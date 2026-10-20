@@ -252,6 +252,12 @@ pub struct RuntimeLocalBinding<V = RuntimeValue> {
 /// Validation failures at a native FunctionSite input boundary.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeFunctionApplyError {
+    #[error("function site {site} input instantiation failed: {source}")]
+    InputInstantiation {
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+        #[source]
+        source: crate::program_types::RuntimeFunctionEffectInstantiationError,
+    },
     #[error("function site {site} inputs have no joint declaration effect instantiation")]
     InvalidEffectInstantiation {
         site: crate::runtime_id::RuntimeFunctionSiteId,

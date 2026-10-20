@@ -18,6 +18,31 @@ use authority::FunctionTypeAuthority;
 pub(crate) use authority::RuntimeValueTypeContext;
 pub use parameter_values::RuntimeParameterValueAdmissionError;
 
+/// A failure to instantiate one original function's joint input/effect contract.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum RuntimeFunctionEffectInstantiationError {
+    #[error("function inputs have no valid original declaration contract")]
+    InvalidContract,
+    #[error("function contract expects {expected} inputs, received {actual}")]
+    InputCount { expected: usize, actual: usize },
+    #[error("function input {ordinal} does not match its checked type {expected:?}")]
+    InputRelation {
+        ordinal: usize,
+        expected: RuntimeSemanticTypeId,
+    },
+    #[error("function inputs have no joint declaration effect instantiation")]
+    Predicate,
+    #[error(transparent)]
+    Resource(Box<crate::entry::RuntimeSchemaError>),
+}
+
+impl RuntimeFunctionEffectInstantiationError {
+    fn retaining_resource_failure(self, work: &ValidationWork) -> Self {
+        work.failure()
+            .map_or(self, |source| Self::Resource(Box::new(source)))
+    }
+}
+
 impl super::RuntimeProgramValueType<'_> {
     /// Checks the destination's declaration scope before retaining a binding.
     /// The caller has already bounded its borrowed metadata in this allowance.
@@ -822,8 +847,9 @@ impl AwbcProgram {
         &self,
         context: AwbcTypeId,
         inputs: &[&RuntimeValue],
-    ) -> Option<RuntimeFunctionEffectInstantiation> {
-        ParameterMatcher::instantiate(self, context, inputs)
+        work: &ValidationWork,
+    ) -> Result<RuntimeFunctionEffectInstantiation, RuntimeFunctionEffectInstantiationError> {
+        ParameterMatcher::instantiate(self, context, inputs, work)
     }
 }
 
@@ -846,14 +872,27 @@ impl super::RuntimeProgramTypes<'_> {
         &self,
         context: RuntimeSemanticTypeId,
         inputs: &[&RuntimeValue],
-    ) -> Option<RuntimeFunctionEffectInstantiation> {
+        work: &ValidationWork,
+    ) -> Result<RuntimeFunctionEffectInstantiation, RuntimeFunctionEffectInstantiationError> {
         match self {
-            Self::Plan(plan) => {
-                ParameterMatcher::instantiate(*plan, plan.by_semantic(context)?, inputs)
-            }
-            Self::Awbc(program) => {
-                ParameterMatcher::instantiate(*program, program.by_semantic(context)?, inputs)
-            }
+            Self::Plan(plan) => ParameterMatcher::instantiate(
+                *plan,
+                plan.by_semantic(context).ok_or_else(|| {
+                    RuntimeFunctionEffectInstantiationError::InvalidContract
+                        .retaining_resource_failure(work)
+                })?,
+                inputs,
+                work,
+            ),
+            Self::Awbc(program) => ParameterMatcher::instantiate(
+                *program,
+                program.by_semantic(context).ok_or_else(|| {
+                    RuntimeFunctionEffectInstantiationError::InvalidContract
+                        .retaining_resource_failure(work)
+                })?,
+                inputs,
+                work,
+            ),
         }
     }
 }
@@ -863,14 +902,38 @@ impl<A: FunctionTypeAuthority> ParameterMatcher<'_, A> {
         program: &A,
         context: A::Type,
         inputs: &[&RuntimeValue],
-    ) -> Option<RuntimeFunctionEffectInstantiation> {
-        let (parameters, mut matcher) = ParameterMatcher::for_function(program, context, None)?;
+        work: &ValidationWork,
+    ) -> Result<RuntimeFunctionEffectInstantiation, RuntimeFunctionEffectInstantiationError> {
+        use RuntimeFunctionEffectInstantiationError as Failure;
+        let failure = |phase: Failure| phase.retaining_resource_failure(work);
+        if let Some(source) = work.failure() {
+            return Err(Failure::Resource(Box::new(source)));
+        }
+        let semantic = program
+            .semantic(context)
+            .ok_or_else(|| failure(Failure::InvalidContract))?;
+        let (parameters, mut matcher) =
+            ParameterMatcher::for_function_with_work(program, context, None, work.clone())
+                .ok_or_else(|| failure(Failure::InvalidContract))?;
         if parameters.len() != inputs.len() {
-            return None;
+            return Err(Failure::InputCount {
+                expected: parameters.len(),
+                actual: inputs.len(),
+            });
         }
         let environment = matcher.parameters.clone();
-        for (expected, value) in parameters.iter().zip(inputs) {
-            matcher.value(*expected, value, 0, &environment).ok()?;
+        for (ordinal, (expected, value)) in parameters.iter().zip(inputs).enumerate() {
+            let expected_semantic = program
+                .semantic(*expected)
+                .ok_or_else(|| failure(Failure::InvalidContract))?;
+            matcher
+                .value(*expected, value, 0, &environment)
+                .map_err(|()| {
+                    failure(Failure::InputRelation {
+                        ordinal,
+                        expected: expected_semantic,
+                    })
+                })?;
         }
         let count = environment
             .scope
@@ -881,22 +944,28 @@ impl<A: FunctionTypeAuthority> ParameterMatcher<'_, A> {
         let predicate = matcher
             .predicate
             .universally_quantified(&matcher.locals, &mut matcher.work)
-            .ok()?;
-        let completion = predicate.complete(&variables, &mut matcher.work).ok()?;
+            .map_err(|()| failure(Failure::Predicate))?;
+        let completion = predicate
+            .complete(&variables, &mut matcher.work)
+            .map_err(|()| failure(Failure::Predicate))?;
         if !completion.admissibility.is_unconstrained() {
-            return None;
+            return Err(failure(Failure::Predicate));
         }
-        let least = completion.least?;
+        let least = completion
+            .least
+            .ok_or_else(|| failure(Failure::Predicate))?;
         let effects = (0..count)
             .map(|slot| {
                 least
-                    .get(&ContractVariable::Parameter(slot))?
+                    .get(&ContractVariable::Parameter(slot))
+                    .ok_or_else(|| failure(Failure::Predicate))?
                     .closed(&mut matcher.work)
-                    .ok()?
+                    .map_err(|()| failure(Failure::Predicate))
+                    .and_then(|effects| effects.ok_or_else(|| failure(Failure::Predicate)))
             })
-            .collect::<Option<Box<[_]>>>()?;
-        Some(RuntimeFunctionEffectInstantiation {
-            context: program.semantic(context)?,
+            .collect::<Result<Box<[_]>, _>>()?;
+        Ok(RuntimeFunctionEffectInstantiation {
+            context: semantic,
             effects: effects.into(),
         })
     }
@@ -1101,18 +1170,6 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         }
         Self::for_function_with_work(program, contract, bindable, work)
     }
-    fn for_function(
-        program: &'a A,
-        contract: A::Type,
-        bindable: Option<BTreeSet<u32>>,
-    ) -> Option<(&'a [A::Type], Self)> {
-        Self::for_function_with_work(
-            program,
-            contract,
-            bindable,
-            ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
-        )
-    }
     fn for_function_with_work(
         program: &'a A,
         contract: A::Type,
@@ -1189,6 +1246,10 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
     }
     fn enter(&mut self, depth: usize) -> Result<(), ()> {
         if depth > 64 {
+            self.work
+                .retain_failure(crate::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "function_type_depth",
+                });
             return Err(());
         }
         self.work.charge(depth).map_err(|_| ())

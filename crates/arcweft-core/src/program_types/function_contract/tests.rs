@@ -34,6 +34,178 @@ fn retained_effect_binding_fixture() -> (AwbcProgram, RuntimeFunctionEffectInsta
     (program, binding)
 }
 
+fn scalar_input_instantiation_programs() -> (
+    crate::plan::RuntimePlan,
+    AwbcProgram,
+    RuntimeSemanticTypeId,
+    RuntimeSemanticTypeId,
+) {
+    use crate::plan::{RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed};
+    let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+    let function = RuntimeSemanticTypeId::from_bytes([0xa8; 32]);
+    let contract = || {
+        RuntimeFunctionTypeContract::new(
+            RuntimeTypeBinder::EMPTY,
+            EffectPredicate::unconstrained(),
+            EffectFormula::empty(),
+        )
+    };
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(
+                    function,
+                    RuntimePlanTypeProjection::Function {
+                        contract: contract(),
+                        parameters: Box::new([unit]),
+                        result: unit,
+                    },
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+    let plan = builder.finish().unwrap();
+    let awbc = AwbcProgram {
+        runtime_types: vec![
+            AwbcRuntimeType::unit(),
+            AwbcRuntimeType::new(
+                function,
+                AwbcRuntimeTypeShape::Function {
+                    contract: contract(),
+                    parameters: vec![AwbcTypeId(0)],
+                    result: AwbcTypeId(0),
+                },
+            ),
+        ],
+        ..AwbcProgram::default()
+    };
+    (plan, awbc, unit, function)
+}
+
+#[test]
+fn function_instantiation_retains_input_count_type_and_original_contract_failures() {
+    use super::super::RuntimeProgramTypes;
+    let (plan, awbc, unit, function) = scalar_input_instantiation_programs();
+    let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+    for program in [
+        RuntimeProgramTypes::Plan(&plan),
+        RuntimeProgramTypes::Awbc(&awbc),
+    ] {
+        let work = || ValidationWork::new(limits);
+        assert_eq!(
+            program.instantiate_function_effects(function, &[], &work()),
+            Err(RuntimeFunctionEffectInstantiationError::InputCount {
+                expected: 1,
+                actual: 0,
+            })
+        );
+        assert_eq!(
+            program.instantiate_function_effects(function, &[&RuntimeValue::Bool(false)], &work()),
+            Err(RuntimeFunctionEffectInstantiationError::InputRelation {
+                ordinal: 0,
+                expected: unit,
+            })
+        );
+        assert_eq!(
+            program.instantiate_function_effects(unit, &[], &work()),
+            Err(RuntimeFunctionEffectInstantiationError::InvalidContract)
+        );
+        let binding = program
+            .instantiate_function_effects(function, &[&RuntimeValue::Unit], &work())
+            .unwrap();
+        assert_eq!(binding.context(), function);
+        assert!(binding.effects.is_empty());
+    }
+}
+
+#[test]
+fn function_instantiation_preserves_the_callers_first_resource_failure() {
+    use super::super::RuntimeProgramTypes;
+    let (plan, awbc, _, function) = scalar_input_instantiation_programs();
+    let missing = RuntimeSemanticTypeId::from_bytes([0xa9; 32]);
+    let limits = crate::entry::RuntimeSchemaLimits {
+        max_validation_work: 0,
+        ..crate::entry::RuntimeSchemaLimits::engine_default()
+    };
+    for program in [
+        RuntimeProgramTypes::Plan(&plan),
+        RuntimeProgramTypes::Awbc(&awbc),
+    ] {
+        let work = ValidationWork::new(limits);
+        let Err(RuntimeFunctionEffectInstantiationError::Resource(first)) =
+            program.instantiate_function_effects(function, &[&RuntimeValue::Unit], &work)
+        else {
+            panic!("input admission must retain its actual resource failure")
+        };
+        assert_eq!(work.failure(), Some(*first.clone()));
+        let consumed = work.consumed();
+        assert_eq!(
+            program.instantiate_function_effects(missing, &[], &work),
+            Err(RuntimeFunctionEffectInstantiationError::Resource(first))
+        );
+        assert_eq!(work.consumed(), consumed);
+    }
+}
+
+#[test]
+fn function_type_depth_refusal_keeps_its_existing_bound_and_resource_cause() {
+    let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+    for depth in [64_u8, 65] {
+        let mut program = AwbcProgram {
+            runtime_types: vec![AwbcRuntimeType::unit()],
+            ..AwbcProgram::default()
+        };
+        let mut chain = |first: u8| {
+            let mut result = AwbcTypeId(0);
+            for offset in 0..depth {
+                let next = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+                program.runtime_types.push(AwbcRuntimeType::new(
+                    RuntimeSemanticTypeId::from_bytes([first + offset; 32]),
+                    AwbcRuntimeTypeShape::Function {
+                        contract: RuntimeFunctionTypeContract::new(
+                            RuntimeTypeBinder::EMPTY,
+                            EffectPredicate::unconstrained(),
+                            EffectFormula::empty(),
+                        ),
+                        parameters: vec![],
+                        result,
+                    },
+                ));
+                result = next;
+            }
+            result
+        };
+        let expected = chain(2);
+        let actual = chain(100);
+        let work = ValidationWork::new(limits);
+        let (_, mut matcher) =
+            ParameterMatcher::for_function_with_work(&program, expected, None, work.clone())
+                .unwrap();
+        let environment = matcher.parameters.clone();
+        let result = matcher.types(expected, actual, 0, &environment, &environment);
+        if depth == 64 {
+            assert!(result.is_ok());
+            assert_eq!(work.failure(), None);
+        } else {
+            assert!(result.is_err());
+            assert_eq!(
+                work.failure(),
+                Some(crate::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "function_type_depth",
+                })
+            );
+            assert!(
+                matcher
+                    .types(AwbcTypeId(0), AwbcTypeId(0), 0, &environment, &environment)
+                    .is_err()
+            );
+        }
+    }
+}
+
 #[test]
 fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
     use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
@@ -989,7 +1161,11 @@ fn failed_value_choice_does_not_leak_callback_effect_constraints() {
     .unwrap();
     let value = RuntimeValue::Tuple(vec![RuntimeValue::Callable(callback), RuntimeValue::Unit]);
     let binding = super::super::RuntimeProgramTypes::Plan(&plan)
-        .instantiate_function_effects(id(8), &[&value])
+        .instantiate_function_effects(
+            id(8),
+            &[&value],
+            &ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
+        )
         .unwrap();
     assert_eq!(
         binding.effects.as_ref(),

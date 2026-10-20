@@ -25,7 +25,8 @@ pub(crate) use construction::ProgramVariantCase;
 mod function_contract;
 pub(crate) use function_contract::RuntimeValueTypeContext;
 pub use function_contract::{
-    RuntimeFunctionEffectInstantiation, RuntimeParameterValueAdmissionError,
+    RuntimeFunctionEffectInstantiation, RuntimeFunctionEffectInstantiationError,
+    RuntimeParameterValueAdmissionError,
 };
 mod data_shapes;
 mod entry;

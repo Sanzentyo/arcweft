@@ -1548,6 +1548,8 @@ pub enum FiberStateError {
     InvalidRuntimeCallable { reason: String },
     #[error("invalid runtime value at {path}: {reason}")]
     InvalidRuntimeValue { path: String, reason: String },
+    #[error("function argument instantiation failed: {0}")]
+    FunctionInstantiation(#[source] crate::program_types::RuntimeFunctionEffectInstantiationError),
     #[error("{kind} has no admitted AWBC snapshot representation")]
     UnsupportedSnapshotValue { kind: &'static str },
     #[error("AWBC function expects {expected} arguments, received {actual}")]
@@ -5062,13 +5064,15 @@ impl FiberFrame {
     {
         context
             .map(|context| {
-                program.instantiate_function_effects(context, values).ok_or(
-                    FiberStateError::InvalidRuntimeValue {
-                        path: "function arguments".to_owned(),
-                        reason: "arguments have no joint declaration effect instantiation"
-                            .to_owned(),
-                    },
-                )
+                program
+                    .instantiate_function_effects(
+                        context,
+                        values,
+                        &crate::entry::schema::value_budget::ValidationWork::new(
+                            crate::entry::RuntimeSchemaLimits::engine_default(),
+                        ),
+                    )
+                    .map_err(FiberStateError::FunctionInstantiation)
             })
             .transpose()
     }

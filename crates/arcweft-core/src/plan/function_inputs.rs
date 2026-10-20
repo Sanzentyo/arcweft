@@ -205,9 +205,18 @@ impl RuntimePlan {
                     .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?
                     .semantic_identity();
                 crate::program_types::RuntimeProgramTypes::Plan(self)
-                    .instantiate_function_effects(context, &references)
+                    .instantiate_function_effects(
+                        context,
+                        &references,
+                        &crate::entry::schema::value_budget::ValidationWork::new(
+                            crate::entry::RuntimeSchemaLimits::engine_default(),
+                        ),
+                    )
                     .map(std::sync::Arc::new)
-                    .ok_or(RuntimeFunctionApplyError::InvalidEffectInstantiation { site })
+                    .map_err(|source| RuntimeFunctionApplyError::InputInstantiation {
+                        site,
+                        source,
+                    })
             })
             .transpose()?;
         for input in declaration.inputs() {
