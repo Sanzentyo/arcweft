@@ -354,9 +354,11 @@ fn assert_wide_map_sum_completion(path: &std::path::Path, bytes: u64, expected: 
         ])
         .output()
         .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
+    assert_eq!(
+        output.status.code(),
+        Some(i32::from(expected.is_none())),
+        "unexpected completion status, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -561,7 +563,14 @@ fn assert_source_map_one_op_prefix(path: &std::path::Path) {
         .arg("run")
         .arg(path)
         .args([
-            "--entry", "entry.run", "--mode", "one-op", "--steps", "32", "--pure-backend", "jit",
+            "--entry",
+            "entry.run",
+            "--mode",
+            "one-op",
+            "--steps",
+            "32",
+            "--pure-backend",
+            "jit",
             "--json",
         ])
         .output()
