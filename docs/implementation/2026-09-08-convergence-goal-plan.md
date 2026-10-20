@@ -23485,3 +23485,73 @@ admission permitting only that specific pure-fiber suspension. R1916 is running
 against these later changes; its live handle is session37144. Final passing
 behavior is not yet claimed. The planned checkpoint may be rough under the
 user's explicit intermediate-commit policy; retain the failed R1915 evidence.
+AWBC frame checkpoint `1d37ea98f7afe87954e61fac753c06e53819397e` was pushed and
+verified, all6 blobs/3939 inputs, held14, fresh advertised main and zero drift;
+index empty and baseline advanced to owned0. Parent
+`28a833a82bed9fb008b389ff4a11e205ce8e2dbe`, tree
+`5419c88735bef41332cee0e21370445e8918285e`, patch SHA256
+`68ca5643fcb95edb11a6af49aae6f6c99800831716e1456057acdd2ae4f96a8b`.
+R1916 completed successfully:3 selected cases passed,1960 excluded,0.093s. The
+original cold-restore assertion now passes unchanged, as do missing/duplicate
+origin and initializer phase rejection. All3938 frozen runtime/spec inputs match;
+this is a narrow dev run, not the complete owner suite. BudgetYield/phase-origin
+changes were included in that build. R1917 Core/driver full catalog is running
+(session36563); continue that exact handle and inspect its terminal catalog before
+starting the full owner run. Required next evidence includes successful reducer
+return, actual selected Rust backend/formatter and cold no-repeat, hostile quota/
+identity/restore atomicity, full owner/compiler/workspace/Clippy/wasm and the
+remaining53-package matrix. Inspect production consumers of RootCallableEvaluator/
+RootRuntime::step; with both production adapters removed, delete any obsolete
+production convenience path and migrate its domain tests without weakening them.
+
+### 2026-10-20 — admit complete AWBC rollback targets before replacing owners
+
+Inspected main `1d37ea98f7afe87954e61fac753c06e53819397e`; the held14 tracked
+paths and three untracked entries are preserved. The requested workspace clean
+already completed once (265286 files / 323.8 GiB, exit0); it is not repeated.
+R1917 completed with2139 Core/driver cases. R1918 Core all-target/all-feature
+check passed before the subsequent identity-admission change.
+
+Rollback restoration now admits the Root phase/origins and the full Root/product
+retained graph together before dropping the existing owner. It captures the old
+inert image, drops the old live executor before constructing restored values,
+and drops a failed candidate before reconstructing the original image. Startup
+shell construction does not execute an initializer or reducer. Public product-only
+snapshot/restore coupling and its own failure atomicity remain separate open work.
+
+R1919 discovered2140 cases. R1920 executed exactly that set:2139 passed (one slow),
+one failed, zero skipped,178.587s, actual exit100;3938 frozen inputs and all case
+keys matched. The new regression exposed acceptance of a stale fiber allocation
+cursor, rather than failing in the expected rejection path. Its assertion stays.
+The product snapshot owner now rejects duplicate or unissued fiber identities
+after bounding the metadata collection and before restoring any value. The test
+also stages an actual reducer frame and rejects an aliased child ID and a child
+at the next unissued ID, preserving the complete original image after each error.
+R1921 ordinary Core Clippy passed with warnings and R1922 structure had no blocking
+findings on the earlier bytes; neither establishes the later identity gate.
+R1923 catalog is rebuilding the final candidate. No broad acceptance is claimed.
+
+Ownership review:arcweft-core's snapshot.rs remains the checkpoint grammar and
+restoration owner:174885 bytes,4147 physical LOC versus4058 at the inspected base.
+This cut changes checkpoint admission and owner replacement, adds no state model,
+I/O or dependency edge, and uses the existing Root and product validators. Keeping
+the replacement guard with its private installer preserves the same lifecycle
+boundary. root.rs is27220 bytes/680 LOC versus642, with the regression beside the
+adapter's existing reducer/cold-restore tests. The original goal remains active;
+successful reducer return/backend/formatter proofs, product-only restore coupling,
+complete future-owner resource admission, compiler/workspace/wasm/53-consumer/Tier2
+and visual acceptance remain outstanding alongside the previously recorded work.
+Supersedes the R1923 running cursor:R1923 completed with all2140 Core/driver cases.
+R1924 ran the exact catalog successfully:2140 passed (one slow),zero skipped,
+192.744s,exit0; the compile-time seal case took150.121s. Case-key and all3938 frozen
+runtime/spec input comparisons show zero drift, including the held14 paths.
+R1925 ordinary Core all-target/all-feature Clippy exited0 with warnings; strict
+Clippy is not established. R1926 structure exited0:3160 scanned files,3030 Rust
+files,1723979 physical Rust LOC,97 packages,376 review triggers,zero blocking
+violations. Its frozen-source audit also matched3938 inputs. Both changed Rust
+files pass rustfmt --check; git diff --check passes. The initial R1920 failure is
+retained above. No running check from this slice remains; broader acceptance and
+the original implementation goal remain incomplete. Publish only the two owned
+Rust files and this operational note; preserve held changes and use a normal
+fast-forward push from the inspected main base.
+The broader original goal remains active; no completion or blocking is claimed.

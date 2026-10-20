@@ -595,6 +595,44 @@ mod tests {
     }
 
     #[test]
+    fn awbc_root_product_rejection_preserves_the_complete_live_executor() {
+        let (_, mut executor) = reducer_fixture();
+        let roles = executor.root.as_ref().unwrap().roles();
+        let event = crate::program_types::RuntimeProgramTypes::Awbc(&executor.program)
+            .try_record_value(
+                roles.event.semantic_identity,
+                vec![],
+                roles.command_policy.root_limits.schema,
+            )
+            .unwrap();
+        let mut input = crate::step::RuntimeStepInput::default();
+        input.root_events.push(crate::root::RootEventInput::new(
+            crate::value::RuntimePayload(event),
+        ));
+        let first = executor.step(input, options(1));
+        assert_eq!(first.stats.executed_ops, 1);
+        let original = executor.inert_rollback_image().unwrap();
+        assert_eq!(original.product.child_fibers.len(), 1);
+        let mut invalid = original.clone();
+        invalid.product.next_fiber_instance = crate::runtime_id::RuntimeIdCursor::initial();
+        assert!(executor.restore_rollback_image(invalid).is_err());
+        assert_eq!(executor.inert_rollback_image().unwrap(), original);
+        for instance in [
+            original.product.fiber.instance,
+            crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
+                original.product.next_fiber_instance.next().unwrap(),
+            ),
+        ] {
+            let mut invalid = original.clone();
+            invalid.product.child_fibers[0].fiber.instance = instance;
+            assert!(executor.restore_rollback_image(invalid).is_err());
+            assert_eq!(executor.inert_rollback_image().unwrap(), original);
+        }
+        executor.restore_rollback_image(original.clone()).unwrap();
+        assert_eq!(executor.inert_rollback_image().unwrap(), original);
+    }
+
+    #[test]
     fn root_restore_rejects_initializing_state_for_flow_origin_without_mutation() {
         let raw = std::sync::Arc::new(crate::awbc::stateful_root_fixture());
         let program = AwbcProductProgram::admit(

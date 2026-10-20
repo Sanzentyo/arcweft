@@ -1758,6 +1758,21 @@ impl AwbcProductExecutorSnapshot {
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
+        let mut fiber_instances = BTreeSet::new();
+        for fiber in std::iter::once(&snapshot.fiber)
+            .chain(snapshot.child_fibers.iter().map(|child| &child.fiber))
+        {
+            if snapshot
+                .next_fiber_instance
+                .last_issued()
+                .is_none_or(|last| fiber.instance.get() > last)
+                || !fiber_instances.insert(fiber.instance)
+            {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "Product fiber instance is duplicated or was not allocated".to_owned(),
+                });
+            }
+        }
         let has_invalid_await_many_identity = |fiber: &AwbcFiberStateSnapshot| {
             fiber.suspension.as_ref().is_some_and(|suspension| {
                 matches!(
@@ -3199,9 +3214,83 @@ impl AwbcProductStepExecutor {
         })
     }
 
-    /// Consumes an inert rollback image into an executor after its previous
-    /// live owner has been dropped by the caller.
+    /// Replaces the complete executor from an admitted inert image. The old
+    /// live owner is dropped before restoration, and rebuilt on any failure.
     pub fn restore_rollback_image(
+        &mut self,
+        image: AwbcProductExecutorRollbackImage,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        image
+            .product
+            .fiber
+            .root
+            .admit_executor_roots(
+                image.root.as_ref(),
+                &self.program,
+                image.product.child_fibers.iter().map(|child| {
+                    (
+                        child.fiber.root,
+                        child.fiber.status,
+                        matches!(child.owner, AwbcProductChildFiberOwnerSnapshot::Independent),
+                        matches!(
+                            child
+                                .fiber
+                                .suspension
+                                .as_ref()
+                                .map(|suspension| &suspension.reason),
+                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
+                        ),
+                    )
+                }),
+            )
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
+        if let Some(root) = &image.root {
+            root.admit_retained(&mut admission).map_err(|error| {
+                AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                }
+            })?;
+        }
+        image.product.admit_retained(&owner, &mut admission)?;
+        self.validate_snapshot_for_origin(&image.product, true)?;
+        let rollback = self.inert_rollback_image().map_err(|error| {
+            AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            }
+        })?;
+        let admitted = self.program.clone();
+        let origin = self.fiber.root;
+        let quantum = self.fiber.budget.quantum;
+        let generation = self.runtime_generation;
+        let format_context = self.format_context.clone();
+        let build = || {
+            let mut shell = Self::for_admitted_root(admitted.clone(), origin, quantum, generation)?;
+            shell.format_context = format_context.clone();
+            Ok::<_, AwbcProductStepBuildError>(shell)
+        };
+        let shell = build()?;
+        drop(std::mem::replace(self, shell));
+        match self.install_rollback_image(image) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let shell =
+                    build().expect("the original admitted executor shell remains constructible");
+                drop(std::mem::replace(self, shell));
+                self.install_rollback_image(rollback)
+                    .expect("the original inert executor image remains restorable");
+                Err(error)
+            }
+        }
+    }
+
+    fn install_rollback_image(
         &mut self,
         image: AwbcProductExecutorRollbackImage,
     ) -> Result<(), AwbcProductStepBuildError> {
