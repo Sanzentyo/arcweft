@@ -2255,7 +2255,7 @@ fn snapshot_restore_and_hot_swap_require_exact_semantic_flow_identity() {
 
     let mut tampered = snapshot;
     tampered.live_flow_bindings[0].flow = replacement;
-    let (executor, error) = executor
+    let (_executor, error) = executor
         .restore_snapshot_owned(tampered)
         .expect_err("snapshot identity must not be inferred from a matching public label");
     assert!(matches!(

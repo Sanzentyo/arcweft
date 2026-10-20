@@ -263,6 +263,13 @@ Root と product の実行値は、旧 executor を破棄した後にだけ構�
 Product の復元 API は実行 owner を消費し、成功時は復元済み owner、失敗時は
 元の owner とエラーを返す。保存された実フレームから構築し、起動用の空フレームや
 仮の引数で代用しない。main fiber の identity は最初の割当 identity と照合する。
+session は旧 executor 自身から選択した entry snapshot へ移り、後続の View／task
+検証が失敗した場合も、その候補から元の完全な image へ戻す。復元専用に entry を
+起動せず、元 program／Source と formatter を一貫して保持する。
+session の storage generation と、完了済み frame が保持する過去の実行世代は
+区別する。実行 pin は現在の実行世代と一致させ、pin を持たない完了済み executor
+の復元で frame の世代を書き換えない。後続 event を受け取る Root や未完了 fiber
+には pin を要求し、その実行が依存する generation を解放しない。
 durable Root の live／inert 共通 grammar は failure も保持する。failure は Ready
 phase の現在の transition cursor に対応し、message と digest が一致しなければ
 受け入れない。wire は failure が無い場合も明示的な `null` を要求する。

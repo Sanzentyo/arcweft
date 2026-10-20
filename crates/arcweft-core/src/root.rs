@@ -618,6 +618,13 @@ impl RootStartupContract {
 }
 
 impl<P> RootRuntime<P> {
+    /// Failure ends the Root's ability to receive and reduce future events.
+    /// Returning from its initial Flow does not terminate this owner.
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
+        self.failure.is_some()
+    }
+
     #[must_use]
     pub fn save_blockers(&self) -> RootSaveBlockers {
         RootSaveBlockers {

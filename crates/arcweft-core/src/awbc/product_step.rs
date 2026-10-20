@@ -1502,6 +1502,12 @@ pub(super) fn take_runtime_need_state(
     Some((index, states.remove(index)))
 }
 
+/// Caller-selected invocation authority for one complete Product restore.
+pub(crate) enum AwbcProductSnapshotRestoreTarget<'a> {
+    CurrentInvocation,
+    Entry(&'a crate::entry::ActiveEntrySnapshotV1),
+}
+
 /// Product-only presentation state derived from the compact fiber.
 /// Evaluated await-many state remains in AWBC coordinates and never becomes a
 /// synthetic plan-qualified expression.
@@ -1572,6 +1578,17 @@ impl AwbcProductStepExecutor {
     #[must_use]
     pub const fn runtime_generation(&self) -> GenerationId {
         self.runtime_generation
+    }
+
+    /// Retains execution authority for runnable fibers and future Root ingress.
+    #[must_use]
+    pub fn requires_runtime_generation_pin(&self) -> bool {
+        self.root.as_ref().is_some_and(|root| !root.is_terminal())
+            || !self.fiber.status.is_terminal()
+            || self
+                .child_fibers
+                .iter()
+                .any(|child| !child.fiber.status.is_terminal())
     }
 
     /// Rebinds only the generation used for future Need producer starts.

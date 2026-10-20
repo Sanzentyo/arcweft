@@ -56,6 +56,9 @@ Root と、それを初期化・更新する実際の fiber は、一つの exec
 reducer の trap は committed state と transition cursor を変えず、Root に failure を
 保持する。通常保存もその failure を保存・復元し、復元によって実行可能な Root に
 戻さない。failure の phase・sequence・message digest は復元前に照合する。
+初期 Flow の終了は Root の終了を意味しない。failure の無い Root は後続 event を
+受け取れるため、実行世代の lease を保持する。ContentOnly 更新でも Root の元の
+世代を維持し、後続 reducer を実行する前にその runtime image を破棄しない。
 
 実行中の reducer は、その entry の reducer role に対応する一つの executor
 fiber が所有する。継続中は通常 Flow と後続 event より優先して進め、budget を

@@ -23854,9 +23854,9 @@ advanced to owned0. This remains an intermediate checkpoint,not acceptance.
 
 ### 2026-10-21 — finish the consuming restore API consumers
 
-R1951's actual compiler output rejects four remaining removed-API calls:two in
-compiler/src/project/tests/producer_slots.rs,one in driver's live observation
-integration,and one in compiler's dialogue_readiness integration. A complete
+R1951's compiler output rejects three removed-API calls:two in compiler's
+producer_slots unit helper and one in driver's live observation integration.
+A complete workspace inspection also found the fourth in dialogue_readiness. A complete
 workspace call-site inspection distinguishes the remaining valid facade/input
 controller methods. Migrated these four calls directly to consuming restore,
 binding the returned owner on success and recovering it from the error tuple.
@@ -23897,3 +23897,94 @@ strict current-invocation restore guard as the other legitimate restore target.
 The other driver diagnostic-category and resource/catalog/executable-order
 failures remain open,as do all original broader requirements. No clean,branch,
 worktree,artifact move/profile/jobs change is authorized or needed here.
+Consumer repair checkpoint `68cced924d7c9a9dae26edc8288d775f5080fcef` is pushed
+and verified:parent `aba629fb23f11e4d927b54025fceec6c4af03fc2`,tree
+`0a1cdea77da0adada766c29c170f05864adf2326`,patch SHA256
+`906b3928f073021124b11df498d3ef01e11f013716b3e8c89bf3a0cade65c514`.
+All4 blobs/3939 inputs,held14,advertised main and empty index match;baseline
+advanced to owned0. The repair's actual compiler/driver reverse closure is10;
+the inherited Core public-boundary closure remains53 and is not discharged.
+
+R1951 completed actual101 after the removed-API compilation failures. No catalog
+was produced. R1952 queue session4453 terminated at its catalog prerequisite
+with exit1;no nextest execution occurred and no R1952 test pass exists. R1953
+ordinary four-package/all-target/all-feature/locked Clippy completed0,37m34s
+including its build-lock wait,with warnings. Its source-audit explicitly records
+three consumer files changed while the command was queued;the final3939
+publication inputs match,but no unchanged-start-to-end source claim or strict
+lint pass is made. Both old source-sensitive handles are now closed.
+
+### 2026-10-21 — selected entry restore and durable Root generation ownership
+
+Applied the prepared entry and generation patches and added real behavior
+coverage. Restore target is the closed CurrentInvocation/Entry context. Current
+invocation keeps its original origin and generation checks. Selected entry
+restoration verifies the expected entry against the original admitted program,
+then performs the same complete retained-image admission. Driver now consumes
+its actual original executor rather than spawning a new entry as a restore or
+rollback shell. It retains the candidate while preparing tasks/View state;on a
+later refusal it consumes that candidate to restore the original complete image
+with exact producer identities. Early restore failure reinstalls the returned
+original owner. Original Source and formatter stay with that owning transaction.
+
+RootRuntime's generic lifecycle now declares failure terminal;returning from the
+initial Flow does not end future event ingress. FiberStatus owns its terminal
+classification. Live and inert Product owners query those lifecycles before
+releasing/requiring their runtime generation pin. Driver keeps the generation
+lease while a Root can receive events or a fiber remains nonterminal. Storage
+generation is distinct from an inactive executor's historical execution marker:
+future markers are rejected,live pins must match the selected execution/storage
+owner,and a pin cannot be omitted while execution remains possible. Completed
+historical frames are restored without relabeling their generation.
+
+New compiler regression uses the actual stateful root_replay_fixture,executes its
+initializer/empty Flow one op at a time,requires a Root pin after Flow completion,
+rejects a missing live pin before callbacks without changing the owner,image,
+or state,and performs a ContentOnly swap followed by a real committed Root event
+on the original retained generation/Source. Existing stateless ContentOnly
+coverage now also asserts storage1/execution0,refuses future execution2 and a
+forged pin before callbacks,and preserves the exact original image/Source.
+The ordinary completed round trip and old image retirement assertions remain.
+The two128-step bounds and one-op budgets were not reduced. Stable save/language
+specifications now describe the same lifecycle and consuming entry restoration.
+
+R1955 workspace all-target/all-feature/locked check passed5m38s,actual0;all3939
+inputs match its before-command freeze after completion. Subsequent edits only
+clarified API docs/formatting and strengthened/readied the new tests;production
+logic is unchanged. Their final bytes are compiled by the new selected catalog.
+R1958 structural gate passes on the final frozen candidate:3160 files,3030 Rust
+files,1724499 physical Rust LOC,97 packages,376 review triggers,zero blocking
+violations. All3938 runtime/spec inputs match before/after. Snapshot and executor
+still own their complete graph;Root/fiber own lifecycle,Core owns Source binding,
+and driver owns generation leases and session commit. The two restore target
+roles do not create a second snapshot model or live owner. No dependency edge,
+unsafe code,contract-version exception or fallback reader was introduced.
+
+Final runtime freeze:task-session-entry-generation-20261021-final-runtime.source-freeze.json
+(3938 inputs;only this note excluded). R1956 catalog is live session98123,wrapper
+PID55164 was observed live. R1957 queue is live session59317;it waits for that
+exact terminal receipt,verifies ten required cases,then runs the same arguments
+and audits every selected terminal case and frozen input. R1959 ordinary Clippy
+is live session45283. Preserve these exact handles and the frozen Rust/spec bytes;
+do not restart merely because observation times out. R1958 session37332 closed0.
+
+Cargo metadata confirms four selected libraries and these actual integration
+targets:awbc_product_session,awbc_product_parity,project_cache_transaction,
+evaluated_effects. The new catalog uses those named targets and --lib across
+Core/driver/runtime-plan/compiler,all features/locked. Its filter includes all
+Product and Root domain cases,all product-session/parity cases,presentation
+generation cases,and compiler Root/producer_slots/dialogue_readiness consumers.
+This avoids rebuilding unrelated compiler integration binaries while preserving
+the required changed owner/consumer behavior. The full53 reverse-consumer and
+workspace/Tier2/visual acceptance remain required and are not replaced by this
+slice. No passing R1956/R1957 or current runtime result is claimed yet.
+
+This is a coherent intermediate implementation checkpoint under the user's
+explicit policy. After the running jobs finish,repair new failures without
+weakening assertions,then finish the remaining structured Fiber/Root/Decode
+classification and aggregate resource/catalog/executable-admission phases. The
+last full runtime result remains R1946:2289/2295 passed,six failed;the two AwaitMany
+and ContentOnly fixes have not yet received their new runtime proof. The broader
+original goal,including all shared owner/Need/Generic Match/View/presentation11/
+CLI/native-web/rdeps requirements,remains active and unshrunk. Do not repeat the
+completed clean or move/copy artifacts,create branches/worktrees,or tune jobs.

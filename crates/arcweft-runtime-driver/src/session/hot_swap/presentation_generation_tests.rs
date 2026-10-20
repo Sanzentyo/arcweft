@@ -426,6 +426,30 @@ fn content_only_replacement_switches_presentation_owner_without_relabeling_the_f
     );
     assert!(step.finished, "{:?}", step.diagnostics);
     let snapshot = session.snapshot_session().unwrap();
+    assert_eq!(snapshot.executor.generation, GenerationId::new(1));
+    assert_eq!(
+        snapshot.executor.state.runtime_generation,
+        GenerationId::new(0)
+    );
+    let owner = session.executor.program_owner();
+    for forged_pin in [false, true] {
+        let mut invalid = session.snapshot_session().unwrap();
+        if forged_pin {
+            invalid.runtime.runtime_generation_pin = Some(GenerationId::new(1));
+        } else {
+            invalid.executor.state.runtime_generation = GenerationId::new(2);
+        }
+        let mut visited = false;
+        session
+            .restore_session_snapshot_with_value_validator(invalid, |_| {
+                visited = true;
+                Ok(())
+            })
+            .expect_err("storage ownership cannot forge a completed execution generation");
+        assert!(!visited);
+        assert!(session.executor.program_owner().same_program(&owner));
+        assert_eq!(session.snapshot_session().unwrap(), snapshot);
+    }
     let candidate = session.snapshot_session().unwrap();
     session.restore_session_snapshot(candidate).unwrap();
     assert_eq!(session.snapshot_session().unwrap(), snapshot);

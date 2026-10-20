@@ -551,6 +551,98 @@ fn root_replay_fixture(
     (bundle, event, options)
 }
 
+#[test]
+fn content_only_replacement_retains_the_root_generation_after_its_initial_flow_returns() {
+    use arcweft_core::{
+        root::{RootEventInput, RootTransitionOutcome},
+        task::GenerationId,
+    };
+    use arcweft_runtime_driver::{
+        clock::RuntimeClockStep,
+        session::{BundleSession, BundleStepInput},
+        session_save::BundleSessionSaveError,
+        swap::SwapCompatibility,
+    };
+    let (first, event, options) = root_replay_fixture("root-content-only-generation");
+    let mut second = first.clone();
+    second.manifest.profile_id = Some("profile.root.content".to_owned());
+    let mut session = BundleSession::new(&first, options).unwrap();
+    let original_owner = session.program_owner();
+    let mut tick = 0;
+    let mut initialized = false;
+    for _ in 0..128 {
+        tick += 1;
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(tick, 1).unwrap(),
+            BundleStepInput::default(),
+        );
+        assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+        assert!(step.stats.executed_ops <= 1);
+        initialized |= !step.root_initializations.is_empty();
+        if step.finished {
+            break;
+        }
+    }
+    assert!(initialized);
+    assert!(session.is_finished());
+    assert_eq!(
+        session.current_fiber_generation(),
+        Some(GenerationId::new(0))
+    );
+    let before = session.snapshot_session().unwrap();
+    let mut missing_pin = session.snapshot_session().unwrap();
+    missing_pin.runtime.runtime_generation_pin = None;
+    let mut visited = false;
+    session
+        .restore_session_snapshot_with_value_validator(missing_pin, |_| {
+            visited = true;
+            Ok(())
+        })
+        .expect_err("a Root that can accept future events retains its generation pin");
+    assert!(!visited);
+    assert_eq!(session.snapshot_session().unwrap(), before);
+    let report = session.hot_swap_bundle(&second).unwrap();
+    assert_eq!(report.compatibility, SwapCompatibility::ContentOnly);
+    assert_eq!(report.generation, GenerationId::new(1));
+    assert_eq!(
+        session.current_fiber_generation(),
+        Some(GenerationId::new(0))
+    );
+    assert!(session.has_runtime_image(GenerationId::new(0)));
+    assert!(matches!(
+        session.snapshot_session(),
+        Err(BundleSessionSaveError::GenerationMismatch {
+            field: "runtime_generation_pin",
+            ..
+        })
+    ));
+    let mut input = BundleStepInput::default();
+    input.root_events.push(RootEventInput::new(event.into()));
+    let mut committed = false;
+    for _ in 0..128 {
+        tick += 1;
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(tick, 1).unwrap(),
+            std::mem::take(&mut input),
+        );
+        assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+        assert!(step.stats.executed_ops <= 1);
+        if let [outcome] = &step.root_transitions[..] {
+            assert!(matches!(outcome, RootTransitionOutcome::Committed { .. }));
+            assert_eq!(outcome.sequence().get(), 0);
+            committed = true;
+            break;
+        }
+    }
+    assert!(committed);
+    assert!(session.program_owner().same_program(&original_owner));
+    assert_eq!(
+        session.current_fiber_generation(),
+        Some(GenerationId::new(0))
+    );
+    assert!(session.has_runtime_image(GenerationId::new(0)));
+}
+
 fn record_root_replay_session(
     session: &mut arcweft_runtime_driver::session::BundleSession,
     event: RuntimeValue,

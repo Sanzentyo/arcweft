@@ -1,7 +1,7 @@
 use super::{
-    ActiveChoice, ActiveDialogue, AwbcLineTaskPlanView, AwbcProductStepBuildError,
-    AwbcProductStepExecutor, PendingHostCall, ProductChildFiber, ProductChildFiberOwner,
-    ProductLineTaskFiberPhase, stream_id_for,
+    ActiveChoice, ActiveDialogue, AwbcLineTaskPlanView, AwbcProductSnapshotRestoreTarget,
+    AwbcProductStepBuildError, AwbcProductStepExecutor, PendingHostCall, ProductChildFiber,
+    ProductChildFiberOwner, ProductLineTaskFiberPhase, stream_id_for,
 };
 mod task_publication;
 use crate::awbc::fiber::{AwbcFiberStateSnapshot, FiberStatus};
@@ -1663,6 +1663,17 @@ fn snapshot_active_dialogue(
 }
 
 impl AwbcProductExecutorSnapshot {
+    /// Uses the same lifecycle rule before any live executor is constructed.
+    #[must_use]
+    pub fn requires_runtime_generation_pin(&self) -> bool {
+        self.root.as_ref().is_some_and(|root| !root.is_terminal())
+            || !self.fiber.status.is_terminal()
+            || self
+                .child_fibers
+                .iter()
+                .any(|child| !child.fiber.status.is_terminal())
+    }
+
     pub fn active_entry_snapshot_identity(
         &self,
         program: &crate::awbc::schema::AwbcProgram,
@@ -3248,15 +3259,20 @@ impl AwbcProductStepExecutor {
         self,
         image: AwbcProductExecutorSnapshot,
     ) -> Result<Self, (Self, AwbcProductStepBuildError)> {
-        self.restore_snapshot_transaction(image, crate::task::NeedProducerRestorePolicy::Rollback)
+        self.restore_snapshot_transaction(
+            image,
+            crate::task::NeedProducerRestorePolicy::Rollback,
+            AwbcProductSnapshotRestoreTarget::CurrentInvocation,
+        )
     }
 
     pub(crate) fn restore_snapshot_transaction(
         self,
         image: AwbcProductExecutorSnapshot,
         policy: crate::task::NeedProducerRestorePolicy,
+        target: AwbcProductSnapshotRestoreTarget<'_>,
     ) -> Result<Self, (Self, AwbcProductStepBuildError)> {
-        if let Err(error) = self.validate_snapshot(&image) {
+        if let Err(error) = self.validate_snapshot_target(&image, target) {
             return Err((self, error));
         }
         let rollback = match self.snapshot() {
@@ -3323,7 +3339,11 @@ impl AwbcProductStepExecutor {
         self,
         saved: AwbcProductExecutorSnapshot,
     ) -> Result<Self, (Self, super::AwbcProductStepBuildError)> {
-        self.restore_snapshot_transaction(saved, crate::task::NeedProducerRestorePolicy::Resume)
+        self.restore_snapshot_transaction(
+            saved,
+            crate::task::NeedProducerRestorePolicy::Resume,
+            AwbcProductSnapshotRestoreTarget::CurrentInvocation,
+        )
     }
 
     /// Visits values in the one live executor graph without materializing a
@@ -3791,25 +3811,52 @@ impl AwbcProductStepExecutor {
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
+        self.validate_snapshot_target(
+            snapshot,
+            AwbcProductSnapshotRestoreTarget::CurrentInvocation,
+        )
+    }
+
+    fn validate_snapshot_target(
+        &self,
+        snapshot: &AwbcProductExecutorSnapshot,
+        target: AwbcProductSnapshotRestoreTarget<'_>,
+    ) -> Result<(), AwbcProductStepBuildError> {
         use crate::awbc::fiber::AwbcFiberRoot;
-        let same_entry_phase = snapshot.fiber.root.entry().is_some()
-            && snapshot.fiber.root.entry() == self.fiber.root.entry()
-            && matches!(
-                (snapshot.fiber.root, self.fiber.root),
-                (AwbcFiberRoot::Entry(_), AwbcFiberRoot::RootInitializer(_))
-                    | (AwbcFiberRoot::RootInitializer(_), AwbcFiberRoot::Entry(_))
-            );
-        if snapshot.fiber.root != self.fiber.root && !same_entry_phase {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "saved fiber origin differs from the selected invocation".to_owned(),
-            });
-        }
-        if snapshot.runtime_generation != self.runtime_generation {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message:
-                    "Product snapshot generation pin or AwaitMany occurrence identity is invalid"
-                        .to_owned(),
-            });
+        match target {
+            AwbcProductSnapshotRestoreTarget::CurrentInvocation => {
+                let same_entry_phase = snapshot.fiber.root.entry().is_some()
+                    && snapshot.fiber.root.entry() == self.fiber.root.entry()
+                    && matches!(
+                        (snapshot.fiber.root, self.fiber.root),
+                        (AwbcFiberRoot::Entry(_), AwbcFiberRoot::RootInitializer(_))
+                            | (AwbcFiberRoot::RootInitializer(_), AwbcFiberRoot::Entry(_))
+                    );
+                if snapshot.fiber.root != self.fiber.root && !same_entry_phase {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "saved fiber origin differs from the selected invocation"
+                            .to_owned(),
+                    });
+                }
+                if snapshot.runtime_generation != self.runtime_generation {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "Product snapshot generation pin or AwaitMany occurrence identity is invalid".to_owned(),
+                    });
+                }
+            }
+            AwbcProductSnapshotRestoreTarget::Entry(expected) => {
+                let selected = snapshot
+                    .active_entry_snapshot_identity(&self.program)
+                    .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                        message: error.to_string(),
+                    })?;
+                if &selected != expected {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "saved executor differs from its selected entry contract"
+                            .to_owned(),
+                    });
+                }
+            }
         }
         let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(

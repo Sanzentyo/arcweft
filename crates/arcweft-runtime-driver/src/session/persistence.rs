@@ -574,41 +574,31 @@ impl BundleSession {
             }
         })?;
         let old_image = self.executor.product_inert_rollback_image()?;
-        let old_entry =
-            old_image
-                .fiber
-                .root
-                .entry()
-                .ok_or_else(|| BundleSessionSaveError::Fiber {
-                    message: "foreground session restore requires an entry origin".to_owned(),
-                })?;
-        let restored_entry =
-            state
-                .fiber
-                .root
-                .entry()
-                .ok_or_else(|| BundleSessionSaveError::Fiber {
-                    message: "foreground session snapshot requires an entry origin".to_owned(),
-                })?;
-        drop(
-            self.executor
-                .take_product_for_restore()
-                .expect("validated Product tier has one executor owner"),
-        );
+        let old_entry = old_image
+            .active_entry_snapshot_identity(
+                self.executor
+                    .product_awbc_program()
+                    .expect("validated Product tier"),
+            )
+            .map_err(|error| BundleSessionSaveError::Root {
+                message: error.to_string(),
+            })?;
+        let original = self
+            .executor
+            .take_product_for_restore()
+            .expect("validated Product tier has one executor owner");
+        let mut restored_executor = match original.restore_entry_snapshot(
+            ArcweftRuntimeExecutorSnapshot::AwbcProduct(state),
+            &snapshot.active_entry,
+        ) {
+            Ok(executor) => executor,
+            Err(error) => {
+                let (owner, reason) = error.into_parts();
+                self.executor.install_after_restore(owner);
+                return Err(reason.into());
+            }
+        };
         let restored = (|| -> Result<_, BundleSessionSaveError> {
-            let restored_executor = self
-                .runtime_images
-                .get(active_generation)
-                .expect("validated active generation has a runtime image")
-                .runtime()
-                .spawn_executor_for_entry(restored_entry)
-                .map_err(|error| BundleSessionSaveError::Fiber {
-                    message: error.to_string(),
-                })?;
-            let executor_snapshot = ArcweftRuntimeExecutorSnapshot::AwbcProduct(state);
-            let mut restored_executor = restored_executor
-                .restore_snapshot(executor_snapshot)
-                .map_err(|error| BundleSessionSaveError::from(error.into_parts().1))?;
             let restored_launches = restored_executor.restartable_dispatches();
             let restored_tasks = RuntimeTaskRegistry::restore_restartable(
                 &restartable_tasks,
@@ -725,7 +715,6 @@ impl BundleSession {
                 &restored_executor.fiber().frame.status,
             )?;
             Ok((
-                restored_executor,
                 restored_tasks,
                 restored_task_pins,
                 restored_reensure,
@@ -734,7 +723,6 @@ impl BundleSession {
             ))
         })();
         let (
-            mut restored_executor,
             restored_tasks,
             restored_task_pins,
             restored_reensure,
@@ -743,15 +731,8 @@ impl BundleSession {
         ) = match restored {
             Ok(restored) => restored,
             Err(error) => {
-                let rollback = self
-                    .runtime_images
-                    .get(active_generation)
-                    .expect("validated active generation has a runtime image")
-                    .runtime()
-                    .spawn_executor_for_entry(old_entry)
-                    .expect("captured Product owner can rebuild its selected entry");
-                let rollback = rollback
-                    .restore_product_rollback_image(old_image)
+                let rollback = restored_executor
+                    .restore_product_rollback_image(old_image, &old_entry)
                     .expect("captured inert image restores the exact prior Product owner");
                 self.executor.install_after_restore(rollback);
                 return Err(error);

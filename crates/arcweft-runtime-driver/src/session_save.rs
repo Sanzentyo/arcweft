@@ -97,7 +97,13 @@ impl<P, V> BundleSessionSnapshot<P, V> {
             return Err("session snapshot requires its original Product AWBC owner".to_owned());
         };
         if self.executor.generation != self.generation.active_generation
-            || self.executor.state.runtime_generation != self.executor.generation
+            || self.executor.state.runtime_generation > self.executor.generation
+            || match self.runtime.runtime_generation_pin {
+                Some(pin) => {
+                    pin != self.executor.generation || pin != self.executor.state.runtime_generation
+                }
+                None => self.executor.state.requires_runtime_generation_pin(),
+            }
         {
             return Err(
                 "session executor generation differs from its selected storage generation"
@@ -328,7 +334,8 @@ where
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BundleSessionExecutorSnapshot<S = AwbcProductExecutorSnapshot> {
-    /// Generation that owns the Product AWBC fiber state.
+    /// Generation selected for session storage. A completed executor may retain
+    /// its older execution generation without owning a runnable generation pin.
     pub generation: GenerationId,
     /// Inert Product AWBC state. It becomes live only after the old executor
     /// has relinquished sole ownership during restore.

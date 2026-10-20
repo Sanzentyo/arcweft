@@ -1,7 +1,8 @@
 use crate::aot::AotProgram;
 use crate::awbc::product_step::{
     AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot, AwbcProductProgram,
-    AwbcProductSaveError, AwbcProductStepBuildError, AwbcProductStepExecutor,
+    AwbcProductSaveError, AwbcProductSnapshotRestoreTarget, AwbcProductStepBuildError,
+    AwbcProductStepExecutor,
 };
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
 use crate::engine::{Engine, EngineStartError, FlowFiber};
@@ -554,6 +555,19 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
+    /// Borrows the Product owner's lifetime requirement; other tiers return None.
+    #[must_use]
+    pub fn product_requires_runtime_generation_pin(&self) -> Option<bool> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                Some(executor.vm.requires_runtime_generation_pin())
+            }
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
+            | ArcweftRuntimeExecutorInner::StructuredAot(_)
+            | ArcweftRuntimeExecutorInner::Vacant => None,
+        }
+    }
+
     #[must_use]
     pub fn generation(&self) -> GenerationId {
         match &self.inner {
@@ -708,13 +722,16 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
+    /// Restores an exact selected entry and its retained producer identities.
     pub fn restore_product_rollback_image(
         self,
         image: AwbcProductExecutorSnapshot,
+        entry: &ActiveEntrySnapshotV1,
     ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
         self.restore_snapshot_with_policy(
             ArcweftRuntimeExecutorSnapshot::AwbcProduct(image),
             crate::task::NeedProducerRestorePolicy::Rollback,
+            AwbcProductSnapshotRestoreTarget::Entry(entry),
         )
     }
 
@@ -869,19 +886,41 @@ impl ArcweftRuntimeExecutor {
         self,
         snapshot: ArcweftRuntimeExecutorSnapshot,
     ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
-        self.restore_snapshot_with_policy(snapshot, crate::task::NeedProducerRestorePolicy::Resume)
+        self.restore_snapshot_with_policy(
+            snapshot,
+            crate::task::NeedProducerRestorePolicy::Resume,
+            AwbcProductSnapshotRestoreTarget::CurrentInvocation,
+        )
+    }
+
+    /// Replaces the sole owner using an entry contract already selected from
+    /// this exact executable. Historical frame generations remain in the image.
+    pub fn restore_entry_snapshot(
+        self,
+        snapshot: ArcweftRuntimeExecutorSnapshot,
+        entry: &ActiveEntrySnapshotV1,
+    ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
+        self.restore_snapshot_with_policy(
+            snapshot,
+            crate::task::NeedProducerRestorePolicy::Resume,
+            AwbcProductSnapshotRestoreTarget::Entry(entry),
+        )
     }
 
     fn restore_snapshot_with_policy(
         self,
         snapshot: ArcweftRuntimeExecutorSnapshot,
         policy: crate::task::NeedProducerRestorePolicy,
+        target: AwbcProductSnapshotRestoreTarget<'_>,
     ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
         match (self.inner, snapshot) {
             (
                 ArcweftRuntimeExecutorInner::AwbcProduct(executor),
                 ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot),
-            ) => match executor.vm.restore_snapshot_transaction(snapshot, policy) {
+            ) => match executor
+                .vm
+                .restore_snapshot_transaction(snapshot, policy, target)
+            {
                 Ok(vm) => Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
                     Box::new(AwbcProductExecutor { vm }),
                 ))),

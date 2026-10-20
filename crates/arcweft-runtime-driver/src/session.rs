@@ -907,7 +907,12 @@ impl BundleSession {
             fiber_status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
-        if finished {
+        if finished
+            && !self
+                .executor
+                .product_requires_runtime_generation_pin()
+                .expect("bundle sessions own a Product executor")
+        {
             self.runtime_generation_pin = None;
             self.retire_unused_generations();
         }

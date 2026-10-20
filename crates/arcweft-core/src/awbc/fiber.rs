@@ -607,6 +607,14 @@ pub enum FiberStatus {
     Trapped,
 }
 
+impl FiberStatus {
+    /// Whether this fiber has returned, been cancelled, or trapped.
+    #[must_use]
+    pub const fn is_terminal(self) -> bool {
+        matches!(self, Self::Returned | Self::Cancelled | Self::Trapped)
+    }
+}
+
 /// One retained suspension grammar. Only inert carriers have a save codec.
 ///
 /// ```compile_fail
