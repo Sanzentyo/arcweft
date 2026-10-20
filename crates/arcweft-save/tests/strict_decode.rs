@@ -182,7 +182,10 @@ fn save_envelope_checks_lengths_before_copying_payloads() {
         .encode_bytes()
         .expect("encode");
     let options = SaveDecodeOptions {
-        max_payload_bytes: 3,
+        envelope: arcweft_save::SaveEnvelopeLimits {
+            max_payload_bytes: 3,
+            ..arcweft_save::SaveEnvelopeLimits::default()
+        },
         ..SaveDecodeOptions::default()
     };
 

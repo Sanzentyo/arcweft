@@ -24231,3 +24231,113 @@ as evidence on these frozen bytes. Inspect the terminal catalog before running
 the exact set with --no-tests fail/--no-fail-fast;record real failures and all
 selected/excluded/no-host-test inventories. Do not restart the live handle or
 change jobs,features,profiles,coverage or budgets to reduce this work.
+
+Catalog/admission checkpoint `6ffb650f52588cb96411991c5cea5076456511aa` is pushed
+and verified:parent `da55b57fbc508ab7e68ec020d5fc21910a112372`,tree
+`fa28af1c5a4a5a72d553a1a43d9974da6e6f1c6a`,patch SHA256
+`346a5be2ab480994e8fafeb77f06a594612d33746bf71a3ef6b886ab2a0b7a84`.
+All three blobs/3939 inputs,held14,advertised main and empty index matched;
+baseline advanced to owned0. R1974 is now terminal0,3m20s including lock wait,
+ordinary Driver Clippy with warnings;all3938 frozen inputs match. Session61508
+is closed. R1975 session26163 remains confirmed live;Cargo/rustc are compiling
+the selected non-CLI consumers. No runtime run of that catalog is claimed.
+
+Read-only next-owner reconciliation:the still-explicit Presentation11 rejection
+is in compiler/src/lower.rs:runtime_call_target (around9602),NOT the split
+runtime-plan awbc_lower module. It rejects every selected PresentationCallableId
+with the pending typed Presentation command ABI diagnostic. The sema identity
+enum still contains the eleven named operations. Do not reopen a wrong owner
+from the earlier abbreviated path. Bounded typed save output also remains real:
+save/src/lib.rs:encode_typed_json_save first calls serde_json::to_vec,then the
+envelope checks its u32 length;there is no output sink limit during that encode.
+These are observed remaining implementation gaps,not completed behavior.
+
+### 2026-10-21 — bounded save output prepared during verified reverse build wait
+
+Previous goal turn progressed through the three published checkpoints above.
+This continuation repeatedly confirms R1975 session26163 live;the actual Cargo
+PID54932 started2026-10-20T16:55:28.4741636Z and rustc is building the52 selected
+non-CLI consumers. No timeout/restart or frozen Rust/spec edit was made.
+
+Prepared and reviewed six source/doc drafts under the TEMP evidence prefix
+task-save-bounded-20261021 (candidate.json records exact original/draft hashes).
+They are not a checkout or build artifacts. The candidate adds one Sans-I/O
+bounded envelope encoder and eight behavior tests;SaveEnvelopeLimits owns the
+unchanged512MiB/256MiB/1024/256 defaults for both read/write configuration.
+SaveDecodeOptions.envelope replaces the duplicated scalar limit fields;the
+compiler trace/Save decoder consumers migrate together. Typed JSON writes into
+one bounded envelope buffer,checks escaped bytes before growth/copy,retains its
+first output failure and hashes the completed payload in place. Raw envelope
+output preflights its known full length and preserves its explicit checksum.
+The version-one transcript is retained. Generic Codec::encode_value still
+constructs its codec-owned payload before envelope output;this candidate does
+not claim to bound that generic codec allocation.
+
+Drafts parsed/formatted only;no test or compile success is claimed for them.
+Resolved metadata SHA/manifests remain unchanged;Save+compiler reverse closure
+is11 packages (impact.json). The actual current inputs,not these draft files,
+remain authoritative until application.
+
+Pipeline session93685 is live:follow-root-catalog.ps1 waits for the EXISTING
+R1975 process/terminal receipt,checks its required catalog cases and3938 frozen
+inputs,then invokes the hash/base-guarded apply.ps1 and starts R1976 Save owner
+catalog. Do not duplicate either live handle. The guard expects main
+6ffb650f52588cb96411991c5cea5076456511aa;avoid a docs-only commit before it runs.
+Reconcile candidate.applied/current Git and poll both exact handles on resume.
+On R1975 compilation failure it stops before edits;repair that concrete failure.
+On success,R1975 remains catalog/build evidence,not a runtime pass. After the
+bounded-save candidate stabilizes,regenerate and execute the SAME52-member
+non-CLI acceptance selection,retaining all previous matched keys plus the new
+Save tests. CLI lib/bin/six canonical targets and final feature/workspace/Tier2/
+Native-Web acceptance remain owed. This extends the final candidate;it does
+not reduce the required reverse-consumer runtime surface.
+
+### 2026-10-21 — bounded typed-save output implemented and owner checks passed
+
+R1975 completed0 after37m39s:6463 named cases,6447 matched,16 excluded across
+the52 selected non-CLI consumers. Required Root/binding/catalog/affine cases
+are present;all3938 pre-application inputs match. This is build/catalog evidence,
+not a runtime result. Session26163 is closed. Pipeline93685 then applied the
+reviewed six-file candidate on main6ffb650f52588cb96411991c5cea5076456511aa,
+registered its two new Rust files and completed R1976 Save owner catalog0,
+2m53s. That pipeline is now closed;do not invoke its apply operation again.
+
+The actual encoder now owns the full envelope buffer. Header bounds precede
+Serialize;each payload append checks cumulative escaped bytes and full length
+before reserve/copy. Growth is amortized within the same allowance,the first
+failure is sticky,and finish alone publishes bytes after in-place length/checksum
+completion. Raw known payloads are preflighted before output allocation. All
+default/free-function/raw entry points use this owner;the old typed to_vec plus
+second-envelope-copy path is removed. SaveEnvelopeLimits also owns decode's
+unchanged defaults via SaveDecodeOptions.envelope;both explicit consumer policies
+migrated without changing their limits/assertions. Wire/version1 bytes remain.
+
+R1976 lists31/31 cases,zero excluded,including all eight new behavior cases.
+R1977 executed exactly those31:31 pass (one slow),zero skipped,135.240s,actual0.
+The permissive-decoder API closure remains tested. Complete terminal keys,all
+3940 runtime/spec inputs and all five built binaries match. Session51230 closed.
+R1979 canonical structure gate passed0:3162 files,3032 Rust files,1725158 physical
+Rust LOC,97 packages,376 review triggers,zero blocking violations. R1980 workspace
+all-target/all-feature/locked check passed0,1m44s. Both checks match all3940 inputs.
+
+Ownership review:Save's262-line encoding owner holds the actual buffer/policy/
+failure lifecycle;its257-line child tests exercise wire bytes,exact/over limits,
+early serializer refusal,stream stopping,swallowed failures,address/wire overflow
+and checksum rejection. The774-line Save facade retains decoding/migration.
+Normal fan-out remains6;direct normal consumers are Driver and native player.
+The Save+compiler reverse closure is11. No Cargo/lock/dependency,unsafe,backend
+I/O,contract-version,profile/jobs,branch/worktree or artifact copy/move change.
+
+R1981 workspace all-target/all-feature/locked ordinary Clippy completed0,3m53s.
+All3940 frozen inputs match;the new encoder/test files have zero diagnostic
+locations. Workspace warnings remain;this is not a strict-warning acceptance.
+Session73469 is closed. R1982 is live session5430:the SAME52-member non-CLI
+catalog command now builds this stable bounded-save candidate. No runtime result
+for that closure is claimed. This coherent publication uses the user's
+intermediate-checkpoint policy;owner behavior,workspace compilation/lints and
+structure are proven above while broader runtime/CLI/final acceptance is pending.
+After this candidate stabilizes,rebuild the same52-member catalog and require
+every old6447 matched key plus exactly the eight added Save cases (expected6455
+matched/16 excluded) before executing its complete set. CLI's lib/bin/six named
+integrations remain separate. Generic codec payload allocation,Presentation11,
+and every other unproven requirement in the full convergence goal remain active.

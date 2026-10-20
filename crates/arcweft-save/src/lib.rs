@@ -10,27 +10,15 @@ const MAGIC: &[u8; 8] = b"AWFS\0\0\0\x01";
 const HEADER_LEN: usize = MAGIC.len() + 4 + 4 + 4 + 32 + 4;
 pub const TYPED_JSON_CODEC_ID: &str = "json";
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+mod encoding;
+
+pub use encoding::SaveEnvelopeLimits;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SaveDecodeOptions {
-    pub max_envelope_bytes: u64,
-    pub max_schema_id_bytes: u32,
-    pub max_codec_id_bytes: u32,
-    pub max_payload_bytes: u64,
+    pub envelope: SaveEnvelopeLimits,
     pub allow_trailing_data: bool,
     pub codec: DecodeOptions,
-}
-
-impl Default for SaveDecodeOptions {
-    fn default() -> Self {
-        Self {
-            max_envelope_bytes: 512 * 1024 * 1024,
-            max_schema_id_bytes: 1024,
-            max_codec_id_bytes: 256,
-            max_payload_bytes: 256 * 1024 * 1024,
-            allow_trailing_data: false,
-            codec: DecodeOptions::default(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,29 +63,6 @@ impl SaveEnvelope {
         }
     }
 
-    pub fn encode_bytes(&self) -> Result<Vec<u8>> {
-        let schema = self.schema_id.as_str().as_bytes();
-        let codec = self.codec_id.as_bytes();
-        let schema_len = u32::try_from(schema.len())
-            .map_err(|_| DataError::new(DataErrorKind::NumberOutOfRange, "schema id too long"))?;
-        let codec_len = u32::try_from(codec.len())
-            .map_err(|_| DataError::new(DataErrorKind::NumberOutOfRange, "codec id too long"))?;
-        let payload_len = u32::try_from(self.payload.len())
-            .map_err(|_| DataError::new(DataErrorKind::NumberOutOfRange, "payload too large"))?;
-        let mut out =
-            Vec::with_capacity(HEADER_LEN + schema.len() + codec.len() + self.payload.len());
-        out.extend_from_slice(MAGIC);
-        out.extend_from_slice(&schema_len.to_le_bytes());
-        out.extend_from_slice(&codec_len.to_le_bytes());
-        out.extend_from_slice(&payload_len.to_le_bytes());
-        out.extend_from_slice(&self.payload_checksum);
-        out.extend_from_slice(&self.schema_version.to_le_bytes());
-        out.extend_from_slice(schema);
-        out.extend_from_slice(codec);
-        out.extend_from_slice(&self.payload);
-        Ok(out)
-    }
-
     pub fn decode_bytes(input: &[u8], options: &SaveDecodeOptions) -> Result<Self> {
         let envelope = SaveEnvelope::decode_borrowed(input, options)?;
         Ok(Self {
@@ -114,18 +79,20 @@ impl<'a> SaveEnvelope<&'a str, &'a str, &'a [u8]> {
     /// One envelope grammar validates the complete borrowed input before any
     /// owning header/payload projection or typed payload construction.
     fn decode_borrowed(input: &'a [u8], options: &SaveDecodeOptions) -> Result<Self> {
-        if u64::try_from(input.len()).is_ok_and(|len| len > options.max_envelope_bytes) {
+        if u64::try_from(input.len()).is_ok_and(|len| len > options.envelope.max_envelope_bytes) {
             return Err(DataError::limit(format!(
                 "save envelope length {} exceeds {}",
                 input.len(),
-                options.max_envelope_bytes
+                options.envelope.max_envelope_bytes
             )));
         }
         let mut cursor = Cursor::new(input);
         cursor.expect(MAGIC)?;
-        let schema_len = cursor.bounded_len("schema id", u64::from(options.max_schema_id_bytes))?;
-        let codec_len = cursor.bounded_len("codec id", u64::from(options.max_codec_id_bytes))?;
-        let payload_len = cursor.bounded_len("payload", options.max_payload_bytes)?;
+        let schema_len =
+            cursor.bounded_len("schema id", u64::from(options.envelope.max_schema_id_bytes))?;
+        let codec_len =
+            cursor.bounded_len("codec id", u64::from(options.envelope.max_codec_id_bytes))?;
+        let payload_len = cursor.bounded_len("payload", options.envelope.max_payload_bytes)?;
         let checksum = cursor.array::<32>()?;
         let schema_version = cursor.u32()?;
         let schema_id = std::str::from_utf8(cursor.bytes(schema_len)?)
@@ -398,13 +365,7 @@ pub fn encode_typed_json_save<T>(
 where
     T: Serialize,
 {
-    let payload = serde_json::to_vec(value).map_err(|error| {
-        DataError::new(
-            DataErrorKind::InvalidEncoding,
-            format!("failed to encode typed JSON save payload: {error}"),
-        )
-    })?;
-    SaveEnvelope::new(schema_id, schema_version, TYPED_JSON_CODEC_ID, payload).encode_bytes()
+    SaveEnvelopeLimits::default().encode_typed_json(value, &schema_id, schema_version)
 }
 
 /// Decodes a typed JSON save while rejecting ignored fields anywhere in the
@@ -467,7 +428,8 @@ fn decode_typed_json_payload<'a>(
     options: &SaveDecodeOptions,
 ) -> Result<&'a [u8]> {
     let mut envelope_options = options.clone();
-    envelope_options.max_payload_bytes = envelope_options
+    envelope_options.envelope.max_payload_bytes = envelope_options
+        .envelope
         .max_payload_bytes
         .min(u64::try_from(options.codec.limits.max_input_len).unwrap_or(u64::MAX));
     let envelope = SaveEnvelope::decode_borrowed(input, &envelope_options)?;

@@ -599,6 +599,19 @@ reader は JSON の input-length 上限も envelope の payload 長に適用し�
 slice を直接検証・decode する。通常の owned envelope decoder は同じ借用検証の
 成功後にだけ header と payload をコピーする。
 
+読み書きの envelope 上限は `SaveEnvelopeLimits` が所有し、decode context は
+`SaveDecodeOptions.envelope` に保持する。既定値は envelope 512 MiB、payload
+256 MiB、schema ID 1024 bytes、codec ID 256 bytes とする。wire の長さは
+引き続き u32、契約 version は `1` とする。
+
+typed JSON の出力は一つの envelope buffer に直接書く。header の上限は
+Serialize 呼び出し前に検証し、payload と全体の byte 上限は escape 後の実際の
+書き込みに適用する。buffer の増量・コピーはその書き込みが両方の上限内である
+ことを確認してから行い、checksum は同じ buffer の完成した payload から計算する。
+最初の出力失敗は encoder が保持し、serializer が途中のエラーを無視しても部分的な
+保存データを返さない。payload bytes が既に存在する envelope の出力は、既知の
+全長を出力 buffer の確保前に検証する。
+
 ## Agent replay
 
 Agent actions are replayed as semantic actions when possible.

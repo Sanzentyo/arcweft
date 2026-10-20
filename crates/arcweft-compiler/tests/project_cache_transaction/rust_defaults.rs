@@ -882,11 +882,17 @@ fn root_replay_trace_codec_bounds_wire_and_rejects_unknown_duplicate_and_trailin
     }
     for policy in [
         SaveDecodeOptions {
-            max_envelope_bytes: u64::try_from(bytes.len() - 1).unwrap(),
+            envelope: arcweft_save::SaveEnvelopeLimits {
+                max_envelope_bytes: u64::try_from(bytes.len() - 1).unwrap(),
+                ..decode.envelope
+            },
             ..decode.clone()
         },
         SaveDecodeOptions {
-            max_payload_bytes: u64::try_from(json.len() - 1).unwrap(),
+            envelope: arcweft_save::SaveEnvelopeLimits {
+                max_payload_bytes: u64::try_from(json.len() - 1).unwrap(),
+                ..decode.envelope
+            },
             ..decode.clone()
         },
     ] {
