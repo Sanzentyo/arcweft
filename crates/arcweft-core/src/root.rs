@@ -74,6 +74,27 @@ struct SequencedRootEvent<P = RuntimePayload> {
     payload: P,
 }
 
+/// An admitted reducer invocation. Inputs move to the execution frame once;
+/// the root keeps the committed state until that frame completes.
+#[derive(Debug)]
+pub struct RootReducerInvocation {
+    callable: RuntimeCallableRole,
+    args: Vec<RuntimeValue>,
+}
+
+impl RootReducerInvocation {
+    #[must_use]
+    pub fn into_parts(self) -> (RuntimeCallableRole, Vec<RuntimeValue>) {
+        (self.callable, self.args)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+enum RootReducerPhase {
+    Ready,
+    Evaluating,
+}
+
 pub use crate::value::RuntimeCommand;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -126,7 +147,7 @@ pub struct ActiveRootState<P = RuntimePayload> {
     pub next_sequence: TransitionSequence,
     queued_events: VecDeque<SequencedRootEvent<P>>,
     committed_commands: VecDeque<RuntimeCommandEnvelope<P>>,
-    reducer_active: bool,
+    reducer_phase: RootReducerPhase,
 }
 
 impl ActiveRootState {
@@ -142,7 +163,7 @@ impl ActiveRootState {
 
     #[must_use]
     pub const fn reducer_active(&self) -> bool {
-        self.reducer_active
+        matches!(self.reducer_phase, RootReducerPhase::Evaluating)
     }
 }
 
@@ -178,7 +199,7 @@ impl Clone for ActiveRootState<crate::value::AwbcRuntimeValueSnapshot> {
             next_sequence: self.next_sequence,
             queued_events: self.queued_events.clone(),
             committed_commands: self.committed_commands.clone(),
-            reducer_active: self.reducer_active,
+            reducer_phase: self.reducer_phase,
         }
     }
 }
@@ -269,6 +290,12 @@ pub enum RootRuntimeError {
     TransitionSequenceExhausted,
     #[error("committed root commands must be accepted by the driver before another step")]
     PendingCommandsAwaitingDispatch,
+    #[error("a root reducer invocation is already active")]
+    ReducerAlreadyActive,
+    #[error("no root reducer invocation is active")]
+    NoActiveReducer,
+    #[error("root event sequence does not equal the transition cursor")]
+    EventSequenceMismatch,
     #[error("driver command acknowledgement does not match the committed command prefix")]
     CommandAcknowledgementMismatch,
     #[error("root runtime has failed")]
@@ -388,7 +415,7 @@ impl<P> RootRuntime<P> {
             &self.active.event_identity,
             self.active.event_layout,
             self.active.next_sequence,
-            self.active.reducer_active,
+            self.active.reducer_phase,
             &self.roles,
             &self.reducer,
             self.limits,
@@ -451,7 +478,10 @@ impl<P> RootRuntime<P> {
             .active
             .next_sequence
             .get()
-            .checked_add(u64::from(self.active.reducer_active));
+            .checked_add(u64::from(matches!(
+                self.active.reducer_phase,
+                RootReducerPhase::Evaluating
+            )));
         for event in &self.active.queued_events {
             admission.validate_metadata(&event.sequence)?;
             if next != Some(event.sequence.get()) || event.sequence == TransitionSequence::TERMINAL
@@ -661,7 +691,7 @@ impl RootRuntime {
                         })
                     })
                     .collect::<Result<_, String>>()?,
-                reducer_active: self.active.reducer_active,
+                reducer_phase: self.active.reducer_phase,
             },
             roles: self.roles.clone(),
             reducer: self.reducer.clone(),
@@ -737,7 +767,7 @@ impl RootRuntime {
                         })
                     })
                     .collect::<Result<_, String>>()?,
-                reducer_active: image.reducer_active,
+                reducer_phase: image.reducer_phase,
             },
             roles,
             reducer,
@@ -786,7 +816,7 @@ impl RootRuntime {
             next_sequence: TransitionSequence::ZERO,
             queued_events: VecDeque::new(),
             committed_commands: VecDeque::new(),
-            reducer_active: false,
+            reducer_phase: RootReducerPhase::Ready,
         };
         let root = Self {
             active,
@@ -852,7 +882,7 @@ impl RootRuntime {
     #[must_use]
     pub fn save_blockers(&self) -> RootSaveBlockers {
         RootSaveBlockers {
-            reducer_active: self.active.reducer_active,
+            reducer_active: self.active.reducer_active(),
             pending_events: u32::try_from(self.active.queued_events.len()).unwrap_or(u32::MAX),
             pending_commands: u32::try_from(self.active.committed_commands.len())
                 .unwrap_or(u32::MAX),
@@ -905,7 +935,7 @@ impl RootRuntime {
                 next_sequence: snapshot.next_sequence,
                 queued_events: VecDeque::new(),
                 committed_commands: VecDeque::new(),
-                reducer_active: false,
+                reducer_phase: RootReducerPhase::Ready,
             },
             reducer: roles.reducer.clone(),
             roles,
@@ -923,40 +953,21 @@ impl RootRuntime {
         if !self.active.committed_commands.is_empty() {
             return Err(RootRuntimeError::PendingCommandsAwaitingDispatch);
         }
+        if self.active.reducer_active() {
+            return Err(RootRuntimeError::ReducerAlreadyActive);
+        }
         self.ingress(events, program)?;
         let mut result = RootStepResult::default();
-        while let Some(event) = self.active.queued_events.pop_front() {
-            match self.reduce_front(event, evaluator, program) {
-                Ok(RootReductionDisposition::Committed(outcome)) => {
-                    result.outcomes.push(outcome);
-                }
-                Ok(RootReductionDisposition::Rejected(outcome)) => {
-                    result.outcomes.push(outcome);
-                    result.stopped_after_rejection = true;
-                    break;
-                }
-                Err(failure) => {
-                    let outcome = match &failure {
-                        RootRuntimeFailure::Transition {
-                            sequence,
-                            message,
-                            digest,
-                        } => RootTransitionOutcome::Trapped {
-                            sequence: *sequence,
-                            failure_digest: *digest,
-                            message: message.clone(),
-                        },
-                    };
-                    self.active.reducer_active = false;
-                    self.active.queued_events.clear();
-                    self.failure = Some(failure);
-                    result.outcomes.push(outcome);
-                    result
-                        .commands
-                        .extend(self.active.committed_commands.iter().cloned());
-                    result.failed = true;
-                    return Ok(result);
-                }
+        while let Some(invocation) = self.begin_reduction()? {
+            let (callable, args) = invocation.into_parts();
+            let returned = evaluator.evaluate_root_callable(&callable, args);
+            let completed = self.complete_reduction(returned, program)?;
+            result.stopped_after_rejection =
+                matches!(completed, RootTransitionOutcome::Rejected { .. });
+            result.failed = matches!(completed, RootTransitionOutcome::Trapped { .. });
+            result.outcomes.push(completed);
+            if result.stopped_after_rejection || result.failed {
+                break;
             }
         }
         result
@@ -1020,6 +1031,11 @@ impl RootRuntime {
                 .sequence
                 .next()
                 .ok_or(RootRuntimeError::TransitionSequenceExhausted)?,
+            None if self.active.reducer_active() => self
+                .active
+                .next_sequence
+                .next()
+                .ok_or(RootRuntimeError::TransitionSequenceExhausted)?,
             None => self.active.next_sequence,
         };
         let last_offset = u64::try_from(events.len() - 1)
@@ -1051,45 +1067,82 @@ impl RootRuntime {
         Ok(())
     }
 
-    fn reduce_front(
-        &mut self,
-        event: SequencedRootEvent,
-        evaluator: &mut impl RootCallableEvaluator,
-        program: crate::program_types::RuntimeProgramTypes<'_>,
-    ) -> Result<RootReductionDisposition, RootRuntimeFailure> {
-        if event.sequence != self.active.next_sequence {
-            return Err(Self::failure_for(
-                event.sequence,
-                "root event sequence does not equal the transition cursor",
-            ));
+    /// Moves the next admitted event into its ordinary executable frame.
+    /// No callable is evaluated and the committed state remains unchanged.
+    /// A yielded frame must complete before another invocation can begin.
+    pub fn begin_reduction(&mut self) -> Result<Option<RootReducerInvocation>, RootRuntimeError> {
+        if self.failure.is_some() {
+            return Err(RootRuntimeError::Failed);
         }
-        self.active.reducer_active = true;
-        let sequence = event.sequence;
-        let returned = evaluator.evaluate_root_callable(
-            &self.reducer,
-            vec![self.active.value.0.clone(), event.payload.0],
-        );
-        let returned = match returned {
-            Ok(value) => value,
-            Err(error) => {
-                self.active.reducer_active = false;
-                return Err(Self::failure_for(sequence, &error.to_string()));
-            }
+        if self.active.reducer_active() {
+            return Err(RootRuntimeError::ReducerAlreadyActive);
+        }
+        let Some(event) = self.active.queued_events.front() else {
+            return Ok(None);
         };
-        match parse_reducer_result(returned) {
-            Ok(ParsedReducerResult::Committed(reduction)) => {
-                self.commit_reduction(sequence, reduction, program)
-            }
-            Ok(ParsedReducerResult::Rejected {
-                code,
-                message,
-                value,
-            }) => self.reject_reduction(sequence, code, message, value),
-            Err(message) => {
-                self.active.reducer_active = false;
-                Err(Self::failure_for(sequence, &message))
-            }
+        if event.sequence != self.active.next_sequence {
+            return Err(RootRuntimeError::EventSequenceMismatch);
         }
+        let event = self
+            .active
+            .queued_events
+            .pop_front()
+            .expect("checked front");
+        self.active.reducer_phase = RootReducerPhase::Evaluating;
+        Ok(Some(RootReducerInvocation {
+            callable: self.reducer.clone(),
+            args: vec![self.active.value.0.clone(), event.payload.0],
+        }))
+    }
+
+    /// Admits a complete reducer result before publishing any state or command.
+    /// Evaluation failures and invalid results retain the old committed state.
+    pub fn complete_reduction(
+        &mut self,
+        returned: Result<RuntimeValue, RootCallableEvaluationError>,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+    ) -> Result<RootTransitionOutcome, RootRuntimeError> {
+        if self.failure.is_some() {
+            return Err(RootRuntimeError::Failed);
+        }
+        if !self.active.reducer_active() {
+            return Err(RootRuntimeError::NoActiveReducer);
+        }
+        let sequence = self.active.next_sequence;
+        let disposition = returned
+            .map_err(|error| Self::failure_for(sequence, &error.to_string()))
+            .and_then(|value| {
+                parse_reducer_result(value).map_err(|message| Self::failure_for(sequence, &message))
+            })
+            .and_then(|returned| match returned {
+                ParsedReducerResult::Committed(reduction) => {
+                    self.commit_reduction(sequence, reduction, program)
+                }
+                ParsedReducerResult::Rejected {
+                    code,
+                    message,
+                    value,
+                } => self.reject_reduction(sequence, code, message, value),
+            });
+        self.active.reducer_phase = RootReducerPhase::Ready;
+        Ok(match disposition {
+            Ok(outcome) => outcome,
+            Err(failure) => {
+                let RootRuntimeFailure::Transition {
+                    sequence,
+                    message,
+                    digest,
+                } = &failure;
+                let outcome = RootTransitionOutcome::Trapped {
+                    sequence: *sequence,
+                    failure_digest: *digest,
+                    message: message.clone(),
+                };
+                self.active.queued_events.clear();
+                self.failure = Some(failure);
+                outcome
+            }
+        })
     }
 
     fn commit_reduction(
@@ -1097,7 +1150,7 @@ impl RootRuntime {
         sequence: TransitionSequence,
         reduction: RuntimeReductionValue,
         program: crate::program_types::RuntimeProgramTypes<'_>,
-    ) -> Result<RootReductionDisposition, RootRuntimeFailure> {
+    ) -> Result<RootTransitionOutcome, RootRuntimeFailure> {
         let (state, commands) = reduction.into_parts();
         let commands = commands.into_vec();
         let state = RuntimePayload(state);
@@ -1153,14 +1206,11 @@ impl RootRuntime {
         self.active.value = state;
         self.active.next_sequence = next_sequence;
         self.active.committed_commands.extend(envelopes);
-        self.active.reducer_active = false;
-        Ok(RootReductionDisposition::Committed(
-            RootTransitionOutcome::Committed {
-                sequence,
-                state_digest,
-                command_digests,
-            },
-        ))
+        Ok(RootTransitionOutcome::Committed {
+            sequence,
+            state_digest,
+            command_digests,
+        })
     }
 
     fn reject_reduction(
@@ -1169,7 +1219,7 @@ impl RootRuntime {
         code: String,
         message: String,
         value: RuntimeValue,
-    ) -> Result<RootReductionDisposition, RootRuntimeFailure> {
+    ) -> Result<RootTransitionOutcome, RootRuntimeFailure> {
         let error_digest = validate_replay_safe_payload(&RuntimePayload(value), self.limits.schema)
             .map_err(|message| Self::failure_for(sequence, &message))?;
         let next_sequence = sequence.next().ok_or_else(|| {
@@ -1179,15 +1229,12 @@ impl RootRuntime {
             )
         })?;
         self.active.next_sequence = next_sequence;
-        self.active.reducer_active = false;
-        Ok(RootReductionDisposition::Rejected(
-            RootTransitionOutcome::Rejected {
-                sequence,
-                code,
-                message,
-                error_digest,
-            },
-        ))
+        Ok(RootTransitionOutcome::Rejected {
+            sequence,
+            code,
+            message,
+            error_digest,
+        })
     }
 
     fn failure_for(sequence: TransitionSequence, message: &str) -> RootRuntimeFailure {
@@ -1198,11 +1245,6 @@ impl RootRuntime {
             digest,
         }
     }
-}
-
-enum RootReductionDisposition {
-    Committed(RootTransitionOutcome),
-    Rejected(RootTransitionOutcome),
 }
 
 enum ParsedReducerResult {

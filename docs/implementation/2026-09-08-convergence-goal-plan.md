@@ -22524,3 +22524,51 @@ the shared step allowance and failure-atomic pending-initializer restore.
 The full5151-consumer result remains5095 passed/56 CLI failures/39 exclusions,
 and all other original acceptance, including strict lint and final cross-tier
 execution/capture checks, remains open. The goal is active and unchanged.
+
+### 2026-10-20 — Root reducer invocation boundary (intermediate)
+
+Inspected main ac0a74dcda4d4a13bdfe9cef7d8620aaac4ea060. This cut owns
+Core root.rs and root/tests.rs plus this record; held14 tracked changes and
+the three held untracked entries remain outside the cut.
+
+Root now owns explicit Ready/Evaluating reducer phases and separate invocation
+start/completion APIs. The admitted event moves once into callable inputs while
+the committed state stays in Root. Completion admits the entire result before
+publishing state/commands; invalid results and execution failures retain the old
+state and clear following events. Duplicate start/completion are rejected.
+Ingress while an invocation is active starts after its transition cursor even
+when the pending queue is empty. Inert rollback retains that phase and frontier.
+The synchronous step path uses these same transitions; its replaced reduce_front
+and redundant private reduction-disposition enum are deleted. Completion returns
+the existing typed transition outcome without copying pending commands per event.
+
+Three new behavioral tests cover later ingress, double completion/start,
+failure atomicity and live/inert rollback through Plan and AWBC storage owners.
+The existing save-blocker test now begins a real invocation instead of setting
+a private boolean. Existing affine-event and complete-result tests are retained.
+R1794 built the exact Core catalogue:1943 selected/zero excluded, including all
+three new cases and the original affine/save-blocker guards. R1793 Core check
+passed on the preceding staging shape; it is not final-shape execution evidence.
+R1796 ordinary Core Clippy passed with2916 warnings/2392 duplicates, including
+one introduced missing-panics-doc warning at begin_reduction's checked expect;
+remove that unnecessary panic after the fixed-input runs terminate. Strict lint
+remains open. R1797 structural gate passed:3155 files/3025 Rust files/1719921
+physical Rust LOC/97 packages/376 review triggers/zero blocking violations.
+Root remains the cohesive Sans-I/O state/event/command transaction owner; the
+API is needed by executable tiers, not file splitting. No dependencies, facade
+exports, saved wire shape or version markers change.
+
+At this intermediate publication R1795 workspace check is live at55012 and
+R1798 full Core nextest is live at84980, waiting on the ordinary build lock;
+neither is passing evidence yet. All3932 executable/source inputs are frozen
+separately from this operational record. The actual resolved Core reverse
+closure remains53 packages; all99 manifest/lock inputs match. The user's
+frequent-checkpoint instruction permits this intermediate commit before every
+execution check finishes. Audit their terminal results before source edits.
+
+This boundary is implemented, but initializers still execute eagerly and both
+tiers still use the synchronous reducer adapter outside the shared step budget.
+Next migrate their actual executable frames, original-entry continuation,
+selected backend/formatter and pending-initializer save/restore together. The
+earlier56 CLI failures and the complete original convergence acceptance remain
+required; this cut does not complete or narrow the active goal.

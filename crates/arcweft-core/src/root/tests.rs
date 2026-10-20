@@ -752,7 +752,9 @@ fn save_002_active_reducer_reports_exact_blocker() {
     let fixture = Fixture::new();
     for program in fixture.programs() {
         let mut root = fixture.start(program);
-        root.active.reducer_active = true;
+        root.ingress(vec![fixture.event(RuntimeValue::Bool(true))], program)
+            .unwrap();
+        let _invocation = root.begin_reduction().unwrap().unwrap();
         assert_eq!(
             root.save_blockers(),
             RootSaveBlockers {
@@ -761,6 +763,158 @@ fn save_002_active_reducer_reports_exact_blocker() {
                 pending_commands: 0
             }
         );
+    }
+}
+
+#[test]
+fn suspended_reducer_keeps_committed_state_and_sequences_later_ingress() {
+    let fixture = Fixture::new();
+    for program in fixture.programs() {
+        let mut root = fixture.start(program);
+        let before = root.snapshot_state();
+        assert!(matches!(
+            root.complete_reduction(
+                Ok(reduction(fixture.state(RuntimeValue::Bool(false)))),
+                program
+            ),
+            Err(RootRuntimeError::NoActiveReducer)
+        ));
+        root.ingress(vec![fixture.event(RuntimeValue::Bool(true))], program)
+            .unwrap();
+        let invocation = root.begin_reduction().unwrap().unwrap();
+        let (callable, args) = invocation.into_parts();
+        assert_eq!(callable, fixture.contract.roles.reducer);
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0], before.value.0);
+        assert_eq!(root.snapshot_state(), before);
+        assert!(matches!(
+            root.begin_reduction(),
+            Err(RootRuntimeError::ReducerAlreadyActive)
+        ));
+        let mut evaluator = ReturnValue::new(reduction(fixture.state(RuntimeValue::Bool(false))));
+        assert!(matches!(
+            root.step(Vec::new(), &mut evaluator, program),
+            Err(RootRuntimeError::ReducerAlreadyActive)
+        ));
+        assert_eq!(evaluator.calls, 0);
+
+        root.ingress(vec![fixture.event(RuntimeValue::Bool(false))], program)
+            .unwrap();
+        assert_eq!(root.active.queued_events[0].sequence.get(), 1);
+        let completed = root
+            .complete_reduction(
+                Ok(reduction(fixture.state(RuntimeValue::Bool(false)))),
+                program,
+            )
+            .unwrap();
+        assert!(matches!(completed, RootTransitionOutcome::Committed { .. }));
+        assert_eq!(completed.sequence().get(), 0);
+        assert_eq!(root.active.next_sequence.get(), 1);
+        let after = root.snapshot_state();
+        assert!(matches!(
+            root.complete_reduction(Ok(RuntimeValue::Unit), program),
+            Err(RootRuntimeError::NoActiveReducer)
+        ));
+        assert_eq!(root.snapshot_state(), after);
+
+        let _next = root.begin_reduction().unwrap().unwrap();
+        let completed = root
+            .complete_reduction(
+                Ok(reduction(fixture.state(RuntimeValue::Bool(true)))),
+                program,
+            )
+            .unwrap();
+        assert_eq!(completed.sequence().get(), 1);
+        assert_eq!(root.active.next_sequence.get(), 2);
+        assert!(root.begin_reduction().unwrap().is_none());
+    }
+}
+
+#[test]
+fn suspended_reducer_failure_does_not_publish_and_clears_following_events() {
+    let fixture = Fixture::new();
+    for program in fixture.programs() {
+        for returned in [
+            Ok(RuntimeValue::Unit),
+            Err(RootCallableEvaluationError::new(
+                "executor trapped after yield",
+            )),
+        ] {
+            let mut root = fixture.start(program);
+            let before = root.snapshot_state();
+            root.ingress(vec![fixture.event(RuntimeValue::Bool(true))], program)
+                .unwrap();
+            let _invocation = root.begin_reduction().unwrap().unwrap();
+            root.ingress(vec![fixture.event(RuntimeValue::Bool(false))], program)
+                .unwrap();
+            let completed = root.complete_reduction(returned, program).unwrap();
+            assert!(matches!(
+                completed,
+                RootTransitionOutcome::Trapped {
+                    sequence: TransitionSequence::ZERO,
+                    ..
+                }
+            ));
+            assert_eq!(root.active.pending_command_count(), 0);
+            assert_eq!(root.snapshot_state(), before);
+            assert_eq!(root.active.pending_event_count(), 0);
+            assert!(!root.active.reducer_active());
+            assert!(matches!(
+                root.begin_reduction(),
+                Err(RootRuntimeError::Failed)
+            ));
+        }
+    }
+}
+
+#[test]
+fn suspended_reducer_phase_and_event_frontier_survive_inert_rollback() {
+    for (mut root, owner) in [
+        retained_root_fixture(RootExecutionLimits::engine_default()),
+        retained_awbc_root_fixture(),
+    ] {
+        let event = || {
+            RootEventInput::new(RuntimePayload(
+                owner
+                    .types()
+                    .try_record_value(
+                        root.roles.event.semantic_identity,
+                        vec![],
+                        root.limits.schema,
+                    )
+                    .unwrap(),
+            ))
+        };
+        let first = event();
+        let second = event();
+        root.ingress(vec![first], owner.types()).unwrap();
+        let _invocation = root.begin_reduction().unwrap().unwrap();
+        root.ingress(vec![second], owner.types()).unwrap();
+        let image = root.inert_rollback_image(&owner).unwrap();
+        let mut restored = RootRuntime::from_rollback_image(image.clone(), &owner).unwrap();
+        assert_eq!(restored, root);
+        assert_eq!(restored.inert_rollback_image(&owner).unwrap(), image);
+        assert!(matches!(
+            restored.begin_reduction(),
+            Err(RootRuntimeError::ReducerAlreadyActive)
+        ));
+        let outcome = restored
+            .complete_reduction(
+                Err(RootCallableEvaluationError::new(
+                    "restored invocation trapped",
+                )),
+                owner.types(),
+            )
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            RootTransitionOutcome::Trapped {
+                sequence: TransitionSequence::ZERO,
+                ..
+            }
+        ));
+        assert_eq!(restored.snapshot_state(), root.snapshot_state());
+        assert_eq!(restored.active.pending_event_count(), 0);
     }
 }
 
