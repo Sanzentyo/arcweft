@@ -82,6 +82,12 @@ pub struct RootReducerInvocation {
     args: Vec<RuntimeValue>,
 }
 
+/// Borrowed inputs used to admit a reducer frame before copying committed state.
+pub(crate) struct RootReducerInputs<'a> {
+    pub(crate) callable: &'a RuntimeCallableRole,
+    pub(crate) arguments: [&'a RuntimeValue; 2],
+}
+
 impl RootReducerInvocation {
     #[must_use]
     pub fn into_parts(self) -> (RuntimeCallableRole, Vec<RuntimeValue>) {
@@ -1342,13 +1348,34 @@ impl RootRuntime {
     /// No callable is evaluated and the committed state remains unchanged.
     /// A yielded frame must complete before another invocation can begin.
     pub fn begin_reduction(&mut self) -> Result<Option<RootReducerInvocation>, RootRuntimeError> {
+        if self.pending_reduction_inputs()?.is_none() {
+            return Ok(None);
+        }
+        let RootPhase::Initialized { value, reducer } = &mut self.active.phase else {
+            unreachable!("borrowed reducer admission requires initialized state")
+        };
+        let event = self
+            .active
+            .queued_events
+            .pop_front()
+            .expect("borrowed reducer admission found the next event");
+        *reducer = RootReducerPhase::Evaluating;
+        Ok(Some(RootReducerInvocation {
+            callable: self.reducer.clone(),
+            args: vec![value.0.clone(), event.payload.0],
+        }))
+    }
+
+    pub(crate) fn pending_reduction_inputs(
+        &self,
+    ) -> Result<Option<RootReducerInputs<'_>>, RootRuntimeError> {
         if self.failure.is_some() {
             return Err(RootRuntimeError::Failed);
         }
         if self.active.reducer_active() {
             return Err(RootRuntimeError::ReducerAlreadyActive);
         }
-        let RootPhase::Initialized { value, reducer } = &mut self.active.phase else {
+        let RootPhase::Initialized { value, .. } = &self.active.phase else {
             return Err(RootRuntimeError::InitializationPending);
         };
         if self
@@ -1359,14 +1386,36 @@ impl RootRuntime {
         {
             return Err(RootRuntimeError::EventSequenceMismatch);
         }
-        let Some(event) = self.active.queued_events.pop_front() else {
+        let Some(event) = self.active.queued_events.front() else {
             return Ok(None);
         };
-        *reducer = RootReducerPhase::Evaluating;
-        Ok(Some(RootReducerInvocation {
-            callable: self.reducer.clone(),
-            args: vec![value.0.clone(), event.payload.0],
+        Ok(Some(RootReducerInputs {
+            callable: &self.reducer,
+            arguments: [&value.0, &event.payload.0],
         }))
+    }
+
+    /// Traps a rejected frame admission without copying its state or event.
+    pub(crate) fn trap_pending_reduction(
+        &mut self,
+        error: RootCallableEvaluationError,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+    ) -> Result<RootTransitionOutcome, RootRuntimeError> {
+        if self.pending_reduction_inputs()?.is_none() {
+            return Err(RootRuntimeError::NoActiveReducer);
+        }
+        self.active.queued_events.pop_front();
+        let RootPhase::Initialized { reducer, .. } = &mut self.active.phase else {
+            unreachable!("borrowed reducer admission requires initialized state")
+        };
+        *reducer = RootReducerPhase::Evaluating;
+        self.complete_reduction(Err(error), program)
+    }
+
+    pub(crate) fn committed_commands(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &RuntimeCommandEnvelope> {
+        self.active.committed_commands.iter()
     }
 
     /// Admits a complete reducer result before publishing any state or command.

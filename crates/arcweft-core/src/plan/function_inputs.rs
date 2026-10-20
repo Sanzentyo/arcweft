@@ -20,6 +20,39 @@ impl RuntimeFunctionInputAdmission<'_> {
         self.site
     }
 
+    /// Admits all formal patterns before copying or transferring any input.
+    pub(crate) fn validate_owned_patterns(
+        &self,
+        captures: &[&RuntimeValue],
+        arguments: &[&RuntimeValue],
+    ) -> Result<(), crate::value::RuntimeEvalError> {
+        for input in self.declaration.inputs() {
+            let (values, position) = match input.source() {
+                RuntimeFunctionInputSource::Capture { position }
+                | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
+                    (captures, position)
+                }
+                RuntimeFunctionInputSource::Parameter { position, .. } => (arguments, position),
+            };
+            let value = values
+                .get(position as usize)
+                .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site: self.site })?;
+            if !crate::pattern::inspect_runtime_pattern_owned(
+                self.plan,
+                input.pattern(),
+                value,
+                self.type_instantiation.as_deref(),
+            )? {
+                return Err(crate::value::RuntimeEvalError::PatternMismatch(format!(
+                    "function site {} input {:?}",
+                    self.site,
+                    input.source()
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Transfers the admitted input owners through their actual formal patterns.
     /// Flow roots and structured calls share this binding rule.
     pub(crate) fn stage_owned_inputs(
@@ -30,6 +63,10 @@ impl RuntimeFunctionInputAdmission<'_> {
         let site = self.site;
         let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
         let mut arguments = arguments.into_iter().map(Some).collect::<Vec<_>>();
+        self.validate_owned_patterns(
+            &captures.iter().flatten().collect::<Vec<_>>(),
+            &arguments.iter().flatten().collect::<Vec<_>>(),
+        )?;
         let mut staged = Vec::new();
         for input in self.declaration.inputs() {
             let (values, position) = match input.source() {

@@ -13,17 +13,17 @@ pub use match_source::{
 
 use crate::entry::{RuntimeIdentityError, RuntimeMapKind, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::plan::{
-    RuntimeNominalRecordDomain, RuntimePlan, RuntimePlanRecordField, RuntimePlanTypeDeclaration,
-    RuntimePlanTypeProjection, RuntimePlanValueTypeError,
+    RuntimeNominalRecordDomain, RuntimePlan, RuntimePlanRecordField, RuntimePlanTypeProjection,
+    RuntimePlanValueTypeError,
 };
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::runtime_value_views_equal;
 use crate::value::{
     LiveRuntimeValueView, RuntimeEntityReference, RuntimeEvalError, RuntimeExpr,
-    RuntimeLocalBinding, RuntimeLocalReadMode, RuntimeNominalRecordValue, RuntimeOpaquePersistence,
-    RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimeOpaqueValueError, RuntimePayload,
-    RuntimeRecordFieldId, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
-    RuntimeUnsignedIntWidth, RuntimeValue, RuntimeValueView,
+    RuntimeLocalBinding, RuntimeLocalReadMode, RuntimeOpaquePersistence, RuntimeOpaqueValue,
+    RuntimeOpaqueValueClass, RuntimeOpaqueValueError, RuntimePayload, RuntimeRecordFieldId,
+    RuntimeScalarView, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeValueView,
 };
 pub use arcweft_id::RuntimeSemanticTypeId;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -2869,278 +2869,14 @@ impl RuntimePlan {
         if self.type_table().get(ty).is_none() {
             return Err(RuntimePlanValueTypeError::UnknownType { ty });
         }
-        Ok(runtime_value_matches_type_inner(self, ty, value, 0))
+        Ok(self
+            .validate_live_value(
+                ty,
+                value,
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .is_ok())
     }
-}
-
-fn runtime_value_matches_type_inner(
-    plan: &RuntimePlan,
-    ty: RuntimePlanTypeId,
-    value: &RuntimeValue,
-    depth: usize,
-) -> bool {
-    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
-        return false;
-    }
-    let Some(declaration) = plan.type_table().get(ty) else {
-        return false;
-    };
-    match (declaration.projection(), value) {
-        (RuntimePlanTypeProjection::DenseNumeric(dense), value) => {
-            value.dense_numeric_type() == Some(*dense)
-        }
-        (RuntimePlanTypeProjection::Unit, RuntimeValue::Unit)
-        | (RuntimePlanTypeProjection::Bool, RuntimeValue::Bool(_))
-        | (RuntimePlanTypeProjection::F32, RuntimeValue::F32(_))
-        | (RuntimePlanTypeProjection::F64, RuntimeValue::F64(_))
-        | (RuntimePlanTypeProjection::String, RuntimeValue::String(_))
-        | (RuntimePlanTypeProjection::Color, RuntimeValue::Color(_))
-        | (RuntimePlanTypeProjection::Char, RuntimeValue::Char(_))
-        | (RuntimePlanTypeProjection::Duration, RuntimeValue::Duration(_))
-        | (RuntimePlanTypeProjection::Progress, RuntimeValue::Progress(_))
-        | (RuntimePlanTypeProjection::EntityReference, RuntimeValue::EntityRef(_))
-        | (RuntimePlanTypeProjection::Need(_), RuntimeValue::NeedHandle(_))
-        | (RuntimePlanTypeProjection::Range(_), RuntimeValue::Range(_))
-        | (RuntimePlanTypeProjection::Iterator(_), RuntimeValue::Iterator(_)) => true,
-        (RuntimePlanTypeProjection::Function { .. }, RuntimeValue::Callable(value)) => {
-            matches!(value.owner(), crate::task::RuntimeProgramOwner::Plan(owner) if std::ptr::eq(owner.as_ref(), plan))
-                && plan
-                    .callable_states()
-                    .get(value.state())
-                    .is_some_and(|state| {
-                        state.function_type == ty
-                            && state.retained.len() == value.retained().len()
-                            && state
-                                .retained
-                                .iter()
-                                .zip(value.retained())
-                                .all(|(input, value)| {
-                                    runtime_value_matches_type_inner(
-                                        plan,
-                                        input.ty,
-                                        value,
-                                        depth + 1,
-                                    )
-                                })
-                    })
-        }
-        (RuntimePlanTypeProjection::Signed(expected), RuntimeValue::Int(actual)) => {
-            *expected == actual.width()
-        }
-        (RuntimePlanTypeProjection::Unsigned(expected), RuntimeValue::UInt(actual)) => {
-            *expected == actual.width()
-        }
-        (RuntimePlanTypeProjection::Bytes, RuntimeValue::Seq(sequence)) => {
-            runtime_sequence_is_bytes(sequence)
-        }
-        (RuntimePlanTypeProjection::Sequence { item, .. }, RuntimeValue::Seq(sequence)) => {
-            runtime_sequence_matches_type(plan, *item, sequence, None, depth)
-        }
-        (RuntimePlanTypeProjection::Array { item, length }, RuntimeValue::Seq(sequence)) => {
-            length.constant().is_some_and(|length| {
-                runtime_sequence_matches_type(plan, *item, sequence, Some(length), depth)
-            })
-        }
-        (RuntimePlanTypeProjection::Tuple(types), RuntimeValue::Tuple(values)) => {
-            runtime_tuple_matches_type(plan, types, values, depth)
-        }
-        (RuntimePlanTypeProjection::Record(fields), RuntimeValue::Record(values)) => {
-            runtime_record_matches_type(plan, fields, values.fields(), depth)
-        }
-        (RuntimePlanTypeProjection::Choice(types), value) => {
-            runtime_choice_matches_type(plan, types, value, depth)
-        }
-        (
-            RuntimePlanTypeProjection::Result { .. }
-            | RuntimePlanTypeProjection::Option { .. }
-            | RuntimePlanTypeProjection::BuiltinVariant { .. },
-            value,
-        ) => runtime_variant_matches_type(plan, ty, value, depth),
-        (RuntimePlanTypeProjection::AgentValue, value) => {
-            RuntimeCheckedType::AgentValue.accepts_value(value)
-        }
-        (
-            RuntimePlanTypeProjection::Nominal {
-                nominal, layout, ..
-            },
-            RuntimeValue::NominalRecord(record),
-        ) => runtime_nominal_record_matches_type(plan, ty, nominal, *layout, record, depth),
-        (
-            RuntimePlanTypeProjection::Nominal { .. } | RuntimePlanTypeProjection::Opaque { .. },
-            value @ RuntimeValue::Variant(_),
-        ) => runtime_variant_matches_type(plan, ty, value, depth),
-        (
-            RuntimePlanTypeProjection::Opaque {
-                producer,
-                admission,
-                value_class,
-                persistence,
-                ..
-            },
-            RuntimeValue::Opaque(value),
-        ) => runtime_opaque_matches_type(
-            declaration,
-            producer,
-            *admission,
-            *value_class,
-            *persistence,
-            value,
-        ),
-        (
-            RuntimePlanTypeProjection::Shared(inner) | RuntimePlanTypeProjection::Reference(inner),
-            value,
-        ) => runtime_value_matches_type_inner(plan, *inner, value, depth + 1),
-        (RuntimePlanTypeProjection::Agent(agent), RuntimeValue::Agent(value)) => {
-            match (agent, value) {
-                (
-                    crate::plan::RuntimeAgentTypeProjection::DataShape(_),
-                    crate::value::RuntimeAgentValue::DataShape(shape),
-                ) => shape.matches_plan(plan, declaration.semantic_identity()),
-                (crate::plan::RuntimeAgentTypeProjection::DataShape(_), _) => false,
-                _ => agent.operational_type() == value.operational_type(),
-            }
-        }
-        _ => false,
-    }
-}
-
-fn runtime_sequence_is_bytes(sequence: &RuntimeSeq) -> bool {
-    sequence.clone().into_values().iter().all(
-        |value| matches!(value, RuntimeValue::UInt(value) if value.width() == RuntimeUnsignedIntWidth::U8),
-    )
-}
-
-fn runtime_sequence_matches_type(
-    plan: &RuntimePlan,
-    item: RuntimePlanTypeId,
-    sequence: &RuntimeSeq,
-    expected_length: Option<u64>,
-    depth: usize,
-) -> bool {
-    if expected_length.is_some_and(|length| usize::try_from(length).ok() != Some(sequence.len())) {
-        return false;
-    }
-    sequence
-        .clone()
-        .into_values()
-        .iter()
-        .all(|value| runtime_value_matches_type_inner(plan, item, value, depth + 1))
-}
-
-fn runtime_tuple_matches_type(
-    plan: &RuntimePlan,
-    types: &[RuntimePlanTypeId],
-    values: &[RuntimeValue],
-    depth: usize,
-) -> bool {
-    types.len() == values.len()
-        && types
-            .iter()
-            .zip(values)
-            .all(|(ty, value)| runtime_value_matches_type_inner(plan, *ty, value, depth + 1))
-}
-
-fn runtime_record_matches_type(
-    plan: &RuntimePlan,
-    fields: &[crate::plan::RuntimePlanRecordField<RuntimePlanTypeId>],
-    values: &[crate::value::RuntimeFieldValue],
-    depth: usize,
-) -> bool {
-    fields.len() == values.len()
-        && fields
-            .iter()
-            .zip(values)
-            .enumerate()
-            .all(|(ordinal, (field, value))| {
-                RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
-                    .is_ok_and(|expected| expected == value.field())
-                    && runtime_value_matches_type_inner(plan, *field.ty(), value.value(), depth + 1)
-            })
-}
-
-fn runtime_choice_matches_type(
-    plan: &RuntimePlan,
-    types: &[RuntimePlanTypeId],
-    value: &RuntimeValue,
-    depth: usize,
-) -> bool {
-    types
-        .iter()
-        .any(|ty| runtime_value_matches_type_inner(plan, *ty, value, depth + 1))
-}
-
-fn runtime_variant_matches_type(
-    plan: &RuntimePlan,
-    ty: RuntimePlanTypeId,
-    value: &RuntimeValue,
-    depth: usize,
-) -> bool {
-    let RuntimeValue::Variant(variant) = value else {
-        return false;
-    };
-    let Ok(case) = plan.variant_case(ty, variant.ordinal()) else {
-        return false;
-    };
-    variant.owner() == case.owner()
-        && variant.name() == case.name()
-        && match (case.payload(), variant.payload()) {
-            (Some(expected), Some(payload)) => {
-                runtime_value_matches_type_inner(plan, expected, payload, depth + 1)
-            }
-            (None, None) => true,
-            _ => false,
-        }
-}
-
-fn runtime_nominal_record_matches_type(
-    plan: &RuntimePlan,
-    ty: RuntimePlanTypeId,
-    nominal: &RuntimeNominalTypeId,
-    layout: TypeLayoutHash,
-    record: &RuntimeNominalRecordValue,
-    depth: usize,
-) -> bool {
-    plan.nominal_record_domains().get(ty).is_some_and(|domain| {
-        record.type_id() == nominal
-            && plan
-                .type_table()
-                .get(ty)
-                .is_some_and(|row| row.semantic_identity() == record.semantic_identity())
-            && record.layout() == layout
-            && record.fields().len() == domain.fields().len()
-            && record
-                .fields()
-                .iter()
-                .zip(domain.fields())
-                .all(|(value, field)| {
-                    runtime_value_matches_type_inner(plan, field.ty(), value, depth + 1)
-                })
-    })
-}
-
-fn runtime_opaque_matches_type(
-    declaration: &RuntimePlanTypeDeclaration,
-    producer: &RuntimeOpaqueTypeProducerId,
-    admission: RuntimeOpaqueTypeAdmission,
-    value_class: RuntimeOpaqueValueClass,
-    persistence: RuntimeOpaquePersistence,
-    value: &RuntimeOpaqueValue,
-) -> bool {
-    let owner = match admission {
-        RuntimeOpaqueTypeAdmission::ExactIdentity => RuntimeOpaqueTypeOwner::exact_with(
-            producer.clone(),
-            declaration.semantic_identity(),
-            value_class,
-            persistence,
-        ),
-        RuntimeOpaqueTypeAdmission::ProducerWide => RuntimeOpaqueTypeOwner::producer_wide_with(
-            producer.clone(),
-            declaration.semantic_identity(),
-            value_class,
-            persistence,
-        ),
-    };
-    owner.accepts_opaque_value(value)
 }
 
 impl RuntimePatternKind {

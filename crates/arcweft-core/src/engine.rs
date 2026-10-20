@@ -1,6 +1,6 @@
 use crate::awbc::schema::AwbcTypeId;
 use crate::effect::LineEffectRequest;
-use crate::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole};
+use crate::entry::RuntimeCallableExecutableCode;
 use crate::line_task::{ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskWorkTag};
 use crate::observation::RuntimeObservationState;
 use crate::pattern::RuntimePattern;
@@ -8,10 +8,10 @@ use crate::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryTarget,
     RuntimeFlow, RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimePlan,
 };
-use crate::pure::{RuntimeCallBackend, VmPureFunctionScratch, VmRuntimePureCallBackend};
+use crate::pure::{RuntimeCallBackend, VmRuntimePureCallBackend};
 use crate::root::{
-    RootCallableEvaluationError, RootCallableEvaluator, RootEventInput, RootRuntime,
-    RootRuntimeError, RootStartupContract, RuntimeCommandEnvelope,
+    RootCallableEvaluationError, RootEventInput, RootRuntime, RootRuntimeError,
+    RootStartupContract, RuntimeCommandEnvelope,
 };
 use crate::runtime_id::{DialogueActivationId, RuntimePersistentFiberId};
 use crate::runtime_id::{RuntimeFormatAttemptId, RuntimePlanTypeId};
@@ -49,6 +49,7 @@ pub mod dialogue;
 pub mod eval;
 mod numeric_map;
 mod rollback;
+mod root;
 #[cfg(test)]
 mod root_initialization_tests;
 pub(crate) use eval::evaluate_runtime_call;
@@ -647,6 +648,7 @@ impl FlowFiberId {
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub(crate) enum FlowFiberOwner {
     Executor,
+    RootReducer { entry: EntryRuntimeId },
     LineTask(LineTaskFiberOwner),
 }
 
@@ -1112,6 +1114,9 @@ pub(crate) enum FunctionReturnContinuation<P = crate::value::RuntimeCallablePend
     RootInitializer {
         entry: EntryRuntimeId,
     },
+    RootReducer {
+        entry: EntryRuntimeId,
+    },
     Program {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
     },
@@ -1134,6 +1139,9 @@ impl Clone for FunctionReturnContinuationRollbackImage {
     fn clone(&self) -> Self {
         match self {
             Self::RootInitializer { entry } => Self::RootInitializer {
+                entry: entry.clone(),
+            },
+            Self::RootReducer { entry } => Self::RootReducer {
                 entry: entry.clone(),
             },
             Self::Program { program } => Self::Program { program: *program },
@@ -1160,6 +1168,9 @@ impl FunctionReturnContinuation {
                     entry: entry.clone(),
                 }
             }
+            Self::RootReducer { entry } => FunctionReturnContinuationRollbackImage::RootReducer {
+                entry: entry.clone(),
+            },
             Self::Program { program } => {
                 FunctionReturnContinuationRollbackImage::Program { program: *program }
             }
@@ -1207,6 +1218,9 @@ impl FunctionReturnContinuation {
             FunctionReturnContinuationRollbackImage::RootInitializer { entry } => {
                 Self::RootInitializer { entry }
             }
+            FunctionReturnContinuationRollbackImage::RootReducer { entry } => {
+                Self::RootReducer { entry }
+            }
             FunctionReturnContinuationRollbackImage::Program { program } => {
                 Self::Program { program }
             }
@@ -1248,54 +1262,6 @@ pub enum EngineStartError {
     InvalidFlowInvocation { message: String },
     #[error("runtime entry `{entry}` failed root startup validation: {message}")]
     InvalidRootStartup { entry: String, message: String },
-}
-
-struct StructuredRootEvaluator<'a> {
-    plan: &'a Arc<RuntimePlan>,
-    scratch: VmPureFunctionScratch,
-}
-
-impl<'a> StructuredRootEvaluator<'a> {
-    fn new(plan: &'a Arc<RuntimePlan>) -> Self {
-        Self {
-            plan,
-            scratch: VmPureFunctionScratch::default(),
-        }
-    }
-}
-
-impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
-    fn evaluate_root_callable(
-        &mut self,
-        callable: &RuntimeCallableRole,
-        args: Vec<RuntimeValue>,
-    ) -> Result<RuntimeValue, RootCallableEvaluationError> {
-        let executable = self
-            .plan
-            .callable_executables
-            .iter()
-            .find(|executable| {
-                executable.callable == callable.callable && executable.contract == callable.contract
-            })
-            .ok_or_else(|| {
-                RootCallableEvaluationError::new(format!(
-                    "missing executable callable `{}`",
-                    callable.callable.as_str()
-                ))
-            })?;
-        match executable.code {
-            RuntimeCallableExecutableCode::FunctionSite(site) => self
-                .scratch
-                .evaluate_function_site(self.plan, site, args)
-                .map_err(|error| RootCallableEvaluationError::new(error.to_string())),
-            RuntimeCallableExecutableCode::ControllerFlow(_) => {
-                Err(RootCallableEvaluationError::new(format!(
-                    "callable `{}` is not a pure root callable",
-                    callable.callable.as_str()
-                )))
-            }
-        }
-    }
 }
 
 /// Execution phase of the sole dialogue activation owner.
@@ -1965,13 +1931,7 @@ impl Engine {
             root.admit_retained(&mut admission)
                 .map_err(|error| error.to_string())?;
         }
-        self.fiber.frame.admit_root_phase(
-            self.root.as_ref(),
-            matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)),
-        )?;
-        for child in &self.child_fibers {
-            child.frame.admit_root_phase(None::<&RootRuntime>, false)?;
-        }
+        self.admit_root_execution()?;
         self.validate_scheduled_scope_state(&mut admission)?;
         for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
             fiber
@@ -2916,7 +2876,10 @@ impl Engine {
         let events = self.latch_need_publications(need_states, events, &mut output);
         self.step_stream_plans(&mut output, pure_backend);
 
-        while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
+        while executed_ops < options.budget.max_ops {
+            if !self.prepare_root_reducer(&mut output) || !self.can_attempt_runtime_op() {
+                break;
+            }
             let consumed = self
                 .try_step_numeric_map_control(
                     options.budget.max_ops - executed_ops,
@@ -3007,47 +2970,16 @@ impl Engine {
             ));
             return false;
         };
-        let result = {
-            if matches!(
-                root.active().phase,
-                crate::root::RootPhase::Initializing { .. }
-            ) {
-                return match root.ingress(
-                    events,
-                    crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
-                ) {
-                    Ok(()) => true,
-                    Err(error) => {
-                        output.diagnostics.push(RuntimeDiagnostic::categorized(
-                            RuntimeDiagnosticCategory::Input,
-                            error.to_string(),
-                        ));
-                        false
-                    }
-                };
-            }
-            let mut evaluator = StructuredRootEvaluator::new(&self.plan);
-            root.step(
+        let result = if root.active().pending_command_count() != 0 {
+            Err(RootRuntimeError::PendingCommandsAwaitingDispatch)
+        } else {
+            root.ingress(
                 events,
-                &mut evaluator,
                 crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
             )
         };
         match result {
-            Ok(result) => {
-                let failed = result.failed;
-                output.root_transitions.extend(result.outcomes);
-                output.root_commands.extend(result.commands);
-                if failed {
-                    let message = root
-                        .failure()
-                        .map_or_else(|| "root reducer trapped".to_owned(), ToString::to_string);
-                    self.fiber.frame.status = FlowFiberStatus::Failed(message);
-                    false
-                } else {
-                    true
-                }
-            }
+            Ok(()) => true,
             Err(error) => {
                 let step_input_rejection = matches!(
                     &error,
@@ -3083,6 +3015,14 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        if self
+            .child_fibers
+            .front()
+            .is_some_and(|fiber| matches!(fiber.owner, FlowFiberOwner::RootReducer { .. }))
+        {
+            self.step_next_child_fiber(input, events, output, pure_backend);
+            return;
+        }
         if self.run_child_next && self.step_next_child_fiber(input, events, output, pure_backend) {
             self.run_child_next = false;
             return;
@@ -4081,6 +4021,35 @@ impl Engine {
             .transpose()?;
         let mut drops = child.frame.env.take_assignment_discard_authorization();
         drops.set_boundary(drop_policy)?;
+        if let FlowFiberOwner::RootReducer { entry } = &owner {
+            let failure = match &child.frame.status {
+                FlowFiberStatus::Failed(message) => Some(message.clone()),
+                FlowFiberStatus::Done(_)
+                    if self
+                        .root
+                        .as_ref()
+                        .is_some_and(|root| root.active().reducer_active()) =>
+                {
+                    Some("native reducer body completed without returning its result".to_owned())
+                }
+                FlowFiberStatus::Running | FlowFiberStatus::Done(_) => None,
+                _ => Some("native pure reducer attempted to suspend".to_owned()),
+            };
+            if let Some(message) = failure {
+                self.finish_root_reduction(
+                    entry,
+                    Err(RootCallableEvaluationError::new(message)),
+                    output,
+                )
+                .map_err(|message| dialogue::DialogueExecutionError::ChildFailed { message })?;
+            } else if !matches!(child.frame.status, FlowFiberStatus::Done(_)) {
+                self.child_fibers.push_front(child);
+            }
+            if let Some(failure) = self.root.as_ref().and_then(RootRuntime::failure) {
+                self.fiber.frame.status = FlowFiberStatus::Failed(failure.to_string());
+            }
+            return Ok(true);
+        }
         if let FlowFiberOwner::LineTask(owner) = &owner {
             let mut transaction = self
                 .dialogue_activations
@@ -4129,7 +4098,9 @@ impl Engine {
                     {
                         Some(owner.tag.activation_id().clone())
                     }
-                    FlowFiberOwner::Executor | FlowFiberOwner::LineTask(_) => None,
+                    FlowFiberOwner::Executor
+                    | FlowFiberOwner::RootReducer { .. }
+                    | FlowFiberOwner::LineTask(_) => None,
                 };
                 if let FlowFiberOwner::LineTask(owner) = owner {
                     let live_tokens = live_tokens
@@ -4471,7 +4442,7 @@ impl Engine {
     }
 
     fn effective_fiber_status(&self) -> FlowFiberStatus {
-        if self.has_executor_work()
+        if (self.has_executor_work() || self.root_has_pending_reduction())
             && matches!(
                 self.fiber.frame.status,
                 FlowFiberStatus::Done(_)
@@ -4524,6 +4495,11 @@ impl Engine {
     }
 
     fn hard_stop_reason(&self, output: &RuntimeStepOutput) -> Option<RuntimeStepStopReason> {
+        if self.root_has_pending_reduction()
+            && !matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_))
+        {
+            return None;
+        }
         if self.has_runnable_child_fibers()
             && !matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_))
         {

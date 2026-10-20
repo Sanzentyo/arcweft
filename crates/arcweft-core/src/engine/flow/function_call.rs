@@ -151,6 +151,27 @@ impl Engine {
                     self.fail_eval(error, output);
                 }
             }
+            FunctionReturnContinuation::RootReducer { entry } => {
+                if self.fiber.owner
+                    != (super::super::FlowFiberOwner::RootReducer {
+                        entry: entry.clone(),
+                    })
+                {
+                    self.fail_eval(
+                        "native reducer returned from a different fiber owner",
+                        output,
+                    );
+                    return;
+                }
+                match self.finish_root_reduction(&entry, Ok(value), output) {
+                    Ok(()) => {
+                        self.fiber.frame.cursor = None;
+                        self.fiber.frame.status =
+                            FlowFiberStatus::Done(crate::engine::FlowExit::Done);
+                    }
+                    Err(error) => self.fail_eval(error, output),
+                }
+            }
             FunctionReturnContinuation::Program { program } => {
                 if !plan_owner
                     .resolve_pure_program(program)

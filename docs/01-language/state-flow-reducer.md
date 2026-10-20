@@ -50,6 +50,13 @@ initializer と reducer は、選択済み backend・formatter と同じ step al
 使う通常の executable frame で進める。budget による中断は言語上の `await`
 とは区別する。
 
+実行中の reducer は、その entry の reducer role に対応する一つの executor
+fiber が所有する。継続中は通常 Flow と後続 event より優先して進め、budget を
+使い切った時点の frame と元 state を保持する。rollback は phase、entry、role、
+関数本体と fiber の対応をすべて検証してから復元する。既に完了した外部呼出しを
+復元時に再実行しない。式本体と純粋な executable 本体は同じ入力・戻り値契約を
+満たす通常関数として扱う。
+
 ## Event
 
 ```arcw

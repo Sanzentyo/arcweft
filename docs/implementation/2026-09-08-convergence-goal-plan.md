@@ -23242,3 +23242,56 @@ full restore failure atomicity, all14 host families, Generic Match/retained View
 earlier56 CLI failures, Presentation ABI, strict Clippy, full reverse/Tier2/visual
 and final workspace acceptance and all other original requirements remain open.
 The complete original goal remains active.
+
+## 2026-10-20 — Native Root reducers enter the real executor (validation pending)
+
+Inspected base `4fab482f94388a0c6c963935bac00b24b1e8db9d`, existing main.
+Held14 tracked and3 untracked paths remain unchanged. The one requested workspace
+clean already completed at2026-10-20T05:39:12+09:00, exit0,265286 files/323.8GiB;
+its source/Git checks were unchanged. Subsequent builds recreated artifacts.
+No second clean, artifact relocation, job/profile tuning or agent delegation ran.
+
+Native ingress now queues only. A reducer is staged backend-free into an ordinary
+executor child with a RootReducer owner and exact entry-role return continuation.
+It runs before foreground/other children under the same step instruction loop,
+selected backend and formatter, using the existing fiber identity allocator.
+State and event references, common cumulative resource admission, the original
+function ABI and all formal pattern/affine-overlap tests precede the state copy
+and event transfer. The function-input owner also preflights all formal patterns
+before transferring its first input. The synchronous StructuredRootEvaluator was
+deleted. Only newly committed command envelopes publish at each completion.
+Traps retain old state and remove the active frame; pre-frame allocation/admission
+failures trap without copying a queued event. Pending Root work keeps a finished
+foreground from falsely reporting completion at zero budget.
+
+Rollback admission correlates phase with exactly one running reducer child at the
+executor front, its entry, Root role and original FunctionSite. Missing, duplicate,
+forged or wrongly placed Root continuations reject before replacement. The
+maintained language contract records this ownership/ordering. Entry admission now
+accepts ordinary effect-free executable bodies through the existing pure-body
+predicate rather than restricting Root roles to expression bodies.
+
+R1890 dev check failed with two implementation type errors (generic status and
+borrowed view conversion); both were repaired before later builds. R1891 ran
+three new dev cases:two passed, one failed, zero selected cases skipped. The
+failed cold-resume case reached reducer return and exposed the old parallel native
+value predicate's missing Reduction carrier. Native type matching now delegates
+to existing exact Plan value admission; the cloned-sequence/parallel recursive
+predicate and its private helpers were deleted. The original success assertion
+and backend call-count/locale/original-owner assertions remain. A fourth case
+covers allocator exhaustion before execution. R1892 owner catalog is pending;
+the R1891 binaries predate final pattern-admission/exhaustion/terminal handling
+and are not evidence for the final patch. Runtime inputs are3938; the operational
+note alone is excluded from the runtime freeze. Cargo manifests/lock still match
+all99 R1872 metadata inputs and the actual Core reverse closure remains53.
+
+R1893 structure passed:3160 files,3030 Rust files,1723243 physical Rust LOC,
+97 packages,376 review triggers, zero blocking violations. Ownership disposition:
+Engine owns scheduling and complete-step transactions; its root module owns role
+frame admission/completion; RootRuntime owns queue/phase/commit; the existing Plan
+value authority owns carrier/type validation. No new schema/catalog/fake task plan
+or copied foreground suspension was introduced. Final execution checks remain
+pending. AWBC's synchronous ProductRootEvaluator/million-op helper are still open,
+as are full restore failure atomicity, original Native Rust-call cold execution,
+all53 reverse consumers, all prior56 CLI failures, presentation ABI, strict Clippy,
+Tier2/visual/final workspace acceptance and the rest of the original active goal.

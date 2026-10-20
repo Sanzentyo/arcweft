@@ -72,6 +72,14 @@ pub(crate) fn stateful_builder_with_limits(
     schema: RuntimeTypeSchema,
     limits: RootExecutionLimits,
 ) -> RuntimePlanBuilder {
+    stateful_builder_with_reducer_prefix(schema, limits, Vec::new())
+}
+
+pub(crate) fn stateful_builder_with_reducer_prefix(
+    schema: RuntimeTypeSchema,
+    limits: RootExecutionLimits,
+    reducer_prefix: Vec<RuntimeFlowOpSeed>,
+) -> RuntimePlanBuilder {
     let graph = RuntimeNominalSchemaGraph::try_new(
         (1..=2)
             .map(|tag| {
@@ -91,7 +99,8 @@ pub(crate) fn stateful_builder_with_limits(
     .unwrap();
     let mut builder = RuntimePlanBuilder::new();
     let locals = admit_stateful_types(&mut builder, &graph);
-    let (initializer_role, reducer_role) = admit_stateful_callables(&mut builder, &locals);
+    let (initializer_role, reducer_role) =
+        admit_stateful_callables(&mut builder, &locals, reducer_prefix);
     let flow_role = admit_stateful_flow(&mut builder, locals[2].clone());
     let binding = EntryBindingIdentity::from_bytes([76; 32]);
     builder
@@ -203,6 +212,7 @@ fn admit_stateful_types(
 fn admit_stateful_callables(
     builder: &mut RuntimePlanBuilder,
     locals: &[RuntimeLocalSeedId],
+    mut reducer_prefix: Vec<RuntimeFlowOpSeed>,
 ) -> (RuntimeCallableRole, RuntimeCallableRole) {
     let state = || {
         RuntimeExprSeed::new(
@@ -218,11 +228,28 @@ fn admit_stateful_callables(
             state(),
         )
         .unwrap();
+    let result = RuntimeExprSeed::new(
+        semantic(8),
+        RuntimeExprSeedKind::Variant {
+            ordinal: 0,
+            payload: Some(Box::new(RuntimeExprSeed::new(
+                semantic(6),
+                RuntimeExprSeedKind::Tuple(Box::new([RuntimeExprSeed::new(
+                    semantic(4),
+                    RuntimeExprSeedKind::ReductionUnchanged {
+                        state: Box::new(state()),
+                    },
+                )])),
+            ))),
+        },
+    );
+    let executable = !reducer_prefix.is_empty();
     let reducer = builder
-        .push_function_site_seed(
-            RuntimeFunctionDefinitionIdentity::from_accepted_identity([62; 32]),
-            RuntimeFunctionSemanticRole::Ordinary,
-            [
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([62; 32]),
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs: Box::new([
                 parameter(
                     locals[0].clone(),
                     semantic(3),
@@ -237,24 +264,26 @@ fn admit_stateful_callables(
                     1,
                     RuntimeFunctionParameterPassing::Value,
                 ),
-            ],
-            RuntimeExprSeed::new(
-                semantic(8),
-                RuntimeExprSeedKind::Variant {
-                    ordinal: 0,
-                    payload: Some(Box::new(RuntimeExprSeed::new(
-                        semantic(6),
-                        RuntimeExprSeedKind::Tuple(Box::new([RuntimeExprSeed::new(
-                            semantic(4),
-                            RuntimeExprSeedKind::ReductionUnchanged {
-                                state: Box::new(state()),
-                            },
-                        )])),
-                    ))),
-                },
-            ),
-        )
+            ]),
+            result: semantic(8),
+            body_kind: if executable {
+                RuntimeFunctionSiteBodyKind::Executable
+            } else {
+                RuntimeFunctionSiteBodyKind::Expression
+            },
+            effects: RuntimeEffectSet::empty(),
+        })
         .unwrap();
+    let body = if executable {
+        reducer_prefix.push(RuntimeFlowOpSeed::ReturnExpr(result));
+        RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+            effects: RuntimeEffectSet::empty(),
+            ops: reducer_prefix.into_boxed_slice(),
+        })
+    } else {
+        result.into()
+    };
+    builder.define_function_site_seed(&reducer, body).unwrap();
     let initializer_role = RuntimeCallableRole {
         callable: RuntimeCallableId::from_checked_digest([71; 32]),
         contract: CallableContractHash::from_bytes([72; 32]),

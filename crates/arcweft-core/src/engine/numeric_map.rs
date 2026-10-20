@@ -447,6 +447,7 @@ impl Engine {
                     let continuation_avoids = match &frame.continuation {
                         Return::Program { .. }
                         | Return::Function { .. }
+                        | Return::RootReducer { .. }
                         | Return::RootInitializer { .. } => true,
                         Return::Bind { result } => result
                             .binding_declarations()

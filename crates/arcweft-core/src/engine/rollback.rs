@@ -95,28 +95,31 @@ impl<P> FunctionReturnContinuation<P> {
             message: message.into(),
         };
         match self {
-            Self::RootInitializer { entry } => {
+            Self::RootInitializer { entry } | Self::RootReducer { entry } => {
                 admission.validate_metadata(entry)?;
                 let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
                 else {
-                    return Err(invalid(
-                        "native initializer continuation requires its plan owner",
-                    ));
+                    return Err(invalid("native Root continuation requires its plan owner"));
                 };
                 let roles = plan
                     .entries()
                     .iter()
                     .find(|candidate| candidate.id == *entry)
                     .and_then(|entry| entry.roles.stateful())
-                    .ok_or_else(|| invalid("native initializer entry is absent from its plan"))?;
+                    .ok_or_else(|| invalid("native Root entry is absent from its plan"))?;
+                let role = match self {
+                    Self::RootInitializer { .. } => &roles.initializer,
+                    Self::RootReducer { .. } => &roles.reducer,
+                    _ => unreachable!("matched Root continuation"),
+                };
                 if !plan.callable_executables().iter().any(|executable| {
-                    executable.callable == roles.initializer.callable
-                        && executable.contract == roles.initializer.contract
+                    executable.callable == role.callable
+                        && executable.contract == role.contract
                         && executable.code
                             == crate::entry::RuntimeCallableExecutableCode::FunctionSite(site)
                 }) {
                     return Err(invalid(
-                        "native initializer continuation does not match its entry role",
+                        "native Root continuation does not match its entry role",
                     ));
                 }
             }
@@ -262,10 +265,72 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
     }
 }
 
+impl<V, N, P, Q, FV, FP, O, C, A, AS, MS, D>
+    Engine<
+        V,
+        N,
+        P,
+        crate::root::RootRuntime<Q>,
+        NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS>>,
+        D,
+    >
+{
+    pub(super) fn admit_root_execution(&self) -> Result<(), String>
+    where
+        C: ScopeControl<O>,
+    {
+        if !matches!(self.fiber.owner, FlowFiberOwner::Executor) {
+            return Err("native main fiber does not have its executor owner".into());
+        }
+        self.fiber.frame.admit_root_phase(
+            self.root.as_ref(),
+            &self.fiber.owner,
+            matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)),
+        )?;
+        let mut reducer_count = 0;
+        for child in &self.child_fibers {
+            let root = if matches!(child.owner, FlowFiberOwner::RootReducer { .. }) {
+                if !matches!(child.frame.status, FlowFiberStatus::Running) {
+                    return Err("native Root reducer is not a running pure frame".into());
+                }
+                reducer_count += 1;
+                self.root.as_ref()
+            } else {
+                None
+            };
+            child.frame.admit_root_phase(root, &child.owner, false)?;
+        }
+        let evaluating = self.root.as_ref().is_some_and(|root| {
+            matches!(
+                root.active().phase,
+                crate::root::RootPhase::Initialized {
+                    reducer: crate::root::RootReducerPhase::Evaluating,
+                    ..
+                }
+            )
+        });
+        if reducer_count != usize::from(evaluating) {
+            return Err(
+                "native Root reducer phase does not have exactly its executable fiber".into(),
+            );
+        }
+        if evaluating
+            && !self
+                .child_fibers
+                .front()
+                .is_some_and(|child| matches!(child.owner, FlowFiberOwner::RootReducer { .. }))
+        {
+            return Err("native Root reducer lost its executor priority".into());
+        }
+        Ok(())
+    }
+}
+
 impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
     pub(super) fn admit_root_phase<Q>(
         &self,
         root: Option<&crate::root::RootRuntime<Q>>,
+        owner: &FlowFiberOwner,
         failed: bool,
     ) -> Result<(), String>
     where
@@ -275,14 +340,12 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             .control_stack
             .iter()
             .filter_map(ScopeControl::function_context);
-        let initializer = functions
-            .next()
-            .and_then(|context| context.initializer_entry);
-        if functions.any(|context| context.initializer_entry.is_some()) {
-            return Err("native initializer is not the invocation root".into());
+        let invocation = functions.next().and_then(|context| context.root);
+        if functions.any(|context| context.root.is_some()) {
+            return Err("native Root role is not the invocation root".into());
         }
-        match (root, initializer) {
-            (Some(root), Some(entry))
+        match (owner, root, invocation) {
+            (FlowFiberOwner::Executor, Some(root), Some(RootInvocation::Initializer(entry)))
                 if root.active().entry == *entry
                     && matches!(
                         root.active().phase,
@@ -292,7 +355,24 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             {
                 Ok(())
             }
-            (Some(root), None)
+            (
+                FlowFiberOwner::RootReducer { entry: owner_entry },
+                Some(root),
+                Some(RootInvocation::Reducer(entry)),
+            ) if owner_entry == entry
+                && root.active().entry == *entry
+                && matches!(
+                    root.active().phase,
+                    crate::root::RootPhase::Initialized {
+                        reducer: crate::root::RootReducerPhase::Evaluating,
+                        ..
+                    }
+                )
+                && self.cursor.is_none() =>
+            {
+                Ok(())
+            }
+            (FlowFiberOwner::Executor, Some(root), None)
                 if !matches!(
                     root.active().phase,
                     crate::root::RootPhase::Initializing { .. }
@@ -300,8 +380,8 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             {
                 Ok(())
             }
-            (None, None) => Ok(()),
-            _ => Err("native Root phase does not match its initializer origin".into()),
+            (FlowFiberOwner::Executor | FlowFiberOwner::LineTask(_), None, None) => Ok(()),
+            _ => Err("native Root phase does not match its executable fiber origin".into()),
         }
     }
 
@@ -440,7 +520,12 @@ pub(super) struct FunctionContext<'a> {
     site: crate::runtime_id::RuntimeFunctionSiteId,
     entered: bool,
     instantiation: Option<&'a crate::program_types::RuntimeFunctionEffectInstantiation>,
-    initializer_entry: Option<&'a crate::plan::EntryRuntimeId>,
+    root: Option<RootInvocation<'a>>,
+}
+
+enum RootInvocation<'a> {
+    Initializer(&'a crate::plan::EntryRuntimeId),
+    Reducer(&'a crate::plan::EntryRuntimeId),
 }
 
 pub(super) trait ScopeControl<O> {
@@ -487,8 +572,13 @@ where
                 site: frame.site,
                 entered: frame.function_scope,
                 instantiation: frame.type_instantiation.as_deref(),
-                initializer_entry: match &frame.continuation {
-                    FunctionReturnContinuation::RootInitializer { entry } => Some(entry),
+                root: match &frame.continuation {
+                    FunctionReturnContinuation::RootInitializer { entry } => {
+                        Some(RootInvocation::Initializer(entry))
+                    }
+                    FunctionReturnContinuation::RootReducer { entry } => {
+                        Some(RootInvocation::Reducer(entry))
+                    }
                     _ => None,
                 },
             }),
@@ -871,15 +961,7 @@ impl NativeEngineRollbackImage {
             root.admit_retained(&mut admission)
                 .map_err(|error| error.to_string())?;
         }
-        self.fiber.frame.admit_root_phase(
-            self.root.as_ref(),
-            matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)),
-        )?;
-        for child in &self.child_fibers {
-            child
-                .frame
-                .admit_root_phase(None::<&crate::root::RootRuntimeRollbackImage>, false)?;
-        }
+        self.admit_root_execution()?;
         self.validate_scheduled_scope_state(&mut admission)?;
         for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
             fiber

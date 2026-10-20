@@ -1373,9 +1373,7 @@ impl super::RuntimePlanInventory {
         let Some(site) = self.function_sites().get(site) else {
             return false;
         };
-        if site.capture_inputs().next().is_some()
-            || !matches!(site.body(), super::RuntimeFunctionSiteBody::Expression(_))
-        {
+        if site.capture_inputs().next().is_some() || !site.is_eager_pure_candidate() {
             return false;
         }
         let parameters = site.parameter_inputs().collect::<Vec<_>>();
