@@ -188,6 +188,40 @@ impl FlowCursor {
     }
 }
 
+impl<O, P> FunctionCallFrame<O, P> {
+    fn admit_code_position(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        use crate::plan::code::{RuntimeCodeBodyRef, RuntimeCodeOwner};
+        let invalid = |message: &str| crate::value::AwbcRuntimeValueSnapshotError::Message {
+            message: message.into(),
+        };
+        admission.validate_metadata(&(self.site.get(), self.next_instruction))?;
+        let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
+            return Err(invalid(
+                "native function position requires its original Plan executable",
+            ));
+        };
+        let valid = match plan
+            .inventory
+            .code_body(RuntimeCodeOwner::Function(self.site))
+        {
+            Some(RuntimeCodeBodyRef::Operations(operations)) => {
+                self.next_instruction <= operations.len()
+            }
+            Some(RuntimeCodeBodyRef::Expression(_)) => self.next_instruction == 0,
+            None => false,
+        };
+        if !valid {
+            return Err(invalid(
+                "native function position exceeds its original body",
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl<V, O> NativeFormatAttemptFrame<V, O> {
     fn admit_owned_values(
         &self,
@@ -555,6 +589,7 @@ where
         match self {
             Self::FormatAttempt(frame) => frame.admit_owned_values(admission, binding),
             Self::FunctionCall(frame) => {
+                frame.admit_code_position(admission)?;
                 if let Some(cursor) = frame.resume {
                     cursor.admit_retained(admission)?;
                 }

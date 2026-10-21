@@ -349,6 +349,26 @@ impl FlowFiber {
 }
 
 impl NativeFlowExecutionFrame {
+    fn active_function(&self) -> Option<&FunctionCallFrame> {
+        self.control_stack
+            .iter()
+            .rev()
+            .find_map(|entry| match &entry.kind {
+                FlowControlStackEntryKind::FunctionCall(frame) => Some(frame),
+                _ => None,
+            })
+    }
+
+    fn active_function_mut(&mut self) -> Option<&mut FunctionCallFrame> {
+        self.control_stack
+            .iter_mut()
+            .rev()
+            .find_map(|entry| match &mut entry.kind {
+                FlowControlStackEntryKind::FunctionCall(frame) => Some(frame),
+                _ => None,
+            })
+    }
+
     fn inert_rollback_image(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
@@ -942,6 +962,8 @@ pub(crate) struct NativeFormatOperandFrame<O = FlowOp> {
 #[derive(Debug, PartialEq)]
 pub(crate) struct FunctionCallFrame<O = FlowOp, P = crate::value::RuntimeCallablePendingGroup> {
     site: crate::runtime_id::RuntimeFunctionSiteId,
+    /// Next root operation in this frame's original `FunctionSite` body.
+    next_instruction: usize,
     type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     function_scope: bool,
     resume: Option<FlowCursor>,
@@ -956,6 +978,7 @@ impl Clone for FunctionCallFrameRollbackImage {
     fn clone(&self) -> Self {
         Self {
             site: self.site,
+            next_instruction: self.next_instruction,
             type_instantiation: self.type_instantiation.clone(),
             function_scope: self.function_scope,
             resume: self.resume,
@@ -982,6 +1005,7 @@ impl FlowControlStackEntry {
             FlowControlStackEntryKind::FunctionCall(frame) => {
                 FlowControlStackEntryRollbackImage::FunctionCall(FunctionCallFrameRollbackImage {
                     site: frame.site,
+                    next_instruction: frame.next_instruction,
                     type_instantiation: frame.type_instantiation.clone(),
                     function_scope: frame.function_scope,
                     resume: frame.resume,
@@ -1066,6 +1090,7 @@ impl FlowControlStackEntry {
             }
             FlowControlStackEntryRollbackImage::FunctionCall(FunctionCallFrameRollbackImage {
                 site,
+                next_instruction,
                 type_instantiation,
                 function_scope,
                 resume,
@@ -1073,6 +1098,7 @@ impl FlowControlStackEntry {
                 continuation,
             }) => FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
                 site,
+                next_instruction,
                 type_instantiation,
                 function_scope,
                 resume,
@@ -1098,6 +1124,7 @@ impl FunctionCallFrame {
     ) -> Self {
         Self {
             site,
+            next_instruction: 0,
             type_instantiation: None,
             function_scope: false,
             resume,
@@ -2579,6 +2606,22 @@ impl Engine {
 
     pub(super) fn flow_at_cursor(&self, cursor: &FlowCursor) -> Option<&RuntimeFlow> {
         self.plan.flows.get(cursor.flow_index)
+    }
+
+    /// Remaining root code for the active frame, before any pending child work.
+    pub(super) fn original_operation_remainder<'a>(
+        &self,
+        plan: &'a RuntimePlan,
+    ) -> Option<&'a [FlowOp]> {
+        if let Some(frame) = self.fiber.frame.active_function() {
+            return frame.original_operation_remainder(plan);
+        }
+        let cursor = self.fiber.frame.cursor.as_ref()?;
+        plan.flows
+            .get(cursor.flow_index)?
+            .body()
+            .ops()
+            .get(cursor.op_index..)
     }
 
     pub(super) fn flow_index(&self, flow: &FlowRuntimeId) -> Option<usize> {
@@ -4385,7 +4428,10 @@ impl Engine {
         if !matches!(self.fiber.frame.status, FlowFiberStatus::Running) {
             return;
         }
-        if self.fiber.frame.cursor.is_some() || !self.fiber.frame.pending_ops.is_empty() {
+        if self.fiber.frame.cursor.is_some()
+            || !self.fiber.frame.pending_ops.is_empty()
+            || self.has_active_project_call()
+        {
             self.step_flow(output, pure_backend, drop_policy);
         }
     }
@@ -4412,6 +4458,7 @@ impl Engine {
         if matches!(self.fiber.frame.status, FlowFiberStatus::Running)
             && self.fiber.frame.cursor.is_none()
             && self.fiber.frame.pending_ops.is_empty()
+            && !self.has_active_project_call()
         {
             self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
         }

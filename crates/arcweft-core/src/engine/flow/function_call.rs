@@ -12,6 +12,7 @@ use crate::engine::{
 };
 use crate::pattern::RuntimePattern;
 use crate::plan::RuntimeFunctionSiteBody;
+use crate::plan::code::{RuntimeCodeBodyRef, RuntimeCodeOwner};
 use crate::value::{RuntimeFunctionApplyError, RuntimeValue};
 
 impl Engine {
@@ -83,13 +84,6 @@ impl Engine {
     ) -> Result<(), RuntimeEvalError> {
         let site = declaration.site();
         debug_assert_eq!(frame.site, site);
-        let body = declaration.body().clone();
-        let ops = match body {
-            RuntimeFunctionSiteBody::Expression(body) => {
-                vec![crate::plan::FlowOp::ReturnExpr(body)]
-            }
-            RuntimeFunctionSiteBody::Executable(executable) => executable.ops().to_vec(),
-        };
         let staged = declaration.stage_owned_inputs(captures, args)?;
         frame.type_instantiation = declaration.type_instantiation;
         self.fiber.frame.env.push_function_scope(
@@ -103,8 +97,59 @@ impl Engine {
         self.fiber.frame.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FunctionCall(frame),
         });
-        self.fiber.frame.pending_ops.extend(ops);
         Ok(())
+    }
+
+    /// Fetches one root from the original function row. Nested control work is
+    /// drained first; each suspended caller retains its own root position.
+    pub(super) fn step_function_site_body(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+        drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
+    ) -> bool {
+        let Some(frame) = self.fiber.frame.active_function_mut() else {
+            return false;
+        };
+        let site = frame.site;
+        let plan = Arc::clone(&self.plan);
+        match plan.inventory.code_body(RuntimeCodeOwner::Function(site)) {
+            Some(RuntimeCodeBodyRef::Operations(operations)) => {
+                if let Some(operation) = operations.get(frame.next_instruction) {
+                    frame.next_instruction += 1;
+                    self.execute_flow_operation(
+                        operation.clone(),
+                        None,
+                        output,
+                        pure_backend,
+                        drop_policy,
+                    );
+                } else {
+                    self.complete_function_call_fallthrough(output, pure_backend);
+                }
+            }
+            Some(RuntimeCodeBodyRef::Expression(expression)) => {
+                if self.has_joined_work() {
+                    self.run_child_next = true;
+                } else {
+                    match self.evaluate_expr_with_backend(expression, pure_backend) {
+                        Ok(value) => {
+                            let returned =
+                                self.return_function_call_value(value, output, pure_backend);
+                            debug_assert!(returned, "the active function retains its return frame");
+                        }
+                        Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+                    }
+                }
+            }
+            None => self.fail_eval(
+                RuntimeEvalError::FunctionApply(RuntimeFunctionApplyError::UnknownStructuredSite {
+                    site,
+                }),
+                output,
+            ),
+        }
+        true
     }
 
     fn complete_function_call_return(
@@ -332,5 +377,20 @@ impl Engine {
             RuntimeEvalError::FunctionFallthrough { site: frame.site },
             output,
         );
+    }
+}
+
+impl<O, P> FunctionCallFrame<O, P> {
+    pub(in crate::engine) fn original_operation_remainder<'a>(
+        &self,
+        plan: &'a crate::plan::RuntimePlan,
+    ) -> Option<&'a [crate::plan::FlowOp]> {
+        match plan
+            .inventory
+            .code_body(RuntimeCodeOwner::Function(self.site))?
+        {
+            RuntimeCodeBodyRef::Operations(operations) => operations.get(self.next_instruction..),
+            RuntimeCodeBodyRef::Expression(_) => None,
+        }
     }
 }

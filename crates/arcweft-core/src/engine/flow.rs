@@ -31,8 +31,9 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
     ) {
-        if self.fiber.frame.pending_ops.is_empty() && self.has_active_project_call() {
-            self.complete_function_call_fallthrough(output, pure_backend);
+        if self.fiber.frame.pending_ops.is_empty()
+            && self.step_function_site_body(output, pure_backend, drop_policy)
+        {
             return;
         }
         let (op, next_op_index) = if let Some(op) = self.fiber.frame.pending_ops.pop_front() {
@@ -900,11 +901,7 @@ impl Engine {
     }
 
     pub(in crate::engine) fn has_active_project_call(&self) -> bool {
-        self.fiber
-            .frame
-            .control_stack
-            .iter()
-            .any(|entry| matches!(entry.kind, FlowControlStackEntryKind::FunctionCall(_)))
+        self.fiber.frame.active_function().is_some()
     }
 
     fn start_project_call(

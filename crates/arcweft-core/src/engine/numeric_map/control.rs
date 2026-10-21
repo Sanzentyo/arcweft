@@ -113,11 +113,7 @@ impl Engine {
         }
         let owner = Arc::clone(&self.plan);
         let current = if self.fiber.frame.pending_ops.is_empty() {
-            let cursor = self.fiber.frame.cursor.as_ref()?;
-            self.flow_at_cursor(cursor)?
-                .body()
-                .ops()
-                .get(cursor.op_index)?
+            self.original_operation_remainder(&owner)?.first()?
         } else {
             self.fiber.frame.pending_ops.front()?
         };
@@ -125,11 +121,7 @@ impl Engine {
             return None;
         };
         let ops = if self.fiber.frame.pending_ops.is_empty() {
-            let cursor = self.fiber.frame.cursor.as_ref()?;
-            self.flow_at_cursor(cursor)?
-                .body()
-                .ops()
-                .get(cursor.op_index..)?
+            self.original_operation_remainder(&owner)?
                 .iter()
                 .collect::<Vec<_>>()
         } else {

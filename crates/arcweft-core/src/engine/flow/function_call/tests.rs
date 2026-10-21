@@ -440,6 +440,22 @@ fn program_return_preserves_typed_result_and_rollback_custody() {
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();
     let mut engine =
         Engine::for_program_invocation(Arc::clone(&plan), program, Vec::new()).unwrap();
+    assert!(engine.fiber.frame.pending_ops.is_empty());
+    let mut invalid_position = engine.inert_rollback_image().unwrap();
+    let Some(crate::engine::FlowControlStackEntryRollbackImage::FunctionCall(frame)) =
+        invalid_position.fiber.frame.control_stack.last_mut()
+    else {
+        panic!("the program starts at its actual function frame");
+    };
+    frame.next_instruction = 1;
+    assert!(
+        Engine::from_rollback_image(
+            invalid_position,
+            &crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan)),
+        )
+        .is_err(),
+        "an expression function has only its original unconsumed expression"
+    );
     let rejection =
         Engine::for_program_invocation(Arc::clone(&plan), program, vec![RuntimeValue::Bool(false)])
             .unwrap_err();
@@ -810,6 +826,7 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
     )
     .unwrap();
     assert!(Arc::ptr_eq(&engine.plan, &plan));
+    assert!(engine.fiber.frame.pending_ops.is_empty());
     let options = crate::step::RuntimeStepOptions {
         mode: crate::step::RuntimeStepMode::OneOp,
         budget: crate::step::RuntimeStepBudget { max_ops: 1 },
@@ -824,6 +841,15 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
     assert!(engine.take_function_result(site).unwrap().is_none());
     let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));
     let saved = engine.inert_rollback_image().unwrap();
+    let mut invalid_position = saved.clone();
+    let Some(crate::engine::FlowControlStackEntryRollbackImage::FunctionCall(frame)) =
+        invalid_position.fiber.frame.control_stack.last_mut()
+    else {
+        panic!("the invocation retains its original function frame");
+    };
+    assert_eq!(frame.next_instruction, 1);
+    frame.next_instruction = usize::MAX;
+    assert!(Engine::from_rollback_image(invalid_position, &owner).is_err());
     let mut restored = Engine::from_rollback_image(saved, &owner).unwrap();
     assert!(Arc::ptr_eq(&restored.plan, &plan));
     for _ in 0..16 {
@@ -833,6 +859,8 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
         if matches!(output.fiber_status, crate::engine::FlowFiberStatus::Done(_)) {
             break;
         }
+        restored =
+            Engine::from_rollback_image(restored.inert_rollback_image().unwrap(), &owner).unwrap();
     }
     assert!(matches!(
         restored.fiber.frame.status,

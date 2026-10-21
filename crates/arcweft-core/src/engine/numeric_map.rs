@@ -398,7 +398,9 @@ fn operations_avoid_locals(plan: &RuntimePlan, ops: &[&FlowOp], elided: &[Local]
 impl Engine {
     fn consume_projected_ops(&mut self, count: usize) {
         if self.fiber.frame.pending_ops.is_empty() {
-            if let Some(cursor) = self.fiber.frame.cursor.as_mut() {
+            if let Some(frame) = self.fiber.frame.active_function_mut() {
+                frame.next_instruction += count;
+            } else if let Some(cursor) = self.fiber.frame.cursor.as_mut() {
                 cursor.op_index += count;
             }
         } else {
@@ -455,6 +457,15 @@ impl Engine {
                         Return::CallableDefault { .. } => false,
                     };
                     continuation_avoids
+                        && frame
+                            .original_operation_remainder(plan)
+                            .is_some_and(|operations| {
+                                operations_avoid_locals(
+                                    plan,
+                                    &operations.iter().collect::<Vec<_>>(),
+                                    elided,
+                                )
+                            })
                         && operations_avoid_locals(
                             plan,
                             &frame.caller_pending_ops.iter().collect::<Vec<_>>(),
@@ -489,11 +500,7 @@ impl Engine {
         }
         let owner = Arc::clone(&self.plan);
         let ops = if self.fiber.frame.pending_ops.is_empty() {
-            let cursor = self.fiber.frame.cursor.as_ref()?;
-            self.flow_at_cursor(cursor)?
-                .body()
-                .ops()
-                .get(cursor.op_index..)?
+            self.original_operation_remainder(&owner)?
                 .iter()
                 .collect::<Vec<_>>()
         } else {
