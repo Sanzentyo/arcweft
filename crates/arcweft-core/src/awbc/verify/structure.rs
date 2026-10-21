@@ -2276,7 +2276,9 @@ fn verify_callable_body(
     if !matches!(
         target.kind,
         AwbcFunctionKind::Ordinary | AwbcFunctionKind::Synthetic
-    ) {
+    ) && !(target.kind == AwbcFunctionKind::Flow
+        && target.semantic_role == crate::plan::RuntimeFunctionSemanticRole::Flow)
+    {
         return Err(AwbcVerifyError::InvalidInvariant {
             at: at.to_owned(),
             message: "callable transition target must be an executable function".to_owned(),

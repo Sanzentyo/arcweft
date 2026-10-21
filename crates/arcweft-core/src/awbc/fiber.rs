@@ -3480,16 +3480,32 @@ impl FiberState {
         ) {
             validate_return_point(program, caller_frame, returning_frame.function, &return_to)?;
         }
-        let signature = program
+        let returning_function = program
             .functions
             .get(returning_frame.function.index())
-            .and_then(|function| program.signatures.get(function.signature.index()))
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let signature = program
+            .signatures
+            .get(returning_function.signature.index())
             .ok_or(FiberStateError::InvalidFrame)?;
         let return_value = match (signature.result, value) {
             (Some(expected), Some(value))
                 if returning_frame.value_matches_type(program, &value, expected) =>
             {
                 Some(value)
+            }
+            (Some(expected), None)
+                if returning_function.kind == AwbcFunctionKind::Flow
+                    && returning_function
+                        .semantic_role
+                        .allows_implicit_unit_completion()
+                    && returning_frame.value_matches_type(
+                        program,
+                        &RuntimeValue::Unit,
+                        expected,
+                    ) =>
+            {
+                Some(RuntimeValue::Unit)
             }
             (None, None) if return_to.destination.is_some() => Some(RuntimeValue::Unit),
             (None, None) => None,

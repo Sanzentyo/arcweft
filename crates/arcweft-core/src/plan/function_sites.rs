@@ -143,6 +143,13 @@ pub enum RuntimeFunctionSemanticRole {
 }
 
 impl RuntimeFunctionSemanticRole {
+    /// Flow bodies may finish without an explicit return only for a Unit result.
+    /// Invocation resumes its caller with Unit; root execution retains Done.
+    #[must_use]
+    pub const fn allows_implicit_unit_completion(self) -> bool {
+        matches!(self, Self::Flow)
+    }
+
     pub const ALL: &[Self] = &[
         Self::Ordinary,
         Self::Closure,

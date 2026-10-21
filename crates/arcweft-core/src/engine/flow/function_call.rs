@@ -304,7 +304,7 @@ impl Engine {
         true
     }
 
-    pub(super) fn fail_function_call_fallthrough(
+    pub(super) fn complete_function_call_fallthrough(
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -312,6 +312,21 @@ impl Engine {
         let Some(frame) = self.take_function_call_frame(output, pure_backend) else {
             unreachable!("fallthrough is dispatched only with an active function frame")
         };
+        let completes_unit = self
+            .plan
+            .function_sites()
+            .get(frame.site)
+            .is_some_and(|site| {
+                site.role().allows_implicit_unit_completion()
+                    && matches!(
+                        self.plan.checked_type(site.result()),
+                        Ok(Some(crate::pattern::RuntimeCheckedType::Unit))
+                    )
+            });
+        if completes_unit {
+            self.complete_function_call_return(frame, RuntimeValue::Unit, output, pure_backend);
+            return;
+        }
         self.fiber.frame.pending_ops.clear();
         self.fail_eval(
             RuntimeEvalError::FunctionFallthrough { site: frame.site },

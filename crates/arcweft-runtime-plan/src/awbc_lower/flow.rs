@@ -1007,10 +1007,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             self.plan.checked_type(result),
             Ok(Some(arcweft_core::pattern::RuntimeCheckedType::Never))
         );
-        if role == arcweft_core::plan::RuntimeFunctionSemanticRole::Flow
-            && unit_result
-            && !body.terminated
-        {
+        if role.allows_implicit_unit_completion() && unit_result && !body.terminated {
             self.close_active_scopes_for_terminator(&mut frame);
             body.terminate(
                 self.inventory,

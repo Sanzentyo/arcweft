@@ -3973,6 +3973,16 @@ fn project_call_verifier_rejects_invoke_target_identity_and_result_mismatches() 
         "callable transition target must be an executable function",
     );
 
+    let mut unbound_flow_target = project_call_invoke_program();
+    unbound_flow_target.functions[1].kind = AwbcFunctionKind::Flow;
+    unbound_flow_target.functions[1].semantic_role = crate::plan::RuntimeFunctionSemanticRole::Flow;
+    let target_entry = unbound_flow_target.functions[1].entry_block.index();
+    unbound_flow_target.blocks[target_entry].safe_point = AwbcSafePointKind::FlowEntry;
+    expect_project_call_rejection(
+        unbound_flow_target,
+        "Flow function has no exact semantic Flow binding",
+    );
+
     let mut default_noninvoke = project_call_default_program();
     default_noninvoke.callable_states[0].transition = RuntimeCallableTransition::Retain {
         state: callable_state_id(0),

@@ -3777,6 +3777,7 @@ fn apply_terminator(
             let row = &program.functions[function];
             let signature = &program.signatures[row.signature.index()];
             if row.kind != AwbcFunctionKind::Flow
+                || !row.semantic_role.allows_implicit_unit_completion()
                 || !signature.result.is_some_and(|ty| {
                     matches!(runtime_shape(program, ty), Some(AwbcRuntimeTypeShape::Unit))
                 })
