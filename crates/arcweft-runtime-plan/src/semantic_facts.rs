@@ -541,6 +541,15 @@ impl RuntimeNormalizedType {
         &self.shape
     }
 
+    /// Borrows the result of the accepted awaitable constructor, preserving
+    /// the distinction between a Need and a scoped Thread handle.
+    pub(crate) fn awaited_payload(&self) -> Option<&Self> {
+        match self.shape() {
+            RuntimeTypeShape::Need(item) | RuntimeTypeShape::ThreadHandle(item) => Some(item),
+            _ => None,
+        }
+    }
+
     pub(crate) fn variant_selection(
         &self,
         ordinal: u32,
@@ -8403,12 +8412,12 @@ impl RuntimePlanSemanticFacts {
                     expression: *expression,
                 });
             };
-            let RuntimeTypeShape::Need(item) = operand.shape() else {
+            let Some(item) = operand.awaited_payload() else {
                 return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
                     expression: *expression,
                 });
             };
-            if expression_types.get(expression) != Some(item.as_ref()) {
+            if expression_types.get(expression) != Some(item) {
                 return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
                     expression: *expression,
                 });

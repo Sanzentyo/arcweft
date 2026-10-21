@@ -8511,16 +8511,16 @@ impl<'a> FinalFlowLowerer<'a> {
                 ))
             })?;
         let source_type = self.expression_type(awaited.operand())?;
-        let RuntimeTypeShape::Need(item_type) = source_type.shape() else {
+        let Some(item_type) = source_type.awaited_payload() else {
             return Err(RuntimePlanLowerError::new(format!(
-                "Await operand {:?} is not a checked Need<T> value",
+                "Await operand {:?} has no checked awaitable result",
                 awaited.operand()
             )));
         };
         let payload = self.expression_source_type(expression)?.clone();
         if source.ty() != source_type.identity() || payload.identity() != item_type.identity() {
             return Err(RuntimePlanLowerError::new(format!(
-                "Await expression {expression:?} source or result type differs from its checked Need<T> contract"
+                "Await expression {expression:?} source or result type differs from its checked awaitable contract"
             )));
         }
         if awaited.branches().len() != fact.observers().len() {

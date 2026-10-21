@@ -2090,26 +2090,17 @@ impl Analyzer<'_, '_, '_> {
                         },
                     )
                 })?;
-                let (ty, resolution) = match operand_type {
-                    TypeKind::Need(item) => {
-                        let observers =
-                            self.check_await_pending_observers(module, operation.branches())?;
-                        (
-                            item.as_ref().clone(),
-                            CheckedExpressionResolution::Await(CheckedAwait::new(
-                                operation.operand(),
-                                observers,
-                            )),
-                        )
-                    }
-                    TypeKind::ThreadHandle(value) => (
-                        value.as_ref().clone(),
-                        CheckedExpressionResolution::Structural,
-                    ),
+                let ty = match operand_type {
+                    TypeKind::Need(item) | TypeKind::ThreadHandle(item) => item.as_ref().clone(),
                     _ => {
                         return Err(AnalyzerExpressionError::rejected(owner));
                     }
                 };
+                let observers = self.check_await_pending_observers(module, operation.branches())?;
+                let resolution = CheckedExpressionResolution::Await(CheckedAwait::new(
+                    operation.operand(),
+                    observers,
+                ));
                 let mut effects = EffectSet::new();
                 effects.insert(EffectId::control_suspend());
                 Ok(CheckedExpression::value(

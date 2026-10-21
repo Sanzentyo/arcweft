@@ -1144,7 +1144,6 @@ const fn structural_resolution_matches(kind: &HirExprKind) -> bool {
             | HirExprKind::NumericBracketSequence(_)
             | HirExprKind::ArrayRepeat(_)
             | HirExprKind::Index(_)
-            | HirExprKind::Await(_)
             | HirExprKind::Thread(_)
             | HirExprKind::Range(_)
             | HirExprKind::Binary(_)

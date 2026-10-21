@@ -9,6 +9,59 @@ use crate::types::TypeKind;
 use super::{analyze, character_nominal_fixture, fixture};
 
 #[test]
+fn need_and_thread_awaits_retain_checked_operands_observers_and_affine_moves() {
+    use crate::final_analysis::CheckedExpressionResolution;
+
+    for target in ["Need<Unit>", "ThreadHandle<Unit>"] {
+        for (suffix, observer_count) in [("", 0), (" with { pending progress => {} }", 1)] {
+            let world = fixture(
+                &format!(
+                    "fn join(child: {target}) -> Unit effects {{ control.suspend }} {{ await child{suffix} }}"
+                ),
+                None,
+            );
+            let report = analyze(&world).unwrap();
+            let executable = world.project.analysis_view().unwrap();
+            let (_, module) = executable.modules().next().unwrap();
+            let (owner, operand) = module
+                .expressions()
+                .find_map(|(owner, expression)| match expression.kind() {
+                    HirExprKind::Await(awaited) => Some((owner, awaited.operand())),
+                    _ => None,
+                })
+                .unwrap();
+            let CheckedExpressionResolution::Await(checked) =
+                report.expression(owner).unwrap().resolution()
+            else {
+                panic!("every awaitable family retains its checked Await semantics");
+            };
+            assert_eq!(checked.operand(), operand);
+            assert_eq!(checked.observers().len(), observer_count);
+            let moved = report
+                .checked_local_uses()
+                .value_transfers()
+                .find_map(|(site, row)| {
+                    (site == CheckedLocalUseSite::Expression(operand)).then_some(row.mode())
+                })
+                .unwrap();
+            assert_eq!(moved, CheckedLocalReadMode::Move);
+        }
+        let repeated = fixture(
+            &format!(
+                "fn join(child: {target}) -> Unit effects {{ control.suspend }} {{ await child; await child }}"
+            ),
+            None,
+        );
+        assert!(matches!(
+            analyze(&repeated),
+            Err(FinalSemanticAnalysisError::LocalUse(
+                CheckedLocalUseError::Unavailable { .. }
+            ))
+        ));
+    }
+}
+
+#[test]
 fn closed_instance_from_an_equivalent_rebuild_cannot_issue_local_use_evidence() {
     let source = "fn pair<T>(value: T) -> (T, T) { (value, value) }\nfn caller() -> (i64, i64) { pair(1i64) }";
     let first = fixture(source, None);
