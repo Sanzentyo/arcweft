@@ -599,6 +599,19 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
             .map(StableCheckedStatementCoordinate::new)
     }
 
+    pub(crate) fn statement_origin(
+        &self,
+        owner: StmtId,
+    ) -> Result<super::CheckedStatementOrigin, SemanticCoordinateIndexError> {
+        self.statement(owner).map(|coordinate| {
+            super::CheckedStatementOrigin::new(
+                owner,
+                Arc::clone(self.catalog.topology()),
+                coordinate,
+            )
+        })
+    }
+
     #[allow(
         dead_code,
         reason = "checked statement transcript publication consumes this affine evidence"

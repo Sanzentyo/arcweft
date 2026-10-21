@@ -409,3 +409,48 @@ fn include_late_join_rejects_missing_foreign_and_stale_checked_rows() {
         ));
     }
 }
+
+#[test]
+fn include_target_retains_its_original_statement_and_accepted_generation() {
+    let source = concat!(
+        "flow @flow.root root {\n",
+        "    include @flow.child\n",
+        "    include @flow.child\n",
+        "}\n",
+        "flow @flow.child child {}\n",
+    );
+    let original = fixture(source, None);
+    let report = analyze(&original).unwrap();
+    let targets = report
+        .statements()
+        .filter_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::Include(target) => Some(target.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(targets.len(), 2);
+    assert_eq!(targets[0].declaration(), targets[1].declaration());
+    assert_ne!(targets[0].statement(), targets[1].statement());
+    let project = original.project.analysis_view().unwrap();
+    let authority = crate::final_analysis::CheckedLocalUseAuthority::Global(std::sync::Arc::clone(
+        report.checked_local_uses(),
+    ));
+    for target in &targets {
+        assert!(target.origin().validate_owner(project, target.statement()));
+        assert!(
+            target
+                .origin()
+                .validate_authority(&authority, target.statement())
+        );
+    }
+    assert!(
+        !targets[0]
+            .origin()
+            .validate_owner(project, targets[1].statement())
+    );
+    let foreign = fixture(source, None);
+    assert!(!targets[0].origin().validate_owner(
+        foreign.project.analysis_view().unwrap(),
+        targets[0].statement(),
+    ));
+}

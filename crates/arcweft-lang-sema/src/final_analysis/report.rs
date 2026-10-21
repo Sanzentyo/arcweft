@@ -2564,14 +2564,7 @@ impl FinalSemanticAnalysis {
         crate::semantic_coordinate::CheckedStatementOriginError,
     > {
         crate::semantic_coordinate::SemanticCoordinateIndex::new(self.accepted_root_catalog(), self)
-            .statement(owner)
-            .map(|coordinate| {
-                crate::semantic_coordinate::CheckedStatementOrigin::new(
-                    owner,
-                    Arc::clone(self.hir_topology()),
-                    coordinate,
-                )
-            })
+            .statement_origin(owner)
             .map_err(
                 |_| crate::semantic_coordinate::CheckedStatementOriginError { statement: owner },
             )

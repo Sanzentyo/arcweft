@@ -250,7 +250,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
                 scopes.push(scope.clone());
             }
             (HirStmtKind::Include(_), CheckedStatementPayload::Include(target)) => {
-                includes.push(*target);
+                includes.push(target.clone());
             }
             (HirStmtKind::UnsafeLifetime { .. }, CheckedStatementPayload::UnsafeAudit(audit)) => {
                 unsafe_audits.push(CheckedUnsafeAuditCorpusFact {

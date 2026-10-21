@@ -527,7 +527,12 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
         Ok(CheckedStatementPayload::Include(
-            CheckedIncludeFlowTarget::new(target.semantic_digest()),
+            CheckedIncludeFlowTarget::new(
+                self.coordinates
+                    .statement_origin(owner)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?,
+                target.semantic_digest(),
+            ),
         ))
     }
 

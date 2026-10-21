@@ -1150,7 +1150,7 @@ pub enum RuntimeProjectFunctionStatementPayload {
     Select,
     SourceLocale,
     Scope(crate::semantic_facts::RuntimeScopeFact),
-    Include,
+    Include(arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget),
     Suspension,
     Yield,
 }
@@ -1173,7 +1173,7 @@ impl RuntimeProjectFunctionStatementPayload {
             Self::Select => CheckedExecutableRuntimeStatementFactFamily::Select,
             Self::SourceLocale => CheckedExecutableRuntimeStatementFactFamily::SourceLocale,
             Self::Scope(_) => CheckedExecutableRuntimeStatementFactFamily::Scope,
-            Self::Include => CheckedExecutableRuntimeStatementFactFamily::Include,
+            Self::Include(_) => CheckedExecutableRuntimeStatementFactFamily::Include,
             Self::Suspension => CheckedExecutableRuntimeStatementFactFamily::Suspension,
             Self::Yield => CheckedExecutableRuntimeStatementFactFamily::Yield,
         }
@@ -2643,6 +2643,23 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             if let RuntimeProjectFunctionExpressionPayload::Closure(closure) = expression.payload()
             {
                 closure.semantics().visit_statement_owners(visitor);
+            }
+        }
+    }
+
+    pub(crate) fn visit_includes<'a>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget),
+    ) {
+        for statement in &self.statements {
+            if let RuntimeProjectFunctionStatementPayload::Include(target) = statement.payload() {
+                visitor(target);
+            }
+        }
+        for expression in &self.expressions {
+            if let RuntimeProjectFunctionExpressionPayload::Closure(closure) = expression.payload()
+            {
+                closure.semantics().visit_includes(visitor);
             }
         }
     }

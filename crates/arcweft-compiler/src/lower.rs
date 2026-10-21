@@ -1587,6 +1587,7 @@ fn project_runtime_semantic_fact_inventories(
             continue;
         }
         match statement.payload() {
+            CheckedStatementPayload::Include(target) => input.push_include(target.clone()),
             CheckedStatementPayload::Scope(identity) => {
                 let module = project
                     .modules()
@@ -1667,7 +1668,6 @@ fn project_runtime_semantic_fact_inventories(
             | CheckedStatementPayload::UnsafeAudit(_)
             | CheckedStatementPayload::Select(_)
             | CheckedStatementPayload::SourceLocale(_)
-            | CheckedStatementPayload::Include(_)
             | CheckedStatementPayload::Suspension(_)
             | CheckedStatementPayload::Yield => {}
         }
@@ -8733,8 +8733,8 @@ fn runtime_executable_semantic_facts<'abi>(
             ),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Include,
-                CheckedStatementPayload::Include(_),
-            ) => RuntimeProjectFunctionStatementPayload::Include,
+                CheckedStatementPayload::Include(target),
+            ) => RuntimeProjectFunctionStatementPayload::Include(target.clone()),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Suspension,
                 CheckedStatementPayload::Suspension(_),

@@ -3153,7 +3153,12 @@ impl RuntimePlanBuilder {
 
     /// Joins an original Flow identity to its actual reserved function. The
     /// common seal still requires the complete body and invocation schema.
-    pub(in crate::plan::construction) fn bind_flow_function_seed(
+    ///
+    /// # Errors
+    ///
+    /// Rejects foreign or non-Flow executable seeds, an unusable builder, or
+    /// exhausted table limits. Final sealing requires distinct Flow functions.
+    pub fn bind_flow_function_seed(
         &mut self,
         id: FlowRuntimeId,
         site: &RuntimeFunctionSiteSeedId,
@@ -3257,10 +3262,14 @@ fn validate_flow_parameters(
     types: &super::RuntimePlanTypeTable,
 ) -> Result<(), RuntimePlanBuildError> {
     let mut flow_ids = BTreeSet::new();
+    let mut flow_functions = BTreeSet::new();
     for flow in flows {
         let label = flow.id.canonical_label();
         if !flow_ids.insert(flow.id.clone()) {
             return Err(RuntimePlanBuildError::DuplicateFlowDefinition { flow: label });
+        }
+        if !flow_functions.insert(flow.function_site()) {
+            return Err(RuntimePlanBuildError::InvalidFlowFunction { flow: label });
         }
         let mut unique = BTreeSet::new();
         for &local in &flow.params {

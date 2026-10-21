@@ -19,6 +19,50 @@ use crate::value::RuntimeValue;
 const BOOL: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([91; 32]);
 const PARAM: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([92; 32]);
 const FUNCTION: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([93; 32]);
+
+#[test]
+fn flow_binding_seal_rejects_two_identities_for_one_original_function() {
+    let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+    let mut builder = crate::plan::RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch([RuntimePlanTypeSeed::new(unit, P::Unit)], [])
+        .unwrap();
+    let function = builder
+        .reserve_function_site_seed(crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+            RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xb1; 32]),
+            None,
+            Box::new([]),
+            unit,
+            RuntimeEffectSet::empty(),
+        ))
+        .unwrap();
+    for name in ["first", "second"] {
+        let flow = crate::plan::FlowRuntimeId::canonical(name).unwrap();
+        builder
+            .bind_flow_function_seed(flow.clone(), &function)
+            .unwrap();
+        builder
+            .push_flow_schema(crate::plan::RuntimeFlowSchema {
+                flow,
+                parameters: vec![],
+            })
+            .unwrap();
+    }
+    builder
+        .define_function_site_seed(
+            &function,
+            crate::plan::RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([]),
+            }),
+        )
+        .unwrap();
+    assert!(matches!(
+        builder.finish(),
+        Err(crate::plan::RuntimePlanBuildError::InvalidFlowFunction { .. })
+    ));
+}
+
 fn limits(plan: &RuntimePlan) -> RuntimeFunctionSourceLimits {
     RuntimeFunctionSourceLimits {
         rows: 100,

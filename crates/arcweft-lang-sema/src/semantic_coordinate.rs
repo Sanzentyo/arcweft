@@ -1631,6 +1631,10 @@ pub struct CheckedStatementOrigin {
 }
 
 impl CheckedStatementOrigin {
+    pub const fn statement(&self) -> StmtId {
+        self.statement
+    }
+
     pub(crate) fn new(
         statement: StmtId,
         topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,

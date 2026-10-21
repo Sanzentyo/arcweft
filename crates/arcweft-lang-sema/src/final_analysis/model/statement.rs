@@ -441,14 +441,29 @@ pub enum CheckedScopeIdentity {
 }
 
 /// Accepted Flow declaration selected for one Include statement.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedIncludeFlowTarget {
+    origin: crate::semantic_coordinate::CheckedStatementOrigin,
     declaration: CallableDeclarationDigest,
 }
 
 impl CheckedIncludeFlowTarget {
-    pub(crate) const fn new(declaration: CallableDeclarationDigest) -> Self {
-        Self { declaration }
+    pub(crate) const fn new(
+        origin: crate::semantic_coordinate::CheckedStatementOrigin,
+        declaration: CallableDeclarationDigest,
+    ) -> Self {
+        Self {
+            origin,
+            declaration,
+        }
+    }
+
+    pub const fn origin(&self) -> &crate::semantic_coordinate::CheckedStatementOrigin {
+        &self.origin
+    }
+
+    pub const fn statement(&self) -> arcweft_lang_hir::identity::StmtId {
+        self.origin.statement()
     }
 
     pub const fn declaration(&self) -> CallableDeclarationDigest {

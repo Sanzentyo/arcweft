@@ -404,7 +404,7 @@ impl RuntimeProjectFunctionStatementPayload {
             | Self::UnsafeAudit
             | Self::Select
             | Self::SourceLocale
-            | Self::Include
+            | Self::Include(_)
             | Self::Suspension
             | Self::Yield => {}
         }

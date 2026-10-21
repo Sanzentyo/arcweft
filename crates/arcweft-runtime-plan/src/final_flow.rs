@@ -11,6 +11,8 @@ pub(crate) use environment_callables::{EnvironmentCallableKey, EnvironmentCallab
 mod control_locals;
 #[path = "final_flow/defer.rs"]
 mod defer;
+#[path = "final_flow/flow_functions.rs"]
+mod flow_functions;
 #[path = "final_flow/format_attempt.rs"]
 mod format_attempt;
 #[path = "final_flow/line_plan.rs"]
@@ -581,6 +583,7 @@ struct FinalLoweringContext<'project, 'data> {
     task_plans: &'data arcweft_core::plan::RuntimeTaskPlanConstructionContext,
     project: HirAnalysisProjectView<'project>,
     facts: &'data RuntimePlanSemanticFacts,
+    flow_functions: &'data flow_functions::ReservedFlowFunctions,
     locals: &'data BTreeMap<LocalId, RuntimeLocalSeedId>,
     project_callable_states: &'data callable_states::ProjectCallableStates,
     environment_callable_states: &'data EnvironmentCallableStates,
@@ -1711,6 +1714,8 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
     if !errors.is_empty() {
         return Err(errors);
     }
+    let (flow_functions, mut flow_schemas) =
+        flow_functions::reserve(project, facts, &locals, &mut builder)?;
     let (
         project_callable_states,
         callable_sources,
@@ -1755,6 +1760,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
         task_plans: &task_plans,
         project,
         facts,
+        flow_functions: &flow_functions,
         locals: &locals,
         project_callable_states: &project_callable_states,
         environment_callable_states: &environment_callable_states,
@@ -1990,7 +1996,6 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
 
     let mut entry_owners = collect_entry_inputs(entry_input, &mut errors);
     let mut flow_seeds = Vec::new();
-    let mut flow_schemas = Vec::new();
     let mut assertion_sites = dialogue_assertion_sites;
     for item in project.items() {
         if matches!(
@@ -2003,107 +2008,29 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
         match item.item().kind() {
             HirItemKind::Flow(flow) => {
                 let Some(flow_fact) = facts.flow(item.id()) else {
-                    errors.push(RuntimePlanLowerError::new(format!(
-                        "checked runtime Flow identity is missing for final-HIR item {:?}",
-                        item.id()
-                    )));
+                    errors.push(RuntimePlanLowerError::new(
+                        "reserved Flow has no checked definition",
+                    ));
                     continue;
                 };
-                let identity = flow_fact.identity().clone();
-                match flow_invocation_schema(
-                    item.module(),
-                    flow,
-                    &identity,
-                    flow_fact.definition(),
-                    facts,
-                ) {
-                    Ok(schema) => flow_schemas.push(schema),
-                    Err(error) => {
-                        errors.push(error);
-                        continue;
-                    }
-                }
-                let params = flow
-                    .parameters()
-                    .iter()
-                    .flat_map(HirParameter::locals)
-                    .map(|local| {
-                        locals.get(local).cloned().ok_or_else(|| {
-                            RuntimePlanLowerError::new(format!(
-                                "runtime Flow {identity} parameter {local:?} has no admitted local"
-                            ))
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>();
-                let params = match params {
-                    Ok(params) => params,
-                    Err(error) => {
-                        errors.push(error);
-                        continue;
-                    }
+                let Some(reserved) = context
+                    .flow_functions
+                    .get(&flow_fact.declaration().semantic_digest())
+                else {
+                    errors.push(RuntimePlanLowerError::new(
+                        "checked Flow has no original function reservation",
+                    ));
+                    continue;
                 };
                 let mut lowerer = FinalFlowLowerer::new(
                     item.module(),
                     &context,
-                    RuntimeAssertionOwner::Flow(identity.clone()),
+                    RuntimeAssertionOwner::Flow(flow_fact.identity().clone()),
                 );
                 match lowerer.lower_body(flow.body()) {
                     Ok(ops) => {
                         assertion_sites.extend(lowerer.into_assertion_sites());
-                        let RuntimeTypeShape::Function {
-                            parameters, result, ..
-                        } = flow_fact.function_type().shape()
-                        else {
-                            errors.push(RuntimePlanLowerError::new(
-                                "accepted Flow has no normalized function signature",
-                            ));
-                            continue;
-                        };
-                        if parameters.len() != params.len() {
-                            errors.push(RuntimePlanLowerError::new(
-                                "Flow invocation locals differ from its accepted input signature",
-                            ));
-                            continue;
-                        }
-                        let inputs = params
-                            .into_iter()
-                            .zip(parameters)
-                            .zip(flow_fact.definition().parameters())
-                            .enumerate()
-                            .map(|(position, ((local, ty), formal))| {
-                                Ok(RuntimeFunctionInputBindingSeed {
-                                    transfer:
-                                        arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
-                                    origin: formal.runtime_input_origin(),
-                                    source: RuntimeFunctionInputSource::Parameter {
-                                        position: u32::try_from(position).map_err(|_| {
-                                            RuntimePlanLowerError::new(
-                                                "Flow parameter index overflow",
-                                            )
-                                        })?,
-                                        passing: formal.passing(),
-                                    },
-                                    input_local: local.clone(),
-                                    pattern: RuntimePatternSeed::new(
-                                        ty.identity(),
-                                        RuntimePatternSeedKind::Bind {
-                                            mutable: false,
-                                            local: local.clone(),
-                                        },
-                                    ),
-                                    ownership: RuntimeValueOwnershipRequirement::Owned,
-                                    unrestricted_bindings: Box::new([]),
-                                })
-                            })
-                            .collect::<Result<Box<[_]>, RuntimePlanLowerError>>();
-                        let inputs = match inputs {
-                            Ok(inputs) => inputs,
-                            Err(error) => {
-                                errors.push(error);
-                                continue;
-                            }
-                        };
-                        let body_effects = match RuntimeEffectSet::try_from_effects(
+                        let effects = match RuntimeEffectSet::try_from_effects(
                             flow_fact.definition().effects().iter().cloned(),
                         ) {
                             Ok(effects) => effects,
@@ -2112,25 +2039,15 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                                 continue;
                             }
                         };
-                        flow_seeds.push(RuntimeFlowSeed::new(
-                            identity,
-                            RuntimeFunctionSiteDeclarationSeed {
-                                definition: flow_fact
-                                    .definition()
-                                    .definition_identity()
-                                    .runtime_identity(),
-                                role: arcweft_core::plan::RuntimeFunctionSemanticRole::Flow,
-                                function_type: Some(flow_fact.function_type().identity()),
-                                inputs,
-                                result: result.identity(),
-                                body_kind: RuntimeFunctionSiteBodyKind::Executable,
-                                effects: flow_fact.effects().clone(),
-                            },
-                            arcweft_core::plan::RuntimeExecutableBodySeed {
-                                effects: body_effects,
-                                ops: (ops).into_boxed_slice(),
-                            },
-                        ));
+                        if let Err(error) = builder.define_function_site_seed(
+                            &reserved.function,
+                            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                                effects,
+                                ops: ops.into_boxed_slice(),
+                            }),
+                        ) {
+                            errors.push(RuntimePlanLowerError::new(error.to_string()));
+                        }
                     }
                     Err(mut item_errors) => errors.append(&mut item_errors),
                 }
@@ -5896,6 +5813,7 @@ struct FinalFlowLowerer<'a> {
     implicit_body_root: Option<ExprId>,
     module: &'a HirModule,
     facts: &'a RuntimePlanSemanticFacts,
+    flow_functions: &'a flow_functions::ReservedFlowFunctions,
     semantic_facts: RuntimeScopedExecutableSemanticFactView<'a>,
     package: &'a CallablePackageId,
     locals: &'a BTreeMap<LocalId, RuntimeLocalSeedId>,
@@ -6243,6 +6161,7 @@ impl<'a> FinalFlowLowerer<'a> {
             mutation_return: None,
             implicit_body_root: None,
             facts: context.facts,
+            flow_functions: context.flow_functions,
             semantic_facts: RuntimeScopedExecutableSemanticFactView::global(context.facts),
             package: context.project.package(),
             locals: context.locals,
@@ -6728,6 +6647,23 @@ impl<'a> FinalFlowLowerer<'a> {
             HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(format!(
                 "defer {id:?} requires scope-owned runtime registration"
             ))),
+            HirStmtKind::Include(_) => {
+                let target = self.semantic_facts.facts().include(id).ok_or_else(|| {
+                    RuntimePlanLowerError::new("Include statement has no original checked target")
+                })?;
+                let function = self
+                    .flow_functions
+                    .get(&target.declaration())
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new("Include target has no original Flow function")
+                    })?;
+                let invoke = function.invoke.as_ref().ok_or_else(|| {
+                    RuntimePlanLowerError::new(
+                        "Include target has no admitted zero-input invocation",
+                    )
+                })?;
+                Ok(vec![invoke.clone()])
+            }
             HirStmtKind::Out { value, .. } => {
                 let application = self.result_selection_application.ok_or_else(|| {
                     RuntimePlanLowerError::new(format!(

@@ -17,6 +17,7 @@ use std::{
     sync::Arc,
 };
 
+mod flow_include;
 mod nominal_definitions;
 pub use nominal_definitions::RuntimeNominalDefinition;
 
@@ -5518,6 +5519,7 @@ pub struct RuntimePlanSemanticFactInput {
     expression_specializations: Vec<(ExprId, RuntimeCallableValueSpecialization)>,
     local_declarations: Vec<(LocalId, RuntimeLocalDeclarationFact)>,
     flows: Vec<(ItemId, RuntimeFlowFact)>,
+    includes: Vec<arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget>,
     expression_scopes: Vec<(ExprId, crate::semantic_facts::RuntimeScopeFact)>,
     statement_scopes: Vec<(StmtId, crate::semantic_facts::RuntimeScopeFact)>,
     thread_producers: Vec<(
@@ -5589,6 +5591,7 @@ impl RuntimePlanSemanticFactInput {
             expression_specializations: Vec::new(),
             local_declarations: Vec::new(),
             flows: Vec::new(),
+            includes: Vec::new(),
             expression_scopes: Vec::new(),
             statement_scopes: Vec::new(),
             thread_producers: Vec::new(),
@@ -5694,6 +5697,13 @@ impl RuntimePlanSemanticFactInput {
         identity: crate::semantic_facts::RuntimeScopeFact,
     ) {
         self.statement_scopes.push((owner, identity));
+    }
+
+    pub fn push_include(
+        &mut self,
+        target: arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget,
+    ) {
+        self.includes.push(target);
     }
 
     /// Stages the accepted normalized type of one selected runtime-domain
@@ -6049,6 +6059,7 @@ pub struct RuntimePlanSemanticFacts {
     local_declaration_order: Box<[LocalId]>,
     local_declarations: BTreeMap<LocalId, RuntimeLocalDeclarationFact>,
     flows: BTreeMap<ItemId, RuntimeFlowFact>,
+    includes: BTreeMap<StmtId, arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget>,
     expression_scopes: BTreeMap<ExprId, crate::semantic_facts::RuntimeScopeFact>,
     statement_scopes: BTreeMap<StmtId, crate::semantic_facts::RuntimeScopeFact>,
     thread_producers: BTreeMap<ExprId, arcweft_lang_sema::CheckedExpressionProducerDefinition>,
@@ -6654,6 +6665,21 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => facts.expression_scopes.get(&owner),
             Self::ProjectInstance(facts) => facts.expression_scope(owner),
+        }
+    }
+
+    pub fn include(
+        self,
+        owner: StmtId,
+    ) -> Option<&'facts arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget> {
+        match self {
+            Self::Global(facts) => facts.includes.get(&owner),
+            Self::ProjectInstance(facts) => {
+                facts.statement(owner).and_then(|row| match row.payload() {
+                    RuntimeProjectFunctionStatementPayload::Include(target) => Some(target),
+                    _ => None,
+                })
+            }
         }
     }
 
@@ -7706,6 +7732,13 @@ impl RuntimePlanSemanticFacts {
             }
         }
 
+        let includes = flow_include::admit_global(
+            project,
+            &modules,
+            runtime_owners,
+            &instance_statement_owners,
+            input.includes,
+        )?;
         let expression_scopes = collect_unique(
             input.expression_scopes,
             RuntimeSemanticFactFamily::ExpressionScope,
@@ -9324,6 +9357,7 @@ impl RuntimePlanSemanticFacts {
             local_declaration_order: expected_local_declarations.into_boxed_slice(),
             local_declarations,
             flows,
+            includes,
             expression_scopes,
             statement_scopes,
             thread_producers,
@@ -10492,6 +10526,25 @@ impl RuntimePlanSemanticFacts {
         }
     }
 
+    pub(crate) fn visit_includes<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(&'facts arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget),
+    ) {
+        for target in self.includes.values() {
+            visitor(target);
+        }
+        for (_, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+            self.trait_methods.values(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
+        ) {
+            semantics.visit_includes(visitor);
+        }
+    }
+
     /// Visits implicit callables under the exact executable catalog that
     /// sealed each abstraction. The same HIR expression may occur in several
     /// closed generic instances and therefore is not a site identity alone.
@@ -10639,6 +10692,12 @@ pub enum RuntimeSemanticFactsError {
     InvalidLocalOrigin { local: LocalId },
     #[error("Flow {item:?} definition does not belong to its exact accepted owner")]
     InvalidFlowDefinition { item: ItemId },
+    #[error(
+        "Include statement {statement:?} does not retain its original checked target authority"
+    )]
+    InvalidIncludeTarget { statement: StmtId },
+    #[error("Include statement {statement:?} has no checked target fact")]
+    MissingIncludeTarget { statement: StmtId },
     #[error("producer definition does not belong to its exact expression and local-use authority")]
     InvalidProducerDefinition { expression: ExprId },
     #[error("checked local use at {site:?} does not belong to the accepted HIR generation")]
@@ -10900,6 +10959,7 @@ pub enum RuntimeSemanticFactFamily {
     LocalUse,
     SyntheticUse,
     FlowIdentity,
+    Include,
     ExpressionScope,
     StatementScope,
     ThreadProducer,
@@ -13780,13 +13840,20 @@ fn validate_project_function_semantic_catalog(
                     (_, None) => {}
                 }
             }
+            RuntimeProjectFunctionStatementPayload::Include(target) => {
+                flow_include::validate_instance(
+                    modules,
+                    semantics.local_uses(),
+                    row.owner(),
+                    target,
+                )?;
+            }
             RuntimeProjectFunctionStatementPayload::Structural
             | RuntimeProjectFunctionStatementPayload::Assertion(_)
             | RuntimeProjectFunctionStatementPayload::ControlTransfer
             | RuntimeProjectFunctionStatementPayload::UnsafeAudit
             | RuntimeProjectFunctionStatementPayload::Select
             | RuntimeProjectFunctionStatementPayload::SourceLocale
-            | RuntimeProjectFunctionStatementPayload::Include
             | RuntimeProjectFunctionStatementPayload::Suspension
             | RuntimeProjectFunctionStatementPayload::Yield => {}
         }
