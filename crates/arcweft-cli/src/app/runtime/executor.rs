@@ -39,7 +39,7 @@ impl RuntimeExecutorTemplate {
     pub(in crate::app) fn instantiate(&self) -> Result<RuntimeExecutorCore, String> {
         let invocation = self
             .invocation
-            .try_repeat_unrestricted()
+            .try_repeat_unrestricted(arcweft_core::entry::RuntimeSchemaLimits::engine_default())
             .map_err(|error| error.to_string())?;
         let executor = match self.tier {
             ArcweftExecutionTier::AwbcProduct => {

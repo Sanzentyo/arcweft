@@ -308,9 +308,9 @@ pub struct RuntimeFlowInvocation {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeFlowInvocationError {
     #[error(
-        "runtime Flow invocation parameter {parameter:?} cannot be repeated because its value is not unrestricted"
+        "runtime Flow invocation parameter {parameter:?} cannot be copied because its value is not unrestricted"
     )]
-    NonRepeatableParameter { parameter: FlowParameterCoordinate },
+    NonCopyableParameter { parameter: FlowParameterCoordinate },
     #[error("runtime Flow `{flow}` does not exist")]
     UnknownFlow { flow: String },
     #[error("runtime Flow `{flow}` has no invocation schema")]
@@ -379,32 +379,54 @@ impl RuntimePlan {
         >,
         limits: crate::entry::RuntimeSchemaLimits,
     ) -> Result<RuntimeFlowInvocation, RuntimeFlowInvocationError> {
-        let expected = self.flow_invocation_contract(&flow)?.1.parameters.len();
         let plan = Arc::new(self);
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan)),
-            limits,
-        );
-        let failure = |source| RuntimeFlowInvocationError::InputAdmission(Box::new(source));
-        admission
-            .validate_metadata_collection(expected)
-            .map_err(failure)?;
-        let bindings = plan.collect_flow_invocation_bindings(&flow, bindings)?;
-        for binding in &bindings {
-            admission.validate(binding.value).map_err(failure)?;
-        }
-        plan.validate_flow_invocation_with_work(&flow, &bindings, &admission.work())?;
+        let bindings = plan.copy_flow_invocation_bindings(&flow, bindings, limits)?;
         Ok(RuntimeFlowInvocation {
             plan,
             flow,
-            bindings: bindings
-                .into_iter()
-                .map(|binding| RuntimeFlowParameterBinding {
-                    parameter: binding.parameter,
-                    value: binding.value.clone(),
-                })
-                .collect(),
+            bindings,
         })
+    }
+
+    fn copy_flow_invocation_bindings<'value>(
+        self: &Arc<Self>,
+        flow: &FlowRuntimeId,
+        bindings: impl IntoIterator<
+            Item = RuntimeFlowParameterBinding<&'value crate::value::RuntimeValue>,
+        >,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<Box<[RuntimeFlowParameterBinding]>, RuntimeFlowInvocationError> {
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Plan(Arc::clone(self)),
+            limits,
+        );
+        let failure = |source| RuntimeFlowInvocationError::InputAdmission(Box::new(source));
+        admission.validate_metadata(flow).map_err(failure)?;
+        let expected = self.flow_invocation_contract(flow)?.1.parameters.len();
+        admission
+            .validate_metadata_collection(expected)
+            .map_err(failure)?;
+        let bindings = self.collect_flow_invocation_bindings(flow, bindings)?;
+        for binding in &bindings {
+            admission
+                .validate(binding.value)
+                .map_err(|source| match source {
+                    crate::value::AwbcRuntimeValueSnapshotError::AffineValue => {
+                        RuntimeFlowInvocationError::NonCopyableParameter {
+                            parameter: binding.parameter,
+                        }
+                    }
+                    source => failure(source),
+                })?;
+        }
+        self.validate_flow_invocation_with_work(flow, &bindings, &admission.work())?;
+        Ok(bindings
+            .into_iter()
+            .map(|binding| RuntimeFlowParameterBinding {
+                parameter: binding.parameter,
+                value: binding.value.clone(),
+            })
+            .collect())
     }
 
     fn collect_flow_invocation_bindings<V>(
@@ -518,25 +540,33 @@ impl RuntimePlan {
 }
 
 impl RuntimeFlowInvocation {
-    /// Repeats the same admitted input inventory only when every value is
-    /// unrestricted. The entire inventory is checked before any value is
-    /// copied, and the new invocation retains this exact immutable plan.
+    /// Repeats this inventory under the selected copy limits. All original
+    /// values, ownership and type/effect relations pass the same borrowed
+    /// admission as initial copying before any value is cloned. The repeated
+    /// invocation retains this exact immutable plan.
     ///
     /// # Errors
     ///
-    /// Rejects affine or linear inputs without copying a partial inventory.
-    pub fn try_repeat_unrestricted(&self) -> Result<Self, RuntimeFlowInvocationError> {
-        for binding in &self.bindings {
-            if !binding.value.ownership().permits_copy() {
-                return Err(RuntimeFlowInvocationError::NonRepeatableParameter {
+    /// Rejects resource, ownership or ABI failures without copying a partial
+    /// inventory or changing the original invocation.
+    pub fn try_repeat_unrestricted(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeFlowInvocationError> {
+        let bindings = self.plan.copy_flow_invocation_bindings(
+            &self.flow,
+            self.bindings
+                .iter()
+                .map(|binding| RuntimeFlowParameterBinding {
                     parameter: binding.parameter,
-                });
-            }
-        }
+                    value: &binding.value,
+                }),
+            limits,
+        )?;
         Ok(Self {
             plan: Arc::clone(&self.plan),
             flow: self.flow.clone(),
-            bindings: self.bindings.clone(),
+            bindings,
         })
     }
 

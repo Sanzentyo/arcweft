@@ -621,8 +621,8 @@ fn nominal_field_inspection_native_reads_the_live_child_after_an_affine_sibling_
         )
         .unwrap();
     assert!(matches!(
-        invocation.try_repeat_unrestricted(),
-        Err(crate::plan::RuntimeFlowInvocationError::NonRepeatableParameter { parameter })
+        invocation.try_repeat_unrestricted(crate::entry::RuntimeSchemaLimits::engine_default()),
+        Err(crate::plan::RuntimeFlowInvocationError::NonCopyableParameter { parameter })
             if parameter == FlowParameterCoordinate::from_position(0)
     ));
     // A rejected repeat leaves the original composite Need custody usable.

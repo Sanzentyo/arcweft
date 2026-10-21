@@ -27,7 +27,7 @@ use crate::value::{
     RuntimeLocalReadMode, RuntimeValue,
 };
 
-fn two_string_inputs_plan() -> (RuntimePlan, FlowRuntimeId) {
+fn string_inputs_plan(count: usize) -> (RuntimePlan, FlowRuntimeId) {
     let mut builder = RuntimePlanBuilder::new();
     let function = RuntimeSemanticTypeId::from_bytes([0xb1; 32]);
     let admitted = builder
@@ -42,15 +42,15 @@ fn two_string_inputs_plan() -> (RuntimePlan, FlowRuntimeId) {
                             EffectPredicate::unconstrained(),
                             EffectFormula::empty(),
                         ),
-                        parameters: Box::new([string_type(), string_type()]),
+                        parameters: vec![string_type(); count].into_boxed_slice(),
                         result: string_type(),
                     },
                 ),
             ],
-            ["first", "second"].map(|name| {
+            (0..count).map(|index| {
                 RuntimeLocalDeclarationSeed::new(
                     manual_local_source(
-                        &format!("arcweft-core.fixture.borrowed-invocation.{name}"),
+                        &format!("arcweft-core.fixture.borrowed-invocation.input{index}"),
                         false,
                     ),
                     string_type(),
@@ -59,37 +59,31 @@ fn two_string_inputs_plan() -> (RuntimePlan, FlowRuntimeId) {
         )
         .unwrap();
     let flow = flow_id("flow.borrowed_inputs");
-    let parameters = [0xc1, 0xc2]
-        .map(|marker| RuntimeFunctionParameterIdentity::from_accepted_identity([marker; 32]));
-    builder
-        .push_flow_schema(RuntimeFlowSchema {
-            flow: flow.clone(),
-            parameters: parameters
-                .iter()
-                .enumerate()
-                .map(|(index, identity)| RuntimeFlowExecutableParameter {
-                    identity: *identity,
-                    coordinate: FlowParameterCoordinate::from_position(
-                        u32::try_from(index).unwrap(),
-                    ),
-                    name: format!("input{index}"),
-                    mode: RuntimeFlowParameterMode::Owned,
-                    passing: RuntimeFunctionParameterPassing::Value,
-                    semantic_identity: string_type(),
-                })
-                .collect(),
-        })
-        .unwrap();
+    let schema = RuntimeFlowSchema {
+        flow: flow.clone(),
+        parameters: (0..count)
+            .map(|index| RuntimeFlowExecutableParameter {
+                identity: RuntimeFunctionParameterIdentity::from_accepted_identity(
+                    [u8::try_from(0xc1 + index).unwrap(); 32],
+                ),
+                coordinate: FlowParameterCoordinate::from_position(u32::try_from(index).unwrap()),
+                name: format!("input{index}"),
+                mode: RuntimeFlowParameterMode::Owned,
+                passing: RuntimeFunctionParameterPassing::Value,
+                semantic_identity: string_type(),
+            })
+            .collect(),
+    };
     let inputs = admitted
         .local_ids()
         .iter()
-        .enumerate()
-        .map(|(index, local)| RuntimeFunctionInputBindingSeed {
+        .zip(&schema.parameters)
+        .map(|(local, formal)| RuntimeFunctionInputBindingSeed {
             transfer: RuntimeFunctionInputTransfer::Formal,
-            origin: RuntimeFunctionInputOrigin::Parameter(parameters[index]),
+            origin: RuntimeFunctionInputOrigin::Parameter(formal.identity),
             source: RuntimeFunctionInputSource::Parameter {
-                position: u32::try_from(index).unwrap(),
-                passing: RuntimeFunctionParameterPassing::Value,
+                position: formal.coordinate.position(),
+                passing: formal.passing,
             },
             input_local: local.clone(),
             pattern: RuntimePatternSeed::new(
@@ -103,6 +97,7 @@ fn two_string_inputs_plan() -> (RuntimePlan, FlowRuntimeId) {
             unrestricted_bindings: Box::new([]),
         })
         .collect();
+    builder.push_flow_schema(schema).unwrap();
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
@@ -141,7 +136,7 @@ fn borrowed_bindings(
 
 #[test]
 fn borrowed_flow_invocation_admits_the_complete_inventory_and_executes_its_inputs() {
-    let (plan, flow) = two_string_inputs_plan();
+    let (plan, flow) = string_inputs_plan(2);
     let values = [
         RuntimeValue::String("first input".into()),
         RuntimeValue::String("second input".into()),
@@ -165,7 +160,7 @@ fn borrowed_flow_invocation_admits_the_complete_inventory_and_executes_its_input
 
 #[test]
 fn borrowed_flow_invocation_shares_resources_across_roots_before_type_inference() {
-    let (plan, flow) = two_string_inputs_plan();
+    let (plan, flow) = string_inputs_plan(2);
     let values = [
         RuntimeValue::String("first".into()),
         RuntimeValue::Bool(false),
@@ -185,7 +180,7 @@ fn borrowed_flow_invocation_shares_resources_across_roots_before_type_inference(
 
 #[test]
 fn borrowed_flow_invocation_refuses_affine_inputs_before_copying_or_type_inference() {
-    let (plan, flow) = two_string_inputs_plan();
+    let (plan, flow) = string_inputs_plan(2);
     let (_registry, need) = crate::tests::pending_string_need(string_type());
     let values = [
         RuntimeValue::String("first".into()),
@@ -199,14 +194,14 @@ fn borrowed_flow_invocation_refuses_affine_inputs_before_copying_or_type_inferen
         )
         .unwrap_err();
     assert!(
-        matches!(error, RuntimeFlowInvocationError::InputAdmission(source)
-        if *source == AwbcRuntimeValueSnapshotError::AffineValue)
+        matches!(error, RuntimeFlowInvocationError::NonCopyableParameter { parameter }
+        if parameter == FlowParameterCoordinate::from_position(1))
     );
 }
 
 #[test]
 fn borrowed_flow_invocation_retains_the_original_joint_type_failure() {
-    let (plan, flow) = two_string_inputs_plan();
+    let (plan, flow) = string_inputs_plan(2);
     let values = [
         RuntimeValue::String("first".into()),
         RuntimeValue::Bool(false),
@@ -257,7 +252,7 @@ fn borrowed_flow_invocation_bounds_collection_before_inspecting_values() {
 
 #[test]
 fn borrowed_flow_invocation_bounds_group_storage_before_collecting_inputs() {
-    let (plan, flow) = two_string_inputs_plan();
+    let (plan, flow) = string_inputs_plan(2);
     let limits = RuntimeSchemaLimits {
         max_sequence_items: 1,
         ..RuntimeSchemaLimits::engine_default()
@@ -272,4 +267,116 @@ fn borrowed_flow_invocation_bounds_group_storage_before_collecting_inputs() {
                 budget: "sequence_items",
             })
     ));
+}
+
+fn owned_invocation(values: [RuntimeValue; 2]) -> crate::plan::RuntimeFlowInvocation {
+    let (plan, flow) = string_inputs_plan(2);
+    plan.seal_flow_invocation(
+        flow,
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| RuntimeFlowParameterBinding {
+                parameter: FlowParameterCoordinate::from_position(u32::try_from(index).unwrap()),
+                value,
+            }),
+    )
+    .unwrap()
+}
+
+#[test]
+fn repeated_flow_invocation_retains_the_exact_program_and_original_inputs() {
+    let invocation = owned_invocation([
+        RuntimeValue::String("first input".into()),
+        RuntimeValue::String("second input".into()),
+    ]);
+    let repeated = invocation
+        .try_repeat_unrestricted(RuntimeSchemaLimits::engine_default())
+        .unwrap();
+    assert!(std::sync::Arc::ptr_eq(invocation.plan(), repeated.plan()));
+    for invocation in [invocation, repeated] {
+        let mut engine = Engine::for_flow_invocation(invocation).unwrap();
+        assert_eq!(
+            drain(&mut engine).flow_events,
+            [FlowEvent::Return {
+                value: "first input".into()
+            }]
+        );
+    }
+}
+
+#[test]
+fn repeated_flow_invocation_refuses_string_growth_under_the_selected_limits() {
+    let invocation = owned_invocation([
+        RuntimeValue::String("x".repeat(64)),
+        RuntimeValue::String("second".into()),
+    ]);
+    let limits = RuntimeSchemaLimits {
+        max_string_bytes: 32,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    assert!(matches!(invocation.try_repeat_unrestricted(limits),
+        Err(RuntimeFlowInvocationError::InputAdmission(source))
+            if *source == AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded { budget: "string_bytes" })
+    ));
+}
+
+#[test]
+fn repeated_flow_invocation_shares_node_limits_and_preserves_custody_after_refusal() {
+    let invocation = owned_invocation([
+        RuntimeValue::String("first".into()),
+        RuntimeValue::String("second".into()),
+    ]);
+    let limits = RuntimeSchemaLimits {
+        max_nodes: 1,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    assert!(matches!(invocation.try_repeat_unrestricted(limits),
+        Err(RuntimeFlowInvocationError::InputAdmission(source))
+            if *source == AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded { budget: "nodes" })
+    ));
+    let mut engine = Engine::for_flow_invocation(invocation).unwrap();
+    assert_eq!(
+        drain(&mut engine).flow_events,
+        [FlowEvent::Return {
+            value: "first".into()
+        }]
+    );
+}
+
+#[test]
+fn repeated_flow_invocation_bounds_its_retained_identity_before_copying() {
+    let invocation = owned_invocation([
+        RuntimeValue::String("first".into()),
+        RuntimeValue::String("second".into()),
+    ]);
+    let limits = RuntimeSchemaLimits {
+        max_string_bytes: 16,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    assert!(matches!(invocation.try_repeat_unrestricted(limits),
+        Err(RuntimeFlowInvocationError::InputAdmission(source))
+            if *source == AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded { budget: "string_bytes" })
+    ));
+}
+
+#[test]
+fn borrowed_flow_invocation_bounds_group_storage_after_admitting_its_identity() {
+    let (plan, flow) = string_inputs_plan(3);
+    let limits = RuntimeSchemaLimits {
+        max_sequence_items: 2,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    crate::value::RuntimeRetainedValueAdmission::standalone(limits)
+        .validate_metadata(&flow)
+        .unwrap();
+    let bindings = std::iter::from_fn(|| -> Option<RuntimeFlowParameterBinding<&RuntimeValue>> {
+        panic!("the admitted identity must not hide an oversized input group")
+    });
+    assert!(
+        matches!(plan.seal_flow_invocation_copying(flow, bindings, limits),
+            Err(RuntimeFlowInvocationError::InputAdmission(source))
+                if *source == AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded { budget: "sequence_items" })
+        )
+    );
 }
