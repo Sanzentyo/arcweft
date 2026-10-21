@@ -22,6 +22,7 @@ use crate::step::{RuntimeHostCallId, RuntimeHostCallRequest};
 use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
 use crate::time::LogicalDuration;
 use crate::value::{RuntimeEnv, RuntimeLocalBinding};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 impl Engine {
@@ -36,42 +37,48 @@ impl Engine {
         {
             return;
         }
+        let plan = Arc::clone(&self.plan);
         let (op, next_op_index) = if let Some(op) = self.fiber.frame.pending_ops.pop_front() {
-            (op, None)
+            (Cow::Owned(op), None)
         } else {
             let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
                 return;
             };
-            let Some(op) = self
-                .flow_at_cursor(cursor)
+            let Some(op) = plan
+                .flows
+                .get(cursor.flow_index)
                 .and_then(|flow| flow.body().ops().get(cursor.op_index))
-                .cloned()
             else {
                 self.finish(output, pure_backend);
                 return;
             };
-            (op, Some(cursor.op_index + 1))
+            (Cow::Borrowed(op), Some(cursor.op_index + 1))
         };
         self.execute_flow_operation(op, next_op_index, output, pure_backend, drop_policy);
     }
 
     // One dispatcher owns the complete FlowOp algebra for every native frame.
+    // Borrowed rows come from the admitted original plan. Pending runtime values
+    // enter owned, so Bind and iterator continuations move their inputs.
     #[allow(clippy::too_many_lines)]
     pub(super) fn execute_flow_operation(
         &mut self,
-        op: FlowOp,
+        op: Cow<'_, FlowOp>,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
     ) {
-        match op {
-            FlowOp::Bind(bindings) => {
+        match op.as_ref() {
+            FlowOp::Bind(_) => {
+                let FlowOp::Bind(bindings) = op.into_owned() else {
+                    unreachable!("the selected operation binds its owned values");
+                };
                 self.fiber.frame.env.bind_all(bindings);
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::Let { pattern, expr } => {
-                self.evaluate_let_with_backend(&pattern, &expr, output, pure_backend);
+                self.evaluate_let_with_backend(pattern, expr, output, pure_backend);
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::StandardMap(control) => {
@@ -89,12 +96,16 @@ impl Engine {
                 self.advance_if_needed(next_op_index);
                 self.push_ops(control.body().to_vec());
             }
-            FlowOp::FormatOperandAttempt {
-                attempt,
-                parameter,
-                body,
-                value,
-            } => {
+            FlowOp::FormatOperandAttempt { .. } => {
+                let FlowOp::FormatOperandAttempt {
+                    attempt,
+                    parameter,
+                    body,
+                    value,
+                } = op.into_owned()
+                else {
+                    unreachable!("selected formatter operand");
+                };
                 if let Err(error) = self.start_format_operand_attempt(
                     attempt,
                     parameter,
@@ -111,23 +122,22 @@ impl Engine {
                 value,
             } => {
                 if let Err(error) =
-                    self.complete_format_operand_attempt(attempt, parameter, &value, pure_backend)
+                    self.complete_format_operand_attempt(*attempt, *parameter, value, pure_backend)
                 {
                     self.fail_format_aware_eval(error, output, pure_backend);
                 }
             }
-            FlowOp::LetElse {
-                pattern,
-                expr,
-                else_ops,
-            } => {
+            FlowOp::LetElse { pattern, expr, .. } => {
                 match self
-                    .evaluate_expr_with_backend(&expr, pure_backend)
-                    .and_then(|value| self.try_bind_pattern_owned(&pattern, value))
+                    .evaluate_expr_with_backend(expr, pure_backend)
+                    .and_then(|value| self.try_bind_pattern_owned(pattern, value))
                 {
                     Ok(None) => self.advance_if_needed(next_op_index),
                     Ok(Some(value)) => {
                         self.advance_if_needed(next_op_index);
+                        let FlowOp::LetElse { else_ops, .. } = op.into_owned() else {
+                            unreachable!("selected let-else body");
+                        };
                         self.push_ops(else_ops);
                         output.diagnostics.push(RuntimeDiagnostic::new(format!(
                             "let-else pattern did not match {}",
@@ -138,8 +148,8 @@ impl Engine {
                 }
             }
             FlowOp::Assign { place, value } => {
-                match self.evaluate_expr_with_backend(&value, pure_backend) {
-                    Ok(value) => match self.fiber.frame.env.assign_place(&place, value) {
+                match self.evaluate_expr_with_backend(value, pure_backend) {
+                    Ok(value) => match self.fiber.frame.env.assign_place(place, value) {
                         Ok(_) => self.advance_if_needed(next_op_index),
                         Err(error) => self.fail_eval(error.into_parts().0, output),
                     },
@@ -168,7 +178,7 @@ impl Engine {
                     );
                     return;
                 }
-                match self.evaluate_expr_with_backend(&value, pure_backend) {
+                match self.evaluate_expr_with_backend(value, pure_backend) {
                     Ok(selected) => {
                         self.fiber.frame.selected_dialogue_result = Some(selected);
                         *drop_policy = Some(crate::effect::RuntimeDropPolicy::Default);
@@ -180,11 +190,15 @@ impl Engine {
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::Dialogue {
-                target,
-                content,
-                result,
-            } => {
+            FlowOp::Dialogue { .. } => {
+                let FlowOp::Dialogue {
+                    target,
+                    content,
+                    result,
+                } = op.into_owned()
+                else {
+                    unreachable!("selected dialogue activation");
+                };
                 let target_value = match self.evaluate_expr_with_backend(&target, pure_backend) {
                     Ok(value) => value,
                     Err(error) => {
@@ -350,7 +364,10 @@ impl Engine {
                         super::DialogueRuntimePhase::Activating,
                     ));
             }
-            FlowOp::Choice { id, options } => {
+            FlowOp::Choice { .. } => {
+                let FlowOp::Choice { id, options } = op.into_owned() else {
+                    unreachable!("selected choice");
+                };
                 output.flow_events.push(FlowEvent::ChoicePresented {
                     id: id.clone(),
                     options: options.clone(),
@@ -361,11 +378,15 @@ impl Engine {
                     resume: self.resume_cursor(next_op_index),
                 });
             }
-            FlowOp::Await {
-                binding,
-                target,
-                observers,
-            } => {
+            FlowOp::Await { .. } => {
+                let FlowOp::Await {
+                    binding,
+                    target,
+                    observers,
+                } = op.into_owned()
+                else {
+                    unreachable!("selected await");
+                };
                 self.start_need_await(
                     binding,
                     target,
@@ -375,14 +396,21 @@ impl Engine {
                     pure_backend,
                 );
             }
-            FlowOp::StartNeedProducer { binding, target } => {
+            FlowOp::StartNeedProducer { .. } => {
+                let FlowOp::StartNeedProducer { binding, target } = op.into_owned() else {
+                    unreachable!("selected producer start");
+                };
                 self.start_need_producer(binding, target, next_op_index, output, pure_backend);
             }
-            FlowOp::AwaitMany {
-                binding,
-                target,
-                pending,
-            } => {
+            FlowOp::AwaitMany { .. } => {
+                let FlowOp::AwaitMany {
+                    binding,
+                    target,
+                    pending,
+                } = op.into_owned()
+                else {
+                    unreachable!("selected aggregate await");
+                };
                 self.emit_line_effects(pending, output, pure_backend);
                 self.start_await_many_state(
                     binding,
@@ -445,14 +473,14 @@ impl Engine {
                 };
                 output.requests.host_calls.push(request);
                 self.fiber.frame.status = FlowFiberStatus::HostCall(HostCallState {
-                    binding,
+                    binding: binding.clone(),
                     id,
                     result_type: super::HostCallResultType::Plan(target.result),
                     resume: self.resume_cursor(next_op_index),
                 });
             }
             FlowOp::ProjectCall { site } => {
-                self.start_project_call(site, next_op_index, output, pure_backend);
+                self.start_project_call(*site, next_op_index, output, pure_backend);
             }
             FlowOp::ApplyGroup {
                 callee,
@@ -461,12 +489,12 @@ impl Engine {
             } => {
                 let resume = self.resume_cursor(next_op_index);
                 let application = (|| {
-                    let callee = self.evaluate_expr_with_backend(&callee, pure_backend)?;
-                    let args = self.evaluate_function_call_args(&args, pure_backend)?;
+                    let callee = self.evaluate_expr_with_backend(callee, pure_backend)?;
+                    let args = self.evaluate_function_call_args(args, pure_backend)?;
                     self.start_function_value_call(
                         callee,
                         args,
-                        result,
+                        result.clone(),
                         resume,
                         output,
                         pure_backend,
@@ -476,44 +504,69 @@ impl Engine {
                     self.fail_format_aware_eval(error, output, pure_backend);
                 }
             }
-            FlowOp::If {
-                condition,
-                then_ops,
-                else_ops,
-            } => match self.evaluate_bool_with_backend(&condition, pure_backend) {
-                Ok(true) => {
-                    self.advance_if_needed(next_op_index);
-                    self.push_scoped_ops(then_ops);
+            FlowOp::If { condition, .. } => {
+                match self.evaluate_bool_with_backend(condition, pure_backend) {
+                    Ok(selected) => {
+                        self.advance_if_needed(next_op_index);
+                        let body = match op {
+                            Cow::Owned(FlowOp::If {
+                                then_ops, else_ops, ..
+                            }) => {
+                                if selected {
+                                    then_ops
+                                } else {
+                                    else_ops
+                                }
+                            }
+                            Cow::Borrowed(FlowOp::If {
+                                then_ops, else_ops, ..
+                            }) => (if selected { then_ops } else { else_ops }).clone(),
+                            _ => unreachable!("selected if operation"),
+                        };
+                        self.push_scoped_ops(body);
+                    }
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
-                Ok(false) => {
-                    self.advance_if_needed(next_op_index);
-                    self.push_scoped_ops(else_ops);
-                }
-                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-            },
+            }
             FlowOp::IfLet {
                 pattern,
                 expr,
                 guard,
-                then_ops,
-                else_ops,
-            } => match self.evaluate_if_let_with_backend(
-                &pattern,
-                &expr,
-                guard.as_ref(),
-                pure_backend,
-            ) {
-                Ok(Some(bindings)) => {
-                    self.advance_if_needed(next_op_index);
-                    self.push_scoped_ops_with_bindings(bindings, then_ops);
+                ..
+            } => {
+                match self.evaluate_if_let_with_backend(pattern, expr, guard.as_ref(), pure_backend)
+                {
+                    Ok(bindings) => {
+                        self.advance_if_needed(next_op_index);
+                        let selected = bindings.is_some();
+                        let body = match op {
+                            Cow::Owned(FlowOp::IfLet {
+                                then_ops, else_ops, ..
+                            }) => {
+                                if selected {
+                                    then_ops
+                                } else {
+                                    else_ops
+                                }
+                            }
+                            Cow::Borrowed(FlowOp::IfLet {
+                                then_ops, else_ops, ..
+                            }) => (if selected { then_ops } else { else_ops }).clone(),
+                            _ => unreachable!("selected if-let operation"),
+                        };
+                        if let Some(bindings) = bindings {
+                            self.push_scoped_ops_with_bindings(bindings, body);
+                        } else {
+                            self.push_scoped_ops(body);
+                        }
+                    }
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
-                Ok(None) => {
-                    self.advance_if_needed(next_op_index);
-                    self.push_scoped_ops(else_ops);
-                }
-                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-            },
-            FlowOp::Match { scrutinee, arms } => {
+            }
+            FlowOp::Match { .. } => {
+                let FlowOp::Match { scrutinee, arms } = op.into_owned() else {
+                    unreachable!("selected match operation");
+                };
                 match self.evaluate_expr_with_backend(&scrutinee, pure_backend) {
                     Ok(value) => {
                         self.advance_if_needed(next_op_index);
@@ -524,7 +577,10 @@ impl Engine {
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::Loop { result, body } => {
+            FlowOp::Loop { .. } => {
+                let FlowOp::Loop { result, body } = op.into_owned() else {
+                    unreachable!("selected loop operation");
+                };
                 self.advance_if_needed(next_op_index);
                 let body = Arc::from(body);
                 self.fiber.frame.control_stack.push(FlowControlStackEntry {
@@ -536,9 +592,12 @@ impl Engine {
                 self.push_loop_iteration(&body);
             }
             FlowOp::LoopNext { body } => {
-                self.push_loop_iteration(&body);
+                self.push_loop_iteration(body);
             }
-            FlowOp::While { condition, body } => {
+            FlowOp::While { .. } => {
+                let FlowOp::While { condition, body } = op.into_owned() else {
+                    unreachable!("selected while operation");
+                };
                 match self.evaluate_bool_with_backend(&condition, pure_backend) {
                     Ok(true) => {
                         self.advance_if_needed(next_op_index);
@@ -555,7 +614,10 @@ impl Engine {
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::WhileNext { condition, body } => {
+            FlowOp::WhileNext { .. } => {
+                let FlowOp::WhileNext { condition, body } = op.into_owned() else {
+                    unreachable!("selected while continuation");
+                };
                 match self.evaluate_bool_with_backend(&condition, pure_backend) {
                     Ok(true) => {
                         self.push_while_iteration(condition, &body);
@@ -566,58 +628,74 @@ impl Engine {
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::WhileLet {
-                pattern,
-                expr,
-                guard,
-                body,
-            } => match self.evaluate_if_let_with_backend(
-                &pattern,
-                &expr,
-                guard.as_ref(),
-                pure_backend,
-            ) {
-                Ok(Some(bindings)) => {
-                    self.advance_if_needed(next_op_index);
-                    let body = Arc::from(body);
-                    self.fiber.frame.control_stack.push(FlowControlStackEntry {
-                        kind: FlowControlStackEntryKind::WhileLet {
-                            pattern: pattern.clone(),
-                            expr: Box::new(expr.clone()),
-                            guard: guard.clone().map(Box::new),
-                            body: Arc::clone(&body),
-                        },
-                    });
-                    self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
+            FlowOp::WhileLet { .. } => {
+                let FlowOp::WhileLet {
+                    pattern,
+                    expr,
+                    guard,
+                    body,
+                } = op.into_owned()
+                else {
+                    unreachable!("selected while-let operation");
+                };
+                match self.evaluate_if_let_with_backend(
+                    &pattern,
+                    &expr,
+                    guard.as_ref(),
+                    pure_backend,
+                ) {
+                    Ok(Some(bindings)) => {
+                        self.advance_if_needed(next_op_index);
+                        let body = Arc::from(body);
+                        self.fiber.frame.control_stack.push(FlowControlStackEntry {
+                            kind: FlowControlStackEntryKind::WhileLet {
+                                pattern: pattern.clone(),
+                                expr: Box::new(expr.clone()),
+                                guard: guard.clone().map(Box::new),
+                                body: Arc::clone(&body),
+                            },
+                        });
+                        self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
+                    }
+                    Ok(None) => self.advance_if_needed(next_op_index),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
-                Ok(None) => self.advance_if_needed(next_op_index),
-                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-            },
-            FlowOp::WhileLetNext {
-                pattern,
-                expr,
-                guard,
-                body,
-            } => match self.evaluate_if_let_with_backend(
-                &pattern,
-                &expr,
-                guard.as_ref(),
-                pure_backend,
-            ) {
-                Ok(Some(bindings)) => {
-                    self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
+            }
+            FlowOp::WhileLetNext { .. } => {
+                let FlowOp::WhileLetNext {
+                    pattern,
+                    expr,
+                    guard,
+                    body,
+                } = op.into_owned()
+                else {
+                    unreachable!("selected while-let continuation");
+                };
+                match self.evaluate_if_let_with_backend(
+                    &pattern,
+                    &expr,
+                    guard.as_ref(),
+                    pure_backend,
+                ) {
+                    Ok(Some(bindings)) => {
+                        self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
+                    }
+                    Ok(None) => {
+                        self.pop_loop_frame(output, pure_backend);
+                    }
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
-                Ok(None) => {
-                    self.pop_loop_frame(output, pure_backend);
-                }
-                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-            },
-            FlowOp::For {
-                pattern,
-                source,
-                evidence,
-                body,
-            } => {
+            }
+            FlowOp::For { .. } => {
+                let FlowOp::For {
+                    pattern,
+                    source,
+                    evidence,
+                    body,
+                } = op.into_owned()
+                else {
+                    unreachable!("selected for operation");
+                };
                 self.advance_if_needed(next_op_index);
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
                     Ok(value) => match self.runtime_iterator_from_value_with_backend(
@@ -641,20 +719,28 @@ impl Engine {
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::ForNext {
-                pattern,
-                iterator,
-                evidence,
-                body,
-            } => {
+            FlowOp::ForNext { .. } => {
+                let FlowOp::ForNext {
+                    pattern,
+                    iterator,
+                    evidence,
+                    body,
+                } = op.into_owned()
+                else {
+                    unreachable!("the selected continuation owns its iterator");
+                };
                 self.push_for_next(pattern, iterator, evidence, &body, output, pure_backend);
             }
-            FlowOp::Thread {
-                name,
-                producer,
-                captures,
-                body,
-            } => {
+            FlowOp::Thread { .. } => {
+                let FlowOp::Thread {
+                    name,
+                    producer,
+                    captures,
+                    body,
+                } = op.into_owned()
+                else {
+                    unreachable!("selected thread operation");
+                };
                 let captured = captures
                     .iter()
                     .map(|local| {
@@ -716,16 +802,23 @@ impl Engine {
                 self.advance_if_needed(next_op_index);
                 output.requests.tasks.push(accepted);
             }
-            FlowOp::Scope { identity, body } => {
+            FlowOp::Scope { .. } => {
+                let FlowOp::Scope { identity, body } = op.into_owned() else {
+                    unreachable!("selected scope operation");
+                };
                 self.advance_if_needed(next_op_index);
                 self.push_scoped_ops_with_identity(identity, body);
             }
-            FlowOp::LetScope {
-                identity,
-                pattern,
-                mut ops,
-                value,
-            } => {
+            FlowOp::LetScope { .. } => {
+                let FlowOp::LetScope {
+                    identity,
+                    pattern,
+                    mut ops,
+                    value,
+                } = op.into_owned()
+                else {
+                    unreachable!("selected let scope operation");
+                };
                 self.advance_if_needed(next_op_index);
                 ops.insert(0, FlowOp::EnterScope { identity });
                 ops.push(FlowOp::ExitScopeBind {
@@ -736,7 +829,7 @@ impl Engine {
             }
             FlowOp::Break(expr) => {
                 let value = match expr {
-                    Some(expr) => match self.evaluate_expr_with_backend(&expr, pure_backend) {
+                    Some(expr) => match self.evaluate_expr_with_backend(expr, pure_backend) {
                         Ok(value) => value,
                         Err(error) => {
                             self.fail_format_aware_eval(error, output, pure_backend);
@@ -767,12 +860,15 @@ impl Engine {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 }
             }
-            FlowOp::Goto(target) => self.goto(&target, output, pure_backend),
-            FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(&expr) {
+            FlowOp::Goto(target) => self.goto(target, output, pure_backend),
+            FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(expr) {
                 Ok(target) => self.goto(&target, output, pure_backend),
                 Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
-            FlowOp::Return(value) => {
+            FlowOp::Return(_) => {
+                let FlowOp::Return(value) = op.into_owned() else {
+                    unreachable!("selected return value");
+                };
                 if self.has_joined_work() {
                     self.push_ops(vec![FlowOp::Return(value)]);
                     self.run_child_next = true;
@@ -782,10 +878,13 @@ impl Engine {
             }
             FlowOp::ReturnExpr(expr) => {
                 if self.has_joined_work() {
+                    let FlowOp::ReturnExpr(expr) = op.into_owned() else {
+                        unreachable!("selected deferred return expression");
+                    };
                     self.push_ops(vec![FlowOp::ReturnExpr(expr)]);
                     self.run_child_next = true;
                 } else {
-                    match self.evaluate_expr_with_backend(&expr, pure_backend) {
+                    match self.evaluate_expr_with_backend(expr, pure_backend) {
                         Ok(value) => {
                             let label = runtime_value_label(&value);
                             if !self.return_function_call_value(value, output, pure_backend) {
@@ -796,14 +895,17 @@ impl Engine {
                     }
                 }
             }
-            FlowOp::Effect(effect) => {
+            FlowOp::Effect(_) => {
+                let FlowOp::Effect(effect) = op.into_owned() else {
+                    unreachable!("selected effect");
+                };
                 self.emit_line_effect(effect, output, pure_backend);
                 if !self.apply_control_effects(output, pure_backend) {
                     self.advance_if_needed(next_op_index);
                 }
             }
             FlowOp::EvaluatedEffect(effect) => {
-                if !self.execute_evaluated_effect(&effect, drop_policy, output, pure_backend) {
+                if !self.execute_evaluated_effect(effect, drop_policy, output, pure_backend) {
                     return;
                 }
                 if !self.apply_control_effects(output, pure_backend) {
@@ -811,18 +913,24 @@ impl Engine {
                 }
             }
             FlowOp::RegisterDefer { site, .. } => {
-                self.fail_eval(RuntimeEvalError::UnknownDeferredSite { site }, output);
+                self.fail_eval(
+                    RuntimeEvalError::UnknownDeferredSite { site: *site },
+                    output,
+                );
             }
-            FlowOp::RegisterCleanup { key, effect } => {
+            FlowOp::RegisterCleanup { .. } => {
+                let FlowOp::RegisterCleanup { key, effect } = op.into_owned() else {
+                    unreachable!("selected cleanup registration");
+                };
                 self.register_scope_cleanup(key, effect);
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::CancelCleanup { key } => {
-                self.cancel_scope_cleanup(&key);
+                self.cancel_scope_cleanup(key);
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::EnterScope { identity } => {
-                self.push_scope_frame(identity);
+                self.push_scope_frame(identity.clone());
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::EnterScheduledScope { identity, token } => {
@@ -838,13 +946,13 @@ impl Engine {
                     return;
                 }
                 self.push_scope_frame_with_origin(
-                    identity,
-                    crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
+                    identity.clone(),
+                    crate::scope::RuntimeScopeFrameOrigin::Scheduled(*token),
                 );
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::ExitScheduledScope { token } => {
-                let expected = Some(token);
+                let expected = Some(*token);
                 let valid = crate::scope::RuntimeScopeExitTarget::Frame(expected)
                     .resolve(self.active_scope_targets())
                     .is_ok();
@@ -880,7 +988,7 @@ impl Engine {
                 self.fiber.frame.status = FlowFiberStatus::NeedWaiting(state);
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
-                let value = match self.evaluate_expr_with_backend(&expr, pure_backend) {
+                let value = match self.evaluate_expr_with_backend(expr, pure_backend) {
                     Ok(value) => value,
                     Err(error) => {
                         self.fail_format_aware_eval(error, output, pure_backend);
@@ -891,7 +999,7 @@ impl Engine {
                     self.fail_eval(error, output);
                     return;
                 }
-                self.bind_value(&pattern, value, output);
+                self.bind_value(pattern, value, output);
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::Noop => {

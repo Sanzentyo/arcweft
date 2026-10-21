@@ -1170,7 +1170,7 @@ impl Engine {
         std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
         if let Some(operation) = operation {
             self.execute_flow_operation(
-                operation,
+                std::borrow::Cow::Owned(operation),
                 None,
                 &mut staged,
                 pure_backend,

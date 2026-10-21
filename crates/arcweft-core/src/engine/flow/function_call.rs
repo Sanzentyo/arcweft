@@ -118,7 +118,7 @@ impl Engine {
                 if let Some(operation) = operations.get(frame.next_instruction) {
                     frame.next_instruction += 1;
                     self.execute_flow_operation(
-                        operation.clone(),
+                        std::borrow::Cow::Borrowed(operation),
                         None,
                         output,
                         pure_backend,
