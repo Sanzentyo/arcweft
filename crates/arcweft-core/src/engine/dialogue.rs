@@ -69,7 +69,7 @@ pub(crate) enum DialogueExecutionError {
 pub(super) struct DialogueLineTaskStart {
     pub(super) event: Option<FlowEvent>,
     pub(super) request_cancellation: bool,
-    pub(super) group: crate::line_task::LineTaskGroup,
+    pub(super) group: crate::runtime_id::RuntimeLineTaskGroupId,
     pub(super) activation: crate::line_task::LineTaskActivation,
     pub(super) captures: Box<[RuntimeLocalBinding]>,
     pub(super) callback_sites: Vec<crate::runtime_id::RuntimeDialogueEffectSiteId>,
@@ -191,6 +191,23 @@ impl Engine {
         };
         let (transaction, batch, event, commit_proof) = match start {
             Some(start) => {
+                if start.group != transaction.frame().task_group {
+                    self.begin_dialogue_failure(
+                        transaction,
+                        LineRuntimeError::InvalidActivationOperation.into(),
+                        output,
+                    );
+                    return;
+                }
+                let plan = std::sync::Arc::clone(&self.plan);
+                let Some(group) = plan.line_task_groups().get(start.group.index()) else {
+                    self.begin_dialogue_failure(
+                        transaction,
+                        LineRuntimeError::UnknownTaskGroup.into(),
+                        output,
+                    );
+                    return;
+                };
                 let commit_proof = match self
                     .dialogue_activations
                     .inspect_commit_transaction(&transaction)
@@ -234,7 +251,7 @@ impl Engine {
                 };
                 let mut batch = match self.prepare_line_task_commands(
                     &mut transaction,
-                    &start.group,
+                    group,
                     start.activation,
                     &start.captures,
                     start.request_cancellation,
@@ -968,11 +985,10 @@ impl Engine {
                 .begin_dialogue_reveal(&activation_id, frame, activation)
                 .map(DialogueActivationStep::Reveal);
         }
-        let group = self
-            .plan
+        let plan = std::sync::Arc::clone(&self.plan);
+        let group = plan
             .line_task_groups()
             .get(frame.task_group.index())
-            .cloned()
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
         let operation = group
             .activation_ops()
@@ -1677,11 +1693,10 @@ impl Engine {
         operation: RuntimeLineOperation,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), DialogueExecutionError> {
-        let group = self
-            .plan
+        let plan = std::sync::Arc::clone(&self.plan);
+        let group = plan
             .line_task_groups()
             .get(state.task_group.index())
-            .cloned()
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
         let site = group
             .handle_site(operation.site())
@@ -2352,19 +2367,18 @@ impl Engine {
         {
             return Err(LineRuntimeError::ResultNotCommitted.into());
         }
-        let group = self
-            .plan
+        let plan = std::sync::Arc::clone(&self.plan);
+        let group = plan
             .line_task_groups()
             .get(state.task_group.index())
-            .cloned()
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
         let task_inputs = state.task_inputs_for_reveal(group.activation_exports())?;
-        let mut live = LineTaskLiveState::new(&group, activation_id.clone());
+        let mut live = LineTaskLiveState::new(group, activation_id.clone());
         for token in activation.arm_due_schedules(state.elapsed)? {
             live.mark_scheduled_ready(token)?;
         }
         let line_task_activation = progress_live_line_task_group(
-            &group,
+            group,
             state.elapsed,
             LineTaskReadyEvents::new(&std::collections::BTreeSet::new()),
             &mut live,
@@ -2387,7 +2401,7 @@ impl Engine {
                 values: std::mem::take(&mut state.values),
             }),
             request_cancellation: false,
-            group,
+            group: state.task_group,
             activation: line_task_activation,
             captures: task_inputs,
             callback_sites: Vec::new(),

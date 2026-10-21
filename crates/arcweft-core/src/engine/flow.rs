@@ -228,7 +228,8 @@ impl Engine {
                     );
                     return;
                 };
-                let Some(content_plan) = self.plan.dialogue_content().get(content).cloned() else {
+                let plan = Arc::clone(&self.plan);
+                let Some(content_plan) = plan.dialogue_content().get(content) else {
                     self.fiber.frame.status =
                         FlowFiberStatus::Failed(format!("missing dialogue content plan {content}"));
                     return;
@@ -289,12 +290,7 @@ impl Engine {
                     );
                     return;
                 };
-                let Some(group) = self
-                    .plan
-                    .line_task_groups()
-                    .get(task_group.index())
-                    .cloned()
-                else {
+                let Some(group) = plan.line_task_groups().get(task_group.index()) else {
                     self.fiber.frame.status = FlowFiberStatus::Failed(
                         crate::line_task::LineRuntimeError::UnknownTaskGroup.to_string(),
                     );
@@ -306,7 +302,7 @@ impl Engine {
                     );
                     return;
                 }
-                let captures = match self.capture_line_task_locals(&group) {
+                let captures = match self.capture_line_task_locals(group) {
                     Ok(captures) => captures,
                     Err(error) => {
                         self.fiber.frame.status = FlowFiberStatus::Failed(error.to_string());

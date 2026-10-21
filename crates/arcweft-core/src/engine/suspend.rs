@@ -148,7 +148,8 @@ impl Engine {
             return;
         }
         let content_id = transaction.frame().content;
-        let Some(content) = self.plan.dialogue_content().get(content_id).cloned() else {
+        let plan = std::sync::Arc::clone(&self.plan);
+        let Some(content) = plan.dialogue_content().get(content_id) else {
             self.begin_dialogue_failure(
                 transaction,
                 crate::line_task::LineRuntimeError::UnknownContentPlan.into(),
@@ -171,12 +172,7 @@ impl Engine {
         let mut callback_sites = Vec::new();
         let mut task_inputs = None;
         if let DialogueLineTaskState::Live(line_task) = &mut frame.line_task {
-            let Some(group) = self
-                .plan
-                .line_task_groups()
-                .get(frame.task_group.index())
-                .cloned()
-            else {
+            let Some(group) = plan.line_task_groups().get(frame.task_group.index()) else {
                 self.begin_dialogue_failure(
                     transaction,
                     crate::line_task::LineRuntimeError::UnknownTaskGroup.into(),
@@ -230,7 +226,7 @@ impl Engine {
                     }
                 };
             let ready = accepted_content.ready().with_input_actions(&input_actions);
-            if let Some((action, cancelled)) = cancel_live_line_task_group(&group, ready, line_task)
+            if let Some((action, cancelled)) = cancel_live_line_task_group(group, ready, line_task)
             {
                 let event = Some(FlowEvent::LineCancelled {
                     trigger: action.as_str().to_owned(),
@@ -238,7 +234,7 @@ impl Engine {
                 start = Some(super::dialogue::DialogueLineTaskStart {
                     event,
                     request_cancellation: true,
-                    group,
+                    group: frame.task_group,
                     activation: cancelled,
                     captures: task_inputs.take().expect("live task inputs were checked"),
                     callback_sites: std::mem::take(&mut callback_sites),
@@ -254,7 +250,7 @@ impl Engine {
                 return;
             }
             if line_task.is_closing() || line_task.is_closed() {
-                let activation = finalize_live_line_task_close(&group, line_task);
+                let activation = finalize_live_line_task_close(group, line_task);
                 if line_task.is_closed() {
                     frame.line_task = DialogueLineTaskState::Closed;
                     frame.phase = DialogueRuntimePhase::Closing;
@@ -262,7 +258,7 @@ impl Engine {
                 start = Some(super::dialogue::DialogueLineTaskStart {
                     event: None,
                     request_cancellation: false,
-                    group,
+                    group: frame.task_group,
                     activation,
                     captures: task_inputs.take().expect("live task inputs were checked"),
                     callback_sites: std::mem::take(&mut callback_sites),
@@ -284,7 +280,7 @@ impl Engine {
                 }
             }
             let activation =
-                match progress_live_line_task_group(&group, frame.elapsed, ready, line_task) {
+                match progress_live_line_task_group(group, frame.elapsed, ready, line_task) {
                     Ok(activation) => activation,
                     Err(error) => {
                         self.begin_dialogue_failure(transaction, error.into(), output);
@@ -294,7 +290,7 @@ impl Engine {
             start = Some(super::dialogue::DialogueLineTaskStart {
                 event: None,
                 request_cancellation: false,
-                group,
+                group: frame.task_group,
                 activation,
                 captures: Box::new([]),
                 callback_sites: Vec::new(),
@@ -311,17 +307,13 @@ impl Engine {
         }
         if advance {
             if let DialogueLineTaskState::Live(line_task) = &mut frame.line_task
-                && let Some(group) = self
-                    .plan
-                    .line_task_groups()
-                    .get(frame.task_group.index())
-                    .cloned()
+                && let Some(group) = plan.line_task_groups().get(frame.task_group.index())
             {
-                let cleanup = finish_live_line_task_group(&group, line_task);
+                let cleanup = finish_live_line_task_group(group, line_task);
                 start = Some(super::dialogue::DialogueLineTaskStart {
                     event: None,
                     request_cancellation: true,
-                    group,
+                    group: frame.task_group,
                     activation: cleanup,
                     captures: Box::new([]),
                     callback_sites: Vec::new(),

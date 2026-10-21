@@ -18,6 +18,104 @@ use execution::{
 };
 
 #[test]
+fn source_dialogue_reveal_and_advance_keep_the_original_line_groups() {
+    use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
+    use arcweft_core::plan::FlowEvent;
+    use arcweft_core::pure::VmRuntimePureCallBackend;
+    use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
+    use arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend;
+
+    let compiled = compile_source(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> String {
+    alice[First line]
+    alice[Second line]
+    return "after-lines"
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("actual dialogue source compiles");
+    let [flow] = compiled.plan.flows() else {
+        panic!("the source owns one original Flow");
+    };
+    let encoded = AwbcLowerer::new(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        "line-groups.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program
+    .encode_canonical()
+    .unwrap();
+    let mut plan = compiled.plan.clone();
+    plan.bind_artifact(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+            *blake3::hash(&encoded).as_bytes(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut engine = Engine::for_flow(plan, &flow.id).unwrap();
+    let plan = engine.program_plan();
+    let expected_lines = plan
+        .dialogue_content()
+        .rows()
+        .iter()
+        .map(|content| content.line().clone())
+        .collect::<Vec<_>>();
+    assert_eq!(expected_lines.len(), 2);
+    let groups = plan
+        .dialogue_content()
+        .rows()
+        .iter()
+        .map(|content| content.line_task_group().unwrap())
+        .collect::<Vec<_>>();
+    assert_ne!(groups[0], groups[1]);
+    let schema =
+        bind_character_dialogue_schema(&compiled, RuntimeProgramOwner::Plan(Arc::clone(&plan)));
+    let mut backend = VmRuntimePureCallBackend::default()
+        .with_external_calls(CharacterDialogueRuntimeExternalCallBackend::new(&schema));
+    let mut input = RuntimeStepInput::default();
+    let mut revealed = Vec::new();
+    for _ in 0..256 {
+        let result =
+            engine.step_with_pure_backend(input, RuntimeStepOptions::default(), &mut backend);
+        assert!(result.stats.executed_ops <= 1);
+        assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
+        assert!(
+            result.output.requests.line_commands.is_empty(),
+            "{:?}",
+            result.output
+        );
+        assert!(Arc::ptr_eq(&engine.program_plan(), &plan));
+        input = RuntimeStepInput::default();
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine {
+                activation, line, ..
+            } = event
+            {
+                revealed.push(line);
+                input.dialogue_advances.push(activation);
+            }
+        }
+        if let FlowFiberStatus::Done(exit) = result.fiber_status {
+            assert_eq!(exit, FlowExit::Return("after-lines".to_owned()));
+            assert_eq!(revealed, expected_lines);
+            return;
+        }
+        assert!(
+            !matches!(result.fiber_status, FlowFiberStatus::Failed(_)),
+            "{:?}",
+            result.fiber_status
+        );
+    }
+    panic!("the original dialogue groups did not return to their Flow");
+}
+
+#[test]
 fn record_field_reads_preserve_the_owner_in_native_and_decoded_awbc() {
     const SOURCE: &str = r#"
 entry cli @entry.main { goto @flow.main }
