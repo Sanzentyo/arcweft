@@ -6,12 +6,15 @@ use arcweft_compiler::source::compile_source;
 use arcweft_core::{
     awbc::{
         codec::AwbcDecodeBudget,
-        product_step::AwbcProductProgram,
+        product_step::{AwbcProductExecutorSaveSnapshot, AwbcProductProgram},
         schema::AwbcProgram,
         verify::{AwbcVerifyBudget, AwbcVerifyContext},
     },
     engine::{FlowExit, FlowFiberStatus},
-    executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor},
+    executor::{
+        ArcweftExecutionTier, ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot,
+        RuntimeExecutor,
+    },
     plan::{RuntimeEntryTarget, RuntimeTaskSourceArtifactLimits},
     step::{RuntimeStepInput, RuntimeStepOptions},
 };
@@ -92,6 +95,9 @@ fn returns(source: &str, expected: &str) {
                 output.output,
                 executor.fiber()
             );
+            if !matches!(backend, Backend::Native) {
+                executor = restore_product(executor);
+            }
             if matches!(
                 executor.fiber().frame.status,
                 FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
@@ -109,6 +115,19 @@ fn returns(source: &str, expected: &str) {
             "Include did not resume its caller; backend={backend:?}"
         );
     }
+}
+
+fn restore_product(executor: ArcweftRuntimeExecutor) -> ArcweftRuntimeExecutor {
+    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = executor.snapshot().unwrap();
+    let saved =
+        AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &executor.program_owner()).unwrap();
+    let bytes = serde_json::to_vec(&saved).unwrap();
+    let decoded: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(decoded, saved);
+    let bound = executor.bind_product_save_snapshot(decoded).unwrap();
+    executor
+        .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+        .unwrap()
 }
 
 #[test]
@@ -173,6 +192,9 @@ fn mutually_recursive_includes_execute_under_the_original_one_operation_budget()
                 executor.fiber().frame.status,
                 FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
             ));
+            if !matches!(backend, Backend::Native) {
+                executor = restore_product(executor);
+            }
         }
     }
 }
@@ -187,5 +209,47 @@ fn goto_inside_an_include_replaces_the_actual_flow_without_returning_to_its_call
             "entry cli @entry.main { goto @flow.main }\n",
         ),
         "destination",
+    );
+}
+
+#[test]
+fn include_in_a_function_owned_thread_joins_before_its_flow_caller_returns() {
+    returns(
+        concat!(
+            "fn reusable() -> ThreadHandle<Unit> effects { control.spawn } { thread { include @flow.snippet } }\n",
+            "flow main() -> String { let child = reusable(); await child; return \"after-join\" }\n",
+            "flow snippet() {}\n",
+            "entry cli @entry.main { goto @flow.main }\n",
+        ),
+        "after-join",
+    );
+}
+
+#[test]
+fn include_rejects_a_parameterized_flow_before_executable_publication() {
+    use arcweft_compiler::project::ProjectCompileStage;
+
+    let declaration = "flow snippet(value: String) {}\n";
+    compile_source(&format!(
+        "{declaration}flow main() {{}}\nentry cli @entry.main {{ goto @flow.main }}\n"
+    ))
+    .expect("the parameterized Flow itself is valid");
+    let error = compile_source(&format!(
+        "{declaration}flow main() {{ include @flow.snippet }}\nentry cli @entry.main {{ goto @flow.main }}\n"
+    ))
+    .expect_err("Include cannot fabricate the required input");
+    assert_eq!(
+        error.project().stage(),
+        ProjectCompileStage::RuntimePlanLower.as_str()
+    );
+    assert!(
+        error.project().diagnostics().iter().any(|diagnostic| {
+            diagnostic.stage() == ProjectCompileStage::RuntimePlanLower
+                && diagnostic
+                    .diagnostic()
+                    .message()
+                    .contains("zero-input invocation ABI")
+        }),
+        "{error:?}"
     );
 }
