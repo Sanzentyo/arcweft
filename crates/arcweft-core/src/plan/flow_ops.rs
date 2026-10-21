@@ -1,7 +1,12 @@
 //! Owned executable operation traversal, independent of call-graph edges.
 
-use super::{FlowOp, RuntimeFunctionSiteBody, RuntimePlan};
+use super::{
+    FlowOp, RuntimeAwaitPendingObserver, RuntimeFunctionSiteBody, RuntimeMatchArm, RuntimePlan,
+};
 use crate::line_task::{LineTaskNode, ScopeExit};
+
+mod location;
+pub(in crate::plan) use location::{RuntimeFlowLocationStep, RuntimeFlowOperationLocation};
 
 /// Structural role of one directly owned operation body.
 ///
@@ -46,6 +51,34 @@ pub struct RuntimeFlowOwnedBodies<'a> {
     op: &'a FlowOp,
     ordinal: usize,
     guard: bool,
+}
+
+/// One borrowed schema supplies traversal and indexed lookup of owned bodies.
+enum RuntimeFlowBodySchema<'a> {
+    Empty,
+    One(RuntimeFlowBodyRole, &'a [FlowOp]),
+    Branches(&'a [FlowOp], &'a [FlowOp]),
+    Match(&'a [RuntimeMatchArm]),
+    Await(&'a [RuntimeAwaitPendingObserver]),
+}
+
+impl<'a> RuntimeFlowBodySchema<'a> {
+    fn get(self, role: RuntimeFlowBodyRole) -> Option<&'a [FlowOp]> {
+        use RuntimeFlowBodyRole as Role;
+        match (self, role) {
+            (Self::One(expected, body), actual) if expected == actual => Some(body),
+            (Self::Branches(then_ops, _), Role::Then) => Some(then_ops),
+            (Self::Branches(_, else_ops), Role::Else) => Some(else_ops),
+            (Self::Match(arms), Role::MatchGuard { arm }) => {
+                Some(&arms.get(arm)?.guard.as_ref()?.ops)
+            }
+            (Self::Match(arms), Role::MatchArm { arm }) => Some(&arms.get(arm)?.ops),
+            (Self::Await(observers), Role::AwaitObserver { ordinal }) => {
+                Some(&observers.get(ordinal)?.ops)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Role of a directly owned expression or pattern in one operation.
@@ -489,63 +522,33 @@ impl FlowOp {
     }
 }
 
-impl<'a> Iterator for RuntimeFlowOwnedBodies<'a> {
-    type Item = (RuntimeFlowBodyRole, &'a [FlowOp]);
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl FlowOp {
+    fn body_schema(&self) -> RuntimeFlowBodySchema<'_> {
         use RuntimeFlowBodyRole as Role;
-        let next = match self.op {
-            FlowOp::StandardMap(control) => {
-                (self.ordinal == 0).then_some((Role::Body, control.body()))
-            }
-            FlowOp::Await { observers, .. } => observers.get(self.ordinal).map(|observer| {
-                (
-                    Role::AwaitObserver {
-                        ordinal: self.ordinal,
-                    },
-                    observer.ops.as_slice(),
-                )
-            }),
-            FlowOp::LetElse { else_ops, .. } => {
-                (self.ordinal == 0).then_some((Role::Else, else_ops.as_slice()))
-            }
-            FlowOp::If {
+        use RuntimeFlowBodySchema as Schema;
+        match self {
+            Self::StandardMap(control) => Schema::One(Role::Body, control.body()),
+            Self::Await { observers, .. } => Schema::Await(observers),
+            Self::LetElse { else_ops, .. } => Schema::One(Role::Else, else_ops),
+            Self::If {
                 then_ops, else_ops, ..
             }
-            | FlowOp::IfLet {
+            | Self::IfLet {
                 then_ops, else_ops, ..
-            } => match self.ordinal {
-                0 => Some((Role::Then, then_ops.as_slice())),
-                1 => Some((Role::Else, else_ops.as_slice())),
-                _ => None,
-            },
-            FlowOp::Match { arms, .. } => {
-                let arm = arms.get(self.ordinal)?;
-                if self.guard {
-                    self.guard = false;
-                    if let Some(guard) = &arm.guard {
-                        return Some((Role::MatchGuard { arm: self.ordinal }, &guard.ops));
-                    }
-                }
-                self.guard = true;
-                Some((Role::MatchArm { arm: self.ordinal }, arm.ops.as_slice()))
-            }
-            FlowOp::FormatOperandAttempt { body, .. }
-            | FlowOp::Loop { body, .. }
-            | FlowOp::While { body, .. }
-            | FlowOp::WhileLet { body, .. }
-            | FlowOp::For { body, .. }
-            | FlowOp::Thread { body, .. }
-            | FlowOp::Scope { body, .. }
-            | FlowOp::LetScope { ops: body, .. } => {
-                (self.ordinal == 0).then_some((Role::Body, body.as_slice()))
-            }
-            FlowOp::LoopNext { body }
-            | FlowOp::WhileNext { body, .. }
-            | FlowOp::WhileLetNext { body, .. }
-            | FlowOp::ForNext { body, .. } => {
-                (self.ordinal == 0).then_some((Role::Body, body.as_ref()))
-            }
+            } => Schema::Branches(then_ops, else_ops),
+            Self::Match { arms, .. } => Schema::Match(arms),
+            Self::FormatOperandAttempt { body, .. }
+            | Self::Loop { body, .. }
+            | Self::While { body, .. }
+            | Self::WhileLet { body, .. }
+            | Self::For { body, .. }
+            | Self::Thread { body, .. }
+            | Self::Scope { body, .. }
+            | Self::LetScope { ops: body, .. } => Schema::One(Role::Body, body),
+            Self::LoopNext { body }
+            | Self::WhileNext { body, .. }
+            | Self::WhileLetNext { body, .. }
+            | Self::ForNext { body, .. } => Schema::One(Role::Body, body),
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
             | FlowOp::CompleteFormatOperand { .. }
@@ -577,7 +580,49 @@ impl<'a> Iterator for RuntimeFlowOwnedBodies<'a> {
             | FlowOp::ExitScheduledScope { .. }
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::CompleteAwaitObserver
-            | FlowOp::Noop => None,
+            | FlowOp::Noop => Schema::Empty,
+        }
+    }
+
+    pub(crate) fn owned_body(&self, role: RuntimeFlowBodyRole) -> Option<&[FlowOp]> {
+        self.body_schema().get(role)
+    }
+}
+
+impl<'a> Iterator for RuntimeFlowOwnedBodies<'a> {
+    type Item = (RuntimeFlowBodyRole, &'a [FlowOp]);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use RuntimeFlowBodyRole as Role;
+        let next = match self.op.body_schema() {
+            RuntimeFlowBodySchema::Empty => None,
+            RuntimeFlowBodySchema::One(role, body) => (self.ordinal == 0).then_some((role, body)),
+            RuntimeFlowBodySchema::Branches(then_ops, else_ops) => match self.ordinal {
+                0 => Some((Role::Then, then_ops)),
+                1 => Some((Role::Else, else_ops)),
+                _ => None,
+            },
+            RuntimeFlowBodySchema::Await(observers) => {
+                observers.get(self.ordinal).map(|observer| {
+                    (
+                        Role::AwaitObserver {
+                            ordinal: self.ordinal,
+                        },
+                        observer.ops.as_slice(),
+                    )
+                })
+            }
+            RuntimeFlowBodySchema::Match(arms) => {
+                let arm = arms.get(self.ordinal)?;
+                if self.guard {
+                    self.guard = false;
+                    if let Some(guard) = &arm.guard {
+                        return Some((Role::MatchGuard { arm: self.ordinal }, &guard.ops));
+                    }
+                }
+                self.guard = true;
+                Some((Role::MatchArm { arm: self.ordinal }, arm.ops.as_slice()))
+            }
         };
         if next.is_some() {
             self.ordinal += 1;

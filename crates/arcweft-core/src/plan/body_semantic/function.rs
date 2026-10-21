@@ -3,6 +3,7 @@
 
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner;
+use crate::plan::flow_ops::{RuntimeFlowLocationStep, RuntimeFlowOperationLocation};
 use crate::plan::{self, RuntimeFunctionSiteBody};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError, TaskSemanticMeter};
 
@@ -510,13 +511,6 @@ impl EndpointKind {
     }
 }
 
-#[derive(Clone, Copy)]
-enum PathStep {
-    Body(plan::RuntimeFlowBodyRole),
-    Operation(usize),
-    Endpoint(usize),
-}
-
 impl<'a> OriginalRequestEndpoint<'a> {
     fn find_source(
         owner: OriginalRequestOwner<'a>,
@@ -828,50 +822,67 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         let RuntimeFunctionSiteBody::Executable(body) = body else {
             return Ok(vec![]);
         };
-        let mut path = Vec::new();
+        let mut location = RuntimeFlowOperationLocation::default();
+        let mut depth = 0usize;
         let mut endpoints = Vec::new();
         plan::flow_ops::try_visit_ops_events(body.ops(), &mut |event| {
             meter.status()?;
             match event {
                 plan::flow_ops::RuntimeFlowTreeEvent::EnterBody { role, .. } => {
                     meter.charge_work(1)?;
-                    path.push(PathStep::Body(role));
+                    if depth != 0 {
+                        location.enter_body(role);
+                    }
+                    depth = depth
+                        .checked_add(1)
+                        .ok_or(TaskSemanticEncodingError::ArithmeticOverflow)?;
                 }
-                plan::flow_ops::RuntimeFlowTreeEvent::ExitBody
-                | plan::flow_ops::RuntimeFlowTreeEvent::ExitOperation => {
-                    path.pop();
+                plan::flow_ops::RuntimeFlowTreeEvent::ExitBody => {
+                    depth = depth
+                        .checked_sub(1)
+                        .ok_or(TaskSemanticEncodingError::ArithmeticOverflow)?;
+                    if depth != 0 && !location.leave_body() {
+                        return Err(RuntimeBodySemanticError::InvalidRequestSource);
+                    }
                 }
+                plan::flow_ops::RuntimeFlowTreeEvent::ExitOperation => {}
                 plan::flow_ops::RuntimeFlowTreeEvent::EnterOperation { ordinal, op } => {
                     meter.charge_work(1)?;
-                    path.push(PathStep::Operation(ordinal));
+                    location.set_operation(ordinal);
                     for (ordinal, kind) in Self::endpoint_kinds(op).iter().copied().enumerate() {
                         meter.charge_work(1)?;
-                        path.push(PathStep::Endpoint(ordinal));
+                        let op = location
+                            .resolve(body.ops())
+                            .ok_or(RuntimeBodySemanticError::InvalidRequestSource)?;
                         let mut encoder = TaskSemanticEncoder::new(
                             b"arcweft.runtime-plan.producer-endpoint-path.v1\0",
                             meter,
                         );
-                        encoder.count(path.len());
-                        for step in &path {
+                        encoder.count(
+                            location
+                                .step_count()
+                                .and_then(|count| count.checked_add(1))
+                                .ok_or(TaskSemanticEncodingError::ArithmeticOverflow)?,
+                        );
+                        for step in location.steps() {
                             encoder.enter_element();
                             encoder.enter_role();
                             match step {
-                                PathStep::Body(role) => {
+                                RuntimeFlowLocationStep::Body(role) => {
                                     encoder.tag(0);
                                     role.encode_semantic_path(&mut encoder);
                                 }
-                                PathStep::Operation(ordinal) => {
+                                RuntimeFlowLocationStep::Operation(ordinal) => {
                                     encoder.tag(1);
-                                    encoder.count(*ordinal);
-                                }
-                                PathStep::Endpoint(ordinal) => {
-                                    encoder.tag(2);
-                                    encoder.count(*ordinal);
+                                    encoder.count(ordinal);
                                 }
                             }
                         }
+                        encoder.enter_element();
+                        encoder.enter_role();
+                        encoder.tag(2);
+                        encoder.count(ordinal);
                         endpoints.push((kind, encoder.finish()?, op));
-                        path.pop();
                     }
                 }
             }
