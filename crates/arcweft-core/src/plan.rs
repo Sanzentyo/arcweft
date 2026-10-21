@@ -1,6 +1,7 @@
 pub(crate) mod body_semantic;
 mod callable_specialization;
 mod callable_states;
+pub(crate) mod code;
 mod construction;
 pub use body_semantic::{
     ProducerFunctionSemanticDigest, RuntimeRequestArgument, RuntimeRequestArgumentRole,

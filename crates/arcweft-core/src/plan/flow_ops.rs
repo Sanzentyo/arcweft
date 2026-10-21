@@ -1,9 +1,7 @@
 //! Owned executable operation traversal, independent of call-graph edges.
 
-use super::{
-    FlowOp, RuntimeAwaitPendingObserver, RuntimeFunctionSiteBody, RuntimeMatchArm, RuntimePlan,
-};
-use crate::line_task::{LineTaskNode, ScopeExit};
+use super::code::RuntimeCodeBodyRef;
+use super::{FlowOp, RuntimeAwaitPendingObserver, RuntimeMatchArm, RuntimePlan};
 
 mod location;
 pub(in crate::plan) use location::{RuntimeFlowLocationStep, RuntimeFlowOperationLocation};
@@ -679,34 +677,10 @@ impl super::RuntimePlanInventory {
         &self,
         visitor: &mut impl FnMut(&FlowOp) -> Result<(), E>,
     ) -> Result<(), E> {
-        for site in self.function_sites().iter() {
-            if let RuntimeFunctionSiteBody::Executable(body) = site.body() {
-                try_visit_ops(body.ops(), visitor)?;
-            }
-        }
-        for group in self.line_task_groups() {
-            try_visit_ops(group.activation_ops(), visitor)?;
-            for node in group.nodes() {
-                match node {
-                    LineTaskNode::Action(ops) => try_visit_ops(ops, visitor)?,
-                    LineTaskNode::Sequence(_)
-                    | LineTaskNode::Start(_)
-                    | LineTaskNode::Parallel { .. }
-                    | LineTaskNode::Child { .. } => {}
-                }
-            }
-            for rule in group.cancel_rules() {
-                try_visit_ops(rule.action(), visitor)?;
-            }
-            for exit in [
-                ScopeExit::Completed,
-                ScopeExit::Cancelled,
-                ScopeExit::Failed,
-            ] {
-                try_visit_ops(group.cleanup().actions(exit), visitor)?;
-            }
-        }
-        Ok(())
+        self.try_visit_code_roots(&mut |_, body| match body {
+            RuntimeCodeBodyRef::Operations(operations) => try_visit_ops(operations, visitor),
+            RuntimeCodeBodyRef::Expression(_) => Ok(()),
+        })
     }
 }
 

@@ -1,5 +1,7 @@
 use super::*;
-use crate::line_task::{LineCancelRule, LineCleanupPolicy, LineTaskCleanup, LineTaskGroup};
+use crate::line_task::{
+    LineCancelRule, LineCleanupPolicy, LineTaskCleanup, LineTaskGroup, LineTaskNode, ScopeExit,
+};
 use crate::pattern::{RuntimePattern, RuntimePatternKind, RuntimeSemanticTypeId};
 use crate::plan::{
     RuntimeAwaitPendingObserver, RuntimeMatchArm, RuntimeMatchGuard, RuntimePlanBuilder,
@@ -109,6 +111,13 @@ fn observer_bodies_are_owned_in_source_order() {
 }
 
 fn inventory_plan(activation: Box<[FlowOp]>) -> RuntimePlan {
+    inventory_plan_with_nodes(
+        activation,
+        Box::new([LineTaskNode::Action(Box::new([marker("action")]))]),
+    )
+}
+
+fn inventory_plan_with_nodes(activation: Box<[FlowOp]>, nodes: Box<[LineTaskNode]>) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_type_batch(
@@ -130,7 +139,7 @@ fn inventory_plan(activation: Box<[FlowOp]>) -> RuntimePlan {
         ty(),
         Box::new([]),
         RuntimeLineTaskNodeId::from_zero_based(0).unwrap(),
-        Box::new([LineTaskNode::Action(Box::new([marker("action")]))]),
+        nodes,
         Box::new([LineCancelRule::new(
             InputActionId::new("Cancel").unwrap(),
             Box::new([marker("cancel")]),
@@ -143,6 +152,139 @@ fn inventory_plan(activation: Box<[FlowOp]>) -> RuntimePlan {
         ),
     ));
     plan
+}
+
+#[test]
+fn code_root_resolution_retains_original_line_bodies_and_rejects_other_rows_and_roles() {
+    use crate::plan::code::{RuntimeCodeOwner, RuntimeLineCodeBody};
+    use crate::runtime_id::RuntimeLineTaskGroupId;
+
+    let plan = inventory_plan_with_nodes(
+        Box::new([marker("activation")]),
+        Box::new([
+            LineTaskNode::Action(Box::new([marker("action")])),
+            LineTaskNode::Sequence(Box::new([])),
+        ]),
+    );
+    let group_id = RuntimeLineTaskGroupId::from_zero_based(0).unwrap();
+    let action = RuntimeLineTaskNodeId::from_zero_based(0).unwrap();
+    let owner = |body| RuntimeCodeOwner::LineTask {
+        group: group_id,
+        body,
+    };
+    let group = &plan.line_task_groups()[0];
+    let LineTaskNode::Action(action_body) = group.node(action).unwrap() else {
+        panic!("the fixture owns one action body");
+    };
+    let originals = [
+        group.activation_ops(),
+        action_body.as_ref(),
+        group.cancel_rules()[0].action(),
+        group.cleanup().actions(ScopeExit::Completed),
+        group.cleanup().actions(ScopeExit::Cancelled),
+        group.cleanup().actions(ScopeExit::Failed),
+    ];
+    let mut roots = Vec::new();
+    plan.inventory
+        .try_visit_code_roots(&mut |owner, body| {
+            let RuntimeCodeBodyRef::Operations(operations) = body else {
+                panic!("line code roots retain their original operation slices");
+            };
+            let RuntimeCodeBodyRef::Operations(resolved) = plan.inventory.code_body(owner).unwrap()
+            else {
+                panic!("the same owner resolves the same body kind");
+            };
+            assert!(std::ptr::eq(operations, resolved));
+            assert!(std::ptr::eq(operations, originals[roots.len()]));
+            roots.push(owner);
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+    assert_eq!(
+        roots,
+        [
+            owner(RuntimeLineCodeBody::Activation),
+            owner(RuntimeLineCodeBody::Action(action)),
+            owner(RuntimeLineCodeBody::Cancellation { rule: 0 }),
+            owner(RuntimeLineCodeBody::Cleanup(ScopeExit::Completed)),
+            owner(RuntimeLineCodeBody::Cleanup(ScopeExit::Cancelled)),
+            owner(RuntimeLineCodeBody::Cleanup(ScopeExit::Failed)),
+        ]
+    );
+    for body in [
+        RuntimeLineCodeBody::Action(RuntimeLineTaskNodeId::from_zero_based(1).unwrap()),
+        RuntimeLineCodeBody::Action(RuntimeLineTaskNodeId::from_zero_based(2).unwrap()),
+        RuntimeLineCodeBody::Cancellation { rule: 1 },
+    ] {
+        assert!(plan.inventory.code_body(owner(body)).is_none());
+    }
+    assert!(
+        plan.inventory
+            .code_body(RuntimeCodeOwner::LineTask {
+                group: RuntimeLineTaskGroupId::from_zero_based(1).unwrap(),
+                body: RuntimeLineCodeBody::Activation,
+            })
+            .is_none()
+    );
+}
+
+#[test]
+fn expression_code_root_borrows_the_original_return_expression() {
+    use crate::plan::code::{RuntimeCodeBodyRef, RuntimeCodeOwner};
+    use crate::plan::{
+        RuntimeEffectSet, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionDefinitionIdentity,
+        RuntimeFunctionSemanticRole, RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind,
+        RuntimeFunctionSiteDeclarationSeed,
+    };
+
+    let identity = RuntimeSemanticTypeId::from_bytes([1; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                identity,
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [],
+        )
+        .unwrap();
+    let site = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([72; 32]),
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs: Box::new([]),
+            result: identity,
+            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &site,
+            RuntimeExprSeed::new(
+                identity,
+                RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
+            ),
+        )
+        .unwrap();
+    let plan = builder.finish().unwrap();
+    let (site, declaration) = plan.function_sites().iter_with_ids().next().unwrap();
+    let RuntimeFunctionSiteBody::Expression(original) = declaration.body() else {
+        panic!("the fixture's actual function owns its return expression");
+    };
+    let mut owners = Vec::new();
+    plan.inventory
+        .try_visit_code_roots(&mut |owner, body| {
+            let RuntimeCodeBodyRef::Expression(expression) = body else {
+                panic!("expression roots do not allocate executable wrappers");
+            };
+            assert!(std::ptr::eq(expression, original));
+            owners.push(owner);
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+    assert_eq!(owners, [RuntimeCodeOwner::Function(site)]);
 }
 
 #[test]
