@@ -74,6 +74,15 @@ programs do not synthesize an Entry ID. Entry invocation retains its complete
 target validation; program invocation resolves the unique verified program
 binding and its complete function signature.
 
+A directly launched Flow keeps its original function origin across `goto`.
+The current root frame may then belong to another exact Flow binding in the
+same program. Live checkpoints, inert restore, and terminal-result admission
+apply this same rule; ordinary function and program origins still require their
+exact declared root. Selected-entry lowering discovers static Flow targets
+through the function-body emission queue, including transfers inside called
+Flows, closures, and line-task functions. A dynamic Flow target requires the
+complete admitted Flow inventory.
+
 An independently spawned child retains its actual function root. Its existing
 typed execution owner carries its parent, dialogue and task relationship;
 the child's function is not substituted for the parent's original program.

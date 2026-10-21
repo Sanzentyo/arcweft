@@ -294,7 +294,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             ));
             return;
         };
-        let flows = selected_flow_closure(self.plan, entry);
+        let flows = entry_target_flows([*entry]);
         self.lower_plan_selection(&flows, &entries);
     }
 
@@ -303,14 +303,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         selected_flows: &BTreeSet<FlowRuntimeId>,
         entries: &[&RuntimeEntrySpec],
     ) {
-        for helper in self.plan.pure_helpers() {
-            self.lower_pure_helper(helper);
-        }
-        AwbcTraitMethodLowerer::new(self.inventory, self.plan).lower_plan();
-        for group in self.plan.line_task_groups() {
-            let _ = self.lower_line_task_group(group);
-        }
-
         for flow in self
             .plan
             .flows()
@@ -321,6 +313,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 .inventory
                 .reserve_function_site_slot(flow.function_site(), flow.definition());
             self.inventory.bind_flow_function(&flow.id, function);
+        }
+        for helper in self.plan.pure_helpers() {
+            self.lower_pure_helper(helper);
+        }
+        AwbcTraitMethodLowerer::new(self.inventory, self.plan).lower_plan();
+        for group in self.plan.line_task_groups() {
+            let _ = self.lower_line_task_group(group);
         }
         self.lower_defer_sites();
         for flow in self
@@ -1462,7 +1461,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 });
             }
             FlowOp::Choice { id, options } => {
-                let choice = self.lower_choice(id.as_deref(), options);
+                let choice = self.lower_choice(id.as_deref(), options, path);
                 let dst = frame.temp(self.inventory.string_ty());
                 body.suspend(self.inventory, AwbcSafePointKind::Choice, |resume| {
                     AwbcTerminator::Choice {
@@ -1809,7 +1808,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             }
             FlowOp::Goto(target) => {
                 self.emit_format_attempt_abandons(0);
-                if let Some(function) = self.inventory.flow_function(target) {
+                if let Some(function) = self.prepare_flow_target(target, path) {
                     self.close_active_scopes_for_terminator(frame);
                     body.terminate(
                         self.inventory,
@@ -1840,6 +1839,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 }
             }
             FlowOp::GotoExpr(expr) => {
+                // A runtime-selected Flow can name any admitted Flow. Reserve
+                // these original sites through the same dependency work queue.
+                let plan = self.plan;
+                for flow in plan.flows() {
+                    let _ = self.prepare_flow_target(&flow.id, path);
+                }
                 self.emit_format_attempt_abandons(0);
                 let target =
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
@@ -2086,6 +2091,23 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 },
             },
         );
+    }
+
+    /// Reserves the original target before its caller is emitted. The ordinary
+    /// function-site queue lowers its body once, including any further Flow
+    /// transfers discovered inside calls, closures, or line-task functions.
+    fn prepare_flow_target(
+        &mut self,
+        target: &FlowRuntimeId,
+        path: &str,
+    ) -> Option<AwbcFunctionId> {
+        if let Some(function) = self.inventory.flow_function(target) {
+            return Some(function);
+        }
+        let flow = self.plan.flows().iter().find(|flow| &flow.id == target)?;
+        let function = self.prepare_function_site(flow.function_site(), path)?;
+        self.inventory.bind_flow_function(target, function);
+        Some(function)
     }
 
     fn prepare_function_site(
@@ -2388,7 +2410,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         }
     }
 
-    fn lower_choice(&mut self, id: Option<&str>, options: &[ChoiceRuntimeOption]) -> AwbcChoiceId {
+    fn lower_choice(
+        &mut self,
+        id: Option<&str>,
+        options: &[ChoiceRuntimeOption],
+        path: &str,
+    ) -> AwbcChoiceId {
         let public_id = id.map(|id| self.inventory.intern_string(id));
         let lowered = options
             .iter()
@@ -2402,7 +2429,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 target: option
                     .target
                     .as_ref()
-                    .and_then(|target| self.inventory.flow_function(target)),
+                    .and_then(|target| self.prepare_flow_target(target, path)),
                 out_effect: option.out.as_ref().map(|out| {
                     self.inventory
                         .intern_effect(&arcweft_core::effect::LineEffectRequest::Out(out.clone()))
@@ -3964,136 +3991,6 @@ fn entry_target_flows<'a>(
         }
     }
     targets
-}
-
-fn selected_flow_closure(plan: &RuntimePlan, entry: &RuntimeEntrySpec) -> BTreeSet<FlowRuntimeId> {
-    let mut selected = entry_target_flows([entry]);
-    loop {
-        let mut discovered = BTreeSet::new();
-        let mut has_dynamic_target = false;
-        for flow in plan
-            .flows()
-            .iter()
-            .filter(|flow| selected.contains(&flow.id))
-        {
-            collect_flow_dependencies(flow.body().ops(), &mut discovered, &mut has_dynamic_target);
-        }
-        if has_dynamic_target {
-            return plan.flows().iter().map(|flow| flow.id.clone()).collect();
-        }
-        let previous_len = selected.len();
-        selected.extend(discovered);
-        if selected.len() == previous_len {
-            return selected;
-        }
-    }
-}
-
-fn collect_flow_dependencies(
-    ops: &[FlowOp],
-    targets: &mut BTreeSet<FlowRuntimeId>,
-    has_dynamic_target: &mut bool,
-) {
-    for op in ops {
-        let terminates = match op {
-            FlowOp::StandardMap(control) => {
-                collect_flow_dependencies(control.body(), targets, has_dynamic_target);
-                false
-            }
-            FlowOp::Choice { options, .. } => {
-                targets.extend(options.iter().filter_map(|option| option.target.clone()));
-                false
-            }
-            FlowOp::Goto(target) => {
-                targets.insert(target.clone());
-                true
-            }
-            FlowOp::GotoExpr(_) => {
-                *has_dynamic_target = true;
-                true
-            }
-            FlowOp::LetElse { else_ops, .. } => {
-                collect_flow_dependencies(else_ops, targets, has_dynamic_target);
-                false
-            }
-            FlowOp::FormatOperandAttempt { body, .. } => {
-                collect_flow_dependencies(body, targets, has_dynamic_target);
-                false
-            }
-            FlowOp::If {
-                then_ops, else_ops, ..
-            }
-            | FlowOp::IfLet {
-                then_ops, else_ops, ..
-            } => {
-                collect_flow_dependencies(then_ops, targets, has_dynamic_target);
-                collect_flow_dependencies(else_ops, targets, has_dynamic_target);
-                false
-            }
-            FlowOp::Match { arms, .. } => {
-                for arm in arms {
-                    collect_flow_dependencies(&arm.ops, targets, has_dynamic_target);
-                }
-                false
-            }
-            FlowOp::Loop { body, .. }
-            | FlowOp::While { body, .. }
-            | FlowOp::WhileLet { body, .. }
-            | FlowOp::For { body, .. }
-            | FlowOp::Thread { body, .. }
-            | FlowOp::Scope { body, .. } => {
-                collect_flow_dependencies(body, targets, has_dynamic_target);
-                false
-            }
-            FlowOp::LoopNext { body }
-            | FlowOp::WhileNext { body, .. }
-            | FlowOp::WhileLetNext { body, .. }
-            | FlowOp::ForNext { body, .. } => {
-                collect_flow_dependencies(body.as_ref(), targets, has_dynamic_target);
-                false
-            }
-            FlowOp::LetScope { ops, .. } => {
-                collect_flow_dependencies(ops, targets, has_dynamic_target);
-                false
-            }
-            FlowOp::Await { observers, .. } => {
-                for observer in observers {
-                    collect_flow_dependencies(&observer.ops, targets, has_dynamic_target);
-                }
-                false
-            }
-            FlowOp::Return(_) | FlowOp::ReturnExpr(_) | FlowOp::SelectDialogueResult { .. } => true,
-            FlowOp::Bind(_)
-            | FlowOp::Let { .. }
-            | FlowOp::CompleteFormatOperand { .. }
-            | FlowOp::Assign { .. }
-            | FlowOp::LineOperation { .. }
-            | FlowOp::CommitDialogueResult { .. }
-            | FlowOp::Dialogue { .. }
-            | FlowOp::AwaitMany { .. }
-            | FlowOp::StartNeedProducer { .. }
-            | FlowOp::HostCall { .. }
-            | FlowOp::ProjectCall { .. }
-            | FlowOp::ApplyGroup { .. }
-            | FlowOp::Break(_)
-            | FlowOp::Continue
-            | FlowOp::Effect(_)
-            | FlowOp::EvaluatedEffect(_)
-            | FlowOp::RegisterCleanup { .. }
-            | FlowOp::RegisterDefer { .. }
-            | FlowOp::CancelCleanup { .. }
-            | FlowOp::EnterScope { .. }
-            | FlowOp::ExitScope
-            | FlowOp::EnterScheduledScope { .. }
-            | FlowOp::ExitScheduledScope { .. }
-            | FlowOp::ExitScopeBind { .. }
-            | FlowOp::CompleteAwaitObserver
-            | FlowOp::Noop => false,
-        };
-        if terminates {
-            break;
-        }
-    }
 }
 
 fn flow_public_id(flow: &FlowRuntimeId) -> String {

@@ -253,6 +253,26 @@ impl AwbcFiberRoot {
             Self::Empty => Err(FiberStateError::InvalidFrame),
         }
     }
+
+    /// Authenticates the retained root frame while preserving its launch origin.
+    /// A directly launched Flow may transfer to another bound Flow through Goto;
+    /// ordinary functions and program/Root roles retain their exact declaration.
+    fn validate_root_frame(
+        self,
+        program: &AwbcProgram,
+        function: Option<AwbcFunctionId>,
+    ) -> Result<Option<AwbcFunctionId>, FiberStateError> {
+        let expected = self.validate(program)?;
+        if let (Some(expected), Some(function)) = (expected, function)
+            && expected != function
+            && !(matches!(self, Self::Function(_))
+                && program.flow_identity(expected).is_some()
+                && program.flow_identity(function).is_some())
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        Ok(expected)
+    }
 }
 
 /// Complete state that may cross compact-VM and compiled-region boundaries.

@@ -69,18 +69,16 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
                     .map_or(error, |resource| FiberStateError::Snapshot(resource.into()))
             })?;
         }
-        let expected = self.root.validate(program)?;
+        self.root.validate_root_frame(
+            program,
+            Some(
+                self.frames
+                    .first()
+                    .map_or(self.cursor.function, |frame| frame.function),
+            ),
+        )?;
         if self.root == AwbcFiberRoot::Empty {
             return self.validate_empty_origin();
-        }
-        if let Some(expected) = expected
-            && self
-                .frames
-                .first()
-                .map_or(self.cursor.function, |frame| frame.function)
-                != expected
-        {
-            return Err(FiberStateError::InvalidFrame);
         }
         self.status.validate_retained_shape(
             self.suspension.is_some(),

@@ -4227,6 +4227,63 @@ fn goto_static_and_dynamic_unwind_every_call_frame_without_project_call_return()
 }
 
 #[test]
+fn directly_launched_flow_goto_keeps_its_origin_through_live_and_inert_validation() {
+    use super::fiber::{AwbcFiberRoot, AwbcFiberStateSnapshot};
+
+    for dynamic in [false, true] {
+        let mut program = goto_unwind_program(dynamic);
+        program.canonicalize_string_table();
+        program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .unwrap();
+        let program = std::sync::Arc::new(program);
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
+        let origin = AwbcFiberRoot::Function(AwbcFunctionId(0));
+        let mut fiber =
+            FiberState::for_function(&program, origin, AwbcFunctionId(0), 1, 64).unwrap();
+        fiber
+            .push_call_frame_at(
+                &program,
+                AwbcFunctionId(1),
+                super::fiber::FiberReturnPoint::ordinary(fiber.cursor, None),
+                &[],
+            )
+            .unwrap();
+
+        let mut returned = false;
+        for _ in 0..8 {
+            let output = super::vm::step(
+                &program,
+                &mut fiber,
+                super::vm::VmStepOptions {
+                    max_instructions: 1,
+                },
+            )
+            .unwrap();
+            fiber.validate_for_program(&program).unwrap();
+            let saved = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+            let bytes = serde_json::to_vec(&saved).unwrap();
+            let saved: AwbcFiberStateSnapshot = serde_json::from_slice(&bytes).unwrap();
+            fiber = saved.into_live_for_program(&owner).unwrap();
+            assert_eq!(fiber.root, origin);
+            if output.exit == super::vm::VmExit::Returned(None) {
+                returned = true;
+                break;
+            }
+        }
+        assert!(returned);
+        assert_eq!(fiber.frames.len(), 1);
+        assert_eq!(fiber.active_frame().unwrap().function, AwbcFunctionId(2));
+
+        // An ordinary function origin cannot authenticate a different Flow's
+        // retained frame or returned result.
+        let mut forged = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        forged.root = AwbcFiberRoot::Function(AwbcFunctionId(1));
+        assert!(forged.into_live_for_program(&owner).is_err());
+    }
+}
+
+#[test]
 fn flow_transfer_keeps_target_effect_and_capability_validation() {
     for dynamic in [false, true] {
         let mut program = goto_unwind_program(dynamic);

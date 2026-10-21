@@ -81,7 +81,7 @@ use arcweft_lang_hir::identity::{ExprId, HirModuleId, HirSnapshotId, ItemId, Loc
 use arcweft_lang_hir::item::{
     HirEntryDeclaration, HirEntryId, HirEntryKind, HirFlowItem, HirFunctionBody, HirImplFunction,
     HirImplMember, HirItemKind, HirMethodParameter, HirMethodParameterGroup, HirMethodReceiverKind,
-    HirParameter, HirParameterKind,
+    HirParameterKind,
 };
 use arcweft_lang_hir::leaf::HirIdRef;
 use arcweft_lang_hir::module::HirModule;

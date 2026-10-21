@@ -17,7 +17,16 @@ use arcweft_core::{
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
-fn executor(source: &str, product: bool) -> ArcweftRuntimeExecutor {
+#[derive(Clone, Copy, Debug)]
+enum Backend {
+    Native,
+    Awbc,
+    SelectedAwbc,
+}
+
+const BACKENDS: [Backend; 3] = [Backend::Native, Backend::Awbc, Backend::SelectedAwbc];
+
+fn executor(source: &str, backend: Backend) -> ArcweftRuntimeExecutor {
     let compiled =
         compile_source(source).expect("Include source compiles through its checked target");
     let [entry] = compiled.plan.entries() else {
@@ -27,14 +36,22 @@ fn executor(source: &str, product: bool) -> ArcweftRuntimeExecutor {
         panic!("fixture Entry owns a Flow")
     };
     let flow = flow.clone();
-    if product {
-        let lowered = AwbcLowerer::new(
-            &compiled.plan,
-            &compiled.dialogue_content,
-            "flow-include.arcw",
-        )
-        .lower()
-        .expect("original Flow calls lower to AWBC");
+    if !matches!(backend, Backend::Native) {
+        let lowerer = match backend {
+            Backend::SelectedAwbc => AwbcLowerer::for_entry(
+                &compiled.plan,
+                &compiled.dialogue_content,
+                "flow-include.arcw",
+                &entry.id,
+            ),
+            Backend::Awbc => AwbcLowerer::new(
+                &compiled.plan,
+                &compiled.dialogue_content,
+                "flow-include.arcw",
+            ),
+            Backend::Native => unreachable!(),
+        };
+        let lowered = lowerer.lower().expect("original Flow calls lower to AWBC");
         let decoded = AwbcProgram::decode_canonical(
             &lowered.program.encode_canonical().unwrap(),
             AwbcDecodeBudget::default(),
@@ -63,16 +80,17 @@ fn executor(source: &str, product: bool) -> ArcweftRuntimeExecutor {
 }
 
 fn returns(source: &str, expected: &str) {
-    for product in [false, true] {
-        let mut executor = executor(source, product);
+    for backend in BACKENDS {
+        let mut executor = executor(source, backend);
         let mut done = false;
-        for _ in 0..128 {
+        for step in 0..128 {
             let output = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
             assert!(output.stats.executed_ops <= 1);
             assert!(
                 output.output.diagnostics.is_empty(),
-                "{:?}",
-                output.output.diagnostics
+                "backend={backend:?}, step={step}, output={:?}, fiber={:?}",
+                output.output,
+                executor.fiber()
             );
             if matches!(
                 executor.fiber().frame.status,
@@ -86,7 +104,10 @@ fn returns(source: &str, expected: &str) {
                 break;
             }
         }
-        assert!(done, "Include did not resume its caller; product={product}");
+        assert!(
+            done,
+            "Include did not resume its caller; backend={backend:?}"
+        );
     }
 }
 
@@ -138,8 +159,8 @@ fn mutually_recursive_includes_execute_under_the_original_one_operation_budget()
         "flow second() { include @flow.first }\n",
         "entry cli @entry.main { goto @flow.main }\n",
     );
-    for product in [false, true] {
-        let mut executor = executor(source, product);
+    for backend in BACKENDS {
+        let mut executor = executor(source, backend);
         for _ in 0..16 {
             let output = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
             assert_eq!(output.stats.executed_ops, 1);

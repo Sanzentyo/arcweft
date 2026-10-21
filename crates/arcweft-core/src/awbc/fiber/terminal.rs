@@ -109,12 +109,7 @@ impl<V> FiberTerminalValue<V> {
             .work()
             .charge(0)
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        let expected_root = root.validate(program)?;
-        if let Some(expected) = expected_root
-            && frame.is_some_and(|frame| frame.function != expected)
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
+        let expected_root = root.validate_root_frame(program, frame.map(|frame| frame.function))?;
         let expected = match self {
             Self::Returned(_) | Self::ReturnedTransferred => {
                 let value = match self {
