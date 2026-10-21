@@ -99,7 +99,7 @@ fn two_string_inputs_plan() -> (RuntimePlan, FlowRuntimeId) {
                     local: local.clone(),
                 },
             ),
-            ownership: RuntimeValueOwnershipRequirement::Unrestricted,
+            ownership: RuntimeValueOwnershipRequirement::Owned,
             unrestricted_bindings: Box::new([]),
         })
         .collect();
