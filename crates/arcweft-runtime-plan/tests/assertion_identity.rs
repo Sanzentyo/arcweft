@@ -5,7 +5,7 @@ use arcweft_core::{
         RuntimeArtifactFingerprint, RuntimeAssertion, RuntimeAssertionFailure,
         RuntimeAssertionGuardId, RuntimeAssertionProfile, RuntimeEffectExpr,
     },
-    plan::{FlowOp, FlowRuntimeId},
+    plan::FlowOp,
     value::RuntimeValue,
 };
 use arcweft_lang_hir::{
@@ -669,14 +669,7 @@ fn lower_assertion_project(
             local_analysis.expression_origin(owner).unwrap(),
         );
     }
-    input.push_flow(
-        flow_owner,
-        accepted_flow_fixture(
-            &project,
-            flow_owner,
-            FlowRuntimeId::canonical("checks").expect("runtime Flow identity"),
-        ),
-    );
+    input.push_flow(flow_owner, accepted_flow_fixture(&project, flow_owner));
     for (condition, value) in conditions.iter().copied().zip(values.iter().copied()) {
         input.push_expression_literal(condition, RuntimeValue::Bool(value));
     }
@@ -813,7 +806,6 @@ fn accepted_analysis_fixture(
 fn accepted_flow_fixture(
     project: &arcweft_lang_hir::project::HirProject,
     owner: arcweft_lang_hir::identity::ItemId,
-    identity: arcweft_core::plan::FlowRuntimeId,
 ) -> arcweft_runtime_plan::semantic_facts::RuntimeFlowFact {
     use arcweft_lang_sema::{final_analysis::*, registration::*};
     let executable = project.analysis_view().unwrap();
@@ -865,6 +857,5 @@ fn accepted_flow_fixture(
             result: Box::new(unit),
         },
     );
-    arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::try_new(identity, definition, signature)
-        .unwrap()
+    arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::try_new(definition, signature).unwrap()
 }

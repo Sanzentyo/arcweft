@@ -1023,14 +1023,6 @@ fn project_runtime_semantic_fact_inventories(
                 &arcweft_lang_hir::project::HirRuntimeExecutableOwner::Item(owner),
             )
         {
-            let symbol = symbols
-                .flow_symbol_for_item(owner)
-                .ok_or(RuntimeSemanticProjectionError::InvalidFlowIdentity { owner })?;
-            let CallableDeclarationKey::Flow(declaration) = symbol.declaration() else {
-                return Err(RuntimeSemanticProjectionError::InvalidFlowIdentity { owner });
-            };
-            let identity = runtime_flow_identity(declaration)
-                .map_err(|_| RuntimeSemanticProjectionError::InvalidFlowIdentity { owner })?;
             let definition = Arc::new(
                 analysis
                     .checked_flow_execution_definition(project, symbols, owner)
@@ -1048,7 +1040,6 @@ fn project_runtime_semantic_fact_inventories(
             input.push_flow(
                 owner,
                 arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::try_new(
-                    identity,
                     definition,
                     function_type,
                 )

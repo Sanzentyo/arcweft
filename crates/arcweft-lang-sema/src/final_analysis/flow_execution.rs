@@ -5,7 +5,7 @@ use std::sync::Arc;
 use arcweft_lang_hir::{
     identity::ItemId,
     project::{HirAnalysisProjectView, HirDeclarationBodyRootRole},
-    symbol::ProjectSymbolTable,
+    symbol::{CallableDeclarationKey, FlowDeclarationId, ProjectSymbolTable},
 };
 
 use super::{
@@ -26,6 +26,18 @@ pub struct CheckedFlowExecutionDefinition {
 impl CheckedFlowExecutionDefinition {
     pub const fn owner(&self) -> ItemId {
         self.owner
+    }
+
+    /// Original declaration selected with this definition's accepted body.
+    /// The private constructor always requests the same Flow body source.
+    pub fn declaration(&self) -> &FlowDeclarationId {
+        match self.body.source() {
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                declaration: CallableDeclarationKey::Flow(declaration),
+                role: HirDeclarationBodyRootRole::FlowBody,
+            }) => declaration,
+            _ => unreachable!("checked Flow definitions retain their original declaration body"),
+        }
     }
 
     pub const fn body(&self) -> &Arc<CheckedExecutionInputAbi> {

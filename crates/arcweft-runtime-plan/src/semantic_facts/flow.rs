@@ -17,7 +17,6 @@ pub struct RuntimeFlowFact {
 
 impl RuntimeFlowFact {
     pub fn try_new(
-        identity: FlowRuntimeId,
         definition: Arc<CheckedFlowExecutionDefinition>,
         function_type: RuntimeNormalizedType,
     ) -> Result<Self, RuntimeFlowFactError> {
@@ -41,6 +40,12 @@ impl RuntimeFlowFact {
             });
         }
         let effects = RuntimeEffectSet::try_from_effects(definition.effects().iter().cloned())?;
+        let declaration = definition.declaration();
+        let identity = FlowRuntimeId::from_checked_declaration_digest(
+            declaration.semantic_digest().into_bytes(),
+            declaration.public_id().as_str(),
+        )
+        .map_err(|source| RuntimeFlowFactError::Identity(Box::new(source)))?;
         Ok(Self {
             identity,
             effects,
@@ -73,10 +78,17 @@ impl RuntimeFlowFact {
     pub fn owner(&self) -> arcweft_lang_hir::identity::ItemId {
         self.definition.owner()
     }
+
+    #[must_use]
+    pub fn declaration(&self) -> &arcweft_lang_hir::symbol::FlowDeclarationId {
+        self.definition.declaration()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeFlowFactError {
+    #[error("accepted Flow declaration has no runtime identity: {0}")]
+    Identity(#[source] Box<arcweft_core::runtime_id::RuntimeIdError>),
     #[error("accepted Flow invocation projection is not a function type")]
     NotFunction,
     #[error("accepted Flow invocation has {actual} normalized inputs, expected {expected}")]

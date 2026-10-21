@@ -9797,12 +9797,10 @@ mod tests {
             .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
             .map(arcweft_lang_hir::project::HirProjectItemRef::id)
             .expect("Flow item");
-        let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
+        let flow = accepted_flow_fixture(&project, owner);
+        let identity = flow.identity().clone();
         let mut input = complete_type_input(&project);
-        input.push_flow(
-            owner,
-            accepted_flow_fixture(&project, owner, identity.clone()),
-        );
+        input.push_flow(owner, flow);
         let facts = runtime_facts(&project, input).expect("checked facts");
         let entry_input = RuntimeEntryLoweringInput::empty(executable);
         let report = lower_runtime_plan_with_stats(executable, &facts, &entry_input)
@@ -9810,6 +9808,51 @@ mod tests {
         assert_eq!(report.plan.flows().len(), 1);
         assert_eq!(report.plan.flows()[0].id, identity);
         assert!(report.plan.flows()[0].body().ops().is_empty());
+    }
+
+    #[test]
+    fn checked_flow_identity_keeps_same_label_declarations_distinct_at_invocation() {
+        let left = project_fixture("flow-identity-left", "flow opening {}\n");
+        let right = project_fixture("flow-identity-right", "flow opening {}\n");
+        let lower = |project: &HirProject| {
+            let executable = project.analysis_view().unwrap();
+            let owner = executable
+                .items()
+                .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
+                .unwrap()
+                .id();
+            let flow = accepted_flow_fixture(project, owner);
+            let identity = flow.identity().clone();
+            let mut input = complete_type_input(project);
+            input.push_flow(owner, flow);
+            let facts = runtime_facts(project, input).unwrap();
+            let report = lower_runtime_plan_with_stats(
+                executable,
+                &facts,
+                &RuntimeEntryLoweringInput::empty(executable),
+            )
+            .unwrap();
+            (report.plan, identity)
+        };
+        let (left_plan, left_identity) = lower(&left);
+        let (_, right_identity) = lower(&right);
+        assert_eq!(left_identity.public_label(), right_identity.public_label());
+        assert_ne!(left_identity, right_identity);
+        assert_ne!(left_identity, FlowRuntimeId::canonical("opening").unwrap());
+        assert!(matches!(
+            left_plan.clone().seal_flow_invocation(right_identity, []),
+            Err(arcweft_core::plan::RuntimeFlowInvocationError::UnknownFlow { .. })
+        ));
+        let mut engine = arcweft_core::engine::Engine::for_flow(left_plan, &left_identity).unwrap();
+        let output = engine.step(
+            arcweft_core::step::RuntimeStepInput::default(),
+            arcweft_core::step::RuntimeStepOptions::default(),
+        );
+        assert!(output.output.diagnostics.is_empty());
+        assert_eq!(
+            engine.fiber().frame.status,
+            arcweft_core::engine::FlowFiberStatus::Done(arcweft_core::engine::FlowExit::Done)
+        );
     }
 
     #[test]
@@ -9862,7 +9905,6 @@ mod tests {
             .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
             .map(arcweft_lang_hir::project::HirProjectItemRef::id)
             .expect("Flow item");
-        let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
         let mut input = complete_type_input(&project);
         input.attach_checked_local_uses(Arc::clone(analysis.checked_local_uses()));
         for (owner, _) in analysis.expressions() {
@@ -9876,7 +9918,7 @@ mod tests {
                 );
             }
         }
-        input.push_flow(owner, accepted_flow_fixture(&project, owner, identity));
+        input.push_flow(owner, accepted_flow_fixture(&project, owner));
         let facts = runtime_facts(&project, input).expect("checked facts");
         let partition = analysis
             .execution_projection()
@@ -9989,13 +10031,10 @@ mod tests {
             .find(|item| matches!(item.item().kind(), HirItemKind::Entry(_)))
             .map(arcweft_lang_hir::project::HirProjectItemRef::id)
             .expect("Entry item");
-        let flow =
-            FlowRuntimeId::from_source_entity_body("flow.main").expect("runtime Flow identity");
+        let flow_fact = accepted_flow_fixture(&project, flow_owner);
+        let flow = flow_fact.identity().clone();
         let mut fact_input = complete_type_input(&project);
-        fact_input.push_flow(
-            flow_owner,
-            accepted_flow_fixture(&project, flow_owner, flow.clone()),
-        );
+        fact_input.push_flow(flow_owner, flow_fact);
         let facts = runtime_facts(&project, fact_input).expect("checked facts");
 
         let missing = RuntimeEntryLoweringInput::empty(executable);
@@ -10238,7 +10277,6 @@ mod tests {
     fn accepted_flow_fixture(
         project: &arcweft_lang_hir::project::HirProject,
         owner: arcweft_lang_hir::identity::ItemId,
-        identity: arcweft_core::plan::FlowRuntimeId,
     ) -> crate::semantic_facts::RuntimeFlowFact {
         use arcweft_lang_sema::{final_analysis::*, registration::*};
         let executable = project.analysis_view().unwrap();
@@ -10291,8 +10329,7 @@ mod tests {
                     result: Box::new(unit),
                 },
             );
-            crate::semantic_facts::RuntimeFlowFact::try_new(identity, definition, signature)
-                .unwrap()
+            crate::semantic_facts::RuntimeFlowFact::try_new(definition, signature).unwrap()
         }
     }
 

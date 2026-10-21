@@ -21,7 +21,7 @@ use arcweft_core::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
 };
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeBuiltinIteratorFamily, RuntimeLineId,
+    RuntimeAgentOperationalType, RuntimeBuiltinIteratorFamily, RuntimeLineId,
     RuntimeOperationalType, RuntimePlanTypeProjection,
 };
 use arcweft_core::value::{
@@ -1886,12 +1886,11 @@ fn checked_flow_identity_uses_the_qualified_item_owner() {
         "flow opening {}\nfn __runtime_plan_test_probe() -> Unit { () }\n",
     );
     let owner = flow_item(&project);
-    let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
+    let flow = accepted_flow_fixture(&project, owner);
+    let identity = flow.identity().clone();
+    assert_eq!(identity.public_label().as_str(), "flow.opening");
     let mut input = complete_type_input(&project);
-    input.push_flow(
-        owner,
-        accepted_flow_fixture(&project, owner, identity.clone()),
-    );
+    input.push_flow(owner, flow);
 
     let facts = runtime_facts(&project, input).expect("Flow identity fact");
     assert_eq!(
@@ -1910,11 +1909,7 @@ fn flow_definition_rejects_another_owner_and_generation() {
         .filter_map(|item| matches!(item.item().kind(), HirItemKind::Flow(_)).then_some(item.id()))
         .take(2)
         .collect::<Vec<_>>();
-    let first = accepted_flow_fixture(
-        &project,
-        owners[0],
-        FlowRuntimeId::canonical("first").unwrap(),
-    );
+    let first = accepted_flow_fixture(&project, owners[0]);
     let mut foreign_owner = complete_type_input(&project);
     foreign_owner.push_flow(owners[1], first);
     assert_eq!(
@@ -1929,11 +1924,7 @@ fn flow_definition_rejects_another_owner_and_generation() {
         .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
         .unwrap()
         .id();
-    let foreign = accepted_flow_fixture(
-        &other,
-        other_owner,
-        FlowRuntimeId::canonical("first").unwrap(),
-    );
+    let foreign = accepted_flow_fixture(&other, other_owner);
     let mut foreign_generation = complete_type_input(&project);
     foreign_generation.push_flow(owners[0], foreign);
     assert_eq!(
@@ -3966,7 +3957,6 @@ fn accepted_flow_definition_fixture(
 fn accepted_flow_fixture(
     project: &arcweft_lang_hir::project::HirProject,
     owner: arcweft_lang_hir::identity::ItemId,
-    identity: arcweft_core::plan::FlowRuntimeId,
 ) -> crate::semantic_facts::RuntimeFlowFact {
     let definition = accepted_flow_definition_fixture(project, owner);
     {
@@ -3986,7 +3976,7 @@ fn accepted_flow_fixture(
                 result: Box::new(unit),
             },
         );
-        crate::semantic_facts::RuntimeFlowFact::try_new(identity, definition, signature).unwrap()
+        crate::semantic_facts::RuntimeFlowFact::try_new(definition, signature).unwrap()
     }
 }
 
@@ -4097,9 +4087,8 @@ fn flow_invocation_projection_rejects_nonfunction_and_incomplete_arity() {
     );
     let owner = flow_item(&project);
     let definition = accepted_flow_definition_fixture(&project, owner);
-    let identity = FlowRuntimeId::canonical("root").unwrap();
     assert!(matches!(
-        RuntimeFlowFact::try_new(identity.clone(), Arc::clone(&definition), unit_type()),
+        RuntimeFlowFact::try_new(Arc::clone(&definition), unit_type()),
         Err(RuntimeFlowFactError::NotFunction)
     ));
     let extra_input = RuntimeNormalizedType::new(
@@ -4113,7 +4102,7 @@ fn flow_invocation_projection_rejects_nonfunction_and_incomplete_arity() {
         },
     );
     assert!(matches!(
-        RuntimeFlowFact::try_new(identity, definition, extra_input),
+        RuntimeFlowFact::try_new(definition, extra_input),
         Err(RuntimeFlowFactError::InputArity {
             expected: 0,
             actual: 1
