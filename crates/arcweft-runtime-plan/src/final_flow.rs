@@ -6840,12 +6840,7 @@ impl<'a> FinalFlowLowerer<'a> {
                         )));
                     }
                     let body = self.lower_body_as_one_error(thread_expr.body())?;
-                    let captures = RuntimeFlowOpSeed::Scope {
-                        identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
-                        body: body.clone(),
-                    }
-                    .free_locals()
-                    .into_vec();
+                    let captures = RuntimeFlowOpSeed::free_locals(&body).into_vec();
                     let payload = arcweft_core::pattern::RuntimeCheckedType::Unit;
                     let identity = payload.semantic_identity_digest();
                     let mut contract = blake3::Hasher::new();

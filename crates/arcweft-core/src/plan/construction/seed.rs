@@ -585,15 +585,14 @@ pub enum RuntimeFlowOpSeed {
 }
 
 impl RuntimeFlowOpSeed {
-    /// Returns the source-ordered free locals captured by this sealed
-    /// construction operation. The operation algebra remains the sole owner of
-    /// binding semantics; downstream line-plan lowering must not reimplement
-    /// per-variant traversal.
+    /// Returns the source-ordered, unique free locals read by a borrowed body.
+    /// Bindings accumulate across its operations and remain local to nested
+    /// scopes. The operation algebra owns binding semantics; callers need not
+    /// copy the body into a synthetic scope to analyze its captures.
     #[must_use]
-    pub fn free_locals(&self) -> Box<[RuntimeLocalSeedId]> {
-        let mut bound = Vec::new();
+    pub fn free_locals(ops: &[Self]) -> Box<[RuntimeLocalSeedId]> {
         let mut locals = Vec::new();
-        collect_flow_op_free_locals(self, &mut bound, &mut locals);
+        collect_flow_ops_free_locals(ops, &[], &mut locals);
         locals.into_boxed_slice()
     }
 }

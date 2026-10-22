@@ -266,8 +266,7 @@ fn fixture(mode: Mode) -> Result<RuntimePlan, RuntimePlanBuildError> {
             consumption,
         );
         assert_eq!(
-            RuntimeFlowOpSeed::StandardMap(control.clone())
-                .free_locals()
+            RuntimeFlowOpSeed::free_locals(&[RuntimeFlowOpSeed::StandardMap(control.clone())])
                 .as_ref(),
             &[source.clone(), mapping.clone()]
         );
@@ -283,6 +282,7 @@ fn fixture(mode: Mode) -> Result<RuntimePlan, RuntimePlanBuildError> {
         }
         ops.push(RuntimeFlowOpSeed::StandardMap(control));
     }
+    assert_eq!(RuntimeFlowOpSeed::free_locals(&ops).as_ref(), &[]);
     let root = builder.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
         definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x91; 32]),
         role: RuntimeFunctionSemanticRole::Ordinary,
