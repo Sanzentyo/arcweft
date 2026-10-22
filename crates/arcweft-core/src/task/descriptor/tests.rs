@@ -319,7 +319,7 @@ fn submission_identity_is_admitted_before_request_callable_construction() {
     let mut forged = handle;
     forged.correlation.task_id = TaskId::try_from_bytes([9; 32]).unwrap();
     wire["handle"] = serde_json::to_value(forged).unwrap();
-    wire["spec"]["request"]["Custom"]["args"] =
+    wire["spec"]["request"]["Host"]["Custom"]["args"] =
         serde_json::to_value(vec![AwbcRuntimeValueSnapshot::Callable(
             crate::value::AwbcRuntimeCallableSnapshot {
                 state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),

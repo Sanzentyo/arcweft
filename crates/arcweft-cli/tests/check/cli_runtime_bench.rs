@@ -3853,7 +3853,7 @@ fn bench_json_measures_checked_in_thread_scheduling_fixture() {
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 3);
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 3);
     assert_eq!(measurement["native_io"]["parallel_batches"], 0);
-    assert_eq!(measurement["native_io"]["program_task_terminals"], 0);
+    assert_eq!(measurement["native_io"]["program_task_terminals"], 3);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["completion_sorts"], 0);
     assert_native_bridge_phase_timings(measurement);

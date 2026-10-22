@@ -69,6 +69,15 @@ fn actual_program_body_retirement_is_required_and_duplicate_batch_is_atomic() {
     let mut terminals = Vec::new();
     let mut logs = Vec::new();
     for step in 0..128 {
+        let expected_diagnostics = events
+            .iter()
+            .map(|event: &TaskEvent| {
+                arcweft_core::step::RuntimeDiagnostic::new(format!(
+                    "task {} sequence {} delivered",
+                    event.correlation.task_id, event.cursor.sequence.0,
+                ))
+            })
+            .collect::<Vec<_>>();
         let result = runtime.step(
             RuntimeStepInput {
                 task_events: std::mem::take(&mut events),
@@ -77,7 +86,12 @@ fn actual_program_body_retirement_is_required_and_duplicate_batch_is_atomic() {
             RuntimeStepOptions::default(),
         );
         assert!(result.stats.executed_ops <= 1);
-        assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
+        assert_eq!(
+            result.output.diagnostics, expected_diagnostics,
+            "{:?}",
+            result.output
+        );
+        assert_eq!(result.stats.task_events_in, expected_diagnostics.len());
         logs.extend(
             result
                 .output
