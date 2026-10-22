@@ -1947,7 +1947,10 @@ entry cli @entry.main {{ goto @flow.main }}
 fn sibling_thread_dialogue_callbacks_join_their_own_activation() {
     use arcweft_core::engine::{FlowExit, FlowFiberStatus};
     use arcweft_core::plan::FlowEvent;
-    use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
+    use arcweft_core::step::{
+        RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind, RuntimeStepInput,
+        RuntimeStepOptions,
+    };
     use arcweft_core::time::TickId;
 
     let compiled = compile_attached_dialogue_project(
@@ -1993,15 +1996,25 @@ entry cli @entry.main { goto @flow.main }
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
     let mut advances = Vec::new();
+    let mut content_events = Vec::new();
+    let mut delivered_effects = 0;
     let mut parents = std::collections::BTreeSet::new();
     let mut activations = std::collections::BTreeSet::new();
     let mut effects = Vec::new();
     let mut submissions = 0;
     for tick in 0..256 {
+        let revealed = std::mem::take(&mut content_events);
+        let ready_advances = if revealed.is_empty() {
+            std::mem::take(&mut advances)
+        } else {
+            Vec::new()
+        };
+        delivered_effects += revealed.len();
         let result = native.step_with_pure_backend(
             RuntimeStepInput {
                 tick: TickId(tick),
-                dialogue_advances: std::mem::take(&mut advances),
+                dialogue_content_events: revealed,
+                dialogue_advances: ready_advances,
                 ..RuntimeStepInput::default()
             },
             RuntimeStepOptions::default(),
@@ -2019,6 +2032,18 @@ entry cli @entry.main { goto @flow.main }
             if let FlowEvent::DialogueLine { activation, .. } = event {
                 parents.insert(activation.owner_fiber());
                 assert!(activations.insert(activation.clone()));
+                let content = runtime
+                    .plan
+                    .dialogue_content()
+                    .get(activation.content())
+                    .unwrap();
+                let [site] = content.effect_sites() else {
+                    panic!("each source line reveals one callback");
+                };
+                content_events.push(RuntimeDialogueContentEvent::new(
+                    activation.clone(),
+                    RuntimeDialogueContentEventKind::Effect(site.site()),
+                ));
                 advances.push(activation);
             }
         }
@@ -2027,6 +2052,7 @@ entry cli @entry.main { goto @flow.main }
             assert_eq!(submissions, 2);
             assert_eq!(parents.len(), 2);
             assert_eq!(activations.len(), 2);
+            assert_eq!(delivered_effects, 2);
             assert_eq!(log_messages(&effects), ["first", "second"]);
             assert_eq!(native.child_fiber_count(), 0);
             return;
