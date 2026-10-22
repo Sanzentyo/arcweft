@@ -25258,3 +25258,46 @@ must remain distinct, with one active code-position authority and original
 expression roots. All other full-goal implementation and acceptance requirements
 remain in scope. The 39 excluded cases and final Tier 2/workspace/visual acceptance
 have not been promoted to completed work.
+
+### 2026-10-23 Original body coordinates in progress
+
+Base `f0f2e3481a5503206a1d80fe913352d75c6218ed`, retaining the original held WIP.
+The operation location now contains the shared structural body location and its
+operation ordinal. The existing semantic endpoint-path visitor uses the same
+ordered root/body/operation steps; no alternate resolver or transcript is added.
+The inventory's existing root lookup delegates to the same body-coordinate
+resolver, preserving original expression roots and rejecting nested paths through
+expressions, absent bodies, foreign roles and missing function-site ordinals.
+Function-site IDs are plan-local coordinates, not executable-owner proofs. The
+frame's exact retained program lease continues to authenticate its executable
+before metadata or value processing; lookup alone cannot establish provenance.
+New regressions borrow the exact original expression/operation/body pointers and
+distinguish a genuine empty body from an absent child.
+
+This is preparatory work for the complete native position/queue migration,
+not its completion. Native pending bodies and static rollback still own the old
+AST work and must be replaced together with their control/observer/formatter/
+caller consumers. Validation of this preparatory source is pending; the R2342
+full-suite result belongs to its recorded earlier source, not these edits.
+
+R2343 catalogued the earlier preparatory input (Cargo 8m37s), but no runtime was
+started from it: an own new test incorrectly treated plan-local function-site
+ordinals as program provenance. That premise and the note were corrected from
+the actual ID definition, preserving frame lease admission as the authority.
+The older source freeze/catalog remain retained and are explicitly superseded.
+R2344 catalogued the corrected frozen source (Cargo 1m36s); R2345 executed all
+2,460 selected library cases across the same eight actual consumers, 0 failures,
+0 skips, 24.290s. All four coordinate regressions were required by name, including
+the two existing exact structural transcript/location checks. All 3,976 inputs,
+all case names and eight executable hashes matched after execution; original
+14 held tracked paths remain unchanged. R2346 Core all-target/all-feature locked
+Clippy passed (Cargo 1m39s, existing warnings). No further runtime pin is live.
+
+This private decomposition preserves the existing root/body/operation transcript,
+source body schema and executable authority boundary. It changes no public wire
+shape, manifest/feature, version marker or dependency direction. The current
+preparatory slice uses complete Core/Scheduler/Driver/HostAdapter/RuntimeHost/Web/
+RuntimePlan/Compiler library evidence, not a repeat of the just-completed full
+53-package acceptance matrix. Full consumer/CLI/budget/restore checks remain
+necessary when native executable state and queues actually switch. These helpers
+and tests do not constitute completion of that switch.

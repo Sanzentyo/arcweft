@@ -4,7 +4,9 @@ use super::code::RuntimeCodeBodyRef;
 use super::{FlowOp, RuntimeAwaitPendingObserver, RuntimeMatchArm, RuntimePlan};
 
 mod location;
-pub(in crate::plan) use location::{RuntimeFlowLocationStep, RuntimeFlowOperationLocation};
+pub(crate) use location::{
+    RuntimeFlowBodyLocation, RuntimeFlowLocationStep, RuntimeFlowOperationLocation,
+};
 
 /// Structural role of one directly owned operation body.
 ///

@@ -1,5 +1,6 @@
 //! Original executable roots, independent of a fiber's active position.
 
+use super::flow_ops::RuntimeFlowBodyLocation;
 use super::{FlowOp, RuntimeFunctionSiteBody, RuntimePlanInventory};
 use crate::line_task::{LineTaskNode, ScopeExit};
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId};
@@ -44,9 +45,27 @@ impl RuntimePlanInventory {
     /// Resolves only the named owning row and role. A structural node, missing
     /// cancellation rule, or foreign ordinal never substitutes another body.
     pub(crate) fn code_body(&self, owner: RuntimeCodeOwner) -> Option<RuntimeCodeBodyRef<'_>> {
+        self.code_body_at(owner, &RuntimeFlowBodyLocation::default())
+    }
+
+    /// Selects a structural body inside its named original row. Expression
+    /// roots remain expressions and cannot authorize an operation-body path.
+    pub(crate) fn code_body_at(
+        &self,
+        owner: RuntimeCodeOwner,
+        location: &RuntimeFlowBodyLocation,
+    ) -> Option<RuntimeCodeBodyRef<'_>> {
         let operations = match owner {
             RuntimeCodeOwner::Function(site) => {
-                return Some(self.function_sites().get(site)?.body().into());
+                return match self.function_sites().get(site)?.body() {
+                    RuntimeFunctionSiteBody::Expression(expression) if location.is_root() => {
+                        Some(RuntimeCodeBodyRef::Expression(expression))
+                    }
+                    RuntimeFunctionSiteBody::Expression(_) => None,
+                    RuntimeFunctionSiteBody::Executable(body) => location
+                        .resolve(body.ops())
+                        .map(RuntimeCodeBodyRef::Operations),
+                };
             }
             RuntimeCodeOwner::LineTask { group, body } => {
                 let group = self.line_task_groups().get(group.index())?;
@@ -66,7 +85,9 @@ impl RuntimePlanInventory {
                 }
             }
         };
-        Some(RuntimeCodeBodyRef::Operations(operations))
+        location
+            .resolve(operations)
+            .map(RuntimeCodeBodyRef::Operations)
     }
 
     /// Visits each original root once, including empty roots, in the owning
@@ -118,5 +139,54 @@ impl RuntimePlanInventory {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        plan::{RuntimeFlowBodyRole, RuntimeFunctionSiteBodyKind},
+        tests::function_application::returning_function_plan,
+    };
+
+    #[test]
+    fn body_lookup_retains_original_expression_and_operation_rows_and_rejects_invalid_paths() {
+        let plan = returning_function_plan(RuntimeFunctionSiteBodyKind::Executable);
+        let root = RuntimeFlowBodyLocation::default();
+        let mut nested = RuntimeFlowBodyLocation::default();
+        nested.enter(0, RuntimeFlowBodyRole::Body);
+        let mut visited = 0;
+        for (site, declaration) in plan.function_sites().iter_with_ids() {
+            let owner = RuntimeCodeOwner::Function(site);
+            let resolved = plan.inventory.code_body_at(owner, &root).unwrap();
+            match (declaration.body(), resolved) {
+                (
+                    RuntimeFunctionSiteBody::Expression(expected),
+                    RuntimeCodeBodyRef::Expression(actual),
+                ) => {
+                    assert!(std::ptr::eq(actual, expected));
+                }
+                (
+                    RuntimeFunctionSiteBody::Executable(expected),
+                    RuntimeCodeBodyRef::Operations(actual),
+                ) => {
+                    assert!(std::ptr::eq(actual, expected.ops()));
+                }
+                _ => panic!("an original code root cannot change its body kind"),
+            }
+            assert!(plan.inventory.code_body_at(owner, &nested).is_none());
+            visited += 1;
+        }
+        assert_eq!(visited, 3);
+
+        let missing_site = crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
+            std::num::NonZeroU32::new(u32::MAX).unwrap(),
+        );
+        assert!(
+            plan.inventory
+                .code_body_at(RuntimeCodeOwner::Function(missing_site), &root)
+                .is_none()
+        );
     }
 }

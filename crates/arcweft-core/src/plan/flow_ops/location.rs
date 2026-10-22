@@ -12,8 +12,13 @@ struct OwnedBodyLocation {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct RuntimeFlowOperationLocation {
+pub(crate) struct RuntimeFlowBodyLocation {
     parents: Vec<OwnedBodyLocation>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct RuntimeFlowOperationLocation {
+    body: RuntimeFlowBodyLocation,
     operation: usize,
 }
 
@@ -23,50 +28,96 @@ pub(crate) enum RuntimeFlowLocationStep {
     Operation(usize),
 }
 
-impl RuntimeFlowOperationLocation {
-    pub(in crate::plan) fn set_operation(&mut self, operation: usize) {
-        self.operation = operation;
+impl RuntimeFlowBodyLocation {
+    pub(crate) fn is_root(&self) -> bool {
+        self.parents.is_empty()
     }
 
-    pub(in crate::plan) fn enter_body(&mut self, role: RuntimeFlowBodyRole) {
-        self.parents.push(OwnedBodyLocation {
-            operation: self.operation,
-            role,
-        });
-        self.operation = 0;
+    pub(crate) fn parent_count(&self) -> usize {
+        self.parents.len()
     }
 
-    pub(in crate::plan) fn leave_body(&mut self) -> bool {
-        let Some(parent) = self.parents.pop() else {
-            return false;
-        };
-        self.operation = parent.operation;
-        true
+    pub(crate) fn enter(&mut self, operation: usize, role: RuntimeFlowBodyRole) {
+        self.parents.push(OwnedBodyLocation { operation, role });
     }
 
-    pub(in crate::plan) fn step_count(&self) -> Option<usize> {
-        self.parents.len().checked_mul(2)?.checked_add(2)
+    fn leave(&mut self) -> Option<usize> {
+        self.parents.pop().map(|parent| parent.operation)
     }
 
-    pub(in crate::plan) fn steps(&self) -> impl Iterator<Item = RuntimeFlowLocationStep> + '_ {
+    pub(crate) fn step_count(&self) -> Option<usize> {
+        self.parents.len().checked_mul(2)?.checked_add(1)
+    }
+
+    pub(crate) fn steps(&self) -> impl Iterator<Item = RuntimeFlowLocationStep> + '_ {
         use RuntimeFlowLocationStep::{Body, Operation};
-        std::iter::once(Body(RuntimeFlowBodyRole::Body))
-            .chain(
-                self.parents
-                    .iter()
-                    .flat_map(|parent| [Operation(parent.operation), Body(parent.role)]),
-            )
-            .chain(std::iter::once(Operation(self.operation)))
+        std::iter::once(Body(RuntimeFlowBodyRole::Body)).chain(
+            self.parents
+                .iter()
+                .flat_map(|parent| [Operation(parent.operation), Body(parent.role)]),
+        )
     }
 
-    /// Borrows the actual operation without reconstructing or copying its body.
-    pub(in crate::plan) fn resolve<'a>(&self, root: &'a [FlowOp]) -> Option<&'a FlowOp> {
+    /// Borrows even an empty original body. An absent child or foreign role is
+    /// rejected instead of substituting an empty body or another code root.
+    pub(crate) fn resolve<'a>(&self, root: &'a [FlowOp]) -> Option<&'a [FlowOp]> {
         let mut body = root;
         for parent in &self.parents {
             let operation = body.get(parent.operation)?;
             body = operation.owned_body(parent.role)?;
         }
-        body.get(self.operation)
+        Some(body)
+    }
+
+    pub(crate) fn operation(self, operation: usize) -> RuntimeFlowOperationLocation {
+        RuntimeFlowOperationLocation {
+            body: self,
+            operation,
+        }
+    }
+}
+
+impl RuntimeFlowOperationLocation {
+    pub(crate) fn set_operation(&mut self, operation: usize) {
+        self.operation = operation;
+    }
+
+    pub(crate) fn body(&self) -> &RuntimeFlowBodyLocation {
+        &self.body
+    }
+
+    pub(crate) fn operation_index(&self) -> usize {
+        self.operation
+    }
+
+    pub(crate) fn enter_body(&mut self, role: RuntimeFlowBodyRole) {
+        self.body.enter(self.operation, role);
+        self.operation = 0;
+    }
+
+    pub(crate) fn leave_body(&mut self) -> bool {
+        let Some(operation) = self.body.leave() else {
+            return false;
+        };
+        self.operation = operation;
+        true
+    }
+
+    pub(crate) fn step_count(&self) -> Option<usize> {
+        self.body.step_count()?.checked_add(1)
+    }
+
+    pub(crate) fn steps(&self) -> impl Iterator<Item = RuntimeFlowLocationStep> + '_ {
+        self.body
+            .steps()
+            .chain(std::iter::once(RuntimeFlowLocationStep::Operation(
+                self.operation,
+            )))
+    }
+
+    /// Borrows the actual operation without reconstructing or copying its body.
+    pub(crate) fn resolve<'a>(&self, root: &'a [FlowOp]) -> Option<&'a FlowOp> {
+        self.body.resolve(root)?.get(self.operation)
     }
 }
 
@@ -123,6 +174,41 @@ mod tests {
                 RuntimeFlowLocationStep::Body(RuntimeFlowBodyRole::AwaitObserver { ordinal: 4 }),
                 RuntimeFlowLocationStep::Operation(5),
             ]
+        );
+    }
+
+    #[test]
+    fn body_coordinates_borrow_empty_and_nested_original_bodies_without_substitution() {
+        let root = [scope(vec![FlowOp::Noop, scope(vec![])])];
+        let mut body = RuntimeFlowBodyLocation::default();
+        assert!(body.is_root());
+        assert!(std::ptr::eq(body.resolve(&root).unwrap(), root.as_slice()));
+        body.enter(0, RuntimeFlowBodyRole::Body);
+        let original = root[0].owned_body(RuntimeFlowBodyRole::Body).unwrap();
+        assert!(!body.is_root());
+        assert_eq!(body.parent_count(), 1);
+        assert!(std::ptr::eq(body.resolve(&root).unwrap(), original));
+        let operation = body.clone().operation(0);
+        assert_eq!(operation.body(), &body);
+        assert_eq!(operation.operation_index(), 0);
+        assert!(std::ptr::eq(
+            operation.resolve(&root).unwrap(),
+            &original[0]
+        ));
+        body.enter(1, RuntimeFlowBodyRole::Body);
+        assert!(body.resolve(&root).unwrap().is_empty());
+        assert!(body.clone().operation(0).resolve(&root).is_none());
+        body.enter(0, RuntimeFlowBodyRole::Body);
+        assert!(body.resolve(&root).is_none());
+
+        let mut foreign = RuntimeFlowBodyLocation::default();
+        foreign.enter(0, RuntimeFlowBodyRole::Else);
+        assert!(foreign.resolve(&root).is_none());
+        assert!(
+            RuntimeFlowBodyLocation::default()
+                .resolve(&[])
+                .unwrap()
+                .is_empty()
         );
     }
 }
