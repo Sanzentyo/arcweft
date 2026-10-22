@@ -83,24 +83,27 @@ impl ObjectContainer {
         }
 
         // No encoded bytes were allocated before the complete length check.
-        let mut written = MeasuredOutput::new(output.remaining_len()?, Some(output));
-        self.write_header_prefix(&mut written)?;
-        debug_assert_eq!(written.length, header_len);
-        written.append(marker)?;
-        if count != 0 {
-            write_long(&mut written, count)?;
-            write_length(&mut written, datum_len)?;
-            let mut data = MeasuredOutput::new(datum_len, written.output.take());
-            data.hasher = seed;
-            self.write_records(records(), count, &mut data)?;
-            if data.length != datum_len || data.hasher.finalize() != digest {
-                return Err(invalid_encoding(
-                    "Avro datum changed between encoding passes",
-                ));
+        {
+            let mut written = MeasuredOutput::new(output.remaining_len()?, Some(output));
+            self.write_header_prefix(&mut written)?;
+            debug_assert_eq!(written.length, header_len);
+            written.append(marker)?;
+            if count != 0 {
+                write_long(&mut written, count)?;
+                write_length(&mut written, datum_len)?;
+                let mut data = MeasuredOutput::new(datum_len, written.output.take());
+                data.hasher = seed;
+                self.write_records(records(), count, &mut data)?;
+                if data.length != datum_len || data.hasher.finalize() != digest {
+                    return Err(invalid_encoding(
+                        "Avro datum changed between encoding passes",
+                    ));
+                }
             }
-            // The measured block is complete; the final sync marker is framing.
-            let buffer = data.output.take().expect("writing output is retained");
-            buffer.append(marker)?;
+        }
+        if count != 0 {
+            // All datum borrows have ended; framing uses the original buffer.
+            output.append(marker)?;
         }
         Ok(())
     }
@@ -190,11 +193,11 @@ impl Output for MeasuredOutput<'_> {
 }
 
 pub(super) fn write_long(output: &mut dyn Output, value: i64) -> Result<()> {
-    let mut value = ((value as u64) << 1) ^ ((value >> 63) as u64);
+    let mut value = (value.cast_unsigned() << 1) ^ (value >> 63).cast_unsigned();
     let mut bytes = [0; 10];
     let mut length = 0;
     loop {
-        bytes[length] = (value as u8 & 0x7f) | if value > 0x7f { 0x80 } else { 0 };
+        bytes[length] = (value.to_le_bytes()[0] & 0x7f) | if value > 0x7f { 0x80 } else { 0 };
         length += 1;
         value >>= 7;
         if value == 0 {

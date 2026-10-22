@@ -115,7 +115,7 @@ impl<'a> DatumWriter<'a> {
     pub fn union(
         self,
         index: usize,
-        value: impl FnOnce(DatumWriter<'_>) -> Result<()>,
+        value: impl FnOnce(DatumWriter<'a>) -> Result<()>,
     ) -> Result<()> {
         let Schema::Union(union) = self.schema else {
             return Err(invalid_encoding("expected Avro union"));
@@ -176,7 +176,10 @@ impl<'a> DatumWriter<'a> {
         if condition {
             Ok(())
         } else {
-            Err(invalid_encoding(format!("expected Avro {expected}")))
+            Err(invalid_encoding(format!(
+                "expected Avro {expected}, found {:?}",
+                apache_avro::schema::SchemaKind::from(self.schema)
+            )))
         }
     }
 }

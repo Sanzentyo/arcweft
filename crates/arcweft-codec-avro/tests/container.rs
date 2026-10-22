@@ -75,22 +75,12 @@ fn schema_directed_writer_rejects_wrong_kind_missing_and_reordered_fields() {
 
 #[test]
 fn deterministic_child_probe() {
-    let bytes = longs();
-    println!(
-        "AVRO_BYTES:{}",
-        bytes
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
-    );
+    println!("AVRO_BYTES:{:?}", longs());
 }
 
 #[test]
 fn container_bytes_match_across_independent_processes() {
-    let expected = longs()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let expected = format!("{:?}", longs());
     for _ in 0..3 {
         let result = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "deterministic_child_probe", "--nocapture"])
@@ -203,7 +193,7 @@ fn zero_byte_datums_preserve_large_array_and_record_counts() {
         100_000
     );
     let empty = options
-        .encode_with(|output| container.encode_to(|| std::iter::empty::<Null>(), output))
+        .encode_with(|output| container.encode_to(std::iter::empty::<Null>, output))
         .unwrap();
     assert_eq!(Reader::new(empty.as_slice()).unwrap().count(), 0);
     assert_ne!(bytes, empty);
@@ -219,14 +209,6 @@ fn changed_datums_and_json_strings_cannot_publish_invalid_bytes() {
             writer.boolean(value)
         }
     }
-    let changing = Changing(Cell::new(false));
-    let error = EncodeOptions::default()
-        .encode_with(|output| {
-            ObjectContainer::new("\"boolean\"")?.encode_to(|| std::iter::once(&changing), output)
-        })
-        .unwrap_err();
-    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
-
     struct ChangingJson(Cell<bool>);
     impl serde::Serialize for ChangingJson {
         fn serialize<S: serde::Serializer>(
@@ -243,6 +225,14 @@ fn changed_datums_and_json_strings_cannot_publish_invalid_bytes() {
             writer.json_string(self)
         }
     }
+    let changing = Changing(Cell::new(false));
+    let error = EncodeOptions::default()
+        .encode_with(|output| {
+            ObjectContainer::new("\"boolean\"")?.encode_to(|| std::iter::once(&changing), output)
+        })
+        .unwrap_err();
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
     let changing_json = ChangingJson(Cell::new(false));
     let error = EncodeOptions::default()
         .encode_with(|output| {

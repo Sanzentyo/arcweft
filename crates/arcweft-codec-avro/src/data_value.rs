@@ -45,7 +45,7 @@ impl<'a> DataDatum<'a> {
             (TypeShape::Option(inner), Value::Option(value)) => {
                 let (null, some, _) = option_schema(writer.schema())?;
                 match value {
-                    None => writer.union(null, |writer| writer.null()),
+                    None => writer.union(null, DatumWriter::null),
                     Some(value) => writer.union(some, |writer| {
                         DataDatum::new(value, ShapeRef::Inline(inner), self.access).write(writer)
                     }),
@@ -187,7 +187,7 @@ impl<'a> DataDatum<'a> {
                         }
                         None if shape_is_option(ShapeRef::Inline(shape.as_ref()), self.access)? => {
                             let (null, _, _) = option_schema(writer.schema())?;
-                            writer.union(null, |writer| writer.null())
+                            writer.union(null, DatumWriter::null)
                         }
                         None => Err(DataError::new(
                             DataErrorKind::MissingField,
