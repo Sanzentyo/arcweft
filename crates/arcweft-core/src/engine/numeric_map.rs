@@ -499,13 +499,7 @@ impl Engine {
             return None;
         }
         let owner = Arc::clone(&self.plan);
-        let ops = if self.fiber.frame.pending_ops.is_empty() {
-            self.original_operation_remainder(&owner)?
-                .iter()
-                .collect::<Vec<_>>()
-        } else {
-            self.fiber.frame.pending_ops.iter().collect::<Vec<_>>()
-        };
+        let ops = self.active_flow_operations().collect::<Vec<_>>();
         if matches!(ops.first().copied(), Some(FlowOp::ProjectCall { .. })) {
             let packet = self.prepare_numeric_project_calls(&owner, &ops, remaining_ops)?;
             return self.commit_numeric_project_calls(packet, output, backend);

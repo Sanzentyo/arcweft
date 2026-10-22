@@ -112,21 +112,11 @@ impl Engine {
             return None;
         }
         let owner = Arc::clone(&self.plan);
-        let current = if self.fiber.frame.pending_ops.is_empty() {
-            self.original_operation_remainder(&owner)?.first()?
-        } else {
-            self.fiber.frame.pending_ops.front()?
-        };
+        let current = self.active_flow_operations().next()?;
         let FlowOp::StandardMap(control) = current else {
             return None;
         };
-        let ops = if self.fiber.frame.pending_ops.is_empty() {
-            self.original_operation_remainder(&owner)?
-                .iter()
-                .collect::<Vec<_>>()
-        } else {
-            self.fiber.frame.pending_ops.iter().collect::<Vec<_>>()
-        };
+        let ops = self.active_flow_operations().collect::<Vec<_>>();
         let result_pattern = project_body(&owner, control)?;
         let value = self.fiber.frame.env.get(control.mapping())?;
         control.admit_mapping(value).ok()?;

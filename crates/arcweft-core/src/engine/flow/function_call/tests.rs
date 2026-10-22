@@ -827,6 +827,33 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
     .unwrap();
     assert!(Arc::ptr_eq(&engine.plan, &plan));
     assert!(engine.fiber.frame.pending_ops.is_empty());
+    let original = plan
+        .function_sites()
+        .get(site)
+        .unwrap()
+        .body()
+        .executable()
+        .unwrap()
+        .ops();
+    assert!(std::ptr::eq(
+        engine.active_flow_operations().next().unwrap(),
+        &original[0]
+    ));
+    assert_eq!(engine.active_flow_operations().count(), original.len());
+    engine
+        .fiber
+        .frame
+        .pending_ops
+        .push_back(crate::plan::FlowOp::Noop);
+    assert!(std::ptr::eq(
+        engine.active_flow_operations().next().unwrap(),
+        engine.fiber.frame.pending_ops.front().unwrap()
+    ));
+    assert_eq!(engine.active_flow_operations().count(), 1);
+    assert!(matches!(
+        engine.fiber.frame.pending_ops.pop_front(),
+        Some(crate::plan::FlowOp::Noop)
+    ));
     let options = crate::step::RuntimeStepOptions {
         mode: crate::step::RuntimeStepMode::OneOp,
         budget: crate::step::RuntimeStepBudget { max_ops: 1 },
@@ -839,6 +866,10 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
         crate::engine::FlowFiberStatus::Running
     ));
     assert!(engine.take_function_result(site).unwrap().is_none());
+    assert!(std::ptr::eq(
+        engine.active_flow_operations().next().unwrap(),
+        &original[1]
+    ));
     let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));
     let saved = engine.inert_rollback_image().unwrap();
     let mut invalid_position = saved.clone();
@@ -852,6 +883,10 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
     assert!(Engine::from_rollback_image(invalid_position, &owner).is_err());
     let mut restored = Engine::from_rollback_image(saved, &owner).unwrap();
     assert!(Arc::ptr_eq(&restored.plan, &plan));
+    assert!(std::ptr::eq(
+        restored.active_flow_operations().next().unwrap(),
+        &original[1]
+    ));
     for _ in 0..16 {
         let output = restored.step(Default::default(), options);
         assert!(output.output.diagnostics.is_empty());

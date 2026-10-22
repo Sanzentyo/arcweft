@@ -2612,6 +2612,19 @@ impl Engine {
         &self.fiber
     }
 
+    /// Borrows the active frame's queued continuation or remaining original
+    /// root operations. Expression roots and exhausted bodies have no operation
+    /// rows; their frame transitions remain part of normal stepping.
+    pub fn active_flow_operations(&self) -> impl DoubleEndedIterator<Item = &FlowOp> {
+        let original = if self.fiber.frame.pending_ops.is_empty() {
+            self.original_operation_remainder(&self.plan)
+                .unwrap_or_default()
+        } else {
+            &[]
+        };
+        self.fiber.frame.pending_ops.iter().chain(original)
+    }
+
     pub(super) fn flow_at_cursor(&self, cursor: &FlowCursor) -> Option<&RuntimeFlow> {
         self.plan.flows.get(cursor.flow_index)
     }

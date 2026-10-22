@@ -2023,7 +2023,7 @@ flow main() -> String { return "ok" }
     fn until_call(engine: &mut Engine, backend: &mut impl arcweft_core::pure::RuntimeCallBackend) {
         for _ in 0..64 {
             if matches!(
-                engine.fiber().frame.pending_ops.front(),
+                engine.active_flow_operations().next(),
                 Some(FlowOp::ProjectCall { .. })
             ) {
                 return;
@@ -2087,7 +2087,7 @@ flow main() -> String { return "ok" }
         let mut probe = native(&selected, 3);
         let mut vm = VmRuntimePureCallBackend::default();
         until_call(&mut probe, &mut vm);
-        let Some(FlowOp::ProjectCall { site }) = probe.fiber().frame.pending_ops.front() else {
+        let Some(FlowOp::ProjectCall { site }) = probe.active_flow_operations().next() else {
             panic!("original checked source call")
         };
         let result = selected
@@ -2493,7 +2493,7 @@ flow main() -> String { return "ok" }
         let mut probe = native(&selected, 3);
         let mut vm = VmRuntimePureCallBackend::default();
         until_call(&mut probe, &mut vm);
-        let Some(FlowOp::ProjectCall { site }) = probe.fiber().frame.pending_ops.front() else {
+        let Some(FlowOp::ProjectCall { site }) = probe.active_flow_operations().next() else {
             panic!("accepted caller dispatch")
         };
         let result_local = selected
