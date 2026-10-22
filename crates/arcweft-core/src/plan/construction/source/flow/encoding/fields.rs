@@ -180,18 +180,28 @@ impl Writer {
         template: &NeedProducerTemplate,
         plan: &RuntimePlan,
     ) -> Result<(), Error> {
-        if plan.task_plan(&template.plan).is_none() {
+        self.producer_definition(&template.definition, plan)?;
+        self.text(&template.request.capability.0)?;
+        self.text(&template.request.operation)?;
+        self.argument_roles(&template.request.args)
+    }
+    fn producer_definition(
+        &mut self,
+        definition: &crate::task::NeedProducerDefinition,
+        plan: &RuntimePlan,
+    ) -> Result<(), Error> {
+        if plan.task_plan(&definition.plan).is_none() {
             return Err(Error::Handle {
                 kind: "producer task",
             });
         }
-        self.raw(template.definition.as_bytes())?;
-        self.byte(template.family.semantic_tag())?;
-        self.raw(template.contract.as_bytes())?;
-        self.u32(template.plan.ordinal())?;
-        self.raw(template.producer_site.as_bytes())?;
+        self.raw(definition.function.as_bytes())?;
+        self.byte(definition.family.semantic_tag())?;
+        self.raw(definition.contract.as_bytes())?;
+        self.u32(definition.plan.ordinal())?;
+        self.raw(definition.producer_site.as_bytes())?;
         let semantic =
-            crate::pattern::RuntimeSemanticTypeId::from_bytes(*template.payload_type.as_bytes());
+            crate::pattern::RuntimeSemanticTypeId::from_bytes(*definition.payload_type.as_bytes());
         let payload = plan
             .type_table()
             .id_for_semantic(semantic)
@@ -199,14 +209,11 @@ impl Writer {
                 kind: "producer payload type",
             })?;
         self.ty(payload)?;
-        self.byte(template.class.semantic_tag())?;
-        self.raw(&template.priority.0.to_le_bytes())?;
-        self.text(&template.cancel_scope.0)?;
-        self.byte(template.policy.semantic_tag())?;
-        self.text(&template.request.capability.0)?;
-        self.text(&template.request.operation)?;
-        self.text(&template.debug_label)?;
-        self.argument_roles(&template.request.args)
+        self.byte(definition.class.semantic_tag())?;
+        self.raw(&definition.priority.0.to_le_bytes())?;
+        self.text(&definition.cancel_scope.0)?;
+        self.byte(definition.policy.semantic_tag())?;
+        self.text(&definition.debug_label)
     }
     fn effect(
         &mut self,
@@ -511,7 +518,7 @@ impl Writer {
                 ..
             } => {
                 self.optional_text(name.as_deref())?;
-                self.template(producer, plan)?;
+                self.producer_definition(producer, plan)?;
                 self.locals(captures)?;
             }
             FlowOp::Scope { identity, .. } | FlowOp::EnterScope { identity } => {

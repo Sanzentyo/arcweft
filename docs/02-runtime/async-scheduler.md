@@ -26,6 +26,15 @@ instead of creating duplicate backend work. Arcweft source-level `thread`
 blocks execute as program-owned fibers whose task requests retain their original
 Source. They do not require an adapter host-call declaration.
 
+`NeedProducerDefinition` owns the shared original function, family, contract,
+task-plan coordinate, site, payload type and scheduling policy. A Thread stores
+that definition directly. `NeedProducerTemplate` combines the same definition
+with a Host request only for producers that actually construct Host arguments.
+Thread semantic endpoints and private source encoding contain no synthetic Host
+capability, operation or request arguments; their captures retain their original
+program roles. AWBC Host request kernels admit only actual Host templates;
+they cannot certify a program body by returning an empty Host argument tuple.
+
 ```rust
 pub trait TaskHost {
     fn ensure_task(&mut self, spec: TaskSpec) -> TaskHandle;

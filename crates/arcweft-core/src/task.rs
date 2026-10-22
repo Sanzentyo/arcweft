@@ -71,7 +71,7 @@ pub use failure::{
 };
 mod template;
 pub use semantic::TaskSemanticEncodingError;
-pub use template::{HostCallProducerDefinition, NeedProducerTemplate};
+pub use template::{HostCallProducerDefinition, NeedProducerDefinition, NeedProducerTemplate};
 
 #[cfg(test)]
 mod identity_tests {

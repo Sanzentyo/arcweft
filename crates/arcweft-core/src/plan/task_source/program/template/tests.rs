@@ -129,22 +129,24 @@ fn original_with_other_child(other: bool) -> RuntimePlan {
             .unwrap();
         let producer = |marker, family, plan, payload: RuntimeSemanticTypeId, args| {
             RuntimeNeedProducerTemplateSeed {
-                definition: definition(marker),
-                family,
-                contract: NeedProducerContractDigest::from_bytes([marker; 32]),
-                plan,
-                producer_site: NeedProducerSiteDigest::from_bytes([marker; 32]),
-                payload_type: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
-                class: TaskClass::Cpu,
-                priority: TaskPriority(-3),
-                cancel_scope: CancelScopeId("元scope".into()),
-                policy: TaskPolicy::AlwaysStart,
+                definition: crate::task::NeedProducerDefinition {
+                    function: definition(marker),
+                    family: family,
+                    contract: NeedProducerContractDigest::from_bytes([marker; 32]),
+                    plan: plan,
+                    producer_site: NeedProducerSiteDigest::from_bytes([marker; 32]),
+                    payload_type: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+                    class: TaskClass::Cpu,
+                    priority: TaskPriority(-3),
+                    cancel_scope: CancelScopeId("元scope".into()),
+                    policy: TaskPolicy::AlwaysStart,
+                    debug_label: "template source fixture".into(),
+                },
                 request: RuntimeHostTaskRequestTemplateSeed {
                     capability: HostCapabilityId("source".into()),
                     operation: "request".into(),
                     args,
                 },
-                debug_label: "template source fixture".into(),
             }
         };
         let mut ops = Vec::new();
@@ -302,6 +304,7 @@ pub(in crate::plan::task_source) fn executable() -> AwbcProgram {
         code.functions.push(AwbcFunction {
             definition: producer
                 .definition
+                .function
                 .generated_child(RuntimeGeneratedFunctionRole::TaskRequest),
             semantic_role: RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
@@ -364,9 +367,9 @@ pub(in crate::plan::task_source) fn executable() -> AwbcProgram {
             ],
             kind: if index == 0 {
                 AwbcTaskPlanKind::AwaitMany {
-                    contract: producer.contract,
-                    site: producer.producer_site,
-                    plan: original.task_plan(&producer.plan).unwrap().key(),
+                    contract: producer.definition.contract,
+                    site: producer.definition.producer_site,
+                    plan: original.task_plan(&producer.definition.plan).unwrap().key(),
                     child: AwbcTaskPlanId(1),
                     captures: vec![AwbcRegisterId(0), AwbcRegisterId(1)],
                     request_function: function,
@@ -375,10 +378,10 @@ pub(in crate::plan::task_source) fn executable() -> AwbcProgram {
                 }
             } else {
                 AwbcTaskPlanKind::Template {
-                    family: producer.family,
-                    contract: producer.contract,
-                    site: producer.producer_site,
-                    plan: original.task_plan(&producer.plan).unwrap().key(),
+                    family: producer.definition.family,
+                    contract: producer.definition.contract,
+                    site: producer.definition.producer_site,
+                    plan: original.task_plan(&producer.definition.plan).unwrap().key(),
                     request_function: function,
                 }
             },
@@ -425,7 +428,11 @@ fn awbc_templates_resolve_both_original_rows_and_capture_abis_after_decode() {
         };
         assert_eq!(
             source.task_plan().key(),
-            program.original().task_plan(&expected.plan).unwrap().key()
+            program
+                .original()
+                .task_plan(&expected.definition.plan)
+                .unwrap()
+                .key()
         );
         assert_eq!(work.totals().1, 0);
     }
@@ -594,7 +601,7 @@ fn awbc_await_many_rejects_another_genuine_admitted_child_from_the_same_source()
         unreachable!()
     };
     *plan = original
-        .task_plan(&target(&original).base.plan)
+        .task_plan(&target(&original).base.definition.plan)
         .unwrap()
         .key();
     let AwbcTaskPlanKind::Template {
@@ -606,12 +613,16 @@ fn awbc_await_many_rejects_another_genuine_admitted_child_from_the_same_source()
     else {
         unreachable!()
     };
-    *plan = original.task_plan(&other.child.plan).unwrap().key();
-    *contract = other.child.contract;
-    *site = other.child.producer_site;
+    *plan = original
+        .task_plan(&other.child.definition.plan)
+        .unwrap()
+        .key();
+    *contract = other.child.definition.contract;
+    *site = other.child.definition.producer_site;
     code.functions[1].definition = other
         .child
         .definition
+        .function
         .generated_child(RuntimeGeneratedFunctionRole::TaskRequest);
     code.functions[1].input_ownership = other
         .captures()

@@ -188,7 +188,7 @@ pub(super) fn preflight(
         }
         28 => {
             reader.optional_text()?;
-            reader.template()?;
+            reader.producer_definition()?;
             reader.locals()?;
             reader.body()?;
         }
@@ -446,10 +446,30 @@ impl Reader<'_, '_> {
         Ok(())
     }
     fn template(&mut self) -> Result<(), Error> {
+        self.producer_definition()?;
         self.counts.storage(
-            size_of::<crate::plan::RuntimeNeedProducerTemplateSeed>()
-                + size_of::<crate::task::NeedProducerTemplate>(),
+            size_of::<crate::plan::RuntimeHostTaskRequestTemplateSeed>()
+                + size_of::<crate::task::HostTaskRequestTemplate>(),
         )?;
+        self.text()?;
+        self.text()?;
+        let before = self.counts.footprint;
+        self.arguments()?;
+        let units = (self.counts.footprint.nodes - before.nodes)
+            .checked_add(self.counts.footprint.elements - before.elements)
+            .ok_or(Error::Arithmetic)?;
+        self.counts.storage(
+            units
+                .checked_mul(
+                    2 * size_of::<crate::plan::RuntimeLocalSeedId>()
+                        + 2 * size_of::<crate::runtime_id::RuntimeLocalDeclarationId>(),
+                )
+                .ok_or(Error::Arithmetic)?,
+        )
+    }
+    fn producer_definition(&mut self) -> Result<(), Error> {
+        self.counts
+            .storage(2 * size_of::<crate::task::NeedProducerDefinition>())?;
         self.metadata.digest()?;
         let tag = self.metadata.byte()?;
         crate::task::NeedProducerFamily::from_semantic_tag(tag).ok_or(Error::Tag {
@@ -469,25 +489,7 @@ impl Reader<'_, '_> {
         self.metadata.i32()?;
         self.text()?;
         self.tag("task policy", 2)?;
-        self.text()?;
-        self.text()?;
-        self.text()?;
-        let before = self.counts.footprint;
-        self.arguments()?;
-        // The original request owner derives captures from all argument roots.
-        // Reserve a conservative scratch/retained slot per syntactic node and
-        // edge, including wide captures, before any argument value is built.
-        let units = (self.counts.footprint.nodes - before.nodes)
-            .checked_add(self.counts.footprint.elements - before.elements)
-            .ok_or(Error::Arithmetic)?;
-        self.counts.storage(
-            units
-                .checked_mul(
-                    2 * size_of::<crate::plan::RuntimeLocalSeedId>()
-                        + 2 * size_of::<crate::runtime_id::RuntimeLocalDeclarationId>(),
-                )
-                .ok_or(Error::Arithmetic)?,
-        )
+        self.text().map(|_| ())
     }
     fn match_arms(&mut self) -> Result<(), Error> {
         self.expression()?;

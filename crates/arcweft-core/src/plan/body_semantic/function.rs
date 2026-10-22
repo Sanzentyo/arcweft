@@ -202,6 +202,7 @@ impl<'a> OriginalRequestEndpoint<'a> {
             EndpointKind::AwaitManyChild => Binding::AwaitManyChild,
             EndpointKind::FunctionRoot
             | EndpointKind::HostTask
+            | EndpointKind::ProgramTask
             | EndpointKind::MakeNeed
             | EndpointKind::LineTask => Binding::Ordinary,
         }
@@ -214,7 +215,7 @@ impl<'a> OriginalRequestEndpoint<'a> {
             (
                 EndpointKind::AwaitManyBase,
                 ProducerEndpointSource::Operation(plan::FlowOp::AwaitMany { target, .. }),
-            ) => Some(&target.child.plan),
+            ) => Some(&target.child.definition.plan),
             _ => None,
         }
     }
@@ -227,7 +228,10 @@ impl<'a> OriginalRequestEndpoint<'a> {
         match self.kind {
             EndpointKind::HostTask => match operation {
                 plan::FlowOp::HostCall { target, .. } => Some(Source::Host(target)),
-                plan::FlowOp::Thread { producer, .. } => Some(Source::Producer(producer)),
+                _ => None,
+            },
+            EndpointKind::ProgramTask => match operation {
+                plan::FlowOp::Thread { producer, .. } => Some(Source::ProgramProducer(producer)),
                 _ => None,
             },
             EndpointKind::MakeNeed => match operation {
@@ -338,7 +342,6 @@ impl<'a> OriginalRequestEndpoint<'a> {
         match operation {
             plan::FlowOp::HostCall { target, .. } => Some(&target.args),
             plan::FlowOp::StartNeedProducer { target, .. } => Some(target.arguments()),
-            plan::FlowOp::Thread { producer, .. } => Some(&producer.request.args),
             plan::FlowOp::AwaitMany { target, .. } => match self.kind {
                 EndpointKind::AwaitManyBase => Some(&target.base.request.args),
                 EndpointKind::AwaitManyChild => Some(&target.child.request.args),
@@ -493,6 +496,7 @@ impl ProducerFunctionSemanticDigest {
 pub(crate) enum EndpointKind {
     FunctionRoot,
     HostTask,
+    ProgramTask,
     MakeNeed,
     AwaitManyBase,
     AwaitManyChild,
@@ -503,6 +507,7 @@ impl EndpointKind {
         match self {
             Self::FunctionRoot => 7,
             Self::HostTask => 0,
+            Self::ProgramTask => 1,
             Self::AwaitManyBase => 2,
             Self::AwaitManyChild => 3,
             Self::LineTask => 5,
@@ -894,7 +899,8 @@ impl<'a> RuntimeBodySemanticContext<'a> {
     fn endpoint_kinds(op: &plan::FlowOp) -> &'static [EndpointKind] {
         use plan::FlowOp as Op;
         match op {
-            Op::HostCall { .. } | Op::Thread { .. } => &[EndpointKind::HostTask],
+            Op::HostCall { .. } => &[EndpointKind::HostTask],
+            Op::Thread { .. } => &[EndpointKind::ProgramTask],
             Op::StartNeedProducer { .. } => &[EndpointKind::MakeNeed],
             Op::AwaitMany { .. } => &[EndpointKind::AwaitManyBase, EndpointKind::AwaitManyChild],
             Op::Dialogue { .. } => &[EndpointKind::LineTask],

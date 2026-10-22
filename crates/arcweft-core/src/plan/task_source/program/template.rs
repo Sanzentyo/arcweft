@@ -161,7 +161,7 @@ impl RuntimeTaskSourceProgram {
             admission.check(task, Field::Limit, *limit == target.limit)?;
             let child_source = admission.row(*child, &executable.task_plans[child.index()])?;
             let expected = original
-                .task_plan(&target.child.plan)
+                .task_plan(&target.child.definition.plan)
                 .expect("the original common seal admitted its child coordinate");
             admission.check(task, Field::ChildKey, child_source.task_plan() == expected)?;
         }
@@ -304,7 +304,7 @@ impl<'program> TemplateAdmission<'program, '_> {
                 self.meter,
             )
             .map_err(|source| RuntimeAwbcTemplateSourceError::Source { task, source })?;
-        let Some(RuntimeBodyTaskSource::Producer(producer)) =
+        let Some(RuntimeBodyTaskSource::Producer(template)) =
             source.request_endpoint().task_source()
         else {
             return Err(RuntimeAwbcTemplateSourceError::Mismatch {
@@ -312,6 +312,7 @@ impl<'program> TemplateAdmission<'program, '_> {
                 field: Field::RequestKind,
             });
         };
+        let producer = &template.definition;
         let original_kind = source.request_endpoint().kind();
         self.check(
             task,
@@ -335,28 +336,31 @@ impl<'program> TemplateAdmission<'program, '_> {
         )?;
         self.check(task, Field::Contract, contract == producer.contract)?;
         self.check(task, Field::Site, site == producer.producer_site)?;
-        let AwbcTaskRequestProjection::CustomCapability {
-            capability,
-            operation,
-        } = row.request
-        else {
-            return Err(RuntimeAwbcTemplateSourceError::Mismatch {
-                task,
-                field: Field::RequestProjection,
-            });
-        };
-        self.text(
-            task,
-            Field::Capability,
-            &executable.strings[capability.index()],
-            &producer.request.capability.0,
-        )?;
-        self.text(
-            task,
-            Field::Operation,
-            &executable.strings[operation.index()],
-            &producer.request.operation,
-        )?;
+        match &row.request {
+            AwbcTaskRequestProjection::CustomCapability {
+                capability,
+                operation,
+            } => {
+                self.text(
+                    task,
+                    Field::Capability,
+                    &executable.strings[capability.index()],
+                    &template.request.capability.0,
+                )?;
+                self.text(
+                    task,
+                    Field::Operation,
+                    &executable.strings[operation.index()],
+                    &template.request.operation,
+                )?;
+            }
+            _ => {
+                return Err(RuntimeAwbcTemplateSourceError::Mismatch {
+                    task,
+                    field: Field::RequestProjection,
+                });
+            }
+        }
         // Shared request metadata does not own the actual completed row's class.
         self.check(
             task,
@@ -387,7 +391,7 @@ impl<'program> TemplateAdmission<'program, '_> {
             .expect("the original common seal admitted the producer payload");
         self.types
             .push((task, Field::Payload, payload, row.payload_type));
-        let args = &producer.request.args;
+        let args = template.request.args.as_slice();
         self.roles(
             task,
             Field::ArgumentCount,
@@ -437,7 +441,7 @@ impl<'program> TemplateAdmission<'program, '_> {
             Field::RequestDefinition,
             kernel.definition
                 == producer
-                    .definition
+                    .function
                     .generated_child(RuntimeGeneratedFunctionRole::TaskRequest)
                 && kernel.semantic_role == crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         )?;

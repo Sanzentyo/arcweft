@@ -52,22 +52,24 @@ fn fanout_plan() -> (RuntimePlan, FlowRuntimeId) {
                     payload: crate::pattern::RuntimeSemanticTypeId,
                     identity| {
         RuntimeNeedProducerTemplateSeed {
-            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([identity; 32]),
-            family,
-            contract: NeedProducerContractDigest::from_bytes([11; 32]),
-            plan: coordinate,
-            producer_site: NeedProducerSiteDigest::from_bytes([identity; 32]),
-            payload_type: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
-            class: TaskClass::Cpu,
-            priority: TaskPriority(0),
-            cancel_scope: CancelScopeId("native-await-many".into()),
-            policy: TaskPolicy::JoinSameKey,
+            definition: crate::task::NeedProducerDefinition {
+                function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([identity; 32]),
+                family: family,
+                contract: NeedProducerContractDigest::from_bytes([11; 32]),
+                plan: coordinate,
+                producer_site: NeedProducerSiteDigest::from_bytes([identity; 32]),
+                payload_type: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+                class: TaskClass::Cpu,
+                priority: TaskPriority(0),
+                cancel_scope: CancelScopeId("native-await-many".into()),
+                policy: TaskPolicy::JoinSameKey,
+                debug_label: "native-await-many".into(),
+            },
             request: RuntimeHostTaskRequestTemplateSeed {
                 capability: HostCapabilityId("fixture".into()),
                 operation: "run".into(),
                 args: vec![],
             },
-            debug_label: "native-await-many".into(),
         }
     };
     let flow = FlowRuntimeId::canonical("native-await-many").unwrap();

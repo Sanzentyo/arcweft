@@ -6851,8 +6851,8 @@ impl<'a> FinalFlowLowerer<'a> {
                     let mut contract = blake3::Hasher::new();
                     contract.update(b"arcweft.thread.producer-contract.v1\0");
                     contract.update(identity.as_bytes());
-                    let producer = arcweft_core::plan::RuntimeNeedProducerTemplateSeed {
-                        definition: self
+                    let producer = arcweft_core::task::NeedProducerDefinition {
+                        function: self
                             .semantic_facts
                             .expression_coordinate(*thread)
                             .ok_or_else(|| {
@@ -6878,11 +6878,6 @@ impl<'a> FinalFlowLowerer<'a> {
                         priority: arcweft_core::task::TaskPriority(0),
                         cancel_scope: arcweft_core::task::CancelScopeId("flow".into()),
                         policy: arcweft_core::task::TaskPolicy::AlwaysStart,
-                        request: arcweft_core::plan::RuntimeHostTaskRequestTemplateSeed {
-                            capability: arcweft_core::task::HostCapabilityId("flow_thread".into()),
-                            operation: "run_child".into(),
-                            args: Vec::new(),
-                        },
                         debug_label: thread_expr
                             .name()
                             .map_or("anonymous", |name| name.as_str())

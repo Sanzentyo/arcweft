@@ -544,7 +544,7 @@ pub enum RuntimeFlowOpSeed {
     },
     Thread {
         name: Option<String>,
-        producer: RuntimeNeedProducerTemplateSeed,
+        producer: crate::task::NeedProducerDefinition,
         captures: Vec<RuntimeLocalSeedId>,
         body: Vec<Self>,
     },

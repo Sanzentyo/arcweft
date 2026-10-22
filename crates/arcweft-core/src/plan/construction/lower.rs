@@ -3652,6 +3652,7 @@ impl RuntimePlanBodyConstruction<'_> {
                     ]
                 {
                     template
+                        .definition
                         .family
                         .validate_runtime_task_binding(&binding)
                         .map_err(
@@ -3840,7 +3841,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 body,
             } => FlowOp::Thread {
                 name,
-                producer: self.lower_need_producer_template(producer, &[])?,
+                producer: self.lower_producer_definition(producer)?,
                 captures: captures
                     .iter()
                     .map(|local| {
@@ -4656,24 +4657,21 @@ impl RuntimePlanBodyConstruction<'_> {
         template: super::RuntimeNeedProducerTemplateSeed,
         bound: &[super::RuntimeLocalSeedId],
     ) -> Result<crate::task::NeedProducerTemplate, RuntimePlanBuildError> {
-        self.resolve_seed_type(
-            "producer template payload",
-            crate::pattern::RuntimeSemanticTypeId::from_bytes(*template.payload_type.as_bytes()),
-        )?;
         Ok(crate::task::NeedProducerTemplate {
-            definition: template.definition,
-            family: template.family,
-            contract: template.contract,
-            plan: template.plan,
-            producer_site: template.producer_site,
-            payload_type: template.payload_type,
-            class: template.class,
-            priority: template.priority,
-            cancel_scope: template.cancel_scope,
-            policy: template.policy,
+            definition: self.lower_producer_definition(template.definition)?,
             request: self.lower_host_task_request(template.request, bound)?,
-            debug_label: template.debug_label,
         })
+    }
+
+    fn lower_producer_definition(
+        &self,
+        definition: crate::task::NeedProducerDefinition,
+    ) -> Result<crate::task::NeedProducerDefinition, RuntimePlanBuildError> {
+        self.resolve_seed_type(
+            "producer payload",
+            crate::pattern::RuntimeSemanticTypeId::from_bytes(*definition.payload_type.as_bytes()),
+        )?;
+        Ok(definition)
     }
 
     fn lower_host_task_request(

@@ -5,16 +5,15 @@ use super::*;
 use crate::plan::*;
 use crate::task::*;
 
-fn producer(
+fn producer_definition(
     coordinate: RuntimeTaskPlanBuildCoordinate,
     marker: u8,
     family: NeedProducerFamily,
     payload: RuntimeSemanticTypeId,
-    arguments: Vec<RuntimeHostArgumentSeed>,
-) -> RuntimeNeedProducerTemplateSeed {
-    RuntimeNeedProducerTemplateSeed {
-        definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([marker; 32]),
-        family,
+) -> NeedProducerDefinition {
+    NeedProducerDefinition {
+        function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([marker; 32]),
+        family: family,
         contract: NeedProducerContractDigest::from_bytes([marker; 32]),
         plan: coordinate,
         producer_site: NeedProducerSiteDigest::from_bytes([marker; 32]),
@@ -23,12 +22,24 @@ fn producer(
         priority: TaskPriority::default(),
         cancel_scope: CancelScopeId("test".to_owned()),
         policy: TaskPolicy::AlwaysStart,
+        debug_label: "request endpoint".to_owned(),
+    }
+}
+
+fn producer(
+    coordinate: RuntimeTaskPlanBuildCoordinate,
+    marker: u8,
+    family: NeedProducerFamily,
+    payload: RuntimeSemanticTypeId,
+    arguments: Vec<RuntimeHostArgumentSeed>,
+) -> RuntimeNeedProducerTemplateSeed {
+    RuntimeNeedProducerTemplateSeed {
+        definition: producer_definition(coordinate, marker, family, payload),
         request: RuntimeHostTaskRequestTemplateSeed {
             capability: HostCapabilityId("test".to_owned()),
             operation: "request".to_owned(),
             args: arguments,
         },
-        debug_label: "request endpoint".to_owned(),
     }
 }
 
@@ -151,12 +162,11 @@ fn fixture(
         RuntimeFlowOpSeed::Thread {
             name: None,
             captures: vec![],
-            producer: producer(
+            producer: producer_definition(
                 builder.task_coordinate_owner(1).resolve(0).unwrap(),
                 74,
                 NeedProducerFamily::StructuredTaskPlan,
                 unit,
-                argument(92, scalar),
             ),
             body: vec![RuntimeFlowOpSeed::ReturnExpr(returned.clone())],
         }

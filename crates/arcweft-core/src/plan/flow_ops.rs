@@ -412,11 +412,7 @@ impl FlowOp {
                 expression(Role::Source, source, visitor)?;
             }
             FlowOp::ForNext { pattern, .. } => visitor(Role::Pattern, Node::Pattern(pattern))?,
-            FlowOp::Thread { producer, .. } => {
-                for (ordinal, argument) in producer.request.args.iter().enumerate() {
-                    expression(Role::Argument { ordinal }, argument.value(), visitor)?;
-                }
-            }
+            FlowOp::Thread { .. } => {}
             FlowOp::LetScope { pattern, value, .. } => {
                 visitor(Role::Pattern, Node::Pattern(pattern))?;
                 expression(Role::Value, value, visitor)?;

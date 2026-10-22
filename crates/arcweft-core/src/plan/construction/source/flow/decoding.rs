@@ -378,12 +378,10 @@ impl Reader<'_, '_, '_> {
         }
         Ok(args)
     }
-    fn template(&mut self) -> Result<RuntimeNeedProducerTemplateSeed, Error> {
-        self.counts.storage(
-            size_of::<RuntimeNeedProducerTemplateSeed>()
-                + size_of::<crate::task::NeedProducerTemplate>(),
-        )?;
-        let definition =
+    fn producer_definition(&mut self) -> Result<crate::task::NeedProducerDefinition, Error> {
+        self.counts
+            .storage(2 * size_of::<crate::task::NeedProducerDefinition>())?;
+        let function =
             RuntimeFunctionDefinitionIdentity::from_accepted_identity(self.metadata.digest()?);
         let tag = self.metadata.byte()?;
         let family = NeedProducerFamily::from_semantic_tag(tag).ok_or(Error::Tag {
@@ -410,9 +408,29 @@ impl Reader<'_, '_, '_> {
             kind: "task policy",
             tag,
         })?;
+        let debug_label = self.text()?;
+        Ok(crate::task::NeedProducerDefinition {
+            function,
+            family,
+            contract,
+            plan,
+            producer_site,
+            payload_type,
+            class,
+            priority,
+            cancel_scope,
+            policy,
+            debug_label,
+        })
+    }
+    fn template(&mut self) -> Result<RuntimeNeedProducerTemplateSeed, Error> {
+        let definition = self.producer_definition()?;
+        self.counts.storage(
+            size_of::<RuntimeHostTaskRequestTemplateSeed>()
+                + size_of::<crate::task::HostTaskRequestTemplate>(),
+        )?;
         let capability = HostCapabilityId(self.text()?);
         let operation = self.text()?;
-        let debug_label = self.text()?;
         let before = self.counts.footprint;
         let args = self.arguments()?;
         let units = (self.counts.footprint.nodes - before.nodes)
@@ -428,21 +446,11 @@ impl Reader<'_, '_, '_> {
         )?;
         Ok(RuntimeNeedProducerTemplateSeed {
             definition,
-            family,
-            contract,
-            plan,
-            producer_site,
-            payload_type,
-            class,
-            priority,
-            cancel_scope,
-            policy,
             request: RuntimeHostTaskRequestTemplateSeed {
                 capability,
                 operation,
                 args,
             },
-            debug_label,
         })
     }
     fn fields(&mut self) -> Result<Box<[RuntimeRecordFieldSeedId]>, Error> {
@@ -931,7 +939,7 @@ impl Reader<'_, '_, '_> {
             },
             28 => Op::Thread {
                 name: self.optional_text()?,
-                producer: self.template()?,
+                producer: self.producer_definition()?,
                 captures: self.locals()?,
                 body: self.body()?,
             },

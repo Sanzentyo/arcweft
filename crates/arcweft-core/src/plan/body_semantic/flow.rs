@@ -13,11 +13,21 @@ use crate::task::semantic::TaskSemanticEncoder;
 #[derive(Clone, Copy)]
 pub(crate) enum RuntimeBodyTaskSource<'a> {
     Producer(&'a crate::task::NeedProducerTemplate),
+    ProgramProducer(&'a crate::task::NeedProducerDefinition),
     Host(&'a plan::RuntimeHostCallTarget),
     Start(&'a plan::RuntimeNeedProducerStartTarget),
 }
 
-impl RuntimeBodyTaskSource<'_> {
+impl<'a> RuntimeBodyTaskSource<'a> {
+    pub(crate) const fn producer_definition(
+        &self,
+    ) -> Option<&'a crate::task::NeedProducerDefinition> {
+        match self {
+            Self::Producer(template) => Some(&template.definition),
+            Self::ProgramProducer(definition) => Some(definition),
+            Self::Host(_) | Self::Start(_) => None,
+        }
+    }
     pub(in crate::plan) fn control_identity(
         &self,
         meter: &mut crate::task::semantic::TaskSemanticMeter,
@@ -31,6 +41,10 @@ impl RuntimeBodyTaskSource<'_> {
             }
             Self::Producer(producer) => {
                 encoder.tag(1);
+                producer.encode_control_metadata(&mut encoder);
+            }
+            Self::ProgramProducer(producer) => {
+                encoder.tag(3);
                 producer.encode_control_metadata(&mut encoder);
             }
             Self::Start(target) => {
@@ -47,7 +61,8 @@ impl RuntimeBodyTaskSource<'_> {
 
     pub(crate) fn coordinate(&self) -> &RuntimeTaskPlanBuildCoordinate {
         match self {
-            Self::Producer(producer) => &producer.plan,
+            Self::Producer(producer) => &producer.definition.plan,
+            Self::ProgramProducer(producer) => &producer.plan,
             Self::Host(target) => &target.producer.plan,
             Self::Start(target) => target.task_plan(),
         }
@@ -191,10 +206,9 @@ impl RuntimeBodySemanticContext<'_> {
             FlowOp::Thread {
                 producer, captures, ..
             } => {
-                self.write_host_arguments_metadata(encoder, &producer.request.args)?;
                 Self::write_task_reference(
                     encoder,
-                    RuntimeBodyTaskSource::Producer(producer),
+                    RuntimeBodyTaskSource::ProgramProducer(producer),
                     task_owner,
                 )?;
                 encoder.count(captures.len());

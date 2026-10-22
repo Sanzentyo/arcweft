@@ -68,11 +68,8 @@ impl HostCallProducerDefinition {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct NeedProducerTemplate<
-    Plan = crate::plan::RuntimeTaskPlanBuildCoordinate,
-    Request = HostTaskRequestTemplate,
-> {
-    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
+pub struct NeedProducerDefinition<Plan = crate::plan::RuntimeTaskPlanBuildCoordinate> {
+    pub function: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub family: NeedProducerFamily,
     pub contract: NeedProducerContractDigest,
     pub plan: Plan,
@@ -84,11 +81,19 @@ pub struct NeedProducerTemplate<
     pub priority: TaskPriority,
     pub cancel_scope: CancelScopeId,
     pub policy: TaskPolicy,
-    pub request: Request,
     pub debug_label: String,
 }
 
-impl<Plan, Request> NeedProducerTemplate<Plan, Request> {
+#[derive(Clone, Debug, PartialEq)]
+pub struct NeedProducerTemplate<
+    Plan = crate::plan::RuntimeTaskPlanBuildCoordinate,
+    Request = HostTaskRequestTemplate,
+> {
+    pub definition: NeedProducerDefinition<Plan>,
+    pub request: Request,
+}
+
+impl<Plan> NeedProducerDefinition<Plan> {
     #[must_use]
     pub const fn outcome(&self) -> TaskOutcomeContract {
         TaskOutcomeContract::Program {
@@ -99,12 +104,12 @@ impl<Plan, Request> NeedProducerTemplate<Plan, Request> {
     }
 }
 
-impl NeedProducerTemplate {
+impl NeedProducerDefinition {
     pub(crate) fn encode_control_metadata(
         &self,
         encoder: &mut super::semantic::TaskSemanticEncoder<'_>,
     ) {
-        encoder.digest(self.definition.as_bytes());
+        encoder.digest(self.function.as_bytes());
         encoder.tag(self.family.semantic_tag());
         encoder.digest(self.contract.as_bytes());
         encoder.digest(self.producer_site.as_bytes());
@@ -113,6 +118,22 @@ impl NeedProducerTemplate {
         encoder.ordinal(self.priority.0.cast_unsigned());
         encoder.string(&self.cancel_scope.0);
         encoder.tag(self.policy.semantic_tag());
+    }
+}
+
+impl<Plan, Request> NeedProducerTemplate<Plan, Request> {
+    #[must_use]
+    pub const fn outcome(&self) -> TaskOutcomeContract {
+        self.definition.outcome()
+    }
+}
+
+impl NeedProducerTemplate {
+    pub(crate) fn encode_control_metadata(
+        &self,
+        encoder: &mut super::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        self.definition.encode_control_metadata(encoder);
         encoder.string(&self.request.capability.0);
         encoder.string(&self.request.operation);
         encoder.count(self.request.captures.len());
@@ -142,7 +163,8 @@ impl NeedProducerTemplate {
         request: HostTaskRequest,
         max_encoded_bytes: usize,
     ) -> Result<TaskSpec, NeedProducerAdmissionError> {
-        let plan = self
+        let definition = &self.definition;
+        let plan = definition
             .plan
             .sealed_plan()
             .ok_or(NeedProducerAdmissionError::UnsealedTaskPlan)?
@@ -151,23 +173,23 @@ impl NeedProducerTemplate {
             crate::entry::schema::canonical_runtime_value_view_digest(arguments, max_encoded_bytes)
                 .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;
         let input = NeedProducerSpec::new(
-            self.family,
-            self.contract,
+            definition.family,
+            definition.contract,
             plan,
-            self.producer_site,
-            self.payload_type,
+            definition.producer_site,
+            definition.payload_type,
             digest,
         );
         let spec = TaskSpec {
             generation,
             producer: NeedProducerInstance::try_from(&input)?,
-            class: self.class.clone(),
-            priority: self.priority,
-            cancel_scope: self.cancel_scope.clone(),
-            policy: self.policy,
+            class: definition.class.clone(),
+            priority: definition.priority,
+            cancel_scope: definition.cancel_scope.clone(),
+            policy: definition.policy,
             outcome: self.outcome(),
             request: request.into(),
-            debug_label: self.debug_label.clone(),
+            debug_label: definition.debug_label.clone(),
         };
         spec.validate_outcome()?;
         Ok(spec)

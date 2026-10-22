@@ -91,10 +91,13 @@ impl RuntimeTaskSourceRef<'_> {
         admission.status()?;
         let captures = arguments.captures();
         admission.validate_metadata_collection(captures.len())?;
-        let Some(RuntimeBodyTaskSource::Producer(producer)) = self.request_endpoint().task_source()
-        else {
-            return Err(RuntimeTaskProducerSourceError::RequestKind);
-        };
+        let task_source = self
+            .request_endpoint()
+            .task_source()
+            .ok_or(RuntimeTaskProducerSourceError::RequestKind)?;
+        let producer = task_source
+            .producer_definition()
+            .ok_or(RuntimeTaskProducerSourceError::RequestKind)?;
         if !admission
             .program_owner()
             .is_some_and(|owner| program.owns_source_for(self, owner))
@@ -140,9 +143,11 @@ impl RuntimeTaskSourceRef<'_> {
             producer.priority,
             &producer.cancel_scope,
             producer.policy,
-            &producer.request.capability,
-            &producer.request.operation,
         ))?;
+        if let RuntimeBodyTaskSource::Producer(template) = task_source {
+            admission
+                .validate_metadata(&(&template.request.capability, &template.request.operation))?;
+        }
         // Inspect only the source container header before any capture value is
         // projected. Children stay borrowed until its complete role preflight.
         let source_view =

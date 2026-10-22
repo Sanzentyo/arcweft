@@ -1673,8 +1673,8 @@ impl AwbcInventory {
             ));
             return None;
         }
-        let base_key = self.original_task_plan_key(plan, &target.base.plan)?;
-        let child_key = self.original_task_plan_key(plan, &target.child.plan)?;
+        let base_key = self.original_task_plan_key(plan, &target.base.definition.plan)?;
+        let child_key = self.original_task_plan_key(plan, &target.child.definition.plan)?;
         let inputs = target.captures().collect::<Vec<_>>();
         let mut child_inputs = inputs.clone();
         child_inputs.push(target.item_binding);
@@ -1682,9 +1682,9 @@ impl AwbcInventory {
         let child = self.intern_producer_template(
             &target.child,
             AwbcTaskPlanKind::Template {
-                family: target.child.family,
-                contract: target.child.contract,
-                site: target.child.producer_site,
+                family: target.child.definition.family,
+                contract: target.child.definition.contract,
+                site: target.child.definition.producer_site,
                 plan: child_key,
                 request_function: child_function,
             },
@@ -1693,8 +1693,8 @@ impl AwbcInventory {
         self.intern_producer_template(
             &target.base,
             AwbcTaskPlanKind::AwaitMany {
-                contract: target.base.contract,
-                site: target.base.producer_site,
+                contract: target.base.definition.contract,
+                site: target.base.definition.producer_site,
                 plan: base_key,
                 child,
                 captures,
@@ -1713,6 +1713,7 @@ impl AwbcInventory {
         let request = &producer.request;
         let definition = producer
             .definition
+            .function
             .generated_child(arcweft_core::plan::RuntimeGeneratedFunctionRole::TaskRequest);
         let function = self.reserve_function_slot(definition);
         self.push_pending_closure(PendingAwbcClosure::TaskRequest {
@@ -1739,7 +1740,7 @@ impl AwbcInventory {
         let signature = self.intern_signature(params, None, AwbcEffectSetId(0));
         let arguments = self.intern_host_arguments(&template.request.args);
         let Some(payload_type) = self.semantic_type(RuntimeSemanticTypeId::from_bytes(
-            *template.payload_type.as_bytes(),
+            *template.definition.payload_type.as_bytes(),
         )) else {
             self.diagnostic(AwbcLowerDiagnostic::error(
                 "task.payload",
@@ -1753,10 +1754,10 @@ impl AwbcInventory {
                 capability: self.intern_string(&template.request.capability.0),
                 operation: self.intern_string(&template.request.operation),
             },
-            class: awbc_task_class(&template.class),
-            priority: template.priority.0,
-            cancel_scope: self.intern_string(&template.cancel_scope.0),
-            policy: awbc_task_policy(template.policy),
+            class: awbc_task_class(&template.definition.class),
+            priority: template.definition.priority.0,
+            cancel_scope: self.intern_string(&template.definition.cancel_scope.0),
+            policy: awbc_task_policy(template.definition.policy),
             payload_type,
             arguments,
             kind,

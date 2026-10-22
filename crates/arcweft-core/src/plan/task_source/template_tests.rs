@@ -135,10 +135,10 @@ fn template_sources_keep_original_keys_and_exact_nested_argument_transcripts() {
         };
         let expected = NeedProducerSpec::new(
             base.task_plan().definition().family(),
-            base_metadata.contract,
+            base_metadata.definition.contract,
             base.task_plan().key(),
-            base_metadata.producer_site,
-            base_metadata.payload_type,
+            base_metadata.definition.producer_site,
+            base_metadata.definition.payload_type,
             base_arguments,
         );
         assert_eq!(
@@ -152,10 +152,10 @@ fn template_sources_keep_original_keys_and_exact_nested_argument_transcripts() {
         };
         let expected = NeedProducerSpec::new(
             child.task_plan().definition().family(),
-            child_metadata.contract,
+            child_metadata.definition.contract,
             child.task_plan().key(),
-            child_metadata.producer_site,
-            child_metadata.payload_type,
+            child_metadata.definition.producer_site,
+            child_metadata.definition.payload_type,
             child_arguments,
         );
         assert_eq!(
@@ -690,8 +690,8 @@ fn thread() -> RuntimeTaskSourceProgram {
                     RuntimeFlowOpSeed::Thread {
                         name: None,
                         captures: vec![local.clone()],
-                        producer: RuntimeNeedProducerTemplateSeed {
-                            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        producer: crate::task::NeedProducerDefinition {
+                            function: RuntimeFunctionDefinitionIdentity::from_accepted_identity(
                                 [2; 32],
                             ),
                             family: NeedProducerFamily::StructuredTaskPlan,
@@ -703,20 +703,6 @@ fn thread() -> RuntimeTaskSourceProgram {
                             priority: TaskPriority(0),
                             cancel_scope: CancelScopeId("thread".into()),
                             policy: TaskPolicy::AlwaysStart,
-                            request: RuntimeHostTaskRequestTemplateSeed {
-                                capability: HostCapabilityId("thread".into()),
-                                operation: "run".into(),
-                                args: vec![RuntimeHostArgumentTemplate::positional(
-                                    RuntimeRequestRoleIdentity::from_accepted_identity([32; 32]),
-                                    RuntimeExprSeed::new(
-                                        boolean,
-                                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                            local,
-                                            crate::value::RuntimeLocalReadMode::Copy,
-                                        )),
-                                    ),
-                                )],
-                            },
                             debug_label: "thread source".into(),
                         },
                         body: vec![RuntimeFlowOpSeed::ReturnExpr(unit_value.clone())],
@@ -727,6 +713,116 @@ fn thread() -> RuntimeTaskSourceProgram {
         )
         .unwrap();
     RuntimeTaskSourceProgram::native(Arc::new(builder.finish().unwrap()))
+}
+
+#[test]
+fn thread_source_codec_retains_program_definition_and_capture_roles() {
+    let program = thread();
+    let limits = RuntimeTaskSourceArtifactLimits::default();
+    let artifact = program.original().task_source_artifact(limits).unwrap();
+    let decoded = artifact.admit(limits, None).unwrap();
+    assert_eq!(
+        decoded.executable_semantic_digest(),
+        program.original().executable_semantic_digest(),
+    );
+    assert_eq!(decoded.task_source_artifact(limits).unwrap(), artifact);
+    let row = decoded
+        .task_plans()
+        .by_index(RuntimeTaskPlanIndex(0))
+        .unwrap();
+    let source = decoded
+        .task_source_by_expected_key(
+            &ExpectedTaskPlanKey::new(*row.key().as_bytes()),
+            limits.seal,
+            &mut meter(),
+        )
+        .unwrap();
+    assert!(matches!(
+        source.request_endpoint().task_source(),
+        Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer(_))
+    ));
+    assert!(source.request_endpoint().host_arguments().is_none());
+    let Some(FlowOp::Thread {
+        captures, producer, ..
+    }) = source.request_endpoint().operation()
+    else {
+        panic!("round trip must retain the actual Thread operation");
+    };
+    assert_eq!(captures.len(), 1);
+    assert_eq!(
+        producer.function,
+        RuntimeFunctionDefinitionIdentity::from_accepted_identity([2; 32])
+    );
+    assert_eq!(producer.family, NeedProducerFamily::StructuredTaskPlan);
+}
+
+#[test]
+fn awbc_host_request_kernel_cannot_claim_an_original_thread_source() {
+    use crate::awbc::schema::{AwbcTaskPlanKind, AwbcTypeId};
+    let native = thread();
+    let original = native.original();
+    let row = original
+        .task_plans()
+        .by_index(RuntimeTaskPlanIndex(0))
+        .unwrap();
+    let source = original
+        .task_source_by_expected_key(
+            &ExpectedTaskPlanKey::new(*row.key().as_bytes()),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter(),
+        )
+        .unwrap();
+    let Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer(definition)) =
+        source.request_endpoint().task_source()
+    else {
+        panic!("Thread has an actual program producer");
+    };
+    let mut code = program::template_executable_fixture();
+    code.original_source = Some(
+        original
+            .task_source_artifact(RuntimeTaskSourceArtifactLimits::default())
+            .unwrap(),
+    );
+    let AwbcTaskPlanKind::AwaitMany {
+        request_function, ..
+    } = code.task_plans[0].kind
+    else {
+        panic!("fixture owns a real Host request kernel");
+    };
+    code.task_plans[0].kind = AwbcTaskPlanKind::Template {
+        family: definition.family,
+        contract: definition.contract,
+        site: definition.producer_site,
+        plan: row.key(),
+        request_function,
+    };
+    code.task_plans[0].payload_type = AwbcTypeId(u32::try_from(code.runtime_types.len()).unwrap());
+    code.runtime_types.push(AwbcRuntimeType::new(
+        crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+        AwbcRuntimeTypeShape::Unit,
+    ));
+    let program = RuntimeTaskSourceProgram::admit_awbc(
+        Arc::new(code),
+        AwbcVerifyBudget::default(),
+        AwbcVerifyContext {
+            require_entrypoint: false,
+            ..AwbcVerifyContext::default()
+        },
+        RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .unwrap();
+    assert!(matches!(
+        program.awbc_template_source(
+            AwbcTaskPlanId(0),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter()
+        ),
+        Err(program::RuntimeAwbcTemplateSourceError::Mismatch {
+            field: program::RuntimeAwbcTemplateSourceField::RequestKind,
+            ..
+        }),
+    ));
 }
 
 #[test]
@@ -757,11 +853,16 @@ fn thread_source_uses_original_capture_order_and_retains_only_an_admitted_source
             &mut bank(&program, RuntimeSchemaLimits::engine_default()),
         )
         .unwrap();
-    let Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::Producer(original)) =
+    let Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer(original)) =
         source.request_endpoint().task_source()
     else {
         unreachable!()
     };
+    assert_eq!(
+        source.request_endpoint().kind(),
+        crate::plan::body_semantic::function::EndpointKind::ProgramTask
+    );
+    assert!(source.request_endpoint().host_arguments().is_none());
     let digest = crate::entry::schema::canonical_runtime_value_view_digest(
         crate::value::RuntimeValueView::Tuple(crate::value::RuntimeTupleView::Values(&captures)),
         1 << 20,
