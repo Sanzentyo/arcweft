@@ -52,6 +52,14 @@ report by decoding serialized data. Duplicate or foreign terminal batches reject
 before advancing the scheduler, publication frontiers or completion counters.
 Equal deterministic task coordinates from another executable are insufficient.
 Re-ensuring the same live Web dispatch preserves its pending work and frontier.
+Core retirement order does not have to match replay publication order. The
+Native host binds reports to their accepted dispatches while constructing one
+ordered packet with `TaskEvent::publication_order`; the scheduler receives that
+whole atomic packet. Ordered-tree insertion still costs O(log n) per report and
+is included in event-construction timing. Scheduler sort counters measure its
+own normalization work; already ordered singleton packets also count as skipped
+sort items. Native completion totals include both scheduled work and direct
+runtime host calls, with `completed_host_calls` exposing the direct-call subset.
 The internal `flow_thread.run_child` and `line_task.run_child` host-call routes
 are absent from adapter manifests, policies and bundle requirements.
 

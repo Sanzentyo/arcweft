@@ -39,16 +39,23 @@ flow main() -> String effects { control.spawn, log.write } {
     .unwrap()
 }
 
-fn retire(runtime: &mut ArcweftRuntimeExecutor) -> Vec<arcweft_core::task::ProgramTaskCompletion> {
+fn retire(
+    runtime: &mut ArcweftRuntimeExecutor,
+) -> (
+    Vec<TaskSubmission>,
+    Vec<arcweft_core::task::ProgramTaskCompletion>,
+) {
+    let mut tasks = Vec::new();
     let mut reports = Vec::new();
     for _ in 0..128 {
         let step = runtime.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
         assert!(step.stats.executed_ops <= 1);
         assert!(step.output.diagnostics.is_empty(), "{:?}", step.output);
+        tasks.extend(step.output.requests.tasks);
         reports.extend(step.output.requests.program_task_completions);
         if matches!(runtime.fiber().frame.status, FlowFiberStatus::Done(_)) {
             assert_eq!(reports.len(), 2);
-            return reports;
+            return (tasks, reports);
         }
     }
     panic!("foreign original executable did not retire its bodies");
@@ -60,7 +67,7 @@ fn actual_program_body_retirement_is_required_and_duplicate_batch_is_atomic() {
     let owner = runtime.program_owner();
     let mut foreign = self::runtime();
     let foreign_owner = foreign.program_owner();
-    let foreign_reports = retire(&mut foreign);
+    let (_, foreign_reports) = retire(&mut foreign);
     let mut bridge =
         NativeTaskBridge::try_with_registry(HostCallPolicy::new(), HostAdapterRegistry::new())
             .unwrap();
@@ -182,4 +189,26 @@ fn actual_program_body_retirement_is_required_and_duplicate_batch_is_atomic() {
         }
     }
     panic!("actual nested Thread bodies did not retire");
+}
+
+#[test]
+fn actual_program_terminals_construct_one_ordered_publication_packet() {
+    let mut runtime = runtime();
+    let owner = runtime.program_owner();
+    let (tasks, mut reports) = retire(&mut runtime);
+    reports.sort_by_key(|report| std::cmp::Reverse(report.handle().correlation));
+    assert!(reports[0].handle().correlation > reports[1].handle().correlation);
+    let mut bridge =
+        NativeTaskBridge::try_with_registry(HostCallPolicy::new(), HostAdapterRegistry::new())
+            .unwrap();
+    assert!(bridge.complete_tasks(owner, tasks).unwrap().is_empty());
+    let events = bridge.complete_program_tasks(&reports).unwrap();
+    assert_eq!(events.len(), 2);
+    assert!(arcweft_core::task::task_events_are_normalized(&events));
+    assert_eq!(bridge.stats().scheduler.completed, 2);
+    assert_eq!(bridge.stats().scheduler.in_flight, 0);
+    assert_eq!(bridge.stats().scheduler.completion_sorts, 0);
+    assert_eq!(bridge.stats().scheduler.completion_sort_skipped_items, 2);
+    assert_eq!(bridge.stats().program_task_terminals, 2);
+    assert_eq!(bridge.stats().completed_host_calls, 0);
 }

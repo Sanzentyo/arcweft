@@ -431,6 +431,7 @@ impl RuntimeScheduler {
     fn normalize_completion_events(&mut self, events: &mut [TaskEvent]) {
         self.stats.completion_normalization_passes += 1;
         if events.len() <= 1 {
+            self.stats.completion_sort_skipped_items += events.len();
             return;
         }
         self.stats.completion_normalization_checks += 1;
@@ -688,6 +689,7 @@ mod tests {
         );
         assert_eq!(scheduler.stats().in_flight, 1);
         assert_eq!(scheduler.stats().completed, 0);
+        assert_eq!(scheduler.stats().completion_sort_skipped_items, 1);
         scheduler.submit([owner.clone()]).unwrap();
         assert_eq!(
             scheduler.complete([ready(&owner, 2)]).unwrap(),

@@ -245,6 +245,7 @@ impl RuntimeBenchSamples {
 #[derive(Default)]
 struct NativeTaskStatsSamples {
     completed_tasks: Vec<usize>,
+    completed_host_calls: Vec<usize>,
     failed_tasks: Vec<usize>,
     read_ops: Vec<usize>,
     write_ops: Vec<usize>,
@@ -269,6 +270,7 @@ impl NativeTaskStatsSamples {
     pub(in crate::app) fn with_capacity(capacity: usize) -> Self {
         Self {
             completed_tasks: Vec::with_capacity(capacity),
+            completed_host_calls: Vec::with_capacity(capacity),
             failed_tasks: Vec::with_capacity(capacity),
             read_ops: Vec::with_capacity(capacity),
             write_ops: Vec::with_capacity(capacity),
@@ -292,6 +294,7 @@ impl NativeTaskStatsSamples {
 
     fn push(&mut self, stats: &NativeTaskStats) {
         self.completed_tasks.push(stats.completed_tasks);
+        self.completed_host_calls.push(stats.completed_host_calls);
         self.failed_tasks.push(stats.failed_tasks);
         self.read_ops.push(stats.read_ops);
         self.write_ops.push(stats.write_ops);
@@ -322,6 +325,7 @@ impl NativeTaskStatsSamples {
     fn median(&mut self) -> NativeTaskStats {
         NativeTaskStats {
             completed_tasks: median_usize(&mut self.completed_tasks),
+            completed_host_calls: median_usize(&mut self.completed_host_calls),
             failed_tasks: median_usize(&mut self.failed_tasks),
             read_ops: median_usize(&mut self.read_ops),
             write_ops: median_usize(&mut self.write_ops),

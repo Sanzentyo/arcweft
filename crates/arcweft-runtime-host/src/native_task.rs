@@ -137,7 +137,9 @@ impl NativeTaskDispatch {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub struct NativeTaskStats {
+    /// Successful scheduled work and direct runtime host calls together.
     pub completed_tasks: usize,
+    pub completed_host_calls: usize,
     pub failed_tasks: usize,
     pub read_ops: usize,
     pub write_ops: usize,
@@ -427,8 +429,13 @@ impl NativeTaskBridge {
         &mut self,
         completions: &[arcweft_core::task::ProgramTaskCompletion],
     ) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
+        let started = Instant::now();
         let mut owners = BTreeSet::new();
-        let mut events = Vec::with_capacity(completions.len());
+        // Bind each proof to its actual dispatch while constructing the packet
+        // in the common replay order. This retains one atomic batch and avoids
+        // a second full sort inside the scheduler. Tree insertion has its own
+        // O(log n) ordering cost; it does not reorder Core execution effects.
+        let mut publications = BTreeMap::new();
         for completion in completions {
             let handle = completion.handle();
             let task_id = handle.correlation.task_id;
@@ -463,14 +470,27 @@ impl NativeTaskBridge {
                     TaskEventKind::InfrastructureFailure(failure.clone())
                 }
             };
-            events.push(self.event_for_task(&task_id, revision, kind)?);
+            let event = self.event_for_task(&task_id, revision, kind)?;
+            publications.insert(event.publication_order(), event);
         }
+        let events = publications.into_values().collect::<Vec<_>>();
         self.prepare_task_event_frontiers(&events)?;
+        let event_build_elapsed_ns = started.elapsed().as_nanos();
+        let started = Instant::now();
         let mut scheduler = self.scheduler.clone();
         let events = scheduler.complete(events)?;
         let frontiers = self.prepare_task_event_frontiers(&events)?;
+        let scheduler_complete_elapsed_ns = started.elapsed().as_nanos();
         self.record_scheduler_owner_outcomes(&owners, &events);
         self.stats.program_task_terminals += owners.len();
+        self.stats.event_build_elapsed_ns = self
+            .stats
+            .event_build_elapsed_ns
+            .saturating_add(event_build_elapsed_ns);
+        self.stats.scheduler_complete_elapsed_ns = self
+            .stats
+            .scheduler_complete_elapsed_ns
+            .saturating_add(scheduler_complete_elapsed_ns);
         self.scheduler = scheduler;
         self.publication_frontiers = frontiers;
         self.retire_terminal_dispatches(&events);
@@ -651,6 +671,7 @@ impl NativeTaskBridge {
                 if expected.try_payload(value.value().clone()).is_ok() =>
             {
                 self.stats.completed_tasks += 1;
+                self.stats.completed_host_calls += 1;
                 RuntimeHostCallResult {
                     id,
                     outcome: Ok(value),

@@ -6645,7 +6645,8 @@ flow threaded_reads() -> String effects { fs.read(save), log.write, control.spaw
     assert_eq!(measurement["deterministic"]["task_requests_median"], 4);
     assert_eq!(measurement["deterministic"]["task_events_in_median"], 4);
     assert_eq!(measurement["deterministic"]["max_child_fibers_median"], 2);
-    assert_eq!(measurement["native_io"]["completed_tasks"], 4);
+    assert_eq!(measurement["native_io"]["completed_tasks"], 6);
+    assert_eq!(measurement["native_io"]["completed_host_calls"], 2);
     assert_eq!(measurement["native_io"]["read_ops"], 2);
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 4);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatched"], 4);

@@ -1592,6 +1592,16 @@ impl Clone for TaskEvent<crate::value::AwbcRuntimeValueSnapshot> {
 }
 
 impl<P> TaskEvent<P> {
+    /// Replay order shared by packet producers and scheduler normalization.
+    /// The payload is not part of the publication identity.
+    pub const fn publication_order(&self) -> (LogicalEpoch, TaskCorrelation, TaskSequence) {
+        (
+            self.cursor.logical_epoch,
+            self.correlation,
+            self.cursor.sequence,
+        )
+    }
+
     /// Preflights retained metadata and the exact outcome while the payload
     /// still belongs to its original live or inert owner.
     pub(crate) fn admit_retained<Q, S>(
@@ -2075,11 +2085,7 @@ pub fn task_events_are_normalized<P>(events: &[TaskEvent<P>]) -> bool {
 
 /// Compares task events by replay-stable completion order.
 pub fn compare_task_events<P>(left: &TaskEvent<P>, right: &TaskEvent<P>) -> std::cmp::Ordering {
-    left.cursor
-        .logical_epoch
-        .cmp(&right.cursor.logical_epoch)
-        .then_with(|| left.correlation.cmp(&right.correlation))
-        .then_with(|| left.cursor.sequence.cmp(&right.cursor.sequence))
+    left.publication_order().cmp(&right.publication_order())
 }
 
 /// Returns producer-owned Need states in replay-stable publication order.
