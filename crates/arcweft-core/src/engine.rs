@@ -58,6 +58,7 @@ pub mod line;
 pub mod program;
 pub mod stream;
 pub mod suspend;
+mod thread;
 
 /// Ephemeral charge for the currently dispatched native operation. The driver
 /// reserves that dispatch first; physical bodies may consume only its actual

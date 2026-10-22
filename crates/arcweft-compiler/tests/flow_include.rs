@@ -225,6 +225,83 @@ fn include_in_a_function_owned_thread_joins_before_its_flow_caller_returns() {
     );
 }
 
+const NATIVE_THREAD_CAPTURE_SOURCE: &str = concat!(
+    "fn launch(flag: bool) -> Unit effects { control.spawn } {\n",
+    "    thread worker { if flag { include @flow.snippet } }\n",
+    "    ()\n",
+    "}\n",
+    "flow main() -> String { launch(true); return \"after-thread\" }\n",
+    "flow snippet() {}\n",
+    "entry cli @entry.main { goto @flow.main }\n",
+);
+
+#[test]
+fn native_thread_capture_source_and_child_resume_under_one_operation_steps() {
+    let mut runtime = executor(NATIVE_THREAD_CAPTURE_SOURCE, Backend::Native);
+    let mut submissions = 0;
+    let mut observed_child = false;
+    for step in 0..128 {
+        let result = runtime.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+        assert!(result.stats.executed_ops <= 1);
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "step={step}: {:?}",
+            result.output.diagnostics
+        );
+        for task in &result.output.requests.tasks {
+            assert_eq!(task.spec().class, arcweft_core::task::TaskClass::Cpu);
+            assert_eq!(task.spec().debug_label, "worker");
+            assert_eq!(result.stats.child_fibers, 1);
+            submissions += 1;
+        }
+        observed_child |= result.stats.child_fibers > 0;
+        match &runtime.fiber().frame.status {
+            FlowFiberStatus::Done(exit) => {
+                assert_eq!(exit, &FlowExit::Return("after-thread".into()));
+                assert_eq!(submissions, 1);
+                assert!(observed_child);
+                return;
+            }
+            FlowFiberStatus::Failed(message) => panic!("Thread failed after restore: {message}"),
+            _ => {}
+        }
+    }
+    panic!("Thread capture execution did not complete");
+}
+
+#[test]
+fn native_thread_quota_rejection_publishes_no_child_or_task() {
+    let mut runtime = executor(NATIVE_THREAD_CAPTURE_SOURCE, Backend::Native);
+    for step in 0..128 {
+        let result = runtime.step(
+            RuntimeStepInput::default(),
+            RuntimeStepOptions {
+                max_new_task_requests: 0,
+                ..RuntimeStepOptions::default()
+            },
+        );
+        assert!(result.stats.executed_ops <= 1);
+        assert_eq!(result.stats.child_fibers, 0);
+        assert!(result.output.requests.tasks.is_empty());
+        if !result.output.diagnostics.is_empty() {
+            assert!(
+                result.output.diagnostics.iter().any(|diagnostic| {
+                    diagnostic.category == arcweft_core::step::RuntimeDiagnosticCategory::Budget
+                        && diagnostic.message.contains("Thread start")
+                }),
+                "step={step}: {:?}",
+                result.output.diagnostics
+            );
+            return;
+        }
+        assert!(!matches!(
+            runtime.fiber().frame.status,
+            FlowFiberStatus::Done(_)
+        ));
+    }
+    panic!("zero Thread task quota was not enforced");
+}
+
 #[test]
 fn include_rejects_a_parameterized_flow_before_executable_publication() {
     use arcweft_compiler::project::ProjectCompileStage;

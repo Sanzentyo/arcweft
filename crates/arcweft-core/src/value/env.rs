@@ -365,7 +365,7 @@ impl RuntimeEnv {
         &self,
         locals: &[RuntimeLocalDeclarationId],
     ) -> Result<Self, RuntimeEvalError> {
-        let selected = locals
+        let mut selected = locals
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
@@ -377,21 +377,28 @@ impl RuntimeEnv {
                 return Err(RuntimeEvalError::AffineLocalCopy(*local));
             }
         }
+        // A captured task owns a new lexical root, not the caller's scope or
+        // return stack. Only its nearest authenticated type environment is
+        // inherited; nested calls above that root retain their own contexts.
+        let function_context = self.source_function_context();
+        let mut slots = Vec::with_capacity(selected.len());
+        for local in locals {
+            if selected.remove(local) {
+                slots.push(RuntimeLocalSlot::new(
+                    *local,
+                    self.get(*local)
+                        .expect("all captures were inspected before copying")
+                        .clone()
+                        .into(),
+                ));
+            }
+        }
         Ok(Self {
-            scopes: self
-                .scopes
-                .iter()
-                .map(|scope| RuntimeScope {
-                    identity: scope.identity.clone(),
-                    function_context: scope.function_context.clone(),
-                    slots: scope
-                        .slots
-                        .iter()
-                        .filter(|slot| selected.contains(&slot.local()))
-                        .cloned()
-                        .collect(),
-                })
-                .collect(),
+            scopes: vec![RuntimeScope {
+                identity: RuntimeScopeIdentity::Anonymous,
+                function_context,
+                slots,
+            }],
             spare_scopes: Vec::new(),
             assignment_discards: crate::line_task::RuntimeHandleDropAuthorization::default(),
         })

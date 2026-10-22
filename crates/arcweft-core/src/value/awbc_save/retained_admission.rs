@@ -159,6 +159,19 @@ impl RuntimeRetainedValueAdmission {
         self.validate_view(value.value, value.origin, None)
     }
 
+    /// Admits a newly authored scalar before constructing its owning carrier.
+    /// Scalars have no retained descendants whose storage origin could change.
+    pub(crate) fn validate_scalar(
+        &mut self,
+        value: crate::value::RuntimeScalarView<'_>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view(
+            crate::value::RuntimeValueView::Scalar(value),
+            ValueAdmissionOrigin::Live,
+            None,
+        )
+    }
+
     /// Checks a borrowed domain field under the caller's original stored type.
     pub fn validate_typed_borrowed(
         &mut self,

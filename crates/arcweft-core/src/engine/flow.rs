@@ -727,56 +727,19 @@ impl Engine {
                 };
                 self.push_for_next(pattern, iterator, evidence, &body, output, pure_backend);
             }
-            FlowOp::Thread { .. } => {
-                let FlowOp::Thread {
-                    name,
-                    producer,
-                    captures,
-                    body,
-                } = op.into_owned()
-                else {
-                    unreachable!("selected thread operation");
-                };
-                let captured = captures
-                    .iter()
-                    .map(|local| {
-                        let value = self
-                            .fiber
-                            .frame
-                            .env
-                            .get(*local)
-                            .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
-                        if !value.ownership().permits_copy() {
-                            return Err(RuntimeEvalError::AffineLocalCopy(*local));
-                        }
-                        Ok(value)
-                    })
-                    .collect::<Result<Vec<_>, RuntimeEvalError>>();
-                let captured = match captured {
-                    Ok(values) => values,
-                    Err(error) => {
-                        self.fail_eval(error, output);
-                        return;
-                    }
-                };
-                let arguments = crate::value::RuntimeValueView::Tuple(
-                    crate::value::RuntimeTupleView::Borrowed(&captured),
-                );
-                let label = name.as_deref().unwrap_or("anonymous");
-                let request = HostTaskRequest::custom("flow_thread", "run_child", [label.into()]);
-                let spec = match producer.instantiate_view(
-                    self.generation,
-                    arguments,
-                    request,
-                    16 * 1024 * 1024,
-                ) {
-                    Ok(spec) => spec,
-                    Err(error) => {
-                        self.fail_eval(error, output);
-                        return;
-                    }
-                };
-                let (child, next_fiber_id) = match self.prepare_child_fiber(body, &captures) {
+            FlowOp::Thread { producer, .. } => {
+                if self.task_request_quota_remaining == 0 {
+                    self.fail_task_request_quota(
+                        "Thread start exceeds the remaining task request quota",
+                        output,
+                    );
+                    return;
+                }
+                let super::thread::PreparedThread {
+                    spec,
+                    child,
+                    next_fiber_id,
+                } = match self.prepare_thread(&producer.plan) {
                     Ok(prepared) => prepared,
                     Err(error) => {
                         self.fail_eval(error, output);
@@ -795,6 +758,7 @@ impl Engine {
                         return;
                     }
                 };
+                self.task_request_quota_remaining -= 1;
                 self.advance_if_needed(next_op_index);
                 output.requests.tasks.push(accepted);
             }
