@@ -3270,20 +3270,20 @@ impl Engine {
 
     fn prepare_child_fiber(
         &self,
-        body: Vec<FlowOp>,
+        body: &[FlowOp],
         captures: &[crate::runtime_id::RuntimeLocalDeclarationId],
     ) -> Result<(FlowFiber, u64), RuntimeEvalError> {
-        let env = self.fiber.frame.env.try_capture_unrestricted(captures)?;
         let ordinal = self.next_fiber_id;
         let next = ordinal
             .checked_add(1)
             .and_then(std::num::NonZeroU64::new)
             .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+        let env = self.fiber.frame.env.try_capture_unrestricted(captures)?;
         let mut pending_ops = VecDeque::with_capacity(body.len().saturating_add(2));
         if !body.is_empty() {
             pending_ops.push_front(FlowOp::ExitScope);
-            for op in body.into_iter().rev() {
-                pending_ops.push_front(op);
+            for op in body.iter().rev() {
+                pending_ops.push_front(op.clone());
             }
             pending_ops.push_front(FlowOp::EnterScope {
                 identity: crate::scope::RuntimeScopeIdentity::Anonymous,
@@ -5367,7 +5367,7 @@ mod dialogue_readiness_tests {
             .to_vec();
         let mut engine = Engine::new(plan);
         let (child, next_fiber_id) = engine
-            .prepare_child_fiber(child_ops, &[])
+            .prepare_child_fiber(&child_ops, &[])
             .expect("the owning constructor issues the child and lexical scope");
         engine.child_fibers.push_back(child);
         engine.next_fiber_id = next_fiber_id;

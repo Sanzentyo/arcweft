@@ -83,6 +83,7 @@ impl Engine {
         admission.validate_metadata_collection(1)?;
         admission.validate_scalar(RuntimeScalarView::String(label))?;
         let instance = NeedProducerInstance::try_from(&checked)?;
+        let (child, next_fiber_id) = self.prepare_child_fiber(body, captures).map_err(Box::new)?;
         let spec = TaskSpec {
             generation: self.generation,
             producer: instance,
@@ -98,9 +99,6 @@ impl Engine {
             ),
             debug_label: producer.debug_label.clone(),
         };
-        let (child, next_fiber_id) = self
-            .prepare_child_fiber(body.clone(), captures)
-            .map_err(Box::new)?;
         Ok(PreparedThread {
             spec,
             child,
