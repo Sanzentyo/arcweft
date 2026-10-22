@@ -836,32 +836,17 @@ impl Engine {
                 let FlowOp::Return(value) = op.into_owned() else {
                     unreachable!("selected return value");
                 };
-                if self.has_joined_work() {
-                    self.push_ops(vec![FlowOp::Return(value)]);
-                    self.run_child_next = true;
-                } else {
-                    self.return_value(value, output, pure_backend);
-                }
+                self.return_value(value, output, pure_backend);
             }
-            FlowOp::ReturnExpr(expr) => {
-                if self.return_waits_for_join() {
-                    let FlowOp::ReturnExpr(expr) = op.into_owned() else {
-                        unreachable!("selected deferred return expression");
-                    };
-                    self.push_ops(vec![FlowOp::ReturnExpr(expr)]);
-                    self.run_child_next = true;
-                } else {
-                    match self.evaluate_expr_with_backend(expr, pure_backend) {
-                        Ok(value) => {
-                            let label = runtime_value_label(&value);
-                            if !self.return_function_call_value(value, output, pure_backend) {
-                                self.return_value(label, output, pure_backend);
-                            }
-                        }
-                        Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+            FlowOp::ReturnExpr(expr) => match self.evaluate_expr_with_backend(expr, pure_backend) {
+                Ok(value) => {
+                    let label = runtime_value_label(&value);
+                    if !self.return_function_call_value(value, output, pure_backend) {
+                        self.return_value(label, output, pure_backend);
                     }
                 }
-            }
+                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+            },
             FlowOp::Effect(_) => {
                 let FlowOp::Effect(effect) = op.into_owned() else {
                     unreachable!("selected effect");

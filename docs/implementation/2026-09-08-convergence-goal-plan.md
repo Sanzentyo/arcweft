@@ -25116,3 +25116,80 @@ R2325 exact CLI catalog completed0,Cargo1m12s:480 discovered,8 selected,472 outs
 Source/owner review:Native player_observation1216LOC/43545B(-8),CLI bench211LOC/8590B(-20),CLI steps293LOC/10178B(-3),Host bundle_runner1670LOC/63340B(+63;786 embedded test LOC),Host session285LOC/11202B(+34). These are existing legitimate request-draining/host-loop owners;the same full accepted step outputs are processed before terminal control in every affected owner. Existing Source/outcome/scheduler atomic checks remain on their owning NativeTaskBridge. The only new shared test helper retains the real compiled source and bundle across the two real consumer regressions;its narrow visibility serves that actual fixture sharing. No new production state cluster,crate edge,source model,public facade,duplicate registry,per-example exception or file-splitting visibility is introduced. No file grows300LOC;the existing large cohesive runner/observation owners remain,with upper-level ownership unchanged.
 
 Further diagnostics preserve the failing bench's16-step/1-op/drain acceptance bound. The original pinned CLI reproduces that failure. A separately labeled diagnostic-only32-step CLI-entry trace of the same three Thread/log bodies completes in19 steps,with3 real submissions/3 completions. That extended trace is not acceptance evidence for16. The trace and source inspection identify repeated parent Return/ReturnExpr join polling as charged operations:flow.rs requeues the same return while children exist,leaving pending-work counts unchanged across several charged steps. Preserve deferred expression evaluation and source order;do not evaluate the return early or remove real scope/bind/next charges. The next general repair should block the owning frame at its original pending terminal position while its joined descendants run,rather than cloning/requeueing return code and charging join polls as statements. Reuse the existing captured function type environment;no new parallel context or fake owner is needed. Full original-code cursor migration and all remaining goal contracts still apply. Source-root trace/setup receipts remain in the existing evidence directory;the first diagnostic run lacking --entry was a setup rejection,not runtime proof.
+
+### 2026-10-23 Joined terminal frame progress
+
+Inspected main `55e82e39cadf2f7754e701b82c1b3302e788da12`; the original
+14 tracked held paths and six untracked held files remain present. The preceding
+turn only reconfirmed the completed clean receipt and supplied no new goal
+progress. No clean is repeated and no artifact is moved or copied.
+
+The original 16-step/max-ops-1 thread benchmark remained a genuine failure after
+the terminal request fix. Its retained 32-step diagnostic completed in 19 steps,
+including six parent return retries that executed no source statement. The
+runtime previously advanced a root instruction, cloned/requeued its return, and
+charged each join poll. This also applied to expression-root evaluation attempts
+and terminal child fibers waiting for descendants.
+
+The native frame now derives task completion from its actual pending/original
+code position and function continuation. Scheduler selection skips joined
+terminal parents in place, including child parents and exhausted bodies. Ordinary
+function returns still resume the same task's caller. Scope-close requests retain
+priority and suspended children retain input/publication resumption. Return
+expressions are evaluated only after descendants drain. The retry AST clones and
+expression-root join-poll branch are removed; no new stored waiting state or
+alternate program owner is introduced. The existing original-operation remainder
+lookup moves to the frame and Engine delegates to it.
+
+New owner regressions cover original expression/return/fallthrough positions,
+one-operation parent steps with rollback-image restoration, exact scoped-body
+operation accounting, and a queued child parent retaining its return while a
+later descendant runs. Validation is pending on this new source; prior receipts
+are not claimed as validation of the changed scheduler.
+
+Verification supersedes the pending status above:
+
+- R2331 failed compilation on two incorrect code-owner imports. Both imports
+  were corrected to the existing private `plan::code` authority. R2332 then
+  catalogued all 2,458 library cases in Core, HostAdapter, Scheduler, Driver,
+  RuntimeHost, Web, RuntimePlan and Compiler; R2333 executed all 2,458 with no
+  failures or skips (25.156s). The three new regressions were required by name.
+- R2334/R2335 executed the complete 12-case Compiler `flow_include` suite:
+  11 passed, and the previously observed returned Thread expression lowering
+  rejection remains. The genuine ordinary-function, sibling and descendant
+  join cases passed with their original one-operation budgets.
+- R2336/R2337 executed the unchanged eight-case CLI slice: seven passed and
+  one failed (2.367s; 472 cases outside this slice). The original 16-step,
+  max-ops-1 scheduling benchmark now passes. Scalar/linear deferred returns,
+  direct source Thread completion, the checked-in Thread and SystemInfo
+  fixtures, and threaded native reads also pass. The remaining profile failure
+  demands three operations while its actual log/return execution records two;
+  no fabricated operation or pure-call increment is introduced.
+- Every runtime audit observed all 3,976 frozen inputs, the complete catalogued
+  case set, exact executable bytes, and the original 14 held tracked paths
+  without drift (eight library executables, one Compiler executable, and the
+  CLI test plus real CLI executable).
+- R2338 workspace all-target/all-feature locked check passed (Cargo 1m03s).
+  R2339 matching Clippy passed (Cargo 1m29s, existing warnings retained).
+  R2340 structural gate passed with no blocking findings. Current production
+  Engine remains cohesive scheduler/transaction custody, 5,720 physical LOC,
+  228,079 bytes; the new private frame-progress owner is 80 LOC/3,161 bytes.
+  Child polling regressions are 339 LOC/13,131 bytes. No owner grows by 300 LOC;
+  prior Engine ownership disposition remains applicable. No API is widened to
+  split files, and no dependency or contract version changes.
+- `task-joined-frame-trace.receipt.json` executes the exact retained diagnostic
+  source and verified real CLI binary, holding each hash unchanged. The same
+  diagnostic that previously took 19 one-operation steps now completes in 13
+  steps/13 operations, with three actual submissions and three completions.
+  Its 32-step diagnostic ceiling is distinct from the unchanged 16-step
+  acceptance benchmark that independently passed. No trace step has an invalid
+  charge. This removes the six observed parent join polls.
+
+The resolved metadata still gives 53 Core reverse packages and 99 unchanged
+manifest/lock inputs. Full reverse execution on this source remains pending;
+R2320's earlier 55 failures are not a passing result for the new source. The
+current cut establishes joined-return progress, not the complete original-code
+cursor migration: nested/control/guard/formatter/Await/line/Thread bodies still
+need their original structural ranges and closed runtime continuations. Thread
+handle/non-Unit lowering, genuine AWBC scheduling, retained View/Need authority,
+resource bounds, visual acceptance and other full-goal requirements remain open.

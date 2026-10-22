@@ -47,6 +47,7 @@ pub mod audio;
 mod child_poll_tests;
 pub mod dialogue;
 pub mod eval;
+mod frame_progress;
 mod numeric_map;
 mod rollback;
 mod root;
@@ -2707,15 +2708,7 @@ impl Engine {
         &self,
         plan: &'a RuntimePlan,
     ) -> Option<&'a [FlowOp]> {
-        if let Some(frame) = self.fiber.frame.active_function() {
-            return frame.original_operation_remainder(plan);
-        }
-        let cursor = self.fiber.frame.cursor.as_ref()?;
-        plan.flows
-            .get(cursor.flow_index)?
-            .body()
-            .ops()
-            .get(cursor.op_index..)
+        self.fiber.frame.original_operation_remainder(plan)
     }
 
     pub(super) fn flow_index(&self, flow: &FlowRuntimeId) -> Option<usize> {
@@ -3142,7 +3135,7 @@ impl Engine {
     }
 
     fn can_attempt_runtime_op(&self) -> bool {
-        self.main_fiber_can_attempt_runtime_op() || self.has_executor_work()
+        self.main_fiber_can_attempt_runtime_op() || self.next_child_fiber_index().is_some()
     }
 
     fn step_runtime_op(
@@ -3301,6 +3294,7 @@ impl Engine {
                 self.fiber.frame.status,
                 FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
             )
+            && !self.fiber_waits_for_join(&self.fiber)
     }
 
     /// Joined work controls parent flow completion. Detached line work remains
@@ -3319,14 +3313,6 @@ impl Engine {
         self.child_fibers.iter().any(|child| {
             child.owner.dialogue_activation() == Some(activation) && child.owner.has_joined_work()
         })
-    }
-
-    pub(super) fn return_waits_for_join(&self) -> bool {
-        self.fiber
-            .frame
-            .active_function()
-            .is_none_or(|frame| !frame.continuation.returns_to_caller())
-            && self.has_joined_work()
     }
 
     /// Executor work controls scheduling. It includes detached line fibers so
@@ -4144,7 +4130,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        if self.child_fibers.is_empty() {
+        if self.next_child_fiber_index().is_none() {
             return false;
         }
         let image =
@@ -4217,9 +4203,13 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<bool, dialogue::DialogueExecutionError> {
-        let Some(mut child) = self.child_fibers.pop_front() else {
+        let Some(index) = self.next_child_fiber_index() else {
             return Ok(false);
         };
+        let mut child = self
+            .child_fibers
+            .remove(index)
+            .expect("selected child remains in the scheduling queue");
         let owner = child.owner.clone();
         let before_tokens = matches!(&owner, FlowFiberOwner::LineTask(_))
             .then(|| flow_fiber_line_handle_tokens(&child))
@@ -4811,6 +4801,13 @@ impl Engine {
                 })
             }
             FlowFiberStatus::NeedWaiting(_) => Some(RuntimeStepStopReason::Blocked),
+            FlowFiberStatus::Running if self.fiber_waits_for_join(&self.fiber) => Some(
+                if output.has_presentation_visible_output() || output.has_host_requests() {
+                    RuntimeStepStopReason::Output
+                } else {
+                    RuntimeStepStopReason::Blocked
+                },
+            ),
             FlowFiberStatus::Running if output.has_host_requests() => {
                 Some(RuntimeStepStopReason::Output)
             }
@@ -4840,7 +4837,7 @@ impl Engine {
             return true;
         }
         match &fiber.frame.status {
-            FlowFiberStatus::Running => true,
+            FlowFiberStatus::Running => !self.fiber_waits_for_join(fiber),
             FlowFiberStatus::Dialogue(activation) => self.dialogue_activations.has_internal_work(
                 activation.activation(),
                 self.has_joined_dialogue_work(activation.activation()),
@@ -4857,10 +4854,10 @@ impl Engine {
     fn has_runnable_child_fibers(&self) -> bool {
         self.child_fibers.iter().any(|child| {
             self.fiber_has_internal_work(child)
-                || matches!(
+                || (matches!(
                     child.frame.status,
                     FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-                )
+                ) && !self.fiber_waits_for_join(child))
         })
     }
 }

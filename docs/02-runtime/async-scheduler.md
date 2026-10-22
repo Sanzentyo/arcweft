@@ -206,6 +206,13 @@ cooperatively by the VM and are deterministic runtime scheduling data, not OS
 thread creation. Detached `thread` blocks are rejected by runtime-plan lowering
 until detached capture and cancellation contracts are checked explicitly.
 
+A task's terminal return, expression root, or body completion stays at its
+original frame position while its attached descendants run. Selecting a child
+does not execute or requeue the parent's return and does not charge an operation
+for polling the join. Return expressions are evaluated after the join. Ordinary
+function returns resume their caller in the same task without joining its
+children. Cancellation still enters the owning fiber to unwind its scopes.
+
 ```rust
 pub enum HostTaskRequest {
     FileReadText(FileReadTextRequest),

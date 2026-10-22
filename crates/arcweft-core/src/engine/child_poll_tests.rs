@@ -63,6 +63,171 @@ fn nonempty_child_poll_still_requires_atomic_admission() {
 }
 
 #[test]
+fn joined_return_keeps_its_position_across_steps_and_restore_without_poll_charges() {
+    use super::{FlowExit, FlowFiberStatus};
+    use crate::step::RuntimeStepOptions;
+
+    let mut engine = Engine::new(returning_function_plan(
+        RuntimeFunctionSiteBodyKind::Executable,
+    ));
+    engine.main_started = true;
+    engine
+        .fiber
+        .frame
+        .pending_ops
+        .push_back(FlowOp::Return("joined".into()));
+    let (child, next) = engine
+        .prepare_child_fiber(&[FlowOp::Noop, FlowOp::Noop], &[])
+        .unwrap();
+    engine.next_fiber_id = next;
+    engine.child_fibers.push_back(child);
+    let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+    let mut operations = 0;
+    for _ in 0..5 {
+        let joining = !engine.child_fibers.is_empty();
+        if joining {
+            assert!(!engine.main_fiber_can_attempt_runtime_op());
+            assert!(matches!(
+                engine.fiber.frame.pending_ops.front(),
+                Some(FlowOp::Return(value)) if value == "joined"
+            ));
+            assert_eq!(engine.fiber.frame.pending_ops.len(), 1);
+        }
+        let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        assert_eq!(result.stats.executed_ops, 1);
+        operations += result.stats.executed_ops;
+        if joining {
+            assert_eq!(engine.fiber.frame.pending_ops.len(), 1);
+            assert!(matches!(
+                engine.fiber.frame.status,
+                FlowFiberStatus::Running
+            ));
+        }
+        engine =
+            Engine::from_rollback_image(engine.inert_rollback_image().unwrap(), &owner).unwrap();
+    }
+    assert_eq!(
+        operations, 5,
+        "two body operations, scope enter/exit, and one return"
+    );
+    assert!(engine.child_fibers.is_empty());
+    assert_eq!(
+        engine.fiber.frame.status,
+        FlowFiberStatus::Done(FlowExit::Return("joined".into()))
+    );
+}
+
+#[test]
+fn joined_original_function_return_expression_and_fallthrough_do_not_advance() {
+    use super::{
+        FlowControlStackEntry, FlowControlStackEntryKind, FunctionCallFrame,
+        FunctionReturnContinuation,
+    };
+    use crate::plan::code::{RuntimeCodeBodyRef, RuntimeCodeOwner};
+
+    let mut engine = Engine::new(returning_function_plan(
+        RuntimeFunctionSiteBodyKind::Executable,
+    ));
+    engine.main_started = true;
+    let (child, next) = engine.prepare_child_fiber(&[FlowOp::Noop], &[]).unwrap();
+    engine.next_fiber_id = next;
+    engine.child_fibers.push_back(child);
+    let sites = engine
+        .plan
+        .function_sites()
+        .iter_with_ids()
+        .map(|(site, _)| site)
+        .collect::<Vec<_>>();
+    let mut cases = 0;
+    for site in sites {
+        let positions = match engine
+            .plan
+            .inventory
+            .code_body(RuntimeCodeOwner::Function(site))
+            .unwrap()
+        {
+            RuntimeCodeBodyRef::Expression(_) => vec![0],
+            RuntimeCodeBodyRef::Operations([FlowOp::ReturnExpr(_)]) => vec![0, 1],
+            RuntimeCodeBodyRef::Operations(_) => continue,
+        };
+        for position in positions {
+            let mut frame =
+                FunctionCallFrame::new(site, None, FunctionReturnContinuation::Function { site });
+            frame.next_instruction = position;
+            engine.fiber.frame.control_stack = vec![FlowControlStackEntry {
+                kind: FlowControlStackEntryKind::FunctionCall(frame),
+            }];
+            assert!(!engine.main_fiber_can_attempt_runtime_op());
+            assert!(!engine.fiber_has_internal_work(&engine.fiber));
+            assert_eq!(
+                engine
+                    .fiber
+                    .frame
+                    .active_function()
+                    .unwrap()
+                    .next_instruction,
+                position
+            );
+            assert!(engine.fiber.frame.pending_ops.is_empty());
+            cases += 1;
+        }
+    }
+    assert_eq!(
+        cases, 3,
+        "original expression, return operation, and exhausted body"
+    );
+}
+
+#[test]
+fn joined_child_return_keeps_its_queue_position_while_a_descendant_runs() {
+    let mut engine = Engine::new(returning_function_plan(
+        RuntimeFunctionSiteBodyKind::Executable,
+    ));
+    let (mut parent, next) = engine
+        .prepare_child_fiber(&[FlowOp::Return("child".into())], &[])
+        .unwrap();
+    engine.next_fiber_id = next;
+    let parent_id = parent.id;
+    std::mem::swap(&mut engine.fiber, &mut parent);
+    let (descendant, next) = engine
+        .prepare_child_fiber(&[FlowOp::Noop, FlowOp::Noop], &[])
+        .unwrap();
+    engine.next_fiber_id = next;
+    std::mem::swap(&mut engine.fiber, &mut parent);
+    engine.child_fibers.push_back(parent);
+    engine.child_fibers.push_back(descendant);
+    let mut input = RuntimeStepInput::default();
+    let mut output = RuntimeStepOutput::default();
+    let mut backend = VmRuntimePureCallBackend::default();
+    // Enter the parent's scheduled scope, then the descendant's scope.
+    assert!(engine.step_next_child_fiber(&mut input, &[], &mut output, &mut backend));
+    assert!(engine.step_next_child_fiber(&mut input, &[], &mut output, &mut backend));
+    assert_eq!(engine.child_fibers.front().unwrap().id, parent_id);
+    let parent_before = engine.child_fibers.front().unwrap().frame.pending_ops.len();
+    assert!(matches!(
+        engine.child_fibers.front().unwrap().frame.pending_ops.front(),
+        Some(FlowOp::Return(value)) if value == "child"
+    ));
+    assert_eq!(engine.next_child_fiber_index(), Some(1));
+    assert!(engine.step_next_child_fiber(&mut input, &[], &mut output, &mut backend));
+    assert_eq!(engine.child_fibers.front().unwrap().id, parent_id);
+    assert_eq!(
+        engine.child_fibers.front().unwrap().frame.pending_ops.len(),
+        parent_before
+    );
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+    let restored =
+        Engine::from_rollback_image(engine.inert_rollback_image().unwrap(), &owner).unwrap();
+    assert_eq!(restored.next_child_fiber_index(), Some(1));
+}
+
+#[test]
 fn child_identity_exhaustion_precedes_capture_admission_and_preserves_the_last_identity() {
     let plan = returning_function_plan(RuntimeFunctionSiteBodyKind::Executable);
     let local = plan

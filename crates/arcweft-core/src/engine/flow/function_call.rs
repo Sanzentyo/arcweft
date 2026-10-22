@@ -129,17 +129,12 @@ impl Engine {
                 }
             }
             Some(RuntimeCodeBodyRef::Expression(expression)) => {
-                if self.return_waits_for_join() {
-                    self.run_child_next = true;
-                } else {
-                    match self.evaluate_expr_with_backend(expression, pure_backend) {
-                        Ok(value) => {
-                            let returned =
-                                self.return_function_call_value(value, output, pure_backend);
-                            debug_assert!(returned, "the active function retains its return frame");
-                        }
-                        Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+                match self.evaluate_expr_with_backend(expression, pure_backend) {
+                    Ok(value) => {
+                        let returned = self.return_function_call_value(value, output, pure_backend);
+                        debug_assert!(returned, "the active function retains its return frame");
                     }
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
             None => self.fail_eval(
