@@ -396,6 +396,52 @@ fn native_spawn_function_returns_before_its_child_finishes() {
 }
 
 #[test]
+fn native_nested_thread_finishes_its_own_descendants_before_the_outer_flow() {
+    use arcweft_core::effect::LineEffectRequest;
+
+    let source = concat!(
+        "flow main() -> String {\n",
+        "    thread parent {\n",
+        "        thread descendant {\n",
+        "            log.info(\"descendant-start\")\n",
+        "            log.info(\"descendant-middle\")\n",
+        "            log.info(\"descendant-finish\")\n",
+        "        }\n",
+        "        include @flow.child\n",
+        "    }\n",
+        "    thread sibling { include @flow.child }\n",
+        "    return \"joined\"\n",
+        "}\n",
+        "flow child() -> Unit { return () }\n",
+        "entry cli @entry.main { goto @flow.main }\n",
+    );
+    let mut runtime = executor(source, Backend::Native);
+    let mut submissions = 0;
+    let mut descendant_finished = false;
+    for step in 0..128 {
+        let result = runtime.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+        assert!(result.stats.executed_ops <= 1);
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "step={step}: {:?}",
+            result.output.diagnostics
+        );
+        submissions += result.output.requests.tasks.len();
+        descendant_finished |= result.output.effects.line.iter().any(|effect| {
+            matches!(effect, LineEffectRequest::Log(log) if log.message == "descendant-finish")
+        });
+        if let FlowFiberStatus::Done(exit) = &runtime.fiber().frame.status {
+            assert_eq!(exit, &FlowExit::Return("joined".into()));
+            assert_eq!(submissions, 3);
+            assert!(descendant_finished);
+            assert_eq!(result.stats.child_fibers, 0);
+            return;
+        }
+    }
+    panic!("nested Thread did not join its actual descendants");
+}
+
+#[test]
 fn include_rejects_a_parameterized_flow_before_executable_publication() {
     use arcweft_compiler::project::ProjectCompileStage;
 

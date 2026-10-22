@@ -414,7 +414,13 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             {
                 Ok(())
             }
-            (FlowFiberOwner::Executor | FlowFiberOwner::LineTask(_), None, None) => Ok(()),
+            (
+                FlowFiberOwner::Executor
+                | FlowFiberOwner::LineTask(_)
+                | FlowFiberOwner::DialogueEffectCallback { .. },
+                None,
+                None,
+            ) => Ok(()),
             _ => Err("native Root phase does not match its executable fiber origin".into()),
         }
     }
@@ -821,13 +827,14 @@ impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
         let invalid_identity = || crate::value::AwbcRuntimeValueSnapshotError::Message {
             message: "native fiber identities do not follow their original allocator".into(),
         };
-        if self.fiber.id.0 != 0 {
+        if self.fiber.id.0 != 0 || self.fiber.parent.is_some() {
             return Err(invalid_identity());
         }
         let mut fiber_ids = BTreeSet::new();
         for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
             admission.validate_metadata(&(
                 fiber.id,
+                fiber.parent,
                 fiber.persistent_id,
                 fiber.execution,
                 &fiber.owner,
@@ -836,6 +843,23 @@ impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
                 || !fiber_ids.insert(fiber.id.0)
                 || fiber.id.0.checked_add(1) != Some(fiber.persistent_id.get())
                 || fiber.execution.get().get() != fiber.persistent_id.get()
+            {
+                return Err(invalid_identity());
+            }
+        }
+        for child in &self.child_fibers {
+            if let FlowFiberOwner::DialogueEffectCallback { activation, .. } = &child.owner
+                && !self
+                    .dialogue_effect_callback_activations
+                    .contains(activation)
+            {
+                return Err(invalid_identity());
+            }
+            let Some(parent) = child.parent else {
+                return Err(invalid_identity());
+            };
+            if parent.0 >= child.id.0
+                || (child.owner.has_joined_work() && !fiber_ids.contains(&parent.0))
             {
                 return Err(invalid_identity());
             }

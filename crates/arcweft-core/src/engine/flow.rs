@@ -325,6 +325,7 @@ impl Engine {
                     .into_boxed_slice();
                 locals.bind_all(captures.into_vec());
                 let dialogue = DialogueActivationFrame {
+                    parent: self.fiber.id,
                     line,
                     content,
                     target: Some(target_value),

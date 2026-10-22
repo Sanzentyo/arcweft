@@ -268,7 +268,12 @@ impl Engine {
                     &start.callback_sites,
                 )
                 .expect("borrowed callback-site preflight remains valid");
-                self.commit_dialogue_effect_callbacks(&mut batch, callbacks, prepared_callbacks);
+                self.commit_dialogue_effect_callbacks(
+                    transaction.frame().parent,
+                    &mut batch,
+                    callbacks,
+                    prepared_callbacks,
+                );
                 (transaction, Some(batch), start.event, Some(commit_proof))
             }
             None => (transaction, None, None, None),
@@ -329,7 +334,7 @@ impl Engine {
             state.failure = Some(error);
         }
         state.phase = DialogueRuntimePhase::Closing;
-        self.request_line_task_cancellation();
+        self.request_line_task_cancellation(transaction.activation());
         self.resume_dialogue_failure_close(transaction, output);
     }
 
@@ -365,6 +370,7 @@ impl Engine {
             {
                 Some(RuntimeDeferUnwindStep::Run(registration)) => {
                     return Ok(Some(self.commit_prepared_deferred_line_child(
+                        transaction.frame().parent,
                         &activation_id,
                         registration,
                         prepared.expect("matching defer was preflighted before moving captures"),
@@ -398,7 +404,7 @@ impl Engine {
             self.fail_eval(error, output);
             return;
         }
-        if !self.has_joined_work() {
+        if !self.has_joined_dialogue_work(&activation_id) {
             while !transaction.frame().scopes.is_empty() {
                 let (frame, line) = transaction.parts_mut();
                 let step = match self.prepare_activation_scope_exit(
@@ -479,7 +485,8 @@ impl Engine {
             }
         }
         let (state, activation) = transaction.parts_mut();
-        let terminal = activation.failure_close_ready() && !self.has_joined_work();
+        let terminal =
+            activation.failure_close_ready() && !self.has_joined_dialogue_work(&activation_id);
         if terminal {
             let Some(error) = state.failure.clone() else {
                 self.fail_eval(LineRuntimeError::InvalidResultTransition, output);
@@ -532,7 +539,7 @@ impl Engine {
     ) {
         let activation_id = transaction.activation().clone();
         transaction.frame_mut().phase = DialogueRuntimePhase::Closing;
-        if !self.has_joined_work() {
+        if !self.has_joined_dialogue_work(&activation_id) {
             let batch = match self
                 .prepare_dialogue_deferred_child(&mut transaction, ScopeExit::Completed)
             {
@@ -567,7 +574,8 @@ impl Engine {
             }
         }
         let activation = transaction.line();
-        let terminal = activation.successful_close_ready() && !self.has_joined_work();
+        let terminal =
+            activation.successful_close_ready() && !self.has_joined_dialogue_work(&activation_id);
         if terminal {
             self.resume_dialogue_publication_with_transaction(transaction, output);
         } else {
@@ -1485,6 +1493,7 @@ impl Engine {
                     scope.inflight = Some((popped.id(), popped.site()));
                     return Ok(ActivationScopeStep::Deferred(
                         self.commit_prepared_deferred_line_child(
+                            frame.parent,
                             activation_id,
                             popped,
                             prepared
@@ -3014,6 +3023,7 @@ mod tests {
         let mut locals = crate::value::RuntimeEnv::default();
         locals.set(local, RuntimeValue::Unit);
         DialogueActivationFrame {
+            parent: crate::engine::FlowFiberId::default(),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line"),
             content: RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),

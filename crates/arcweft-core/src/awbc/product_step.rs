@@ -2175,6 +2175,7 @@ impl AwbcProductStepExecutor {
                 },
             },
             id: FlowFiberId::from_executor_ordinal(0),
+            parent: None,
             persistent_id: crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
                 std::num::NonZeroU64::MIN,

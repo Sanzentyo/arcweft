@@ -60,6 +60,7 @@ pub(crate) struct DialogueActivationFrame<
     C = crate::value::RuntimeCallableValue,
     E = super::super::NativeFlowExecutionFrame,
 > {
+    pub(in crate::engine) parent: super::super::FlowFiberId,
     pub(in crate::engine) line: crate::plan::RuntimeLineId,
     pub(in crate::engine) content: crate::runtime_id::RuntimeDialogueContentPlanId,
     pub(in crate::engine) target: Option<O>,
@@ -115,6 +116,20 @@ type NativeEngineDialogueFrameRollbackImage =
     EngineDialogueActivationFrame<NativeDialogueActivationFrameRollbackImage>;
 
 impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+    fn validate_parent(
+        &self,
+        next_fiber_id: u64,
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+        if self.parent.0 >= next_fiber_id {
+            return Err(
+                crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                    message: "dialogue parent fiber was not allocated by its executor".into(),
+                },
+            );
+        }
+        Ok(())
+    }
+
     fn admit_reducer<L>(
         &self,
         activation: &DialogueActivationId,
@@ -165,6 +180,7 @@ impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
 impl Clone for NativeDialogueActivationFrameRollbackImage {
     fn clone(&self) -> Self {
         Self {
+            parent: self.parent,
             line: self.line.clone(),
             content: self.content,
             target: self.target.clone(),
@@ -256,6 +272,15 @@ pub(crate) struct DialogueActivationStoreRollbackImage {
 }
 
 impl DialogueActivationStoreRollbackImage {
+    pub(in crate::engine) fn validate_parent_allocations(
+        &self,
+        next_fiber_id: u64,
+    ) -> Result<(), String> {
+        self.registry
+            .try_visit_active(|_, active, _| active.frame.validate_parent(next_fiber_id))
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn active_line(
         &self,
         activation: &DialogueActivationId,
@@ -430,6 +455,7 @@ impl DialogueActivationFrame {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<NativeDialogueActivationFrameRollbackImage, String> {
         Ok(NativeDialogueActivationFrameRollbackImage {
+            parent: self.parent,
             line: self.line.clone(),
             content: self.content,
             target: self
@@ -510,6 +536,7 @@ impl DialogueActivationFrame {
             })
             .transpose()?;
         Ok(Self {
+            parent: image.parent,
             line: image.line,
             content: image.content,
             target,
@@ -677,6 +704,15 @@ pub struct DialogueActivationStore {
 }
 
 impl DialogueActivationStore {
+    pub(in crate::engine) fn validate_parent_allocations(
+        &self,
+        next_fiber_id: u64,
+    ) -> Result<(), String> {
+        self.registry
+            .try_visit_active(|_, active, _| active.frame.validate_parent(next_fiber_id))
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn into_published(
         self,
     ) -> Result<crate::line_task::RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {
@@ -844,7 +880,7 @@ impl DialogueActivationStore {
             .map_err(|error| error.to_string())?;
         self.registry
             .try_visit_active(|activation, active, line| {
-                admission.validate_metadata(&active.inbox)?;
+                admission.validate_metadata(&(active.frame.parent, &active.inbox))?;
                 active.frame.admit_reducer(activation, line, &mut admission)
             })
             .map_err(|error| error.to_string())?;
@@ -889,7 +925,7 @@ impl DialogueActivationStore {
         image
             .registry
             .try_visit_active(|activation, active, line| {
-                admission.validate_metadata(&active.inbox)?;
+                admission.validate_metadata(&(active.frame.parent, &active.inbox))?;
                 active.frame.admit_reducer(activation, line, &mut admission)
             })
             .map_err(|error| error.to_string())?;
@@ -1369,6 +1405,7 @@ mod tests {
     fn frame(phase: DialogueRuntimePhase) -> DialogueActivationFrame {
         let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
         DialogueActivationFrame {
+            parent: crate::engine::FlowFiberId::default(),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line identity"),
             content: RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),

@@ -228,6 +228,7 @@ pub(super) struct NativePreparedDialogueEffectCallback {
 pub struct FlowFiber<F = NativeFlowExecutionFrame> {
     pub frame: F,
     pub id: FlowFiberId,
+    pub(crate) parent: Option<FlowFiberId>,
     pub persistent_id: RuntimePersistentFiberId,
     pub execution: crate::runtime_id::ExecutionInstanceId,
     pub(crate) owner: FlowFiberOwner,
@@ -271,6 +272,7 @@ impl Clone for FlowFiberRollbackImage {
         Self {
             frame: self.frame.clone(),
             id: self.id,
+            parent: self.parent,
             persistent_id: self.persistent_id,
             execution: self.execution,
             owner: self.owner.clone(),
@@ -329,6 +331,7 @@ impl FlowFiber {
         Ok(FlowFiberRollbackImage {
             frame: self.frame.snapshot_with_admitted_values(owner)?,
             id: self.id,
+            parent: self.parent,
             persistent_id: self.persistent_id,
             execution: self.execution,
             owner: self.owner.clone(),
@@ -342,6 +345,7 @@ impl FlowFiber {
         Ok(Self {
             frame: NativeFlowExecutionFrame::from_image_with_admitted_values(image.frame, owner)?,
             id: image.id,
+            parent: image.parent,
             persistent_id: image.persistent_id,
             execution: image.execution,
             owner: image.owner,
@@ -669,8 +673,14 @@ impl FlowFiberId {
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub(crate) enum FlowFiberOwner {
     Executor,
-    RootReducer { entry: EntryRuntimeId },
+    RootReducer {
+        entry: EntryRuntimeId,
+    },
     LineTask(LineTaskFiberOwner),
+    DialogueEffectCallback {
+        activation: crate::runtime_id::RuntimeDialogueEffectCallbackActivationId,
+        closing: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -692,11 +702,20 @@ impl FlowFiberOwner {
         )
     }
 
-    fn requests_line_task_close(&self) -> bool {
+    fn requests_scope_close(&self) -> bool {
         matches!(
             self,
             Self::LineTask(LineTaskFiberOwner { closing: true, .. })
+                | Self::DialogueEffectCallback { closing: true, .. }
         )
+    }
+
+    fn dialogue_activation(&self) -> Option<&DialogueActivationId> {
+        match self {
+            Self::LineTask(owner) => Some(owner.tag.activation_id()),
+            Self::DialogueEffectCallback { activation, .. } => Some(activation.dialogue()),
+            Self::Executor | Self::RootReducer { .. } => None,
+        }
     }
 }
 
@@ -1902,6 +1921,7 @@ impl Default for FlowFiber {
         Self {
             frame: NativeFlowExecutionFrame::default(),
             id: FlowFiberId::default(),
+            parent: None,
             persistent_id: RuntimePersistentFiberId::default(),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
                 std::num::NonZeroU64::MIN,
@@ -1948,6 +1968,8 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 
 impl Engine {
     fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
+        self.dialogue_activations
+            .validate_parent_allocations(self.next_fiber_id)?;
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
             owner.clone(),
@@ -2049,6 +2071,9 @@ impl Engine {
         image: NativeEngineRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
+        image
+            .dialogue_activations
+            .validate_parent_allocations(image.next_fiber_id)?;
         let expected_deferred_children = image.admit_rollback_values(owner)?;
         let restored = Self {
             evaluation_stats: image.evaluation_stats,
@@ -2235,6 +2260,7 @@ impl Engine {
                     status,
                 },
                 id: FlowFiberId::default(),
+                parent: None,
                 persistent_id: RuntimePersistentFiberId::from_allocated(1),
                 execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
                     std::num::NonZeroU64::MIN,
@@ -3233,9 +3259,19 @@ impl Engine {
     /// Joined work controls parent flow completion. Detached line work remains
     /// executor work but is intentionally excluded from this local join.
     pub(super) fn has_joined_work(&self) -> bool {
+        self.has_joined_work_for(self.fiber.id)
+    }
+
+    fn has_joined_work_for(&self, parent: FlowFiberId) -> bool {
         self.child_fibers
             .iter()
-            .any(|child| child.owner.has_joined_work())
+            .any(|child| child.parent == Some(parent) && child.owner.has_joined_work())
+    }
+
+    pub(super) fn has_joined_dialogue_work(&self, activation: &DialogueActivationId) -> bool {
+        self.child_fibers.iter().any(|child| {
+            child.owner.dialogue_activation() == Some(activation) && child.owner.has_joined_work()
+        })
     }
 
     pub(super) fn return_waits_for_join(&self) -> bool {
@@ -3255,11 +3291,24 @@ impl Engine {
     /// Requests cancellation without deleting a queued child. Cancel-and-join
     /// transitions the owner into Closing; the scheduler subsequently enters
     /// that fiber and performs its lexical cleanup before reporting completion.
-    pub(super) fn request_line_task_cancellation(&mut self) {
+    pub(super) fn request_line_task_cancellation(&mut self, activation: &DialogueActivationId) {
         for child in &mut self.child_fibers {
+            if let FlowFiberOwner::DialogueEffectCallback {
+                activation: callback,
+                closing,
+            } = &mut child.owner
+            {
+                if callback.dialogue() == activation {
+                    *closing = true;
+                }
+                continue;
+            }
             let FlowFiberOwner::LineTask(owner) = &mut child.owner else {
                 continue;
             };
+            if owner.tag.activation_id() != activation {
+                continue;
+            }
             match owner.cancel_policy {
                 ChildCancelPolicy::Finish => {}
                 // Builder admission rejects Detach until it has a proved
@@ -3318,6 +3367,7 @@ impl Engine {
                     status: FlowFiberStatus::Running,
                 },
                 id: FlowFiberId(ordinal),
+                parent: Some(self.fiber.id),
                 persistent_id: RuntimePersistentFiberId::from_allocated(next.get()),
                 execution: crate::runtime_id::ExecutionInstanceId::from_allocated(next),
                 owner: FlowFiberOwner::Executor,
@@ -3403,6 +3453,7 @@ impl Engine {
 
     fn commit_dialogue_effect_callback(
         &self,
+        parent: FlowFiberId,
         callback: RuntimeCallableValue,
         prepared: NativePreparedDialogueEffectCallback,
     ) -> FlowFiber {
@@ -3480,9 +3531,13 @@ impl Engine {
                 status: FlowFiberStatus::Running,
             },
             id: FlowFiberId(prepared.ordinal),
+            parent: Some(parent),
             persistent_id: RuntimePersistentFiberId::from_allocated(prepared.allocated.get()),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
-            owner: FlowFiberOwner::Executor,
+            owner: FlowFiberOwner::DialogueEffectCallback {
+                activation: prepared.key,
+                closing: false,
+            },
         }
     }
 
@@ -3564,6 +3619,7 @@ impl Engine {
 
     pub(super) fn commit_dialogue_effect_callbacks(
         &self,
+        parent: FlowFiberId,
         batch: &mut NativeLineTaskExecutionBatch,
         callbacks: Vec<(
             crate::runtime_id::RuntimeDialogueEffectSiteId,
@@ -3581,7 +3637,7 @@ impl Engine {
                     .insert(proof.key.clone())
             );
             batch.next_fiber_id = proof.allocated.get();
-            let child = self.commit_dialogue_effect_callback(callback, proof);
+            let child = self.commit_dialogue_effect_callback(parent, callback, proof);
             batch.child_fibers.push_back(child);
             batch.run_child_next = true;
         }
@@ -3775,6 +3831,7 @@ impl Engine {
                             status: FlowFiberStatus::Running,
                         },
                         id: FlowFiberId(ordinal),
+                        parent: Some(transaction.frame().parent),
                         persistent_id: RuntimePersistentFiberId::from_allocated(allocated.get()),
                         execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
                             allocated,
@@ -3936,6 +3993,7 @@ impl Engine {
     /// removed that packet from its stack.
     fn commit_prepared_deferred_line_child(
         &self,
+        parent: FlowFiberId,
         activation: &DialogueActivationId,
         registration: crate::line_task::RuntimeLineDeferredRegistration,
         prepared: NativePreparedDeferredLineChild,
@@ -4002,6 +4060,7 @@ impl Engine {
                 status: FlowFiberStatus::Running,
             },
             id: FlowFiberId(prepared.ordinal),
+            parent: Some(parent),
             persistent_id: RuntimePersistentFiberId::from_allocated(prepared.allocated.get()),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
             owner: FlowFiberOwner::LineTask(LineTaskFiberOwner {
@@ -4166,6 +4225,14 @@ impl Engine {
             let receipt = self.dialogue_activations.commit_transaction(transaction)?;
             Self::publish_dialogue_line_receipt(receipt.into_line(), output);
         }
+        if matches!(
+            child.frame.status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        ) && self.has_joined_work_for(child.id)
+        {
+            self.child_fibers.push_back(child);
+            return Ok(true);
+        }
         match child.frame.status {
             FlowFiberStatus::Done(_) => {
                 if let FlowFiberOwner::LineTask(owner) = owner {
@@ -4192,6 +4259,9 @@ impl Engine {
             }
             FlowFiberStatus::Failed(message) => {
                 let failed_activation = match &owner {
+                    FlowFiberOwner::DialogueEffectCallback { activation, .. } => {
+                        Some(activation.dialogue().clone())
+                    }
                     FlowFiberOwner::LineTask(owner)
                         if owner.join_policy == ChildJoinPolicy::Join =>
                     {
@@ -4441,8 +4511,8 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
     ) {
-        if self.fiber.owner.requests_line_task_close() {
-            self.close_active_line_task_fiber(output, pure_backend);
+        if self.fiber.owner.requests_scope_close() {
+            self.close_active_child_fiber(output, pure_backend);
             return;
         }
         if let Err(error) = self.latch_active_await_observer_publications() {
@@ -4463,7 +4533,7 @@ impl Engine {
         }
     }
 
-    fn close_active_line_task_fiber(
+    fn close_active_child_fiber(
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -4486,6 +4556,7 @@ impl Engine {
             && self.fiber.frame.cursor.is_none()
             && self.fiber.frame.pending_ops.is_empty()
             && !self.has_active_project_call()
+            && !self.has_joined_work()
         {
             self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
         }
@@ -4666,14 +4737,15 @@ impl Engine {
     }
 
     fn fiber_has_internal_work(&self, fiber: &FlowFiber) -> bool {
-        if fiber.owner.requests_line_task_close() {
+        if fiber.owner.requests_scope_close() {
             return true;
         }
         match &fiber.frame.status {
             FlowFiberStatus::Running => true,
-            FlowFiberStatus::Dialogue(activation) => self
-                .dialogue_activations
-                .has_internal_work(activation.activation(), self.has_joined_work()),
+            FlowFiberStatus::Dialogue(activation) => self.dialogue_activations.has_internal_work(
+                activation.activation(),
+                self.has_joined_dialogue_work(activation.activation()),
+            ),
             FlowFiberStatus::Done(_)
             | FlowFiberStatus::Failed(_)
             | FlowFiberStatus::NeedWaiting(_)

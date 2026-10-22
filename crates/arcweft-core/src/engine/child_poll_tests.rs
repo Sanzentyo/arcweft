@@ -91,3 +91,84 @@ fn child_identity_exhaustion_precedes_capture_admission_and_preserves_the_last_i
     assert_eq!(engine.next_fiber_id, u64::MAX - 1);
     assert!(engine.child_fibers.is_empty());
 }
+
+#[test]
+fn child_scope_joins_its_descendants_and_keeps_its_parent_until_they_finish() {
+    let mut engine = Engine::new(returning_function_plan(
+        RuntimeFunctionSiteBodyKind::Executable,
+    ));
+    let (mut parent, next) = engine.prepare_child_fiber(&[], &[]).unwrap();
+    engine.next_fiber_id = next;
+    let parent_id = parent.id;
+    let (sibling, next) = engine.prepare_child_fiber(&[], &[]).unwrap();
+    engine.next_fiber_id = next;
+    let retired_sibling = sibling.id;
+    engine.child_fibers.push_back(sibling);
+
+    std::mem::swap(&mut engine.fiber, &mut parent);
+    assert!(
+        !engine.has_joined_work(),
+        "a sibling belongs to the outer task"
+    );
+    let (descendant, next) = engine
+        .prepare_child_fiber(&[FlowOp::Noop, FlowOp::Noop], &[])
+        .unwrap();
+    engine.next_fiber_id = next;
+    assert_eq!(descendant.parent, Some(parent_id));
+    std::mem::swap(&mut engine.fiber, &mut parent);
+    engine.child_fibers.push_back(parent);
+    engine.child_fibers.push_back(descendant);
+
+    let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+    let mut input = RuntimeStepInput::default();
+    let mut output = RuntimeStepOutput::default();
+    let mut backend = VmRuntimePureCallBackend::default();
+    assert!(engine.step_next_child_fiber(&mut input, &[], &mut output, &mut backend));
+    assert!(
+        engine
+            .child_fibers
+            .iter()
+            .all(|fiber| fiber.id != retired_sibling)
+    );
+
+    let saved = engine.inert_rollback_image().unwrap();
+    let mut orphan = saved.clone();
+    orphan.child_fibers.back_mut().unwrap().parent = Some(retired_sibling);
+    assert!(Engine::from_rollback_image(orphan, &owner).is_err());
+    let mut cyclic = saved.clone();
+    let descendant = cyclic.child_fibers.back_mut().unwrap();
+    descendant.parent = Some(descendant.id);
+    assert!(Engine::from_rollback_image(cyclic, &owner).is_err());
+    let mut unowned = saved.clone();
+    unowned.child_fibers.back_mut().unwrap().parent = None;
+    assert!(Engine::from_rollback_image(unowned, &owner).is_err());
+    let mut failed_parent = Engine::from_rollback_image(saved.clone(), &owner).unwrap();
+    failed_parent.child_fibers.front_mut().unwrap().frame.status =
+        super::FlowFiberStatus::Failed("parent failed".into());
+    assert!(failed_parent.step_next_child_fiber(&mut input, &[], &mut output, &mut backend));
+    assert!(
+        failed_parent
+            .child_fibers
+            .iter()
+            .any(|fiber| fiber.id == parent_id)
+    );
+    assert!(failed_parent.inert_rollback_image().is_ok());
+    let mut engine = Engine::from_rollback_image(saved, &owner).unwrap();
+    assert!(engine.step_next_child_fiber(&mut input, &[], &mut output, &mut backend));
+    assert!(
+        engine
+            .child_fibers
+            .iter()
+            .any(|fiber| fiber.id == parent_id)
+    );
+    for _ in 0..32 {
+        if engine.child_fibers.is_empty() {
+            break;
+        }
+        assert!(engine.step_next_child_fiber(&mut input, &[], &mut output, &mut backend));
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        engine =
+            Engine::from_rollback_image(engine.inert_rollback_image().unwrap(), &owner).unwrap();
+    }
+    assert!(engine.child_fibers.is_empty());
+}
