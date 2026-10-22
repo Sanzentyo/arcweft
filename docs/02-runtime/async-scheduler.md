@@ -78,6 +78,7 @@ the executor reaches a terminal status. Hosts register the step's issued task
 requests before publishing its program completions, including in that terminal
 step. Direct host-call requests use the same output-draining boundary. The
 terminal flag is applied after the step's accepted outputs have been processed.
+
 Core retirement order does not have to match replay publication order. The
 Native host binds reports to their accepted dispatches while constructing one
 ordered packet with `TaskEvent::publication_order`; the scheduler receives that
