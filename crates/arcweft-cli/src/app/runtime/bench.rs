@@ -52,26 +52,9 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
             ..
         } = result;
         let program_completions = std::mem::take(&mut output.requests.program_task_completions);
-        let mut task_requests = std::mem::take(&mut output.requests.tasks);
+        let task_requests = std::mem::take(&mut output.requests.tasks);
         let host_call_requests = std::mem::take(&mut output.requests.host_calls);
         totals.push(&stats, task_requests.len(), output.diagnostics.len());
-        let terminal = matches!(
-            &fiber_status,
-            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-        );
-        if terminal {
-            task_requests.retain(|task| {
-                matches!(
-                    &task.spec().request,
-                    arcweft_core::task::TaskRequest::Program(_)
-                )
-            });
-        }
-        let host_call_requests = if terminal {
-            Vec::new()
-        } else {
-            host_call_requests
-        };
         if let Some(source) = source
             && (!task_requests.is_empty()
                 || !host_call_requests.is_empty()
@@ -107,11 +90,8 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
                     host.complete_program_tasks(&program_completions)
                         .map_err(RuntimeStepRunError::from)?,
                 );
-                host_call_results = if terminal {
-                    Vec::new()
-                } else {
-                    host.complete_host_calls(executor.program_owner(), epoch, host_call_requests)
-                };
+                host_call_results =
+                    host.complete_host_calls(executor.program_owner(), epoch, host_call_requests);
             }
         }
         match fiber_status {

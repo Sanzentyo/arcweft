@@ -579,12 +579,6 @@ fn run_runtime_steps_with_executor(
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
         summaries.push(summary);
-        if done {
-            if let Some(host) = host.as_mut() {
-                task_events.extend(host.complete_program_tasks(&program_completions)?);
-            }
-            break;
-        }
         if let Some(host) = host.as_mut() {
             task_events.extend(
                 host.complete_tasks_with_generation_and_bundle_asset_context(
@@ -601,6 +595,9 @@ fn run_runtime_steps_with_executor(
                 logical_epoch(step_index)?,
                 host_call_requests,
             ));
+        }
+        if done {
+            break;
         }
     }
     Ok(RuntimeRunTrace {
@@ -1304,6 +1301,35 @@ mod tests {
     }
 
     #[test]
+    fn terminal_native_step_registers_requests_before_publishing_body_retirement() {
+        let (bundle, mut executor) = terminal_thread_fixture();
+        let workspace = MaterializedBundleWorkspace::create(&bundle).unwrap();
+        let policy = HostCallPolicy::new();
+        let trace = run_runtime_steps_with_executor(
+            &mut executor,
+            NativeRunHost {
+                source_path: Some(workspace.source_path()),
+                policy: &policy,
+                adapter_registrars: &[],
+                bundle: &bundle,
+                artifact_identity: logical_bundle_artifact_identity(&bundle).unwrap(),
+            },
+            1,
+            BundleRunnerStepMode::Drain,
+            64,
+        )
+        .expect("terminal step admits its real request before its real Core completion");
+        assert_eq!(trace.steps.len(), 1);
+        assert_eq!(trace.steps[0].task_requests, 1);
+        assert!(trace.steps[0].executed_ops <= 64);
+        assert_eq!(trace.final_status, "done return done");
+        assert_eq!(trace.native_io.scheduler.submitted, 1);
+        assert_eq!(trace.native_io.completed_tasks, 1);
+        assert_eq!(trace.native_io.program_task_terminals, 1);
+        assert_eq!(trace.native_io.completed_host_calls, 0);
+    }
+
+    #[test]
     fn bundle_runner_session_captures_per_run_host_state_and_steps_incrementally() {
         let configured = std::cell::Cell::new(false);
         let bundle = dialogue_bundle();
@@ -1541,7 +1567,7 @@ mod tests {
     }
 
     fn dialogue_bundle() -> ArcweftBundle {
-        let compiled = arcweft_compiler::source::compile_source(
+        source_bundle(
             r#"
 pub character fixture {}
 flow main() -> String {
@@ -1551,7 +1577,43 @@ flow main() -> String {
 entry cli @entry.main { goto @flow.main }
 "#,
         )
-        .expect("host fixture compiles through the accepted source pipeline");
+        .0
+    }
+
+    pub(super) fn terminal_thread_fixture() -> (ArcweftBundle, RuntimeExecutorInstance) {
+        let (bundle, plan) = source_bundle(
+            r#"
+pub character fixture {}
+flow main() -> String effects { control.spawn } {
+    thread worker { let _ = 7 }
+    return "done"
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        );
+        let [entry] = plan.entries() else {
+            panic!("one fixture entry")
+        };
+        let arcweft_core::plan::RuntimeEntryTarget::Flow(flow) = &entry.target else {
+            panic!("fixture Flow entry")
+        };
+        let flow = flow.clone();
+        let invocation = plan.seal_flow_invocation(flow, []).unwrap();
+        let pure = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig::default(),
+            invocation.plan(),
+        );
+        let executor = ArcweftRuntimeExecutor::from_runtime_flow_invocation(
+            invocation,
+            arcweft_core::executor::ArcweftExecutionTier::RuntimePlanVm,
+        )
+        .unwrap();
+        (bundle, RuntimeExecutorInstance { executor, pure })
+    }
+
+    fn source_bundle(source: &str) -> (ArcweftBundle, arcweft_core::plan::RuntimePlan) {
+        let compiled = arcweft_compiler::source::compile_source(source)
+            .expect("host fixture compiles through the accepted source pipeline");
         let documents = compiled
             .analysis
             .modules()
@@ -1567,7 +1629,7 @@ entry cli @entry.main { goto @flow.main }
             .character_dialogue_generation
             .expect("host fixture retains its original dialogue generation");
         let (style, _, _) = compiled.style.into_parts();
-        ArcweftBundle::try_new(
+        let bundle = ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
@@ -1592,7 +1654,8 @@ entry cli @entry.main { goto @flow.main }
         .expect("host fixture installs the standard dialogue resources")
         .with_view_resources(None, Some(style))
         .expect("host fixture installs its original compiled Style")
-        .with_character_dialogue_generation(generation.as_ref().clone())
+        .with_character_dialogue_generation(generation.as_ref().clone());
+        (bundle, compiled.plan)
     }
 
     fn source_map(label: &str, text: &str) -> SourceMapSection {

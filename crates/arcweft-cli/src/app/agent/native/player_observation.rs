@@ -353,19 +353,15 @@ fn advance_player_runtime(
         );
         append_fx_diagnostics(&mut diagnostics, fx_diagnostics, step.index);
         task_request_count = task_request_count.saturating_add(step.requested_tasks.len());
-        runtime.task_events = if finished {
-            Vec::new()
-        } else {
-            complete_player_runtime_tasks(
-                runtime.host.as_mut(),
-                runtime.session.program_owner(),
-                &step.requested_tasks,
-            )
-            .map_err(|error| {
-                eprintln!("error: player-backed task submission failed: {error}");
-                ExitCode::FAILURE
-            })?
-        };
+        runtime.task_events = complete_player_runtime_tasks(
+            runtime.host.as_mut(),
+            runtime.session.program_owner(),
+            &step.requested_tasks,
+        )
+        .map_err(|error| {
+            eprintln!("error: player-backed task submission failed: {error}");
+            ExitCode::FAILURE
+        })?;
         if let Some(host) = runtime.host.as_mut() {
             runtime.task_events.extend(
                 host.complete_program_tasks(&step.program_task_completions)
@@ -375,17 +371,13 @@ fn advance_player_runtime(
                     })?,
             );
         }
-        runtime.host_call_results = if finished {
-            Vec::new()
-        } else {
-            runtime.host.as_mut().map_or_else(Vec::new, |host| {
-                host.complete_host_calls(
-                    runtime.session.program_owner(),
-                    arcweft_core::task::LogicalEpoch(clock.tick().0),
-                    std::mem::take(&mut step.requested_host_calls),
-                )
-            })
-        };
+        runtime.host_call_results = runtime.host.as_mut().map_or_else(Vec::new, |host| {
+            host.complete_host_calls(
+                runtime.session.program_owner(),
+                arcweft_core::task::LogicalEpoch(clock.tick().0),
+                std::mem::take(&mut step.requested_host_calls),
+            )
+        });
         last_step = Some(step);
         if finished && !force_capture_step {
             break;

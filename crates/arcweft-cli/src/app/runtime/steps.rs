@@ -151,12 +151,6 @@ fn try_run_runtime_steps_with_executor(
         );
         final_status = step_status;
         summaries.push(summary);
-        if done {
-            if let Some(host) = host.as_mut() {
-                task_events.extend(host.complete_program_tasks(&program_completions)?);
-            }
-            break;
-        }
         if let Some(host) = host.as_mut() {
             task_events = host.complete_tasks_with_generation_and_bundle_asset_context(
                 executor.program_owner(),
@@ -177,6 +171,9 @@ fn try_run_runtime_steps_with_executor(
                 ),
                 host_call_requests,
             );
+        }
+        if done {
+            break;
         }
     }
     Ok(RuntimeRunTrace {

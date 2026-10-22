@@ -177,23 +177,21 @@ impl BundleRunnerSession {
             self.executor.fiber().frame.status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
-        if !runtime_finished {
-            self.task_events.extend(
-                self.host
-                    .complete_tasks_with_generation_and_bundle_asset_context(
-                        self.executor.program_owner(),
-                        self.executor.generation(),
-                        super::logical_epoch(index)?,
-                        task_requests,
-                        Some(self.bundle_asset_context),
-                    )?,
-            );
-            self.host_call_results.extend(self.host.complete_host_calls(
-                self.executor.program_owner(),
-                super::logical_epoch(index)?,
-                host_call_requests,
-            ));
-        }
+        self.task_events.extend(
+            self.host
+                .complete_tasks_with_generation_and_bundle_asset_context(
+                    self.executor.program_owner(),
+                    self.executor.generation(),
+                    super::logical_epoch(index)?,
+                    task_requests,
+                    Some(self.bundle_asset_context),
+                )?,
+        );
+        self.host_call_results.extend(self.host.complete_host_calls(
+            self.executor.program_owner(),
+            super::logical_epoch(index)?,
+            host_call_requests,
+        ));
 
         self.task_events
             .extend(self.host.complete_program_tasks(&program_completions)?);
@@ -247,5 +245,41 @@ impl BundleRunnerSession {
                 .status
                 .status_label(FlowStatusLabelStyle::Runtime),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_session_step_registers_requests_before_publishing_body_retirement() {
+        let (bundle, executor) = super::super::tests::terminal_thread_fixture();
+        let mut session = BundleRunnerSession::with_adapter_installer(
+            &bundle,
+            &BundleRunnerOptions {
+                steps: 1,
+                mode: BundleRunnerStepMode::Drain,
+                max_ops: 64,
+                ..BundleRunnerOptions::default()
+            },
+            |_path, builder| Ok(builder),
+        )
+        .unwrap();
+        // Both admitted tiers share this runner. Use the actual Native source
+        // so its private Core retirement report is emitted in the final step.
+        session.executor = executor;
+        let step = session.step().unwrap().expect("one terminal step");
+        assert!(step.finished);
+        assert_eq!(step.summary.task_requests, 1);
+        assert!(step.summary.executed_ops <= 64);
+        assert!(session.step().unwrap().is_none());
+        let report = session.into_report();
+        assert_eq!(report.steps.len(), 1);
+        assert_eq!(report.final_status, "done return done");
+        assert_eq!(report.native_io.scheduler.submitted, 1);
+        assert_eq!(report.native_io.completed_tasks, 1);
+        assert_eq!(report.native_io.program_task_terminals, 1);
+        assert_eq!(report.native_io.completed_host_calls, 0);
     }
 }
