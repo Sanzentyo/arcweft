@@ -325,7 +325,7 @@ impl HostAdapter for CustomEchoAdapter {
         task: &arcweft_core::task::TaskSpec,
         bound: &arcweft_core::task::BoundTaskOutcome,
     ) -> Option<HostTaskOutcome> {
-        matches!(&task.request, HostTaskRequest::Custom { capability, operation, .. }
+        matches!(task.request.as_host(), Some(HostTaskRequest::Custom { capability, operation, .. })
             if capability.0 == "custom" && operation == "echo")
         .then(|| HostTaskOutcome {
             completion: bound
