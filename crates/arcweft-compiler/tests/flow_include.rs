@@ -262,7 +262,7 @@ fn native_thread_capture_source_and_child_resume_under_one_operation_steps() {
                 assert!(observed_child);
                 return;
             }
-            FlowFiberStatus::Failed(message) => panic!("Thread failed after restore: {message}"),
+            FlowFiberStatus::Failed(message) => panic!("Thread failed: {message}"),
             _ => {}
         }
     }
