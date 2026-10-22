@@ -1163,6 +1163,13 @@ pub(crate) enum FunctionReturnContinuation<P = crate::value::RuntimeCallablePend
 type FunctionReturnContinuationRollbackImage =
     FunctionReturnContinuation<crate::value::RuntimeCallablePendingSnapshot>;
 
+impl<P> FunctionReturnContinuation<P> {
+    /// A nested invocation resumes the same task instead of ending its work.
+    const fn returns_to_caller(&self) -> bool {
+        matches!(self, Self::CallableDefault { .. } | Self::Bind { .. })
+    }
+}
+
 impl Clone for FunctionReturnContinuationRollbackImage {
     fn clone(&self) -> Self {
         match self {
@@ -3216,6 +3223,14 @@ impl Engine {
         self.child_fibers
             .iter()
             .any(|child| child.owner.has_joined_work())
+    }
+
+    pub(super) fn return_waits_for_join(&self) -> bool {
+        self.fiber
+            .frame
+            .active_function()
+            .is_none_or(|frame| !frame.continuation.returns_to_caller())
+            && self.has_joined_work()
     }
 
     /// Executor work controls scheduling. It includes detached line fibers so

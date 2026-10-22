@@ -837,7 +837,7 @@ impl Engine {
                 }
             }
             FlowOp::ReturnExpr(expr) => {
-                if self.has_joined_work() {
+                if self.return_waits_for_join() {
                     let FlowOp::ReturnExpr(expr) = op.into_owned() else {
                         unreachable!("selected deferred return expression");
                     };

@@ -129,7 +129,7 @@ impl Engine {
                 }
             }
             Some(RuntimeCodeBodyRef::Expression(expression)) => {
-                if self.has_joined_work() {
+                if self.return_waits_for_join() {
                     self.run_child_next = true;
                 } else {
                     match self.evaluate_expr_with_backend(expression, pure_backend) {

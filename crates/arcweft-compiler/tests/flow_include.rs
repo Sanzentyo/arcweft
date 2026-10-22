@@ -303,6 +303,99 @@ fn native_thread_quota_rejection_publishes_no_child_or_task() {
 }
 
 #[test]
+fn native_sibling_thread_includes_return_to_their_callers_without_mutual_join() {
+    let source = concat!(
+        "flow main() -> String {\n",
+        "    thread first { include @flow.child }\n",
+        "    thread second { include @flow.child }\n",
+        "    return \"joined\"\n",
+        "}\n",
+        "flow child() -> Unit { return () }\n",
+        "entry cli @entry.main { goto @flow.main }\n",
+    );
+    let mut runtime = executor(source, Backend::Native);
+    let mut submissions = 0;
+    for step in 0..128 {
+        let result = runtime.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+        assert!(result.stats.executed_ops <= 1);
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "step={step}: {:?}",
+            result.output.diagnostics
+        );
+        submissions += result.output.requests.tasks.len();
+        if let FlowFiberStatus::Done(exit) = &runtime.fiber().frame.status {
+            assert_eq!(exit, &FlowExit::Return("joined".into()));
+            assert_eq!(submissions, 2);
+            assert_eq!(result.stats.child_fibers, 0);
+            return;
+        }
+    }
+    panic!("sibling Include returns joined each other's tasks");
+}
+
+#[test]
+fn native_spawn_function_returns_before_its_child_finishes() {
+    use arcweft_core::effect::LineEffectRequest;
+
+    let source = concat!(
+        "fn launch() -> Unit effects { control.spawn, log.write } {\n",
+        "    thread worker {\n",
+        "        log.info(\"child-start\")\n",
+        "        log.info(\"child-1\")\n",
+        "        log.info(\"child-2\")\n",
+        "        log.info(\"child-3\")\n",
+        "        log.info(\"child-4\")\n",
+        "        log.info(\"child-finished\")\n",
+        "    }\n",
+        "    ()\n",
+        "}\n",
+        "flow main() -> String { launch(); log.info(\"parent-resumed\"); return \"joined\" }\n",
+        "entry cli @entry.main { goto @flow.main }\n",
+    );
+    let mut runtime = executor(source, Backend::Native);
+    let mut logs = Vec::new();
+    for step in 0..128 {
+        let result = runtime.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+        assert!(result.stats.executed_ops <= 1);
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "step={step}: {:?}",
+            result.output.diagnostics
+        );
+        logs.extend(
+            result
+                .output
+                .effects
+                .line
+                .into_iter()
+                .filter_map(|effect| match effect {
+                    LineEffectRequest::Log(log) => Some(log.message),
+                    _ => None,
+                }),
+        );
+        if let FlowFiberStatus::Done(exit) = &runtime.fiber().frame.status {
+            assert_eq!(exit, &FlowExit::Return("joined".into()));
+            assert_eq!(result.stats.child_fibers, 0);
+            let resumed = logs
+                .iter()
+                .position(|message| message == "parent-resumed")
+                .unwrap();
+            let finished = logs
+                .iter()
+                .position(|message| message == "child-finished")
+                .unwrap();
+            assert!(
+                resumed < finished,
+                "ordinary return waited for its spawned child: {logs:?}"
+            );
+            return;
+        }
+    }
+    panic!("parent task did not finish after its child");
+}
+
+#[test]
 fn include_rejects_a_parameterized_flow_before_executable_publication() {
     use arcweft_compiler::project::ProjectCompileStage;
 
