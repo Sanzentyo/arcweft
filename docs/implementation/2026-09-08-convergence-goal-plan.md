@@ -25193,3 +25193,68 @@ cursor migration: nested/control/guard/formatter/Await/line/Thread bodies still
 need their original structural ranges and closed runtime continuations. Thread
 handle/non-Unit lowering, genuine AWBC scheduling, retained View/Need authority,
 resource bounds, visual acceptance and other full-goal requirements remain open.
+
+### 2026-10-23 Complete reverse execution for joined frame progress
+
+Supersedes the pending full-reverse status above. Inspected published main
+`a3942c2c6da1cce12c77bd593fca0944c0cf677a`; the original 14 held tracked paths
+and six untracked held files remain present. The published parent is
+`55e82e39cadf2f7754e701b82c1b3302e788da12`, tree
+`fc467b845e72eb07ad0c90f29e162bb135d4be3a`, reviewed patch SHA-256
+`ae0f72697328dde56562c63dd57607f2f793feacdc1fcd549c9ea9bcfb7d6b1e`.
+Publication verified the advertised remote commit and all seven changed blobs,
+all 3,976 working inputs, the exact held patch and an empty index, without drift.
+
+R2341 compiled the complete metadata-derived 53-package Core reverse closure
+(all features, locked; Cargo 11m42s). It discovered 7,256 cases, selecting 7,217
+and excluding 39 under the existing filter. R2342 executed all 7,217 selected
+cases: 7,165 passed (54 slow), 52 failed, 39 skipped, in 1,415.057s. The actual
+nextest exit is 100; the outer queue exit is 1. This is a failed full suite, not
+a passing convergence result. All 3,976 input hashes, 225 test/non-test executable
+hashes, and the complete selected case set matched after execution. All pins and
+processes from this queue are now closed; no runtime or Cargo job is retained.
+
+Fifty packages have named host cases. `arcweft`, `arcweft-bundle-assets` and
+`arcweft-render-web` have none in this selection; they are not reported as tested
+passes. Failure names are exactly a subset of R2320: 51 CLI cases and one
+Compiler returned-Thread lowering case. No new failure name appears. Three
+previously failing CLI cases now pass in the full dependency/feature selection:
+
+- `bench_json_measures_thread_scheduling_characteristics`, retaining its actual
+  16-step/max-ops-1/drain bound;
+- `scalar_live_budget_owner_tests::pending_joined_source_work_keeps_the_original_scalar_return_continuation`;
+- `scalar_live_budget_owner_tests::source_goto_linear_return_drains_joined_children_before_native_or_aot_completion`.
+
+All three new owner regressions also passed in this full selection. Name-set
+comparison does not assert identical causes for the remaining 52 failures.
+Typed Background ABI rejection, missing full-grammar presentation, JLREQ
+geometry/crops, other CLI contracts and returned Thread lowering remain open;
+the exact current failure list is R2342's terminal audit. Profile still records
+two actual operations against the existing three-operation assertion.
+
+Unchanged heavy workloads passed: nonreturning empty Match restore atomicity
+235.547s; authored text expression/cache/restore budget failure 276.387s; original
+low/one-op array-map Native/AWBC parity 445.218s; real rendered IME controls and
+executable callbacks 687.467s. Counts, budgets, batch/fusion/copy/capture conditions
+and the 1,000/3,000-view workloads are preserved. These are durations, not a
+performance claim across differently loaded executions. The complete selected
+public API/compile-fail cases finished, including Core, Sema, LSP, ProjectLoader,
+RuntimePlan, Save and Tooling. Inspected golden diagnostics reject raw effect
+proof construction/deserialization, nominal receiver injection, public callable
+construction and descriptor serialization; local `TRYBUILD` is unset.
+
+A redundant read-only catalog tail reader was stopped after verifying its exact
+PID/creation/command identity; the Cargo/nextest queue remained live and finished.
+Bounded forward log reading replaces that observation path. No test was stopped
+or restarted, no assertion/timeout/feature was relaxed, and no build artifact was
+moved or copied. Retained metadata r2285, its 99 unchanged manifest/lock inputs,
+and actual inverse-tree evidence remain the graph authority.
+
+Next is the complete original-code position/queue migration, including caller
+and formatter continuations, control/guard/Await/line/Thread body ranges, scope
+markers and the static AST rollback fallback. Existing structural coordinates
+and body-role grammar are reused; source operations and runtime continuations
+must remain distinct, with one active code-position authority and original
+expression roots. All other full-goal implementation and acceptance requirements
+remain in scope. The 39 excluded cases and final Tier 2/workspace/visual acceptance
+have not been promoted to completed work.
