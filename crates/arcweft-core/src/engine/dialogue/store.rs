@@ -118,12 +118,16 @@ type NativeEngineDialogueFrameRollbackImage =
 impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
     fn validate_parent(
         &self,
+        activation: &DialogueActivationId,
         next_fiber_id: u64,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
-        if self.parent.0 >= next_fiber_id {
+        if self.parent.0 >= next_fiber_id
+            || !self.parent.matches_persistent(activation.owner_fiber())
+        {
             return Err(
                 crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                    message: "dialogue parent fiber was not allocated by its executor".into(),
+                    message: "dialogue parent fiber differs from its allocated activation owner"
+                        .into(),
                 },
             );
         }
@@ -277,7 +281,9 @@ impl DialogueActivationStoreRollbackImage {
         next_fiber_id: u64,
     ) -> Result<(), String> {
         self.registry
-            .try_visit_active(|_, active, _| active.frame.validate_parent(next_fiber_id))
+            .try_visit_active(|activation, active, _| {
+                active.frame.validate_parent(activation, next_fiber_id)
+            })
             .map_err(|error| error.to_string())
     }
 
@@ -709,7 +715,9 @@ impl DialogueActivationStore {
         next_fiber_id: u64,
     ) -> Result<(), String> {
         self.registry
-            .try_visit_active(|_, active, _| active.frame.validate_parent(next_fiber_id))
+            .try_visit_active(|activation, active, _| {
+                active.frame.validate_parent(activation, next_fiber_id)
+            })
             .map_err(|error| error.to_string())
     }
 
@@ -1440,6 +1448,35 @@ mod tests {
             pending_host_call: None,
             failure: None,
         }
+    }
+
+    #[test]
+    fn dialogue_parent_must_match_the_activations_issuing_fiber() {
+        let store = |parent| {
+            let mut frame = frame(DialogueRuntimePhase::Ready);
+            frame.parent = super::super::super::FlowFiberId::from_executor_ordinal(parent);
+            let mut store = DialogueActivationStore::default();
+            store
+                .registry
+                .begin(
+                    activation(1),
+                    EngineDialogueActivationFrame {
+                        frame,
+                        inbox: DialogueStepInbox::default(),
+                    },
+                )
+                .unwrap();
+            store
+        };
+        let original = store(0);
+        original.validate_parent_allocations(1).unwrap();
+        assert!(original.validate_parent_allocations(0).is_err());
+
+        let foreign = store(1);
+        let before = foreign.registry.active_ids();
+        assert!(foreign.validate_parent_allocations(2).is_err());
+        assert_eq!(foreign.registry.active_ids(), before);
+        assert!(foreign.registry.active_frame(&activation(1)).is_some());
     }
 
     #[test]

@@ -1944,6 +1944,98 @@ entry cli @entry.main {{ goto @flow.main }}
 }
 
 #[test]
+fn sibling_thread_dialogue_callbacks_join_their_own_activation() {
+    use arcweft_core::engine::{FlowExit, FlowFiberStatus};
+    use arcweft_core::plan::FlowEvent;
+    use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
+    use arcweft_core::time::TickId;
+
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+fn emit(message: String) -> Unit { log.info(message) }
+flow main() -> Unit {
+    thread first { alice[inline [call emit("first")]] }
+    thread second { alice[inline [call emit("second")]] }
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("sibling Threads retain their exact dialogue callbacks");
+    let runtime = compiled.runtime_plan();
+    let bytes = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "sibling_thread_dialogue_callbacks.arcw",
+    )
+    .lower()
+    .expect("the actual Source lowers to a sealed Product artifact")
+    .program
+    .encode_canonical()
+    .unwrap();
+    let [flow] = runtime.plan.flows() else {
+        panic!("one source Flow");
+    };
+    let mut plan = runtime.plan.clone();
+    plan.bind_artifact(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+            *blake3::hash(&bytes).as_bytes(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
+    );
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut advances = Vec::new();
+    let mut parents = std::collections::BTreeSet::new();
+    let mut activations = std::collections::BTreeSet::new();
+    let mut effects = Vec::new();
+    let mut submissions = 0;
+    for tick in 0..256 {
+        let result = native.step_with_pure_backend(
+            RuntimeStepInput {
+                tick: TickId(tick),
+                dialogue_advances: std::mem::take(&mut advances),
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepOptions::default(),
+            &mut backend,
+        );
+        assert!(result.stats.executed_ops <= 1);
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        submissions += result.output.requests.tasks.len();
+        effects.extend(result.output.effects.line);
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine { activation, .. } = event {
+                parents.insert(activation.owner_fiber());
+                assert!(activations.insert(activation.clone()));
+                advances.push(activation);
+            }
+        }
+        if let FlowFiberStatus::Done(exit) = result.fiber_status {
+            assert_eq!(exit, FlowExit::Done);
+            assert_eq!(submissions, 2);
+            assert_eq!(parents.len(), 2);
+            assert_eq!(activations.len(), 2);
+            assert_eq!(log_messages(&effects), ["first", "second"]);
+            assert_eq!(native.child_fiber_count(), 0);
+            return;
+        }
+    }
+    panic!("sibling dialogue callbacks did not finish their owning activations");
+}
+
+#[test]
 fn cancellation_out_selects_the_dialogue_result_in_native_and_decoded_awbc() {
     let compiled = compile_attached_dialogue_project(
         r#"

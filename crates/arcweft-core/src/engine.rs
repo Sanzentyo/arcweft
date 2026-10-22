@@ -668,6 +668,10 @@ impl FlowFiberId {
     pub(crate) const fn from_executor_ordinal(ordinal: u64) -> Self {
         Self(ordinal)
     }
+
+    fn matches_persistent(self, persistent: RuntimePersistentFiberId) -> bool {
+        self.0.checked_add(1) == Some(persistent.get())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]

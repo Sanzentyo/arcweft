@@ -841,7 +841,7 @@ impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
             ))?;
             if fiber.id.0 >= self.next_fiber_id
                 || !fiber_ids.insert(fiber.id.0)
-                || fiber.id.0.checked_add(1) != Some(fiber.persistent_id.get())
+                || !fiber.id.matches_persistent(fiber.persistent_id)
                 || fiber.execution.get().get() != fiber.persistent_id.get()
             {
                 return Err(invalid_identity());
@@ -860,6 +860,10 @@ impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
             };
             if parent.0 >= child.id.0
                 || (child.owner.has_joined_work() && !fiber_ids.contains(&parent.0))
+                || child
+                    .owner
+                    .dialogue_activation()
+                    .is_some_and(|activation| !parent.matches_persistent(activation.owner_fiber()))
             {
                 return Err(invalid_identity());
             }
