@@ -323,7 +323,6 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
 impl RuntimeProjectFunctionExpressionPayload {
     fn append_normalized_types<'a>(&'a self, roots: &mut Vec<&'a RuntimeNormalizedType>) {
         match self {
-            Self::Thread => {}
             Self::Value(value) => value.append_normalized_types(roots),
             Self::NominalRecord(record) => record.append_normalized_types(roots),
             Self::Variant(variant) => variant.owner().append_normalized_types(roots),
@@ -366,6 +365,7 @@ impl RuntimeProjectFunctionExpressionPayload {
             | Self::Select(_)
             | Self::PostfixCandidate(_)
             | Self::Await(_)
+            | Self::Thread
             | Self::Choice(_)
             | Self::Pipe(_) => {}
         }
