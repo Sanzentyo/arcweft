@@ -742,6 +742,34 @@ fn thread_source_codec_retains_program_definition_and_capture_roles() {
         Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer(_))
     ));
     assert!(source.request_endpoint().host_arguments().is_none());
+    let request = source
+        .request_endpoint()
+        .definition(&mut meter(), limits.seal)
+        .unwrap();
+    let [capture] = request.arguments() else {
+        panic!("the original Thread has one capture role");
+    };
+    assert_eq!(capture.role, RuntimeRequestArgumentRole::Capture);
+    assert_eq!(capture.identity, None);
+    assert_eq!(
+        decoded
+            .type_table()
+            .get(capture.ty)
+            .unwrap()
+            .semantic_identity(),
+        crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
+    );
+    assert_eq!(capture.source, RuntimeRequestValueSource::Local);
+    assert_eq!(&*capture.path, &[RuntimeRequestPathStep::Capture(0)]);
+    let mut no_roles = limits.seal;
+    no_roles.max_request_roles = 0;
+    assert!(matches!(
+        source.request_endpoint().definition(&mut meter(), no_roles),
+        Err(RuntimeBodySemanticError::RequestRoles {
+            actual: 1,
+            maximum: 0
+        })
+    ));
     let Some(FlowOp::Thread {
         captures, producer, ..
     }) = source.request_endpoint().operation()

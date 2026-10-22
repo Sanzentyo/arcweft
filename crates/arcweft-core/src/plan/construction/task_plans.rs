@@ -280,6 +280,17 @@ impl RuntimePlanBuilder {
         }))
     }
 
+    pub(in crate::plan) fn source_local_type(
+        &self,
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    ) -> Result<crate::runtime_id::RuntimePlanTypeId, RuntimeBodySemanticError> {
+        self.locals
+            .lock()
+            .expect("source local queries run no user callbacks")
+            .ty(local)
+            .ok_or(RuntimeBodySemanticError::UnknownLocal { local })
+    }
+
     #[must_use]
     pub fn task_plan_construction(&self) -> RuntimeTaskPlanConstructionContext {
         RuntimeTaskPlanConstructionContext {

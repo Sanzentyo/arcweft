@@ -325,6 +325,30 @@ impl<'a> OriginalRequestEndpoint<'a> {
             }
         }
     }
+    pub(super) fn source_local_type(
+        &self,
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    ) -> Result<crate::runtime_id::RuntimePlanTypeId, RuntimeBodySemanticError> {
+        match self.owner {
+            OriginalRequestOwner::Inventory(plan) => plan
+                .local_declarations()
+                .get(local)
+                .map(|declaration| declaration.ty())
+                .ok_or(RuntimeBodySemanticError::UnknownLocal { local }),
+            OriginalRequestOwner::Construction(builder) => builder.source_local_type(local),
+        }
+    }
+    pub(super) fn program_captures(
+        &self,
+    ) -> Option<&'a [crate::runtime_id::RuntimeLocalDeclarationId]> {
+        match (self.kind, self.source) {
+            (
+                EndpointKind::ProgramTask,
+                ProducerEndpointSource::Operation(plan::FlowOp::Thread { captures, .. }),
+            ) => Some(captures),
+            _ => None,
+        }
+    }
     #[cfg(test)]
     pub(crate) fn host_target(&self) -> Option<&'a plan::RuntimeHostCallTarget> {
         if let ProducerEndpointSource::Operation(plan::FlowOp::HostCall { target, .. }) =

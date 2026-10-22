@@ -415,6 +415,49 @@ impl OriginalRequestEndpoint<'_> {
                 fields: Box::new([]),
             });
         }
+        if let Some(captures) = endpoint.program_captures() {
+            let actual = meter.checked_count_sum(captures.len(), 0)?;
+            if actual > limits.max_request_roles as usize {
+                meter.reject_owner();
+                return Err(RuntimeBodySemanticError::RequestRoles {
+                    actual,
+                    maximum: limits.max_request_roles,
+                });
+            }
+            let mut arguments = Vec::with_capacity(actual);
+            for (ordinal, local) in captures.iter().copied().enumerate() {
+                meter.charge_work(1)?;
+                let ty = endpoint
+                    .source_local_type(local)
+                    .inspect_err(|_| meter.reject_owner())?;
+                let source = if endpoint
+                    .source_type_is_need(ty)
+                    .inspect_err(|_| meter.reject_owner())?
+                {
+                    RuntimeRequestValueSource::NeedHandle
+                } else {
+                    endpoint.request_local_source(meter, local)?
+                };
+                let position = u32::try_from(ordinal).map_err(|_| {
+                    meter.reject_owner();
+                    RuntimeBodySemanticError::Encoding(
+                        crate::task::semantic::TaskSemanticEncodingError::ArithmeticOverflow,
+                    )
+                })?;
+                arguments.push(RuntimeRequestArgument {
+                    role: RuntimeRequestArgumentRole::Capture,
+                    identity: None,
+                    ty,
+                    source,
+                    path: Box::new([RuntimeRequestPathStep::Capture(position)]),
+                });
+            }
+            return Ok(RuntimeTaskRequestTemplate::at_operation(
+                endpoint.ordinal(),
+                arguments.into_boxed_slice(),
+                Box::new([]),
+            ));
+        }
         let actual_arguments = endpoint.host_arguments().ok_or_else(|| {
             meter.reject_owner();
             RuntimeBodySemanticError::InvalidRequestSource
@@ -468,17 +511,7 @@ impl OriginalRequestEndpoint<'_> {
                 Expr::Local(read) if !read.fields().is_empty() => {
                     RuntimeRequestValueSource::Projection
                 }
-                Expr::Local(read) => {
-                    meter.charge_work(1)?;
-                    let captured = self
-                        .source_local_is_capture(read.local())
-                        .inspect_err(|_| meter.reject_owner())?;
-                    if captured {
-                        RuntimeRequestValueSource::Capture
-                    } else {
-                        RuntimeRequestValueSource::Local
-                    }
-                }
+                Expr::Local(read) => self.request_local_source(meter, read.local())?,
                 Expr::Field { .. } | Expr::ProjectTuple { .. } | Expr::ProjectRecord { .. } => {
                     RuntimeRequestValueSource::Projection
                 }
@@ -514,6 +547,22 @@ impl OriginalRequestEndpoint<'_> {
                 | Expr::ReductionUnchanged { .. } => RuntimeRequestValueSource::CallResult,
             });
         }
+    }
+
+    fn request_local_source(
+        &self,
+        meter: &mut TaskSemanticMeter,
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    ) -> Result<RuntimeRequestValueSource, RuntimeBodySemanticError> {
+        meter.charge_work(1)?;
+        let captured = self
+            .source_local_is_capture(local)
+            .inspect_err(|_| meter.reject_owner())?;
+        Ok(if captured {
+            RuntimeRequestValueSource::Capture
+        } else {
+            RuntimeRequestValueSource::Local
+        })
     }
 }
 
