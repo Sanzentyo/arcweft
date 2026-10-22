@@ -6818,7 +6818,23 @@ impl<'a> FinalFlowLowerer<'a> {
                     ))
                 })?;
                 if let HirExprKind::Thread(thread_expr) = thread_expr.kind() {
-                    if thread_expr.mode() == HirThreadMode::Detached {
+                    let admission =
+                        self.semantic_facts
+                            .thread_producer(*thread)
+                            .ok_or_else(|| {
+                                RuntimePlanLowerError::new(
+                                    "Thread has no accepted producer definition",
+                                )
+                            })?;
+                    let checked = admission
+                        .thread()
+                        .filter(|checked| checked.matches_source(thread_expr))
+                        .ok_or_else(|| {
+                            RuntimePlanLowerError::new(
+                                "Thread producer does not own this body and mode",
+                            )
+                        })?;
+                    if checked.mode() == HirThreadMode::Detached {
                         return Err(RuntimePlanLowerError::new(format!(
                             "detached Thread expression {thread:?} requires typed runtime ownership metadata"
                         )));
@@ -6830,14 +6846,6 @@ impl<'a> FinalFlowLowerer<'a> {
                     }
                     .free_locals()
                     .into_vec();
-                    let admission =
-                        self.semantic_facts
-                            .thread_producer(*thread)
-                            .ok_or_else(|| {
-                                RuntimePlanLowerError::new(
-                                    "Thread has no accepted producer definition",
-                                )
-                            })?;
                     let payload = arcweft_core::pattern::RuntimeCheckedType::Unit;
                     let identity = payload.semantic_identity_digest();
                     let mut contract = blake3::Hasher::new();
@@ -9888,7 +9896,7 @@ mod tests {
                 crate::semantic_facts::RuntimeProjectFunctionExpressionSemanticFact::new(
                     row.owner(),
                     row.children().into(),
-                    crate::semantic_facts::RuntimeProjectFunctionExpressionPayload::Structural,
+                    crate::semantic_facts::RuntimeProjectFunctionExpressionPayload::Thread,
                 )
             })
             .collect::<Box<[_]>>();

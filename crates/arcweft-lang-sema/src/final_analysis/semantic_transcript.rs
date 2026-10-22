@@ -2696,6 +2696,9 @@ fn write_resolution_payload(
                 cycle_owner,
             )?;
         }
+        CheckedExpressionResolution::Thread(thread) => {
+            transcript_update!(hasher, &[thread.mode().semantic_transcript_tag()]);
+        }
         CheckedExpressionResolution::Await(awaited) => {
             transcript_update!(hasher, &[0]);
             write_resolution_child_digest(

@@ -1,7 +1,7 @@
 use arcweft_lang_sema::checked_rich_text::CheckedDialogueMark;
 use arcweft_lang_sema::final_analysis::{
-    CheckedIncludeFlowTarget, CheckedSelectStatement, CheckedStatement, CheckedTrigger,
-    CheckedUnsafeAudit,
+    CheckedIncludeFlowTarget, CheckedSelectStatement, CheckedStatement, CheckedThread,
+    CheckedTrigger, CheckedUnsafeAudit,
 };
 use arcweft_lang_sema::semantic_coordinate::StableCheckedDialogueMarkCoordinate;
 
@@ -39,13 +39,23 @@ fn forge_unsafe_audit() -> CheckedUnsafeAudit {
 }
 
 fn forge_include() -> CheckedIncludeFlowTarget {
-    CheckedIncludeFlowTarget { declaration: any() }
+    CheckedIncludeFlowTarget {
+        declaration: any(),
+        origin: any(),
+    }
 }
 
 fn forge_statement() -> CheckedStatement {
     CheckedStatement {
         effects: any(),
         payload: any(),
+    }
+}
+
+fn forge_thread() -> CheckedThread {
+    CheckedThread {
+        body: any(),
+        mode: any(),
     }
 }
 

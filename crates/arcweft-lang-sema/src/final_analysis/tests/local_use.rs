@@ -9,6 +9,116 @@ use crate::types::TypeKind;
 use super::{analyze, character_nominal_fixture, fixture};
 
 #[test]
+fn thread_producers_retain_the_exact_checked_body_and_execution_mode() {
+    use crate::final_analysis::{CheckedExpressionResolution, CheckedLocalUseAuthority};
+    use arcweft_lang_hir::expr::HirThreadMode;
+
+    let world = fixture(
+        "fn attached() -> ThreadHandle<Unit> effects { control.spawn } { thread worker {} }\n\
+         fn detached() -> ThreadHandle<Unit> effects { control.spawn } { thread detached worker {} }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let project = world.project.analysis_view().unwrap();
+    let (_, module) = project.modules().next().unwrap();
+    let threads = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            let HirExprKind::Thread(thread) = expression.kind() else {
+                return None;
+            };
+            Some((owner, thread))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(threads.len(), 2);
+    assert_ne!(threads[0].1.scope(), threads[1].1.scope());
+    assert_eq!(
+        threads
+            .iter()
+            .filter(|(_, thread)| thread.mode() == HirThreadMode::Detached)
+            .count(),
+        1
+    );
+    let authority =
+        CheckedLocalUseAuthority::Global(std::sync::Arc::clone(report.checked_local_uses()));
+    for (ordinal, (owner, authored)) in threads.iter().enumerate() {
+        let CheckedExpressionResolution::Thread(checked) =
+            report.expression(*owner).unwrap().resolution()
+        else {
+            panic!("Thread must retain its checked semantics");
+        };
+        assert_eq!(checked.body(), authored.scope());
+        assert_eq!(checked.mode(), authored.mode());
+        assert!(checked.matches_source(authored));
+        assert!(!checked.matches_source(threads[1 - ordinal].1));
+        let producer = report
+            .checked_thread_producer_admission(project, &world.symbols, *owner)
+            .unwrap();
+        assert_eq!(
+            producer.kind(),
+            crate::CheckedExpressionProducerKind::Thread
+        );
+        assert_eq!(producer.thread(), Some(checked));
+        assert!(producer.matches_authority(*owner, &authority));
+        assert!(!producer.matches_authority(threads[1 - ordinal].0, &authority));
+    }
+}
+
+#[test]
+fn thread_publication_rejects_structural_and_foreign_body_semantics() {
+    use crate::final_analysis::{
+        CheckedExpression, CheckedExpressionResolution, FinalSemanticAnalysis,
+    };
+
+    let world = fixture(
+        "fn root() -> ThreadHandle<Unit> effects { control.spawn } { thread {} }\n\
+         fn other() -> ThreadHandle<Unit> effects { control.spawn } { thread {} }",
+        None,
+    );
+    let accepted = analyze(&world).unwrap();
+    let threads = accepted
+        .expressions()
+        .filter(|(_, fact)| matches!(fact.resolution(), CheckedExpressionResolution::Thread(_)))
+        .collect::<Vec<_>>();
+    assert_eq!(threads.len(), 2);
+    let (owner, original) = threads[0];
+    for (ty, resolution) in [
+        (
+            original.value_type().unwrap().clone(),
+            CheckedExpressionResolution::Structural,
+        ),
+        (
+            original.value_type().unwrap().clone(),
+            threads[1].1.resolution().clone(),
+        ),
+        (TypeKind::Unit, original.resolution().clone()),
+    ] {
+        let mut input = super::input_from_report(&accepted);
+        let (_, fact) = input
+            .expressions
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == owner)
+            .unwrap();
+        *fact = CheckedExpression::value(
+            ty,
+            original.type_selection().unwrap(),
+            original.effects().clone(),
+            resolution,
+        )
+        .into();
+        let error = FinalSemanticAnalysis::try_new(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            std::sync::Arc::clone(accepted.hir_topology()),
+            accepted.checked_callables().clone(),
+            input,
+        )
+        .expect_err("a Thread requires its own checked body, mode and result type");
+        assert_eq!(error, FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+}
+
+#[test]
 fn need_and_thread_awaits_retain_checked_operands_observers_and_affine_moves() {
     use crate::final_analysis::CheckedExpressionResolution;
 

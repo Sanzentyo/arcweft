@@ -3227,7 +3227,7 @@ impl Analyzer<'_, '_, '_> {
                 };
                 Ok(structural_expression(ty, CheckedTypeSelection::Inferred))
             }
-            HirExprKind::Thread(_) => {
+            HirExprKind::Thread(thread) => {
                 let mut effects = EffectSet::new();
                 effects.insert(
                     EffectId::parse("control.spawn")
@@ -3237,7 +3237,9 @@ impl Analyzer<'_, '_, '_> {
                     TypeKind::ThreadHandle(Box::new(TypeKind::Unit)),
                     CheckedTypeSelection::Inferred,
                     effects,
-                    CheckedExpressionResolution::Structural,
+                    CheckedExpressionResolution::Thread(super::super::CheckedThread::from_source(
+                        thread,
+                    )),
                 ))
             }
             HirExprKind::Choice(choice) => self.check_choice_expression(

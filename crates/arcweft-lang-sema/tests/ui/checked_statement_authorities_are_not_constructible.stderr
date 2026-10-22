@@ -40,21 +40,35 @@ error[E0451]: fields `id` and `has_safety_doc` of struct `CheckedUnsafeAudit` ar
 37 |         has_safety_doc: false,
    |         ^^^^^^^^^^^^^^ private field
 
-error[E0451]: field `declaration` of struct `CheckedIncludeFlowTarget` is private
-  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:42:32
+error[E0451]: fields `declaration` and `origin` of struct `CheckedIncludeFlowTarget` are private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:43:9
    |
-42 |     CheckedIncludeFlowTarget { declaration: any() }
-   |                                ^^^^^^^^^^^ private field
+42 |     CheckedIncludeFlowTarget {
+   |     ------------------------ in this type
+43 |         declaration: any(),
+   |         ^^^^^^^^^^^ private field
+44 |         origin: any(),
+   |         ^^^^^^ private field
 
 error[E0451]: fields `effects` and `payload` of struct `CheckedStatement` are private
-  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:47:9
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:50:9
    |
-46 |     CheckedStatement {
+49 |     CheckedStatement {
    |     ---------------- in this type
-47 |         effects: any(),
+50 |         effects: any(),
    |         ^^^^^^^ private field
-48 |         payload: any(),
+51 |         payload: any(),
    |         ^^^^^^^ private field
+
+error[E0451]: fields `body` and `mode` of struct `CheckedThread` are private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:57:9
+   |
+56 |     CheckedThread {
+   |     ------------- in this type
+57 |         body: any(),
+   |         ^^^^ private field
+58 |         mode: any(),
+   |         ^^^^ private field
 
 error: type `final_analysis::model::statement::CheckedTriggerKind` is private
   --> tests/ui/checked_statement_authorities_are_not_constructible.rs:27:28

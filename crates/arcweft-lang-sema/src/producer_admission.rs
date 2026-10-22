@@ -30,7 +30,7 @@ use arcweft_core::task::NeedProducerSiteDigest;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExpressionProducerDefinition {
     owner: ExprId,
-    kind: CheckedExpressionProducerKind,
+    source: CheckedExpressionProducerSource,
     generation: std::sync::Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
     instance: Option<crate::final_analysis::CheckedLocalUseInstanceIdentity>,
     site: NeedProducerSiteDigest,
@@ -43,9 +43,25 @@ pub enum CheckedExpressionProducerKind {
     Thread,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CheckedExpressionProducerSource {
+    Call,
+    Thread(crate::final_analysis::CheckedThread),
+}
+
 impl CheckedExpressionProducerDefinition {
     pub const fn kind(&self) -> CheckedExpressionProducerKind {
-        self.kind
+        match self.source {
+            CheckedExpressionProducerSource::Call => CheckedExpressionProducerKind::Call,
+            CheckedExpressionProducerSource::Thread(_) => CheckedExpressionProducerKind::Thread,
+        }
+    }
+
+    pub const fn thread(&self) -> Option<&crate::final_analysis::CheckedThread> {
+        match &self.source {
+            CheckedExpressionProducerSource::Thread(thread) => Some(thread),
+            CheckedExpressionProducerSource::Call => None,
+        }
     }
 
     pub fn matches_authority(
@@ -201,13 +217,22 @@ impl FinalSemanticAnalysis {
                     .flatten()
             })
             .ok_or(CheckedNeedProducerAdmissionError::NotThread)?;
-        if !matches!(
-            expression.kind(),
-            arcweft_lang_hir::expr::HirExprKind::Thread(_)
-        ) {
+        let arcweft_lang_hir::expr::HirExprKind::Thread(authored) = expression.kind() else {
+            return Err(CheckedNeedProducerAdmissionError::NotThread);
+        };
+        let Some(crate::final_analysis::CheckedExpressionResolution::Thread(checked)) = self
+            .expression(owner)
+            .map(crate::final_analysis::CheckedExpression::resolution)
+        else {
+            return Err(CheckedNeedProducerAdmissionError::NotThread);
+        };
+        if !checked.matches_source(authored) {
             return Err(CheckedNeedProducerAdmissionError::NotThread);
         }
-        self.checked_expression_producer_definition(owner, CheckedExpressionProducerKind::Thread)
+        self.checked_expression_producer_definition(
+            owner,
+            CheckedExpressionProducerSource::Thread(checked.clone()),
+        )
     }
 
     pub fn checked_call_producer_definition(
@@ -224,13 +249,13 @@ impl FinalSemanticAnalysis {
         {
             return Err(CheckedNeedProducerAdmissionError::NotSelectedCall);
         }
-        self.checked_expression_producer_definition(owner, CheckedExpressionProducerKind::Call)
+        self.checked_expression_producer_definition(owner, CheckedExpressionProducerSource::Call)
     }
 
     fn checked_expression_producer_definition(
         &self,
         owner: ExprId,
-        kind: CheckedExpressionProducerKind,
+        source: CheckedExpressionProducerSource,
     ) -> Result<CheckedExpressionProducerDefinition, CheckedNeedProducerAdmissionError> {
         let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
             self.accepted_root_catalog(),
@@ -252,7 +277,7 @@ impl FinalSemanticAnalysis {
         hasher.update(&bytes);
         Ok(CheckedExpressionProducerDefinition {
             owner,
-            kind,
+            source,
             generation: std::sync::Arc::clone(self.hir_generation()),
             instance: None,
             site: NeedProducerSiteDigest::from_bytes(*hasher.finalize().as_bytes()),

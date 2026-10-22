@@ -2272,6 +2272,16 @@ impl<'a> LocalUseChecker<'a> {
                 self.end_loop(state)?;
             }
             HirExprKind::Thread(value) => {
+                let Some(CheckedExpressionResolution::Thread(checked)) = self
+                    .analysis
+                    .expression(owner)
+                    .map(super::CheckedExpression::resolution)
+                else {
+                    return Err(CheckedLocalUseError::InvalidTopology);
+                };
+                if !checked.matches_source(value) {
+                    return Err(CheckedLocalUseError::InvalidTopology);
+                }
                 // A spawned body owns independent availability, loans and control
                 // scopes. Collect its inputs from those same admitted body reads,
                 // then transfer only external bindings in the parent frame.

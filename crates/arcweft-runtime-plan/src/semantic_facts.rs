@@ -7544,7 +7544,10 @@ impl RuntimePlanSemanticFacts {
                 runtime_owners,
                 *owner,
                 RuntimeSemanticFactFamily::ThreadProducer,
-                |kind| matches!(kind, HirExprKind::Thread(_)),
+                |kind| {
+                    matches!(kind, HirExprKind::Thread(thread)
+                    if definition.thread().is_some_and(|checked| checked.matches_source(thread)))
+                },
             )?;
         }
         let call_producers = collect_unique(
@@ -13348,6 +13351,14 @@ fn validate_project_function_semantic_catalog(
         let owner = row.owner();
         let hir = resolve_expr(modules, owner)?;
         match row.payload() {
+            RuntimeProjectFunctionExpressionPayload::Thread => {
+                if !matches!(hir, HirExprKind::Thread(authored)
+                    if row.producer().and_then(|producer| producer.thread())
+                        .is_some_and(|checked| checked.matches_source(authored)))
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
             RuntimeProjectFunctionExpressionPayload::Structural
             | RuntimeProjectFunctionExpressionPayload::Consumed => {}
             RuntimeProjectFunctionExpressionPayload::Scope(identity) => {
@@ -14109,6 +14120,7 @@ fn validate_project_instance_dialogue_applications(
             | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { .. }
             | RuntimeProjectFunctionExpressionPayload::PostfixCandidate(_)
             | RuntimeProjectFunctionExpressionPayload::Await(_)
+            | RuntimeProjectFunctionExpressionPayload::Thread
             | RuntimeProjectFunctionExpressionPayload::Choice(_)
             | RuntimeProjectFunctionExpressionPayload::Try(_)
             | RuntimeProjectFunctionExpressionPayload::ImplicitCallable { .. }

@@ -1063,6 +1063,9 @@ fn expression_resolution_matches(
             expression_resolution_matches(kind, scalar.original())
         }
         (HirExprKind::Closure(_), CheckedExpressionResolution::Closure(_)) => true,
+        (HirExprKind::Thread(authored), CheckedExpressionResolution::Thread(checked)) => {
+            checked.matches_source(authored)
+        }
         (HirExprKind::LifetimePath(path), CheckedExpressionResolution::RegistryAddress(address)) => {
             path.as_resolved().is_some_and(|path| address.matches_path(path))
         }
@@ -1144,7 +1147,6 @@ const fn structural_resolution_matches(kind: &HirExprKind) -> bool {
             | HirExprKind::NumericBracketSequence(_)
             | HirExprKind::ArrayRepeat(_)
             | HirExprKind::Index(_)
-            | HirExprKind::Thread(_)
             | HirExprKind::Range(_)
             | HirExprKind::Binary(_)
             | HirExprKind::Borrow(_)
@@ -1434,6 +1436,11 @@ fn validate_expression_resolution(
                 .as_resolved()
                 .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
             (look.matches_type(ty) && look.diagnostic_name() == authored)
+                .then_some(())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
+        CheckedExpressionResolution::Thread(_) => {
+            matches!(ty, TypeKind::ThreadHandle(payload) if **payload == TypeKind::Unit)
                 .then_some(())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
         }

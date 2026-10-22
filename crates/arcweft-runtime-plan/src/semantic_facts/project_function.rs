@@ -951,6 +951,7 @@ pub enum RuntimeProjectFunctionExpressionPayload {
     },
     PostfixCandidate(ExprId),
     Await(RuntimeAwaitFact),
+    Thread,
     Choice(RuntimeChoiceFact),
     Try(RuntimeTryFact),
     ImplicitCallable {
@@ -1013,6 +1014,7 @@ impl RuntimeProjectFunctionExpressionPayload {
                 CheckedExecutableRuntimeExpressionFactFamily::PostfixCandidate
             }
             Self::Await(_) => CheckedExecutableRuntimeExpressionFactFamily::Await,
+            Self::Thread => CheckedExecutableRuntimeExpressionFactFamily::Thread,
             Self::Choice(_) => CheckedExecutableRuntimeExpressionFactFamily::Choice,
             Self::Try(_) => CheckedExecutableRuntimeExpressionFactFamily::Try,
             Self::ImplicitCallable { .. } => {
@@ -1728,7 +1730,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                             arcweft_lang_sema::CheckedExpressionProducerKind::Call => host,
                             arcweft_lang_sema::CheckedExpressionProducerKind::Thread => matches!(
                                 expression.payload(),
-                                RuntimeProjectFunctionExpressionPayload::Structural
+                                RuntimeProjectFunctionExpressionPayload::Thread
                             ),
                         } => {}
                 None if !host => {}
@@ -2418,6 +2420,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { .. }
                 | RuntimeProjectFunctionExpressionPayload::PostfixCandidate(_)
                 | RuntimeProjectFunctionExpressionPayload::Await(_)
+                | RuntimeProjectFunctionExpressionPayload::Thread
                 | RuntimeProjectFunctionExpressionPayload::Choice(_)
                 | RuntimeProjectFunctionExpressionPayload::Try(_)
                 | RuntimeProjectFunctionExpressionPayload::ImplicitCallable { .. }
@@ -2465,6 +2468,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { .. }
                 | RuntimeProjectFunctionExpressionPayload::PostfixCandidate(_)
                 | RuntimeProjectFunctionExpressionPayload::Await(_)
+                | RuntimeProjectFunctionExpressionPayload::Thread
                 | RuntimeProjectFunctionExpressionPayload::Choice(_)
                 | RuntimeProjectFunctionExpressionPayload::Try(_)
                 | RuntimeProjectFunctionExpressionPayload::ImplicitCallable { .. }
@@ -2504,6 +2508,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { .. }
                 | RuntimeProjectFunctionExpressionPayload::PostfixCandidate(_)
                 | RuntimeProjectFunctionExpressionPayload::Await(_)
+                | RuntimeProjectFunctionExpressionPayload::Thread
                 | RuntimeProjectFunctionExpressionPayload::Choice(_)
                 | RuntimeProjectFunctionExpressionPayload::Try(_)
                 | RuntimeProjectFunctionExpressionPayload::ImplicitCallable { .. }

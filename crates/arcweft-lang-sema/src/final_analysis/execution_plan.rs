@@ -641,6 +641,7 @@ fn execution_plan_for_expression_with_roles(
         | CheckedExpressionResolution::StageLook(_)
         | CheckedExpressionResolution::Effect(_)
         | CheckedExpressionResolution::Await(_)
+        | CheckedExpressionResolution::Thread(_)
         | CheckedExpressionResolution::Choice(_)
         | CheckedExpressionResolution::Try(_)
         | CheckedExpressionResolution::ImplicitCallable(_)

@@ -1121,18 +1121,10 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
-        let is_thread = project
-            .modules()
-            .find_map(|(_, module)| {
-                (module.module_id() == owner.module())
-                    .then(|| module.resolve_expr(owner).ok())
-                    .flatten()
-                    .map(|expr| {
-                        matches!(expr.kind(), arcweft_lang_hir::expr::HirExprKind::Thread(_))
-                    })
-            })
-            .unwrap_or(false);
-        if is_thread {
+        if matches!(
+            expression.resolution(),
+            CheckedExpressionResolution::Thread(_)
+        ) {
             let admission = analysis
                 .checked_thread_producer_admission(project, symbols, owner)
                 .map_err(|error| RuntimeSemanticProjectionError::Call {
@@ -1519,6 +1511,7 @@ fn project_runtime_semantic_fact_inventories(
             | CheckedExpressionResolution::DialogueApplication { .. }
             | CheckedExpressionResolution::ContentApplication(_)
             | CheckedExpressionResolution::Effect(_)
+            | CheckedExpressionResolution::Thread(_)
             | CheckedExpressionResolution::Closure(_) => {}
         }
     }
@@ -7632,6 +7625,7 @@ fn discover_runtime_project_executable_dependencies(
                 | CheckedExecutableRuntimeExpressionFactFamily::EvaluatedEffect
                 | CheckedExecutableRuntimeExpressionFactFamily::PostfixCandidate
                 | CheckedExecutableRuntimeExpressionFactFamily::Await
+                | CheckedExecutableRuntimeExpressionFactFamily::Thread
                 | CheckedExecutableRuntimeExpressionFactFamily::Choice
                 | CheckedExecutableRuntimeExpressionFactFamily::Try
                 | CheckedExecutableRuntimeExpressionFactFamily::ImplicitCallable
@@ -7981,6 +7975,9 @@ fn runtime_executable_semantic_facts<'abi>(
             }
             CheckedExecutableRuntimeExpressionFactFamily::Structural => {
                 RuntimeProjectFunctionExpressionPayload::Structural
+            }
+            CheckedExecutableRuntimeExpressionFactFamily::Thread => {
+                RuntimeProjectFunctionExpressionPayload::Thread
             }
             CheckedExecutableRuntimeExpressionFactFamily::Consumed => {
                 RuntimeProjectFunctionExpressionPayload::Consumed

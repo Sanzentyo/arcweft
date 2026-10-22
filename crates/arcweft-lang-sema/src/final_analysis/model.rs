@@ -978,6 +978,8 @@ pub enum CheckedExpressionResolution {
     Call,
     /// Exact outcome and continuation contract owned by one Await expression.
     Await(CheckedAwait),
+    /// Exact child body and execution mode owned by one Thread expression.
+    Thread(CheckedThread),
     /// Exact project Flow targets selected for compact Choice `goto` arms.
     Choice(CheckedChoice),
     /// Exact carrier and nearest lexical propagation boundary for prefix Try.
@@ -1090,6 +1092,7 @@ impl CheckedExpressionResolution {
             | Self::StageLook(_)
             | Self::Effect(_)
             | Self::Await(_)
+            | Self::Thread(_)
             | Self::Choice(_)
             | Self::Try(_)
             | Self::Closure(_)
@@ -1157,6 +1160,7 @@ impl CheckedExpressionResolution {
             | Self::Effect(_)
             | Self::Call
             | Self::Await(_)
+            | Self::Thread(_)
             | Self::Closure(_)
             | Self::ImplicitParameter(_)
             | Self::Pipe(_)
@@ -1558,6 +1562,34 @@ impl CheckedTry {
         visitor(self.operand.value_type())?;
         self.carrier.visit_types(visitor)?;
         visitor(self.boundary.boundary_type())
+    }
+}
+
+/// Accepted source body and execution mode of one Thread expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedThread {
+    body: arcweft_lang_hir::identity::ScopeId,
+    mode: arcweft_lang_hir::expr::HirThreadMode,
+}
+
+impl CheckedThread {
+    pub(super) const fn from_source(thread: &arcweft_lang_hir::expr::HirThreadExpr) -> Self {
+        Self {
+            body: thread.scope(),
+            mode: thread.mode(),
+        }
+    }
+
+    pub const fn body(&self) -> arcweft_lang_hir::identity::ScopeId {
+        self.body
+    }
+
+    pub const fn mode(&self) -> arcweft_lang_hir::expr::HirThreadMode {
+        self.mode
+    }
+
+    pub fn matches_source(&self, thread: &arcweft_lang_hir::expr::HirThreadExpr) -> bool {
+        self.body == thread.scope() && self.mode == thread.mode()
     }
 }
 

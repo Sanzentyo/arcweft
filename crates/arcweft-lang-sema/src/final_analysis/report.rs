@@ -340,6 +340,7 @@ pub enum CheckedExecutableRuntimeExpressionFactFamily {
     EvaluatedEffect,
     PostfixCandidate,
     Await,
+    Thread,
     Choice,
     Try,
     ImplicitCallable,
@@ -822,6 +823,9 @@ impl FinalAnalysisExecutionProjection<'_> {
                     CheckedExpressionResolution::Await(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Await
                     }
+                    CheckedExpressionResolution::Thread(_) => {
+                        CheckedExecutableRuntimeExpressionFactFamily::Thread
+                    }
                     CheckedExpressionResolution::Choice(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Choice
                     }
@@ -871,8 +875,11 @@ impl FinalAnalysisExecutionProjection<'_> {
                 coordinate: coordinates.expression(owner).map_err(|_| {
                     FinalAnalysisExecutionProjectionError::InvalidExpressionCoordinate { owner }
                 })?,
-                producer_kind: matches!(hir.kind(), arcweft_lang_hir::expr::HirExprKind::Thread(_))
-                    .then_some(crate::CheckedExpressionProducerKind::Thread),
+                producer_kind: matches!(
+                    expression.resolution(),
+                    CheckedExpressionResolution::Thread(_)
+                )
+                .then_some(crate::CheckedExpressionProducerKind::Thread),
                 family,
                 has_runtime_type: runtime_type_owners.contains(&owner),
                 children: owners.expression_children(owner).into(),
