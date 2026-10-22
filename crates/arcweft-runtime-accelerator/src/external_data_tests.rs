@@ -956,6 +956,20 @@ fn data_avro_envelope_round_trips_with_the_selected_shape() {
     let Some(RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bytes(bytes)))) = bytes else {
         panic!("Avro encode returns bytes");
     };
+    for _ in 0..4 {
+        let repeated = accelerator
+            .call_external(
+                &encode,
+                &callable_target("data.encode"),
+                &[value.clone(), format.clone()],
+            )
+            .expect("Avro encode is handled")
+            .expect("Avro encode succeeds");
+        assert_eq!(
+            repeated, encoded,
+            "runtime Avro bytes must be deterministic"
+        );
+    }
     let decode = fixture.context(
         [
             semantic(BYTES),

@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-agent-protocol = { workspace = true }
 arcweft-audio-core = { workspace = true }
 arcweft-character = { workspace = true }
+arcweft-codec-avro = { workspace = true, optional = true }
 arcweft-core = { workspace = true }
 arcweft-data = { workspace = true }
 arcweft-dialogue = { workspace = true }
@@ -45,7 +46,7 @@ default = [
     "format-toml",
     "format-yaml",
 ]
-format-avro = ["dep:apache-avro"]
+format-avro = ["dep:apache-avro", "dep:arcweft-codec-avro"]
 format-cbor = ["dep:ciborium"]
 format-messagepack = ["dep:rmp-serde"]
 format-toml = ["dep:toml"]

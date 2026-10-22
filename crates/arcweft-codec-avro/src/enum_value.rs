@@ -5,9 +5,7 @@ use arcweft_data::{
     VariantShape,
 };
 
-use crate::codec::{
-    avro_to_value, avro_value_label, schema_mismatch, validate_schema, value_to_avro,
-};
+use crate::codec::{avro_to_value, avro_value_label, schema_mismatch, validate_schema};
 
 pub(super) fn validate_enum_schema(
     variants: &[VariantShape],
@@ -117,140 +115,7 @@ fn validate_variant_record_schema(
     }
 }
 
-pub(super) fn value_to_avro_enum(
-    value: &Value,
-    variants: &[VariantShape],
-    schema: &Schema,
-    access: &dyn ShapeAccess,
-) -> Result<AvroValue> {
-    if matches!(schema, Schema::Enum(_)) {
-        return value_to_avro_native_enum(value, variants, schema);
-    }
-    value_to_avro_payload_enum(value, variants, schema, access)
-}
-
-fn value_to_avro_native_enum(
-    value: &Value,
-    variants: &[VariantShape],
-    schema: &Schema,
-) -> Result<AvroValue> {
-    let Schema::Enum(avro_enum) = schema else {
-        return Err(schema_mismatch("Avro enum", schema));
-    };
-    let Value::Enum { variant, payload } = value else {
-        return Err(DataError::invalid_type("enum", value.type_name()));
-    };
-    if payload.is_some() {
-        return Err(DataError::invalid_type("unit enum", "payload enum"));
-    }
-    let shape_index = variants
-        .iter()
-        .position(|candidate| candidate.wire_name == *variant)
-        .ok_or_else(|| {
-            DataError::new(
-                DataErrorKind::InvalidEnumTag,
-                format!("unknown enum variant `{variant}`"),
-            )
-        })?;
-    let schema_index = avro_enum
-        .symbols
-        .iter()
-        .position(|symbol| symbol == variant)
-        .ok_or_else(|| {
-            DataError::new(
-                DataErrorKind::InvalidEnumTag,
-                format!("Avro enum schema does not contain `{variant}`"),
-            )
-        })?;
-    if shape_index != schema_index {
-        return Err(DataError::new(
-            DataErrorKind::InvalidEnumTag,
-            format!("enum variant `{variant}` has mismatched Avro index"),
-        ));
-    }
-    Ok(AvroValue::Enum(
-        u32::try_from(schema_index).expect("enum index fits u32"),
-        variant.clone(),
-    ))
-}
-
-fn value_to_avro_payload_enum(
-    value: &Value,
-    variants: &[VariantShape],
-    schema: &Schema,
-    access: &dyn ShapeAccess,
-) -> Result<AvroValue> {
-    let Schema::Union(union) = schema else {
-        return Err(schema_mismatch("Avro union of variant records", schema));
-    };
-    let Value::Enum { variant, payload } = value else {
-        return Err(DataError::invalid_type("enum", value.type_name()));
-    };
-    let index = variants
-        .iter()
-        .position(|candidate| candidate.wire_name == *variant)
-        .ok_or_else(|| {
-            DataError::new(
-                DataErrorKind::InvalidEnumTag,
-                format!("unknown enum variant `{variant}`"),
-            )
-        })?;
-    let variant_shape = &variants[index];
-    let branch_schema = union.variants().get(index).ok_or_else(|| {
-        DataError::new(
-            DataErrorKind::InvalidEnumTag,
-            format!("missing Avro branch for enum variant `{variant}`"),
-        )
-    })?;
-    let record = value_to_variant_record(variant_shape, payload.as_deref(), branch_schema, access)?;
-    Ok(AvroValue::Union(
-        u32::try_from(index).expect("enum union index fits u32"),
-        Box::new(record),
-    ))
-}
-
-fn value_to_variant_record(
-    variant: &VariantShape,
-    payload: Option<&Value>,
-    schema: &Schema,
-    access: &dyn ShapeAccess,
-) -> Result<AvroValue> {
-    let Schema::Record(record) = schema else {
-        return Err(schema_mismatch("Avro variant record", schema));
-    };
-    if record.name.name != variant.wire_name {
-        return Err(DataError::new(
-            DataErrorKind::InvalidEnumTag,
-            format!(
-                "Avro variant record `{}` does not match Arcweft variant `{}`",
-                record.name.name, variant.wire_name
-            ),
-        ));
-    }
-    match (&variant.payload, payload) {
-        (Some(payload_shape), Some(payload)) => {
-            let field = variant_payload_field(record, &variant.wire_name)?;
-            value_to_avro(
-                payload,
-                ShapeRef::Inline(payload_shape),
-                &field.schema,
-                access,
-            )
-            .map(|payload| AvroValue::Record(vec![("payload".to_owned(), payload)]))
-            .map_err(|error| error.at_variant(variant.wire_name.clone()))
-        }
-        (Some(_), None) => Err(DataError::new(
-            DataErrorKind::MissingField,
-            format!("missing enum payload for variant `{}`", variant.wire_name),
-        )
-        .at_variant(variant.wire_name.clone())),
-        (None, None) => Ok(AvroValue::Record(Vec::new())),
-        (None, Some(_)) => Err(DataError::invalid_type("unit enum variant", "payload enum")
-            .at_variant(variant.wire_name.clone())),
-    }
-}
-
-fn variant_payload_field<'a>(
+pub(super) fn variant_payload_field<'a>(
     record: &'a apache_avro::schema::RecordSchema,
     variant: &str,
 ) -> Result<&'a RecordField> {

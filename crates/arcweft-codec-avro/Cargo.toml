@@ -9,6 +9,8 @@ description = "Apache Avro adapter for Arcweft data."
 [dependencies]
 arcweft-data = { workspace = true }
 apache-avro.workspace = true
+blake3.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [lints]

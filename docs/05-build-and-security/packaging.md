@@ -172,6 +172,27 @@ the stable JSON bundle representation. Full schema-native Avro sections remain
 available through the separate `arcweft-codec-avro` data adapter when a caller
 has a concrete Avro schema for tabular or streaming data.
 
+All Arcweft Avro producers use `arcweft-codec-avro::container::ObjectContainer`.
+Its version-1 deterministic output profile writes the exact admitted schema JSON,
+metadata in `avro.codec`, `avro.schema` order, and one uncompressed block. A
+domain-separated BLAKE3 digest of the schema, record count and encoded datums
+supplies the 16-byte synchronization marker. This is the Arcweft deterministic
+profile's explicit replacement for the fresh random marker described by the
+[Avro container specification](https://avro.apache.org/docs/1.12.0/specification/#object-container-files);
+the binary framing remains readable by the standard Avro reader. The same schema
+text and values produce the same bytes across processes. Different schema text
+is retained as different metadata, even when its parsed meaning is equivalent.
+
+The writer measures borrowed datums under the remaining `EncodeBuffer` allowance
+before copying any encoded output. The emission pass must reproduce the measured
+length and digest. Arrays, strings, bytes and record fields are streamed without
+an owned Avro value tree or block buffer. Bundle JSON is measured and streamed
+directly into its string field under the same limit. This envelope uses the
+shared encode default of 256 MiB; zero-byte null datums are not charged as if
+their in-memory representation were serialized bytes. Runtime data envelopes
+retain their separate bounded JSON codec payload; this does not establish bounds
+on that JSON codec's internal value projections.
+
 The CLI includes the manifest-selected authored `assets/` root by default and
 can opt into `.arcweft/save`, `.arcweft/temp`, and `.arcweft/export` from the
 local state root. Authored `content/` is an input to typed bundle content/View

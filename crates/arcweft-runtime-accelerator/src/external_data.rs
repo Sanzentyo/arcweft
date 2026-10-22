@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::BTreeMap};
 
-use apache_avro::{Reader, Schema, Writer, types::Value as AvroValue};
+use apache_avro::{Reader, types::Value as AvroValue};
+use arcweft_codec_avro::container::{AvroDatum, DatumWriter, ObjectContainer};
 use arcweft_core::{
     entry::{RuntimeNominalRecordShape, RuntimeSchemaLimits},
     pattern::{
@@ -1421,23 +1422,17 @@ fn encode_avro_json_envelope(
         shape,
         access,
     )?;
-    let schema = Schema::parse_str(
+    let container = ObjectContainer::new(
         r#"{"type":"record","name":"ArcweftDataEnvelope","fields":[{"name":"json","type":"bytes"}]}"#,
-    )
-    .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-    EncodeOptions::default().encode_with(|output| {
-        let mut writer = Writer::new(&schema, output);
-        writer
-            .append(AvroValue::Record(vec![(
-                "json".to_owned(),
-                AvroValue::Bytes(json),
-            )]))
-            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-        writer
-            .flush()
-            .map(|_| ())
-            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
-    })
+    )?;
+    struct JsonEnvelope<'a>(&'a [u8]);
+    impl AvroDatum for JsonEnvelope<'_> {
+        fn write_avro(&self, writer: DatumWriter<'_>) -> arcweft_data::Result<()> {
+            writer.record(|record| record.field("json", |writer| writer.bytes(self.0)))
+        }
+    }
+    EncodeOptions::default()
+        .encode_with(|output| container.encode_to(|| std::iter::once(JsonEnvelope(&json)), output))
 }
 
 fn decode_avro_json_envelope(

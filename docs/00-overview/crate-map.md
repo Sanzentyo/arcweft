@@ -206,6 +206,10 @@ arcweft-launch
   推論変数の eligibility、候補制約、未確定の annotation は sema に残し、
   代数自体は HIR、solver transaction、I/O に依存しない。
 - `arcweft-bundle` は bundle data model と deterministic codec entrypoints を所有する。JSON は `.awfb` 互換の default codec、TOML/YAML/MessagePack/CBOR/Avro は explicit alternate artifact format とする。Avro bundle artifact は stable JSON payload を Avro Object Container envelope に包む。
+  Avro の container framing、metadata 順序、content-derived sync marker と
+  借用 datum の書き込みは `arcweft-codec-avro::container` が所有する。
+  bundle と runtime accelerator はこの Sans I/O owner に依存し、それぞれの
+  envelope field grammar を渡す。独立した第三者 Writer は構築しない。
 - `arcweft-bundle-assets` は generation ごとの exact bundle identity に束縛された image / voice catalog、実バイトの decode・metadata validation、typed runtime handle/error の生成と保存値の再検証を所有する portable runtime boundary とする。bundle の artifact model / codec は `arcweft-bundle`、host I/O と backend resource 化は native / web adapter に残す。
 - `arcweft-bundle::resource_codec` は product resource section の共通
   compact codec contract を所有する。section magic/schema、decode budgets、

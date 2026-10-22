@@ -179,6 +179,53 @@ fn avro_codec_roundtrips_shape_driven_rows() {
         .decode_value(&encoded, &row_shape(), &DecodeOptions::default())
         .expect("decode");
     assert_eq!(decoded, sample_rows());
+    assert_eq!(
+        encoded,
+        codec
+            .encode_value(&sample_rows(), &row_shape(), &EncodeOptions::default())
+            .unwrap()
+    );
+}
+
+#[test]
+fn avro_streams_in_schema_order_with_nonfirst_null_and_fixed_bytes() {
+    let schema = r#"{"type":"record","name":"Ordered","fields":[{"name":"last","type":"long"},{"name":"maybe","type":["string","null"]},{"name":"first","type":{"type":"fixed","name":"Pair","size":2}}]}"#;
+    let shape = TypeShape::record(
+        "Ordered",
+        [
+            FieldShape::new(
+                "first",
+                "first",
+                TypeShape::Bytes {
+                    format: BytesFormat::default(),
+                },
+            ),
+            FieldShape::new("maybe", "maybe", TypeShape::option(TypeShape::String)),
+            FieldShape::new("last", "last", TypeShape::I64),
+        ],
+    );
+    let codec = AvroCodec::new(schema).unwrap();
+    for integer in [i64::MIN, i64::MAX, -1, 0, 1] {
+        for option in [
+            Value::Option(None),
+            Value::Option(Some(Box::new(Value::String("蟹".into())))),
+        ] {
+            let value = record([
+                ("first", Value::Bytes(Bytes::new(vec![0, 255]))),
+                ("maybe", option),
+                ("last", Value::Number(Number::I(i128::from(integer)))),
+            ]);
+            let bytes = codec
+                .encode_value(&value, &shape, &EncodeOptions::default())
+                .unwrap();
+            assert_eq!(
+                codec
+                    .decode_value(&bytes, &shape, &DecodeOptions::default())
+                    .unwrap(),
+                value
+            );
+        }
+    }
 }
 
 #[test]

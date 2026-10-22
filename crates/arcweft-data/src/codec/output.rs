@@ -13,6 +13,15 @@ pub struct EncodeBuffer {
 }
 
 impl EncodeBuffer {
+    /// Bytes still available under this buffer's publication limit. Codecs can
+    /// measure a framed representation before allocating or copying its output.
+    pub fn remaining_len(&self) -> Result<usize> {
+        if let Some(error) = &self.failure {
+            return Err(error.clone());
+        }
+        Ok(self.maximum_len - self.bytes.len())
+    }
+
     pub(super) const fn new(maximum_len: usize) -> Self {
         Self {
             bytes: Vec::new(),

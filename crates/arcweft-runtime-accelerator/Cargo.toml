@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 apache-avro.workspace = true
+arcweft-codec-avro.workspace = true
 arcweft-codec-cbor.workspace = true
 arcweft-codec-arrow.workspace = true
 arcweft-codec-binary.workspace = true

@@ -21,12 +21,18 @@ fn encoded_output_checks_the_entire_append_before_growth_or_copy() {
 #[test]
 fn encoded_output_accumulates_sibling_writes_and_preserves_the_limit() {
     let mut output = EncodeBuffer::new(5);
+    assert_eq!(output.remaining_len().unwrap(), 5);
     output.append(b"ab").unwrap();
     output.push(b'c').unwrap();
     output.append(b"de").unwrap();
+    assert_eq!(output.remaining_len().unwrap(), 0);
     let capacity = output.bytes.capacity();
     assert!(capacity <= 5);
     assert!(output.push(b'f').is_err());
+    assert_eq!(
+        output.remaining_len().unwrap_err().kind(),
+        &DataErrorKind::LimitExceeded
+    );
     assert_eq!(output.bytes, b"abcde");
     assert_eq!(output.bytes.capacity(), capacity);
     assert!(output.flush().is_err());

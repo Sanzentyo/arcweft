@@ -1,5 +1,7 @@
 //! Sans I/O bundle data model and deterministic codecs.
 
+#[cfg(feature = "format-avro")]
+mod avro_envelope;
 pub mod bundle_artifact_identity;
 mod character_dialogue_generation;
 pub mod character_package;
@@ -27,9 +29,9 @@ use crate::resource_codec::{
     ViewThemeResource,
 };
 #[cfg(feature = "format-avro")]
-use apache_avro::types::Value as AvroValue;
+use apache_avro::Reader;
 #[cfg(feature = "format-avro")]
-use apache_avro::{Reader, Schema, Writer};
+use apache_avro::types::Value as AvroValue;
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_audio_core::graph::AudioGraph;
 use arcweft_character::presentation_name::CharacterPresentationCatalogData;
@@ -1408,38 +1410,6 @@ impl ArcweftBundle {
     }
 
     #[cfg(feature = "format-avro")]
-    fn to_avro_envelope_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
-        let schema = bundle_avro_envelope_schema()?;
-        let payload_json = serde_json::to_string(self).map_err(BundleCodecError::Encode)?;
-        let mut writer = Writer::new(&schema, Vec::new());
-        writer
-            .append(AvroValue::Record(vec![
-                (
-                    "schema_version".to_owned(),
-                    AvroValue::Int(
-                        i32::try_from(ARCWEFT_BUNDLE_SCHEMA_VERSION)
-                            .expect("Arcweft bundle schema version fits in Avro int"),
-                    ),
-                ),
-                (
-                    "payload_format".to_owned(),
-                    AvroValue::String(BundleFormat::Json.as_str().to_owned()),
-                ),
-                ("payload_json".to_owned(), AvroValue::String(payload_json)),
-            ]))
-            .map_err(|error| BundleCodecError::EncodeFormat {
-                format: BundleFormat::Avro,
-                message: error.to_string(),
-            })?;
-        writer
-            .into_inner()
-            .map_err(|error| BundleCodecError::EncodeFormat {
-                format: BundleFormat::Avro,
-                message: error.to_string(),
-            })
-    }
-
-    #[cfg(feature = "format-avro")]
     fn from_avro_envelope_slice(bytes: &[u8]) -> Result<Self, BundleCodecError> {
         let reader = Reader::new(bytes).map_err(|error| BundleCodecError::DecodeFormat {
             format: BundleFormat::Avro,
@@ -1592,26 +1562,6 @@ impl std::str::FromStr for BundleFormat {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::parse(value)
     }
-}
-
-#[cfg(feature = "format-avro")]
-fn bundle_avro_envelope_schema() -> Result<Schema, BundleCodecError> {
-    Schema::parse_str(
-        r#"{
-          "type": "record",
-          "name": "ArcweftBundleEnvelope",
-          "namespace": "org.arcweft.bundle",
-          "fields": [
-            {"name": "schema_version", "type": "int"},
-            {"name": "payload_format", "type": "string"},
-            {"name": "payload_json", "type": "string"}
-          ]
-        }"#,
-    )
-    .map_err(|error| BundleCodecError::EncodeFormat {
-        format: BundleFormat::Avro,
-        message: error.to_string(),
-    })
 }
 
 #[cfg(feature = "format-avro")]
@@ -2303,6 +2253,15 @@ mod tests {
             let bytes = bundle
                 .to_format_bytes(format)
                 .unwrap_or_else(|error| panic!("{format} encodes: {error}"));
+            if format == BundleFormat::Avro {
+                for _ in 0..4 {
+                    assert_eq!(
+                        bundle.to_format_bytes(format).unwrap(),
+                        bytes,
+                        "Avro bundle bytes must be deterministic"
+                    );
+                }
+            }
             let decoded = ArcweftBundle::from_format_slice(format, &bytes)
                 .unwrap_or_else(|error| panic!("{format} decodes: {error}"));
             assert_eq!(decoded, bundle, "{format} should round-trip bundle data");

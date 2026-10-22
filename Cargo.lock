@@ -504,6 +504,7 @@ dependencies = [
  "arcweft-agent-protocol",
  "arcweft-audio-core",
  "arcweft-character",
+ "arcweft-codec-avro",
  "arcweft-core",
  "arcweft-data",
  "arcweft-dialogue",
@@ -670,6 +671,8 @@ version = "0.1.0"
 dependencies = [
  "apache-avro",
  "arcweft-data",
+ "blake3",
+ "serde",
  "serde_json",
 ]
 
@@ -1460,6 +1463,7 @@ version = "0.1.0"
 dependencies = [
  "apache-avro",
  "arcweft-codec-arrow",
+ "arcweft-codec-avro",
  "arcweft-codec-binary",
  "arcweft-codec-cbor",
  "arcweft-codec-csv",
