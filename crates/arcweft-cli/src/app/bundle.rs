@@ -53,9 +53,8 @@ use arcweft_lang_sema::project_index::ProjectSemanticIndex;
 use arcweft_launch::LaunchKind;
 use arcweft_project::layout::AuthoredResourceRoots;
 use arcweft_runtime_host::{
-    BundleRunnerError, BundleRunnerOptions, INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar,
-    internal_scheduler_manifest, run_bundle_file_with_native_adapters,
-    run_bundle_with_native_adapters,
+    BundleRunnerError, BundleRunnerOptions, NativeAdapterRegistrar,
+    run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
 };
 use arcweft_source::SourceDocument;
 use arcweft_verify::{VerificationPolicy, VerificationReport};
@@ -469,7 +468,6 @@ fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
             }
         }
         FlowOp::HostCall { target, .. } => calls.push(target.public_id.clone()),
-        FlowOp::Thread { .. } => calls.push("flow_thread.run_child".to_owned()),
         _ => {}
     });
     calls.sort();
@@ -951,10 +949,6 @@ fn bundle_adapter_manifest_ids<'a>(
                     matches!(host_call, "asset.image" | "asset.voice")
                         .then_some(standard::BUNDLE_ASSET_ADAPTER_ID)
                 })
-                .or_else(|| {
-                    matches!(host_call, "line_task.run_child" | "flow_thread.run_child")
-                        .then_some(INTERNAL_SCHEDULER_ADAPTER_ID)
-                })
                 .or_else(|| desktop_manifest_id_for_host_call(host_call))
         }))
         .map(str::to_owned)
@@ -992,14 +986,6 @@ fn bundle_adapter_manifests<'a>(
     {
         manifests.push(bundle_adapter_manifest_from_context(
             &standard::bundle_asset_manifest(),
-        ));
-    }
-    if required
-        .iter()
-        .any(|host_call| matches!(*host_call, "line_task.run_child" | "flow_thread.run_child"))
-    {
-        manifests.push(bundle_adapter_manifest_from_context(
-            &internal_scheduler_manifest(),
         ));
     }
     manifests.extend(

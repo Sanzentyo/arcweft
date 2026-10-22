@@ -1,4 +1,3 @@
-use crate::native_task::internal_scheduler_manifest;
 use arcweft_adapter_context::{
     manifest::{AdapterHostCallId, AdapterManifest},
     standard,
@@ -92,7 +91,6 @@ impl RuntimeHostCapabilities {
         let manifests = [
             standard::native_file_manifest(),
             standard::system_info_manifest(),
-            internal_scheduler_manifest(),
         ];
         Self::from_adapter_manifests(&manifests)
     }
@@ -103,10 +101,7 @@ impl RuntimeHostCapabilities {
     /// web math backends should add their own implemented adapter manifests when
     /// they expose host-call surfaces.
     pub fn browser_web() -> Self {
-        let manifests = [
-            standard::system_info_manifest(),
-            internal_scheduler_manifest(),
-        ];
+        let manifests = [standard::system_info_manifest()];
         Self::from_adapter_manifests(&manifests)
     }
 
@@ -226,14 +221,13 @@ mod tests {
     use arcweft_adapter_context::manifest::{AdapterEffectCapability, AdapterHostCall};
 
     #[test]
-    fn standard_native_includes_file_system_info_and_scheduler_calls() {
+    fn standard_native_includes_file_and_system_info_calls() {
         let capabilities = RuntimeHostCapabilities::standard_native();
 
         for id in [
             "fs.read_text",
             "system.core_count",
             "system.available_parallelism",
-            "flow_thread.run_child",
         ] {
             assert!(
                 capabilities
@@ -241,6 +235,7 @@ mod tests {
                     .any(|candidate| candidate == id)
             );
         }
+        assert!(!capabilities.has_host_call(&AdapterHostCallId::new("flow_thread.run_child")));
     }
 
     #[test]

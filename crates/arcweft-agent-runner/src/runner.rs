@@ -589,7 +589,9 @@ where
             for task in &step.output.requests.tasks {
                 let host_request = task.spec().request.as_host().ok_or_else(|| {
                     AgentRunError::InvalidControllerRequest(
-                        "controller task requires a host execution request".into(),
+                        crate::error::AgentHostRequestAdmissionError::UnsupportedEffect {
+                            effect: "program task execution".into(),
+                        },
                     )
                 })?;
                 let request = agent_host_request_from_task(host_request)

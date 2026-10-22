@@ -30,9 +30,8 @@ pub use capabilities::{
 };
 pub use native_system::{HostSystemInfo, host_system_info, system_info_value};
 pub use native_task::{
-    INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, NativeFileRoots, NativeSchedulerStats,
-    NativeTaskBridge, NativeTaskBridgeError, NativeTaskClassCounts, NativeTaskDispatch,
-    NativeTaskStats, internal_scheduler_manifest,
+    NativeAdapterRegistrar, NativeFileRoots, NativeSchedulerStats, NativeTaskBridge,
+    NativeTaskBridgeError, NativeTaskClassCounts, NativeTaskDispatch, NativeTaskStats,
 };
 pub use presentation_dispatch::{
     DispatchedPresentationAction, PresentationActionDestination, PresentationActionDispatchError,

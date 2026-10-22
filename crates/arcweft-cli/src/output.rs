@@ -1369,10 +1369,11 @@ fn flow_event_label(event: &FlowEvent) -> String {
 
 fn task_request_label(task: &TaskSubmission) -> String {
     format!(
-        "{} key={} class={:?} request={}",
+        "{} key={} class={:?} execution={:?} request={}",
         task.task_id(),
         task.task_key(),
         task.spec().class,
+        task.spec().request.kind(),
         task.spec().debug_label
     )
 }

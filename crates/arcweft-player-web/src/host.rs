@@ -108,9 +108,6 @@ impl BrowserTaskBroker {
                     arcweft_core::task::TaskRequest::Program(_)
                 ) {
                     let task_id = dispatch.task.task_id();
-                    if self.program_dispatches.contains_key(&task_id) {
-                        return Some(dispatch.failed("program task was dispatched twice"));
-                    }
                     let bound = match BoundTaskSpec::bind(
                         dispatch.task.clone(),
                         Some(program_owner.clone()),
@@ -119,6 +116,19 @@ impl BrowserTaskBroker {
                         Ok(bound) => bound,
                         Err(error) => return Some(dispatch.failed(error.to_string())),
                     };
+                    if let Some((pending, _)) = self.program_dispatches.get(&task_id) {
+                        if pending.identity() == dispatch.identity()
+                            && pending.last_publication_revision
+                                == dispatch.last_publication_revision
+                            && pending.task.spec().same_join_contract(dispatch.task.spec())
+                        {
+                            return None;
+                        }
+                        return Some(
+                            dispatch
+                                .failed("program task dispatch conflicts with its active owner"),
+                        );
+                    }
                     self.program_dispatches
                         .insert(task_id, (dispatch, bound.outcome().clone()));
                     return None;
@@ -168,7 +178,10 @@ impl BrowserTaskBroker {
                 .program_dispatches
                 .get(&task_id)
                 .ok_or(arcweft_core::task::TaskCompletionError::UnknownTask { task_id })?;
-            if dispatch.task.handle() != handle {
+            if dispatch.task.handle() != handle
+                || !matches!(&dispatch.task.spec().request,
+                    arcweft_core::task::TaskRequest::Program(source) if source == completion.source())
+            {
                 return Err(
                     arcweft_core::task::TaskCompletionError::DispatchMismatch { task_id }.into(),
                 );
@@ -401,6 +414,117 @@ mod tests {
         0xcf, 0xc0, 0xf0, 0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99, 0x3d, 0x1d, 0x00, 0x00,
         0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
     ];
+
+    #[test]
+    fn program_terminals_require_the_exact_source_and_preserve_pending_dispatch_on_rejection() {
+        use arcweft_core::task::{
+            LogicalEpoch, ProgramTaskCompletion, TaskDispatchIdentity, TaskDispatchStart,
+            TaskPublicationRevision, TaskSequence, TaskSubmission,
+        };
+        fn trace() -> (RuntimeProgramOwner, TaskSubmission, ProgramTaskCompletion) {
+            use arcweft_core::{
+                engine::FlowFiberStatus,
+                executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor},
+                plan::RuntimeEntryTarget,
+                step::{RuntimeStepInput, RuntimeStepOptions},
+            };
+            let compiled = arcweft_compiler::source::compile_source(
+                "entry cli @entry.main { goto @flow.main }\nflow main() -> String effects { control.spawn, log.write } {\nthread worker { log.info(\"worker\") }\nreturn \"done\"\n}",
+            ).unwrap();
+            let RuntimeEntryTarget::Flow(flow) = &compiled.plan.entries()[0].target else {
+                panic!("Flow entry")
+            };
+            let flow = flow.clone();
+            let mut executor = ArcweftRuntimeExecutor::from_runtime_flow_invocation(
+                compiled.plan.seal_flow_invocation(flow, []).unwrap(),
+                ArcweftExecutionTier::RuntimePlanVm,
+            )
+            .unwrap();
+            let owner = executor.program_owner();
+            let mut tasks = Vec::new();
+            let mut reports = Vec::new();
+            let mut logged = false;
+            for _ in 0..64 {
+                let step =
+                    executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+                assert!(step.stats.executed_ops <= 1);
+                assert!(step.output.diagnostics.is_empty(), "{:?}", step.output);
+                logged |= step.output.effects.line.iter().any(|effect| {
+                    matches!(effect,
+                    arcweft_core::effect::LineEffectRequest::Log(log) if log.message == "worker")
+                });
+                tasks.extend(step.output.requests.tasks);
+                reports.extend(step.output.requests.program_task_completions);
+                if matches!(executor.fiber().frame.status, FlowFiberStatus::Done(_)) {
+                    assert!(logged);
+                    assert_eq!(tasks.len(), 1);
+                    assert_eq!(reports.len(), 1);
+                    return (owner, tasks.pop().unwrap(), reports.pop().unwrap());
+                }
+            }
+            panic!("actual Core Thread did not retire");
+        }
+        let (owner, task, report) = trace();
+        let (_, _, foreign_report) = trace();
+        assert_eq!(foreign_report.handle(), report.handle());
+        assert_ne!(foreign_report.source(), report.source());
+        let bundle = asset_test_bundle();
+        let identity = BundleArtifactIdentity::LogicalBundle {
+            identity: bundle.logical_identity().unwrap(),
+        };
+        let context = test_asset_context(identity, 0);
+        let mut broker = BrowserTaskBroker::from_bundle(&bundle, context, identity).unwrap();
+        let previous = TaskPublicationRevision::new(std::num::NonZeroU64::new(17).unwrap());
+        let dispatch = HostTaskDispatch::try_new(
+            TaskDispatchStart::new(
+                TaskDispatchIdentity::new(
+                    task.handle().correlation,
+                    LogicalEpoch(9),
+                    TaskSequence(4),
+                ),
+                Some(previous),
+            ),
+            task,
+            None,
+        )
+        .unwrap();
+        assert_eq!(broker.queue_dispatches(vec![dispatch.clone()], &owner), 0);
+        assert_eq!(broker.queue_dispatches(vec![dispatch.clone()], &owner), 0);
+        assert_eq!(broker.program_dispatches.len(), 1);
+        assert!(matches!(
+            broker.queue_program_completions(&[foreign_report]),
+            Err(BrowserHostTaskError::TaskCompletion(
+                arcweft_core::task::TaskCompletionError::DispatchMismatch { .. }
+            ))
+        ));
+        assert!(
+            broker
+                .queue_program_completions(&[report.clone(), report.clone()])
+                .is_err()
+        );
+        assert_eq!(broker.program_dispatches.len(), 1);
+        assert_eq!(
+            broker.program_dispatches[&report.handle().correlation.task_id].0,
+            dispatch
+        );
+        assert!(broker.queued_task_events.is_empty());
+        assert_eq!(
+            broker
+                .queue_program_completions(std::slice::from_ref(&report))
+                .unwrap(),
+            1
+        );
+        let events = broker.drain_queued_task_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].correlation, report.handle().correlation);
+        assert_eq!(events[0].cursor.sequence.0, 18);
+        assert!(
+            matches!(&events[0].kind, TaskEventKind::Ready(payload) if payload.value() == &RuntimeValue::Unit)
+        );
+        assert!(broker.program_dispatches.is_empty());
+        assert!(broker.queue_program_completions(&[report]).is_err());
+        assert!(broker.queued_task_events.is_empty());
+    }
 
     #[test]
     fn asset_loads_publish_typed_image_and_voice_results() {

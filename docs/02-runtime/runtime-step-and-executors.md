@@ -320,7 +320,8 @@ the actual builder and common executable seal issue the completed task identity.
 
 ```rust
 pub struct HostRequestBatch {
-    pub tasks: Vec<TaskSpec>,
+    pub tasks: Vec<TaskSubmission>,
+    pub program_task_completions: Vec<ProgramTaskCompletion>,
     pub cancel_scopes: Vec<CancelScopeId>,
     pub host_calls: Vec<RuntimeHostCallRequest>,
 }

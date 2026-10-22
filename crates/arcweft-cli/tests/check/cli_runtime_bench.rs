@@ -2294,7 +2294,7 @@ flow main() -> String {
 }
 
 #[test]
-fn run_json_executes_source_thread_through_scheduler_marker() {
+fn run_json_executes_source_thread_through_actual_program_completion() {
     let path = temp_arcw(
         "source-thread-scheduler",
         r#"
@@ -2319,7 +2319,7 @@ flow main() -> String {
         .arg("8")
         .arg("--json")
         .output()
-        .expect("arcw run executes source thread marker");
+        .expect("arcw run executes source thread body");
 
     assert!(
         output.status.success(),
@@ -2328,7 +2328,7 @@ flow main() -> String {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("flow_thread.run_child")
+        stdout.contains("execution=Program request=worker")
             && stdout.contains("\"message\": \"worker\"")
             && stdout.contains("return done")
             && stdout.contains("\"child_fibers\": 1")
@@ -2336,7 +2336,7 @@ flow main() -> String {
             && stdout.contains("\"scheduler\"")
             && stdout.contains("\"submitted\": 1")
             && stdout.contains("\"in_flight\": 0"),
-        "run JSON should execute source thread body and observe scheduler marker: {stdout}"
+        "run JSON should execute source thread body and publish its actual terminal: {stdout}"
     );
 }
 

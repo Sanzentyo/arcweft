@@ -17,6 +17,7 @@ pub enum TaskExecutionKind {
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct ProgramTaskCompletion {
     handle: super::TaskHandle,
+    source: RuntimeTaskSource,
     terminal: ProgramTaskTerminal,
 }
 
@@ -38,9 +39,19 @@ impl ProgramTaskCompletion {
         &self.terminal
     }
 
-    pub(crate) const fn completed(handle: super::TaskHandle, cancelled: bool) -> Self {
+    /// The actual issuing executable, rather than an equal serialized locator.
+    pub const fn source(&self) -> &RuntimeTaskSource {
+        &self.source
+    }
+
+    pub(crate) const fn completed(
+        handle: super::TaskHandle,
+        source: RuntimeTaskSource,
+        cancelled: bool,
+    ) -> Self {
         Self {
             handle,
+            source,
             terminal: if cancelled {
                 ProgramTaskTerminal::Cancelled
             } else {
@@ -49,9 +60,14 @@ impl ProgramTaskCompletion {
         }
     }
 
-    pub(crate) fn failed(handle: super::TaskHandle, message: &str) -> Self {
+    pub(crate) fn failed(
+        handle: super::TaskHandle,
+        source: RuntimeTaskSource,
+        message: &str,
+    ) -> Self {
         Self {
             handle,
+            source,
             terminal: ProgramTaskTerminal::Failed(super::RuntimeTaskFailure {
                 kind: super::RuntimeTaskFailureKind::WorkerFailure,
                 diagnostic: super::BoundedRuntimeDiagnostic::from_borrowed_message(message),

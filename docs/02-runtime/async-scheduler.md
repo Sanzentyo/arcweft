@@ -4,21 +4,27 @@
 
 ```rust
 pub struct TaskSpec {
-    pub id: TaskId,
-    pub key: TaskKey,
+    pub generation: GenerationId,
+    pub producer: NeedProducerInstance,
     pub class: TaskClass,
     pub priority: TaskPriority,
     pub cancel_scope: CancelScopeId,
     pub policy: TaskPolicy,
-    pub request: HostTaskRequest,
+    pub outcome: TaskOutcomeContract,
+    pub request: TaskRequest,
     pub debug_label: String,
+}
+
+pub enum TaskRequest<P = RuntimePayload, S = RuntimeTaskSource> {
+    Host(HostTaskRequest<P>),
+    Program(S),
 }
 ```
 
 Runtime adapter tasks are created through `ensure_task`; same-key tasks join
 instead of creating duplicate backend work. Arcweft source-level `thread`
-blocks are VM-scoped fibers and lower to effect requests rather than directly
-creating OS tasks.
+blocks execute as program-owned fibers whose task requests retain their original
+Source. They do not require an adapter host-call declaration.
 
 ```rust
 pub trait TaskHost {
@@ -29,11 +35,25 @@ pub trait TaskHost {
 ```
 
 `arcweft-core` keeps this interface as Sans I/O data. The task body lives in the
-compiled runtime plan or in a host adapter table; `TaskSpec` identifies the
-work by typed `HostTaskRequest`, class, priority, cancellation scope, and stable
-key. `debug_label` is for diagnostics only and is never an execution
+compiled runtime plan or in a host adapter table. `TaskRequest::Host` selects the
+closed 14-family host grammar. `TaskRequest::Program` retains an actual Source
+lease; admission checks its executable owner and expected task-plan key before
+copying the frame or captures. Class, priority, cancellation scope and the issued
+producer contract identify the scheduled work. `debug_label` is for diagnostics only and is never an execution
 discriminator. Backends such as Tokio, Rayon, web workers, or a cooperative test
 executor sit outside core.
+
+Program dispatch remains in flight while Core executes its body and joins its
+attached descendants. Core issues `ProgramTaskCompletion` on actual retirement;
+the report retains the actual issuing Source lease, and the host checks it
+against the accepted request before publishing its terminal through the original dispatch identity, bound
+outcome and next publication revision. A host adapter cannot manufacture this
+report by decoding serialized data. Duplicate or foreign terminal batches reject
+before advancing the scheduler, publication frontiers or completion counters.
+Equal deterministic task coordinates from another executable are insufficient.
+Re-ensuring the same live Web dispatch preserves its pending work and frontier.
+The internal `flow_thread.run_child` and `line_task.run_child` host-call routes
+are absent from adapter manifests, policies and bundle requirements.
 
 The producer contract identifies the selected callable schema or registered
 host manifest contract. Standard Agent host operations use their selected
@@ -139,13 +159,14 @@ boundary does not grant a fresh argument, frame or execution-budget allowance.
 
 The current Rust implementation keeps the deterministic scheduling layer in
 `arcweft-runtime-scheduler`. It depends only on `arcweft-core`, accepts
-`TaskSpec` values, joins in-flight `JoinSameKey` tasks, sorts dispatch by
+`BoundTaskSpec` values, joins in-flight `JoinSameKey` tasks, sorts dispatch by
 priority and stable submission order, records cancellation requests as data,
-and normalizes completed `TaskEvent` values. CLI native file tasks, line-plan
-child task markers, and source-level flow `thread` markers use this scheduler
-before adapter-owned completion work runs. Joinable source `thread name { ... }`
-lowers to `FlowOp::Thread`; entering the op emits a `flow_thread.run_child`
-marker and spawns the body as a scoped VM child fiber. Child fibers are stepped
+and normalizes completed `TaskEvent` values. CLI native file tasks and
+source-level flow `thread` work use this scheduler. Joinable source
+`thread name { ... }` lowers to `FlowOp::Thread`; entering the op publishes its
+admitted Program submission and spawns the body as a scoped VM child fiber.
+The scheduler retains that submission until Core's actual terminal report.
+Child fibers are stepped
 cooperatively by the VM and are deterministic runtime scheduling data, not OS
 thread creation. Detached `thread` blocks are rejected by runtime-plan lowering
 until detached capture and cancellation contracts are checked explicitly.

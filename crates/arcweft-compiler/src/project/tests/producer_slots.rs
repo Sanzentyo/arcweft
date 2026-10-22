@@ -90,7 +90,7 @@ fn compiled(arguments: &str) -> CompiledProject {
 fn assert_request(task: &TaskSubmission) {
     let HostTaskRequest::Custom {
         args, named_args, ..
-    } = &task.spec().request
+    } = task.spec().request.as_host().expect("host producer")
     else {
         panic!("manifest request")
     };

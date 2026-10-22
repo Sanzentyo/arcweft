@@ -25,11 +25,17 @@ pub struct AwaitedTaskSnapshot {
     pub task_id: TaskId,
     pub key: TaskKey,
     pub class: TaskClass,
-    pub request: HostTaskRequest,
+    pub request: TaskRequest<AwbcRuntimeValueSnapshot, RuntimeTaskSourceAssertion>,
 }
 ```
 
 load 時は `ensure_task` で再登録。
+
+Program request の保存データは元 executable を選ぶ inert な Source assertion だけを持つ。
+復元は enclosing executable の実際の Source と共通の retained-value allowance を使い、
+owner・expected key・descriptor を検証してから実行 lease を再取得する。assertion の
+Deserialize は実行権限を発行しない。プロセス内の private rollback は元の immutable
+Source lease を保持し、公開保存データの assertion と役割を分ける。
 
 Restartable dispatch の復元では、保存された完全な task correlation、logical epoch、
 dispatch sequence と publication frontier を保持する。復元先には新しい native host

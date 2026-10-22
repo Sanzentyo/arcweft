@@ -369,7 +369,10 @@ fn advance_player_runtime(
         if let Some(host) = runtime.host.as_mut() {
             runtime.task_events.extend(
                 host.complete_program_tasks(&step.program_task_completions)
-                    .map_err(|error| error.to_string())?,
+                    .map_err(|error| {
+                        eprintln!("error: player-backed program task completion failed: {error}");
+                        ExitCode::FAILURE
+                    })?,
             );
         }
         runtime.host_call_results = if finished {

@@ -802,7 +802,7 @@ fn native_positional_asset_need_uses_canonical_binding_and_original_key() {
         let spec = result.output.requests.tasks[0].spec();
         assert_eq!(spec.producer.plan(), expected);
         assert!(
-            matches!(&spec.request, arcweft_core::task::HostTaskRequest::AssetLoad(request) if request.kind == kind.as_str() && request.id == "asset.positional")
+            matches!(spec.request.as_host(), Some(arcweft_core::task::HostTaskRequest::AssetLoad(request)) if request.kind == kind.as_str() && request.id == "asset.positional")
         );
     }
 }
@@ -833,7 +833,7 @@ fn decoded_awbc_positional_asset_need_uses_canonical_binding_and_original_key() 
         let spec = result.output.requests.tasks[0].spec();
         assert_eq!(spec.producer.plan(), expected);
         assert!(
-            matches!(&spec.request, arcweft_core::task::HostTaskRequest::AssetLoad(request) if request.kind == kind.as_str() && request.id == "asset.positional")
+            matches!(spec.request.as_host(), Some(arcweft_core::task::HostTaskRequest::AssetLoad(request)) if request.kind == kind.as_str() && request.id == "asset.positional")
         );
     }
 }
@@ -880,7 +880,7 @@ fn native_and_decoded_awbc_goto_use_the_target_function_instantiation() {
             let spec = result.output.requests.tasks[0].spec();
             assert_eq!(spec.producer.plan(), expected);
             assert!(
-                matches!(&spec.request, arcweft_core::task::HostTaskRequest::AssetLoad(request) if request.kind == kind.as_str() && request.id == "asset.positional")
+                matches!(spec.request.as_host(), Some(arcweft_core::task::HostTaskRequest::AssetLoad(request)) if request.kind == kind.as_str() && request.id == "asset.positional")
             );
         }
     }

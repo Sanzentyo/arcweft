@@ -37,8 +37,6 @@ use thiserror::Error;
 pub type NativeAdapterRegistrar =
     fn(&Path, HostAdapterRegistryBuilder) -> Result<HostAdapterRegistryBuilder, HostAdapterError>;
 
-pub const INTERNAL_SCHEDULER_ADAPTER_ID: &str = "internal-scheduler";
-
 /// Physical roots mounted behind Arcweft's native virtual file spaces.
 ///
 /// Authored assets are read-only and may live outside the tool-owned state
@@ -240,7 +238,6 @@ impl NativeTaskBridge {
             standard::native_file_manifest(),
             standard::native_cli_manifest(),
             standard::system_info_manifest(),
-            internal_scheduler_manifest(),
         ])
     }
 
@@ -267,13 +264,6 @@ impl NativeTaskBridge {
         expanded.ensure_implemented_by(&self.registry)?;
         self.policy = expanded;
         Ok(())
-    }
-
-    /// Admits only the selected adapter and the engine's internal scheduling calls.
-    pub fn selected_policy_for_manifest(manifest: &AdapterManifest) -> HostCallPolicy {
-        Self::policy_from_manifest(manifest).union(HostCallPolicy::from_manifests([
-            internal_scheduler_manifest(),
-        ]))
     }
 
     pub fn stats(&self) -> NativeTaskStats {
@@ -452,7 +442,7 @@ impl NativeTaskBridge {
             if accepted.handle() != handle
                 || !matches!(
                     &accepted.spec().request,
-                    arcweft_core::task::TaskRequest::Program(_)
+                    arcweft_core::task::TaskRequest::Program(source) if source == completion.source()
                 )
             {
                 return Err(TaskCompletionError::DispatchMismatch { task_id }.into());
@@ -1848,12 +1838,6 @@ fn registry_with_registrars(
         .map(HostAdapterRegistryBuilder::build)
 }
 
-pub fn internal_scheduler_manifest() -> AdapterManifest {
-    AdapterManifest::new(INTERNAL_SCHEDULER_ADAPTER_ID, "Internal Scheduler")
-        .with_host_call(AdapterHostCall::new("line_task.run_child", []))
-        .with_host_call(AdapterHostCall::new("flow_thread.run_child", []))
-}
-
 fn complete_dispatched_tasks(
     registry: &HostAdapterRegistry,
     tasks: &[BoundTaskSpec],
@@ -2134,6 +2118,9 @@ impl From<TaskClassCounts> for NativeTaskClassCounts {
         }
     }
 }
+
+#[cfg(test)]
+mod program_execution_tests;
 
 #[cfg(test)]
 mod tests {
@@ -3125,14 +3112,12 @@ mod tests {
             "system.core_count",
             "system.thread_count",
             "system.available_parallelism",
-            "line_task.run_child",
-            "flow_thread.run_child",
         ] {
             assert!(policy.contains(id), "missing host call {id}");
         }
         assert!(!policy.contains("cli.exit"));
         assert!(
-            NativeTaskBridge::selected_policy_for_manifest(&standard::native_cli_manifest())
+            NativeTaskBridge::policy_from_manifest(&standard::native_cli_manifest())
                 .contains("cli.exit")
         );
     }
@@ -3233,7 +3218,7 @@ mod tests {
                 &source_path,
                 NativeFileRoots::for_source(&source_path),
                 &[],
-                NativeTaskBridge::selected_policy_for_manifest(&manifest),
+                NativeTaskBridge::policy_from_manifest(&manifest),
                 &[],
             )
             .unwrap();
@@ -3463,12 +3448,11 @@ mod tests {
 
     #[test]
     fn selected_native_policy_does_not_grant_unselected_host_calls() {
-        let empty = NativeTaskBridge::selected_policy_for_manifest(&standard::sans_io_manifest());
+        let empty = NativeTaskBridge::policy_from_manifest(&standard::sans_io_manifest());
         assert!(!empty.contains("path.save"));
         assert!(!empty.contains("cli.args"));
-        assert!(empty.contains("flow_thread.run_child"));
-        let file =
-            NativeTaskBridge::selected_policy_for_manifest(&standard::native_file_manifest());
+        assert!(!empty.contains("flow_thread.run_child"));
+        let file = NativeTaskBridge::policy_from_manifest(&standard::native_file_manifest());
         assert!(file.contains("path.save"));
         assert!(file.contains("fs.read_text"));
         assert!(!file.contains("cli.args"));
@@ -3611,11 +3595,11 @@ mod tests {
         );
 
         for request in [&read_text, &read_bytes] {
-            assert!(adapter.can_complete_in_parallel(&request.request));
-            assert!(is_io_task(&request.request));
+            assert!(adapter.can_complete_in_parallel(request.request.as_host().unwrap()));
+            assert!(is_io_task(request.request.as_host().unwrap()));
         }
-        assert!(!adapter.can_complete_in_parallel(&write_text.request));
-        assert!(!adapter.can_complete_in_parallel(&write_bytes.request));
+        assert!(!adapter.can_complete_in_parallel(write_text.request.as_host().unwrap()));
+        assert!(!adapter.can_complete_in_parallel(write_bytes.request.as_host().unwrap()));
     }
 
     #[test]
@@ -3638,7 +3622,7 @@ mod tests {
         let mut wrong_contract = request.clone();
         let HostTaskRequest::Custom {
             manifest_contract, ..
-        } = &mut wrong_contract.request
+        } = wrong_contract.request.as_host_mut().unwrap()
         else {
             panic!("fixture request is custom");
         };

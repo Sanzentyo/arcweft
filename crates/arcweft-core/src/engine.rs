@@ -4278,12 +4278,37 @@ impl Engine {
             self.child_fibers.push_back(child);
             return Ok(true);
         }
+        let completion_source = if matches!(
+            child.frame.status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        ) {
+            match child.launch {
+                FlowFiberLaunch::Local => None,
+                FlowFiberLaunch::Task(handle) => {
+                    let Some(crate::task::TaskRequest::Program(source)) = self
+                        .need_producers
+                        .accepted_task_spec(handle)
+                        .map(|spec| &spec.request)
+                    else {
+                        return Err(dialogue::DialogueExecutionError::ChildFailed {
+                            message: "retiring program task lost its accepted Source".into(),
+                        });
+                    };
+                    Some(source)
+                }
+            }
+        } else {
+            None
+        };
         match child.frame.status {
             FlowFiberStatus::Done(_) => {
                 if let FlowFiberLaunch::Task(handle) = child.launch {
                     output.requests.program_task_completions.push(
                         crate::task::ProgramTaskCompletion::completed(
                             handle,
+                            completion_source
+                                .expect("terminal program task has its Source")
+                                .clone(),
                             owner.requests_scope_close(),
                         ),
                     );
@@ -4312,10 +4337,15 @@ impl Engine {
             }
             FlowFiberStatus::Failed(message) => {
                 if let FlowFiberLaunch::Task(handle) = child.launch {
-                    output
-                        .requests
-                        .program_task_completions
-                        .push(crate::task::ProgramTaskCompletion::failed(handle, &message));
+                    output.requests.program_task_completions.push(
+                        crate::task::ProgramTaskCompletion::failed(
+                            handle,
+                            completion_source
+                                .expect("terminal program task has its Source")
+                                .clone(),
+                            &message,
+                        ),
+                    );
                 }
                 let failed_activation = match &owner {
                     FlowFiberOwner::DialogueEffectCallback { activation, .. } => {

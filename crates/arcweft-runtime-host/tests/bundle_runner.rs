@@ -112,8 +112,8 @@ fn runtime_plan_vm_starts_and_awaits_a_typed_need_producer() {
     );
     let task = started.output.requests.tasks[0].clone();
     assert!(matches!(
-        &task.spec().request,
-        HostTaskRequest::Custom { capability, operation, .. }
+        task.spec().request.as_host(),
+        Some(HostTaskRequest::Custom { capability, operation, .. })
             if capability.0 == "custom" && operation == "echo"
     ));
     assert_eq!(

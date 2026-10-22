@@ -1470,12 +1470,17 @@ mod tests {
         let runtime_host = RuntimeHostCapabilities::standard_native();
         let completions = runtime_host_completions(&runtime_host);
 
-        for label in ["fs.read_text", "system.core_count", "flow_thread.run_child"] {
+        for label in ["fs.read_text", "system.core_count"] {
             assert!(
                 completions.iter().any(|item| item.label == label),
                 "missing runtime-host completion {label}"
             );
         }
+        assert!(
+            !completions
+                .iter()
+                .any(|item| item.label == "flow_thread.run_child")
+        );
         let hover =
             runtime_host_hover(&runtime_host, "system.core_count").expect("runtime-host hover");
         assert!(

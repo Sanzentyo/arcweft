@@ -279,7 +279,8 @@ pub struct RuntimeEffectBatch {
 }
 
 pub struct HostRequestBatch {
-    pub tasks: Vec<TaskSpec>,
+    pub tasks: Vec<TaskSubmission>,
+    pub program_task_completions: Vec<ProgramTaskCompletion>,
     pub audio: Vec<AudioCommandEnvelope>,
     pub cancel_scopes: Vec<CancelScopeId>,
     pub ensure_content: Vec<RuntimeContentRequest>,
