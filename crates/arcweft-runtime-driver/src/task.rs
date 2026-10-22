@@ -48,6 +48,7 @@ pub struct RuntimeTaskRecord {
     pub status: RuntimeTaskStatus,
     pub cursor: Option<TaskPublicationCursor>,
     pub cancel_scope: CancelScopeId,
+    pub execution: arcweft_core::task::TaskExecutionKind,
 }
 
 impl RuntimeTaskRecord {
@@ -63,6 +64,7 @@ impl RuntimeTaskRecord {
                     sequence: TaskSequence(revision.get()),
                 }),
             cancel_scope: dispatch.task.spec().cancel_scope.clone(),
+            execution: dispatch.task.spec().request.kind(),
         }
     }
     fn cancel_event(&self, revision: TaskPublicationRevision) -> TaskEvent {
@@ -113,6 +115,12 @@ pub struct RuntimeTaskRegistry {
 }
 
 impl RuntimeTaskRegistry {
+    pub(crate) fn has_active_program_tasks(&self) -> bool {
+        self.records.values().any(|record| {
+            record.execution == arcweft_core::task::TaskExecutionKind::Program
+                && record.status.is_active()
+        })
+    }
     #[must_use]
     pub(crate) fn contains_sequence(&self, sequence: TaskSequence) -> bool {
         self.records
@@ -842,7 +850,7 @@ mod tests {
             cancel_scope: CancelScopeId(scope.into()),
             policy: TaskPolicy::AlwaysStart,
             outcome,
-            request: HostTaskRequest::custom("test", "unit", [RuntimePayload::from(id)]),
+            request: (HostTaskRequest::custom("test", "unit", [RuntimePayload::from(id)])).into(),
             debug_label: id.into(),
         };
         let mut journal = TaskAdmissionJournal::default();

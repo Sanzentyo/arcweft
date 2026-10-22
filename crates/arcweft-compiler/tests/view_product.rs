@@ -5797,7 +5797,7 @@ fn borrowed_view_need() -> arcweft_core::task::RuntimeNeedHandle {
         cancel_scope: CancelScopeId("view-fixture".into()),
         policy: TaskPolicy::JoinSameKey,
         outcome,
-        request: HostTaskRequest::custom("fixture", "view-input", []),
+        request: (HostTaskRequest::custom("fixture", "view-input", [])).into(),
         debug_label: "borrowed View input".into(),
     })
     .unwrap()

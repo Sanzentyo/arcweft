@@ -34,13 +34,14 @@ fn specification(policy: TaskPolicy) -> TaskSpec {
         cancel_scope: CancelScopeId("fixture".to_owned()),
         policy,
         outcome: TaskOutcomeContract::new(RuntimeCheckedType::Bool),
-        request: HostTaskRequest::Custom {
+        request: (HostTaskRequest::Custom {
             capability: HostCapabilityId("fixture".to_owned()),
             operation: "pure".to_owned(),
             args: Vec::new(),
             named_args: Vec::new(),
             manifest_contract: None,
-        },
+        })
+        .into(),
         debug_label: "diagnostic".to_owned(),
     }
 }
@@ -106,7 +107,7 @@ fn inert_handle_identity_rejects_before_request_callable_construction() {
     let live = accepted(specification(TaskPolicy::JoinSameKey), 0);
     let mut image = RuntimeNeedHandleSaveSnapshot::from_live(&live, None).unwrap();
     image.correlation.need = NeedId::try_from_bytes([9; 32]).unwrap();
-    image.spec.request = super::super::HostTaskRequest::Custom {
+    image.spec.request = (super::super::HostTaskRequest::Custom {
         capability: HostCapabilityId("fixture".into()),
         operation: "pure".into(),
         args: vec![crate::value::AwbcRuntimeValueSnapshot::Callable(
@@ -117,7 +118,8 @@ fn inert_handle_identity_rejects_before_request_callable_construction() {
         )],
         named_args: vec![],
         manifest_contract: None,
-    };
+    })
+    .into();
     let owner = super::super::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
         crate::awbc::schema::AwbcProgram::default(),
     ));
@@ -173,7 +175,7 @@ fn need_handle_environment_move_preserves_complete_specification_without_startin
     };
     for (policy, ordinal) in [(TaskPolicy::JoinSameKey, 0), (TaskPolicy::AlwaysStart, 1)] {
         let mut spec = specification(policy);
-        spec.request = HostTaskRequest::Custom {
+        spec.request = (HostTaskRequest::Custom {
             capability: HostCapabilityId("fixture".to_owned()),
             operation: "pure".to_owned(),
             args: vec![RuntimePayload::new(RuntimeValue::String(
@@ -181,7 +183,8 @@ fn need_handle_environment_move_preserves_complete_specification_without_startin
             ))],
             named_args: Vec::new(),
             manifest_contract: None,
-        };
+        })
+        .into();
         spec.producer = NeedProducerInstance::try_from(&NeedProducerSpec::new(
             producer_input().family(),
             spec.producer.contract(),
@@ -196,7 +199,13 @@ fn need_handle_environment_move_preserves_complete_specification_without_startin
         let handle = accepted(spec.clone(), ordinal);
         let correlation = handle.correlation();
         let spec_address = std::ptr::from_ref(&handle.0.spec);
-        let HostTaskRequest::Custom { args, .. } = &handle.0.spec.request else {
+        let HostTaskRequest::Custom { args, .. } = handle
+            .0
+            .spec
+            .request
+            .as_host()
+            .expect("host request fixture")
+        else {
             panic!("custom request fixture");
         };
         let RuntimeValue::String(argument) = args[0].value() else {
@@ -212,7 +221,13 @@ fn need_handle_environment_move_preserves_complete_specification_without_startin
                 .unwrap()
         );
         assert_eq!(std::ptr::from_ref(&restored.0.spec), spec_address);
-        let HostTaskRequest::Custom { args, .. } = &restored.0.spec.request else {
+        let HostTaskRequest::Custom { args, .. } = restored
+            .0
+            .spec
+            .request
+            .as_host()
+            .expect("host request fixture")
+        else {
             panic!("restored request fixture");
         };
         let RuntimeValue::String(argument) = args[0].value() else {

@@ -2172,7 +2172,7 @@ flow main() -> String effects { fs.read(save), log.write } {
             && stdout.contains("\"parallel_tasks\": 2")
             && stdout.contains("\"parallel_io_tasks\": 2")
             && stdout.contains("\"parallel_system_info_tasks\": 0")
-            && stdout.contains("\"parallel_marker_tasks\": 0")
+            && stdout.contains("\"program_task_terminals\": 0")
             && stdout.contains("return done"),
         "run JSON should show bounded traverse fanout and native reads: {stdout}"
     );
@@ -3853,7 +3853,7 @@ fn bench_json_measures_checked_in_thread_scheduling_fixture() {
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 3);
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 3);
     assert_eq!(measurement["native_io"]["parallel_batches"], 0);
-    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 0);
+    assert_eq!(measurement["native_io"]["program_task_terminals"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["completion_sorts"], 0);
     assert_native_bridge_phase_timings(measurement);
@@ -3912,7 +3912,7 @@ fn bench_json_measures_checked_in_system_info_thread_fixture() {
     assert_eq!(measurement["native_io"]["completed_tasks"], 6);
     assert_eq!(measurement["native_io"]["parallel_batches"], 1);
     assert_eq!(measurement["native_io"]["parallel_system_info_tasks"], 3);
-    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 3);
+    assert_eq!(measurement["native_io"]["program_task_terminals"], 3);
     assert!(
         measurement["native_io"]["parallel_workers"]
             .as_u64()
@@ -6564,7 +6564,7 @@ flow parallel_io() -> String effects { fs.read(save), fs.write(save) } {
             && stdout.contains("\"parallel_batches\": 1")
             && stdout.contains("\"parallel_tasks\": 2")
             && stdout.contains("\"parallel_io_tasks\": 2")
-            && stdout.contains("\"parallel_marker_tasks\": 0")
+            && stdout.contains("\"program_task_terminals\": 0")
             && stdout.contains("\"write_ops\": 1"),
         "bench JSON should expose bounded traverse fanout counters: {stdout}"
     );
@@ -6667,7 +6667,7 @@ flow threaded_reads() -> String effects { fs.read(save), log.write, control.spaw
     );
     assert_eq!(measurement["native_io"]["parallel_io_tasks"], 2);
     assert_eq!(measurement["native_io"]["parallel_system_info_tasks"], 0);
-    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 2);
+    assert_eq!(measurement["native_io"]["program_task_terminals"], 2);
     assert!(
         measurement["native_io"]["parallel_batches"]
             .as_u64()

@@ -504,7 +504,7 @@ fn admitted_test_task(label: &str) -> arcweft_core::task::TaskSubmission {
         cancel_scope: CancelScopeId("test".into()),
         policy: TaskPolicy::AlwaysStart,
         outcome,
-        request: HostTaskRequest::custom("test", "unit", [RuntimePayload::from(label)]),
+        request: (HostTaskRequest::custom("test", "unit", [RuntimePayload::from(label)])).into(),
         debug_label: label.into(),
     };
     let mut journal = TaskAdmissionJournal::default();

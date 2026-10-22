@@ -24,10 +24,18 @@ pub struct BrowserTaskBroker {
     asset_resolver: BundleAssetResolver,
     cancelled_scopes: BTreeSet<CancelScopeId>,
     queued_task_events: Vec<TaskEvent>,
+    program_dispatches: BTreeMap<
+        arcweft_core::task::TaskId,
+        (HostTaskDispatch, arcweft_core::task::BoundTaskOutcome),
+    >,
 }
 
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum BrowserHostTaskError {
+    #[error(transparent)]
+    TaskCompletion(#[from] arcweft_core::task::TaskCompletionError),
+    #[error(transparent)]
+    TaskOutcome(#[from] arcweft_core::task::TaskOutcomeValueError),
     #[error("host call `{0}` is not declared by the active bundle manifests")]
     UndeclaredHostCall(String),
     #[error("browser MVP does not implement host call `{0}`")]
@@ -80,6 +88,7 @@ impl BrowserTaskBroker {
             asset_resolver,
             cancelled_scopes: BTreeSet::new(),
             queued_task_events: Vec::new(),
+            program_dispatches: BTreeMap::new(),
         })
     }
 
@@ -93,12 +102,32 @@ impl BrowserTaskBroker {
     ) -> usize {
         let events = dispatches
             .into_iter()
-            .map(|dispatch| {
+            .filter_map(|dispatch| {
+                if matches!(
+                    &dispatch.task.spec().request,
+                    arcweft_core::task::TaskRequest::Program(_)
+                ) {
+                    let task_id = dispatch.task.task_id();
+                    if self.program_dispatches.contains_key(&task_id) {
+                        return Some(dispatch.failed("program task was dispatched twice"));
+                    }
+                    let bound = match BoundTaskSpec::bind(
+                        dispatch.task.clone(),
+                        Some(program_owner.clone()),
+                        RuntimeSchemaLimits::engine_default(),
+                    ) {
+                        Ok(bound) => bound,
+                        Err(error) => return Some(dispatch.failed(error.to_string())),
+                    };
+                    self.program_dispatches
+                        .insert(task_id, (dispatch, bound.outcome().clone()));
+                    return None;
+                }
                 if self
                     .cancelled_scopes
                     .contains(&dispatch.task.spec().cancel_scope)
                 {
-                    return dispatch.cancelled();
+                    return Some(dispatch.cancelled());
                 }
                 let kind = self
                     .resolve(&dispatch, program_owner)
@@ -110,13 +139,70 @@ impl BrowserTaskBroker {
                             ),
                         )
                     });
-                dispatch.into_event(kind)
+                Some(dispatch.into_event(kind))
             })
             .collect::<Vec<_>>();
         self.queued_task_events.extend(events);
         self.queued_task_events
             .sort_by(arcweft_core::task::compare_task_events);
         self.queued_task_events.len()
+    }
+
+    /// Queues actual Core program retirement, never a host marker's success.
+    pub fn queue_program_completions(
+        &mut self,
+        completions: &[arcweft_core::task::ProgramTaskCompletion],
+    ) -> Result<usize, BrowserHostTaskError> {
+        let mut owners = BTreeSet::new();
+        let mut events = Vec::with_capacity(completions.len());
+        for completion in completions {
+            let handle = completion.handle();
+            let task_id = handle.correlation.task_id;
+            if !owners.insert(task_id) {
+                return Err(
+                    arcweft_core::task::TaskCompletionError::DuplicateTerminalEvent { task_id }
+                        .into(),
+                );
+            }
+            let (dispatch, outcome) = self
+                .program_dispatches
+                .get(&task_id)
+                .ok_or(arcweft_core::task::TaskCompletionError::UnknownTask { task_id })?;
+            if dispatch.task.handle() != handle {
+                return Err(
+                    arcweft_core::task::TaskCompletionError::DispatchMismatch { task_id }.into(),
+                );
+            }
+            let kind = match completion.terminal() {
+                arcweft_core::task::ProgramTaskTerminal::Completed => {
+                    TaskEventKind::Ready(outcome.try_payload(RuntimeValue::Unit)?)
+                }
+                arcweft_core::task::ProgramTaskTerminal::Cancelled => TaskEventKind::Cancelled,
+                arcweft_core::task::ProgramTaskTerminal::Failed(failure) => {
+                    TaskEventKind::InfrastructureFailure(failure.clone())
+                }
+            };
+            let revision = dispatch
+                .dispatch_start()
+                .next_publication_revision()
+                .ok_or(
+                    arcweft_core::task::TaskCompletionError::PublicationRevisionExhausted {
+                        task_id,
+                    },
+                )?;
+            events.push(TaskEvent::from_dispatch(
+                dispatch.identity(),
+                revision,
+                kind,
+            ));
+        }
+        for task_id in owners {
+            self.program_dispatches.remove(&task_id);
+        }
+        self.queued_task_events.extend(events);
+        self.queued_task_events
+            .sort_by(arcweft_core::task::compare_task_events);
+        Ok(self.queued_task_events.len())
     }
 
     pub fn drain_queued_task_events(&mut self) -> Vec<TaskEvent> {
@@ -136,9 +222,14 @@ impl BrowserTaskBroker {
         dispatch: &HostTaskDispatch,
         program_owner: &RuntimeProgramOwner,
     ) -> Result<TaskEventKind, BrowserHostTaskError> {
-        let request = &dispatch.task.spec().request;
+        let Some(request) = dispatch.task.spec().request.as_host() else {
+            return Err(arcweft_core::task::TaskCompletionError::DispatchMismatch {
+                task_id: dispatch.task.task_id(),
+            }
+            .into());
+        };
         let call = request.host_call_id();
-        if !self.allowed_calls.contains(&call) && !is_internal_scheduler_marker(request) {
+        if !self.allowed_calls.contains(&call) {
             return Err(BrowserHostTaskError::UndeclaredHostCall(call));
         }
         match request {
@@ -192,9 +283,6 @@ impl BrowserTaskBroker {
                     RuntimeValue::usize(value),
                 )))
             }
-            request if is_internal_scheduler_marker(request) => Ok(TaskEventKind::Ready(
-                RuntimePayload::new(RuntimeValue::Unit),
-            )),
             request => Err(BrowserHostTaskError::UnsupportedHostCall(
                 request.host_call_id(),
             )),
@@ -240,15 +328,6 @@ impl BrowserTaskBroker {
             }
         }
     }
-}
-
-fn is_internal_scheduler_marker(request: &HostTaskRequest) -> bool {
-    matches!(
-        request,
-        HostTaskRequest::Custom { capability, operation, .. }
-            if matches!(capability.0.as_str(), "line_task" | "flow_thread")
-                && operation == "run_child"
-    )
 }
 
 fn virtual_file_key(space: BundleVirtualFileSpace, path: &str) -> String {
@@ -826,10 +905,11 @@ mod tests {
             cancel_scope: CancelScopeId("asset-tests".into()),
             policy: TaskPolicy::JoinSameKey,
             outcome,
-            request: HostTaskRequest::AssetLoad(AssetRequest {
+            request: (HostTaskRequest::AssetLoad(AssetRequest {
                 id: id.into(),
                 kind: kind.into(),
-            }),
+            }))
+            .into(),
             debug_label: id.into(),
         };
         let mut journal = TaskAdmissionJournal::default();

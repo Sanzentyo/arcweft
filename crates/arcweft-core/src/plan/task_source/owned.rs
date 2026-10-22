@@ -32,6 +32,44 @@ pub(in crate::plan::task_source) enum RuntimeTaskSourceExecutionAssertion {
     Awbc(RuntimeTaskExecutionRow),
 }
 
+impl serde::Serialize for RuntimeTaskSource {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&self.assertion(), serializer)
+    }
+}
+
+impl RuntimeTaskSourceAssertion {
+    pub(crate) const fn expected_key_bytes(&self) -> [u8; 32] {
+        *self.expected.bytes()
+    }
+
+    pub(crate) fn visit_descriptor(
+        &self,
+        visitor: &mut impl crate::task::descriptor::TaskDescriptorVisitor,
+        depth: usize,
+    ) -> Result<(), crate::entry::RuntimeSchemaError> {
+        visitor.node(depth)?;
+        visitor.fixed(self.expected.bytes(), depth + 1)?;
+        let (kind, row) = match self.execution {
+            RuntimeTaskSourceExecutionAssertion::Native => (0, None),
+            RuntimeTaskSourceExecutionAssertion::Awbc(RuntimeTaskExecutionRow::HostCall(row)) => {
+                (1, Some(row.0))
+            }
+            RuntimeTaskSourceExecutionAssertion::Awbc(RuntimeTaskExecutionRow::Selected(row)) => {
+                (2, Some(row.0))
+            }
+            RuntimeTaskSourceExecutionAssertion::Awbc(RuntimeTaskExecutionRow::Template(row)) => {
+                (3, Some(row.0))
+            }
+        };
+        visitor.fixed(&[kind], depth + 1)?;
+        if let Some(row) = row {
+            visitor.fixed(&row.to_le_bytes(), depth + 1)?;
+        }
+        Ok(())
+    }
+}
+
 impl RuntimeTaskSource {
     pub(crate) fn assertion(&self) -> RuntimeTaskSourceAssertion {
         RuntimeTaskSourceAssertion {

@@ -281,6 +281,11 @@ impl RuntimeScheduler {
         self.accepted_specs.contains_key(task_id)
     }
 
+    /// Borrows the exact accepted contract, including its execution authority.
+    pub fn bound_spec(&self, task_id: &TaskId) -> Option<&BoundTaskSpec> {
+        self.accepted_specs.get(task_id)
+    }
+
     /// Returns current cumulative scheduler counters.
     pub fn stats(&self) -> RuntimeSchedulerStats {
         let mut stats = self.stats;
@@ -514,7 +519,8 @@ mod tests {
             cancel_scope: CancelScopeId("test".into()),
             policy,
             outcome: TaskOutcomeContract::new(RuntimeCheckedType::String),
-            request: HostTaskRequest::FileReadText(FileReadTextRequest { path: path.into() }),
+            request: (HostTaskRequest::FileReadText(FileReadTextRequest { path: path.into() }))
+                .into(),
             debug_label: path.into(),
         }
     }
@@ -714,9 +720,10 @@ mod tests {
         assert!(original.same_join_contract(&diagnostic));
         let mut variants = vec![];
         let mut changed = original.clone();
-        changed.request = HostTaskRequest::FileReadText(FileReadTextRequest {
+        changed.request = (HostTaskRequest::FileReadText(FileReadTextRequest {
             path: "other".into(),
-        });
+        }))
+        .into();
         variants.push(changed);
         let mut changed = original.clone();
         changed.class = TaskClass::Cpu;

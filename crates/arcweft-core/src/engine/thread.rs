@@ -6,12 +6,10 @@ use crate::plan::task_source::{RuntimeTaskSourceError, RuntimeTaskSourceProgram}
 use crate::plan::{FlowOp, RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanSealLimits};
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::task::{
-    HostTaskRequest, NeedProducerInstance, RuntimeTaskTemplateArguments, TaskIdentityError,
-    TaskSpec,
+    NeedProducerInstance, RuntimeTaskTemplateArguments, TaskIdentityError, TaskRequest, TaskSpec,
 };
 use crate::value::{
     AwbcRuntimeValueSnapshotError, RuntimeEvalError, RuntimeRetainedValueAdmission,
-    RuntimeScalarView,
 };
 use std::sync::Arc;
 
@@ -53,10 +51,10 @@ impl Engine {
             .original()
             .task_source(coordinate, limits, &mut meter)?;
         let Some(FlowOp::Thread {
-            name,
             producer,
             captures,
             body,
+            ..
         }) = source.request_endpoint().operation()
         else {
             return Err(crate::task::RuntimeTaskProducerSourceError::RequestKind.into());
@@ -78,10 +76,8 @@ impl Engine {
             self.fiber.frame.env.function_instantiation(),
             &mut admission,
         )?;
-        let label = name.as_deref().unwrap_or("anonymous");
         admission.validate_metadata_string(&producer.debug_label)?;
-        admission.validate_metadata_collection(1)?;
-        admission.validate_scalar(RuntimeScalarView::String(label))?;
+        admission.validate_metadata(&checked.source().assertion())?;
         let instance = NeedProducerInstance::try_from(&checked)?;
         let (child, next_fiber_id) = self.prepare_child_fiber(body, captures).map_err(Box::new)?;
         let spec = TaskSpec {
@@ -92,11 +88,7 @@ impl Engine {
             cancel_scope: producer.cancel_scope.clone(),
             policy: producer.policy,
             outcome: producer.outcome(),
-            request: HostTaskRequest::custom(
-                &producer.request.capability.0,
-                &producer.request.operation,
-                [label.into()],
-            ),
+            request: TaskRequest::Program(checked.source().clone()),
             debug_label: producer.debug_label.clone(),
         };
         Ok(PreparedThread {

@@ -14,7 +14,7 @@ pub(crate) trait TaskDescriptorVisitor {
     fn blob(&mut self, bytes: &[u8], depth: usize) -> Result<(), RuntimeSchemaError>;
 }
 
-impl<P> TaskSpec<P> {
+impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest, S> {
     pub(crate) fn admit_retained(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -33,6 +33,7 @@ impl<P> TaskSpec<P> {
     where
         P: crate::value::RuntimeStoredValue,
     {
+        self.request.admit_source(admission)?;
         admission.admit_composite(P::admission_origin(), |owner, resources| {
             self.validate_descriptor_inputs(resources, 0, P::borrowed_view)?;
             if let Some(handle) = handle {
@@ -103,7 +104,7 @@ impl<P> TaskSpec<P> {
     }
 }
 
-impl<P> TaskSpec<P> {
+impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest, S> {
     pub(crate) fn validate_descriptor_inputs(
         &self,
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,

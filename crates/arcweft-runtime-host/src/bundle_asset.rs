@@ -104,7 +104,7 @@ impl BundleAssetAdapter {
         outcome: &BoundTaskOutcome,
         submission: HostTaskSubmissionContext,
     ) -> Option<HostTaskOutcome> {
-        let HostTaskRequest::AssetLoad(request) = &task.request else {
+        let HostTaskRequest::AssetLoad(request) = task.request.as_host()? else {
             return None;
         };
         let Some(context) = submission.bundle_asset_context() else {

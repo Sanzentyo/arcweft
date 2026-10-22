@@ -9,6 +9,14 @@ pub struct BoundedRuntimeDiagnostic(String);
 impl BoundedRuntimeDiagnostic {
     pub const MAX_BYTES: usize = 4096;
 
+    pub(crate) fn from_borrowed_message(message: &str) -> Self {
+        let mut end = message.len().min(Self::MAX_BYTES);
+        while !message.is_char_boundary(end) {
+            end -= 1;
+        }
+        Self(message[..end].to_owned())
+    }
+
     /// Trusted runtime/adapter formatting keeps a deterministic UTF-8 prefix.
     pub fn from_message(message: impl Into<String>) -> Self {
         let mut message = message.into();

@@ -112,7 +112,11 @@ impl<B: DesktopBackend> DesktopArcweftAdapter<B> {
     }
 
     fn validate_domain(&self, task: &TaskSpec, request: &DesktopRequest) -> Result<(), String> {
-        let call = task.request.host_call_id();
+        let call = task
+            .request
+            .as_host()
+            .ok_or("desktop adapter expected a host request")?
+            .host_call_id();
         let expected = self
             .domains
             .get(&call)
@@ -155,7 +159,10 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
     ) -> Option<HostTaskSubmission> {
         let task = bound.spec();
         let outcome_contract = bound.outcome();
-        if !self.domains.contains_key(&task.request.host_call_id()) {
+        if !self
+            .domains
+            .contains_key(&task.request.as_host()?.host_call_id())
+        {
             return None;
         }
         let request = match decode_request(task).and_then(|request| {

@@ -522,7 +522,7 @@ mod tests {
             cancel_scope: CancelScopeId("scope.view".into()),
             policy: TaskPolicy::JoinSameKey,
             outcome,
-            request: HostTaskRequest::custom("fixture", "record", []),
+            request: (HostTaskRequest::custom("fixture", "record", [])).into(),
             debug_label: "formatter fixture".into(),
         };
         let mut journal = TaskAdmissionJournal::default();

@@ -574,9 +574,9 @@ impl ValueResourceAdmission {
         self.program_storage_obligations
     }
 
-    pub(crate) fn validate_task_descriptor<P>(
+    pub(crate) fn validate_task_descriptor<P, S: crate::task::TaskExecutionSource>(
         &mut self,
-        spec: &crate::task::TaskSpec<P>,
+        spec: &crate::task::TaskSpec<P, crate::task::TaskPlanSemanticDigest, S>,
         depth: usize,
     ) -> Result<(), RuntimeSchemaError> {
         self.admit_descriptor(|visitor| spec.visit_descriptor(visitor, depth))

@@ -619,7 +619,9 @@ impl BundleSession {
                 let task = launch.submission.clone();
                 let bundle_asset_context = matches!(
                     &task.spec().request,
-                    arcweft_core::task::HostTaskRequest::AssetLoad(_)
+                    arcweft_core::task::TaskRequest::Host(
+                        arcweft_core::task::HostTaskRequest::AssetLoad(_)
+                    )
                 )
                 .then(|| image.generation().bundle_asset_context());
                 restored_task_pins.insert(row.sequence, generation);

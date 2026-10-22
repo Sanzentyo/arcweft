@@ -423,11 +423,12 @@ impl HostAdapterRegistry {
 
     fn task_call(&self, bound: &BoundTaskSpec) -> Option<&RegisteredHostCall> {
         let task = bound.spec();
-        let call = self.calls.get(&task.request.host_call_id())?;
+        let request = task.request.as_host()?;
+        let call = self.calls.get(&request.host_call_id())?;
         if let HostTaskRequest::Custom {
             manifest_contract: Some(contract),
             ..
-        } = &task.request
+        } = request
             && (*contract != call.contract.digest
                 || call.contract.mode != RuntimeHostCallMode::Suspend
                 || task.outcome.program_payload() != Some(call.contract.result)
@@ -452,11 +453,12 @@ impl HostAdapterRegistry {
             return None;
         }
         let task = bound.spec();
-        let call = self.calls.get(&task.request.host_call_id())?;
+        let request = task.request.as_host()?;
+        let call = self.calls.get(&request.host_call_id())?;
         let HostTaskRequest::Custom {
             manifest_contract: Some(contract),
             ..
-        } = &task.request
+        } = request
         else {
             return None;
         };
@@ -942,7 +944,7 @@ mod tests {
         }
 
         fn complete(&self, task: &TaskSpec, outcome: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
-            (task.request.host_call_id() == self.host_call_id).then(|| {
+            (task.request.as_host()?.host_call_id() == self.host_call_id).then(|| {
                 let completion = outcome
                     .try_payload(self.result.value().clone())
                     .map_or_else(
@@ -988,7 +990,7 @@ mod tests {
             panic!("task succeeds");
         };
         assert_eq!(value.label(), "ok");
-        assert!(registry.can_complete_in_parallel(&task.request));
+        assert!(registry.can_complete_in_parallel(task.request.as_host().unwrap()));
     }
 
     #[test]
@@ -1026,7 +1028,7 @@ mod tests {
         let policy = HostCallPolicy::from_manifests([manifest("fixture", "fixture.echo")]);
 
         assert!(policy.contains("fixture.echo"));
-        assert!(policy.allows(&task("fixture", "echo").request));
+        assert!(policy.allows(task("fixture", "echo").request.as_host().unwrap()));
         assert!(!policy.contains("fixture.missing"));
     }
 
@@ -1288,7 +1290,7 @@ mod tests {
             cancel_scope: CancelScopeId("test".into()),
             policy: TaskPolicy::JoinSameKey,
             outcome,
-            request: HostTaskRequest::custom(capability, operation, []),
+            request: (HostTaskRequest::custom(capability, operation, [])).into(),
             debug_label: format!("{capability}.{operation}"),
         }
     }

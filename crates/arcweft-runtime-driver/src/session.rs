@@ -215,6 +215,7 @@ pub struct BundleSessionStep {
     pub text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pub audio_commands: Vec<AudioCommandEnvelope>,
     pub requested_tasks: Vec<HostTaskDispatch>,
+    pub program_task_completions: Vec<arcweft_core::task::ProgramTaskCompletion>,
     pub cancel_scopes: Vec<CancelScopeId>,
     pub finished: bool,
 }
@@ -901,16 +902,18 @@ impl BundleSession {
             text_control_write_backs,
             audio_commands,
             requested_tasks,
+            program_task_completions: output.requests.program_task_completions,
             cancel_scopes,
             finished,
         }
     }
 
     fn finish_step_lifecycle(&mut self, fiber_status: &FlowFiberStatus) -> (usize, bool) {
-        let finished = matches!(
-            fiber_status,
-            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-        );
+        let finished = !self.tasks.has_active_program_tasks()
+            && matches!(
+                fiber_status,
+                FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+            );
         if finished
             && !self
                 .executor
@@ -1022,10 +1025,11 @@ impl BundleSession {
     }
 
     pub fn is_finished(&self) -> bool {
-        matches!(
-            &self.executor.fiber().frame.status,
-            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-        )
+        !self.tasks.has_active_program_tasks()
+            && matches!(
+                &self.executor.fiber().frame.status,
+                FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+            )
     }
 
     fn update_presentation_snapshot(
@@ -1386,7 +1390,9 @@ impl BundleSession {
                 new_offset += 1;
                 let bundle_asset_context = matches!(
                     &task.spec().request,
-                    arcweft_core::task::HostTaskRequest::AssetLoad(_)
+                    arcweft_core::task::TaskRequest::Host(
+                        arcweft_core::task::HostTaskRequest::AssetLoad(_)
+                    )
                 )
                 .then(|| generation.bundle_asset_context());
                 self.task_generation_pins

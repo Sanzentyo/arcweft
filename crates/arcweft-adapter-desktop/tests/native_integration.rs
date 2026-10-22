@@ -102,7 +102,7 @@ fn task(capability: &str, operation: &str) -> TaskSpec {
         cancel_scope: CancelScopeId("desktop-test".into()),
         policy: TaskPolicy::JoinSameKey,
         outcome,
-        request: HostTaskRequest::custom(capability, operation, []),
+        request: (HostTaskRequest::custom(capability, operation, [])).into(),
         debug_label: format!("{capability}.{operation}"),
     }
 }

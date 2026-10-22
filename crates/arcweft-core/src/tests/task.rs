@@ -158,7 +158,7 @@ fn task_spec_uses_typed_request_and_debug_label() {
     spec.cancel_scope = CancelScopeId("flow.opening".to_owned());
     assert_eq!(spec.debug_label, "asset.load image asset.bg.room");
     assert!(
-        matches!(&spec.request, HostTaskRequest::AssetLoad(AssetRequest { id, kind })
+        matches!(spec.request.as_host().expect("host request fixture"), HostTaskRequest::AssetLoad(AssetRequest { id, kind })
         if id == "asset.bg.room" && kind == "image")
     );
     let receipt = crate::tests::task_submission(spec);

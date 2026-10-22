@@ -229,9 +229,31 @@ pub struct FlowFiber<F = NativeFlowExecutionFrame> {
     pub frame: F,
     pub id: FlowFiberId,
     pub(crate) parent: Option<FlowFiberId>,
+    pub(crate) launch: FlowFiberLaunch,
     pub persistent_id: RuntimePersistentFiberId,
     pub execution: crate::runtime_id::ExecutionInstanceId,
     pub(crate) owner: FlowFiberOwner,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+pub(crate) enum FlowFiberLaunch {
+    Local,
+    Task(crate::task::TaskHandle),
+}
+
+fn validate_child_task_launches<F>(
+    children: &VecDeque<FlowFiber<F>>,
+    mut accepted_program: impl FnMut(crate::task::TaskHandle) -> bool,
+) -> Result<(), String> {
+    let mut tasks = BTreeSet::new();
+    for child in children {
+        if let FlowFiberLaunch::Task(handle) = child.launch
+            && (!tasks.insert(handle.correlation.task_id) || !accepted_program(handle))
+        {
+            return Err("native child launch differs from its accepted program task".into());
+        }
+    }
+    Ok(())
 }
 
 /// Budgeted native execution state shared by root, child and dialogue execution.
@@ -273,6 +295,7 @@ impl Clone for FlowFiberRollbackImage {
             frame: self.frame.clone(),
             id: self.id,
             parent: self.parent,
+            launch: self.launch,
             persistent_id: self.persistent_id,
             execution: self.execution,
             owner: self.owner.clone(),
@@ -332,6 +355,7 @@ impl FlowFiber {
             frame: self.frame.snapshot_with_admitted_values(owner)?,
             id: self.id,
             parent: self.parent,
+            launch: self.launch,
             persistent_id: self.persistent_id,
             execution: self.execution,
             owner: self.owner.clone(),
@@ -346,6 +370,7 @@ impl FlowFiber {
             frame: NativeFlowExecutionFrame::from_image_with_admitted_values(image.frame, owner)?,
             id: image.id,
             parent: image.parent,
+            launch: image.launch,
             persistent_id: image.persistent_id,
             execution: image.execution,
             owner: image.owner,
@@ -1926,6 +1951,7 @@ impl Default for FlowFiber {
             frame: NativeFlowExecutionFrame::default(),
             id: FlowFiberId::default(),
             parent: None,
+            launch: crate::engine::FlowFiberLaunch::Local,
             persistent_id: RuntimePersistentFiberId::default(),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
                 std::num::NonZeroU64::MIN,
@@ -1972,6 +1998,11 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 
 impl Engine {
     fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
+        validate_child_task_launches(&self.child_fibers, |handle| {
+            self.need_producers.accepted_task_spec(handle).is_some_and(|spec| {
+                matches!(&spec.request, crate::task::TaskRequest::Program(source) if source.belongs_to(&self.plan))
+            })
+        })?;
         self.dialogue_activations
             .validate_parent_allocations(self.next_fiber_id)?;
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
@@ -2075,6 +2106,11 @@ impl Engine {
         image: NativeEngineRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
+        validate_child_task_launches(&image.child_fibers, |handle| {
+            image.need_producers.task_spec(handle.correlation).is_some_and(|spec| {
+                matches!(&spec.request, crate::task::TaskRequest::Program(source) if source.belongs_to(&image.plan))
+            })
+        })?;
         image
             .dialogue_activations
             .validate_parent_allocations(image.next_fiber_id)?;
@@ -2265,6 +2301,7 @@ impl Engine {
                 },
                 id: FlowFiberId::default(),
                 parent: None,
+                launch: crate::engine::FlowFiberLaunch::Local,
                 persistent_id: RuntimePersistentFiberId::from_allocated(1),
                 execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
                     std::num::NonZeroU64::MIN,
@@ -3372,6 +3409,7 @@ impl Engine {
                 },
                 id: FlowFiberId(ordinal),
                 parent: Some(self.fiber.id),
+                launch: crate::engine::FlowFiberLaunch::Local,
                 persistent_id: RuntimePersistentFiberId::from_allocated(next.get()),
                 execution: crate::runtime_id::ExecutionInstanceId::from_allocated(next),
                 owner: FlowFiberOwner::Executor,
@@ -3536,6 +3574,7 @@ impl Engine {
             },
             id: FlowFiberId(prepared.ordinal),
             parent: Some(parent),
+            launch: crate::engine::FlowFiberLaunch::Local,
             persistent_id: RuntimePersistentFiberId::from_allocated(prepared.allocated.get()),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
             owner: FlowFiberOwner::DialogueEffectCallback {
@@ -3836,6 +3875,7 @@ impl Engine {
                         },
                         id: FlowFiberId(ordinal),
                         parent: Some(transaction.frame().parent),
+                        launch: crate::engine::FlowFiberLaunch::Local,
                         persistent_id: RuntimePersistentFiberId::from_allocated(allocated.get()),
                         execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
                             allocated,
@@ -4065,6 +4105,7 @@ impl Engine {
             },
             id: FlowFiberId(prepared.ordinal),
             parent: Some(parent),
+            launch: crate::engine::FlowFiberLaunch::Local,
             persistent_id: RuntimePersistentFiberId::from_allocated(prepared.allocated.get()),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
             owner: FlowFiberOwner::LineTask(LineTaskFiberOwner {
@@ -4239,6 +4280,14 @@ impl Engine {
         }
         match child.frame.status {
             FlowFiberStatus::Done(_) => {
+                if let FlowFiberLaunch::Task(handle) = child.launch {
+                    output.requests.program_task_completions.push(
+                        crate::task::ProgramTaskCompletion::completed(
+                            handle,
+                            owner.requests_scope_close(),
+                        ),
+                    );
+                }
                 if let FlowFiberOwner::LineTask(owner) = owner {
                     let live_tokens = live_tokens
                         .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
@@ -4262,6 +4311,12 @@ impl Engine {
                 }
             }
             FlowFiberStatus::Failed(message) => {
+                if let FlowFiberLaunch::Task(handle) = child.launch {
+                    output
+                        .requests
+                        .program_task_completions
+                        .push(crate::task::ProgramTaskCompletion::failed(handle, &message));
+                }
                 let failed_activation = match &owner {
                     FlowFiberOwner::DialogueEffectCallback { activation, .. } => {
                         Some(activation.dialogue().clone())

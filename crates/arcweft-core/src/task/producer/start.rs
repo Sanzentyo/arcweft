@@ -16,14 +16,14 @@ use crate::value::{
 /// Private fields keep its exact arguments, request, key and invocation binding
 /// together. Neither role has a metadata-plan or caller-digest constructor.
 #[derive(Debug)]
-pub struct RuntimeNeedProducerStart<V = RuntimeValue, P = RuntimePayload> {
+pub struct RuntimeNeedProducerStart<V = RuntimeValue, P = RuntimePayload, S = RuntimeTaskSource> {
     pub(super) producer: NeedProducerSpec<RuntimeTaskSource>,
     pub(super) arguments: Vec<NeedProducerRuntimeArgument<V>>,
-    pub(super) task_spec: TaskSpec<P>,
+    pub(super) task_spec: TaskSpec<P, super::TaskPlanSemanticDigest, S>,
     pub(super) restart: HostRestartPolicy,
 }
 
-impl<V: PartialEq, P: PartialEq> PartialEq for RuntimeNeedProducerStart<V, P> {
+impl<V: PartialEq, P: PartialEq, S: PartialEq> PartialEq for RuntimeNeedProducerStart<V, P, S> {
     fn eq(&self, other: &Self) -> bool {
         self.producer.same_instance_contract(&other.producer)
             && self.arguments == other.arguments
@@ -32,8 +32,8 @@ impl<V: PartialEq, P: PartialEq> PartialEq for RuntimeNeedProducerStart<V, P> {
     }
 }
 
-impl<V, P> RuntimeNeedProducerStart<V, P> {
-    pub fn task_spec(&self) -> &TaskSpec<P> {
+impl<V, P, S> RuntimeNeedProducerStart<V, P, S> {
+    pub fn task_spec(&self) -> &TaskSpec<P, super::TaskPlanSemanticDigest, S> {
         &self.task_spec
     }
     pub fn producer(&self) -> &NeedProducerSpec<RuntimeTaskSource> {
@@ -86,7 +86,7 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
             policy: metadata.policy(),
             outcome: metadata.outcome(),
             debug_label: request.debug_label(),
-            request,
+            request: request.into(),
         };
         Ok(RuntimeNeedProducerStart {
             producer,
@@ -96,11 +96,15 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
         })
     }
 
-    pub(crate) fn restore_start<V: RuntimeStoredValue, P: RuntimeStoredValue>(
+    pub(crate) fn restore_start<
+        V: RuntimeStoredValue,
+        P: RuntimeStoredValue,
+        S: crate::task::TaskExecutionSource,
+    >(
         mut self,
         arguments: Vec<NeedProducerRuntimeArgument<V>>,
-        task_spec: TaskSpec<P>,
-    ) -> Result<RuntimeNeedProducerStart<V, P>, RuntimeTaskProducerSourceError> {
+        task_spec: TaskSpec<P, super::TaskPlanSemanticDigest, S>,
+    ) -> Result<RuntimeNeedProducerStart<V, P, S>, RuntimeTaskProducerSourceError> {
         let producer = self.producer_spec(&arguments, task_spec.producer.binding())?;
         self.validate_specification(&producer, &arguments, &task_spec)?;
         Ok(RuntimeNeedProducerStart {
@@ -111,21 +115,28 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
         })
     }
 
-    fn validate_specification<V: RuntimeStoredValue, P: RuntimeStoredValue>(
+    fn validate_specification<
+        V: RuntimeStoredValue,
+        P: RuntimeStoredValue,
+        S: crate::task::TaskExecutionSource,
+    >(
         &mut self,
         producer: &NeedProducerSpec<RuntimeTaskSource>,
         arguments: &[NeedProducerRuntimeArgument<V>],
-        spec: &TaskSpec<P>,
+        spec: &TaskSpec<P, super::TaskPlanSemanticDigest, S>,
     ) -> Result<(), RuntimeTaskProducerSourceError> {
         spec.admit_retained(self.admission)?;
+        let crate::task::TaskRequest::Host(request) = &spec.request else {
+            return Err(RuntimeTaskProducerSourceError::RequestKind);
+        };
         if spec.producer != NeedProducerInstance::try_from(producer)?
             || spec.class != *self.metadata.class()
             || spec.priority != self.metadata.priority()
             || spec.cancel_scope != *self.metadata.cancel_scope()
             || spec.policy != self.metadata.policy()
             || spec.outcome != self.metadata.outcome()
-            || spec.debug_label != spec.request.debug_label()
-            || !self.metadata.request_matches(arguments, &spec.request)?
+            || spec.debug_label != request.debug_label()
+            || !self.metadata.request_matches(arguments, request)?
         {
             return Err(RuntimeTaskProducerSourceError::Specification);
         }
@@ -133,7 +144,9 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
     }
 }
 
-impl<V: RuntimeStoredValue, P: RuntimeStoredValue> RuntimeNeedProducerStart<V, P> {
+impl<V: RuntimeStoredValue, P: RuntimeStoredValue, S: crate::task::TaskExecutionSource>
+    RuntimeNeedProducerStart<V, P, S>
+{
     pub(super) fn admit_retained(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
@@ -230,7 +243,7 @@ impl SavedStart {
                     })
                 })
                 .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
-            task_spec: self.task_spec.into_admitted_live(&owner)?,
+            task_spec: self.task_spec.into_admitted_live(&owner, None)?,
             restart: self.restart,
         })
     }

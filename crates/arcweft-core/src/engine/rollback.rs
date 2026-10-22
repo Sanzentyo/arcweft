@@ -827,7 +827,10 @@ impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
         let invalid_identity = || crate::value::AwbcRuntimeValueSnapshotError::Message {
             message: "native fiber identities do not follow their original allocator".into(),
         };
-        if self.fiber.id.0 != 0 || self.fiber.parent.is_some() {
+        if self.fiber.id.0 != 0
+            || self.fiber.parent.is_some()
+            || self.fiber.launch != super::FlowFiberLaunch::Local
+        {
             return Err(invalid_identity());
         }
         let mut fiber_ids = BTreeSet::new();
@@ -835,6 +838,7 @@ impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
             admission.validate_metadata(&(
                 fiber.id,
                 fiber.parent,
+                fiber.launch,
                 fiber.persistent_id,
                 fiber.execution,
                 &fiber.owner,

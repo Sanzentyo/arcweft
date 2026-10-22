@@ -738,7 +738,7 @@ impl Engine {
                 }
                 let super::thread::PreparedThread {
                     spec,
-                    child,
+                    mut child,
                     next_fiber_id,
                 } = match self.prepare_thread(&producer.plan) {
                     Ok(prepared) => prepared,
@@ -747,11 +747,14 @@ impl Engine {
                         return;
                     }
                 };
-                let accepted = self.need_producers.ensure_task_with_publication(spec, |_| {
-                    self.child_fibers.push_back(child);
-                    self.next_fiber_id = next_fiber_id;
-                    self.run_child_next = true;
-                });
+                let accepted = self
+                    .need_producers
+                    .ensure_task_with_publication(spec, |accepted| {
+                        child.launch = super::FlowFiberLaunch::Task(accepted.handle());
+                        self.child_fibers.push_back(child);
+                        self.next_fiber_id = next_fiber_id;
+                        self.run_child_next = true;
+                    });
                 let accepted = match accepted {
                     Ok(accepted) => accepted,
                     Err(error) => {

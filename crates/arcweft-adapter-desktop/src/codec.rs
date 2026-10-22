@@ -22,29 +22,33 @@ use crate::{
 };
 
 pub(crate) fn decode_request(task: &TaskSpec) -> Result<DesktopRequest, String> {
-    let HostTaskRequest::Custom { .. } = &task.request else {
+    let request = task
+        .request
+        .as_host()
+        .ok_or("desktop adapter expected a host request")?;
+    let HostTaskRequest::Custom { .. } = request else {
         return Err("desktop adapter expected a custom host request".to_owned());
     };
-    let args = HostCallArgs::from_custom_request(&task.request)
+    let args = HostCallArgs::from_custom_request(request)
         .expect("custom host task request has typed arguments");
-    if task.request.host_call_id() == DESKTOP_CAPABILITIES_CALL {
+    if request.host_call_id() == DESKTOP_CAPABILITIES_CALL {
         args.expect_len(0)?;
         return Ok(DesktopRequest::Capabilities);
     }
-    if let Some(request) = decode_typed_owned_request(task, &args)? {
+    if let Some(request) = decode_typed_owned_request(request, &args)? {
         return Ok(request);
     }
     Err(format!(
         "desktop host call `{}` has no typed decoder",
-        task.request.host_call_id()
+        request.host_call_id()
     ))
 }
 
 fn decode_typed_owned_request(
-    task: &TaskSpec,
+    request: &HostTaskRequest,
     args: &HostCallArgs<'_>,
 ) -> Result<Option<DesktopRequest>, String> {
-    let call = task.request.host_call_id();
+    let call = request.host_call_id();
     let target = WindowTarget::PrimaryOwned;
     let request = match call.as_str() {
         DESKTOP_OWNED_WINDOW_SET_TITLE_CALL => {
@@ -405,7 +409,7 @@ mod tests {
             cancel_scope: CancelScopeId("desktop-codec-test".into()),
             policy: TaskPolicy::JoinSameKey,
             outcome,
-            request: HostTaskRequest::custom(capability, operation, args),
+            request: (HostTaskRequest::custom(capability, operation, args)).into(),
             debug_label: format!("{capability}.{operation}"),
         }
     }

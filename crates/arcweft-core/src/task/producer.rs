@@ -1117,9 +1117,9 @@ pub enum RuntimeNeedProducerState<P = RuntimePayload> {
 }
 
 impl<P> RuntimeNeedProducerState<P> {
-    pub(crate) fn admit_retained<Q>(
+    pub(crate) fn admit_retained<Q, S>(
         &self,
-        spec: &TaskSpec<Q>,
+        spec: &TaskSpec<Q, TaskPlanSemanticDigest, S>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
@@ -1447,9 +1447,13 @@ impl NeedProducerOwnedTaskEventError {
 /// constructing this value. The registry rebuilds all IDs and the canonical
 /// TaskSpec, then compares the saved TaskSpec before accepting it.
 #[derive(Debug, PartialEq)]
-pub struct NeedProducerLaunchRestore<V = RuntimeValue, P = RuntimePayload> {
+pub struct NeedProducerLaunchRestore<
+    V = RuntimeValue,
+    P = RuntimePayload,
+    S = crate::plan::RuntimeTaskSource,
+> {
     pub invocation: NeedProducerInvocationToken,
-    pub start: RuntimeNeedProducerStart<V, P>,
+    pub start: RuntimeNeedProducerStart<V, P, S>,
     pub correlation: TaskCorrelation,
     pub state: RuntimeNeedProducerState<P>,
     pub publication: Option<TaskPublicationCursor>,
@@ -1503,15 +1507,19 @@ pub struct RuntimeNeedProducerDispatch {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct NeedProducerRegistryRestore<V = RuntimeValue, P = RuntimePayload> {
-    pub task_admissions: Vec<TaskSubmission<P>>,
-    pub launches: Vec<NeedProducerLaunchRestore<V, P>>,
+pub struct NeedProducerRegistryRestore<
+    V = RuntimeValue,
+    P = RuntimePayload,
+    S = crate::plan::RuntimeTaskSource,
+> {
+    pub task_admissions: Vec<TaskSubmission<P, TaskPlanSemanticDigest, S>>,
+    pub launches: Vec<NeedProducerLaunchRestore<V, P, S>>,
     pub invocations: Vec<(NeedProducerInvocationToken, TaskCorrelation)>,
     pub invocation_frontiers: Vec<NeedProducerInvocationFrontier>,
     pub launch_frontiers: Vec<NeedProducerLaunchFrontier>,
 }
 
-impl<V, P> Default for NeedProducerRegistryRestore<V, P> {
+impl<V, P, S> Default for NeedProducerRegistryRestore<V, P, S> {
     fn default() -> Self {
         Self {
             task_admissions: Vec::new(),
@@ -1540,7 +1548,7 @@ impl Clone for NeedProducerRegistrySaveSnapshot {
     }
 }
 
-impl<V, P> NeedProducerRegistryRestore<V, P> {
+impl<V, P, S: super::TaskExecutionSource + PartialEq> NeedProducerRegistryRestore<V, P, S> {
     pub(crate) fn admit_retained(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -1596,7 +1604,10 @@ impl<V, P> NeedProducerRegistryRestore<V, P> {
         Ok(())
     }
 
-    pub(crate) fn task_spec(&self, correlation: TaskCorrelation) -> Option<&TaskSpec<P>> {
+    pub(crate) fn task_spec(
+        &self,
+        correlation: TaskCorrelation,
+    ) -> Option<&TaskSpec<P, TaskPlanSemanticDigest, S>> {
         let mut matches = self
             .task_admissions
             .iter()
@@ -1606,7 +1617,7 @@ impl<V, P> NeedProducerRegistryRestore<V, P> {
     }
 }
 
-impl<V, P> NeedProducerLaunchRestore<V, P> {
+impl<V, P, S: super::TaskExecutionSource> NeedProducerLaunchRestore<V, P, S> {
     fn admit_retained(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -1670,7 +1681,7 @@ impl NeedProducerRegistrySaveSnapshot {
                     .get(&handle.correlation.task_id)
                     .map(|source| source.program_owner());
                 Ok(TaskSubmission {
-                    spec: spec.into_admitted_live(original.as_ref().unwrap_or(owner))?,
+                    spec: spec.into_admitted_live(original.as_ref().unwrap_or(owner), None)?,
                     handle,
                 })
             })
@@ -1718,8 +1729,9 @@ struct ValidatedRestoreLaunch {
 fn validate_restore_launch<
     V: crate::value::RuntimeStoredValue,
     P: crate::value::RuntimeStoredValue,
+    S: super::TaskExecutionSource,
 >(
-    restore: &NeedProducerLaunchRestore<V, P>,
+    restore: &NeedProducerLaunchRestore<V, P, S>,
 ) -> Result<ValidatedRestoreLaunch, NeedProducerAdmissionError> {
     let generation = restore.invocation.generation;
     let input = &restore.start;
@@ -1835,21 +1847,47 @@ impl NeedProducerRegistry {
         owner: &RuntimeProgramOwner,
     ) -> Result<NeedProducerRegistrySaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(NeedProducerRegistrySaveSnapshot {
-            task_admissions: self.task_journal.borrowed_submissions().map(|(spec, handle)| {
-                let original = self.launch_for_correlation(&handle.correlation).map(|launch| launch.source().program_owner());
-                Ok(TaskSubmission { spec: super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_admitted_live(spec, original.as_ref().unwrap_or(owner))?, handle })
-            }).collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
-            launches: self.launches.values().map(|launch| {
-                let original = launch.source().program_owner();
-                Ok(NeedProducerLaunchSaveSnapshot {
-                    invocation: launch.invocation, start: launch.start.snapshot_admitted()?,
-                    correlation: launch.correlation,
-                    state: RuntimeNeedProducerState::from_admitted_live(&launch.state, &original)?, publication: launch.publication,
-                    task_submitted: launch.task_submitted, task_terminal: launch.task_terminal,
+            task_admissions: self
+                .task_journal
+                .borrowed_submissions()
+                .map(|(spec, handle)| {
+                    let original = self
+                        .launch_for_correlation(&handle.correlation)
+                        .map(|launch| launch.source().program_owner());
+                    Ok(TaskSubmission {
+                        spec: super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_admitted_live(
+                            spec,
+                            original.as_ref().unwrap_or(owner),
+                        )?,
+                        handle,
+                    })
                 })
-            }).collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
-            invocations: self.invocations().map(|(invocation, launch)| (invocation, launch.correlation())).collect(),
-            invocation_frontiers: self.invocation_frontiers(), launch_frontiers: self.launch_frontiers(),
+                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+            launches: self
+                .launches
+                .values()
+                .map(|launch| {
+                    let original = launch.source().program_owner();
+                    Ok(NeedProducerLaunchSaveSnapshot {
+                        invocation: launch.invocation,
+                        start: launch.start.snapshot_admitted()?,
+                        correlation: launch.correlation,
+                        state: RuntimeNeedProducerState::from_admitted_live(
+                            &launch.state,
+                            &original,
+                        )?,
+                        publication: launch.publication,
+                        task_submitted: launch.task_submitted,
+                        task_terminal: launch.task_terminal,
+                    })
+                })
+                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+            invocations: self
+                .invocations()
+                .map(|(invocation, launch)| (invocation, launch.correlation()))
+                .collect(),
+            invocation_frontiers: self.invocation_frontiers(),
+            launch_frontiers: self.launch_frontiers(),
         })
     }
 
@@ -2227,6 +2265,10 @@ impl NeedProducerRegistry {
             .expect("accepted receipt belongs to this journal"))
     }
 
+    pub(crate) fn accepted_task_spec(&self, handle: super::TaskHandle) -> Option<&TaskSpec> {
+        self.task_journal.accepted_spec(handle)
+    }
+
     pub fn task_admissions(&self) -> impl Iterator<Item = TaskSubmission> + '_ {
         self.task_journal.submissions()
     }
@@ -2492,8 +2534,9 @@ impl NeedProducerRegistry {
     fn validate_restore_journal<
         V: crate::value::RuntimeStoredValue,
         P: crate::value::RuntimeStoredValue + PartialEq,
+        S: super::TaskExecutionSource + PartialEq,
     >(
-        restore: &NeedProducerRegistryRestore<V, P>,
+        restore: &NeedProducerRegistryRestore<V, P, S>,
     ) -> Result<(), NeedProducerAdmissionError> {
         let mut launches = BTreeMap::new();
         let mut joined = BTreeSet::new();

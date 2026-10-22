@@ -169,6 +169,7 @@ pub struct RuntimeEffectBatch {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HostRequestBatch {
     pub tasks: Vec<TaskSubmission>,
+    pub program_task_completions: Vec<crate::task::ProgramTaskCompletion>,
     pub audio: Vec<AudioCommandEnvelope>,
     pub cancel_scopes: Vec<CancelScopeId>,
     pub ensure_content: Vec<RuntimeContentRequest>,
@@ -268,8 +269,14 @@ impl RuntimeHostCallRequest {
     pub fn into_submission(self) -> crate::task::TaskSubmission {
         self.submission
     }
+    fn host_request(&self) -> &crate::task::HostTaskRequest {
+        let crate::task::TaskRequest::Host(request) = &self.submission.spec().request else {
+            unreachable!("host call admission retains a host execution request");
+        };
+        request
+    }
     pub fn public_id(&self) -> String {
-        self.submission.spec().request.host_call_id()
+        self.host_request().host_call_id()
     }
     pub fn result(&self) -> crate::pattern::RuntimeSemanticTypeId {
         let crate::task::TaskOutcomeContract::Program { payload } = &self.submission.spec().outcome
@@ -279,17 +286,13 @@ impl RuntimeHostCallRequest {
         *payload
     }
     pub fn capability(&self) -> &str {
-        let crate::task::HostTaskRequest::Custom { capability, .. } =
-            &self.submission.spec().request
-        else {
+        let crate::task::HostTaskRequest::Custom { capability, .. } = self.host_request() else {
             unreachable!("admitted custom host call")
         };
         &capability.0
     }
     pub fn operation(&self) -> &str {
-        let crate::task::HostTaskRequest::Custom { operation, .. } =
-            &self.submission.spec().request
-        else {
+        let crate::task::HostTaskRequest::Custom { operation, .. } = self.host_request() else {
             unreachable!("admitted custom host call")
         };
         operation
@@ -297,23 +300,20 @@ impl RuntimeHostCallRequest {
     pub fn contract(&self) -> Option<HostCallContractDigest> {
         let crate::task::HostTaskRequest::Custom {
             manifest_contract, ..
-        } = &self.submission.spec().request
+        } = self.host_request()
         else {
             unreachable!("admitted custom host call")
         };
         *manifest_contract
     }
     pub fn args(&self) -> &[RuntimePayload] {
-        let crate::task::HostTaskRequest::Custom { args, .. } = &self.submission.spec().request
-        else {
+        let crate::task::HostTaskRequest::Custom { args, .. } = self.host_request() else {
             unreachable!("admitted custom host call")
         };
         args
     }
     pub fn named_args(&self) -> &[NamedHostArg<RuntimePayload>] {
-        let crate::task::HostTaskRequest::Custom { named_args, .. } =
-            &self.submission.spec().request
-        else {
+        let crate::task::HostTaskRequest::Custom { named_args, .. } = self.host_request() else {
             unreachable!("admitted custom host call")
         };
         named_args
@@ -772,6 +772,7 @@ impl RuntimeStepOutput {
     /// Work that requires a host adapter before its pending operation can resume.
     pub(crate) fn has_host_requests(&self) -> bool {
         !self.requests.tasks.is_empty()
+            || !self.requests.program_task_completions.is_empty()
             || !self.requests.audio.is_empty()
             || !self.requests.cancel_scopes.is_empty()
             || !self.requests.ensure_content.is_empty()
@@ -814,6 +815,9 @@ impl RuntimeStepOutput {
             .stream_events
             .extend(other.effects.stream_events);
         self.requests.tasks.extend(other.requests.tasks);
+        self.requests
+            .program_task_completions
+            .extend(other.requests.program_task_completions);
         self.requests.audio.extend(other.requests.audio);
         self.requests
             .cancel_scopes

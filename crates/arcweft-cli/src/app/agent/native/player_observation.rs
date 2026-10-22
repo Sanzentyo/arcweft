@@ -366,6 +366,12 @@ fn advance_player_runtime(
                 ExitCode::FAILURE
             })?
         };
+        if let Some(host) = runtime.host.as_mut() {
+            runtime.task_events.extend(
+                host.complete_program_tasks(&step.program_task_completions)
+                    .map_err(|error| error.to_string())?,
+            );
+        }
         runtime.host_call_results = if finished {
             Vec::new()
         } else {

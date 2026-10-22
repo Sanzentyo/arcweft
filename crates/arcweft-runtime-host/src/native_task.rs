@@ -150,7 +150,7 @@ pub struct NativeTaskStats {
     pub parallel_tasks: usize,
     pub parallel_io_tasks: usize,
     pub parallel_system_info_tasks: usize,
-    pub parallel_marker_tasks: usize,
+    pub program_task_terminals: usize,
     pub parallel_workers: usize,
     pub scheduler_submit_elapsed_ns: u128,
     pub scheduler_dispatch_elapsed_ns: u128,
@@ -430,6 +430,63 @@ impl NativeTaskBridge {
         Ok(events)
     }
 
+    /// Publishes actual Core body retirement through the same dispatch fence,
+    /// outcome validation and scheduler transaction as adapter completions.
+    /// Borrowed reports remain with the caller if the complete batch rejects.
+    pub fn complete_program_tasks(
+        &mut self,
+        completions: &[arcweft_core::task::ProgramTaskCompletion],
+    ) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
+        let mut owners = BTreeSet::new();
+        let mut events = Vec::with_capacity(completions.len());
+        for completion in completions {
+            let handle = completion.handle();
+            let task_id = handle.correlation.task_id;
+            if !owners.insert(task_id) {
+                return Err(TaskCompletionError::DuplicateTerminalEvent { task_id }.into());
+            }
+            let accepted = self
+                .scheduler
+                .bound_spec(&task_id)
+                .ok_or(TaskCompletionError::UnknownTask { task_id })?;
+            if accepted.handle() != handle
+                || !matches!(
+                    &accepted.spec().request,
+                    arcweft_core::task::TaskRequest::Program(_)
+                )
+            {
+                return Err(TaskCompletionError::DispatchMismatch { task_id }.into());
+            }
+            let revision = self
+                .publication_frontiers
+                .get(&task_id)
+                .map_or(Some(TaskPublicationRevision::FIRST), |revision| {
+                    revision.checked_next()
+                })
+                .ok_or(TaskCompletionError::PublicationRevisionExhausted { task_id })?;
+            let kind = match completion.terminal() {
+                arcweft_core::task::ProgramTaskTerminal::Completed => {
+                    TaskEventKind::Ready(RuntimeValue::Unit.into())
+                }
+                arcweft_core::task::ProgramTaskTerminal::Cancelled => TaskEventKind::Cancelled,
+                arcweft_core::task::ProgramTaskTerminal::Failed(failure) => {
+                    TaskEventKind::InfrastructureFailure(failure.clone())
+                }
+            };
+            events.push(self.event_for_task(&task_id, revision, kind)?);
+        }
+        self.prepare_task_event_frontiers(&events)?;
+        let mut scheduler = self.scheduler.clone();
+        let events = scheduler.complete(events)?;
+        let frontiers = self.prepare_task_event_frontiers(&events)?;
+        self.record_scheduler_owner_outcomes(&owners, &events);
+        self.stats.program_task_terminals += owners.len();
+        self.scheduler = scheduler;
+        self.publication_frontiers = frontiers;
+        self.retire_terminal_dispatches(&events);
+        Ok(events)
+    }
+
     /// Dispatches direct runtime host calls through the same manifest-owned
     /// adapter registry as temporal tasks. Synchronous results are returned in
     /// call-identity order; suspended completions are retrieved with
@@ -492,7 +549,11 @@ impl NativeTaskBridge {
                 ));
             }
         };
-        let host_request = &bound.spec().request;
+        let host_request = bound
+            .spec()
+            .request
+            .as_host()
+            .expect("admitted runtime host call");
         if !self.policy.allows(&host_request) {
             return Some(host_call_error(
                 runtime_id,
@@ -700,8 +761,12 @@ impl NativeTaskBridge {
             };
             let last_publication_revision =
                 self.publication_frontiers.get(&task.task_id()).copied();
-            let task_asset_context = bundle_asset_context
-                .filter(|_| matches!(&task.spec().request, HostTaskRequest::AssetLoad(_)));
+            let task_asset_context = bundle_asset_context.filter(|_| {
+                matches!(
+                    task.spec().request.as_host(),
+                    Some(HostTaskRequest::AssetLoad(_))
+                )
+            });
             dispatches.push(NativeTaskDispatch::new(
                 TaskDispatchStart::new(identity, last_publication_revision),
                 task,
@@ -838,12 +903,22 @@ impl NativeTaskBridge {
                 .into());
             }
         }
-        let (unauthorized, tasks): (Vec<_>, Vec<_>) = tasks
-            .into_iter()
-            .partition(|task| !self.policy.allows(&task.spec().request));
-        let (unimplemented, tasks): (Vec<_>, Vec<_>) = tasks
-            .into_iter()
-            .partition(|task| !self.registry.contains(&task.spec().request.host_call_id()));
+        let (unauthorized, tasks): (Vec<_>, Vec<_>) =
+            tasks
+                .into_iter()
+                .partition(|task| match &task.spec().request {
+                    arcweft_core::task::TaskRequest::Host(request) => !self.policy.allows(request),
+                    arcweft_core::task::TaskRequest::Program(_) => false,
+                });
+        let (unimplemented, tasks): (Vec<_>, Vec<_>) =
+            tasks
+                .into_iter()
+                .partition(|task| match &task.spec().request {
+                    arcweft_core::task::TaskRequest::Host(request) => {
+                        !self.registry.contains(&request.host_call_id())
+                    }
+                    arcweft_core::task::TaskRequest::Program(_) => false,
+                });
         let scheduled_ids = tasks
             .iter()
             .map(|task| task.task_id())
@@ -903,8 +978,18 @@ impl NativeTaskBridge {
             .saturating_add(started.elapsed().as_nanos());
 
         let started = Instant::now();
+        let host_tasks = dispatch
+            .tasks
+            .into_iter()
+            .filter(|task| {
+                matches!(
+                    &task.spec().request,
+                    arcweft_core::task::TaskRequest::Host(_)
+                )
+            })
+            .collect::<Vec<_>>();
         let completions =
-            complete_dispatched_tasks(&self.registry, &dispatch.tasks, &submission_contexts);
+            complete_dispatched_tasks(&self.registry, &host_tasks, &submission_contexts);
         self.stats.host_complete_elapsed_ns = self
             .stats
             .host_complete_elapsed_ns
@@ -913,20 +998,17 @@ impl NativeTaskBridge {
         if completions.parallel {
             self.stats.parallel_batches += 1;
             self.stats.parallel_tasks += completions.items.len();
-            self.stats.parallel_io_tasks += dispatch
-                .tasks
+            self.stats.parallel_io_tasks += host_tasks
                 .iter()
-                .filter(|task| is_io_task(&task.spec().request))
+                .filter(|task| task.spec().request.as_host().is_some_and(is_io_task))
                 .count();
-            self.stats.parallel_system_info_tasks += dispatch
-                .tasks
+            self.stats.parallel_system_info_tasks += host_tasks
                 .iter()
-                .filter(|task| NativeSystemInfoAdapter::request_kind(&task.spec().request).is_some())
-                .count();
-            self.stats.parallel_marker_tasks += dispatch
-                .tasks
-                .iter()
-                .filter(|task| is_scheduler_marker_task(&task.spec().request))
+                .filter(|task| {
+                    task.spec().request.as_host().is_some_and(|request| {
+                        NativeSystemInfoAdapter::request_kind(request).is_some()
+                    })
+                })
                 .count();
             self.stats.parallel_workers = self.stats.parallel_workers.max(
                 rayon::current_num_threads()
@@ -1013,7 +1095,11 @@ impl NativeTaskBridge {
                 arcweft_core::task::RuntimeTaskFailureKind::AdapterUnavailable,
                 format!(
                     "host call `{}` is not provided by the active adapter manifest",
-                    task.spec().request.host_call_id()
+                    task.spec()
+                        .request
+                        .as_host()
+                        .expect("host dispatch branch")
+                        .host_call_id()
                 ),
             )),
         )
@@ -1030,7 +1116,7 @@ impl NativeTaskBridge {
             publication_revision,
             TaskEventKind::InfrastructureFailure(arcweft_core::task::RuntimeTaskFailure::new(arcweft_core::task::RuntimeTaskFailureKind::AdapterUnavailable, format!(
                 "host call `{}` is provided by the active adapter manifest but no native adapter implementation is registered",
-                task.spec().request.host_call_id()
+                task.spec().request.as_host().expect("host dispatch branch").host_call_id()
             ))),
         )
     }
@@ -1249,24 +1335,20 @@ struct NativeCliAdapter {
     args: Box<[String]>,
 }
 
-#[derive(Clone, Debug)]
-struct InternalSchedulerMarkerAdapter {
-    manifest: AdapterManifest,
-}
-
 impl HostAdapter for NativeFileAdapter {
     fn manifest(&self) -> &AdapterManifest {
         &self.manifest
     }
 
     fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
+        let host_request = task.request.as_host()?;
         if let HostTaskRequest::Custom {
             capability,
             operation,
             args,
             named_args,
             ..
-        } = &task.request
+        } = host_request
             && capability.0 == "path"
         {
             let space = RuntimeVirtualPathSpace::from_label(operation)?;
@@ -1288,7 +1370,7 @@ impl HostAdapter for NativeFileAdapter {
             });
         }
         if matches!(
-            &task.request,
+            host_request,
             HostTaskRequest::Custom { capability, .. } if capability.0 == "fs"
         ) {
             return Some(complete_manifest_file_call(
@@ -1298,7 +1380,7 @@ impl HostAdapter for NativeFileAdapter {
                 bound,
             ));
         }
-        let (result, metrics) = match &task.request {
+        let (result, metrics) = match host_request {
             HostTaskRequest::FileReadText(request) => {
                 complete_read_text(&self.roots, &request.path)
             }
@@ -1330,13 +1412,14 @@ impl HostAdapter for NativeCliAdapter {
     }
 
     fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
+        let host_request = task.request.as_host()?;
         let HostTaskRequest::Custom {
             capability,
             operation,
             args,
             named_args,
             ..
-        } = &task.request
+        } = host_request
         else {
             return None;
         };
@@ -1463,12 +1546,15 @@ fn complete_manifest_file_call(
     task: &TaskSpec,
     bound: &BoundTaskOutcome,
 ) -> HostTaskOutcome {
+    let Some(host_request) = task.request.as_host() else {
+        return failed_host_task("program execution is not a native file request");
+    };
     let HostTaskRequest::Custom {
         capability,
         operation,
         manifest_contract,
         ..
-    } = &task.request
+    } = host_request
     else {
         return failed_host_task("native file adapter expected a manifest-owned custom request");
     };
@@ -1479,7 +1565,7 @@ fn complete_manifest_file_call(
         ));
     }
 
-    let host_call_id = task.request.host_call_id();
+    let host_call_id = host_request.host_call_id();
     let Some(host_call) = manifest
         .host_calls()
         .iter()
@@ -1499,7 +1585,7 @@ fn complete_manifest_file_call(
         Ok(names) => names,
         Err(message) => return failed_host_task(message),
     };
-    let arguments = match manifest_custom_arguments(&task.request, &names) {
+    let arguments = match manifest_custom_arguments(host_request, &names) {
         Ok(arguments) => arguments,
         Err(message) => return failed_host_task(message),
     };
@@ -1702,7 +1788,8 @@ impl HostAdapter for NativeSystemInfoAdapter {
     }
 
     fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
-        let Some(kind) = Self::request_kind(&task.request) else {
+        let host_request = task.request.as_host()?;
+        let Some(kind) = Self::request_kind(host_request) else {
             return None;
         };
         Some(HostTaskOutcome {
@@ -1726,26 +1813,6 @@ impl HostAdapter for NativeSystemInfoAdapter {
     }
 }
 
-impl HostAdapter for InternalSchedulerMarkerAdapter {
-    fn manifest(&self) -> &AdapterManifest {
-        &self.manifest
-    }
-
-    fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
-        is_scheduler_marker_task(&task.request).then(|| HostTaskOutcome {
-            completion: bound.try_payload(RuntimeValue::Unit).map_or_else(
-                |error| HostTaskCompletion::Failed(error.to_string()),
-                HostTaskCompletion::Ready,
-            ),
-            metrics: HostTaskMetrics::default(),
-        })
-    }
-
-    fn can_complete_in_parallel(&self, request: &HostTaskRequest) -> bool {
-        is_scheduler_marker_task(request)
-    }
-}
-
 pub fn standard_cli_registry_builder(
     file_roots: NativeFileRoots,
     cli_args: &[String],
@@ -1762,9 +1829,6 @@ pub fn standard_cli_registry_builder(
         .register(NativeCliAdapter {
             manifest: standard::native_cli_manifest(),
             args: cli_args.to_vec().into_boxed_slice(),
-        })?
-        .register(InternalSchedulerMarkerAdapter {
-            manifest: internal_scheduler_manifest(),
         })?;
     Ok(builder)
 }
@@ -1824,12 +1888,18 @@ fn complete_dispatched_tasks(
 
 fn should_complete_in_parallel(registry: &HostAdapterRegistry, tasks: &[BoundTaskSpec]) -> bool {
     tasks.len() > 1
-        && tasks
-            .iter()
-            .all(|task| registry.can_complete_in_parallel(&task.spec().request))
-        && tasks
-            .iter()
-            .any(|task| is_parallel_host_work(&task.spec().request))
+        && tasks.iter().all(|task| {
+            task.spec()
+                .request
+                .as_host()
+                .is_some_and(|request| registry.can_complete_in_parallel(request))
+        })
+        && tasks.iter().any(|task| {
+            task.spec()
+                .request
+                .as_host()
+                .is_some_and(is_parallel_host_work)
+        })
 }
 
 fn complete_task(
@@ -1856,7 +1926,11 @@ fn complete_task(
             dispatch,
             completion: HostTaskCompletion::Failed(format!(
                 "adapter rejected the registered host-call request `{}`",
-                task.spec().request.host_call_id()
+                task.spec()
+                    .request
+                    .as_host()
+                    .expect("host dispatch branch")
+                    .host_call_id()
             )),
             publication_revision,
             stats: HostTaskMetrics::default(),
@@ -1974,21 +2048,6 @@ fn is_file_read_request(request: &HostTaskRequest) -> bool {
 
 fn is_parallel_host_work(request: &HostTaskRequest) -> bool {
     is_io_task(request) || NativeSystemInfoAdapter::request_kind(request).is_some()
-}
-
-fn is_scheduler_marker_task(request: &HostTaskRequest) -> bool {
-    match request {
-        HostTaskRequest::Custom {
-            capability,
-            operation,
-            ..
-        } => is_scheduler_marker(capability.0.as_str(), operation),
-        _ => false,
-    }
-}
-
-fn is_scheduler_marker(capability: &str, operation: &str) -> bool {
-    matches!(capability, "line_task" | "flow_thread") && operation == "run_child"
 }
 
 #[derive(Clone, Copy)]
@@ -3888,7 +3947,7 @@ mod tests {
             policy,
             outcome,
             debug_label: request.host_call_id(),
-            request,
+            request: (request).into(),
         }
     }
     fn admit_fixture_task(spec: TaskSpec) -> TaskSubmission {

@@ -63,7 +63,7 @@ pub(crate) fn reusable_need_with_outcome(
         cancel_scope: CancelScopeId("fixture".to_owned()),
         policy: TaskPolicy::JoinSameKey,
         outcome,
-        request: HostTaskRequest::custom("fixture", "run", [value.into()]),
+        request: (HostTaskRequest::custom("fixture", "run", [value.into()])).into(),
         debug_label: "reusable fixture".to_owned(),
     })
     .expect("fixture descriptor has one exact complete correlation")
@@ -97,7 +97,7 @@ pub(crate) fn task_spec(
         policy: TaskPolicy::JoinSameKey,
         outcome,
         debug_label: request.debug_label(),
-        request,
+        request: (request).into(),
     }
 }
 

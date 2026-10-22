@@ -28,7 +28,7 @@ fn specification(request: HostTaskRequest) -> TaskSpec {
         cancel_scope: CancelScopeId("c".into()),
         policy: TaskPolicy::JoinSameKey,
         outcome: TaskOutcomeContract::new(RuntimeCheckedType::Bool),
-        request,
+        request: (request).into(),
         debug_label: "d".into(),
     }
 }
@@ -105,12 +105,12 @@ fn every_request_family_uses_the_same_live_inert_descriptor_and_limits() {
     ));
     for request in requests() {
         let mut spec = specification(request);
-        if matches!(spec.request, HostTaskRequest::SystemInfo(_)) {
+        if matches!(spec.request.as_host(), Some(HostTaskRequest::SystemInfo(_))) {
             spec.debug_label = "oversize".into();
         }
-        let saved = TaskSpec::<AwbcRuntimeValueSnapshot>::from_live(&spec, None).unwrap();
+        let saved = crate::task::TaskSpecSaveSnapshot::from_live(&spec, None).unwrap();
         let encoded = serde_json::to_vec(&saved).unwrap();
-        let decoded: TaskSpec<AwbcRuntimeValueSnapshot> = serde_json::from_slice(&encoded).unwrap();
+        let decoded: crate::task::TaskSpecSaveSnapshot = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(decoded.into_live(&owner).unwrap(), spec);
         let limits = RuntimeSchemaLimits {
             max_string_bytes: 7,
@@ -141,8 +141,10 @@ fn every_request_family_uses_the_same_live_inert_descriptor_and_limits() {
 #[test]
 fn later_request_payload_budget_failure_precedes_earlier_callable_construction() {
     let spec = specification(HostTaskRequest::custom("h", "f", []));
-    let mut saved = TaskSpec::<AwbcRuntimeValueSnapshot>::from_live(&spec, None).unwrap();
-    let HostTaskRequest::Custom { args, .. } = &mut saved.request else {
+    let mut saved = crate::task::TaskSpecSaveSnapshot::from_live(&spec, None).unwrap();
+    let HostTaskRequest::Custom { args, .. } =
+        saved.request.as_host_mut().expect("host request fixture")
+    else {
         unreachable!()
     };
     *args = vec![
@@ -181,9 +183,11 @@ fn later_request_original_state_failure_precedes_earlier_progress_construction()
             .is_err()
     );
     let spec = specification(HostTaskRequest::custom("h", "f", []));
-    let mut saved = TaskSpec::<AwbcRuntimeValueSnapshot>::from_live(&spec, None).unwrap();
+    let mut saved = crate::task::TaskSpecSaveSnapshot::from_live(&spec, None).unwrap();
     let state = crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap();
-    let HostTaskRequest::Custom { args, .. } = &mut saved.request else {
+    let HostTaskRequest::Custom { args, .. } =
+        saved.request.as_host_mut().expect("host request fixture")
+    else {
         unreachable!()
     };
     *args = vec![
@@ -204,7 +208,7 @@ fn later_request_original_state_failure_precedes_earlier_progress_construction()
 #[test]
 fn original_outcome_row_precedes_request_construction() {
     let spec = specification(HostTaskRequest::custom("h", "f", []));
-    let mut saved = TaskSpec::<AwbcRuntimeValueSnapshot>::from_live(&spec, None).unwrap();
+    let mut saved = crate::task::TaskSpecSaveSnapshot::from_live(&spec, None).unwrap();
     let payload = crate::pattern::RuntimeSemanticTypeId::from_bytes([99; 32]);
     saved.outcome = TaskOutcomeContract::program(payload);
     let producer = NeedProducerSpec::new(
@@ -216,7 +220,9 @@ fn original_outcome_row_precedes_request_construction() {
         saved.producer.arguments(),
     );
     saved.producer = NeedProducerInstance::try_from(&producer).unwrap();
-    let HostTaskRequest::Custom { args, .. } = &mut saved.request else {
+    let HostTaskRequest::Custom { args, .. } =
+        saved.request.as_host_mut().expect("host request fixture")
+    else {
         unreachable!()
     };
     args.push(AwbcRuntimeValueSnapshot::Callable(
@@ -306,7 +312,7 @@ fn submission_identity_is_admitted_before_request_callable_construction() {
         .unwrap();
     let submission = journal.submission(handle).unwrap();
     let saved = TaskSubmissionSaveSnapshot {
-        spec: TaskSpec::<AwbcRuntimeValueSnapshot>::from_live(submission.spec(), None).unwrap(),
+        spec: crate::task::TaskSpecSaveSnapshot::from_live(submission.spec(), None).unwrap(),
         handle: submission.handle(),
     };
     let mut wire = serde_json::to_value(saved).unwrap();

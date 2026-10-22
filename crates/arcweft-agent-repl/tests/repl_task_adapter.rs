@@ -184,16 +184,18 @@ fn task_record(
         cancel_scope: CancelScopeId(scope.into()),
         policy: TaskPolicy::JoinSameKey,
         outcome,
-        request: HostTaskRequest::custom(
+        request: (HostTaskRequest::custom(
             "fixture",
             "record",
             [RuntimeValue::String(argument.into()).into()],
-        ),
+        ))
+        .into(),
         debug_label: argument.into(),
     };
     let mut journal = TaskAdmissionJournal::default();
     let handle = journal.ensure_task(spec).unwrap();
     RuntimeTaskRecord {
+        execution: arcweft_core::task::TaskExecutionKind::Host,
         dispatch: TaskDispatchIdentity::new(
             handle.correlation,
             LogicalEpoch(epoch),

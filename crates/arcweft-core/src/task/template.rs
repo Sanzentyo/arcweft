@@ -62,7 +62,7 @@ impl HostCallProducerDefinition {
             policy: TaskPolicy::AlwaysStart,
             outcome: TaskOutcomeContract::program(result),
             debug_label: request.host_call_id(),
-            request,
+            request: request.into(),
         })
     }
 }
@@ -166,7 +166,7 @@ impl NeedProducerTemplate {
             cancel_scope: self.cancel_scope.clone(),
             policy: self.policy,
             outcome: self.outcome(),
-            request,
+            request: request.into(),
             debug_label: self.debug_label.clone(),
         };
         spec.validate_outcome()?;

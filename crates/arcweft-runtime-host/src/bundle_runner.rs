@@ -569,6 +569,9 @@ fn run_runtime_steps_with_executor(
             },
             step_options(mode, max_ops),
         );
+        let mut result = result;
+        let program_completions =
+            std::mem::take(&mut result.output.requests.program_task_completions);
         let (summary, task_requests, host_call_requests, _audio_commands) =
             BundleRunnerStepSummary::from_result(step_index, result);
         let done = matches!(
@@ -577,6 +580,9 @@ fn run_runtime_steps_with_executor(
         );
         summaries.push(summary);
         if done {
+            if let Some(host) = host.as_mut() {
+                task_events.extend(host.complete_program_tasks(&program_completions)?);
+            }
             break;
         }
         if let Some(host) = host.as_mut() {
@@ -589,6 +595,7 @@ fn run_runtime_steps_with_executor(
                     Some(asset_context),
                 )?,
             );
+            task_events.extend(host.complete_program_tasks(&program_completions)?);
             host_call_results.extend(host.complete_host_calls(
                 executor.program_owner(),
                 logical_epoch(step_index)?,
@@ -1124,10 +1131,11 @@ mod tests {
             cancel_scope: CancelScopeId("bundle-asset-test".into()),
             policy: TaskPolicy::JoinSameKey,
             outcome,
-            request: HostTaskRequest::AssetLoad(AssetRequest {
+            request: (HostTaskRequest::AssetLoad(AssetRequest {
                 id: id.into(),
                 kind: kind.as_str().into(),
-            }),
+            }))
+            .into(),
             debug_label: id.into(),
         };
         let mut journal = TaskAdmissionJournal::default();

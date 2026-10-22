@@ -587,7 +587,12 @@ where
                 report.events_emitted = host_report.events_emitted;
             }
             for task in &step.output.requests.tasks {
-                let request = agent_host_request_from_task(&task.spec().request)
+                let host_request = task.spec().request.as_host().ok_or_else(|| {
+                    AgentRunError::InvalidControllerRequest(
+                        "controller task requires a host execution request".into(),
+                    )
+                })?;
+                let request = agent_host_request_from_task(host_request)
                     .map_err(AgentRunError::InvalidControllerRequest)?;
                 let host_report =
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;

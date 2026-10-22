@@ -1017,7 +1017,7 @@ fn reusable_bool_need() -> arcweft_core::task::RuntimeNeedHandle {
         cancel_scope: CancelScopeId("fixture".into()),
         policy: TaskPolicy::JoinSameKey,
         outcome,
-        request: HostTaskRequest::custom("fixture", "bool", []),
+        request: (HostTaskRequest::custom("fixture", "bool", [])).into(),
         debug_label: "retained".into(),
     })
     .unwrap()

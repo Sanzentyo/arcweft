@@ -4,10 +4,9 @@
 
 use super::identity::TaskCorrelation;
 use super::{
-    CancelScopeId, GenerationId, HostTaskRequest, NeedProducerContractDigest,
-    NeedProducerInstanceKey, NeedProducerSpec, RuntimeTypeSemanticDigest, TaskClass,
-    TaskIdentityError, TaskLaunchOrdinal, TaskOutcomeContract, TaskPlanSemanticDigest, TaskPolicy,
-    TaskPriority,
+    CancelScopeId, GenerationId, NeedProducerContractDigest, NeedProducerInstanceKey,
+    NeedProducerSpec, RuntimeTypeSemanticDigest, TaskClass, TaskIdentityError, TaskLaunchOrdinal,
+    TaskOutcomeContract, TaskPlanSemanticDigest, TaskPolicy, TaskPriority, TaskRequest,
 };
 use crate::entry::RuntimeValueDigest;
 
@@ -163,7 +162,11 @@ impl NeedProducerInstance<super::ExpectedTaskPlanKey> {
 /// ```
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct TaskSpec<P = crate::value::RuntimePayload, Plan = TaskPlanSemanticDigest> {
+pub struct TaskSpec<
+    P = crate::value::RuntimePayload,
+    Plan = TaskPlanSemanticDigest,
+    S = crate::plan::RuntimeTaskSource,
+> {
     pub generation: GenerationId,
     pub producer: NeedProducerInstance<Plan>,
     pub class: TaskClass,
@@ -171,12 +174,36 @@ pub struct TaskSpec<P = crate::value::RuntimePayload, Plan = TaskPlanSemanticDig
     pub cancel_scope: CancelScopeId,
     pub policy: TaskPolicy,
     pub outcome: TaskOutcomeContract,
-    pub request: HostTaskRequest<P>,
+    pub request: TaskRequest<P, S>,
     pub debug_label: String,
 }
 
-impl<P> TaskSpec<P> {
+impl<P, S> TaskSpec<P, TaskPlanSemanticDigest, S> {
+    /// Changes only the Source storage role after enclosing batch admission.
+    /// Payload custody and the complete issued producer contract move intact.
+    pub(crate) fn map_source_admitted<T, E>(
+        self,
+        source: impl FnOnce(S) -> Result<T, E>,
+    ) -> Result<TaskSpec<P, TaskPlanSemanticDigest, T>, E> {
+        Ok(TaskSpec {
+            generation: self.generation,
+            producer: self.producer,
+            class: self.class,
+            priority: self.priority,
+            cancel_scope: self.cancel_scope,
+            policy: self.policy,
+            outcome: self.outcome,
+            request: self.request.into_mapped_admitted(Ok, source)?,
+            debug_label: self.debug_label,
+        })
+    }
+}
+
+impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
     pub(crate) fn validate_outcome(&self) -> Result<(), super::TaskEnsureError> {
+        if !self.request.matches_plan(self.producer.plan()) {
+            return Err(super::TaskEnsureError::ProgramSourceMismatch);
+        }
         self.outcome.validate_producer(&self.producer)
     }
 
@@ -195,6 +222,7 @@ impl<P> TaskSpec<P> {
     pub fn same_join_contract(&self, other: &Self) -> bool
     where
         P: PartialEq,
+        S: PartialEq,
     {
         self.generation == other.generation
             && self.producer == other.producer

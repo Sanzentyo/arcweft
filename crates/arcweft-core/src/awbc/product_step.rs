@@ -1465,6 +1465,10 @@ fn append_step_output(output: &mut RuntimeStepOutput, mut staged: RuntimeStepOut
         .stream_events
         .append(&mut staged.effects.stream_events);
     output.requests.tasks.append(&mut staged.requests.tasks);
+    output
+        .requests
+        .program_task_completions
+        .append(&mut staged.requests.program_task_completions);
     output.requests.audio.append(&mut staged.requests.audio);
     output
         .requests
@@ -2176,6 +2180,7 @@ impl AwbcProductStepExecutor {
             },
             id: FlowFiberId::from_executor_ordinal(0),
             parent: None,
+            launch: crate::engine::FlowFiberLaunch::Local,
             persistent_id: crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
                 std::num::NonZeroU64::MIN,

@@ -30,7 +30,7 @@ enum RuntimeNeedHandleOrigin {
 #[serde(deny_unknown_fields)]
 pub struct RuntimeNeedHandleSaveSnapshot {
     correlation: TaskCorrelation,
-    spec: Box<super::TaskSpec<crate::value::AwbcRuntimeValueSnapshot>>,
+    spec: Box<super::TaskSpecSaveSnapshot>,
     origin: RuntimeNeedHandleOrigin,
 }
 
@@ -46,7 +46,7 @@ impl RuntimeNeedHandleSaveSnapshot {
     pub(crate) fn view(&self) -> crate::value::RuntimeNeedView<'_> {
         crate::value::RuntimeNeedView::Snapshot(self)
     }
-    pub(crate) fn spec(&self) -> &super::TaskSpec<crate::value::AwbcRuntimeValueSnapshot> {
+    pub(crate) fn spec(&self) -> &super::TaskSpecSaveSnapshot {
         &self.spec
     }
 
@@ -101,12 +101,10 @@ impl RuntimeNeedHandleSaveSnapshot {
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(Self {
             correlation: handle.0.correlation,
-            spec: Box::new(
-                super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_admitted_storage(
-                    &handle.0.spec,
-                    owner,
-                )?,
-            ),
+            spec: Box::new(super::TaskSpecSaveSnapshot::from_admitted_storage(
+                &handle.0.spec,
+                owner,
+            )?),
             origin: handle.0.origin,
         })
     }
@@ -128,7 +126,7 @@ impl RuntimeNeedHandleSaveSnapshot {
         self,
         owner: &super::RuntimeProgramOwner,
     ) -> Result<RuntimeNeedHandle, crate::value::AwbcRuntimeValueSnapshotError> {
-        let spec = self.spec.into_admitted_live(owner)?;
+        let spec = self.spec.into_admitted_live(owner, None)?;
         Ok(RuntimeNeedHandle(Box::new(RuntimeNeedHandleData {
             correlation: self.correlation,
             spec,
@@ -158,10 +156,10 @@ pub enum RuntimeNeedHandleError {
 }
 
 impl RuntimeNeedHandleOrigin {
-    fn visit_descriptor<P>(
+    fn visit_descriptor<P, S: super::TaskExecutionSource>(
         self,
         correlation: TaskCorrelation,
-        spec: &super::TaskSpec<P>,
+        spec: &super::TaskSpec<P, super::TaskPlanSemanticDigest, S>,
         visitor: &mut impl super::descriptor::TaskDescriptorVisitor,
         depth: usize,
     ) -> Result<(), crate::entry::RuntimeSchemaError> {
@@ -268,7 +266,11 @@ impl RuntimeNeedHandle {
     }
 
     pub(crate) fn request_values(&self) -> impl Iterator<Item = &crate::value::RuntimeValue> {
-        self.0.spec.request.runtime_values()
+        self.0
+            .spec
+            .request
+            .payloads()
+            .map(crate::value::RuntimePayload::value)
     }
 
     pub const fn reusable_spec(&self) -> Option<&TaskSpec> {

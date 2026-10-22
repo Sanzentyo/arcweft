@@ -2971,7 +2971,7 @@ impl AwbcTaskPlan {
                 AwbcTaskPolicy::AlwaysStart => TaskPolicy::AlwaysStart,
             },
             outcome: TaskOutcomeContract::program(payload_type),
-            request,
+            request: request.into(),
             debug_label: format!("awbc.template.{:?}", input.family()),
         };
         spec.validate_outcome().map_err(|error| error.to_string())?;

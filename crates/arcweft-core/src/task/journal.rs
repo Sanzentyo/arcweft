@@ -13,12 +13,16 @@ use std::collections::BTreeMap;
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "TaskSpec<P, Plan>: serde::Serialize",
-        deserialize = "P: crate::value::InertRuntimeValueStorage, TaskSpec<P, Plan>: serde::Deserialize<'de>"
+        serialize = "TaskSpec<P, Plan, S>: serde::Serialize",
+        deserialize = "P: crate::value::InertRuntimeValueStorage, TaskSpec<P, Plan, S>: serde::Deserialize<'de>"
     )
 )]
-pub struct TaskSubmission<P = crate::value::RuntimePayload, Plan = super::TaskPlanSemanticDigest> {
-    pub(super) spec: TaskSpec<P, Plan>,
+pub struct TaskSubmission<
+    P = crate::value::RuntimePayload,
+    Plan = super::TaskPlanSemanticDigest,
+    S = crate::plan::RuntimeTaskSource,
+> {
+    pub(super) spec: TaskSpec<P, Plan, S>,
     pub(super) handle: TaskHandle,
 }
 
@@ -33,7 +37,17 @@ impl TaskSubmission {
     }
 }
 
-impl<P> TaskSubmission<P> {
+impl<P, S: super::TaskExecutionSource> TaskSubmission<P, super::TaskPlanSemanticDigest, S> {
+    pub(crate) fn map_source_admitted<T, E>(
+        self,
+        source: impl FnOnce(S) -> Result<T, E>,
+    ) -> Result<TaskSubmission<P, super::TaskPlanSemanticDigest, T>, E> {
+        Ok(TaskSubmission {
+            spec: self.spec.map_source_admitted(source)?,
+            handle: self.handle,
+        })
+    }
+
     pub(crate) fn admit_retained(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -45,7 +59,7 @@ impl<P> TaskSubmission<P> {
         self.spec
             .admit_retained_with_handle(Some(self.handle), admission)
     }
-    pub const fn spec(&self) -> &TaskSpec<P> {
+    pub const fn spec(&self) -> &TaskSpec<P, super::TaskPlanSemanticDigest, S> {
         &self.spec
     }
     pub const fn handle(&self) -> TaskHandle {
@@ -57,7 +71,7 @@ impl<P> TaskSubmission<P> {
     pub const fn task_key(&self) -> TaskKey {
         self.handle.correlation.task_key
     }
-    pub fn into_parts(self) -> (TaskSpec<P>, TaskHandle) {
+    pub fn into_parts(self) -> (TaskSpec<P, super::TaskPlanSemanticDigest, S>, TaskHandle) {
         (self.spec, self.handle)
     }
 }
@@ -137,8 +151,11 @@ impl TaskAdmissionJournal {
         self.accepted.values().map(|row| (&row.spec, row.handle))
     }
 
-    pub(super) fn validate_submissions<P: crate::value::RuntimeStoredValue>(
-        submissions: &[TaskSubmission<P>],
+    pub(super) fn validate_submissions<
+        P: crate::value::RuntimeStoredValue,
+        S: super::TaskExecutionSource,
+    >(
+        submissions: &[TaskSubmission<P, super::TaskPlanSemanticDigest, S>],
     ) -> Result<BTreeMap<(GenerationId, NeedProducerInstanceKey), u64>, TaskEnsureError> {
         for submission in submissions {
             submission.spec().validate_task_descriptor()?;
@@ -146,8 +163,8 @@ impl TaskAdmissionJournal {
         Self::validate_submission_journal(submissions)
     }
 
-    pub(super) fn validate_submission_journal<P>(
-        submissions: &[TaskSubmission<P>],
+    pub(super) fn validate_submission_journal<P, S: super::TaskExecutionSource>(
+        submissions: &[TaskSubmission<P, super::TaskPlanSemanticDigest, S>],
     ) -> Result<BTreeMap<(GenerationId, NeedProducerInstanceKey), u64>, TaskEnsureError> {
         let mut tasks = std::collections::BTreeSet::new();
         let mut joins = std::collections::BTreeSet::new();
@@ -433,7 +450,7 @@ mod tests {
             cancel_scope: CancelScopeId("fixture".into()),
             policy,
             outcome: TaskOutcomeContract::new(RuntimeCheckedType::Bool),
-            request: HostTaskRequest::custom("fixture", "run", []),
+            request: (HostTaskRequest::custom("fixture", "run", [])).into(),
             debug_label: "diagnostic".into(),
         }
     }

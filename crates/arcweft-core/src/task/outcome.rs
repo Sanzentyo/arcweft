@@ -42,6 +42,8 @@ impl RuntimeProgramOwner {
 /// Failure to bind a task outcome contract to the required type authority.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum TaskOutcomeBindingError {
+    #[error("program task Source belongs to another executable")]
+    ProgramSourceOwnerMismatch,
     #[error("standalone task outcome contains a program-owned nominal type or exceeds type limits")]
     InvalidStandaloneType,
     #[error("a standalone task outcome contract cannot be bound to a program")]
@@ -163,6 +165,13 @@ impl BoundTaskSpec {
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, TaskOutcomeBindingError> {
         let spec = submission.spec();
+        if let super::TaskRequest::Program(source) = &spec.request
+            && owner
+                .as_ref()
+                .is_none_or(|owner| !owner.same_program(&source.program_owner()))
+        {
+            return Err(TaskOutcomeBindingError::ProgramSourceOwnerMismatch);
+        }
         let outcome = match owner {
             Some(owner) => {
                 spec.outcome
@@ -220,7 +229,7 @@ impl PartialEq for BoundTaskSpec {
     }
 }
 
-impl<P> TaskSpec<P> {
+impl<P, S> TaskSpec<P, super::TaskPlanSemanticDigest, S> {
     pub(crate) fn validate_admitted_value_view(
         &self,
         value: crate::value::RuntimeValueView<'_>,

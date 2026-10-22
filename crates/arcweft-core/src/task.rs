@@ -58,10 +58,14 @@ pub use specification::{NeedProducerInstance, TaskHandle, TaskSpec};
 mod journal;
 pub use journal::{TaskAdmissionJournal, TaskSubmission};
 mod snapshot;
-pub use snapshot::TaskSubmissionSaveSnapshot;
+pub(crate) use snapshot::{TaskSnapshotSource, TaskSourceRestore};
+pub use snapshot::{TaskSpecSaveSnapshot, TaskSubmissionSaveSnapshot};
 pub(crate) mod descriptor;
+mod execution;
 mod failure;
 mod request;
+pub(crate) use execution::TaskExecutionSource;
+pub use execution::{ProgramTaskCompletion, ProgramTaskTerminal, TaskExecutionKind, TaskRequest};
 pub use failure::{
     BoundedRuntimeDiagnostic, RuntimeNeedOutcome, RuntimeTaskFailure, RuntimeTaskFailureKind,
 };
@@ -821,6 +825,8 @@ pub struct NamedHostArg<T> {
 /// scheduling and outcome contract.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum TaskEnsureError {
+    #[error("program execution Source differs from the task producer plan")]
+    ProgramSourceMismatch,
     #[error("task descriptor violates its resource contract: {0}")]
     Descriptor(Box<crate::entry::RuntimeSchemaError>),
     #[error("task identity derivation failed: {0}")]
@@ -1588,9 +1594,9 @@ impl Clone for TaskEvent<crate::value::AwbcRuntimeValueSnapshot> {
 impl<P> TaskEvent<P> {
     /// Preflights retained metadata and the exact outcome while the payload
     /// still belongs to its original live or inert owner.
-    pub(crate) fn admit_retained<Q>(
+    pub(crate) fn admit_retained<Q, S>(
         &self,
-        spec: Option<&TaskSpec<Q>>,
+        spec: Option<&TaskSpec<Q, TaskPlanSemanticDigest, S>>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where

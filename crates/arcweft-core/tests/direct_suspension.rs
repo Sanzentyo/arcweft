@@ -471,7 +471,7 @@ fn fixture_need(argument: &str) -> RuntimeNeedHandle {
         cancel_scope: CancelScopeId("fixture".to_owned()),
         policy: TaskPolicy::JoinSameKey,
         outcome,
-        request: HostTaskRequest::custom("fixture", "run", [value.into()]),
+        request: (HostTaskRequest::custom("fixture", "run", [value.into()])).into(),
         debug_label: "fixture Need".to_owned(),
     };
     let mut journal = TaskAdmissionJournal::default();

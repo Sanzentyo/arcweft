@@ -28,7 +28,7 @@ fn specification(policy: TaskPolicy) -> TaskSpec {
         cancel_scope: CancelScopeId("fixture".into()),
         policy,
         outcome: TaskOutcomeContract::new(RuntimeCheckedType::Bool),
-        request: HostTaskRequest::custom("fixture", "run", []),
+        request: (HostTaskRequest::custom("fixture", "run", [])).into(),
         debug_label: "first diagnostic".into(),
     }
 }
@@ -50,14 +50,14 @@ fn conflicting_join_does_not_replace_accepted_work() {
     let spec = specification(TaskPolicy::JoinSameKey);
     let accepted = journal.ensure_task(spec.clone()).unwrap();
     let mut conflict = spec;
-    conflict.request = HostTaskRequest::custom("fixture", "different_operation", []);
+    conflict.request = (HostTaskRequest::custom("fixture", "different_operation", [])).into();
     assert!(matches!(
         journal.ensure_task(conflict),
         Err(TaskEnsureError::JoinSpecificationConflict { .. })
     ));
     assert_eq!(
         journal.submission(accepted).unwrap().spec().request,
-        HostTaskRequest::custom("fixture", "run", [])
+        HostTaskRequest::custom("fixture", "run", []).into()
     );
 }
 

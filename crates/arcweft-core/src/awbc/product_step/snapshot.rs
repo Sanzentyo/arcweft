@@ -462,7 +462,7 @@ pub struct AwbcNeedProducerLaunchSaveSnapshot {
     pub source: crate::plan::RuntimeTaskSourceAssertion,
     pub arguments: Vec<AwbcNeedProducerArgumentSaveSnapshot>,
     pub correlation: crate::task::TaskCorrelation,
-    pub task_spec: crate::task::TaskSpec<crate::value::AwbcRuntimeValueSnapshot>,
+    pub task_spec: crate::task::TaskSpecSaveSnapshot,
     pub state: AwbcNeedStateSaveSnapshot,
     pub publication: Option<TaskPublicationCursor>,
     pub task_submitted: bool,
@@ -520,52 +520,21 @@ fn visit_task_request_values<E>(
     spec: &crate::task::TaskSpec,
     visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
 ) -> Result<(), E> {
-    use crate::task::HostTaskRequest;
-
-    let mut visit_optional = |payload: Option<&RuntimePayload>| {
-        if let Some(payload) = payload {
-            visit_runtime_payload(payload, visitor)?;
-        }
-        Ok(())
-    };
-    match &spec.request {
-        HostTaskRequest::HttpFetch(request) => visit_optional(request.body.as_ref()),
-        HostTaskRequest::HttpRespond(request) => visit_optional(request.body.as_ref()),
-        HostTaskRequest::WasmCall(request) => {
-            for payload in &request.args {
-                visit_runtime_payload(payload, visitor)?;
-            }
-            Ok(())
-        }
-        HostTaskRequest::Custom {
-            args, named_args, ..
-        } => {
-            for payload in args {
-                visit_runtime_payload(payload, visitor)?;
-            }
-            for argument in named_args {
-                visit_runtime_payload(&argument.value, visitor)?;
-            }
-            Ok(())
-        }
-        HostTaskRequest::FileReadText(_)
-        | HostTaskRequest::FileReadBytes(_)
-        | HostTaskRequest::FileWriteText(_)
-        | HostTaskRequest::FileWriteBytes(_)
-        | HostTaskRequest::ProcessRun(_)
-        | HostTaskRequest::AssetLoad(_)
-        | HostTaskRequest::ShaderCompile(_)
-        | HostTaskRequest::AudioDecode(_)
-        | HostTaskRequest::TtsSynthesis(_)
-        | HostTaskRequest::SystemInfo(_) => Ok(()),
+    for payload in spec.request.payloads() {
+        visit_runtime_payload(payload, visitor)?;
     }
+    Ok(())
 }
-
 fn save_need_producer_registry(
     registry: &NeedProducerRegistrySaveSnapshot,
 ) -> Result<AwbcNeedProducerRegistrySaveSnapshot, String> {
     Ok(AwbcNeedProducerRegistrySaveSnapshot {
-        task_admissions: registry.task_admissions.clone(),
+        task_admissions: registry
+            .task_admissions
+            .iter()
+            .cloned()
+            .map(|row| row.map_source_admitted(|source| Ok::<_, String>(source.assertion())))
+            .collect::<Result<_, _>>()?,
         launches: registry
             .launches
             .iter()
@@ -585,7 +554,11 @@ fn save_need_producer_registry(
                         })
                         .collect::<Result<_, String>>()?,
                     correlation: launch.correlation,
-                    task_spec: launch.start.task_spec().clone(),
+                    task_spec: launch
+                        .start
+                        .task_spec()
+                        .clone()
+                        .map_source_admitted(|source| Ok::<_, String>(source.assertion()))?,
                     state: launch.state.clone(),
                     publication: launch.publication,
                     task_submitted: launch.task_submitted,
@@ -636,6 +609,30 @@ fn restore_need_producer_registry(
     admission
         .validate_metadata_collection(saved.launches.len())
         .map_err(|error| error.to_string())?;
+    for row in &saved.task_admissions {
+        row.admit_retained(admission)
+            .map_err(|error| error.to_string())?;
+    }
+    let task_owner = admission.program_owner().cloned();
+    let task_admissions = saved
+        .task_admissions
+        .into_iter()
+        .map(|row| {
+            row.map_source_admitted(|assertion| {
+                let program =
+                    source_program.ok_or("program task has no admitted original Source")?;
+                let owner = task_owner
+                    .as_ref()
+                    .ok_or("program task has no enclosing executable")?;
+                crate::task::TaskSnapshotSource::restore_source(
+                    assertion,
+                    owner,
+                    Some(crate::task::TaskSourceRestore { program, admission }),
+                )
+                .map_err(|error| error.to_string())
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let mut launches = Vec::with_capacity(saved.launches.len());
     for launch in saved.launches {
         admission
@@ -671,8 +668,13 @@ fn restore_need_producer_registry(
                 value: argument.value,
             })
             .collect();
+        let task_spec = launch.task_spec.map_source_admitted(|_| {
+            Err::<crate::plan::RuntimeTaskSource, _>(
+                "a selected host producer cannot restore program execution".to_owned(),
+            )
+        })?;
         let start = prepared
-            .restore_start(arguments, launch.task_spec)
+            .restore_start(arguments, task_spec)
             .map_err(|error| error.to_string())?;
         launches.push(NeedProducerLaunchRestore {
             invocation: launch.invocation,
@@ -685,7 +687,7 @@ fn restore_need_producer_registry(
         });
     }
     Ok(NeedProducerRegistrySaveSnapshot {
-        task_admissions: saved.task_admissions,
+        task_admissions,
         launches,
         invocations: saved
             .invocations

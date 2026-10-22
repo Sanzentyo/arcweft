@@ -255,7 +255,7 @@ struct NativeTaskStatsSamples {
     parallel_tasks: Vec<usize>,
     parallel_io_tasks: Vec<usize>,
     parallel_system_info_tasks: Vec<usize>,
-    parallel_marker_tasks: Vec<usize>,
+    program_task_terminals: Vec<usize>,
     parallel_workers: Vec<usize>,
     scheduler_submit_elapsed_ns: Vec<u128>,
     scheduler_dispatch_elapsed_ns: Vec<u128>,
@@ -279,7 +279,7 @@ impl NativeTaskStatsSamples {
             parallel_tasks: Vec::with_capacity(capacity),
             parallel_io_tasks: Vec::with_capacity(capacity),
             parallel_system_info_tasks: Vec::with_capacity(capacity),
-            parallel_marker_tasks: Vec::with_capacity(capacity),
+            program_task_terminals: Vec::with_capacity(capacity),
             parallel_workers: Vec::with_capacity(capacity),
             scheduler_submit_elapsed_ns: Vec::with_capacity(capacity),
             scheduler_dispatch_elapsed_ns: Vec::with_capacity(capacity),
@@ -303,7 +303,8 @@ impl NativeTaskStatsSamples {
         self.parallel_io_tasks.push(stats.parallel_io_tasks);
         self.parallel_system_info_tasks
             .push(stats.parallel_system_info_tasks);
-        self.parallel_marker_tasks.push(stats.parallel_marker_tasks);
+        self.program_task_terminals
+            .push(stats.program_task_terminals);
         self.parallel_workers.push(stats.parallel_workers);
         self.scheduler_submit_elapsed_ns
             .push(stats.scheduler_submit_elapsed_ns);
@@ -331,7 +332,7 @@ impl NativeTaskStatsSamples {
             parallel_tasks: median_usize(&mut self.parallel_tasks),
             parallel_io_tasks: median_usize(&mut self.parallel_io_tasks),
             parallel_system_info_tasks: median_usize(&mut self.parallel_system_info_tasks),
-            parallel_marker_tasks: median_usize(&mut self.parallel_marker_tasks),
+            program_task_terminals: median_usize(&mut self.program_task_terminals),
             parallel_workers: median_usize(&mut self.parallel_workers),
             scheduler_submit_elapsed_ns: median_u128(&mut self.scheduler_submit_elapsed_ns),
             scheduler_dispatch_elapsed_ns: median_u128(&mut self.scheduler_dispatch_elapsed_ns),
