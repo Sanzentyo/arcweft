@@ -34,6 +34,9 @@ Thread semantic endpoints and private source encoding contain no synthetic Host
 capability, operation or request arguments; their captures retain their original
 program roles. AWBC Host request kernels admit only actual Host templates;
 they cannot certify a program body by returning an empty Host argument tuple.
+The common Q definition records each Program capture's original type, source
+order and local/capture/Need provenance through capture roles. It checks the
+complete role allowance before constructing those metadata rows.
 
 ```rust
 pub trait TaskHost {
