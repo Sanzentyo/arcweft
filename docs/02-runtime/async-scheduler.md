@@ -55,6 +55,14 @@ producer contract identify the scheduled work. `debug_label` is for diagnostics 
 discriminator. Backends such as Tokio, Rayon, web workers, or a cooperative test
 executor sit outside core.
 
+Every execution frame retains its immutable original executable lease, including
+dormant frames, suspended dialogue execution and the AWBC public facade. A Native
+Engine executes one immutable plan; replacement constructs a new Engine. An
+in-memory rollback image retains that same lease and checks exact instance
+identity before projecting or restoring frame values. Equal program contents do
+not authorize rebinding a frame to another executable. Frames have no ownerless
+default, and public persistence does not serialize this executable lease.
+
 Program dispatch remains in flight while Core executes its body and joins its
 attached descendants. Core issues `ProgramTaskCompletion` on actual retirement;
 the report retains the actual issuing Source lease, and the host checks it

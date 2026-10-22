@@ -438,6 +438,16 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
     {
         let invalid =
             |message: String| crate::value::AwbcRuntimeValueSnapshotError::Message { message };
+        admission.status()?;
+        let owner_check = match admission.program_owner() {
+            Some(owner) => self.ensure_program_owner(owner),
+            None => Err("execution frame requires its original executable".into()),
+        };
+        if let Err(message) = owner_check {
+            let error = invalid(message);
+            admission.retain_failure(error.clone());
+            return Err(error);
+        }
         admission.validate_metadata(&self.line_cursor)?;
         admission.validate_metadata_collection(self.root_cleanups.len())?;
         for cleanup in &self.root_cleanups {

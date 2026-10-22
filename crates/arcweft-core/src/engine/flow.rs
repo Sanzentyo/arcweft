@@ -333,7 +333,10 @@ impl Engine {
                     resume: self.fiber.frame.cursor,
                     captures: capture_locals,
                     task_inputs: Box::new([]),
-                    execution: super::NativeFlowExecutionFrame::running(locals),
+                    execution: super::NativeFlowExecutionFrame::running(
+                        self.fiber.frame.program.clone(),
+                        locals,
+                    ),
                     line_task: DialogueLineTaskState::NotStarted,
                     elapsed: LogicalDuration::default(),
                     phase: super::DialogueRuntimePhase::Activating,

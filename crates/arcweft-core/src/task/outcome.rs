@@ -19,6 +19,16 @@ pub enum RuntimeProgramOwner {
     Awbc(Arc<AwbcProgram>),
 }
 
+// Executable ownership is instance identity, even when two admitted programs
+// have identical contents. Comparing leases must never walk their code graphs.
+impl PartialEq for RuntimeProgramOwner {
+    fn eq(&self, other: &Self) -> bool {
+        self.same_program(other)
+    }
+}
+
+impl Eq for RuntimeProgramOwner {}
+
 impl RuntimeProgramOwner {
     /// Borrows the original executable's type authority.
     pub fn types(&self) -> RuntimeProgramTypes<'_> {

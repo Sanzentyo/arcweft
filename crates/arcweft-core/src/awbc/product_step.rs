@@ -2162,6 +2162,7 @@ impl AwbcProductStepExecutor {
         debug_assert_eq!(fiber.instance.get(), main_fiber_instance);
         let mut facade_fiber = FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
+                program: crate::task::RuntimeProgramOwner::Awbc(program.program_arc()),
                 line_cursor: 0,
                 cursor: None,
                 pending_ops: VecDeque::new(),

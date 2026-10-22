@@ -1410,7 +1410,16 @@ mod tests {
         )
     }
 
-    fn frame(phase: DialogueRuntimePhase) -> DialogueActivationFrame {
+    fn test_program() -> crate::task::RuntimeProgramOwner {
+        crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(
+            crate::plan::RuntimePlanBuilder::new().finish().unwrap(),
+        ))
+    }
+
+    fn frame(
+        program: crate::task::RuntimeProgramOwner,
+        phase: DialogueRuntimePhase,
+    ) -> DialogueActivationFrame {
         let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
         DialogueActivationFrame {
             parent: crate::engine::FlowFiberId::default(),
@@ -1429,6 +1438,7 @@ mod tests {
             captures: Box::default(),
             task_inputs: Box::default(),
             execution: crate::engine::NativeFlowExecutionFrame::running(
+                program,
                 crate::value::RuntimeEnv::default(),
             ),
             line_task: DialogueLineTaskState::NotStarted,
@@ -1453,7 +1463,7 @@ mod tests {
     #[test]
     fn dialogue_parent_must_match_the_activations_issuing_fiber() {
         let store = |parent| {
-            let mut frame = frame(DialogueRuntimePhase::Ready);
+            let mut frame = frame(test_program(), DialogueRuntimePhase::Ready);
             frame.parent = super::super::super::FlowFiberId::from_executor_ordinal(parent);
             let mut store = DialogueActivationStore::default();
             store
@@ -1487,7 +1497,7 @@ mod tests {
         // This input exceeds the actual snapshot depth policy. The later
         // reducer's original content/group correspondence must reject before
         // capture projects any value from this earlier frame.
-        let mut first = frame(DialogueRuntimePhase::Ready);
+        let mut first = frame(owner.clone(), DialogueRuntimePhase::Ready);
         let mut deep = RuntimeValue::Unit;
         for _ in 0..=crate::entry::RuntimeSchemaLimits::engine_default().max_depth {
             deep = RuntimeValue::Tuple(vec![deep]);
@@ -1498,7 +1508,7 @@ mod tests {
         }]
         .into_boxed_slice();
         let first_value_error = first.inert_rollback_image(&owner).unwrap_err();
-        let mut second = frame(DialogueRuntimePhase::Ready);
+        let mut second = frame(owner.clone(), DialogueRuntimePhase::Ready);
         let group = crate::line_task::LineTaskGroup::new(
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([73; 32]),
             Box::new([]),
@@ -1570,7 +1580,7 @@ mod tests {
         let export = RuntimeLocalDeclarationId::from_accepted_ordinal(
             NonZeroU32::new(2).expect("nonzero local"),
         );
-        let mut state = frame(DialogueRuntimePhase::Activating);
+        let mut state = frame(test_program(), DialogueRuntimePhase::Activating);
         state.captures = vec![external].into_boxed_slice();
         state.execution.env.set(external, RuntimeValue::Unit);
         state.execution.env.set(export, RuntimeValue::Bool(true));
@@ -1614,7 +1624,10 @@ mod tests {
         )
         .expect("stage actor site");
         store
-            .begin(id.clone(), frame(DialogueRuntimePhase::Publishing))
+            .begin(
+                id.clone(),
+                frame(test_program(), DialogueRuntimePhase::Publishing),
+            )
             .expect("activation");
         let mut transaction = store.begin_transaction(id).expect("transaction");
         let mut ledger = crate::line_task::RuntimeLineHandleLedger::default();
@@ -1697,12 +1710,18 @@ mod tests {
         let id = activation(0);
         let mut store = DialogueActivationStore::default();
         store
-            .begin(id.clone(), frame(DialogueRuntimePhase::Activating))
+            .begin(
+                id.clone(),
+                frame(test_program(), DialogueRuntimePhase::Activating),
+            )
             .expect("first activation");
         let before = store.begin_transaction(&id).expect("live transaction");
 
         assert_eq!(
-            store.begin(id.clone(), frame(DialogueRuntimePhase::Ready)),
+            store.begin(
+                id.clone(),
+                frame(test_program(), DialogueRuntimePhase::Ready)
+            ),
             Err(LineRuntimeError::DuplicateActivationLedger)
         );
         assert_eq!(
@@ -1727,7 +1746,10 @@ mod tests {
         let id = activation(1);
         let mut store = DialogueActivationStore::default();
         store
-            .begin(id.clone(), frame(DialogueRuntimePhase::Activating))
+            .begin(
+                id.clone(),
+                frame(test_program(), DialogueRuntimePhase::Activating),
+            )
             .expect("activation");
         let first = store.begin_transaction(&id).expect("first");
         assert_eq!(
@@ -1749,7 +1771,10 @@ mod tests {
         );
         let mut store = DialogueActivationStore::default();
         store
-            .begin(id.clone(), frame(DialogueRuntimePhase::Ready))
+            .begin(
+                id.clone(),
+                frame(test_program(), DialogueRuntimePhase::Ready),
+            )
             .expect("activation");
         store
             .latch_step_input(
@@ -1793,7 +1818,10 @@ mod tests {
             .latch_step_input(LogicalDuration::from_nanos(11), &[], &[], &[])
             .expect("empty ingress");
         store
-            .begin(id.clone(), frame(DialogueRuntimePhase::Ready))
+            .begin(
+                id.clone(),
+                frame(test_program(), DialogueRuntimePhase::Ready),
+            )
             .expect("activation");
         assert_eq!(
             store
@@ -1810,7 +1838,10 @@ mod tests {
         let id = activation(4);
         let mut store = DialogueActivationStore::default();
         store
-            .begin(id.clone(), frame(DialogueRuntimePhase::Closing))
+            .begin(
+                id.clone(),
+                frame(test_program(), DialogueRuntimePhase::Closing),
+            )
             .expect("activation");
         let mut mismatch = store.begin_transaction(&id).expect("mismatch");
         mismatch.line_mut().abandon().expect("abandon");

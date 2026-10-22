@@ -273,6 +273,8 @@ pub struct NativeFlowExecutionFrame<
     A = AwaitState,
     S = FlowFiberStatus,
 > {
+    /// Immutable code and type authority retained by this execution frame.
+    pub(crate) program: crate::task::RuntimeProgramOwner,
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<O>,
@@ -315,6 +317,7 @@ type NativeFlowExecutionFrameRollbackImage = NativeFlowExecutionFrame<
 impl Clone for NativeFlowExecutionFrameRollbackImage {
     fn clone(&self) -> Self {
         Self {
+            program: self.program.clone(),
             line_cursor: self.line_cursor,
             cursor: self.cursor,
             pending_ops: self.pending_ops.clone(),
@@ -378,6 +381,21 @@ impl FlowFiber {
     }
 }
 
+impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
+    /// Borrows the exact original executable retained by this frame.
+    pub const fn program_owner(&self) -> &crate::task::RuntimeProgramOwner {
+        &self.program
+    }
+
+    fn ensure_program_owner(&self, owner: &crate::task::RuntimeProgramOwner) -> Result<(), String> {
+        if self.program.same_program(owner) {
+            Ok(())
+        } else {
+            Err("execution frame belongs to a different original executable".into())
+        }
+    }
+}
+
 impl NativeFlowExecutionFrame {
     fn active_function(&self) -> Option<&FunctionCallFrame> {
         self.control_stack
@@ -417,7 +435,9 @@ impl NativeFlowExecutionFrame {
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<NativeFlowExecutionFrameRollbackImage, String> {
+        self.ensure_program_owner(owner)?;
         Ok(NativeFlowExecutionFrameRollbackImage {
+            program: self.program.clone(),
             line_cursor: self.line_cursor,
             cursor: self.cursor,
             pending_ops: self
@@ -480,7 +500,9 @@ impl NativeFlowExecutionFrame {
         image: NativeFlowExecutionFrameRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
+        image.ensure_program_owner(owner)?;
         Ok(Self {
+            program: image.program,
             line_cursor: image.line_cursor,
             cursor: image.cursor,
             pending_ops: image
@@ -1945,25 +1967,10 @@ impl FlowExit {
     }
 }
 
-impl Default for FlowFiber {
-    fn default() -> Self {
+impl NativeFlowExecutionFrame {
+    fn new(program: crate::task::RuntimeProgramOwner) -> Self {
         Self {
-            frame: NativeFlowExecutionFrame::default(),
-            id: FlowFiberId::default(),
-            parent: None,
-            launch: crate::engine::FlowFiberLaunch::Local,
-            persistent_id: RuntimePersistentFiberId::default(),
-            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
-                std::num::NonZeroU64::MIN,
-            ),
-            owner: FlowFiberOwner::Executor,
-        }
-    }
-}
-
-impl Default for NativeFlowExecutionFrame {
-    fn default() -> Self {
-        Self {
+            program,
             line_cursor: 0,
             cursor: None,
             pending_ops: VecDeque::new(),
@@ -1977,14 +1984,12 @@ impl Default for NativeFlowExecutionFrame {
             status: FlowFiberStatus::Done(FlowExit::Done),
         }
     }
-}
 
-impl NativeFlowExecutionFrame {
-    fn running(env: RuntimeEnv) -> Self {
+    fn running(program: crate::task::RuntimeProgramOwner, env: RuntimeEnv) -> Self {
         Self {
             env,
             status: FlowFiberStatus::Running,
-            ..Self::default()
+            ..Self::new(program)
         }
     }
 }
@@ -2274,7 +2279,7 @@ impl Engine {
         Self {
             evaluation_stats: crate::pure::PureFunctionStats::default(),
             invocation_result: None,
-            plan,
+            plan: Arc::clone(&plan),
             format_context: crate::value::RuntimeFormatContext::default(),
             generation,
             need_producers: NeedProducerRegistry::default(),
@@ -2287,6 +2292,7 @@ impl Engine {
             root: None,
             fiber: FlowFiber {
                 frame: crate::engine::NativeFlowExecutionFrame {
+                    program: crate::task::RuntimeProgramOwner::Plan(plan),
                     line_cursor: 0,
                     cursor: None,
                     pending_ops: VecDeque::new(),
@@ -3395,6 +3401,7 @@ impl Engine {
         Ok((
             FlowFiber {
                 frame: crate::engine::NativeFlowExecutionFrame {
+                    program: self.fiber.frame.program.clone(),
                     line_cursor: 0,
                     cursor: None,
                     pending_ops,
@@ -3560,6 +3567,7 @@ impl Engine {
         pending_ops.push_back(FlowOp::ExitScope);
         FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
+                program: self.fiber.frame.program.clone(),
                 line_cursor: 0,
                 cursor: None,
                 pending_ops,
@@ -3861,6 +3869,7 @@ impl Engine {
                         .expect("fiber identity headroom was preflighted");
                     batch.child_fibers.push_back(FlowFiber {
                         frame: crate::engine::NativeFlowExecutionFrame {
+                            program: self.fiber.frame.program.clone(),
                             line_cursor: 0,
                             cursor: None,
                             pending_ops,
@@ -4091,6 +4100,7 @@ impl Engine {
         };
         let child = FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
+                program: self.fiber.frame.program.clone(),
                 line_cursor: 0,
                 cursor: None,
                 pending_ops,
@@ -5134,6 +5144,104 @@ mod rollback_tests {
     }
 
     #[test]
+    fn native_frames_retain_and_authenticate_the_original_program_before_copy() {
+        use crate::task::RuntimeProgramOwner;
+        let engine = Engine::new(RuntimePlanBuilder::new().finish().unwrap());
+        let owner = RuntimeProgramOwner::Plan(engine.program_plan());
+        let foreign =
+            RuntimeProgramOwner::Plan(Arc::new(RuntimePlanBuilder::new().finish().unwrap()));
+        assert_ne!(
+            owner, foreign,
+            "equal code is not the same executable lease"
+        );
+        assert_eq!(engine.fiber.frame.program_owner(), &owner);
+        let (mut child, _) = engine.prepare_child_fiber(&[], &[]).unwrap();
+        assert_eq!(child.frame.program_owner(), &owner);
+        drop(engine);
+
+        let image = child.frame.inert_rollback_image(&owner).unwrap();
+        assert_eq!(image.program_owner(), &owner);
+        let restored = NativeFlowExecutionFrame::from_rollback_image(image.clone(), &owner)
+            .expect("the frame retains its executable after the engine is dropped");
+        assert_eq!(restored, child.frame);
+        let mismatch = "execution frame belongs to a different original executable";
+        assert_eq!(
+            NativeFlowExecutionFrame::from_rollback_image(image.clone(), &foreign).unwrap_err(),
+            mismatch,
+        );
+        assert_eq!(
+            NativeFlowExecutionFrame::from_image_with_admitted_values(image, &foreign).unwrap_err(),
+            mismatch,
+        );
+
+        // Invalid values must not obscure a foreign executable or be copied
+        // under that executable's structurally equal type table.
+        let mut value = RuntimeValue::Unit;
+        for _ in 0..=crate::entry::RuntimeSchemaLimits::engine_default().max_depth {
+            value = RuntimeValue::Tuple(vec![value]);
+        }
+        let local = crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
+            std::num::NonZeroU32::MIN,
+        );
+        child.frame.env.set(local, value);
+        assert_eq!(
+            child.frame.inert_rollback_image(&foreign).unwrap_err(),
+            mismatch
+        );
+        assert_eq!(
+            child
+                .frame
+                .snapshot_with_admitted_values(&foreign)
+                .unwrap_err(),
+            mismatch,
+        );
+        assert_ne!(
+            child.frame.inert_rollback_image(&owner).unwrap_err(),
+            mismatch
+        );
+        assert!(
+            child.frame.env.get(local).is_some(),
+            "rejection preserves the live frame"
+        );
+    }
+
+    #[test]
+    fn native_frame_program_rejection_is_sticky_in_the_shared_admission() {
+        use crate::task::RuntimeProgramOwner;
+        use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+        let frame = NativeFlowExecutionFrame::new(RuntimeProgramOwner::Plan(Arc::new(
+            RuntimePlanBuilder::new().finish().unwrap(),
+        )));
+        let foreign =
+            RuntimeProgramOwner::Plan(Arc::new(RuntimePlanBuilder::new().finish().unwrap()));
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        let mut admission = RuntimeRetainedValueAdmission::for_program(foreign.clone(), limits);
+        let error = frame.admit_owned_values(&mut admission).unwrap_err();
+        assert_eq!(
+            error,
+            AwbcRuntimeValueSnapshotError::Message {
+                message: "execution frame belongs to a different original executable".into(),
+            },
+        );
+        let matching_frame = NativeFlowExecutionFrame::new(foreign);
+        assert_eq!(
+            matching_frame
+                .admit_owned_values(&mut admission)
+                .unwrap_err(),
+            error
+        );
+        assert_eq!(admission.status().unwrap_err(), error);
+
+        let mut standalone = RuntimeRetainedValueAdmission::standalone(limits);
+        assert_eq!(
+            frame.admit_owned_values(&mut standalone).unwrap_err(),
+            AwbcRuntimeValueSnapshotError::Message {
+                message: "execution frame requires its original executable".into(),
+            },
+        );
+    }
+
+    #[test]
     fn native_rollback_requires_the_exact_external_program_lease() {
         let plan = crate::plan::RuntimePlanBuilder::new().finish().unwrap();
         let equal_plan = crate::plan::RuntimePlanBuilder::new().finish().unwrap();
@@ -5149,6 +5257,18 @@ mod rollback_tests {
         assert_eq!(
             Engine::from_rollback_image(image.clone(), &foreign).unwrap_err(),
             "native rollback belongs to a different original executable",
+        );
+        let mut foreign_frame = image.clone();
+        foreign_frame.fiber.frame.program = foreign.clone();
+        assert_eq!(
+            Engine::from_rollback_image(foreign_frame, &owner).unwrap_err(),
+            "execution frame belongs to a different original executable",
+        );
+        let mut foreign_frame = Engine::from_rollback_image(image.clone(), &owner).unwrap();
+        foreign_frame.fiber.frame.program = foreign.clone();
+        assert_eq!(
+            foreign_frame.inert_rollback_image().unwrap_err(),
+            "execution frame belongs to a different original executable",
         );
         let mut malformed = image;
         malformed.invocation_result = Some((

@@ -145,6 +145,11 @@ fn program_continuation_accepts_detached_prefix_and_retains_awbc_need_result_con
             ],
         )
         .unwrap();
+    assert_eq!(
+        executor.facade_fiber.frame.program_owner(),
+        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+        "the public facade retains the actual AWBC executable",
+    );
     assert!(
         executor
             .step_with_pure_backend(

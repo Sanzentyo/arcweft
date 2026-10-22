@@ -2883,7 +2883,7 @@ mod tests {
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
         engine
             .dialogue_activations
-            .begin(activation.clone(), activation_frame(local))
+            .begin(activation.clone(), activation_frame(&engine, local))
             .expect("activation");
         let mut transaction = engine
             .dialogue_activations
@@ -3018,7 +3018,10 @@ mod tests {
         (Engine::new(builder.finish().expect("plan")), site)
     }
 
-    fn activation_frame(local: RuntimeLocalDeclarationId) -> DialogueActivationFrame {
+    fn activation_frame(
+        engine: &Engine,
+        local: RuntimeLocalDeclarationId,
+    ) -> DialogueActivationFrame {
         let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
         let mut locals = crate::value::RuntimeEnv::default();
         locals.set(local, RuntimeValue::Unit);
@@ -3038,7 +3041,10 @@ mod tests {
             resume: None,
             captures: Box::new([]),
             task_inputs: Box::new([]),
-            execution: crate::engine::NativeFlowExecutionFrame::running(locals),
+            execution: crate::engine::NativeFlowExecutionFrame::running(
+                crate::task::RuntimeProgramOwner::Plan(engine.program_plan()),
+                locals,
+            ),
             line_task: DialogueLineTaskState::NotStarted,
             elapsed: LogicalDuration::default(),
             phase: DialogueRuntimePhase::Activating,
@@ -3072,7 +3078,7 @@ mod tests {
         );
         engine
             .dialogue_activations
-            .begin(activation.clone(), activation_frame(local))
+            .begin(activation.clone(), activation_frame(&engine, local))
             .expect("activation");
         let mut owner = engine
             .dialogue_activations
@@ -3121,7 +3127,7 @@ mod tests {
         let (engine, site) = scoped_defer_engine();
         let id = activation_id();
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
-        let mut frame = activation_frame(local);
+        let mut frame = activation_frame(&engine, local);
         frame.execution.env.push_scope();
         frame.scopes.push(DialogueActivationScope::new());
         let mut line = RuntimeDialogueActivationState::new();
@@ -3185,7 +3191,7 @@ mod tests {
         let mut engine = Engine::new(plan);
         let id = activation_id();
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
-        let mut frame = activation_frame(local);
+        let mut frame = activation_frame(&engine, local);
         frame.execution.env.push_scope();
         frame.scopes.push(DialogueActivationScope::new());
         frame.activation_pc = 3;
@@ -3240,7 +3246,7 @@ mod tests {
         let mut engine = Engine::new(builder.finish().expect("plan"));
         let id = activation_id();
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
-        let mut frame = activation_frame(local);
+        let mut frame = activation_frame(&engine, local);
         frame.activation_pc = 2;
         let call_id = crate::step::RuntimeHostCallId("init.log".to_owned());
         frame.pending_host_call = Some(super::PendingActivationHostCall {
@@ -3306,7 +3312,7 @@ mod tests {
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
         engine
             .dialogue_activations
-            .begin(id.clone(), activation_frame(local))
+            .begin(id.clone(), activation_frame(&engine, local))
             .expect("activation");
         let mut transaction = engine
             .dialogue_activations
@@ -3393,7 +3399,7 @@ mod tests {
         let id = activation_id();
         let source = locals[0];
         let destination = locals[1];
-        let mut frame = activation_frame(source);
+        let mut frame = activation_frame(&engine, source);
         frame.execution.env = crate::value::RuntimeEnv::default();
         frame.execution.env.push_scope();
         frame.scopes.push(DialogueActivationScope::new());
