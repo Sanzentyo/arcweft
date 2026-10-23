@@ -9209,3 +9209,19 @@ R2424 の全53 package runtimeはこの拒否強化前の固定入力の結果�
 
 追加13件を含む71件の原本・派生監査の保存hash差分0。R2427 Clippyのtrailing
 whitespace 3行も保持し、staged whitespace検査の原本除外は上記4件とこの1件の計5件。
+
+### 公開後の照合 — 2026-10-24
+
+既存 `main` に通常 commit／non-forced push で
+`fbc57b594d22094045762beedc477085e41210d5` を公開した。
+parent は `b337ec4d9bf6a37ca24c6db9e38c58f904dc3a5f`、
+tree は `94f388a74a213f8be53ae93070cbbd0556e80d2f`。
+fresh fetch と remote 広告の full SHA、107 staged paths の公開 blob、
+4,167 working inputs、raw patch を照合し、差分0・index空を確認した。
+raw patch SHA256 は `51d7a5d3961c0ffc347aa0364a41ccc1c48828f50a239fc1ac79861ea24408fd`。
+
+既存14 tracked WIPのpathとhunk内容を保持した。混在するNative importは公開対象から
+除外し、blob header／hunk位置以外の変更0。既存の保護対象17ファイルと
+untracked修復メモ2件のhash差分0、71検証原本のhash差分0。
+変更文書の相対リンク52件は解決可能。R2426入力から変わった既存ファイルは
+現状一覧と履歴のみで、この公開照合を追加のruntime合格とは数えない。
