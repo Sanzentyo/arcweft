@@ -151,6 +151,7 @@ pub(super) fn validate_continuation<'a>(
         }
         let target = match tried.boundary() {
             RuntimeTryBoundaryOwner::CarrierBlock(owner)
+            | RuntimeTryBoundaryOwner::Thread(owner)
             | RuntimeTryBoundaryOwner::ExplicitFunctionSite(owner)
             | RuntimeTryBoundaryOwner::ImplicitFunctionSite(owner) => Some(owner),
             RuntimeTryBoundaryOwner::Callable(_) | RuntimeTryBoundaryOwner::Infallible => None,

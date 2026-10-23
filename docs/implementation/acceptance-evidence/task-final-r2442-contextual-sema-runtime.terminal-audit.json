@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "run": "task-final-r2442-contextual-sema-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  12.849s] 1303 tests run: 1303 passed, 0 skipped",
+  "executed": 1303,
+  "passed": 1303,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [
+    "arcweft-lang-hir"
+  ],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4167,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-23T18:47:35.3187108Z"
+}

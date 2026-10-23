@@ -1134,6 +1134,7 @@ impl CheckedExpressionResolution {
                 Ok(())
             }
             Self::Try(checked) => checked.visit_types(visitor),
+            Self::Thread(thread) => visitor(thread.result()),
             Self::ImplicitCallable(callable) => callable.visit_types(visitor),
             Self::CharacterDialogueFactory(factory) => factory.visit_types(visitor),
             Self::CharacterDialogueReconfigure(reconfigure) => reconfigure.visit_types(visitor),
@@ -1160,7 +1161,6 @@ impl CheckedExpressionResolution {
             | Self::Effect(_)
             | Self::Call
             | Self::Await(_)
-            | Self::Thread(_)
             | Self::Closure(_)
             | Self::ImplicitParameter(_)
             | Self::Pipe(_)
@@ -1493,6 +1493,7 @@ impl CheckedTryBoundaryOwner {
         match self {
             Self::CarrierBlock(boundary) => Some(boundary),
             Self::Callable(CheckedCallableBoundary::FunctionSite(site)) => Some(site.site()),
+            Self::Callable(CheckedCallableBoundary::Thread(site)) => Some(site),
             Self::Infallible | Self::Callable(CheckedCallableBoundary::Declaration(_)) => None,
         }
     }
@@ -1565,18 +1566,23 @@ impl CheckedTry {
     }
 }
 
-/// Accepted source body and execution mode of one Thread expression.
+/// Accepted source body, execution mode and result contract of one Thread expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedThread {
     body: arcweft_lang_hir::identity::ScopeId,
     mode: arcweft_lang_hir::expr::HirThreadMode,
+    result: TypeKind,
 }
 
 impl CheckedThread {
-    pub(super) const fn from_source(thread: &arcweft_lang_hir::expr::HirThreadExpr) -> Self {
+    pub(super) fn from_source(
+        thread: &arcweft_lang_hir::expr::HirThreadExpr,
+        result: TypeKind,
+    ) -> Self {
         Self {
             body: thread.scope(),
             mode: thread.mode(),
+            result,
         }
     }
 
@@ -1586,6 +1592,10 @@ impl CheckedThread {
 
     pub const fn mode(&self) -> arcweft_lang_hir::expr::HirThreadMode {
         self.mode
+    }
+
+    pub const fn result(&self) -> &TypeKind {
+        &self.result
     }
 
     pub fn matches_source(&self, thread: &arcweft_lang_hir::expr::HirThreadExpr) -> bool {

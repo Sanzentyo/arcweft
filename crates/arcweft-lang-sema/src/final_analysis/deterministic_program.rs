@@ -185,7 +185,9 @@ impl CheckedClosedExecutionContext<'_> {
                 _ => continue,
             };
             let admitted = match target {
-                CheckedControlTransferTarget::Return(boundary) => inputs.admits_callable(boundary),
+                CheckedControlTransferTarget::Return(boundary) => {
+                    inputs.admits_return_boundary(boundary)
+                }
                 CheckedControlTransferTarget::Output(target) => {
                     inputs.contains_expression(target.application())
                 }
@@ -231,7 +233,9 @@ impl CheckedClosedExecutionContext<'_> {
                 CheckedTryBoundaryOwner::CarrierBlock(boundary) => {
                     inputs.contains_expression(boundary.lookup_owner())
                 }
-                CheckedTryBoundaryOwner::Callable(boundary) => inputs.admits_callable(boundary),
+                CheckedTryBoundaryOwner::Callable(boundary) => {
+                    inputs.admits_return_boundary(boundary)
+                }
             };
             if !admitted {
                 return Err(CheckedProgramAdmissionError::ExternalTry { expression });
@@ -242,7 +246,10 @@ impl CheckedClosedExecutionContext<'_> {
 }
 
 impl CheckedExecutionInputAbi {
-    fn admits_callable(&self, boundary: &CheckedCallableBoundary) -> bool {
+    fn admits_return_boundary(&self, boundary: &CheckedCallableBoundary) -> bool {
+        if let CheckedCallableBoundary::Thread(site) = boundary {
+            return self.contains_expression(site.lookup_owner());
+        }
         match (self.source(), boundary) {
             (
                 CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner))

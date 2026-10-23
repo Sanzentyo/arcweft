@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "run": "task-final-r2437-thread-try-frame-diagnostic-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.084s] 1 test run: 0 passed, 1 failed, 1302 skipped",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 1302,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4167,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::semantic_transcript_acceptance::return_boundaries::try_inside_thread_propagates_to_the_child_result"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-23T18:38:10.0214738Z"
+}

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "run": "task-final-r2431-thread-result-semantic-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.182s] 11 tests run: 8 passed, 3 failed, 2251 skipped",
+  "executed": 11,
+  "passed": 8,
+  "failed": 3,
+  "skipped": 2251,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4167,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::semantic_transcript_acceptance::return_boundaries::try_inside_thread_propagates_to_the_child_result"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::semantic_transcript_acceptance::return_boundaries::thread_results_and_returns_belong_to_their_original_child_frames"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::semantic_transcript_acceptance::return_boundaries::contextual_thread_result_types_its_return_literal_before_publication"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-23T18:28:38.0093908Z"
+}

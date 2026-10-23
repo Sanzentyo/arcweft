@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "run": "task-final-r2449-native-source-thread-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.128s] 3 tests run: 3 passed, 10 skipped",
+  "executed": 3,
+  "passed": 3,
+  "failed": 0,
+  "skipped": 10,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4168,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-23T19:04:06.5317212Z"
+}

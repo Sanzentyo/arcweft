@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "metrics": [
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "bytes": 431572,
+      "physicalLoc": 10145,
+      "baseLoc": 10142,
+      "growth": 3
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/flow_include.rs",
+      "bytes": 18996,
+      "physicalLoc": 518,
+      "baseLoc": 471,
+      "growth": 47
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_project/semantic_paths.rs",
+      "bytes": 252340,
+      "physicalLoc": 6731,
+      "baseLoc": 6727,
+      "growth": 4
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_project/semantic_paths/tests.rs",
+      "bytes": 39280,
+      "physicalLoc": 1091,
+      "baseLoc": 1050,
+      "growth": 41
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/executable_ingress.rs",
+      "bytes": 29596,
+      "physicalLoc": 757,
+      "baseLoc": 768,
+      "growth": -11
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "bytes": 239593,
+      "physicalLoc": 5530,
+      "baseLoc": 5388,
+      "growth": 142
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+      "bytes": 38318,
+      "physicalLoc": 876,
+      "baseLoc": 845,
+      "growth": 31
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/deterministic_program.rs",
+      "bytes": 11751,
+      "physicalLoc": 278,
+      "baseLoc": 271,
+      "growth": 7
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+      "bytes": 113845,
+      "physicalLoc": 3389,
+      "baseLoc": 3379,
+      "growth": 10
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/model/callable_boundary.rs",
+      "bytes": 10564,
+      "physicalLoc": 256,
+      "baseLoc": 215,
+      "growth": 41
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/owner_bound_resolution.rs",
+      "bytes": 37844,
+      "physicalLoc": 919,
+      "baseLoc": 902,
+      "growth": 17
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/prepared.rs",
+      "bytes": 58616,
+      "physicalLoc": 1736,
+      "baseLoc": 1731,
+      "growth": 5
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+      "bytes": 194609,
+      "physicalLoc": 4763,
+      "baseLoc": 4755,
+      "growth": 8
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/return_boundaries.rs",
+      "bytes": 8235,
+      "physicalLoc": 224,
+      "baseLoc": 130,
+      "growth": 94
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+      "bytes": 140260,
+      "physicalLoc": 3312,
+      "baseLoc": 3294,
+      "growth": 18
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "bytes": 441072,
+      "physicalLoc": 10321,
+      "baseLoc": 10316,
+      "growth": 5
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "bytes": 582236,
+      "physicalLoc": 14896,
+      "baseLoc": 14878,
+      "growth": 18
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/lexical_scope.rs",
+      "bytes": 8144,
+      "physicalLoc": 221,
+      "baseLoc": 220,
+      "growth": 1
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "arcweft-lang-hir",
+      "fanIn": 11,
+      "fanOut": 3
+    },
+    {
+      "name": "arcweft-lang-sema",
+      "fanIn": 12,
+      "fanOut": 14
+    },
+    {
+      "name": "arcweft-runtime-plan",
+      "fanIn": 10,
+      "fanOut": 10
+    },
+    {
+      "name": "arcweft-compiler",
+      "fanIn": 5,
+      "fanOut": 34
+    }
+  ],
+  "manifestLockDrift": 0,
+  "reversePackages": 23
+}

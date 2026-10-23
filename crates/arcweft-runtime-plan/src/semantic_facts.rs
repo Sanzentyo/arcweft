@@ -1766,6 +1766,7 @@ impl RuntimeAcceptedDeclarationSemanticId {
 pub enum RuntimeTryBoundaryOwner {
     Infallible,
     CarrierBlock(ExprId),
+    Thread(ExprId),
     ExplicitFunctionSite(ExprId),
     ImplicitFunctionSite(ExprId),
     Callable(RuntimeAcceptedDeclarationSemanticId),
@@ -8581,6 +8582,7 @@ impl RuntimePlanSemanticFacts {
                     .is_some_and(|callable| callable.result() == fact.carrier().success()),
                 RuntimeTryBoundaryOwner::Infallible
                 | RuntimeTryBoundaryOwner::CarrierBlock(_)
+                | RuntimeTryBoundaryOwner::Thread(_)
                 | RuntimeTryBoundaryOwner::ExplicitFunctionSite(_)
                 | RuntimeTryBoundaryOwner::Callable(_) => {
                     expression_types.get(expression) == Some(fact.carrier().success())
@@ -8648,6 +8650,22 @@ impl RuntimePlanSemanticFacts {
                     );
                     if !family_matches
                         || expression_types.get(&boundary) != Some(fact.boundary_type())
+                    {
+                        return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                            expression: *expression,
+                        });
+                    }
+                }
+                RuntimeTryBoundaryOwner::Thread(boundary) => {
+                    let kind = resolve_expr(&modules, boundary)?;
+                    let result = expression_types
+                        .get(&boundary)
+                        .and_then(|ty| match ty.shape() {
+                            RuntimeTypeShape::ThreadHandle(result) => Some(result.as_ref()),
+                            _ => None,
+                        });
+                    if !matches!(kind, HirExprKind::Thread(_))
+                        || result != Some(fact.boundary_type())
                     {
                         return Err(RuntimeSemanticFactsError::InvalidTryFact {
                             expression: *expression,

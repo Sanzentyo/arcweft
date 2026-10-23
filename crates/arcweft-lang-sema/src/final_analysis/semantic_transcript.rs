@@ -2698,6 +2698,10 @@ fn write_resolution_payload(
         }
         CheckedExpressionResolution::Thread(thread) => {
             transcript_update!(hasher, &[thread.mode().semantic_transcript_tag()]);
+            transcript_update!(
+                hasher,
+                thread.result().semantic_identity_digest()?.as_bytes()
+            );
         }
         CheckedExpressionResolution::Await(awaited) => {
             transcript_update!(hasher, &[0]);
@@ -3207,6 +3211,10 @@ fn write_callable_boundary(
         super::CheckedCallableBoundary::Declaration(boundary) => {
             transcript_update!(hasher, &[1]);
             transcript_update!(hasher, boundary.accepted().as_bytes());
+        }
+        super::CheckedCallableBoundary::Thread(boundary) => {
+            transcript_update!(hasher, &[2]);
+            write_bytes(hasher, &boundary.coordinate().canonical_bytes()?)?;
         }
     }
     Ok(())

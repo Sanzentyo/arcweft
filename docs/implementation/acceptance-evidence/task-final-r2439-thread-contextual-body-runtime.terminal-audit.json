@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "run": "task-final-r2439-thread-contextual-body-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 177.106s] 2254 tests run: 2251 passed (1 slow), 3 failed, 8 skipped",
+  "executed": 2254,
+  "passed": 2251,
+  "failed": 3,
+  "skipped": 8,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4167,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_remaining_statement_families_retain_payloads_and_meaning"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::statement_contextual::p07_select_trigger_requires_choice_lifecycle_and_choice_option_pattern"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_statement_corpus_tracks_accepted_root_families"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-23T18:43:49.2848721Z"
+}

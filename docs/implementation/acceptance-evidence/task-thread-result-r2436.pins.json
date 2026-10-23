@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2436-thread-try-frame-diagnostic-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83389952,
+      "nonTest": false,
+      "sha256": "fb14cfdd0a3f2efb511d25ed787abdff8ffe9d0f3b2de864525727a19037a1ac"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-23T18:38:07.9283948Z"
+}

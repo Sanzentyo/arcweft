@@ -1863,6 +1863,9 @@ fn runtime_try_fact(
             } => RuntimeTryBoundaryOwner::ImplicitFunctionSite(site.lookup_owner()),
         },
         arcweft_lang_sema::final_analysis::CheckedTryBoundaryOwner::Callable(
+            arcweft_lang_sema::final_analysis::CheckedCallableBoundary::Thread(boundary),
+        ) => RuntimeTryBoundaryOwner::Thread(boundary.lookup_owner()),
+        arcweft_lang_sema::final_analysis::CheckedTryBoundaryOwner::Callable(
             arcweft_lang_sema::final_analysis::CheckedCallableBoundary::Declaration(boundary),
         ) => RuntimeTryBoundaryOwner::Callable(RuntimeAcceptedDeclarationSemanticId::from_bytes(
             *boundary.accepted().as_bytes(),

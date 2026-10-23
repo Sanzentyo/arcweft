@@ -128,3 +128,97 @@ fn nested_return_rejects_a_value_of_the_wrong_type() {
     }) if expected.as_ref() == &TypeKind::I64 && actual.as_ref() == &TypeKind::Bool)
     );
 }
+
+#[test]
+fn thread_results_and_returns_belong_to_their_original_child_frames() {
+    let world = super::fixture(
+        "fn root() -> ThreadHandle<i64> effects { control.spawn } { thread { thread nested { return \"child\" }; let callback = || { return true }; return 7i64 } }",
+        None,
+    );
+    let report = super::analyze(&world).unwrap();
+    let results = report
+        .expressions()
+        .filter_map(|(_, expression)| {
+            matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::Thread(_)
+            )
+            .then(|| expression.value_type().unwrap().clone())
+        })
+        .collect::<Vec<_>>();
+    let expected = [
+        TypeKind::ThreadHandle(Box::new(TypeKind::I64)),
+        TypeKind::ThreadHandle(Box::new(TypeKind::String)),
+    ];
+    assert_eq!(results.len(), expected.len());
+    assert!(expected.iter().all(|ty| results.contains(ty)));
+    let targets = report
+        .statements()
+        .filter_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::ControlTransfer(target) => target.return_target(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        targets
+            .iter()
+            .filter(|target| matches!(target, CheckedCallableBoundary::Thread(_)))
+            .count(),
+        2
+    );
+    assert_eq!(
+        targets
+            .iter()
+            .filter(|target| matches!(target, CheckedCallableBoundary::FunctionSite(_)))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn contextual_thread_result_types_its_return_literal_before_publication() {
+    let world = super::fixture(
+        "fn root() -> ThreadHandle<i32> effects { control.spawn } { thread { return 7 } }",
+        None,
+    );
+    let report = super::analyze(&world).unwrap();
+    assert!(report.expressions().any(|(_, expression)| {
+        matches!(
+            expression.resolution(),
+            CheckedExpressionResolution::Thread(_)
+        ) && expression.value_type() == Some(&TypeKind::ThreadHandle(Box::new(TypeKind::I32)))
+    }));
+}
+
+#[test]
+fn thread_fallthrough_contributes_unit_and_cannot_satisfy_a_non_unit_result() {
+    let world = super::fixture(
+        "fn root(flag: bool) -> ThreadHandle<i64> effects { control.spawn } { thread { if flag { return 7i64 } } }",
+        None,
+    );
+    assert!(super::analyze(&world).is_err());
+    let world = super::fixture(
+        "fn root() -> ThreadHandle<Unit> effects { control.spawn } { thread {} }",
+        None,
+    );
+    let report = super::analyze(&world).unwrap();
+    assert!(report.expressions().any(|(_, expression)| {
+        matches!(
+            expression.resolution(),
+            CheckedExpressionResolution::Thread(_)
+        ) && expression.value_type() == Some(&TypeKind::ThreadHandle(Box::new(TypeKind::Unit)))
+    }));
+}
+
+#[test]
+fn try_inside_thread_propagates_to_the_child_result() {
+    let world = super::fixture(
+        "fn read() -> Result<i64, String> { Ok(7i64) }\nfn root() -> ThreadHandle<Result<i64, String>> effects { control.spawn } { thread { let value = try read(); return Ok(value) } }",
+        None,
+    );
+    let report = super::analyze(&world).unwrap();
+    assert!(report.expressions().any(|(_, expression)| matches!(
+        expression.resolution(),
+        CheckedExpressionResolution::Try(tried) if matches!(tried.boundary().owner(), CheckedTryBoundaryOwner::Callable(CheckedCallableBoundary::Thread(_)))
+    )));
+}

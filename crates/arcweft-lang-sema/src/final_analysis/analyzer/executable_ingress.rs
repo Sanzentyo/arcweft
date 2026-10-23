@@ -313,20 +313,9 @@ impl Analyzer<'_, '_, '_> {
         path: &[arcweft_lang_hir::project::HirSemanticPathStep],
         expressions: &BTreeSet<Vec<arcweft_lang_hir::project::HirSemanticPathStep>>,
     ) -> bool {
-        use arcweft_lang_hir::body_edges::HirBodyChildRole;
-        use arcweft_lang_hir::project::HirSemanticPathStep;
-        // Thread items are independently checked body roots. Their lexical
-        // container does not evaluate those expressions in its transaction.
-        let floor = path
-            .iter()
-            .rposition(|step| {
-                matches!(
-                    step,
-                    HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. })
-                )
-            })
-            .map_or(1, |index| index + 1);
-        (floor..path.len()).any(|length| expressions.contains(&path[..length]))
+        // Every expression-owned body is checked by its owner's contextual
+        // transaction. Declaration-owned Flow items have no such ancestor.
+        (1..path.len()).any(|length| expressions.contains(&path[..length]))
     }
 
     fn complete_declaration_statements(

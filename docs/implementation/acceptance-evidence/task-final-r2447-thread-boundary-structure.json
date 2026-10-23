@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "name": "task-final-r2447-thread-boundary-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2447-thread-boundary-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T19:00:10.7282321Z",
+  "finishedAt": "2026-10-23T19:00:13.9468097Z"
+}

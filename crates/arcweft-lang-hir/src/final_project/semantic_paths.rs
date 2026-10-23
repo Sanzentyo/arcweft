@@ -485,6 +485,7 @@ impl HirControlTransferKind {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirReturnContext {
     FunctionSite(ExprId),
+    Thread(ExprId),
     Item(ItemId),
 }
 
@@ -1137,7 +1138,7 @@ impl HirSemanticPathIndex {
             match (row.kind(), target) {
                 (HirControlTransferKind::Return, HirControlTransferTarget::Return { context }) => {
                     let module = match context {
-                        HirReturnContext::FunctionSite(owner) => {
+                        HirReturnContext::FunctionSite(owner) | HirReturnContext::Thread(owner) => {
                             if !self.expression(*owner).is_some_and(|path| {
                                 statement_path.steps().starts_with(path.steps())
                                     && statement_path.steps().len() > path.steps().len()
@@ -5928,6 +5929,9 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                     {
                         HirExprKind::Closure(_) => {
                             return Ok(HirReturnContext::FunctionSite(*owner));
+                        }
+                        HirExprKind::Thread(_) => {
+                            return Ok(HirReturnContext::Thread(*owner));
                         }
                         _ => {}
                     }

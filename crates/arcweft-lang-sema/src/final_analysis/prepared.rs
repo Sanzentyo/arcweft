@@ -297,6 +297,10 @@ impl PreparedTry {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedTryBoundary {
     Infallible,
+    Thread {
+        lookup_owner: ExprId,
+        boundary_type: TypeKind,
+    },
     CarrierBlock {
         lookup_owner: ExprId,
     },
@@ -318,6 +322,7 @@ impl PreparedTryBoundary {
     pub(crate) const fn boundary_type(&self) -> Option<&TypeKind> {
         match self {
             Self::ExplicitFunctionSite { boundary_type, .. }
+            | Self::Thread { boundary_type, .. }
             | Self::ImplicitFunctionSite { boundary_type, .. }
             | Self::Callable { boundary_type, .. } => Some(boundary_type),
             Self::Infallible | Self::CarrierBlock { .. } => None,

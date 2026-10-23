@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "name": "task-final-r2441-contextual-sema-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "--binaries-metadata",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-thread-result-r2440.refilter-binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "package(=arcweft-lang-sema)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2441-contextual-sema-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T18:47:08.3537656Z",
+  "finishedAt": "2026-10-23T18:47:08.5103784Z"
+}

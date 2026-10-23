@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "name": "task-final-r2450-thread-boundary-reverse-tree",
+  "command": [
+    "tree",
+    "--workspace",
+    "--all-features",
+    "--target",
+    "all",
+    "--locked",
+    "--invert",
+    "arcweft-lang-hir"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2450-thread-boundary-reverse-tree.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T19:10:04.8892805Z",
+  "finishedAt": "2026-10-23T19:10:07.1974101Z"
+}

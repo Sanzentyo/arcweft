@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2432-thread-result-seal-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_hir-8a644ef035569299.exe",
+      "bytes": 37297664,
+      "nonTest": false,
+      "sha256": "1c0f576bc113478c4fd2fb9b2ef7a30f18e17244c91fed182b388abe9cd82068"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83384320,
+      "nonTest": false,
+      "sha256": "f350857507e7488419eebfe7abf163a02bcbd1371162ffa31e576562c911259d"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-23T18:33:51.9997997Z"
+}

@@ -4,8 +4,8 @@ Arcweft separates five kinds of control transfer.
 
 ## `return`
 
-`return expr` leaves the nearest callable frame: `fn`, method, `parser`, `flow`,
-explicit closure, or selected implicit `_` callable. Ordinary blocks, Match
+`return expr` leaves the nearest executable frame: `fn`, method, `parser`, `flow`,
+explicit closure, selected implicit `_` callable, or `thread` child task. Ordinary blocks, Match
 arms, named scopes, and `result` / `option` carrier blocks do not receive it.
 Returning a callable value does not invoke that value or create a Return frame.
 
@@ -14,6 +14,16 @@ The value must match the receiving callable's result type. A block ending in
 replace the callable's declared or inferred result type. Final semantic facts
 retain the selected callable boundary, including its accepted coordinate and
 implicit callable identity where applicable.
+
+A `thread` body owns its returns independently of the code that creates it.
+Its returned values determine the payload `T` of `ThreadHandle<T>`; a normal
+fallthrough also contributes `Unit`, while a body without normal completion or
+returns has result `Never`. A contextual `ThreadHandle<T>` constrains the child's
+return expressions before their facts are published. Nested child tasks and
+closures have their own return boundaries. A `try` inside a child propagates to
+that child's Result or Option result, or to a nearer carrier block. Returning a
+Thread handle from an ordinary function transfers the handle to its caller;
+it does not return the child's payload or execute the child as a pure expression.
 
 ```arcw
 pub flow title(state: GameState) -> Result<FlowExit, FlowError> {

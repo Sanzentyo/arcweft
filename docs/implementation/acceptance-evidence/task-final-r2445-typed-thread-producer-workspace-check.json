@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "name": "task-final-r2445-typed-thread-producer-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2445-typed-thread-producer-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T18:55:39.0508811Z",
+  "finishedAt": "2026-10-23T18:55:54.5601375Z"
+}

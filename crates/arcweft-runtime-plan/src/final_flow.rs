@@ -6841,8 +6841,13 @@ impl<'a> FinalFlowLowerer<'a> {
                     }
                     let body = self.lower_body_as_one_error(thread_expr.body())?;
                     let captures = RuntimeFlowOpSeed::free_locals(&body).into_vec();
-                    let payload = arcweft_core::pattern::RuntimeCheckedType::Unit;
-                    let identity = payload.semantic_identity_digest();
+                    let ty = self.expression_type(*thread)?;
+                    let RuntimeTypeShape::ThreadHandle(payload) = ty.shape() else {
+                        return Err(RuntimePlanLowerError::new(
+                            "Thread producer has no checked ThreadHandle result contract",
+                        ));
+                    };
+                    let identity = payload.identity();
                     let mut contract = blake3::Hasher::new();
                     contract.update(b"arcweft.thread.producer-contract.v1\0");
                     contract.update(identity.as_bytes());
@@ -8929,7 +8934,7 @@ impl<'a> FinalFlowLowerer<'a> {
             })?;
         match boundary {
             RuntimeTryBoundaryOwner::Infallible => Ok(Vec::new()),
-            RuntimeTryBoundaryOwner::Callable(_) => {
+            RuntimeTryBoundaryOwner::Callable(_) | RuntimeTryBoundaryOwner::Thread(_) => {
                 Ok(vec![RuntimeFlowOpSeed::ReturnExpr(propagated)])
             }
             RuntimeTryBoundaryOwner::ExplicitFunctionSite(boundary)

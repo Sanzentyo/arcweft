@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2434-thread-try-diagnostic-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83385856,
+      "nonTest": false,
+      "sha256": "a377a8d5c088e93853afe703732b1f934d09aff9a33b8e7a471d7020132c3c1c"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-23T18:35:50.2785710Z"
+}

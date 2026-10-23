@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "name": "task-final-r2430-thread-result-semantic-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-hir",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(semantic_transcript_acceptance::return_boundaries::) | test(return_context_)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2430-thread-result-semantic-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T18:24:42.4738944Z",
+  "finishedAt": "2026-10-23T18:27:42.3011524Z"
+}

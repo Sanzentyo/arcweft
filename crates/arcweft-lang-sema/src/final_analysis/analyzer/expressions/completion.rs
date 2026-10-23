@@ -83,6 +83,34 @@ struct CompletionQuery<'a> {
     current_expression: Option<(ExprId, &'a PreparedExpressionFact)>,
 }
 impl Analyzer<'_, '_, '_> {
+    pub(super) fn thread_body_completion(
+        &self,
+        module: &HirModule,
+        body: &arcweft_lang_hir::expr::HirThreadBody,
+        callable: ExprId,
+    ) -> Result<BodyCompletion, AnalyzerExpressionError> {
+        let projection = body.try_body_projection().map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
+        })?;
+        let query = CompletionQuery {
+            purpose: CompletionQueryPurpose::CheckedResults,
+            callable: Some(callable),
+            current_expression: None,
+        };
+        let mut result = BodyCompletion::unit();
+        for edge in projection.children() {
+            result.sequence(match edge.child() {
+                HirBodyChild::Statement(statement) => {
+                    self.statement_body_completion(module, statement, query)?
+                }
+                HirBodyChild::Expression(expression) => {
+                    self.expression_body_completion_in(module, expression, query)?
+                }
+            });
+        }
+        Ok(result)
+    }
+
     pub(super) fn block_statements_completion(
         &self,
         module: &HirModule,
@@ -597,6 +625,9 @@ impl Analyzer<'_, '_, '_> {
                         let receives = match target {
                             HirControlTransferTarget::Return {
                                 context: HirReturnContext::FunctionSite(site),
+                            }
+                            | HirControlTransferTarget::Return {
+                                context: HirReturnContext::Thread(site),
                             } => *site == callable,
                             HirControlTransferTarget::Return {
                                 context: HirReturnContext::Item(_),

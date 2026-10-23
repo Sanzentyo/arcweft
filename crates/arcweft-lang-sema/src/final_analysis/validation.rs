@@ -1439,8 +1439,8 @@ fn validate_expression_resolution(
                 .then_some(())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
-        CheckedExpressionResolution::Thread(_) => {
-            matches!(ty, TypeKind::ThreadHandle(payload) if **payload == TypeKind::Unit)
+        CheckedExpressionResolution::Thread(thread) => {
+            matches!(ty, TypeKind::ThreadHandle(payload) if payload.as_ref() == thread.result())
                 .then_some(())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
@@ -1602,6 +1602,24 @@ fn validate_checked_try(
                         Some(tried.boundary().boundary_type()),
                     )
                 })
+        }
+        CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::Thread(boundary)) => {
+            let expression = resolve_module(modules, boundary.lookup_owner().module())?
+                .resolve_expr(boundary.lookup_owner())
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            let result = expressions
+                .get(&boundary.lookup_owner())
+                .and_then(CheckedExpression::value_type);
+            if !matches!(expression.kind(), HirExprKind::Thread(_)) {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let Some(TypeKind::ThreadHandle(result)) = result else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            (result.as_ref() == tried.boundary().boundary_type()
+                && tried.carrier().accepts_boundary_type(result))
+            .then_some(())
+            .ok_or_else(|| try_boundary_authority_failure(owner, tried, Some(result)))
         }
         CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::Declaration(
             boundary,

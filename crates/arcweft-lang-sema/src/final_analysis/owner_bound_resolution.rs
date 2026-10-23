@@ -516,6 +516,23 @@ fn seal_try(
                 )),
             )
         }
+        PreparedTryBoundary::Thread {
+            lookup_owner,
+            boundary_type,
+        } => {
+            if !carrier.accepts_boundary_type(boundary_type) {
+                return Err(try_boundary_mismatch(owner, &carrier, Some(boundary_type)));
+            }
+            let evidence = coordinates
+                .expression_evidence(*lookup_owner)
+                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            (
+                boundary_type.clone(),
+                CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::Thread(
+                    CheckedExpressionBoundary::from_evidence(evidence),
+                )),
+            )
+        }
         PreparedTryBoundary::ImplicitFunctionSite {
             lookup_owner,
             boundary_type,

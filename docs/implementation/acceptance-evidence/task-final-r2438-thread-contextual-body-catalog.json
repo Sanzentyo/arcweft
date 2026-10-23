@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "name": "task-final-r2438-thread-contextual-body-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-hir",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2438-thread-contextual-body-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T18:39:07.7772298Z",
+  "finishedAt": "2026-10-23T18:39:34.7971426Z"
+}

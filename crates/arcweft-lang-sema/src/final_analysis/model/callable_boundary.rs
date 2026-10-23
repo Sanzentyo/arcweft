@@ -87,11 +87,12 @@ impl CheckedCallableDeclarationBoundary {
     }
 }
 
-/// One accepted callable frame. Return and Try propagation share this authority;
+/// One accepted executable frame. Return and Try propagation share this authority;
 /// carrier blocks remain a separate Try boundary and never receive Return.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedCallableBoundary {
     FunctionSite(CheckedFunctionSiteBoundary),
+    Thread(CheckedExpressionBoundary),
     Declaration(CheckedCallableDeclarationBoundary),
 }
 
@@ -114,7 +115,7 @@ impl CheckedCallableBoundary {
         let (context, root) = coordinates
             .return_context(owner)
             .map_err(|_| unavailable())?;
-        let implicit = coordinates
+        let mut implicit = coordinates
             .enclosing_implicit_callable(value, |candidate| {
                 matches!(
                     expressions
@@ -124,6 +125,19 @@ impl CheckedCallableBoundary {
                 )
             })
             .map_err(|_| unavailable())?;
+        if let (HirReturnContext::Thread(thread), Some(site)) = (context, implicit) {
+            let thread = coordinates
+                .expression_evidence(thread)
+                .map_err(|_| unavailable())?
+                .into_coordinate();
+            let site = coordinates
+                .expression_evidence(site)
+                .map_err(|_| unavailable())?
+                .into_coordinate();
+            if !site.is_at_or_below(&thread) {
+                implicit = None;
+            }
+        }
         if let Some(site) = implicit {
             let Some(CheckedExpressionResolution::ImplicitCallable(callable)) = expressions
                 .get(&site)
@@ -144,6 +158,33 @@ impl CheckedCallableBoundary {
             ));
         }
         match context {
+            HirReturnContext::Thread(site) => {
+                let expression = expressions.get(&site).ok_or_else(unavailable)?;
+                if !matches!(
+                    module.resolve_expr(site).map_err(|_| unavailable())?.kind(),
+                    arcweft_lang_hir::expr::HirExprKind::Thread(_)
+                ) {
+                    return Err(unavailable());
+                }
+                let result = match expression.result() {
+                    super::CheckedExpressionResult::Value(result) => {
+                        let crate::types::TypeKind::ThreadHandle(result) = result.ty() else {
+                            return Err(unavailable());
+                        };
+                        Some(result.as_ref().clone())
+                    }
+                    super::CheckedExpressionResult::Unavailable => None,
+                    super::CheckedExpressionResult::NonValue(_) => return Err(unavailable()),
+                };
+                Ok((
+                    Self::Thread(CheckedExpressionBoundary::from_evidence(
+                        coordinates
+                            .expression_evidence(site)
+                            .map_err(|_| unavailable())?,
+                    )),
+                    result,
+                ))
+            }
             HirReturnContext::FunctionSite(site) => {
                 let expression = expressions.get(&site).ok_or_else(unavailable)?;
                 if !matches!(

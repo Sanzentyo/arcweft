@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2448-native-source-thread-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "bytes": 124712960,
+      "nonTest": false,
+      "sha256": "c87a9c623737494b4190114681da59538befde41e33ab456798ba23de1c94b32"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-23T19:04:04.5860529Z"
+}

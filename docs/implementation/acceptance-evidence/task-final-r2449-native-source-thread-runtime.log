@@ -1,0 +1,31 @@
+────────────
+ Nextest run ID b1a5118e-20a5-4139-9959-a399e4c8dcf3 with nextest profile: default
+    Starting 3 tests across 1 binary (10 tests skipped)
+        SKIP [         ] (───) arcweft-compiler::flow_include forward_include_implicitly_completes_and_resumes_native_and_decoded_awbc
+        SKIP [         ] (───) arcweft-compiler::flow_include goto_inside_an_include_replaces_the_actual_flow_without_returning_to_its_caller
+        SKIP [         ] (───) arcweft-compiler::flow_include include_explicit_unit_and_value_returns_resume_native_and_decoded_awbc
+        SKIP [         ] (───) arcweft-compiler::flow_include include_in_a_function_owned_thread_joins_before_its_flow_caller_returns
+        SKIP [         ] (───) arcweft-compiler::flow_include include_rejects_a_parameterized_flow_before_executable_publication
+        SKIP [         ] (───) arcweft-compiler::flow_include mutually_recursive_includes_execute_under_the_original_one_operation_budget
+        SKIP [         ] (───) arcweft-compiler::flow_include native_nested_thread_finishes_its_own_descendants_before_the_outer_flow
+        SKIP [         ] (───) arcweft-compiler::flow_include native_sibling_thread_includes_return_to_their_callers_without_mutual_join
+        SKIP [         ] (───) arcweft-compiler::flow_include native_spawn_function_returns_before_its_child_finishes
+        SKIP [         ] (───) arcweft-compiler::flow_include repeated_and_nested_includes_share_original_functions_and_resume_their_callers
+        PASS [   0.118s] (1/3) arcweft-compiler::flow_include native_thread_quota_rejection_publishes_no_child_or_task
+        PASS [   0.118s] (2/3) arcweft-compiler::flow_include native_thread_retires_its_actual_non_unit_source_result_contract
+        PASS [   0.127s] (3/3) arcweft-compiler::flow_include native_thread_capture_source_and_child_resume_under_one_operation_steps
+────────────
+     Summary [   0.128s] 3 tests run: 3 passed, 10 skipped
+        PASS [   0.118s] (1/3) arcweft-compiler::flow_include native_thread_quota_rejection_publishes_no_child_or_task
+        PASS [   0.118s] (2/3) arcweft-compiler::flow_include native_thread_retires_its_actual_non_unit_source_result_contract
+        PASS [   0.127s] (3/3) arcweft-compiler::flow_include native_thread_capture_source_and_child_resume_under_one_operation_steps
+        SKIP [         ] (───) arcweft-compiler::flow_include forward_include_implicitly_completes_and_resumes_native_and_decoded_awbc
+        SKIP [         ] (───) arcweft-compiler::flow_include goto_inside_an_include_replaces_the_actual_flow_without_returning_to_its_caller
+        SKIP [         ] (───) arcweft-compiler::flow_include include_explicit_unit_and_value_returns_resume_native_and_decoded_awbc
+        SKIP [         ] (───) arcweft-compiler::flow_include include_in_a_function_owned_thread_joins_before_its_flow_caller_returns
+        SKIP [         ] (───) arcweft-compiler::flow_include include_rejects_a_parameterized_flow_before_executable_publication
+        SKIP [         ] (───) arcweft-compiler::flow_include mutually_recursive_includes_execute_under_the_original_one_operation_budget
+        SKIP [         ] (───) arcweft-compiler::flow_include native_nested_thread_finishes_its_own_descendants_before_the_outer_flow
+        SKIP [         ] (───) arcweft-compiler::flow_include native_sibling_thread_includes_return_to_their_callers_without_mutual_join
+        SKIP [         ] (───) arcweft-compiler::flow_include native_spawn_function_returns_before_its_child_finishes
+        SKIP [         ] (───) arcweft-compiler::flow_include repeated_and_nested_includes_share_original_functions_and_resume_their_callers

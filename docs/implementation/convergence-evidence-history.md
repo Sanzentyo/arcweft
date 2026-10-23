@@ -9225,3 +9225,91 @@ raw patch SHA256 は `51d7a5d3961c0ffc347aa0364a41ccc1c48828f50a239fc1ac79861ea2
 untracked修復メモ2件のhash差分0、71検証原本のhash差分0。
 変更文書の相対リンク52件は解決可能。R2426入力から変わった既存ファイルは
 現状一覧と履歴のみで、この公開照合を追加のruntime合格とは数えない。
+
+## Thread の結果型と return／Try 境界 — 2026-10-24
+
+検証基点は既存 `main` の `81932804da3d150b6039bc99d5d8c39c43dbd4c8`。
+既存14 tracked WIP と6 untracked ファイルを保持し、18 Rust paths と現行仕様1件を修復した。
+この記録は当該入力の証拠であり、現状の唯一の一覧は `current-status.md` とする。
+同一覧の先頭に重複していた過去 cut 別の詳説は、この履歴と原本へ集約した。
+以前の結果・full SHA・途中の失敗を削除したものではない。
+
+### 所有者と修復理由
+
+Thread 式は従来 `ThreadHandle<Unit>` 固定で、HIR の Return target も子 task を
+受信境界としていなかった。`HirReturnContext::Thread` と、元の式座標を保持する
+`CheckedCallableBoundary::Thread` へ Return／Try を接続した。私有 constructor が発行する
+`CheckedThread` が結果型を所有し、外側の `ThreadHandle<T>` との完全一致を検証する。
+型訪問と既存 version-one semantic transcript にもこの結果を含める。
+
+既存の HIR evaluation／transfer algebra から、その子が受信する Return だけを集める。
+正常な fallthrough は Unit、正常終了も Return もない場合は Never として型を定める。
+文脈上の結果型は return literal の発行前に適用し、入れ子の子／closure は別の受信者を持つ。
+Compiler と RuntimePlan の Try fact にも Thread を直接追加し、偽の callable／carrier に
+読み替えない。残余の Return は、実際の子の実行 frame が処理する。
+
+途中の Try 診断では、子本文を先に独立チェックする旧 ThreadItem の path-floor 処理が、
+元の式から渡す結果文脈を切り離していた。これを削除し、式が所有する本文をその式の
+transaction でチェックする一般則へ揃えた。その変更で Select／Choice の既存3件に
+回帰が出たため、同じ型付き statement operand requests／dynamic scrutinee admission を
+式内でも使い、Choice timeout／cancel／on-select の本文も所有者の文脈でチェックした。
+受入済み Generic Match を未完了へ戻したのではなく、今回の未公開修復中の回帰を直した。
+
+Native statement Thread の producer も Unit 固定をやめ、正規化済み ThreadHandle の
+payload identity を使用する。実ソースの Bool return は元の結果契約で退役し、親 Flow は
+別の String return を続ける。新規テストは実際の1操作 step・退役 metadata・元の相関・
+Bool payload identity を確認する。返却 handle の binding／await と AWBC 独立 scheduling の
+受入を、この狭い Native テストから推定しない。
+
+### 固定入力ごとの結果
+
+| 実行 | 実際の結果 |
+|---|---|
+| R2429 | semantic check は exit 101。新規コードの未定義 expected と、新規テストで TypeKind に Ord を要求した誤りを修復。 |
+| R2430／R2431 | focused catalog は11選択。runtime は **8 PASS／3 FAIL／2,251 filter skip、exit 100**。旧 Unit-only final validation と子の Try 文脈が失敗。[原本](acceptance-evidence/task-final-r2431-thread-result-semantic-runtime.log)。 |
+| R2432／R2433 | immutable な Thread result と外側の型の一致検証を修復。同じ11件は **10 PASS／1 FAIL**。残りは Try の型取得。[原本](acceptance-evidence/task-final-r2433-thread-result-seal-runtime.log)。 |
+| R2434–R2437 | Try 1件の二つの診断入力。いずれも実際の exit 100。Expr 27 が Thread 内の Try で、対応する結果 context stack が空と確認した。診断用の一時 probe は最終ソースから削除した。[最終診断](acceptance-evidence/task-final-r2437-thread-try-frame-diagnostic-runtime.log)。 |
+| R2438／R2439 | owner 2 library は全2,262件中 **2,254選択／8既存 ignored**。runtime は **2,251 PASS／3 FAIL、177.106秒、exit 100**。新規 Thread 5件は全 PASS。HIR は951件すべて PASS、Sema の既存 Select／Choice 3件が失敗。[terminal audit](acceptance-evidence/task-final-r2439-thread-contextual-body-runtime.terminal-audit.json)。 |
+| R2440–R2442 | 上記3回帰を修復。R2440 の同じ binary metadata から Sema の filter を再選択し、再ビルドなしで R2441 catalog を作成。R2442 は **1,303/1,303 PASS、skip 0、12.849秒、exit 0**。3回帰と新規4 Semaケースを必須選択。変更のない HIR 951件は R2439 を再利用し、新しい実行へ数えない。[terminal audit](acceptance-evidence/task-final-r2442-contextual-sema-runtime.terminal-audit.json)、[binary audit](acceptance-evidence/task-final-r2442-contextual-sema-runtime.binary-audit.json)。 |
+| R2443／R2444 | workspace check は当初 exit 101。Compiler の Try projection に新しい Thread 境界の consumer が欠けていた。Compiler／RuntimePlan／lexical scope／residual lowering を移行し、R2444 は exit 0。 |
+| R2445 | 最終の Native producer payload と新規実ソーステストを含む **workspace all-target／all-feature／locked check は exit 0**。[receipt](acceptance-evidence/task-final-r2445-typed-thread-producer-workspace-check.json)。 |
+| R2446 | 同じ最終 Rust 入力の **workspace all-target／all-feature／locked Clippy は exit 0、警告あり、1m18s**。CLI check の209警告を workspace 全体の警告数とは呼ばない。[receipt](acceptance-evidence/task-final-r2446-thread-boundary-workspace-clippy.json)。 |
+| R2447 | canonical structure は **exit 0、3,201 files／3,071 Rust／1,736,801 LOC／97 packages／376 review triggers／blocking 0**。[原本](acceptance-evidence/task-final-r2447-thread-boundary-structure.log)。 |
+| R2448／R2449 | Compiler `flow_include` の13件から Native Source result／capture／quota の3件を選択し、**3/3 PASS／10 filter skip、0.128秒、exit 0**。1 executable／4,168入力／case set の差分0。関数返却 handle の既知ケースはこの狭い実行では未選択であり、合格へ数えない。[terminal audit](acceptance-evidence/task-final-r2449-native-source-thread-runtime.terminal-audit.json)。 |
+| R2450 | `cargo tree --workspace --all-features --target all --locked --invert arcweft-lang-hir` は exit 0。[原本](acceptance-evidence/task-final-r2450-thread-boundary-reverse-tree.log)。 |
+
+R2439 の最初の preflight は、ignored を含む2,262を選択件数と数えたため runtime 前に停止。
+原本の8 ignored を照合し、実際の2,254選択へ訂正して同じ catalog から実行した。
+8件は既存の HIR production-limit Tier2 ケースで、今回は実行していない。
+フィルタや assertion、元の1操作 budget を下げて合格にしていない。
+runtime wrapper の exit 0と実際の Cargo exit 100を区別して記録する。
+
+各 runtime の source／case／binary 差分0はその固定入力に限る。
+R2442 は Sema 1 suiteを実行し、metadata に残る HIR artifact を新しい合格とは数えない。
+その後の Rust 変更は model の説明コメントと Compiler／RuntimePlan consumerで、Sema の
+実行ロジックと HIR は変わっていない。最終18 Rust pathsの workspace check／Clippy と
+Native 3件は別の最終入力として確認した。
+
+### 依存と構造の照合
+
+[保持した解決済み Cargo metadata](acceptance-evidence/task-final-r2285.metadata.json) の
+99 manifest／lock hash は差分0。変更4 package の推移的逆依存は23 packageで、
+[実際の scope](acceptance-evidence/task-thread-native-result-r2448.graph.json) と inverted tree を
+保持する。この時点では全23 package の runtime を実行したとは主張しない。
+
+[現物の計測](acceptance-evidence/task-thread-boundary-ownership-metrics.json) では、18 Rust paths
+のどれも基点比300 LOCを超えて成長していない。HIR semantic pathsは6,731 LOC（+4）、
+Sema expressionsは5,530（+142）、modelは3,389（+10）、Compiler lowerは10,145（+3）、
+RuntimePlan final_flowは10,321（+5）、semantic factsは14,896（+18）。
+embedded test moduleはSema expressions88 LOC、semantic transcript333、
+RuntimePlan final_flow636。追加テストは独立したHIR／Semaの責任別unit moduleとCompilerのintegration。
+大きい既存production ownerは、それぞれ構造化されたcontrol target、型チェックtransaction、checked fact、意味投影と
+continuationを引き続き所有する。I/O、新しい依存、別の結果表やsource再構成を追加せず、
+物理分割だけのための公開 API 拡大もしていない。新しい公開 variant／getter は正当な
+consumer の移行に使う。テストは同じReturn境界とCompilerの実ソース実行を観測する。
+workspace direct fan-in／fan-outはHIR11／3、Sema12／14、RuntimePlan10／10、Compiler5／34。
+
+22 command の receipt／log と監査・固定入力・binary hash・解決済みgraph等、77原本を
+元ファイルとSHA256一致で保存した。R2446 Clippy原本のtrailing whitespace 5行は保持し、
+staged whitespace検査ではその原本1件だけを除外する。他のsource・文書・JSON・logは検査する。
+既存WIPは検証入力には含まれるが公開差分からは除外し、全体goalの完了は主張しない。

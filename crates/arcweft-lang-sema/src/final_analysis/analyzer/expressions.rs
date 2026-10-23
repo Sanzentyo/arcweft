@@ -2162,6 +2162,16 @@ impl Analyzer<'_, '_, '_> {
             });
         }
         let continuation = self.expression_body_completion(module, body, callable, body_fact)?;
+        self.completed_body_result(module, body, body_type, continuation)
+    }
+
+    fn completed_body_result(
+        &self,
+        module: &HirModule,
+        body: ExprId,
+        body_type: TypeKind,
+        continuation: completion::BodyCompletion,
+    ) -> Result<TypeKind, AnalyzerExpressionError> {
         let mut results = continuation
             .returns()
             .iter()
@@ -2607,41 +2617,86 @@ impl Analyzer<'_, '_, '_> {
                     let statement = module.resolve_stmt(owner).map_err(|_| {
                         AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
                     })?;
+                    let requests = super::statement_scrutinee::expression_requests_for_statement(
+                        module,
+                        owner,
+                        statement.kind(),
+                    )
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                    let mut requested = BTreeSet::new();
+                    for request in requests {
+                        let expected = request.expected();
+                        self.evaluate_expression(context, request.owner(), expected.as_ref())?;
+                        requested.insert(request.owner());
+                    }
+                    super::statement_scrutinee::seed_dynamic_scrutinee(
+                        module,
+                        &self.types,
+                        self.symbols,
+                        self.catalogs.world.environment().typecheck_env(),
+                        owner,
+                        statement.kind(),
+                        &mut self.facts,
+                    )
+                    .map_err(AnalyzerExpressionError::fatal)?;
                     self.evaluate_statement_bindings(context, owner, statement.kind())?;
-                    let contextual_value =
-                        if let (Some((application, expected)), HirStmtKind::Out { value, .. }) =
-                            (out_expectation, statement.kind())
-                        {
-                            let transfer =
-                                self.topology.control_transfer_row(owner).map_err(|_| {
-                                    AnalyzerExpressionError::fatal(
-                                        FinalSemanticAnalysisError::InvalidOwner,
-                                    )
-                                })?;
-                            let target = transfer.target().map_err(|error| {
-                                AnalyzerExpressionError::fatal(
-                                    FinalSemanticAnalysisError::ControlTransfer(*error),
-                                )
-                            })?;
-                            if target.output_application() == Some(application) {
-                                line_outs.push(owner);
-                                if let Some(expected) = expected {
-                                    let checked =
-                                        self.evaluate_expression(context, *value, Some(expected))?;
-                                    if !checked.value_type().is_some_and(|ty| expected.accepts(ty))
-                                    {
-                                        return Err(AnalyzerExpressionError::rejected(*value));
-                                    }
-                                    Some(*value)
-                                } else {
-                                    None
+                    let thread_return = if let HirStmtKind::Return { value } = statement.kind() {
+                        let transfer = self.topology.control_transfer_row(owner).map_err(|_| {
+                            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                        })?;
+                        match transfer.target().map_err(|error| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::ControlTransfer(*error),
+                            )
+                        })? {
+                            arcweft_lang_hir::project::HirControlTransferTarget::Return {
+                                context: arcweft_lang_hir::project::HirReturnContext::Thread(thread),
+                            } => self
+                                .function_site_stack
+                                .iter()
+                                .rev()
+                                .find(|frame| frame.owner == *thread)
+                                .map(|frame| (*value, frame.result.clone())),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    let contextual_value = if let Some((value, expected)) = thread_return {
+                        let checked = self.evaluate_expression(context, value, Some(&expected))?;
+                        if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
+                            return Err(AnalyzerExpressionError::rejected(value));
+                        }
+                        Some(value)
+                    } else if let (Some((application, expected)), HirStmtKind::Out { value, .. }) =
+                        (out_expectation, statement.kind())
+                    {
+                        let transfer = self.topology.control_transfer_row(owner).map_err(|_| {
+                            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                        })?;
+                        let target = transfer.target().map_err(|error| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::ControlTransfer(*error),
+                            )
+                        })?;
+                        if target.output_application() == Some(application) {
+                            line_outs.push(owner);
+                            if let Some(expected) = expected {
+                                let checked =
+                                    self.evaluate_expression(context, *value, Some(expected))?;
+                                if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
+                                    return Err(AnalyzerExpressionError::rejected(*value));
                                 }
+                                Some(*value)
                             } else {
                                 None
                             }
                         } else {
                             None
-                        };
+                        }
+                    } else {
+                        None
+                    };
                     for body in statement
                         .kind()
                         .body_projections()
@@ -2673,7 +2728,9 @@ impl Analyzer<'_, '_, '_> {
                     for edge in edges.into_iter().rev() {
                         match edge.child() {
                             arcweft_lang_hir::stmt::HirStatementChild::Expression(expression) => {
-                                if contextual_value != Some(expression) {
+                                if contextual_value != Some(expression)
+                                    && !requested.contains(&expression)
+                                {
                                     pending.push(Work::Expression(expression));
                                 }
                             }
@@ -2763,7 +2820,9 @@ impl Analyzer<'_, '_, '_> {
                             })
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner));
                     }
-                    if current.kind() == HirScopeKind::Closure {
+                    if current.kind() == HirScopeKind::Closure
+                        || matches!(expression_kind, HirExprKind::Thread(_))
+                    {
                         let context = self
                             .function_site_stack
                             .iter()
@@ -2778,11 +2837,19 @@ impl Analyzer<'_, '_, '_> {
                             (CheckedTryCarrier::Option { .. }, TypeKind::Option(_)) => true,
                             _ => false,
                         };
-                        return matches
-                            .then_some(PreparedTryBoundary::ExplicitFunctionSite {
+                        let boundary = if matches!(expression_kind, HirExprKind::Thread(_)) {
+                            PreparedTryBoundary::Thread {
                                 lookup_owner: context.owner,
                                 boundary_type: context.result.clone(),
-                            })
+                            }
+                        } else {
+                            PreparedTryBoundary::ExplicitFunctionSite {
+                                lookup_owner: context.owner,
+                                boundary_type: context.result.clone(),
+                            }
+                        };
+                        return matches
+                            .then_some(boundary)
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner));
                     }
                 }
@@ -3228,18 +3295,24 @@ impl Analyzer<'_, '_, '_> {
                 Ok(structural_expression(ty, CheckedTypeSelection::Inferred))
             }
             HirExprKind::Thread(thread) => {
+                let result = self.check_thread_body(
+                    context,
+                    module,
+                    owner,
+                    thread,
+                    expectation.contextual_shape(),
+                )?;
                 let mut effects = EffectSet::new();
                 effects.insert(
                     EffectId::parse("control.spawn")
                         .expect("the language-owned Thread effect is a valid effect identity"),
                 );
+                let thread = super::super::CheckedThread::from_source(thread, result);
                 Ok(CheckedExpression::value(
-                    TypeKind::ThreadHandle(Box::new(TypeKind::Unit)),
+                    TypeKind::ThreadHandle(Box::new(thread.result().clone())),
                     CheckedTypeSelection::Inferred,
                     effects,
-                    CheckedExpressionResolution::Thread(super::super::CheckedThread::from_source(
-                        thread,
-                    )),
+                    CheckedExpressionResolution::Thread(thread),
                 ))
             }
             HirExprKind::Choice(choice) => self.check_choice_expression(
@@ -3253,6 +3326,69 @@ impl Analyzer<'_, '_, '_> {
             _ => return Ok(None),
         }
         .map(Some)
+    }
+
+    fn check_thread_body(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        thread: &arcweft_lang_hir::expr::HirThreadExpr,
+        expected: Option<&TypeKind>,
+    ) -> Result<TypeKind, AnalyzerExpressionError> {
+        let expected = match expected {
+            Some(TypeKind::ThreadHandle(result)) => Some(result.as_ref()),
+            Some(_) => return Err(AnalyzerExpressionError::rejected(owner)),
+            None => None,
+        };
+        if let Some(result) = expected {
+            self.function_site_stack.push(super::FunctionSiteContext {
+                owner,
+                result: result.clone(),
+            });
+        }
+        let result = (|| {
+            self.evaluate_thread_body_uses(context, module, thread.body())?;
+            let completion = self.thread_body_completion(module, thread.body(), owner)?;
+            let body_type = if completion.continues() {
+                TypeKind::Unit
+            } else {
+                TypeKind::Never
+            };
+            let result = self.completed_body_result(module, owner, body_type, completion)?;
+            if expected.is_some_and(|expected| !expected.accepts(&result)) {
+                return Err(AnalyzerExpressionError::rejected(owner));
+            }
+            Ok(result)
+        })();
+        if expected.is_some() {
+            self.function_site_stack
+                .pop()
+                .expect("Thread result context was just pushed");
+        }
+        result
+    }
+
+    fn evaluate_thread_body_uses(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        body: &arcweft_lang_hir::expr::HirThreadBody,
+    ) -> Result<(), AnalyzerExpressionError> {
+        let projection = body.try_body_projection().map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
+        })?;
+        for edge in projection.children() {
+            match edge.child() {
+                HirBodyChild::Expression(expression) => {
+                    self.evaluate_expression(context, expression, None)?;
+                }
+                HirBodyChild::Statement(statement) => {
+                    self.evaluate_block_statement_uses(context, module, &[statement])?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn check_choice_expression(
@@ -3378,7 +3514,7 @@ impl Analyzer<'_, '_, '_> {
                                 effects.union_with(checked.effects());
                                 CheckedChoicePlanItem::Assignment(key)
                             }
-                            HirChoicePlanItem::Timeout { duration, .. } => {
+                            HirChoicePlanItem::Timeout { duration, body } => {
                                 let checked = self.evaluate_expression(
                                     context,
                                     *duration,
@@ -3388,17 +3524,23 @@ impl Analyzer<'_, '_, '_> {
                                     return Err(AnalyzerExpressionError::rejected(*duration));
                                 }
                                 effects.union_with(checked.effects());
+                                self.evaluate_thread_body_uses(context, module, body)?;
                                 CheckedChoicePlanItem::Timeout
                             }
-                            HirChoicePlanItem::Cancel { trigger, .. } => {
-                                CheckedChoicePlanItem::Cancel(self.check_choice_cancel_trigger(
+                            HirChoicePlanItem::Cancel { trigger, body } => {
+                                let trigger = self.check_choice_cancel_trigger(
                                     context,
                                     module,
                                     trigger,
                                     &mut effects,
-                                )?)
+                                )?;
+                                self.evaluate_thread_body_uses(context, module, body)?;
+                                CheckedChoicePlanItem::Cancel(trigger)
                             }
-                            HirChoicePlanItem::OnSelect { .. } => CheckedChoicePlanItem::OnSelect,
+                            HirChoicePlanItem::OnSelect { body, .. } => {
+                                self.evaluate_thread_body_uses(context, module, body)?;
+                                CheckedChoicePlanItem::OnSelect
+                            }
                             HirChoicePlanItem::Error(_) => {
                                 return Err(AnalyzerExpressionError::fatal(
                                     FinalSemanticAnalysisError::RecoveredOwner,

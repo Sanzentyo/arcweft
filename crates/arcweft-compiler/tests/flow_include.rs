@@ -236,6 +236,53 @@ const NATIVE_THREAD_CAPTURE_SOURCE: &str = concat!(
 );
 
 #[test]
+fn native_thread_retires_its_actual_non_unit_source_result_contract() {
+    let source = concat!(
+        "flow main() -> String { thread worker { return true }; return \"after-value\" }\n",
+        "entry cli @entry.main { goto @flow.main }\n",
+    );
+    let mut runtime = executor(source, Backend::Native);
+    let expected = arcweft_lang_sema::types::TypeKind::Bool
+        .semantic_identity_digest()
+        .unwrap();
+    let mut submissions = Vec::new();
+    let mut reports = Vec::new();
+    for step in 0..128 {
+        let result = runtime.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+        assert!(result.stats.executed_ops <= 1);
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "step={step}: {:?}",
+            result.output.diagnostics
+        );
+        for task in result.output.requests.tasks {
+            assert_eq!(
+                task.spec().outcome.payload_semantic_identity().as_bytes(),
+                expected.as_bytes()
+            );
+            submissions.push(task.handle().correlation);
+        }
+        reports.extend(result.output.requests.program_task_completions);
+        match &runtime.fiber().frame.status {
+            FlowFiberStatus::Done(FlowExit::Return(value)) => {
+                assert_eq!(value, "after-value");
+                assert_eq!(submissions.len(), 1);
+                assert_eq!(reports.len(), 1);
+                assert_eq!(reports[0].handle().correlation, submissions[0]);
+                assert_eq!(
+                    reports[0].terminal(),
+                    &arcweft_core::task::ProgramTaskTerminal::Completed
+                );
+                return;
+            }
+            FlowFiberStatus::Failed(error) => panic!("the source child failed: {error}"),
+            _ => {}
+        }
+    }
+    panic!("the actual source child must retire within the original one-operation steps");
+}
+
+#[test]
 fn native_thread_capture_source_and_child_resume_under_one_operation_steps() {
     let mut runtime = executor(NATIVE_THREAD_CAPTURE_SOURCE, Backend::Native);
     let mut submissions = 0;

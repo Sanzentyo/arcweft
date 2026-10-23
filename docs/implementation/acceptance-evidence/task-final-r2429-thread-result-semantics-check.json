@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "81932804da3d150b6039bc99d5d8c39c43dbd4c8",
+  "name": "task-final-r2429-thread-result-semantics-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2429-thread-result-semantics-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T18:22:41.5449641Z",
+  "finishedAt": "2026-10-23T18:23:49.9345490Z"
+}

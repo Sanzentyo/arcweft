@@ -151,6 +151,47 @@ fn return_context_distinguishes_closure_and_item_and_skips_carrier_blocks() {
 }
 
 #[test]
+fn return_context_stops_at_each_thread_and_nested_closure() {
+    let module = lower_control_transfer_fixture(
+        "fn root() effects { control.spawn } { thread { thread { return 3i64 }; let callback = || { return true }; return 7i64 }; return () }",
+    );
+    let builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
+    let mut threads = BTreeSet::new();
+    let mut closures = 0;
+    let mut items = 0;
+    for (owner, statement) in module.statements() {
+        if !matches!(statement.kind(), HirStmtKind::Return { .. }) {
+            continue;
+        }
+        let Some((_, target)) = builder
+            .resolve_control_transfer(owner, statement.kind())
+            .unwrap()
+        else {
+            panic!("Return has a structural target");
+        };
+        match target {
+            HirControlTransferTarget::Return {
+                context: HirReturnContext::Thread(site),
+            } => {
+                assert!(matches!(
+                    module.resolve_expr(site).unwrap().kind(),
+                    HirExprKind::Thread(_)
+                ));
+                assert!(threads.insert(site));
+            }
+            HirControlTransferTarget::Return {
+                context: HirReturnContext::FunctionSite(_),
+            } => closures += 1,
+            HirControlTransferTarget::Return {
+                context: HirReturnContext::Item(_),
+            } => items += 1,
+            _ => panic!("Return cannot target a lexical scope"),
+        }
+    }
+    assert_eq!((threads.len(), closures, items), (2, 1, 1));
+}
+
+#[test]
 fn loop_control_transfers_resolve_the_nearest_loop_expression() {
     let module = lower_control_transfer_fixture(
         "fn accepted() {\n    let result = loop {\n        loop {\n            break\n        }\n        break\n    }\n}\n",
