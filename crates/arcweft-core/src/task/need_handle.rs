@@ -126,7 +126,27 @@ impl RuntimeNeedHandleSaveSnapshot {
         self,
         owner: &super::RuntimeProgramOwner,
     ) -> Result<RuntimeNeedHandle, crate::value::AwbcRuntimeValueSnapshotError> {
-        let spec = self.spec.into_admitted_live(owner, None)?;
+        // Native rollback retains the original plan lease. Resolve an inert
+        // locator only within that actual namespace; never decode or rebuild
+        // an executable from the handle's assertion. Product restoration must
+        // supply its separately admitted Source rather than a Native surrogate.
+        let program = match (&self.spec.request, owner) {
+            (super::TaskRequest::Program(_), super::RuntimeProgramOwner::Plan(plan)) => {
+                Some(crate::plan::task_source::RuntimeTaskSourceProgram::native(
+                    std::sync::Arc::clone(plan),
+                ))
+            }
+            _ => None,
+        };
+        let mut source_admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let context = program.as_ref().map(|program| super::TaskSourceRestore {
+            program,
+            admission: &mut source_admission,
+        });
+        let spec = self.spec.into_admitted_live(owner, context)?;
         Ok(RuntimeNeedHandle(Box::new(RuntimeNeedHandleData {
             correlation: self.correlation,
             spec,

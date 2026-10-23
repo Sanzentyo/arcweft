@@ -1157,6 +1157,7 @@ pub enum FlowOp {
     },
     Thread {
         name: Option<String>,
+        binding: RuntimePattern,
         producer: crate::task::NeedProducerDefinition,
         captures: Vec<RuntimeLocalDeclarationId>,
         body: Vec<FlowOp>,

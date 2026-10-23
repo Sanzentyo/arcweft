@@ -959,7 +959,7 @@ impl Engine {
             value => {
                 self.fail_eval(
                     format!(
-                        "Await source produced {}, expected Need<T>",
+                        "Await source produced {}, expected Need<T> or ThreadHandle<T>",
                         super::runtime_value_label(&value)
                     ),
                     output,
@@ -973,9 +973,12 @@ impl Engine {
             .get(target.source().ty())
             .map(|declaration| declaration.projection())
         {
-            Some(crate::plan::RuntimePlanTypeProjection::Need(item)) => *item,
+            Some(
+                crate::plan::RuntimePlanTypeProjection::Need(item)
+                | crate::plan::RuntimePlanTypeProjection::ThreadHandle(item),
+            ) => *item,
             _ => {
-                self.fail_eval("Await source type is not a checked Need<T>", output);
+                self.fail_eval("Await source type is not a checked awaitable", output);
                 return;
             }
         };

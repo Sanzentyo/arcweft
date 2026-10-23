@@ -1,0 +1,1889 @@
+{
+  "rust-build-meta": {
+    "target-directory": "D:\\git\\arcweft\\target",
+    "build-directory": "D:\\git\\arcweft\\target",
+    "base-output-directories": [
+      "debug"
+    ],
+    "non-test-binaries": {
+      "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0": [
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_browser_bench.dll",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_browser_bench.dll.exp",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_browser_bench.dll.lib",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_browser_bench.pdb",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/libarcweft_browser_bench.rlib",
+          "build-platform": "target"
+        }
+      ],
+      "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0": [
+        {
+          "name": "arcw",
+          "kind": "bin-exe",
+          "path": "debug/arcw.exe",
+          "build-platform": "target"
+        }
+      ],
+      "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0": [
+        {
+          "name": "arcweft-lsp",
+          "kind": "bin-exe",
+          "path": "debug/arcweft-lsp.exe",
+          "build-platform": "target"
+        }
+      ],
+      "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0": [
+        {
+          "name": "arcweft-player-native",
+          "kind": "bin-exe",
+          "path": "debug/arcweft-player-native.exe",
+          "build-platform": "target"
+        },
+        {
+          "name": "windows-tsf-ime-sample",
+          "kind": "bin-exe",
+          "path": "debug/windows-tsf-ime-sample.exe",
+          "build-platform": "target"
+        }
+      ],
+      "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0": [
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_player_web.dll",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_player_web.dll.exp",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_player_web.dll.lib",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_player_web.pdb",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/libarcweft_player_web.rlib",
+          "build-platform": "target"
+        }
+      ]
+    },
+    "build-script-out-dirs": {
+      "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0": "debug/build/arcweft-cli-86702cfd0bcaa78b/out"
+    },
+    "build-script-info": {},
+    "linked-paths": [
+      "debug/build/blake3-10d058e1ab0beac6/out",
+      "debug/build/libsqlite3-sys-030d8f36b1d9d297/out",
+      "debug/build/ring-0e92a9ace67bbdc4/out",
+      "debug/build/zstd-sys-6cceb1064e6d7a37/out"
+    ],
+    "platforms": {
+      "host": {
+        "platform": {
+          "triple": "x86_64-pc-windows-msvc",
+          "target-features": "unknown"
+        },
+        "libdir": {
+          "status": "available",
+          "path": "C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib"
+        }
+      },
+      "targets": []
+    },
+    "target-platforms": [
+      {
+        "triple": "x86_64-pc-windows-msvc",
+        "target-features": "unknown"
+      }
+    ],
+    "target-platform": null
+  },
+  "rust-binaries": {
+    "arcweft": {
+      "binary-id": "arcweft",
+      "binary-name": "arcweft",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft-52504b8741f4a024.exe",
+      "build-platform": "target"
+    },
+    "arcweft-adapter-desktop": {
+      "binary-id": "arcweft-adapter-desktop",
+      "binary-name": "arcweft_adapter_desktop",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-desktop#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_adapter_desktop-038a3fd12b18b163.exe",
+      "build-platform": "target"
+    },
+    "arcweft-adapter-desktop::native_integration": {
+      "binary-id": "arcweft-adapter-desktop::native_integration",
+      "binary-name": "native_integration",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-desktop#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\native_integration-f50a716e94217bd5.exe",
+      "build-platform": "target"
+    },
+    "arcweft-adapter-sema": {
+      "binary-id": "arcweft-adapter-sema",
+      "binary-name": "arcweft_adapter_sema",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_adapter_sema-b280e5a5fb634501.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-mcp": {
+      "binary-id": "arcweft-agent-mcp",
+      "binary-name": "arcweft_agent_mcp",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_mcp-75ad6d3b5b8882cd.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-mcp::descriptor_invariants": {
+      "binary-id": "arcweft-agent-mcp::descriptor_invariants",
+      "binary-name": "descriptor_invariants",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\descriptor_invariants-554e493e9fbe4833.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-mcp::repl_command": {
+      "binary-id": "arcweft-agent-mcp::repl_command",
+      "binary-name": "repl_command",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_command-63401b5f19a18abb.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-mcp-client": {
+      "binary-id": "arcweft-agent-mcp-client",
+      "binary-name": "arcweft_agent_mcp_client",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_mcp_client-4444b99042636971.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-policy": {
+      "binary-id": "arcweft-agent-policy",
+      "binary-name": "arcweft_agent_policy",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-policy#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_policy-2258f04a486fa032.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-protocol": {
+      "binary-id": "arcweft-agent-protocol",
+      "binary-name": "arcweft_agent_protocol",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-protocol#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_protocol-a23c1f15e06c1c86.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-repl": {
+      "binary-id": "arcweft-agent-repl",
+      "binary-name": "arcweft_agent_repl",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_repl-3ea2871b1555bfdc.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-repl::api_compile": {
+      "binary-id": "arcweft-agent-repl::api_compile",
+      "binary-name": "api_compile",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-bb44e73956796891.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-repl::repl_cell": {
+      "binary-id": "arcweft-agent-repl::repl_cell",
+      "binary-name": "repl_cell",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_cell-a4eca3a010b0d7c2.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-repl::repl_command": {
+      "binary-id": "arcweft-agent-repl::repl_command",
+      "binary-name": "repl_command",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_command-929817e68115b6a6.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-repl::repl_task_adapter": {
+      "binary-id": "arcweft-agent-repl::repl_task_adapter",
+      "binary-name": "repl_task_adapter",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_task_adapter-1ee358c7eb61d095.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-repl::repl_tiering": {
+      "binary-id": "arcweft-agent-repl::repl_tiering",
+      "binary-name": "repl_tiering",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_tiering-be384e4989af1754.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-repl::repl_trace": {
+      "binary-id": "arcweft-agent-repl::repl_trace",
+      "binary-name": "repl_trace",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_trace-ec15f00c5bfb02b6.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-repl::repl_transaction": {
+      "binary-id": "arcweft-agent-repl::repl_transaction",
+      "binary-name": "repl_transaction",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_transaction-7ecf1a83f2409441.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-repl::runtime_assertion_diagnostic": {
+      "binary-id": "arcweft-agent-repl::runtime_assertion_diagnostic",
+      "binary-name": "runtime_assertion_diagnostic",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_diagnostic-5e605b74dcd783ac.exe",
+      "build-platform": "target"
+    },
+    "arcweft-agent-runner": {
+      "binary-id": "arcweft-agent-runner",
+      "binary-name": "arcweft_agent_runner",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_runner-96ad7a2de164427f.exe",
+      "build-platform": "target"
+    },
+    "arcweft-browser-bench": {
+      "binary-id": "arcweft-browser-bench",
+      "binary-name": "arcweft_browser_bench",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_browser_bench-88bd25a8ce0e4bc9.exe",
+      "build-platform": "target"
+    },
+    "arcweft-browser-bench::bin/browser_bench_host": {
+      "binary-id": "arcweft-browser-bench::bin/browser_bench_host",
+      "binary-name": "browser_bench_host",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0",
+      "kind": "bin",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\browser_bench_host-455e0009e46fd569.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle": {
+      "binary-id": "arcweft-bundle",
+      "binary-name": "arcweft_bundle",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_bundle-9fc41dddff3fe8db.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::character_package": {
+      "binary-id": "arcweft-bundle::character_package",
+      "binary-name": "character_package",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\character_package-2ed4284c0ccba554.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::ime_player_rendered": {
+      "binary-id": "arcweft-bundle::ime_player_rendered",
+      "binary-name": "ime_player_rendered",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\ime_player_rendered-67956e544ab97d6f.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::locale_catalog_resource_codec": {
+      "binary-id": "arcweft-bundle::locale_catalog_resource_codec",
+      "binary-name": "locale_catalog_resource_codec",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\locale_catalog_resource_codec-4595881ef5ceb81b.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::patch_schema": {
+      "binary-id": "arcweft-bundle::patch_schema",
+      "binary-name": "patch_schema",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\patch_schema-8114e48aacfd6869.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::product_awbc_only": {
+      "binary-id": "arcweft-bundle::product_awbc_only",
+      "binary-name": "product_awbc_only",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\product_awbc_only-2240fa0c194e0c57.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::product_catalog_resource_codecs": {
+      "binary-id": "arcweft-bundle::product_catalog_resource_codecs",
+      "binary-name": "product_catalog_resource_codecs",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\product_catalog_resource_codecs-0bf6fd7c40113d21.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::resource_codec_common": {
+      "binary-id": "arcweft-bundle::resource_codec_common",
+      "binary-name": "resource_codec_common",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\resource_codec_common-c0253216ff0f36b3.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::resource_type_manifest_section": {
+      "binary-id": "arcweft-bundle::resource_type_manifest_section",
+      "binary-name": "resource_type_manifest_section",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\resource_type_manifest_section-ecdabbf956a38362.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::runtime_control_style_resolution": {
+      "binary-id": "arcweft-bundle::runtime_control_style_resolution",
+      "binary-name": "runtime_control_style_resolution",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_style_resolution-28dc1f05e87f45a8.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::runtime_resource_codecs": {
+      "binary-id": "arcweft-bundle::runtime_resource_codecs",
+      "binary-name": "runtime_resource_codecs",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_resource_codecs-88509239aa897c9f.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::source_map": {
+      "binary-id": "arcweft-bundle::source_map",
+      "binary-name": "source_map",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\source_map-df71480a84ca1e20.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::standard_dialogue_view": {
+      "binary-id": "arcweft-bundle::standard_dialogue_view",
+      "binary-name": "standard_dialogue_view",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\standard_dialogue_view-9ccf972555bde2fd.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::style_cross_section_refs": {
+      "binary-id": "arcweft-bundle::style_cross_section_refs",
+      "binary-name": "style_cross_section_refs",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\style_cross_section_refs-2c57f4258ef7044d.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::view_action_button_resources": {
+      "binary-id": "arcweft-bundle::view_action_button_resources",
+      "binary-name": "view_action_button_resources",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_action_button_resources-50ef091837f93c6b.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::view_focus_navigation_resources": {
+      "binary-id": "arcweft-bundle::view_focus_navigation_resources",
+      "binary-name": "view_focus_navigation_resources",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_focus_navigation_resources-d99c77763fc0e632.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::view_product_validation": {
+      "binary-id": "arcweft-bundle::view_product_validation",
+      "binary-name": "view_product_validation",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_product_validation-c92ae5c75075c192.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::view_resource_codecs": {
+      "binary-id": "arcweft-bundle::view_resource_codecs",
+      "binary-name": "view_resource_codecs",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_resource_codecs-3ec3f664c4cc09b9.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::view_runtime_text_controls": {
+      "binary-id": "arcweft-bundle::view_runtime_text_controls",
+      "binary-name": "view_runtime_text_controls",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_runtime_text_controls-41b2c41279db8f01.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::view_style_environment_codec": {
+      "binary-id": "arcweft-bundle::view_style_environment_codec",
+      "binary-name": "view_style_environment_codec",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_style_environment_codec-b2d0ca16fb8d67d8.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle::view_style_program": {
+      "binary-id": "arcweft-bundle::view_style_program",
+      "binary-name": "view_style_program",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_style_program-3543011b7f4f3eee.exe",
+      "build-platform": "target"
+    },
+    "arcweft-bundle-assets": {
+      "binary-id": "arcweft-bundle-assets",
+      "binary-name": "arcweft_bundle_assets",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-bundle-assets#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_bundle_assets-8c98474600139820.exe",
+      "build-platform": "target"
+    },
+    "arcweft-character-view": {
+      "binary-id": "arcweft-character-view",
+      "binary-name": "arcweft_character_view",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-character-view#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_character_view-f58cf826a284f9d3.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli": {
+      "binary-id": "arcweft-cli",
+      "binary-name": "arcweft_cli",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_cli-a6fe9b122dd4b8b5.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::arcw_fixtures_check_run": {
+      "binary-id": "arcweft-cli::arcw_fixtures_check_run",
+      "binary-name": "arcw_fixtures_check_run",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcw_fixtures_check_run-1de0cc0ddf54db9a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::bracket_numeric_batch": {
+      "binary-id": "arcweft-cli::bracket_numeric_batch",
+      "binary-name": "bracket_numeric_batch",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\bracket_numeric_batch-1d6d43fd89acf6f3.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::check": {
+      "binary-id": "arcweft-cli::check",
+      "binary-name": "check",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\check-8600c8293ec39bf2.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::check_core_cli": {
+      "binary-id": "arcweft-cli::check_core_cli",
+      "binary-name": "check_core_cli",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\check_core_cli-375e940644ebe149.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::environment_callable_tensor": {
+      "binary-id": "arcweft-cli::environment_callable_tensor",
+      "binary-name": "environment_callable_tensor",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\environment_callable_tensor-9b2165f1e5d9a14b.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::native_host_contracts": {
+      "binary-id": "arcweft-cli::native_host_contracts",
+      "binary-name": "native_host_contracts",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\native_host_contracts-80cc1db0010ffda3.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::native_style_parity_sample": {
+      "binary-id": "arcweft-cli::native_style_parity_sample",
+      "binary-name": "native_style_parity_sample",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\native_style_parity_sample-b01b65d4fa6e12b4.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::release_trust_json": {
+      "binary-id": "arcweft-cli::release_trust_json",
+      "binary-name": "release_trust_json",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_json-99c65274f985c77a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::runtime_native_options": {
+      "binary-id": "arcweft-cli::runtime_native_options",
+      "binary-name": "runtime_native_options",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_native_options-b0ca7d54f1f12b13.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::seq04_8_4_persistent_cache_build_cli_goldens": {
+      "binary-id": "arcweft-cli::seq04_8_4_persistent_cache_build_cli_goldens",
+      "binary-name": "seq04_8_4_persistent_cache_build_cli_goldens",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\seq04_8_4_persistent_cache_build_cli_goldens-4c80dfc374ddcebb.exe",
+      "build-platform": "target"
+    },
+    "arcweft-cli::bin/arcw": {
+      "binary-id": "arcweft-cli::bin/arcw",
+      "binary-name": "arcw",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "bin",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcw-3941da92fa867cb1.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler": {
+      "binary-id": "arcweft-compiler",
+      "binary-name": "arcweft_compiler",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-ab479908c2412289.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::agent_enum_execution": {
+      "binary-id": "arcweft-compiler::agent_enum_execution",
+      "binary-name": "agent_enum_execution",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\agent_enum_execution-88f009a65846abe0.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::api_compile": {
+      "binary-id": "arcweft-compiler::api_compile",
+      "binary-name": "api_compile",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-5634c01cc95f5cca.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::assertions": {
+      "binary-id": "arcweft-compiler::assertions",
+      "binary-name": "assertions",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\assertions-cba81240f9033392.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::callable_execution": {
+      "binary-id": "arcweft-compiler::callable_execution",
+      "binary-name": "callable_execution",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-05c9e361a00eafff.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::catalog_asset_execution": {
+      "binary-id": "arcweft-compiler::catalog_asset_execution",
+      "binary-name": "catalog_asset_execution",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\catalog_asset_execution-2589931077d82c1c.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::choice_static": {
+      "binary-id": "arcweft-compiler::choice_static",
+      "binary-name": "choice_static",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\choice_static-d59ec978fa408b93.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::data_format_nominal": {
+      "binary-id": "arcweft-compiler::data_format_nominal",
+      "binary-name": "data_format_nominal",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\data_format_nominal-4ee6d27afd05ff18.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::diagnostic_ownership": {
+      "binary-id": "arcweft-compiler::diagnostic_ownership",
+      "binary-name": "diagnostic_ownership",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\diagnostic_ownership-8b7ad18a58a2def0.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::dialogue_profile_admission": {
+      "binary-id": "arcweft-compiler::dialogue_profile_admission",
+      "binary-name": "dialogue_profile_admission",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_profile_admission-8637a3e807c14f17.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::evaluated_effects": {
+      "binary-id": "arcweft-compiler::evaluated_effects",
+      "binary-name": "evaluated_effects",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\evaluated_effects-f918d9c18aa7a9af.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::flow_effects": {
+      "binary-id": "arcweft-compiler::flow_effects",
+      "binary-name": "flow_effects",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_effects-5c1cae2951a2629a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::flow_include": {
+      "binary-id": "arcweft-compiler::flow_include",
+      "binary-name": "flow_include",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-d3e5d47c56d4ad9c.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::generic_continuation_snapshot": {
+      "binary-id": "arcweft-compiler::generic_continuation_snapshot",
+      "binary-name": "generic_continuation_snapshot",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\generic_continuation_snapshot-5699d9a013f04da1.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::inline_failure_policy": {
+      "binary-id": "arcweft-compiler::inline_failure_policy",
+      "binary-name": "inline_failure_policy",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\inline_failure_policy-22d27c873135f193.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::iterator_witness_source": {
+      "binary-id": "arcweft-compiler::iterator_witness_source",
+      "binary-name": "iterator_witness_source",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\iterator_witness_source-5ca3e81228c7b895.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::local_declaration_source": {
+      "binary-id": "arcweft-compiler::local_declaration_source",
+      "binary-name": "local_declaration_source",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\local_declaration_source-46a92d16fecd0a5e.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::named_scopes": {
+      "binary-id": "arcweft-compiler::named_scopes",
+      "binary-name": "named_scopes",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\named_scopes-645eeb427f7a99e4.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::parser_diagnostic": {
+      "binary-id": "arcweft-compiler::parser_diagnostic",
+      "binary-name": "parser_diagnostic",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\parser_diagnostic-6b89e20f8de69625.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::project_cache_transaction": {
+      "binary-id": "arcweft-compiler::project_cache_transaction",
+      "binary-name": "project_cache_transaction",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\project_cache_transaction-2076cefde89ea902.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::project_function_instances": {
+      "binary-id": "arcweft-compiler::project_function_instances",
+      "binary-name": "project_function_instances",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\project_function_instances-449c51131080c367.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::runtime_color": {
+      "binary-id": "arcweft-compiler::runtime_color",
+      "binary-name": "runtime_color",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_color-65915aea41edd0a2.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::scope_propagation": {
+      "binary-id": "arcweft-compiler::scope_propagation",
+      "binary-name": "scope_propagation",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\scope_propagation-ac9db87e519a1926.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::try_pipe": {
+      "binary-id": "arcweft-compiler::try_pipe",
+      "binary-name": "try_pipe",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\try_pipe-a7553b826e3d7cfd.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::view_product": {
+      "binary-id": "arcweft-compiler::view_product",
+      "binary-name": "view_product",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_product-16040efdc21ae6eb.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core": {
+      "binary-id": "arcweft-core",
+      "binary-name": "arcweft_core",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-fcbbac8dbd1281a5.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::api_compile": {
+      "binary-id": "arcweft-core::api_compile",
+      "binary-name": "api_compile",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-4c87fee3f6c3507e.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::awbc_record_type": {
+      "binary-id": "arcweft-core::awbc_record_type",
+      "binary-name": "awbc_record_type",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_record_type-06cc74777ff6d842.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::awbc_variant_types": {
+      "binary-id": "arcweft-core::awbc_variant_types",
+      "binary-name": "awbc_variant_types",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_variant_types-96bc9f828c6ef621.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::builtin_payload_admission": {
+      "binary-id": "arcweft-core::builtin_payload_admission",
+      "binary-name": "builtin_payload_admission",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\builtin_payload_admission-41f7bfa00d3dc025.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::direct_suspension": {
+      "binary-id": "arcweft-core::direct_suspension",
+      "binary-name": "direct_suspension",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\direct_suspension-e010eef430ec8e08.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::nominal_schema_admission": {
+      "binary-id": "arcweft-core::nominal_schema_admission",
+      "binary-name": "nominal_schema_admission",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\nominal_schema_admission-e6a5125f1ef9e69c.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::record_admission": {
+      "binary-id": "arcweft-core::record_admission",
+      "binary-name": "record_admission",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\record_admission-b8d1d9da135edfe7.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::record_field_names": {
+      "binary-id": "arcweft-core::record_field_names",
+      "binary-name": "record_field_names",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\record_field_names-e3c5930229192b36.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::runtime_assertion_identity": {
+      "binary-id": "arcweft-core::runtime_assertion_identity",
+      "binary-name": "runtime_assertion_identity",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_identity-3635d2f0ea8f1287.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::runtime_id_boundaries": {
+      "binary-id": "arcweft-core::runtime_id_boundaries",
+      "binary-name": "runtime_id_boundaries",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_id_boundaries-3d452ecd6526d43b.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::task_admission": {
+      "binary-id": "arcweft-core::task_admission",
+      "binary-name": "task_admission",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\task_admission-880072812237b454.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core::task_plan_view_prefix": {
+      "binary-id": "arcweft-core::task_plan_view_prefix",
+      "binary-name": "task_plan_view_prefix",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\task_plan_view_prefix-e52919b12cbd0056.exe",
+      "build-platform": "target"
+    },
+    "arcweft-debug-model": {
+      "binary-id": "arcweft-debug-model",
+      "binary-name": "arcweft_debug_model",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-debug-model#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_debug_model-53a3596e371e8cee.exe",
+      "build-platform": "target"
+    },
+    "arcweft-debug-sqlite": {
+      "binary-id": "arcweft-debug-sqlite",
+      "binary-name": "arcweft_debug_sqlite",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-debug-sqlite#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_debug_sqlite-5025f571520b58c0.exe",
+      "build-platform": "target"
+    },
+    "arcweft-dialogue": {
+      "binary-id": "arcweft-dialogue",
+      "binary-name": "arcweft_dialogue",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_dialogue-82dab08cff5dec7e.exe",
+      "build-platform": "target"
+    },
+    "arcweft-dialogue::rich_text_schema": {
+      "binary-id": "arcweft-dialogue::rich_text_schema",
+      "binary-name": "rich_text_schema",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\rich_text_schema-21754de61c1ecef8.exe",
+      "build-platform": "target"
+    },
+    "arcweft-glyphon": {
+      "binary-id": "arcweft-glyphon",
+      "binary-name": "arcweft_glyphon",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_glyphon-fa4d331ee505d079.exe",
+      "build-platform": "target"
+    },
+    "arcweft-glyphon::shared_text_layout": {
+      "binary-id": "arcweft-glyphon::shared_text_layout",
+      "binary-name": "shared_text_layout",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\shared_text_layout-076e71fdd886d2f6.exe",
+      "build-platform": "target"
+    },
+    "arcweft-host-adapter": {
+      "binary-id": "arcweft-host-adapter",
+      "binary-name": "arcweft_host_adapter",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-host-adapter#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_host_adapter-6aa8a1dc23fa018e.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lang-jit-cranelift": {
+      "binary-id": "arcweft-lang-jit-cranelift",
+      "binary-name": "arcweft_lang_jit_cranelift",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lang-jit-cranelift#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_jit_cranelift-f76888908aa5b31a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lang-sema": {
+      "binary-id": "arcweft-lang-sema",
+      "binary-name": "arcweft_lang_sema",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-9c2a65da5ddfdf49.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lang-sema::api_compile": {
+      "binary-id": "arcweft-lang-sema::api_compile",
+      "binary-name": "api_compile",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-440811f94723fd51.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lang-sema::character_nominal_mismatch": {
+      "binary-id": "arcweft-lang-sema::character_nominal_mismatch",
+      "binary-name": "character_nominal_mismatch",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\character_nominal_mismatch-e335f5dc0c23f27e.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lang-sema::checked_match_query": {
+      "binary-id": "arcweft-lang-sema::checked_match_query",
+      "binary-name": "checked_match_query",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_match_query-703acbebca7f9695.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lang-sema::checked_statement_read_only_views": {
+      "binary-id": "arcweft-lang-sema::checked_statement_read_only_views",
+      "binary-name": "checked_statement_read_only_views",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_statement_read_only_views-d67c3fb0f543f4c1.exe",
+      "build-platform": "target"
+    },
+    "arcweft-launch": {
+      "binary-id": "arcweft-launch",
+      "binary-name": "arcweft_launch",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_launch-7b881c1bb1c68e9a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-launch::maintained_manifests": {
+      "binary-id": "arcweft-launch::maintained_manifests",
+      "binary-name": "maintained_manifests",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\maintained_manifests-2db5c5e245cbb60c.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lsp": {
+      "binary-id": "arcweft-lsp",
+      "binary-name": "arcweft_lsp",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lsp-5e23c55215b82a44.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lsp::dependency_direction": {
+      "binary-id": "arcweft-lsp::dependency_direction",
+      "binary-name": "dependency_direction",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-c3e870112bc92d8f.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lsp::public_api": {
+      "binary-id": "arcweft-lsp::public_api",
+      "binary-name": "public_api",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-47b3e36b280ee6ad.exe",
+      "build-platform": "target"
+    },
+    "arcweft-lsp::bin/arcweft-lsp": {
+      "binary-id": "arcweft-lsp::bin/arcweft-lsp",
+      "binary-name": "arcweft-lsp",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0",
+      "kind": "bin",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lsp-55b8ec8776f3cc79.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-native": {
+      "binary-id": "arcweft-player-native",
+      "binary-name": "arcweft_player_native",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_native-1fd9343fab191936.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-native::windowed_ingress_runtime": {
+      "binary-id": "arcweft-player-native::windowed_ingress_runtime",
+      "binary-name": "windowed_ingress_runtime",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_ingress_runtime-2e503e5c00cf16bf.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-native::windowed_live_patch_smoke": {
+      "binary-id": "arcweft-player-native::windowed_live_patch_smoke",
+      "binary-name": "windowed_live_patch_smoke",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_live_patch_smoke-f5d0ec0ad8e3d862.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-native::bin/arcweft-player-native": {
+      "binary-id": "arcweft-player-native::bin/arcweft-player-native",
+      "binary-name": "arcweft-player-native",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0",
+      "kind": "bin",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_native-49005a6ddb51e29d.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-native::bin/windows-tsf-ime-sample": {
+      "binary-id": "arcweft-player-native::bin/windows-tsf-ime-sample",
+      "binary-name": "windows-tsf-ime-sample",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0",
+      "kind": "bin",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\windows_tsf_ime_sample-bffece8c61557f89.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene": {
+      "binary-id": "arcweft-player-scene",
+      "binary-name": "arcweft_player_scene",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_scene-18497549244bae8b.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene::action_button_submit": {
+      "binary-id": "arcweft-player-scene::action_button_submit",
+      "binary-name": "action_button_submit",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\action_button_submit-297596d059d71151.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene::character_stage": {
+      "binary-id": "arcweft-player-scene::character_stage",
+      "binary-name": "character_stage",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\character_stage-68f0f96faab4185a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene::controller_navigation": {
+      "binary-id": "arcweft-player-scene::controller_navigation",
+      "binary-name": "controller_navigation",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\controller_navigation-6904fa7cefb5206f.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene::dialogue_view": {
+      "binary-id": "arcweft-player-scene::dialogue_view",
+      "binary-name": "dialogue_view",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_view-392dede2e50c8057.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene::responsive_stage_placement": {
+      "binary-id": "arcweft-player-scene::responsive_stage_placement",
+      "binary-name": "responsive_stage_placement",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\responsive_stage_placement-db706d3081646602.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene::runtime_control_style_lowering": {
+      "binary-id": "arcweft-player-scene::runtime_control_style_lowering",
+      "binary-name": "runtime_control_style_lowering",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_style_lowering-4906449f69994609.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene::runtime_text_controls": {
+      "binary-id": "arcweft-player-scene::runtime_text_controls",
+      "binary-name": "runtime_text_controls",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_text_controls-1c28d168dad03022.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene::scroll_regions": {
+      "binary-id": "arcweft-player-scene::scroll_regions",
+      "binary-name": "scroll_regions",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\scroll_regions-4633705208e5f56b.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-scene::view_geometry_transaction": {
+      "binary-id": "arcweft-player-scene::view_geometry_transaction",
+      "binary-name": "view_geometry_transaction",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_geometry_transaction-73537bb2bf4fe07e.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-text-input": {
+      "binary-id": "arcweft-player-text-input",
+      "binary-name": "arcweft_player_text_input",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-text-input#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_text_input-64a0cd08d9814d0d.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-web": {
+      "binary-id": "arcweft-player-web",
+      "binary-name": "arcweft_player_web",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web-4500c0959c10b7ef.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-web::input": {
+      "binary-id": "arcweft-player-web::input",
+      "binary-name": "input",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\input-7b4d7b019f3c05f4.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-web::interaction_visual_state": {
+      "binary-id": "arcweft-player-web::interaction_visual_state",
+      "binary-name": "interaction_visual_state",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\interaction_visual_state-3ad4af9723aedc70.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-web::parity": {
+      "binary-id": "arcweft-player-web::parity",
+      "binary-name": "parity",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\parity-ccff14a6a81e037a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-web::report": {
+      "binary-id": "arcweft-player-web::report",
+      "binary-name": "report",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\report-290d87175ac54ae6.exe",
+      "build-platform": "target"
+    },
+    "arcweft-player-web::web_text_input_glue": {
+      "binary-id": "arcweft-player-web::web_text_input_glue",
+      "binary-name": "web_text_input_glue",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\web_text_input_glue-df6d49d4452f228a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-project": {
+      "binary-id": "arcweft-project",
+      "binary-name": "arcweft_project",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_project-31de4cb03d23d5e7.exe",
+      "build-platform": "target"
+    },
+    "arcweft-project::bytecode_link_producer_inventory": {
+      "binary-id": "arcweft-project::bytecode_link_producer_inventory",
+      "binary-name": "bytecode_link_producer_inventory",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\bytecode_link_producer_inventory-9db05dffc39d980a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-project-loader": {
+      "binary-id": "arcweft-project-loader",
+      "binary-name": "arcweft_project_loader",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_project_loader-d92d431d60d87221.exe",
+      "build-platform": "target"
+    },
+    "arcweft-project-loader::dependency_direction": {
+      "binary-id": "arcweft-project-loader::dependency_direction",
+      "binary-name": "dependency_direction",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-5bc026b11773c3d3.exe",
+      "build-platform": "target"
+    },
+    "arcweft-project-loader::public_api": {
+      "binary-id": "arcweft-project-loader::public_api",
+      "binary-name": "public_api",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-28e4fc3479918ff2.exe",
+      "build-platform": "target"
+    },
+    "arcweft-project-loader::release_trust_e2e": {
+      "binary-id": "arcweft-project-loader::release_trust_e2e",
+      "binary-name": "release_trust_e2e",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_e2e-7aec36a4510007d3.exe",
+      "build-platform": "target"
+    },
+    "arcweft-rag": {
+      "binary-id": "arcweft-rag",
+      "binary-name": "arcweft_rag",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-rag#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_rag-cff9351b6eecd741.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-text": {
+      "binary-id": "arcweft-render-text",
+      "binary-name": "arcweft_render_text",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_render_text-e914c0846b104c09.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-text::frame_resolution": {
+      "binary-id": "arcweft-render-text::frame_resolution",
+      "binary-name": "frame_resolution",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\frame_resolution-24742acc51bda994.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-text::resolved_document": {
+      "binary-id": "arcweft-render-text::resolved_document",
+      "binary-name": "resolved_document",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\resolved_document-988a21d19af8cca0.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-web": {
+      "binary-id": "arcweft-render-web",
+      "binary-name": "arcweft_render_web",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-web#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_render_web-b12fabd5c897b550.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu": {
+      "binary-id": "arcweft-render-wgpu",
+      "binary-name": "arcweft_render_wgpu",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_render_wgpu-2eeb5b37ac75009f.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::geometry": {
+      "binary-id": "arcweft-render-wgpu::geometry",
+      "binary-name": "geometry",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry-5728cf2bd9df299c.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::geometry_runtime_control_styles": {
+      "binary-id": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "binary-name": "geometry_runtime_control_styles",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry_runtime_control_styles-e9397a2a5d22e5f5.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::prepared_text": {
+      "binary-id": "arcweft-render-wgpu::prepared_text",
+      "binary-name": "prepared_text",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\prepared_text-9a400fb5f5fc52f9.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke": {
+      "binary-id": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke",
+      "binary-name": "runtime_control_backdrop_gpu_smoke",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_backdrop_gpu_smoke-48d4097946b64cbc.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_blend_hsl_modes": {
+      "binary-id": "arcweft-render-wgpu::view_blend_hsl_modes",
+      "binary-name": "view_blend_hsl_modes",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_blend_hsl_modes-71f209427e259882.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_box_shadow_exact_png_golden": {
+      "binary-id": "arcweft-render-wgpu::view_box_shadow_exact_png_golden",
+      "binary-name": "view_box_shadow_exact_png_golden",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_exact_png_golden-0b01ce4bc98c5b89.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_box_shadow_gpu_smoke": {
+      "binary-id": "arcweft-render-wgpu::view_box_shadow_gpu_smoke",
+      "binary-name": "view_box_shadow_gpu_smoke",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_gpu_smoke-7032b409a89430e9.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_box_shadow_plan": {
+      "binary-id": "arcweft-render-wgpu::view_box_shadow_plan",
+      "binary-name": "view_box_shadow_plan",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_plan-a688bae02e9a1177.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_clip_mask_render_closure": {
+      "binary-id": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "binary-name": "view_clip_mask_render_closure",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_clip_mask_render_closure-c554ff1c31f31388.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_compositor_gpu_smoke": {
+      "binary-id": "arcweft-render-wgpu::view_compositor_gpu_smoke",
+      "binary-name": "view_compositor_gpu_smoke",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke-4a9479e8d3095df5.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_compositor_gpu_smoke_seq06_13c": {
+      "binary-id": "arcweft-render-wgpu::view_compositor_gpu_smoke_seq06_13c",
+      "binary-name": "view_compositor_gpu_smoke_seq06_13c",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke_seq06_13c-cf4be8ecc9d98dfb.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_compositor_gpu_smoke_timestamps": {
+      "binary-id": "arcweft-render-wgpu::view_compositor_gpu_smoke_timestamps",
+      "binary-name": "view_compositor_gpu_smoke_timestamps",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke_timestamps-998ccd0d5b7e7c52.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_compositor_plan": {
+      "binary-id": "arcweft-render-wgpu::view_compositor_plan",
+      "binary-name": "view_compositor_plan",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_plan-5c6b4fb47281eb47.exe",
+      "build-platform": "target"
+    },
+    "arcweft-render-wgpu::view_scene_player_path": {
+      "binary-id": "arcweft-render-wgpu::view_scene_player_path",
+      "binary-name": "view_scene_player_path",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_scene_player_path-ba4ba6f3a4427162.exe",
+      "build-platform": "target"
+    },
+    "arcweft-resource-manifest": {
+      "binary-id": "arcweft-resource-manifest",
+      "binary-name": "arcweft_resource_manifest",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_resource_manifest-7ed9e9f8e30c7b22.exe",
+      "build-platform": "target"
+    },
+    "arcweft-resource-manifest::manifest_contract": {
+      "binary-id": "arcweft-resource-manifest::manifest_contract",
+      "binary-name": "manifest_contract",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\manifest_contract-e2b096dcfa408ce9.exe",
+      "build-platform": "target"
+    },
+    "arcweft-resource-manifest::publication_contract": {
+      "binary-id": "arcweft-resource-manifest::publication_contract",
+      "binary-name": "publication_contract",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\publication_contract-b514db9fda174ac7.exe",
+      "build-platform": "target"
+    },
+    "arcweft-resource-model": {
+      "binary-id": "arcweft-resource-model",
+      "binary-name": "arcweft_resource_model",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_resource_model-686e74074db12d75.exe",
+      "build-platform": "target"
+    },
+    "arcweft-resource-model::identity_contract": {
+      "binary-id": "arcweft-resource-model::identity_contract",
+      "binary-name": "identity_contract",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\identity_contract-d8db11382e51ed2a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-resource-model::registry_contract": {
+      "binary-id": "arcweft-resource-model::registry_contract",
+      "binary-name": "registry_contract",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\registry_contract-bb302877ca1a43fd.exe",
+      "build-platform": "target"
+    },
+    "arcweft-resource-model::retained_identity_contract": {
+      "binary-id": "arcweft-resource-model::retained_identity_contract",
+      "binary-name": "retained_identity_contract",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\retained_identity_contract-cace98fdcd50596f.exe",
+      "build-platform": "target"
+    },
+    "arcweft-resource-model::value_contract": {
+      "binary-id": "arcweft-resource-model::value_contract",
+      "binary-name": "value_contract",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\value_contract-05d3edbbc824c9aa.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-accelerator": {
+      "binary-id": "arcweft-runtime-accelerator",
+      "binary-name": "arcweft_runtime_accelerator",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-accelerator#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_accelerator-c6655c7c9f108212.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-codegen": {
+      "binary-id": "arcweft-runtime-codegen",
+      "binary-name": "arcweft_runtime_codegen",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-codegen#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_codegen-30f372a67422ebb2.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-driver": {
+      "binary-id": "arcweft-runtime-driver",
+      "binary-name": "arcweft_runtime_driver",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_driver-827ddfef54ce0e05.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-driver::awbc_product_session": {
+      "binary-id": "arcweft-runtime-driver::awbc_product_session",
+      "binary-name": "awbc_product_session",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_session-aa65b80c732e62d9.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-driver::dialogue_view_store": {
+      "binary-id": "arcweft-runtime-driver::dialogue_view_store",
+      "binary-name": "dialogue_view_store",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_view_store-dc2143b8c13730b0.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-driver::view_runtime": {
+      "binary-id": "arcweft-runtime-driver::view_runtime",
+      "binary-name": "view_runtime",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_runtime-3f1e3701277e8251.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-host": {
+      "binary-id": "arcweft-runtime-host",
+      "binary-name": "arcweft_runtime_host",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_host-b7c6130172af1e18.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-host::awbc_product_runner": {
+      "binary-id": "arcweft-runtime-host::awbc_product_runner",
+      "binary-name": "awbc_product_runner",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_runner-201e925573697884.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-host::bundle_runner": {
+      "binary-id": "arcweft-runtime-host::bundle_runner",
+      "binary-name": "bundle_runner",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\bundle_runner-8602e3ee36ea08f0.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-host::dependency_direction": {
+      "binary-id": "arcweft-runtime-host::dependency_direction",
+      "binary-name": "dependency_direction",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-7304d402ab8d724a.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-host::view_interaction_dispatch": {
+      "binary-id": "arcweft-runtime-host::view_interaction_dispatch",
+      "binary-name": "view_interaction_dispatch",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_interaction_dispatch-f520d67f1ee74687.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-plan": {
+      "binary-id": "arcweft-runtime-plan",
+      "binary-name": "arcweft_runtime_plan",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-3573c896f1830436.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-plan::api_compile": {
+      "binary-id": "arcweft-runtime-plan::api_compile",
+      "binary-name": "api_compile",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-2a90ef76880c7cab.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-plan::assertion_identity": {
+      "binary-id": "arcweft-runtime-plan::assertion_identity",
+      "binary-name": "assertion_identity",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\assertion_identity-09b23a06226358da.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-plan::awbc_product_parity": {
+      "binary-id": "arcweft-runtime-plan::awbc_product_parity",
+      "binary-name": "awbc_product_parity",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_parity-7fa0989d45214c56.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-plan::iterator_witness_awbc": {
+      "binary-id": "arcweft-runtime-plan::iterator_witness_awbc",
+      "binary-name": "iterator_witness_awbc",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\iterator_witness_awbc-e8ca48c35687a69d.exe",
+      "build-platform": "target"
+    },
+    "arcweft-runtime-scheduler": {
+      "binary-id": "arcweft-runtime-scheduler",
+      "binary-name": "arcweft_runtime_scheduler",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-scheduler#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_scheduler-6dac3e76f9ad5c09.exe",
+      "build-platform": "target"
+    },
+    "arcweft-save": {
+      "binary-id": "arcweft-save",
+      "binary-name": "arcweft_save",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_save-f34e2a59e383fc14.exe",
+      "build-platform": "target"
+    },
+    "arcweft-save::public_api": {
+      "binary-id": "arcweft-save::public_api",
+      "binary-name": "public_api",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-1e29d69307b567fa.exe",
+      "build-platform": "target"
+    },
+    "arcweft-save::runtime_assertion_identity": {
+      "binary-id": "arcweft-save::runtime_assertion_identity",
+      "binary-name": "runtime_assertion_identity",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_identity-dd8a822eca7cf726.exe",
+      "build-platform": "target"
+    },
+    "arcweft-save::strict_decode": {
+      "binary-id": "arcweft-save::strict_decode",
+      "binary-name": "strict_decode",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\strict_decode-bd125f9580c11acd.exe",
+      "build-platform": "target"
+    },
+    "arcweft-save::typed_json_preflight": {
+      "binary-id": "arcweft-save::typed_json_preflight",
+      "binary-name": "typed_json_preflight",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\typed_json_preflight-868b9de9f41c6687.exe",
+      "build-platform": "target"
+    },
+    "arcweft-test": {
+      "binary-id": "arcweft-test",
+      "binary-name": "arcweft_test",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_test-27455b55bd8690e4.exe",
+      "build-platform": "target"
+    },
+    "arcweft-text-layout": {
+      "binary-id": "arcweft-text-layout",
+      "binary-name": "arcweft_text_layout",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_text_layout-43751947ac6b1381.exe",
+      "build-platform": "target"
+    },
+    "arcweft-text-layout::document_layout": {
+      "binary-id": "arcweft-text-layout::document_layout",
+      "binary-name": "document_layout",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\document_layout-cb9968579eb59d94.exe",
+      "build-platform": "target"
+    },
+    "arcweft-text-layout::vertical_break_quality": {
+      "binary-id": "arcweft-text-layout::vertical_break_quality",
+      "binary-name": "vertical_break_quality",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\vertical_break_quality-218bb38403c6f706.exe",
+      "build-platform": "target"
+    },
+    "arcweft-text-model": {
+      "binary-id": "arcweft-text-model",
+      "binary-name": "arcweft_text_model",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-text-model#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_text_model-0ee8d21a5cbada01.exe",
+      "build-platform": "target"
+    },
+    "arcweft-tooling": {
+      "binary-id": "arcweft-tooling",
+      "binary-name": "arcweft_tooling",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_tooling-8a04c5d1181ed33b.exe",
+      "build-platform": "target"
+    },
+    "arcweft-tooling::capability_policy": {
+      "binary-id": "arcweft-tooling::capability_policy",
+      "binary-name": "capability_policy",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\capability_policy-8dc38052447837b6.exe",
+      "build-platform": "target"
+    },
+    "arcweft-tooling::public_api": {
+      "binary-id": "arcweft-tooling::public_api",
+      "binary-name": "public_api",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-a746a3f59eb4f9b2.exe",
+      "build-platform": "target"
+    },
+    "arcweft-tooling::runtime_assertion_diagnostic": {
+      "binary-id": "arcweft-tooling::runtime_assertion_diagnostic",
+      "binary-name": "runtime_assertion_diagnostic",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_diagnostic-3754e9996bcd8b60.exe",
+      "build-platform": "target"
+    },
+    "arcweft-tooling::view_export_part": {
+      "binary-id": "arcweft-tooling::view_export_part",
+      "binary-name": "view_export_part",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\view_export_part-8f59419146e50a29.exe",
+      "build-platform": "target"
+    },
+    "arcweft-verify": {
+      "binary-id": "arcweft-verify",
+      "binary-name": "arcweft_verify",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_verify-e66ef970830d4198.exe",
+      "build-platform": "target"
+    },
+    "arcweft-verify-lsp": {
+      "binary-id": "arcweft-verify-lsp",
+      "binary-name": "arcweft_verify_lsp",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_verify_lsp-43325537fb7d8eba.exe",
+      "build-platform": "target"
+    },
+    "arcweft-verify-oxiz": {
+      "binary-id": "arcweft-verify-oxiz",
+      "binary-name": "arcweft_verify_oxiz",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_verify_oxiz-587a9b7d498c183f.exe",
+      "build-platform": "target"
+    },
+    "arcweft-verify-z3": {
+      "binary-id": "arcweft-verify-z3",
+      "binary-name": "arcweft_verify_z3",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_verify_z3-6bfa1677fb9d75f3.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view": {
+      "binary-id": "arcweft-view",
+      "binary-name": "arcweft_view",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_view-333ba1bb8fe94846.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::computed_style": {
+      "binary-id": "arcweft-view::computed_style",
+      "binary-name": "computed_style",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\computed_style-1e3260ccf0ad4fe7.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::geometry_contract": {
+      "binary-id": "arcweft-view::geometry_contract",
+      "binary-name": "geometry_contract",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry_contract-9cb0d538d4da1caf.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::interaction_routing": {
+      "binary-id": "arcweft-view::interaction_routing",
+      "binary-name": "interaction_routing",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\interaction_routing-4b610d12100c8e1e.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::logical_axes": {
+      "binary-id": "arcweft-view::logical_axes",
+      "binary-name": "logical_axes",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axes-1986bc6ee78baf50.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::logical_axis_cascade": {
+      "binary-id": "arcweft-view::logical_axis_cascade",
+      "binary-name": "logical_axis_cascade",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axis_cascade-8245dc51acc1e3c7.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::logical_axis_host_seed": {
+      "binary-id": "arcweft-view::logical_axis_host_seed",
+      "binary-name": "logical_axis_host_seed",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axis_host_seed-de095e42dc113778.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::logical_axis_provider": {
+      "binary-id": "arcweft-view::logical_axis_provider",
+      "binary-name": "logical_axis_provider",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axis_provider-567376e98e6c6266.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::motion_transitions": {
+      "binary-id": "arcweft-view::motion_transitions",
+      "binary-name": "motion_transitions",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\motion_transitions-750ca262e1466fa7.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::style_environment": {
+      "binary-id": "arcweft-view::style_environment",
+      "binary-name": "style_environment",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\style_environment-9e4b19f0397d2d51.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::style_metadata": {
+      "binary-id": "arcweft-view::style_metadata",
+      "binary-name": "style_metadata",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\style_metadata-f159c447ebd9b2d7.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::style_sheet": {
+      "binary-id": "arcweft-view::style_sheet",
+      "binary-name": "style_sheet",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\style_sheet-2f3b14ccda6bb302.exe",
+      "build-platform": "target"
+    },
+    "arcweft-view::virtualization": {
+      "binary-id": "arcweft-view::virtualization",
+      "binary-name": "virtualization",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\virtualization-0a92a9a055e2d706.exe",
+      "build-platform": "target"
+    }
+  }
+}

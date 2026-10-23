@@ -9468,3 +9468,95 @@ Core自体はこの選択の実行対象ではなく、以前のCore合格を新
 再利用する。新しいdoctest／Tier2／最終workspace／Native-Web capture parityは実行していない。
 16原本をbyte・SHA256・Git blob一致で保持した。R2458 raw logのtrailing whitespace8行は
 保持し、staged whitespace検査から原本1件のみを除外する。現状の一覧は `current-status.md` のみ。
+
+## Native ThreadHandle の実際の受渡しと全Core逆依存 — 2026-10-24
+
+前節の16原本と一覧／履歴は `a8ea56ed7a6293800dc05fafade3b6b687f44c55` で公開した。
+parentは `ad41aa6babf1c8c85d73db54021b943a099fb267`、treeは
+`a7200de797f90376a9f835fd6da3af88bc006001`、raw patch SHA256は
+`0600774083f9b5fcaba7b99a0302e3aa74e4d4b004830ce692251cc21cf61a58`。
+[公開照合](acceptance-evidence/task-await-consumer-checkpoint.verified.json) は18公開blob、
+4,298入力、empty index、保持14 tracked WIPの差分0、fresh origin／advertised ref一致を記録する。
+
+同基点から21 Rust pathsを変更した。Threadのstatement/valueを同じCPS経路へ揃え、
+CoreのThread operation／construction seedに必須の型付きresult patternを置いた。
+元のproducerのpayloadとThreadHandleの型を照合し、Sourceの共通visitor、local scope、
+version-one codecのpreflight／materializationへ同じpatternを接続した。
+実際のaccepted receiptをfallible binderへ渡してからregistryへlaunchを挿入する。
+拒否／panicはjournalのordinalとreceiptを戻し、成功後に準備済みchildと親bindingを公開する。
+結果値のownerは既存の共通registryのままで、別の結果tableは追加していない。
+
+Awaitの構築・実行・待機状態検査をNeed／ThreadHandleへ揃えた。
+NeedはHost、ThreadHandleはproducer custodyを持つProgramという区別とexact payloadを保つ。
+Nativeのinert handleは、保持した元Plan leaseのSource namespaceを通して復元する。
+AWBCの独立Program kernel、公開Native save、全14 familyの最終受入を、この修復の合格へ含めない。
+
+### 途中の失敗と修復
+
+| 実行 | 実際の結果・修復との関係 |
+|---|---|
+| R2459／R2460 workspace check | 最初はexit 101。AWBCの実在するThreadHandle投影は`Task(R)`であり、存在しないvariant参照とCore testのimportを修正した。初期入力のR2460はexit 0。 |
+| R2461／R2462 owner | Core／RuntimePlanとCompiler `flow_include`の3 package、2,184件。R2462は2,179 PASS／5 FAIL、exit 100。Need-only Await、Program handleのSource復元、codec metadata preflightからのpattern欠落を検出した。binder拒否／panicの原子性はPASS。 |
+| R2463／R2464 接続修復 | 同2,184件中2,183 PASS／1 FAIL、exit 100。Core 2,012件・RuntimePlan 158件は全PASS。新規Native Bool false／trueとlive handle付きrollbackもPASS。残る複合ケースの値を捨てるAwaitが、待機状態検査のNeed-only条件でNative step 8に失敗し、その条件を修正した。 |
+| R2465 catalog | 新規拒否テストの誤った`TaskJournal`参照でexit 101。実在する`TaskAdmissionJournal`へ修正した。runtimeは起動していない。 |
+| R2466／R2467 最終owner確認 | Core library＋Compiler library／`flow_include`の2 package、2,146件。R2467は2,144 PASS／2 FAIL、exit 100。複合ケースはNativeを通過しAWBC未割当localでpanic。新規拒否テストはUnitを要求する箇所で既定String fixtureを使っており、outcomeをUnitへ明示した。型検査を緩めていない。 |
+
+owner実行の3 packageと、解決済みgraphの53 packageは異なる。
+R2461のscope commentにあったterminal集計への推測は、実際の3 package集計を確認して
+訂正理由を添えた。元の実行件数・raw receiptを変更していない。
+
+### 最終入力の全consumer結果
+
+R2468は元の解決済みCargo metadataと99 manifest／lockのhashを照合し、Coreの全53逆依存を
+実際のCargo package選択へ使った。**7,273全件／7,234選択／39既存ignored**。
+名前付きケースは50 packageで、`arcweft`／`arcweft-bundle-assets`／`arcweft-render-web`は
+このhostで名前付きケースがない。Semaの以前のconsumerケースに欠落は0、
+Generic Match 151件と新規2件もすべて選択した。
+[scope audit](acceptance-evidence/task-final-r2468-thread-handle-reverse-catalog.scope-audit.json)。
+HIRはCoreの上流でこの閉包外にあり、その以前の合格を今回の実行へ数えない。
+
+R2469は **7,234実行／7,182 PASS（71 slow）／52 FAIL／39 skip、1,206.767秒、実際のexit 100**。
+[terminal audit](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.terminal-audit.json)、
+[raw log](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.log)を保持する。
+4,298固定入力・case set・225 executableのdriftは0。
+Core **2,013/2,013**、Sema **1,328/1,328**、RuntimePlan **158/158**がPASS。
+Compilerは612 PASS／1 FAIL、うち`flow_include`は13 PASS／1 FAIL。CLIは640 PASS／51 FAIL。
+
+[受入照合](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.acceptance-audit.json)では、
+**Generic Match 151/151、必須8/8がPASS**。新規2件は、同じpayload型でもHost Needを
+ThreadHandleへ取り違えない拒否と、関数から返したhandleの実際のBool false／trueの取得。
+既存の結果退役・各step後rollback・ACK／再送3件、Source capture／codec／Host kernel拒否3件もPASS。
+1操作予算、既存の3 backendループと各step後Product保存復元のassertionは保持した。
+
+52失敗識別子はR2458と完全一致し、新規・消失とも0。ただし原因の同一性を識別子だけで
+推定しない。[今回の診断](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.failure-recon.json)
+ではtyped Presentation ABI未接続9件とJLREQ geometry／raw crop8件を再現し、hyphenのcolumnは
+1169／1127。Compilerの複合ケースはNativeを完了した後、AWBC loweringの
+`expr.rs:78`で未割当local `1`の読取りに失敗した。現在もThread bodyを親frameへinline化し、
+result bindingを作らない経路が具体的な未達である。Nativeの修復を全Thread受入へ広げない。
+
+### check・構造・保全
+
+R2470 checkとR2471 Clippyはworkspace all-target／all-feature／locked、いずれもexit 0、警告あり。
+receiptの経過時間は225.346秒／376.100秒。225個の固定binaryによるruntimeと並行し、
+check／Clippy／別cargo-script cacheの構造gateを順に実行した。最終binary hashの差分は0。
+R2472 canonical gateは3,201 files・3,071 Rust files・1,737,213 physical LOC・97 package・
+376 review triggers、**blocking 0**。元のCSV／report5件を保持する。
+
+[owner計測](acceptance-evidence/task-thread-handle-ownership-metrics.json)の大きい変更ownerは、
+Core flow 2,023 LOC（+11）、suspend 2,011（+3）、plan 1,554（+1）、construction/lower
+5,967（+35、embedded test 281）、seed 3,056（+5、test 91）、producer 4,532（+7、test 991）、
+RuntimePlan final_flow 10,365（+27、test 653）。Coreのworkspace fan-in/outは35/12、
+RuntimePlanは10/10。全変更fileの増加は300 LOC未満。
+Coreの既存構築／traversal／admissionとregistryのcommit境界がそれぞれの規則を所有し、
+RuntimePlanはchecked sourceから同じThread operationを生成する。statement専用経路は削除した。
+新しいI/O、crate edge、結果authority、物理分割のための公開APIを追加していない。
+大きい既存ownerはこの責任の連続性を保つため維持し、LOCだけでは分割しなかった。
+
+今回の69原本、26,413,195 bytesをbyte・SHA256・Git blob一致で保全した。
+R2469 raw logのtrailing whitespace8行とR2471 Clippy raw logの5行は保持し、
+staged whitespace検査から原本2件のみ除外する。他のsource／文書／原本は検査する。
+新しいdoctest、39 ignored、Tier2、全workspace runtime、Native-Web capture parityの最終gateは
+実行していない。現状一覧は引き続き `current-status.md` の一か所とする。
+変更した5文書の相対リンク232件は解決可能、未閉鎖fenceは0。最終文書更新時にも、
+検証した21 Rust pathsのhash差分0を確認した。

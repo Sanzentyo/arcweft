@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "run": "task-final-r2462-thread-handle-owner-runtime",
+  "binaries": 43,
+  "artifactDrift": 0,
+  "recordedAt": "2026-10-23T20:50:49.3261403Z"
+}

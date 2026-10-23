@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "catalog": "task-final-r2461-thread-handle-owner-catalog",
+  "phase": "owner",
+  "actualSelectedPackages": [
+    "arcweft-compiler",
+    "arcweft-core",
+    "arcweft-runtime-plan"
+  ],
+  "actualSelectedPackageCount": 3,
+  "selected": 2184,
+  "excluded": 0,
+  "resolvedReversePackageCount": 53,
+  "fullReverseRuntimeExecuted": false,
+  "scope": "Owner phase selects complete Core and RuntimePlan named suites and Compiler flow_include only. Actual Cargo selection and terminal selectedPackages are three. The separately retained complete resolved reverse graph has 53 packages; that graph is not this owner runtime scope.",
+  "scopeCommentCorrection": "An earlier preflight comment assumed terminal selectedPackages would use the 53-package graph; the observed terminal audit reports the actual three-package Cargo selection. Counts and raw execution receipts were unchanged."
+}

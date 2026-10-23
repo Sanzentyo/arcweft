@@ -694,12 +694,25 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 Ok(Children::None)
             }
             (Type::Need(item), View::Need(handle))
-                if handle.outcome().payload_semantic_identity().as_bytes()
-                    == self
-                        .authority
-                        .declaration(*item)
-                        .semantic_identity()
-                        .as_bytes() =>
+                if handle.execution_kind() == crate::task::TaskExecutionKind::Host
+                    && handle.outcome().payload_semantic_identity().as_bytes()
+                        == self
+                            .authority
+                            .declaration(*item)
+                            .semantic_identity()
+                            .as_bytes() =>
+            {
+                Ok(Children::None)
+            }
+            (Type::ThreadHandle(item), View::Need(handle))
+                if handle.execution_kind() == crate::task::TaskExecutionKind::Program
+                    && handle.requires_producer_custody()
+                    && handle.outcome().payload_semantic_identity().as_bytes()
+                        == self
+                            .authority
+                            .declaration(*item)
+                            .semantic_identity()
+                            .as_bytes() =>
             {
                 Ok(Children::None)
             }

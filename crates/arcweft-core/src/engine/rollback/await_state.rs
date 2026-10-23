@@ -61,7 +61,8 @@ where
             ));
         };
         if !matches!(plan.type_table().get(target.source().ty()).map(crate::plan::RuntimePlanTypeDeclaration::projection),
-            Some(crate::plan::RuntimePlanTypeProjection::Need(item)) if *item == source.item_type)
+            Some(crate::plan::RuntimePlanTypeProjection::Need(item)
+                | crate::plan::RuntimePlanTypeProjection::ThreadHandle(item)) if *item == source.item_type)
         {
             return Err(invalid(
                 "native Await item type differs from its original source",
@@ -81,7 +82,7 @@ where
         .ok_or_else(|| invalid("native Await item type is absent from its original Plan"))?;
         if semantic != handle.outcome().payload_semantic_identity() {
             return Err(invalid(
-                "native Await item type differs from its Need outcome",
+                "native Await item type differs from its awaited outcome",
             ));
         }
         let mut previous = None;

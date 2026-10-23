@@ -83,10 +83,13 @@ mod launch_tests {
         let mut registry = super::super::NeedProducerRegistry::default();
         let frontiers = registry.launch_frontiers();
         assert_eq!(
-            registry.ensure_program_task_with_publication(spec.clone(), |_| {
-                panic!("a Host packet must never publish a Program launch")
-            }),
-            Err(super::super::TaskEnsureError::ProgramSourceMismatch)
+            registry
+                .ensure_program_task_with_binding::<(), super::super::TaskEnsureError>(
+                    spec.clone(),
+                    |_| { panic!("a Host packet must never publish a Program launch") }
+                )
+                .unwrap_err(),
+            super::super::TaskEnsureError::ProgramSourceMismatch
         );
         assert_eq!(registry.launch_frontiers(), frontiers);
         assert!(registry.task_admissions().next().is_none());

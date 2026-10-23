@@ -3569,7 +3569,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 observers,
             } => {
                 let source = self.lower_expression(target.source)?;
-                let item = self.need_item_type(source.ty())?;
+                let item = self.awaited_item_type(source.ty())?;
                 let binding = binding
                     .map(|binding| self.lower_pattern_seed(binding))
                     .transpose()?;
@@ -3836,23 +3836,41 @@ impl RuntimePlanBodyConstruction<'_> {
             }
             RuntimeFlowOpSeed::Thread {
                 name,
+                binding,
                 producer,
                 captures,
                 body,
-            } => FlowOp::Thread {
-                name,
-                producer: self.lower_producer_definition(producer)?,
-                captures: captures
-                    .iter()
-                    .map(|local| {
-                        local
-                            .resolve(&self.issuer)
-                            .map(|(local, _)| local)
-                            .ok_or(RuntimePlanBuildError::ForeignLocalSeed)
-                    })
-                    .collect::<Result<_, _>>()?,
-                body: self.lower_flow_ops(body)?,
-            },
+            } => {
+                let binding = self.lower_pattern_seed(binding)?;
+                let producer = self.lower_producer_definition(producer)?;
+                let payload = self.resolve_seed_type(
+                    "Thread result payload",
+                    crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                        *producer.payload_type.as_bytes(),
+                    ),
+                )?;
+                match self.projection(binding.ty())? {
+                    RuntimePlanTypeProjection::ThreadHandle(item) => {
+                        require_same("Thread result payload", payload, *item)?;
+                    }
+                    _ => return invalid_projection("Thread result binding", binding.ty()),
+                }
+                FlowOp::Thread {
+                    name,
+                    binding,
+                    producer,
+                    captures: captures
+                        .iter()
+                        .map(|local| {
+                            local
+                                .resolve(&self.issuer)
+                                .map(|(local, _)| local)
+                                .ok_or(RuntimePlanBuildError::ForeignLocalSeed)
+                        })
+                        .collect::<Result<_, _>>()?,
+                    body: self.lower_flow_ops(body)?,
+                }
+            }
             RuntimeFlowOpSeed::StandardMap(control) => {
                 let family = control.family();
                 let (source, source_type) = self.resolve_local(control.source())?;
@@ -4528,6 +4546,17 @@ impl RuntimePlanBodyConstruction<'_> {
                 }
             }
             _ => invalid_projection("AwaitMany source", source),
+        }
+    }
+
+    fn awaited_item_type(
+        &self,
+        source: RuntimePlanTypeId,
+    ) -> Result<RuntimePlanTypeId, RuntimePlanBuildError> {
+        match self.projection(source)? {
+            RuntimePlanTypeProjection::Need(item)
+            | RuntimePlanTypeProjection::ThreadHandle(item) => Ok(*item),
+            _ => invalid_projection("Await source", source),
         }
     }
 
@@ -5325,7 +5354,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         )?;
                     }
                 }
-                FlowOp::Thread { body, .. } => {
+                FlowOp::Thread { binding, body, .. } => {
                     let mut nested = scope.clone();
                     let mut nested_frames = scope_frames.clone();
                     self.validate_flow_operation_locals_inner(
@@ -5333,6 +5362,12 @@ impl RuntimePlanBodyConstruction<'_> {
                         &mut nested,
                         used,
                         &mut nested_frames,
+                    )?;
+                    *scope = extend_scope(
+                        scope,
+                        binding
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
                     )?;
                 }
                 FlowOp::Scope { body, .. } => {

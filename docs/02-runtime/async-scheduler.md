@@ -38,6 +38,22 @@ The common Q definition records each Program capture's original type, source
 order and local/capture/Need provenance through capture roles. It checks the
 complete role allowance before constructing those metadata rows.
 
+Native Thread operations also own a checked `ThreadHandle<T>` result pattern.
+Statement use has a typed discard pattern; value use binds the actual accepted
+task receipt. Child preparation checks the original Source and captures without
+changing the parent environment. The journal admits the receipt and runs the
+fallible result binding before inserting its Program launch. Binding rejection
+or unwind rolls back the receipt and ordinal frontier. Successful admission
+then publishes the prepared child, parent bindings, quota and continuation.
+The result pattern participates in the common operation traversal and the
+version-one source grammar, including counted preflight and materialization.
+
+The value boundary requires a Host request for `Need<T>` and an accepted Program
+launch with producer custody for `ThreadHandle<T>`; both require the exact
+payload type. Await projects the payload from either checked source type.
+Native rollback resolves a saved Program handle through its retained original
+plan lease and source namespace.
+
 ```rust
 pub trait TaskHost {
     fn ensure_task(&mut self, spec: TaskSpec) -> TaskHandle;

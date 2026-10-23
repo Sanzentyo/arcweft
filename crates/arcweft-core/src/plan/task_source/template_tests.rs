@@ -616,11 +616,13 @@ fn thread() -> RuntimeTaskSourceProgram {
     let mut builder = RuntimePlanBuilder::new();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
+    let handle = RuntimeSemanticTypeId::from_bytes([20; 32]);
     let locals = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(handle, RuntimePlanTypeProjection::ThreadHandle(unit)),
             ],
             [RuntimeLocalDeclarationSeed::new(
                 RuntimeLocalDeclarationSource::Binding {
@@ -689,6 +691,7 @@ fn thread() -> RuntimeTaskSourceProgram {
                     },
                     RuntimeFlowOpSeed::Thread {
                         name: None,
+                        binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
                         captures: vec![local.clone()],
                         producer: crate::task::NeedProducerDefinition {
                             function: RuntimeFunctionDefinitionIdentity::from_accepted_identity(
@@ -930,19 +933,53 @@ fn thread_source_uses_original_capture_order_and_retains_only_an_admitted_source
         "equal payload digests do not replace the original program type authority"
     );
     assert_eq!(
-        registry.ensure_program_task_with_publication(standalone, |_| {
-            panic!("a standalone predicate cannot publish original program work")
-        }),
-        Err(TaskEnsureError::OutcomeContractMismatch)
+        registry
+            .ensure_program_task_with_binding::<(), TaskEnsureError>(standalone, |_| {
+                panic!("a standalone predicate cannot publish original program work")
+            })
+            .unwrap_err(),
+        TaskEnsureError::OutcomeContractMismatch
     );
     assert_eq!(registry.launch_frontiers(), before);
     assert!(registry.task_admissions().next().is_none());
 
-    let mut retained = None;
-    let accepted = registry
-        .ensure_program_task_with_publication(task.clone(), |launch| retained = Some(launch))
+    #[derive(Debug, PartialEq)]
+    enum BindingFailure {
+        Admission(TaskEnsureError),
+        Rejected,
+    }
+    impl From<TaskEnsureError> for BindingFailure {
+        fn from(error: TaskEnsureError) -> Self {
+            Self::Admission(error)
+        }
+    }
+    let mut observed_actual_receipt = false;
+    let rejected = registry.ensure_program_task_with_binding(task.clone(), |receipt| {
+        let handle = crate::task::RuntimeNeedHandle::try_from(receipt.clone()).unwrap();
+        assert_eq!(handle.correlation(), receipt.handle().correlation);
+        assert!(handle.requires_producer_custody());
+        observed_actual_receipt = true;
+        Err::<(), _>(BindingFailure::Rejected)
+    });
+    assert_eq!(rejected.unwrap_err(), BindingFailure::Rejected);
+    assert!(observed_actual_receipt);
+    assert_eq!(registry.launch_frontiers(), before);
+    assert!(registry.task_admissions().next().is_none());
+    assert!(registry.launches().next().is_none());
+
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        registry.ensure_program_task_with_binding::<(), TaskEnsureError>(task.clone(), |_| {
+            panic!("injected binding unwind before child or launch publication")
+        })
+    }));
+    assert!(unwound.is_err());
+    assert_eq!(registry.launch_frontiers(), before);
+    assert!(registry.task_admissions().next().is_none());
+    assert!(registry.launches().next().is_none());
+
+    let (accepted, launch, ()) = registry
+        .ensure_program_task_with_binding(task.clone(), |_| Ok::<(), TaskEnsureError>(()))
         .unwrap();
-    let launch = retained.unwrap();
     assert_eq!(launch.handle(), accepted.handle());
     assert_eq!(launch.handle().correlation.launch_ordinal.get(), 1);
     assert_eq!(launch.source(), spec.source());

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "name": "task-final-r2466-thread-handle-final-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-compiler",
+    "--lib",
+    "--test",
+    "flow_include",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-core) | package(=arcweft-compiler)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2466-thread-handle-final-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T21:18:10.7150478Z",
+  "finishedAt": "2026-10-23T21:19:09.0810639Z"
+}

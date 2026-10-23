@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2466-thread-handle-final-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+      "bytes": 266987520,
+      "nonTest": false,
+      "sha256": "b63871c902c3af1b50e013221e535940c98e12f045725759d66842b8d939ed5c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-728949707a889d5a.exe",
+      "bytes": 78843392,
+      "nonTest": false,
+      "sha256": "deeecfb2cc7b33c419cd84141454bdcda2eeb8b05f6e012c2bcaf0f9a6dc2333"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "bytes": 124741632,
+      "nonTest": false,
+      "sha256": "3d3f782194cb7dbd6a65677f2a178712897625c6ff7ab9f66bd7feb39b6a5d78"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-23T21:19:23.3906023Z"
+}

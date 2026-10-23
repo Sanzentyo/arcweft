@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "name": "task-final-r2460-thread-handle-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2460-thread-handle-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T20:38:49.3859552Z",
+  "finishedAt": "2026-10-23T20:40:08.4559010Z"
+}

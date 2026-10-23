@@ -939,6 +939,7 @@ impl Reader<'_, '_, '_> {
             },
             28 => Op::Thread {
                 name: self.optional_text()?,
+                binding: self.pattern()?,
                 producer: self.producer_definition()?,
                 captures: self.locals()?,
                 body: self.body()?,

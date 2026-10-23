@@ -2558,13 +2558,16 @@ impl NeedProducerRegistry {
             .accepted_spec(super::TaskHandle { correlation })
     }
 
-    pub(crate) fn ensure_program_task_with_publication(
+    pub(crate) fn ensure_program_task_with_binding<T, E>(
         &mut self,
         spec: TaskSpec,
-        publish: impl FnOnce(super::ProgramTaskLaunch),
-    ) -> Result<TaskSubmission, TaskEnsureError> {
+        bind: impl FnOnce(&TaskSubmission) -> Result<T, E>,
+    ) -> Result<(TaskSubmission, super::ProgramTaskLaunch, T), E>
+    where
+        E: From<TaskEnsureError>,
+    {
         if !matches!(&spec.request, super::TaskRequest::Program(_)) {
-            return Err(TaskEnsureError::ProgramSourceMismatch);
+            return Err(TaskEnsureError::ProgramSourceMismatch.into());
         }
         spec.validate_task_descriptor()?;
         let prepared = self.task_journal.inspect_task(spec.clone())?;
@@ -2581,8 +2584,13 @@ impl NeedProducerRegistry {
             if launches.contains_key(&key) {
                 return Err(TaskEnsureError::TaskIdSpecificationConflict {
                     task_id: correlation.task_id,
-                });
+                }
+                .into());
             }
+            // Binding observes the actual accepted receipt. Rejection or
+            // unwinding precedes launch publication, and the journal guard
+            // restores the admission and ordinal frontier.
+            let binding = bind(&submission)?;
             launches.insert(
                 key,
                 RuntimeNeedProducerLaunch {
@@ -2599,8 +2607,7 @@ impl NeedProducerRegistry {
                     task_terminal: false,
                 },
             );
-            publish(launch);
-            Ok(submission)
+            Ok((submission, launch, binding))
         })
     }
 

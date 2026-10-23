@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "name": "task-final-r2464-thread-handle-connect-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-thread-handle-connect-r2463.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "package(=arcweft-core) | package(=arcweft-runtime-plan) | binary(=flow_include)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2464-thread-handle-connect-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-23T21:04:24.6292186Z",
+  "finishedAt": "2026-10-23T21:07:26.9633590Z"
+}

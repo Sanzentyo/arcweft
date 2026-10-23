@@ -395,7 +395,9 @@ impl FlowOp {
                 visitor(Role::Pattern, Node::Pattern(pattern))?;
                 expression(Role::Source, source, visitor)?;
             }
-            FlowOp::Thread { .. } => {}
+            FlowOp::Thread { binding, .. } => {
+                visitor(Role::Result, Node::Pattern(binding))?;
+            }
             FlowOp::RegisterDefer { captures, .. } => {
                 for (ordinal, capture) in captures.iter().enumerate() {
                     expression(Role::Capture { ordinal }, capture, visitor)?;

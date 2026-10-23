@@ -1,0 +1,62 @@
+{
+  "rust-build-meta": {
+    "target-directory": "D:\\git\\arcweft\\target",
+    "build-directory": "D:\\git\\arcweft\\target",
+    "base-output-directories": [
+      "debug"
+    ],
+    "non-test-binaries": {},
+    "build-script-out-dirs": {},
+    "build-script-info": {},
+    "linked-paths": [
+      "debug/build/blake3-10d058e1ab0beac6/out",
+      "debug/build/zstd-sys-6cceb1064e6d7a37/out"
+    ],
+    "platforms": {
+      "host": {
+        "platform": {
+          "triple": "x86_64-pc-windows-msvc",
+          "target-features": "unknown"
+        },
+        "libdir": {
+          "status": "available",
+          "path": "C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib"
+        }
+      },
+      "targets": []
+    },
+    "target-platforms": [
+      {
+        "triple": "x86_64-pc-windows-msvc",
+        "target-features": "unknown"
+      }
+    ],
+    "target-platform": null
+  },
+  "rust-binaries": {
+    "arcweft-compiler": {
+      "binary-id": "arcweft-compiler",
+      "binary-name": "arcweft_compiler",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+      "build-platform": "target"
+    },
+    "arcweft-compiler::flow_include": {
+      "binary-id": "arcweft-compiler::flow_include",
+      "binary-name": "flow_include",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "kind": "test",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "build-platform": "target"
+    },
+    "arcweft-core": {
+      "binary-id": "arcweft-core",
+      "binary-name": "arcweft_core",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-728949707a889d5a.exe",
+      "build-platform": "target"
+    }
+  }
+}

@@ -86,12 +86,14 @@ fn fixture(
     let mut builder = RuntimePlanBuilder::new();
     let unit = RuntimeSemanticTypeId::from_bytes([62; 32]);
     let boolean = RuntimeSemanticTypeId::from_bytes([61; 32]);
+    let handle = RuntimeSemanticTypeId::from_bytes([63; 32]);
     let sequence = RuntimeSemanticTypeId::from_bytes([64; 32]);
     let locals = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(handle, RuntimePlanTypeProjection::ThreadHandle(unit)),
                 RuntimePlanTypeSeed::new(
                     sequence,
                     RuntimePlanTypeProjection::Sequence {
@@ -161,6 +163,7 @@ fn fixture(
     } else {
         RuntimeFlowOpSeed::Thread {
             name: None,
+            binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
             captures: vec![],
             producer: producer_definition(
                 builder.task_coordinate_owner(1).resolve(0).unwrap(),

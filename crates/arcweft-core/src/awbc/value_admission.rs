@@ -453,8 +453,17 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 Ok(Children::None)
             }
             (Type::Need(item), View::Need(handle))
-                if handle.outcome().payload_semantic_identity()
-                    == self.row(*item)?.semantic_identity() =>
+                if handle.execution_kind() == crate::task::TaskExecutionKind::Host
+                    && handle.outcome().payload_semantic_identity()
+                        == self.row(*item)?.semantic_identity() =>
+            {
+                Ok(Children::None)
+            }
+            (Type::Task(item), View::Need(handle))
+                if handle.execution_kind() == crate::task::TaskExecutionKind::Program
+                    && handle.requires_producer_custody()
+                    && handle.outcome().payload_semantic_identity()
+                        == self.row(*item)?.semantic_identity() =>
             {
                 Ok(Children::None)
             }

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "run": "task-final-r2464-thread-handle-connect-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 181.832s] 2184 tests run: 2183 passed (1 slow), 1 failed, 0 skipped",
+  "executed": 2184,
+  "passed": 2183,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 3,
+  "matchedPackages": 3,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4298,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_in_a_function_owned_thread_joins_before_its_flow_caller_returns"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-23T21:07:28.4129364Z"
+}

@@ -6125,12 +6125,14 @@ fn resolve_flow_tail_holes(
             }),
             RuntimeFlowOpSeed::Thread {
                 name,
+                binding,
                 producer,
                 captures,
                 body,
             } => {
                 output.push(RuntimeFlowOpSeed::Thread {
                     name,
+                    binding,
                     producer,
                     captures,
                     body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
@@ -6812,84 +6814,6 @@ impl<'a> FinalFlowLowerer<'a> {
                 if let Some(host) = self.lower_host_call(*thread, None)? {
                     return Ok(vec![host]);
                 }
-                let thread_expr = self.module.resolve_expr(*thread).map_err(|error| {
-                    RuntimePlanLowerError::new(format!(
-                        "cannot resolve final-HIR Thread expression {thread:?}: {error}"
-                    ))
-                })?;
-                if let HirExprKind::Thread(thread_expr) = thread_expr.kind() {
-                    let admission =
-                        self.semantic_facts
-                            .thread_producer(*thread)
-                            .ok_or_else(|| {
-                                RuntimePlanLowerError::new(
-                                    "Thread has no accepted producer definition",
-                                )
-                            })?;
-                    let checked = admission
-                        .thread()
-                        .filter(|checked| checked.matches_source(thread_expr))
-                        .ok_or_else(|| {
-                            RuntimePlanLowerError::new(
-                                "Thread producer does not own this body and mode",
-                            )
-                        })?;
-                    if checked.mode() == HirThreadMode::Detached {
-                        return Err(RuntimePlanLowerError::new(format!(
-                            "detached Thread expression {thread:?} requires typed runtime ownership metadata"
-                        )));
-                    }
-                    let body = self.lower_body_as_one_error(thread_expr.body())?;
-                    let captures = RuntimeFlowOpSeed::free_locals(&body).into_vec();
-                    let ty = self.expression_type(*thread)?;
-                    let RuntimeTypeShape::ThreadHandle(payload) = ty.shape() else {
-                        return Err(RuntimePlanLowerError::new(
-                            "Thread producer has no checked ThreadHandle result contract",
-                        ));
-                    };
-                    let identity = payload.identity();
-                    let mut contract = blake3::Hasher::new();
-                    contract.update(b"arcweft.thread.producer-contract.v1\0");
-                    contract.update(identity.as_bytes());
-                    let producer = arcweft_core::task::NeedProducerDefinition {
-                        function: self
-                            .semantic_facts
-                            .expression_coordinate(*thread)
-                            .ok_or_else(|| {
-                                RuntimePlanLowerError::new(
-                                    "Thread producer has no accepted function owner",
-                                )
-                            })?
-                            .runtime_function_definition()
-                            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
-                        family: arcweft_core::task::NeedProducerFamily::StructuredTaskPlan,
-                        contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
-                            *contract.finalize().as_bytes(),
-                        ),
-                        plan: self
-                            .task_plans
-                            .reserve_original_source()
-                            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
-                        producer_site: admission.site(),
-                        payload_type: arcweft_core::task::RuntimeTypeSemanticDigest::from_bytes(
-                            *identity.as_bytes(),
-                        ),
-                        class: arcweft_core::task::TaskClass::Cpu,
-                        priority: arcweft_core::task::TaskPriority(0),
-                        cancel_scope: arcweft_core::task::CancelScopeId("flow".into()),
-                        policy: arcweft_core::task::TaskPolicy::AlwaysStart,
-                        debug_label: thread_expr
-                            .name()
-                            .map_or("anonymous", |name| name.as_str())
-                            .to_owned(),
-                    };
-                    return Ok(vec![RuntimeFlowOpSeed::Thread {
-                        name: thread_expr.name().map(|name| name.as_str().to_owned()),
-                        producer,
-                        captures,
-                        body,
-                    }]);
-                }
                 let ty = self.expression_source_type(*thread)?;
                 if !matches!(ty.shape(), RuntimeTypeShape::Unit) {
                     return Err(RuntimePlanLowerError::new(format!(
@@ -7221,6 +7145,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 | HirExprKind::Block(_)
                 | HirExprKind::NamedBlock(_)
                 | HirExprKind::Await(_)
+                | HirExprKind::Thread(_)
                 | HirExprKind::Choice(_)
                 | HirExprKind::Loop(_)
                 | HirExprKind::Try(_)
@@ -7548,6 +7473,9 @@ impl<'a> FinalFlowLowerer<'a> {
             return self.apply_value_continuation(value, continuation);
         }
         match resolved.kind() {
+            HirExprKind::Thread(thread) => {
+                self.lower_thread_value(expression, thread, continuation)
+            }
             HirExprKind::If(branch) => {
                 self.lower_value_branch(expression, branch.condition(), continuation, overrides)
             }
@@ -8392,6 +8320,105 @@ impl<'a> FinalFlowLowerer<'a> {
             });
         }
         Ok(vec![RuntimeFlowOpSeed::Choice { id, options }])
+    }
+
+    fn lower_thread_value(
+        &mut self,
+        owner: ExprId,
+        thread: &arcweft_lang_hir::expr::HirThreadExpr,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let admission = self.semantic_facts.thread_producer(owner).ok_or_else(|| {
+            RuntimePlanLowerError::new("Thread has no accepted producer definition")
+        })?;
+        let checked = admission
+            .thread()
+            .filter(|checked| checked.matches_source(thread))
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new("Thread producer does not own this body and mode")
+            })?;
+        if checked.mode() == HirThreadMode::Detached {
+            return Err(RuntimePlanLowerError::new(format!(
+                "detached Thread expression {owner:?} requires typed runtime ownership metadata"
+            )));
+        }
+        let body = self.lower_body_as_one_error(thread.body())?;
+        let captures = RuntimeFlowOpSeed::free_locals(&body).into_vec();
+        let ty = self.expression_source_type(owner)?.clone();
+        let RuntimeTypeShape::ThreadHandle(payload) = ty.shape() else {
+            return Err(RuntimePlanLowerError::new(
+                "Thread producer has no checked ThreadHandle result contract",
+            ));
+        };
+        let identity = payload.identity();
+        let mut contract = blake3::Hasher::new();
+        contract.update(b"arcweft.thread.producer-contract.v1\0");
+        contract.update(identity.as_bytes());
+        let producer = arcweft_core::task::NeedProducerDefinition {
+            function: self
+                .semantic_facts
+                .expression_coordinate(owner)
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new("Thread producer has no accepted function owner")
+                })?
+                .runtime_function_definition()
+                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+            family: arcweft_core::task::NeedProducerFamily::StructuredTaskPlan,
+            contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                *contract.finalize().as_bytes(),
+            ),
+            plan: self
+                .task_plans
+                .reserve_original_source()
+                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+            producer_site: admission.site(),
+            payload_type: arcweft_core::task::RuntimeTypeSemanticDigest::from_bytes(
+                *identity.as_bytes(),
+            ),
+            class: arcweft_core::task::TaskClass::Cpu,
+            priority: arcweft_core::task::TaskPriority(0),
+            cancel_scope: arcweft_core::task::CancelScopeId("flow".into()),
+            policy: arcweft_core::task::TaskPolicy::AlwaysStart,
+            debug_label: thread
+                .name()
+                .map_or("anonymous", |name| name.as_str())
+                .to_owned(),
+        };
+        let (binding, tail) = match continuation {
+            RuntimeFlowValueContinuation::Bind { pattern, tail } => (pattern, tail),
+            RuntimeFlowValueContinuation::Ignore(tail) => (
+                RuntimePatternSeed::new(ty.identity(), RuntimePatternSeedKind::Discard),
+                tail,
+            ),
+            other => {
+                let local = self
+                    .control
+                    .expression_values
+                    .get(&owner)
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "Thread expression {owner:?} has no admitted result local"
+                        ))
+                    })?;
+                (
+                    bind_seed(&ty, local.clone()),
+                    RuntimeFlowTail::ContinueValue {
+                        value: local_seed(&ty, local, RuntimeLocalReadMode::Move),
+                        continuation: Box::new(other),
+                    },
+                )
+            }
+        };
+        let mut ops = vec![RuntimeFlowOpSeed::Thread {
+            name: thread.name().map(|name| name.as_str().to_owned()),
+            binding,
+            producer,
+            captures,
+            body,
+        }];
+        ops.extend(self.lower_flow_tail(tail)?);
+        Ok(ops)
     }
 
     fn lower_loop_value(

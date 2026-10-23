@@ -544,6 +544,7 @@ pub enum RuntimeFlowOpSeed {
     },
     Thread {
         name: Option<String>,
+        binding: RuntimePatternSeed,
         producer: crate::task::NeedProducerDefinition,
         captures: Vec<RuntimeLocalSeedId>,
         body: Vec<Self>,
@@ -999,7 +1000,11 @@ fn collect_control_flow_free_locals(
                 result.collect_binding_locals(bound);
             }
         }
-        RuntimeFlowOpSeed::Thread { body, .. } | RuntimeFlowOpSeed::Scope { body, .. } => {
+        RuntimeFlowOpSeed::Thread { binding, body, .. } => {
+            collect_flow_ops_free_locals(body, bound, locals);
+            binding.collect_binding_locals(bound);
+        }
+        RuntimeFlowOpSeed::Scope { body, .. } => {
             collect_flow_ops_free_locals(body, bound, locals);
         }
         RuntimeFlowOpSeed::While { condition, body } => {

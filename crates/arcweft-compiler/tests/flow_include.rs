@@ -236,6 +236,58 @@ const NATIVE_THREAD_CAPTURE_SOURCE: &str = concat!(
 );
 
 #[test]
+fn native_returned_thread_handle_delivers_its_actual_non_unit_value() {
+    for returned in [false, true] {
+        let source = format!(
+            "fn reusable() -> ThreadHandle<bool> effects {{ control.spawn }} {{ thread {{ return {returned} }} }}\n\
+             flow main() -> bool {{ let child = reusable(); return await child }}\n\
+             entry cli @entry.main {{ goto @flow.main }}\n"
+        );
+        let mut runtime = executor(&source, Backend::Native);
+        let mut tasks = Vec::new();
+        let mut completions = Vec::new();
+        let mut done = false;
+        for step in 0..128 {
+            let result = runtime.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+            assert!(result.stats.executed_ops <= 1);
+            assert!(
+                result.output.diagnostics.is_empty(),
+                "returned={returned}, step={step}: {:?}",
+                result.output.diagnostics
+            );
+            for task in result.output.requests.tasks {
+                assert!(matches!(
+                    task.spec().request,
+                    arcweft_core::task::TaskRequest::Program(_)
+                ));
+                tasks.push(task.handle().correlation);
+            }
+            completions.extend(result.output.requests.program_task_completions);
+            match &runtime.fiber().frame.status {
+                FlowFiberStatus::Done(exit) => {
+                    assert_eq!(exit, &FlowExit::Return(returned.to_string()));
+                    assert_eq!(tasks.len(), 1);
+                    assert_eq!(completions.len(), 1);
+                    assert_eq!(completions[0].handle().correlation, tasks[0]);
+                    assert_eq!(
+                        completions[0].terminal(),
+                        &arcweft_core::task::ProgramTaskTerminal::Completed
+                    );
+                    done = true;
+                    break;
+                }
+                FlowFiberStatus::Failed(error) => panic!("the returned child failed: {error}"),
+                _ => {}
+            }
+        }
+        assert!(
+            done,
+            "the returned handle must yield its actual child value"
+        );
+    }
+}
+
+#[test]
 fn native_thread_retires_its_actual_non_unit_source_result_contract() {
     let source = concat!(
         "flow main() -> String { thread worker { return true }; return \"after-value\" }\n",

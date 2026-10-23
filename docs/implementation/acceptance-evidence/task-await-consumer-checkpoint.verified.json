@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "commit": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "parent": "ad41aa6babf1c8c85d73db54021b943a099fb267",
+  "tree": "a7200de797f90376a9f835fd6da3af88bc006001",
+  "remote": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "advertised": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-observer-checkpoint.verified.json",
+      "blob": "1ad04ab8ccb582561b6abcf18f0eaec9ae84fc57",
+      "workingBlob": "1ad04ab8ccb582561b6abcf18f0eaec9ae84fc57",
+      "workingSha256": "950b47d6118174813310dbb99e15e0e3f3c0010c6fed0b5f61b5cc1ee1abb6da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-observer-published.binaries.json",
+      "blob": "9a2c488326fcc6cbe4c751562d9bac72b6f06ac9",
+      "workingBlob": "9a2c488326fcc6cbe4c751562d9bac72b6f06ac9",
+      "workingSha256": "66ef29d61f8f0c2f0e69be76061795954016a2354dd2147ac2d47b962b53a597"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-observer-published.graph.json",
+      "blob": "2479be7b3b5efbde9b4a26c70a036753857ac24c",
+      "workingBlob": "2479be7b3b5efbde9b4a26c70a036753857ac24c",
+      "workingSha256": "97e858bda8d59eda1a918980f1aec32c2b873e14e990942491f9a08458b9b6cb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-observer-published.pins.json",
+      "blob": "c9c845e9f953fe668bfb8d2beb11c5cf6470ccd2",
+      "workingBlob": "c9c845e9f953fe668bfb8d2beb11c5cf6470ccd2",
+      "workingSha256": "94b424d3261055ff1b3ce4922cabc6dfbc452d4d02089f421f32e7cd0d95ac37"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-observer-published.reuse-audit.json",
+      "blob": "d3e606fd49656b35ece041d3db26656d0e59c29a",
+      "workingBlob": "d3e606fd49656b35ece041d3db26656d0e59c29a",
+      "workingSha256": "0f9f835068a4da5a1588b2a810d2c9885b21676b44d581cce6ceada7aff7dde1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-observer-published.source-freeze.json",
+      "blob": "501925840ab50d98f7a15723c97e2251d82ad216",
+      "workingBlob": "501925840ab50d98f7a15723c97e2251d82ad216",
+      "workingSha256": "95446f78999761ee901130d4737838042b703a006414e626b5bd780c4f653441"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2457-await-observer-reverse-catalog.inventory.json",
+      "blob": "f314985478f357370a08522a92dc31e57f2b6ea4",
+      "workingBlob": "f314985478f357370a08522a92dc31e57f2b6ea4",
+      "workingSha256": "7c70ccbb4999dfcabd0adfaf3b15e2c1470eebd33e8ed99253cb01a09a2bfe78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2457-await-observer-reverse-catalog.json",
+      "blob": "fce43362b1d6b3df6b54f7eb8563d91dce471dce",
+      "workingBlob": "fce43362b1d6b3df6b54f7eb8563d91dce471dce",
+      "workingSha256": "c49fa033b07eca3896c06e16adb16ada790163cbb0beba7b2277e07c308b1531"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2457-await-observer-reverse-catalog.log",
+      "blob": "4ae076e6cbc6d3ad78e27a283e1fd0cb5178dc70",
+      "workingBlob": "4ae076e6cbc6d3ad78e27a283e1fd0cb5178dc70",
+      "workingSha256": "858f891588951246ce726b7996e139fdf18530fef6a5ddf44b840a6a31156528"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2457-await-observer-reverse-catalog.scope-audit.json",
+      "blob": "5819574942eb89b8e53bdaae18dafba6e93a650c",
+      "workingBlob": "5819574942eb89b8e53bdaae18dafba6e93a650c",
+      "workingSha256": "d6a1cf296043c4b2a510831512aba4981a840bd533ed6e1fedefc281ab04b659"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.acceptance-audit.json",
+      "blob": "f656b84680aa9691ef613ff89534a60142e9059f",
+      "workingBlob": "f656b84680aa9691ef613ff89534a60142e9059f",
+      "workingSha256": "63355a709a18577f6c48a8b0dff719940da07280d350e9cafe33ce4a4a969df5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.binary-audit.json",
+      "blob": "e71f3f2eb05620380b7b6ba5d5329da4393792f6",
+      "workingBlob": "e71f3f2eb05620380b7b6ba5d5329da4393792f6",
+      "workingSha256": "794a639ebb8c01b96967e54a0f9253c7ad56e737f9667a2a170f8c90f4273944"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.failure-recon.json",
+      "blob": "25dbadaf0d3857d2c466351587b6008e03269f30",
+      "workingBlob": "25dbadaf0d3857d2c466351587b6008e03269f30",
+      "workingSha256": "faa219a365751574930f20a91ccb5626ff4bdcb39180fa26c78d57cd48c97241"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.json",
+      "blob": "b02490ace46bcc9584076badf93c2fbdf32e1b17",
+      "workingBlob": "b02490ace46bcc9584076badf93c2fbdf32e1b17",
+      "workingSha256": "be9f8af22768b1799877e8fa164d8141f29e20b4c893411d4697c2c4cfba30ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.log",
+      "blob": "2f5dd6a01ae1270105d8474aa398f5b6446e3b47",
+      "workingBlob": "2f5dd6a01ae1270105d8474aa398f5b6446e3b47",
+      "workingSha256": "cff53ed6cbb95c09a6ed7f586d28d05ce2688ce5b26caa0175b9cf1a2683f9a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.terminal-audit.json",
+      "blob": "0b023998d0811452c1a5c677255563887dea100b",
+      "workingBlob": "0b023998d0811452c1a5c677255563887dea100b",
+      "workingSha256": "9b687be3ab23cbf1dd6d8fb36d323269038643b4a2ff47775919581d23c16565"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "75961fee5bae4655cb9152930b47433cd202c186",
+      "workingBlob": "75961fee5bae4655cb9152930b47433cd202c186",
+      "workingSha256": "ed04e3b66941ac44a8e98907e3c4d658a74afac109eab335a5859c5420391a52"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "2112d28f90c9ac2d2309ffe805c7c709bb8bb985",
+      "workingBlob": "2112d28f90c9ac2d2309ffe805c7c709bb8bb985",
+      "workingSha256": "c2a02071f78d60cb54bd66433324610753bb954bc405d9c61066aec7f03691de"
+    }
+  ],
+  "sourceCount": 4298,
+  "sourceDrift": 0,
+  "heldPatchSha256": "19984db578254ef3c99a418175e11cd3c5eb442e0d3a42fe4ccf189e88a71983",
+  "patchSha256": "0600774083f9b5fcaba7b99a0302e3aa74e4d4b004830ce692251cc21cf61a58",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-23T20:26:33.7001920Z"
+}

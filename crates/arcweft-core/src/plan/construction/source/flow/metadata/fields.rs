@@ -187,6 +187,7 @@ pub(super) fn preflight(
         }
         28 => {
             reader.optional_text()?;
+            reader.pattern()?;
             reader.producer_definition()?;
             reader.locals()?;
             reader.body()?;

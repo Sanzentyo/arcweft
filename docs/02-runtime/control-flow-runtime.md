@@ -102,11 +102,9 @@ Copy/SnapshotClone/Move (0/1/2), ExternalBinding (1), or Formal (2).
 In particular, extracting a body with external free bindings creates no
 Copy/Move operation, and retaining a whole formal preserves its passing
 evidence. Neither role may be inferred from a value's current occupancy,
-type, local ordinal, or an ingress requirement. This corrects the narrower
-three-mode capture field in the retained task-plan correction package: the
-current producer transcript writes origin, semantic input type, source and
-transfer evidence for each canonical retained input. The package remains a
-historical design mirror; its omission does not authorize inventing a transfer.
+type, local ordinal, or an ingress requirement. The producer transcript writes
+origin, semantic input type, source and transfer evidence for each canonical
+retained input.
 
 The body-root transcript includes the full admitted signature/prologue and
 owned body, including ordered task build-coordinate references. Producer

@@ -1,0 +1,274 @@
+{
+  "version": 1,
+  "base": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "catalog": "task-final-r2468-thread-handle-reverse-catalog",
+  "graphPackages": 53,
+  "namedPackages": [
+    "arcweft-adapter-desktop",
+    "arcweft-adapter-sema",
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-policy",
+    "arcweft-agent-protocol",
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-browser-bench",
+    "arcweft-bundle",
+    "arcweft-character-view",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-core",
+    "arcweft-debug-model",
+    "arcweft-debug-sqlite",
+    "arcweft-dialogue",
+    "arcweft-glyphon",
+    "arcweft-host-adapter",
+    "arcweft-lang-jit-cranelift",
+    "arcweft-lang-sema",
+    "arcweft-launch",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-text-input",
+    "arcweft-player-web",
+    "arcweft-project",
+    "arcweft-project-loader",
+    "arcweft-rag",
+    "arcweft-render-text",
+    "arcweft-render-wgpu",
+    "arcweft-resource-manifest",
+    "arcweft-resource-model",
+    "arcweft-runtime-accelerator",
+    "arcweft-runtime-codegen",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-runtime-scheduler",
+    "arcweft-save",
+    "arcweft-test",
+    "arcweft-text-layout",
+    "arcweft-text-model",
+    "arcweft-tooling",
+    "arcweft-verify",
+    "arcweft-verify-lsp",
+    "arcweft-verify-oxiz",
+    "arcweft-verify-z3",
+    "arcweft-view"
+  ],
+  "all": 7273,
+  "selected": 7234,
+  "excluded": 39,
+  "existingIgnored": 39,
+  "genericCases": 151,
+  "genericMissing": 0,
+  "previousSemaConsumerCasesRemoved": 0,
+  "upstreamHirNote": "HIR is upstream of Core, outside this 53-package closure; its prior evidence is not a fresh pass here.",
+  "outsideClosure": 0,
+  "required": [
+    "thread_handle_admission_requires_program_custody_and_its_exact_payload",
+    "native_returned_thread_handle_delivers_its_actual_non_unit_value",
+    "include_in_a_function_owned_thread_joins_before_its_flow_caller_returns"
+  ],
+  "packageCounts": [
+    {
+      "package": "arcweft-adapter-desktop",
+      "tests": 7
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "tests": 13
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "tests": 31
+    },
+    {
+      "package": "arcweft-agent-mcp-client",
+      "tests": 2
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "tests": 14
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "tests": 54
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "tests": 37
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "tests": 69
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "tests": 6
+    },
+    {
+      "package": "arcweft-bundle",
+      "tests": 328
+    },
+    {
+      "package": "arcweft-character-view",
+      "tests": 2
+    },
+    {
+      "package": "arcweft-cli",
+      "tests": 691
+    },
+    {
+      "package": "arcweft-compiler",
+      "tests": 613
+    },
+    {
+      "package": "arcweft-core",
+      "tests": 2013
+    },
+    {
+      "package": "arcweft-debug-model",
+      "tests": 2
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "tests": 22
+    },
+    {
+      "package": "arcweft-dialogue",
+      "tests": 69
+    },
+    {
+      "package": "arcweft-glyphon",
+      "tests": 24
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "tests": 10
+    },
+    {
+      "package": "arcweft-lang-jit-cranelift",
+      "tests": 25
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "tests": 1328
+    },
+    {
+      "package": "arcweft-launch",
+      "tests": 45
+    },
+    {
+      "package": "arcweft-lsp",
+      "tests": 223
+    },
+    {
+      "package": "arcweft-player-native",
+      "tests": 63
+    },
+    {
+      "package": "arcweft-player-scene",
+      "tests": 128
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "tests": 13
+    },
+    {
+      "package": "arcweft-player-web",
+      "tests": 36
+    },
+    {
+      "package": "arcweft-project",
+      "tests": 42
+    },
+    {
+      "package": "arcweft-project-loader",
+      "tests": 158
+    },
+    {
+      "package": "arcweft-rag",
+      "tests": 2
+    },
+    {
+      "package": "arcweft-render-text",
+      "tests": 20
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "tests": 147
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "tests": 20
+    },
+    {
+      "package": "arcweft-resource-model",
+      "tests": 37
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "tests": 117
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "tests": 12
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "tests": 177
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "tests": 72
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "tests": 158
+    },
+    {
+      "package": "arcweft-runtime-scheduler",
+      "tests": 17
+    },
+    {
+      "package": "arcweft-save",
+      "tests": 35
+    },
+    {
+      "package": "arcweft-test",
+      "tests": 3
+    },
+    {
+      "package": "arcweft-text-layout",
+      "tests": 58
+    },
+    {
+      "package": "arcweft-text-model",
+      "tests": 34
+    },
+    {
+      "package": "arcweft-tooling",
+      "tests": 27
+    },
+    {
+      "package": "arcweft-verify",
+      "tests": 8
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "tests": 14
+    },
+    {
+      "package": "arcweft-verify-oxiz",
+      "tests": 5
+    },
+    {
+      "package": "arcweft-verify-z3",
+      "tests": 2
+    },
+    {
+      "package": "arcweft-view",
+      "tests": 201
+    }
+  ]
+}

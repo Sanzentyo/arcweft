@@ -1,5 +1,6 @@
 use super::*;
 use crate::engine::{FlowExit, FlowFiberStatus};
+use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::*;
 use crate::step::{RuntimeStepInput, RuntimeStepOptions};
 use crate::task::*;
@@ -9,13 +10,37 @@ fn engine(explicit_return: bool) -> Engine {
     let mut builder = RuntimePlanBuilder::new();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
-    builder
+    let handle = RuntimeSemanticTypeId::from_bytes([0xde; 32]);
+    let locals = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(handle, RuntimePlanTypeProjection::ThreadHandle(boolean)),
+                RuntimePlanTypeSeed::new(
+                    RuntimeSemanticTypeId::from_bytes([0xdf; 32]),
+                    RuntimePlanTypeProjection::Need(boolean),
+                ),
+                RuntimePlanTypeSeed::new(
+                    RuntimeSemanticTypeId::from_bytes([0xe0; 32]),
+                    RuntimePlanTypeProjection::ThreadHandle(unit),
+                ),
+                RuntimePlanTypeSeed::new(
+                    RuntimeSemanticTypeId::from_bytes([0xe1; 32]),
+                    RuntimePlanTypeProjection::Need(unit),
+                ),
             ],
-            [],
+            [RuntimeLocalDeclarationSeed::new(
+                RuntimeLocalDeclarationSource::Binding {
+                    identity: [0xd9; 32],
+                    declaration: RuntimeLocalBindingDeclaration::new(
+                        RuntimeLocalBindingKind::PatternBinding,
+                        false,
+                        RuntimeLocalBindingStorage::Derived,
+                    ),
+                },
+                handle,
+            )],
         )
         .unwrap();
     let result = RuntimeExprSeed::new(
@@ -69,6 +94,13 @@ fn engine(explicit_return: bool) -> Engine {
                 ops: Box::new([
                     RuntimeFlowOpSeed::Thread {
                         name: None,
+                        binding: RuntimePatternSeed::new(
+                            handle,
+                            RuntimePatternSeedKind::Bind {
+                                local: locals.local_ids()[0].clone(),
+                                mutable: false,
+                            },
+                        ),
                         captures: vec![],
                         producer: NeedProducerDefinition {
                             function: definition,
@@ -100,6 +132,80 @@ fn engine(explicit_return: bool) -> Engine {
         ))
         .unwrap();
     Engine::for_flow(builder.finish().unwrap(), &flow).unwrap()
+}
+
+#[test]
+fn thread_handle_admission_requires_program_custody_and_its_exact_payload() {
+    let mut engine = engine(true);
+    let mut receipt = None;
+    for _ in 0..64 {
+        let step = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+        assert!(step.stats.executed_ops <= 1);
+        assert!(step.output.diagnostics.is_empty());
+        if let Some(task) = step.output.requests.tasks.into_iter().next() {
+            receipt = Some(task);
+            break;
+        }
+    }
+    let program = RuntimeValue::NeedHandle(
+        RuntimeNeedHandle::try_from(receipt.expect("actual Program task receipt")).unwrap(),
+    );
+    let ty = |marker| {
+        engine
+            .plan
+            .type_table()
+            .id_for_semantic(RuntimeSemanticTypeId::from_bytes([marker; 32]))
+            .unwrap()
+    };
+    let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+    assert!(
+        engine
+            .plan
+            .validate_live_value(ty(0xde), &program, limits)
+            .is_ok()
+    );
+    assert!(
+        engine
+            .plan
+            .validate_live_value(ty(0xdf), &program, limits)
+            .is_err()
+    );
+    assert!(
+        engine
+            .plan
+            .validate_live_value(ty(0xe0), &program, limits)
+            .is_err()
+    );
+
+    let reusable = crate::tests::reusable_need_with_outcome(
+        "thread-handle-kind",
+        TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::Unit),
+    );
+    let mut journal = TaskAdmissionJournal::default();
+    let accepted = journal
+        .ensure_task(reusable.reusable_spec().unwrap().clone())
+        .unwrap();
+    let host = RuntimeNeedHandle::try_from(journal.submission(accepted).unwrap()).unwrap();
+    assert!(host.requires_producer_custody());
+    assert_eq!(
+        host.outcome().payload_semantic_identity().as_bytes(),
+        crate::pattern::RuntimeCheckedType::Unit
+            .semantic_identity_digest()
+            .as_bytes(),
+    );
+    let host = RuntimeValue::NeedHandle(host);
+    assert!(
+        engine
+            .plan
+            .validate_live_value(ty(0xe1), &host, limits)
+            .is_ok()
+    );
+    assert!(
+        engine
+            .plan
+            .validate_live_value(ty(0xe0), &host, limits)
+            .is_err()
+    );
 }
 
 fn retire(

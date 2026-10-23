@@ -28,6 +28,14 @@ pub(super) enum ThreadPreparationError {
     Identity(#[from] TaskIdentityError),
     #[error(transparent)]
     Frame(#[from] Box<RuntimeEvalError>),
+    #[error(transparent)]
+    Task(#[from] crate::task::TaskEnsureError),
+    #[error(transparent)]
+    Handle(#[from] crate::task::RuntimeNeedHandleError),
+    #[error(transparent)]
+    Binding(#[from] crate::pattern::RuntimePatternMatchError),
+    #[error("Thread handle did not match its checked result binding")]
+    BindingMismatch,
     #[error("unknown Thread capture {0:?}")]
     UnknownCapture(RuntimeLocalDeclarationId),
 }

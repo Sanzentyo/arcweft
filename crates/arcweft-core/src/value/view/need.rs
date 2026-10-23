@@ -86,6 +86,13 @@ impl<'a> RuntimeNeedView<'a> {
         }
     }
 
+    pub(crate) fn execution_kind(self) -> crate::task::TaskExecutionKind {
+        match self {
+            Self::Live(value) => value.spec().request.kind(),
+            Self::Snapshot(value) => value.spec().request.kind(),
+        }
+    }
+
     pub(crate) fn visit_descriptor(
         self,
         visitor: &mut impl crate::task::descriptor::TaskDescriptorVisitor,

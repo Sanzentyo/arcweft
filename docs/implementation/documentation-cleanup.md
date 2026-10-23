@@ -98,6 +98,20 @@ GPT-6 Luna／max の3担当が現状の根拠、overview、残存レビュー資
 - 現状一覧の「現 HEAD」の検証済みという表現を訂正した。公開 cut の R2399／R2400
   合格と、その後の R2405／R2406 のコンパイル失敗、さらに変更された未検証入力を区別する。
   これは証拠の適用範囲の訂正であり、Generic Match 等の受入を取り消す判断ではない。
+
+## Native ThreadHandle 検証後の記述整理 — 2026-10-24
+
+基点 `a8ea56ed7a6293800dc05fafade3b6b687f44c55` からのNative変更は、
+R2469のCore全53逆依存と現在のソースで照合した。現状一覧に残っていた
+「Nativeの返却handle実行は未達」「AwaitはNeed-only」という説明を置換した。
+実際のBool返却／await、live handleを持つrollback、異なる実行kind／payloadの拒否が
+合格したためである。既存の複合ケースはNativeを通過してAWBCの未割当localで失敗する。
+その失敗地点を示し、AWBCまで受入済みとはしていない。元の失敗記録は履歴と原本に保持した。
+
+`control-flow-runtime.md` に残っていた、削除済みのtask-plan設計packageを
+「保持中のhistorical design mirror」とする説明も削除した。原文のcapture規則は
+現行契約として保持し、過去packageの説明をそのauthorityに使わない。
+削除した文に検証結果やcommit SHAは含まれていない。
   実際の失敗 receipt／log 4件は元ファイルと SHA256 一致で履歴へ保存した。
 
 この整理は資料・リンク・差分・原本の照合であり、Cargo／runtime の新規実行はない。
