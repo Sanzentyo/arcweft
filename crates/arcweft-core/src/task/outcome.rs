@@ -201,6 +201,12 @@ impl BoundTaskSpec {
         self.submission.spec()
     }
 
+    /// The journal's complete accepted receipt, borrowed without rebuilding
+    /// its original Program Source or copying a Host request payload.
+    pub const fn submission(&self) -> &TaskSubmission {
+        &self.submission
+    }
+
     pub const fn handle(&self) -> super::TaskHandle {
         self.submission.handle()
     }

@@ -361,6 +361,17 @@ impl Engine {
             self.fail_eval("native Await lost its original operation", output);
             return;
         };
+        if self
+            .need_producers
+            .launch_for_handle(&state.handle)
+            .is_some_and(|launch| {
+                launch.execution_kind() == crate::task::TaskExecutionKind::Program
+                    && launch.state().is_terminal()
+            })
+        {
+            self.resume_local_await_state(state, output);
+            return;
+        }
         let publication = match state.queued.pop_front() {
             Some(publication) => Some(publication),
             None => {
@@ -511,99 +522,108 @@ impl Engine {
                     self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
                 }
             },
-            RuntimeNeedPublication::Producer { .. } => {
-                let Some(launch) = self.need_producers.launch_for_handle(&state.handle) else {
-                    self.fail_eval("local Need publication has no producer launch", output);
-                    return;
+            RuntimeNeedPublication::Producer { .. } => self.resume_local_await_state(state, output),
+        }
+    }
+
+    fn resume_local_await_state(&mut self, state: AwaitState, output: &mut RuntimeStepOutput) {
+        let plan = Arc::clone(&self.plan);
+        let super::AwaitSource::Native(source) = &state.source else {
+            self.fail_eval("local Native Await requires its original operation", output);
+            return;
+        };
+        let Some(crate::plan::FlowOp::Await { binding, .. }) = source.operation.operation(&plan)
+        else {
+            self.fail_eval("local Native Await lost its original operation", output);
+            return;
+        };
+        let Some(launch) = self.need_producers.launch_for_handle(&state.handle) else {
+            self.fail_eval("local Need publication has no producer launch", output);
+            return;
+        };
+        match launch.state() {
+            RuntimeNeedProducerState::NotStarted => {
+                self.fiber.frame.status = FlowFiberStatus::NeedWaiting(Box::new(state));
+            }
+            RuntimeNeedProducerState::InfrastructureFailure(failure) => {
+                self.fail_eval(failure.clone(), output);
+            }
+            RuntimeNeedProducerState::Pending(progress) => {
+                let progress = progress.clone();
+                output.flow_events.push(FlowEvent::AwaitProgress {
+                    need: state.handle.need_id(),
+                    progress: progress.clone(),
+                });
+                self.start_await_pending_observer(state, progress, output);
+            }
+            RuntimeNeedProducerState::Ready(value) => {
+                let type_matches = match state.item_type() {
+                    AwaitItemType::Plan(item_type) => self
+                        .plan
+                        .validate_live_value(
+                            item_type,
+                            value.value(),
+                            crate::entry::RuntimeSchemaLimits::engine_default(),
+                        )
+                        .is_ok(),
+                    AwaitItemType::Awbc(_) => false,
                 };
-                match launch.state() {
-                    RuntimeNeedProducerState::NotStarted => {
-                        self.fiber.frame.status = FlowFiberStatus::NeedWaiting(Box::new(state));
-                    }
-                    RuntimeNeedProducerState::InfrastructureFailure(failure) => {
-                        self.fail_eval(failure.clone(), output);
-                    }
-                    RuntimeNeedProducerState::Pending(progress) => {
-                        let progress = progress.clone();
-                        output.flow_events.push(FlowEvent::AwaitProgress {
-                            need: state.handle.need_id(),
-                            progress: progress.clone(),
-                        });
-                        self.start_await_pending_observer(state, progress, output);
-                    }
-                    RuntimeNeedProducerState::Ready(value) => {
-                        let type_matches = match state.item_type() {
-                            AwaitItemType::Plan(item_type) => self
-                                .plan
-                                .validate_live_value(
-                                    item_type,
-                                    value.value(),
-                                    crate::entry::RuntimeSchemaLimits::engine_default(),
-                                )
-                                .is_ok(),
-                            AwaitItemType::Awbc(_) => false,
-                        };
-                        if !type_matches {
-                            self.fail_eval(
-                                "local Need Ready differs from its checked item type",
-                                output,
-                            );
+                if !type_matches {
+                    self.fail_eval(
+                        "local Need Ready differs from its checked item type",
+                        output,
+                    );
+                    return;
+                }
+                if let Some(binding) = binding {
+                    match crate::pattern::inspect_runtime_pattern_owned(
+                        &self.plan,
+                        binding,
+                        value.value(),
+                        state.source_context.instantiation(),
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            self.fail_eval("await result did not match binding pattern", output);
                             return;
                         }
-                        if let Some(binding) = binding {
-                            match crate::pattern::inspect_runtime_pattern_owned(
-                                &self.plan,
-                                binding,
-                                value.value(),
-                                state.source_context.instantiation(),
-                            ) {
-                                Ok(true) => {}
-                                Ok(false) => {
-                                    self.fail_eval(
-                                        "await result did not match binding pattern",
-                                        output,
-                                    );
-                                    return;
-                                }
-                                Err(error) => {
-                                    self.fail_eval(error, output);
-                                    return;
-                                }
-                            }
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return;
                         }
-                        let observed = value
-                            .value()
-                            .ownership()
-                            .permits_copy()
-                            .then(|| value.clone());
-                        let value = self
-                            .need_producers
-                            .take_ready_for_correlation(&state.handle.correlation())
-                            .expect("checked producer Ready remains available");
-                        if let Some(binding) = binding {
-                            let bindings = crate::pattern::match_runtime_pattern_owned(
-                                &self.plan,
-                                binding,
-                                value.into_value(),
-                                state.source_context.instantiation(),
-                            )
-                            .expect("checked await binding remains valid")
-                            .expect("checked await binding matches");
-                            self.fiber.frame.env.bind_all(bindings);
-                        }
-                        output.flow_events.push(FlowEvent::AwaitReady {
-                            need: state.handle.need_id(),
-                            value: observed,
-                        });
-                        self.fiber.frame.status = FlowFiberStatus::Running;
-                    }
-                    RuntimeNeedProducerState::ReadyTransferred => {
-                        self.fail_eval("local Need Ready was already consumed", output);
-                    }
-                    RuntimeNeedProducerState::Cancelled => {
-                        self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
                     }
                 }
+                let observed = value
+                    .value()
+                    .ownership()
+                    .permits_copy()
+                    .then(|| value.clone());
+                let value = self
+                    .need_producers
+                    .take_ready_for_correlation(&state.handle.correlation())
+                    .expect("checked producer Ready remains available");
+                if let Some(binding) = binding {
+                    let bindings = crate::pattern::match_runtime_pattern_owned(
+                        &self.plan,
+                        binding,
+                        value.into_value(),
+                        state.source_context.instantiation(),
+                    )
+                    .expect("checked await binding remains valid")
+                    .expect("checked await binding matches");
+                    self.fiber.frame.env.bind_all(bindings);
+                }
+                output.flow_events.push(FlowEvent::AwaitReady {
+                    need: state.handle.need_id(),
+                    value: observed,
+                });
+                self.fiber.frame.status = FlowFiberStatus::Running;
+            }
+            RuntimeNeedProducerState::ReadyTransferred => {
+                self.fail_eval("local Need Ready was already consumed", output);
+            }
+            RuntimeNeedProducerState::Cancelled => {
+                self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
             }
         }
     }
@@ -1240,6 +1260,13 @@ impl Engine {
                 continue;
             };
             match &event.kind {
+                TaskEventKind::ProgramTerminal(_) => {
+                    self.fail_eval(
+                        "a Host AwaitMany child cannot accept a Program retirement acknowledgement",
+                        output,
+                    );
+                    return;
+                }
                 TaskEventKind::Ready(value) => {
                     if !self.task_outcome_accepts_live_value(
                         &state.target.child.outcome(),

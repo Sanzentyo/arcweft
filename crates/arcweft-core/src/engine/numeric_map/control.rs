@@ -249,11 +249,14 @@ impl Engine {
                                         candidate.bind_value(pattern, value, staged);
                                     }
                                     OwnedSumTarget::Return => {
-                                        let label = crate::value::runtime_value_label(&value);
-                                        if !candidate
-                                            .return_function_call_value(value, staged, backend)
+                                        if let Some(value) =
+                                            candidate.return_typed_value(value, staged, backend)
                                         {
-                                            candidate.return_value(label, staged, backend);
+                                            candidate.return_value(
+                                                crate::value::runtime_value_label(&value),
+                                                staged,
+                                                backend,
+                                            );
                                         }
                                     }
                                 }

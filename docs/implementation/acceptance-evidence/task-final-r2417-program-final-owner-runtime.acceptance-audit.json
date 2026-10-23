@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "runtime": "task-final-r2417-program-final-owner-runtime",
+  "actualExitCode": 0,
+  "passed": 2158,
+  "corePrior": 1956,
+  "coreCurrent": 1959,
+  "coreRemoved": [],
+  "coreAdded": [
+    "engine::thread::tests::non_unit_program_fallthrough_fails_instead_of_publishing_completed_unit",
+    "engine::thread::tests::program_non_unit_result_survives_each_rollback_and_ack_cannot_republish_it",
+    "engine::thread::tests::program_resume_replays_only_unacknowledged_retirement_metadata_once"
+  ],
+  "narrowDiagnosticRuntime": "task-final-r2415-program-fallthrough-diagnostic-runtime",
+  "diagnosticExcluded1958": "filter-selected diagnostic only; not ignored tests or a replacement for the full owner run"
+}

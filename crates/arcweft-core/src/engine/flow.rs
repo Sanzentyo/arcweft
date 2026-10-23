@@ -316,65 +316,65 @@ impl Engine {
             self.execute_native_resume(resume, output, pure_backend);
             return;
         }
-        let (op, source_site, next_op_index) =
-            if let Some(work) = self.fiber.frame.pending_ops.front_mut() {
-                let NativePendingWorkKind::Source { position, role } = &mut work.kind else {
-                    unreachable!("runtime continuations were dispatched before source lookup")
-                };
-                if let Some(expression) = position.expression(&plan) {
-                    if *role != NativeSourceRangeRole::FunctionRoot {
-                        self.fiber.frame.pending_ops.pop_front();
-                    }
-                    match self.evaluate_expr_with_backend(expression, pure_backend) {
-                        Ok(value) => {
-                            let label = runtime_value_label(&value);
-                            if !self.return_function_call_value(value, output, pure_backend) {
-                                self.return_value(label, output, pure_backend);
-                            }
-                        }
-                        Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-                    }
-                    return;
+        let (op, source_site, next_op_index) = if let Some(work) =
+            self.fiber.frame.pending_ops.front_mut()
+        {
+            let NativePendingWorkKind::Source { position, role } = &mut work.kind else {
+                unreachable!("runtime continuations were dispatched before source lookup")
+            };
+            if let Some(expression) = position.expression(&plan) {
+                if *role != NativeSourceRangeRole::FunctionRoot {
+                    self.fiber.frame.pending_ops.pop_front();
                 }
-                let Some(operations) = position.operations(&plan) else {
-                    self.fail_eval("native queued source lost its original body", output);
-                    return;
-                };
-                let Some(op) = operations.first() else {
-                    if self.fiber.frame.active_function().is_some() {
-                        self.complete_function_call_fallthrough(output, pure_backend);
-                    } else {
-                        self.finish(output, pure_backend);
+                match self.evaluate_expr_with_backend(expression, pure_backend) {
+                    Ok(value) => {
+                        if let Some(value) = self.return_typed_value(value, output, pure_backend) {
+                            self.return_value(runtime_value_label(&value), output, pure_backend);
+                        }
                     }
-                    return;
-                };
-                let source = position
-                    .source_operation(&plan)
-                    .expect("selected original operation");
-                let next = position
-                    .operation_index()
-                    .expect("original operation ordinal")
-                    + 1;
-                let advance = if *role == NativeSourceRangeRole::FunctionRoot {
-                    Some(next)
-                } else {
-                    assert!(
-                        position.set_operation(next),
-                        "queued source stays in its original body"
-                    );
-                    None
-                };
-                // The selected source operation has been consumed before it
-                // can suspend or save its caller. Only function-root EOF is
-                // an executable completion transition.
-                self.fiber.frame.normalize_pending_source_ranges(&plan);
-                (Cow::Borrowed(op), source, advance)
-            } else {
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+                }
+                return;
+            }
+            let Some(operations) = position.operations(&plan) else {
+                self.fail_eval("native queued source lost its original body", output);
+                return;
+            };
+            let Some(op) = operations.first() else {
                 if self.fiber.frame.active_function().is_some() {
-                    self.fail_eval("active function lost its queued original root", output);
+                    self.complete_function_call_fallthrough(output, pure_backend);
+                } else {
+                    self.finish(output, pure_backend);
                 }
                 return;
             };
+            let source = position
+                .source_operation(&plan)
+                .expect("selected original operation");
+            let next = position
+                .operation_index()
+                .expect("original operation ordinal")
+                + 1;
+            let advance = if *role == NativeSourceRangeRole::FunctionRoot {
+                Some(next)
+            } else {
+                assert!(
+                    position.set_operation(next),
+                    "queued source stays in its original body"
+                );
+                None
+            };
+            // The selected source operation has been consumed before it
+            // can suspend or save its caller. Only function-root EOF is
+            // an executable completion transition.
+            self.fiber.frame.normalize_pending_source_ranges(&plan);
+            (Cow::Borrowed(op), source, advance)
+        } else {
+            if self.fiber.frame.active_function().is_some() {
+                self.fail_eval("active function lost its queued original root", output);
+            }
+            return;
+        };
         self.execute_flow_operation(
             op,
             source_site,
@@ -930,6 +930,9 @@ impl Engine {
                     self.need_producers
                         .ensure_program_task_with_publication(spec, |launch| {
                             child.launch = super::FlowFiberLaunch::Program(launch);
+                            // Even an empty body must admit implicit Unit through
+                            // its original result contract before actual retirement.
+                            child.frame.status = FlowFiberStatus::Running;
                             self.child_fibers.push_back(child);
                             self.next_fiber_id = next_fiber_id;
                             self.run_child_next = true;
@@ -1008,9 +1011,8 @@ impl Engine {
             }
             FlowOp::ReturnExpr(expr) => match self.evaluate_expr_with_backend(expr, pure_backend) {
                 Ok(value) => {
-                    let label = runtime_value_label(&value);
-                    if !self.return_function_call_value(value, output, pure_backend) {
-                        self.return_value(label, output, pure_backend);
+                    if let Some(value) = self.return_typed_value(value, output, pure_backend) {
+                        self.return_value(runtime_value_label(&value), output, pure_backend);
                     }
                 }
                 Err(error) => self.fail_format_aware_eval(error, output, pure_backend),

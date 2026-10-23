@@ -13,6 +13,9 @@ use crate::value::{
 };
 use std::sync::Arc;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, thiserror::Error)]
 pub(super) enum ThreadPreparationError {
     #[error(transparent)]
@@ -36,6 +39,52 @@ pub(super) struct PreparedThread {
 }
 
 impl Engine {
+    pub(super) fn complete_program_task_return(
+        &mut self,
+        value: crate::value::RuntimeValue,
+        explicit: bool,
+        output: &mut crate::step::RuntimeStepOutput,
+        backend: &mut impl super::RuntimeCallBackend,
+    ) {
+        let super::FlowFiberLaunch::Program(launch) = &self.fiber.launch else {
+            unreachable!("task return is dispatched only with an accepted Program launch")
+        };
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            launch.source().program_owner(),
+            RuntimeSchemaLimits::engine_default(),
+        );
+        if let Err(error) = launch.admit_result(&value, &mut admission) {
+            self.fail_eval(error, output);
+            return;
+        }
+        let launch = launch.clone();
+        self.fiber.frame.pending_ops.clear();
+        self.fiber.frame.await_observer = None;
+        self.fiber.frame.invocation_result =
+            Some((super::NativeInvocationRoot::Task(launch), value));
+        self.unwind_control_stack(output, backend);
+        if matches!(self.fiber.frame.status, super::FlowFiberStatus::Failed(_)) {
+            return;
+        }
+        self.fiber.frame.status = if explicit {
+            let value = &self
+                .fiber
+                .frame
+                .invocation_result
+                .as_ref()
+                .expect("the returning task retains its result")
+                .1;
+            let label = crate::value::runtime_value_label(value);
+            output.flow_events.push(super::FlowEvent::Return {
+                value: label.clone(),
+            });
+            super::FlowFiberStatus::Done(super::FlowExit::Return(label))
+        } else {
+            output.flow_events.push(super::FlowEvent::Done);
+            super::FlowFiberStatus::Done(super::FlowExit::Done)
+        };
+    }
+
     pub(super) fn prepare_thread(
         &self,
         operation: &super::code_cursor::NativeSourceOperation,

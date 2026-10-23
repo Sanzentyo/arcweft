@@ -485,6 +485,9 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                     })?
                     .semantic_identity()
             }
+            NativeInvocationRoot::Task(launch) => {
+                return launch.admit_result(value, admission);
+            }
         };
         admission.validate_owned_typed_borrowed(value.borrowed_value(), expected)
     }

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "b337ec4d9bf6a37ca24c6db9e38c58f904dc3a5f",
+  "name": "task-final-r2428-program-proof-final-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2428-program-proof-final-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T18:02:21.6240871Z",
+  "finishedAt": "2026-10-23T18:02:25.9375940Z"
+}

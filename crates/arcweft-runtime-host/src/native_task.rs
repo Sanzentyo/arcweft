@@ -15,6 +15,7 @@ use arcweft_core::task::{
     TaskOutcomeBindingError, TaskOutcomeContract, TaskPolicy, TaskPriority,
     TaskPublicationRevision, TaskSequence, TaskSpec, TaskSubmission, normalize_task_events,
 };
+use arcweft_core::task::{ProgramTaskPublicationBatch, RuntimeTaskPublication};
 use arcweft_core::value::{
     RuntimeBundleAssetContext, RuntimePayload, RuntimeUnsignedIntWidth, RuntimeValue,
     RuntimeVirtualPath, RuntimeVirtualPathSpace, runtime_sequence_dense_bytes,
@@ -421,36 +422,22 @@ impl NativeTaskBridge {
 
     /// Publishes actual Core body retirement through the same dispatch fence,
     /// outcome validation and scheduler transaction as adapter completions.
-    /// Borrowed reports remain with the caller if the complete batch rejects.
+    /// Rejection restores all reports; success acknowledges Core retirement.
     pub fn complete_program_tasks(
         &mut self,
-        completions: &[arcweft_core::task::ProgramTaskCompletion],
+        completions: &mut Vec<arcweft_core::task::ProgramTaskCompletion>,
     ) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
         let started = Instant::now();
-        let mut owners = BTreeSet::new();
-        // Bind each proof to its actual dispatch while constructing the packet
-        // in the common replay order. This retains one atomic batch and avoids
-        // a second full sort inside the scheduler. Tree insertion has its own
-        // O(log n) ordering cost; it does not reorder Core execution effects.
-        let mut publications = BTreeMap::new();
-        for completion in completions {
-            let handle = completion.handle();
-            let task_id = handle.correlation.task_id;
-            if !owners.insert(task_id) {
-                return Err(TaskCompletionError::DuplicateTerminalEvent { task_id }.into());
-            }
+        let mut batch = ProgramTaskPublicationBatch::bind(completions, |completion| {
+            let task_id = completion.handle().correlation.task_id;
             let accepted = self
                 .scheduler
                 .bound_spec(&task_id)
                 .ok_or(TaskCompletionError::UnknownTask { task_id })?;
-            if accepted.handle() != handle
-                || !matches!(
-                    &accepted.spec().request,
-                    arcweft_core::task::TaskRequest::Program(source) if source == completion.source()
-                )
-            {
-                return Err(TaskCompletionError::DispatchMismatch { task_id }.into());
-            }
+            let dispatch = self
+                .dispatches
+                .get(&task_id)
+                .ok_or(TaskCompletionError::DispatchMismatch { task_id })?;
             let revision = self
                 .publication_frontiers
                 .get(&task_id)
@@ -458,25 +445,23 @@ impl NativeTaskBridge {
                     revision.checked_next()
                 })
                 .ok_or(TaskCompletionError::PublicationRevisionExhausted { task_id })?;
-            let kind = match completion.terminal() {
-                arcweft_core::task::ProgramTaskTerminal::Completed => {
-                    TaskEventKind::Ready(RuntimeValue::Unit.into())
-                }
-                arcweft_core::task::ProgramTaskTerminal::Cancelled => TaskEventKind::Cancelled,
-                arcweft_core::task::ProgramTaskTerminal::Failed(failure) => {
-                    TaskEventKind::InfrastructureFailure(failure.clone())
-                }
-            };
-            let event = self.event_for_task(&task_id, revision, kind)?;
-            publications.insert(event.publication_order(), event);
-        }
-        let mut events = publications.into_values().collect::<Vec<_>>();
-        self.prepare_task_event_frontiers(&events)?;
+            Ok((accepted.submission(), dispatch.identity().clone(), revision))
+        })?;
+        // One ordered packet preserves the existing scheduler normalization
+        // counters. The owning batch restores the source order on any error.
+        batch.sort_for_publication();
+        let owners = batch
+            .packets()
+            .iter()
+            .map(|packet| packet.event().correlation.task_id)
+            .collect::<BTreeSet<_>>();
+        let frontiers = self.prepare_task_event_frontiers(
+            batch.packets().iter().map(RuntimeTaskPublication::event),
+        )?;
         let event_build_elapsed_ns = started.elapsed().as_nanos();
         let started = Instant::now();
-        let mut scheduler = self.scheduler.clone();
-        scheduler.complete(&mut events)?;
-        let frontiers = self.prepare_task_event_frontiers(&events)?;
+        self.scheduler.complete(batch.packets_mut())?;
+        let events = batch.into_events();
         let scheduler_complete_elapsed_ns = started.elapsed().as_nanos();
         self.record_scheduler_owner_outcomes(&owners, &events);
         self.stats.program_task_terminals += owners.len();
@@ -488,7 +473,6 @@ impl NativeTaskBridge {
             .stats
             .scheduler_complete_elapsed_ns
             .saturating_add(scheduler_complete_elapsed_ns);
-        self.scheduler = scheduler;
         self.publication_frontiers = frontiers;
         self.retire_terminal_dispatches(&events);
         Ok(events)
@@ -1167,12 +1151,7 @@ impl NativeTaskBridge {
 
     fn retire_terminal_dispatches(&mut self, events: &[TaskEvent]) {
         for event in events {
-            if matches!(
-                event.kind,
-                TaskEventKind::Ready(_)
-                    | TaskEventKind::InfrastructureFailure(_)
-                    | TaskEventKind::Cancelled
-            ) {
+            if event.kind.is_terminal() {
                 self.dispatches.remove(&event.correlation.task_id);
                 self.publication_frontiers
                     .remove(&event.correlation.task_id);
@@ -1180,9 +1159,9 @@ impl NativeTaskBridge {
         }
     }
 
-    fn prepare_task_event_frontiers(
+    fn prepare_task_event_frontiers<'a>(
         &self,
-        events: &[TaskEvent],
+        events: impl IntoIterator<Item = &'a TaskEvent>,
     ) -> Result<BTreeMap<TaskId, TaskPublicationRevision>, NativeTaskBridgeError> {
         let mut frontiers = self.publication_frontiers.clone();
         let mut terminal = BTreeSet::new();
@@ -1233,12 +1212,7 @@ impl NativeTaskBridge {
                 .into());
             }
             frontiers.insert(event.correlation.task_id, expected);
-            if matches!(
-                event.kind,
-                TaskEventKind::Ready(_)
-                    | TaskEventKind::InfrastructureFailure(_)
-                    | TaskEventKind::Cancelled
-            ) {
+            if event.kind.is_terminal() {
                 terminal.insert(event.correlation.task_id.clone());
             }
         }
@@ -1255,9 +1229,19 @@ impl NativeTaskBridge {
                 continue;
             }
             match event.kind {
-                TaskEventKind::Ready(_) => self.stats.completed_tasks += 1,
-                TaskEventKind::InfrastructureFailure(_) => self.stats.failed_tasks += 1,
-                TaskEventKind::Progress(_) | TaskEventKind::Cancelled => {}
+                TaskEventKind::Ready(_)
+                | TaskEventKind::ProgramTerminal(
+                    arcweft_core::task::ProgramTaskTerminal::Completed,
+                ) => self.stats.completed_tasks += 1,
+                TaskEventKind::InfrastructureFailure(_)
+                | TaskEventKind::ProgramTerminal(
+                    arcweft_core::task::ProgramTaskTerminal::Failed(_),
+                ) => self.stats.failed_tasks += 1,
+                TaskEventKind::Progress(_)
+                | TaskEventKind::Cancelled
+                | TaskEventKind::ProgramTerminal(
+                    arcweft_core::task::ProgramTaskTerminal::Cancelled,
+                ) => {}
             }
         }
     }

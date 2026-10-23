@@ -80,11 +80,13 @@ struct NativeScalarStepCharge {
 }
 /// One native root result authority. Function roots are internal deterministic
 /// invocations of the exact admitted site; program roots retain their public
-/// program binding. Both use the same frame, transaction and value custody.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// program binding. Task roots retain their exact accepted launch. Each uses
+/// the same frame, transaction and value custody.
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum NativeInvocationRoot {
     Program(arcweft_id::runtime_program::RuntimePureProgramId),
     Function(crate::runtime_id::RuntimeFunctionSiteId),
+    Task(crate::task::ProgramTaskLaunch),
 }
 
 /// Native execution ownership shared by live state and inert rollback storage.
@@ -248,16 +250,26 @@ pub(crate) enum FlowFiberLaunch {
     Program(crate::task::ProgramTaskLaunch),
 }
 
-fn validate_child_task_launches<F>(
-    children: &VecDeque<FlowFiber<F>>,
+fn validate_program_task_launches<V, P, O, C, A, S>(
+    active: &FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>,
+    children: &VecDeque<FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>>,
     mut accepted_program: impl FnMut(&crate::task::ProgramTaskLaunch) -> bool,
 ) -> Result<(), String> {
     let mut tasks = BTreeSet::new();
-    for child in children {
+    for child in std::iter::once(active).chain(children) {
         if let FlowFiberLaunch::Program(launch) = &child.launch
             && (!tasks.insert(launch.handle().correlation.task_id) || !accepted_program(launch))
         {
             return Err("native child launch differs from its accepted program task".into());
+        }
+        match (&child.launch, &child.frame.invocation_result) {
+            (FlowFiberLaunch::Program(launch), Some((NativeInvocationRoot::Task(result), _)))
+                if launch == result => {}
+            (FlowFiberLaunch::Program(_), Some(_))
+            | (FlowFiberLaunch::Local, Some((NativeInvocationRoot::Task(_), _))) => {
+                return Err("native task result differs from its owning accepted launch".into());
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -517,7 +529,7 @@ impl NativeFlowExecutionFrame {
                     crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                         value, owner,
                     )
-                    .map(|snapshot| (*program, snapshot))
+                    .map(|snapshot| (program.clone(), snapshot))
                     .map_err(|error| error.to_string())
                 })
                 .transpose()?,
@@ -1882,7 +1894,7 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 
 impl Engine {
     fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
-        validate_child_task_launches(&self.child_fibers, |launch| {
+        validate_program_task_launches(&self.fiber, &self.child_fibers, |launch| {
             self.need_producers
                 .accepted_task_spec(launch.handle())
                 .is_some_and(|spec| {
@@ -1979,7 +1991,7 @@ impl Engine {
         image: NativeEngineRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        validate_child_task_launches(&image.child_fibers, |launch| {
+        validate_program_task_launches(&image.fiber, &image.child_fibers, |launch| {
             image
                 .need_producers
                 .task_spec(launch.handle().correlation)
@@ -4073,7 +4085,7 @@ impl Engine {
         std::mem::swap(&mut self.fiber, &mut child);
         let mut drop_policy = None;
         self.step_active_child_fiber(input, events, output, pure_backend, &mut drop_policy);
-        self.finish_active_child_if_exhausted();
+        self.finish_active_child_if_exhausted(output, pure_backend);
         std::mem::swap(&mut self.fiber, &mut child);
         let live_tokens = matches!(&owner, FlowFiberOwner::LineTask(_))
             .then(|| flow_fiber_line_handle_tokens(&child))
@@ -4161,12 +4173,50 @@ impl Engine {
         match child.frame.status {
             FlowFiberStatus::Done(_) => {
                 if let Some(launch) = completion_launch {
-                    output.requests.program_task_completions.push(
-                        crate::task::ProgramTaskCompletion::completed(
-                            launch,
-                            owner.requests_scope_close(),
-                        ),
+                    if !owner.requests_scope_close()
+                        && !matches!(&child.frame.invocation_result,
+                        Some((NativeInvocationRoot::Task(result), _)) if result == launch)
+                    {
+                        return Err(dialogue::DialogueExecutionError::ChildFailed {
+                            message: "retiring program task has no matching owned body result"
+                                .into(),
+                        });
+                    }
+                    let mut retained = child.frame.invocation_result.take();
+                    let outcome = if owner.requests_scope_close() {
+                        crate::task::ProgramTaskOutcome::Cancelled
+                    } else {
+                        crate::task::ProgramTaskOutcome::Returned(
+                            retained
+                                .take()
+                                .expect("the returning frame owns its result")
+                                .1,
+                        )
+                    };
+                    let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+                        launch.source().program_owner(),
+                        crate::entry::RuntimeSchemaLimits::engine_default(),
                     );
+                    match self.need_producers.complete_program_task(
+                        &launch,
+                        outcome,
+                        &mut admission,
+                    ) {
+                        Ok(report) => output.requests.program_task_completions.push(report),
+                        Err(rejected) => {
+                            if let crate::task::ProgramTaskOutcome::Returned(value) =
+                                rejected.outcome
+                            {
+                                retained =
+                                    Some((NativeInvocationRoot::Task(launch.clone()), value));
+                            }
+                            child.frame.invocation_result = retained;
+                            self.child_fibers.push_front(child);
+                            return Err(dialogue::DialogueExecutionError::ChildFailed {
+                                message: rejected.reason.to_string(),
+                            });
+                        }
+                    }
                 }
                 if let FlowFiberOwner::LineTask(owner) = owner {
                     let live_tokens = live_tokens
@@ -4192,10 +4242,30 @@ impl Engine {
             }
             FlowFiberStatus::Failed(message) => {
                 if let Some(launch) = completion_launch {
-                    output
-                        .requests
-                        .program_task_completions
-                        .push(crate::task::ProgramTaskCompletion::failed(launch, &message));
+                    let failure = crate::task::RuntimeTaskFailure {
+                        kind: crate::task::RuntimeTaskFailureKind::WorkerFailure,
+                        diagnostic: crate::task::BoundedRuntimeDiagnostic::from_borrowed_message(
+                            &message,
+                        ),
+                    };
+                    let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+                        launch.source().program_owner(),
+                        crate::entry::RuntimeSchemaLimits::engine_default(),
+                    );
+                    match self.need_producers.complete_program_task(
+                        launch,
+                        crate::task::ProgramTaskOutcome::Failed(failure),
+                        &mut admission,
+                    ) {
+                        Ok(report) => output.requests.program_task_completions.push(report),
+                        Err(rejected) => {
+                            child.frame.status = FlowFiberStatus::Failed(message);
+                            self.child_fibers.push_front(child);
+                            return Err(dialogue::DialogueExecutionError::ChildFailed {
+                                message: rejected.reason.to_string(),
+                            });
+                        }
+                    }
                 }
                 let failed_activation = match &owner {
                     FlowFiberOwner::DialogueEffectCallback { activation, .. } => {
@@ -4485,13 +4555,21 @@ impl Engine {
         self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
     }
 
-    fn finish_active_child_if_exhausted(&mut self) {
+    fn finish_active_child_if_exhausted(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
         if matches!(self.fiber.frame.status, FlowFiberStatus::Running)
             && self.fiber.frame.pending_ops.is_empty()
             && !self.has_active_project_call()
             && !self.has_joined_work()
         {
-            self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
+            if matches!(&self.fiber.launch, FlowFiberLaunch::Program(_)) {
+                self.finish(output, pure_backend);
+            } else {
+                self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
+            }
         }
     }
 
@@ -4530,11 +4608,15 @@ impl Engine {
     }
 
     fn step_result(
-        &self,
-        output: RuntimeStepOutput,
+        &mut self,
+        mut output: RuntimeStepOutput,
         options: RuntimeStepOptions,
         stats: RuntimeStepStats,
     ) -> RuntimeStepResult {
+        output
+            .requests
+            .program_task_completions
+            .extend(self.need_producers.take_program_retirement_replays());
         let stop_reason = self
             .hard_stop_reason(&output)
             .unwrap_or_else(|| Self::running_stop_reason(options, stats.executed_ops, &output));

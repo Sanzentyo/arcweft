@@ -147,7 +147,7 @@ pub enum RuntimeDialogueContentEventKind {
     Effect(RuntimeDialogueEffectSiteId),
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct RuntimeStepOutput {
     pub diagnostics: Vec<RuntimeDiagnostic>,
     pub flow_events: Vec<FlowEvent>,
@@ -166,7 +166,7 @@ pub struct RuntimeEffectBatch {
 }
 
 /// Host-facing requests emitted by one deterministic runtime step.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct HostRequestBatch {
     pub tasks: Vec<TaskSubmission>,
     pub program_task_completions: Vec<crate::task::ProgramTaskCompletion>,

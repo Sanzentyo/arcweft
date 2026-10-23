@@ -287,17 +287,24 @@ impl Engine {
         unreachable!("the selected function frame remains present while unwinding its child scopes")
     }
 
-    pub(in crate::engine) fn return_function_call_value(
+    pub(in crate::engine) fn return_typed_value(
         &mut self,
         value: RuntimeValue,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> bool {
-        let Some(frame) = self.take_function_call_frame(output, pure_backend) else {
-            return false;
-        };
-        self.complete_function_call_return(frame, value, output, pure_backend);
-        true
+    ) -> Option<RuntimeValue> {
+        if let Some(frame) = self.take_function_call_frame(output, pure_backend) {
+            self.complete_function_call_return(frame, value, output, pure_backend);
+            return None;
+        }
+        if matches!(
+            &self.fiber.launch,
+            crate::engine::FlowFiberLaunch::Program(_)
+        ) {
+            self.complete_program_task_return(value, true, output, pure_backend);
+            return None;
+        }
+        Some(value)
     }
 
     pub(super) fn complete_function_call_fallthrough(

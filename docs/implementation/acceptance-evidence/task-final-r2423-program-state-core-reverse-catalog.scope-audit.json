@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "b337ec4d9bf6a37ca24c6db9e38c58f904dc3a5f",
+  "catalog": "task-final-r2423-program-state-core-reverse-catalog",
+  "all": 7265,
+  "matched": 7226,
+  "excluded": 39,
+  "resolvedPackages": 53,
+  "packagesWithNamedCases": 50,
+  "noNamedTestsOnHost": [
+    "arcweft",
+    "arcweft-bundle-assets",
+    "arcweft-render-web"
+  ],
+  "priorCatalog": "task-final-r2383-native-final-grammar-reverse-catalog",
+  "priorSelected": 7220,
+  "removedSelected": [],
+  "addedSelected": [
+    "arcweft-core::engine::flow::function_call::tests::native_completed_fibers_preserve_distinct_typed_results_across_rollback",
+    "arcweft-core::engine::thread::tests::non_unit_program_fallthrough_fails_instead_of_publishing_completed_unit",
+    "arcweft-core::engine::thread::tests::program_non_unit_result_survives_each_rollback_and_ack_cannot_republish_it",
+    "arcweft-core::engine::thread::tests::program_resume_replays_only_unacknowledged_retirement_metadata_once",
+    "arcweft-core::task::execution::launch_tests::host_launch_rejection_preserves_the_original_journal_and_ordinal",
+    "arcweft-runtime-scheduler::tests::rejected_completion_retains_owned_packets_and_retries_without_copying_payloads"
+  ],
+  "caseOutsideClosure": []
+}

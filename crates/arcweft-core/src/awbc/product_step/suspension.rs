@@ -864,6 +864,24 @@ impl AwbcProductStepExecutor {
                 continue;
             };
             match event.kind {
+                TaskEventKind::ProgramTerminal(_) => {
+                    if !self.discard_extracted_await_many(
+                        state,
+                        &before_handles,
+                        crate::effect::RuntimeDropPolicy::Default,
+                        output,
+                    ) {
+                        return false;
+                    }
+                    self.fail_with_trap(
+                        AwbcTrapCode::HostAbiMismatch,
+                        "a Host AwaitMany child cannot accept a Program retirement acknowledgement"
+                            .into(),
+                        None,
+                        output,
+                    );
+                    return true;
+                }
                 TaskEventKind::Ready(value) => {
                     if !self
                         .task_payload_accepts(self.await_many_child_plan(state.plan), value.value())
@@ -2106,6 +2124,16 @@ impl AwbcProductStepExecutor {
                 continue;
             };
             match &event.kind {
+                TaskEventKind::ProgramTerminal(_) => {
+                    journal.record_default_drop_policy();
+                    mark_child_trapped(
+                        fiber,
+                        AwbcTrapCode::HostAbiMismatch,
+                        "a Host AwaitMany child cannot accept a Program retirement acknowledgement"
+                            .into(),
+                    );
+                    return true;
+                }
                 TaskEventKind::Ready(value) => {
                     if !self
                         .task_payload_accepts(self.await_many_child_plan(state.plan), value.value())

@@ -13,6 +13,9 @@ impl AwbcProductTaskEventSaveSnapshot {
             correlation: event.correlation,
             cursor: event.cursor,
             kind: match &event.kind {
+                TaskEventKind::ProgramTerminal(status) => {
+                    AwbcProductTaskEventKindSaveSnapshot::ProgramTerminal(status.clone())
+                }
                 TaskEventKind::Ready(value) => AwbcProductTaskEventKindSaveSnapshot::Ready(
                     AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value.value(), owner)
                         .map_err(|error| error.to_string())?,
@@ -36,6 +39,9 @@ impl AwbcProductTaskEventSaveSnapshot {
             correlation: self.correlation,
             cursor: self.cursor,
             kind: match self.kind {
+                AwbcProductTaskEventKindSaveSnapshot::ProgramTerminal(status) => {
+                    TaskEventKind::ProgramTerminal(status)
+                }
                 AwbcProductTaskEventKindSaveSnapshot::Ready(value) => {
                     let value = value
                         .into_admitted_runtime_value(owner)

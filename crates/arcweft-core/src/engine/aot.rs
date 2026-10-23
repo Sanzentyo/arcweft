@@ -208,7 +208,13 @@ impl Engine {
             AotLinearOp::ReturnExpr(expr) => {
                 match self.evaluate_expr_with_backend(expr, pure_backend) {
                     Ok(value) => {
-                        self.return_value(super::runtime_value_label(&value), output, pure_backend);
+                        if let Some(value) = self.return_typed_value(value, output, pure_backend) {
+                            self.return_value(
+                                super::runtime_value_label(&value),
+                                output,
+                                pure_backend,
+                            );
+                        }
                     }
                     Err(error) => self.fail_eval(error, output),
                 }

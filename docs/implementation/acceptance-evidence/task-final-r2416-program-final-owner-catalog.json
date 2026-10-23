@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "base": "b337ec4d9bf6a37ca24c6db9e38c58f904dc3a5f",
+  "name": "task-final-r2416-program-final-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-host",
+    "-p",
+    "arcweft-runtime-scheduler",
+    "-p",
+    "arcweft-runtime-driver",
+    "-p",
+    "arcweft-player-web",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-core) | package(=arcweft-runtime-host) | package(=arcweft-runtime-scheduler) | package(=arcweft-runtime-driver) | package(=arcweft-player-web)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2416-program-final-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T16:49:31.0771990Z",
+  "finishedAt": "2026-10-23T16:50:38.9081140Z"
+}

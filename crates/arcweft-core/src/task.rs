@@ -63,13 +63,20 @@ pub use snapshot::{TaskSpecSaveSnapshot, TaskSubmissionSaveSnapshot};
 pub(crate) mod descriptor;
 mod execution;
 mod failure;
+mod publication;
 mod request;
 pub(crate) use execution::ProgramTaskLaunch;
 pub(crate) use execution::TaskExecutionSource;
-pub use execution::{ProgramTaskCompletion, ProgramTaskTerminal, TaskExecutionKind, TaskRequest};
+pub use execution::{
+    ProgramTaskCompletion, ProgramTaskCompletionRejection, ProgramTaskPublication,
+    ProgramTaskPublicationBatch, ProgramTaskRetirementPhase, ProgramTaskTerminal,
+    TaskExecutionKind, TaskRequest,
+};
+pub(crate) use execution::{ProgramTaskOutcome, ProgramTaskRetirementRejection};
 pub use failure::{
     BoundedRuntimeDiagnostic, RuntimeNeedOutcome, RuntimeTaskFailure, RuntimeTaskFailureKind,
 };
+pub use publication::RuntimeTaskPublication;
 mod template;
 pub use semantic::TaskSemanticEncodingError;
 pub use template::{HostCallProducerDefinition, NeedProducerDefinition, NeedProducerTemplate};
@@ -1620,6 +1627,13 @@ impl<P> TaskEvent<P> {
                     spec.ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
                         message: "queued Ready has no exact admitted task correlation".into(),
                     })?;
+                if matches!(&spec.request, TaskRequest::Program(_)) {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message:
+                            "a Program task retains its result locally, not in a queued Host Ready"
+                                .into(),
+                    });
+                }
                 admission.validate_metadata(&spec.outcome)?;
                 admission.admit_composite(P::admission_origin(), |owner, resources| {
                     let view = value.borrowed_view();
@@ -1630,6 +1644,16 @@ impl<P> TaskEvent<P> {
                     spec.validate_admitted_value_view(view, owner, resources)?;
                     Ok(())
                 })
+            }
+            TaskEventKind::ProgramTerminal(status) => {
+                if !spec.is_some_and(|spec| matches!(&spec.request, TaskRequest::Program(_))) {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message:
+                            "a Program retirement acknowledgement has no exact Program journal row"
+                                .into(),
+                    });
+                }
+                admission.validate_metadata(status)
             }
             TaskEventKind::InfrastructureFailure(failure) => admission.validate_metadata(failure),
             TaskEventKind::Progress(progress) => admission.validate_metadata(progress),
@@ -1770,15 +1794,33 @@ pub enum TaskCompletionError {
 ))]
 pub enum TaskEventKind<P = RuntimePayload> {
     Ready(P),
+    /// Host acknowledgement of actual Core retirement. The program result
+    /// remains in Core's task state and is consumed there by its awaiter.
+    ProgramTerminal(ProgramTaskTerminal),
     InfrastructureFailure(RuntimeTaskFailure),
     Cancelled,
     Progress(Progress),
+}
+
+impl<P> TaskEventKind<P> {
+    /// A terminal publication retires its exact dispatch, including a local
+    /// Program retirement that carries no Host Ready value.
+    pub const fn is_terminal(&self) -> bool {
+        match self {
+            Self::Ready(_)
+            | Self::ProgramTerminal(_)
+            | Self::InfrastructureFailure(_)
+            | Self::Cancelled => true,
+            Self::Progress(_) => false,
+        }
+    }
 }
 
 impl Clone for TaskEventKind<crate::value::AwbcRuntimeValueSnapshot> {
     fn clone(&self) -> Self {
         match self {
             Self::Ready(value) => Self::Ready(value.clone()),
+            Self::ProgramTerminal(terminal) => Self::ProgramTerminal(terminal.clone()),
             Self::InfrastructureFailure(failure) => Self::InfrastructureFailure(failure.clone()),
             Self::Cancelled => Self::Cancelled,
             Self::Progress(progress) => Self::Progress(progress.clone()),

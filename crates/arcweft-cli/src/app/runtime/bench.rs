@@ -51,7 +51,7 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
             stats,
             ..
         } = result;
-        let program_completions = std::mem::take(&mut output.requests.program_task_completions);
+        let mut program_completions = std::mem::take(&mut output.requests.program_task_completions);
         let task_requests = std::mem::take(&mut output.requests.tasks);
         let host_call_requests = std::mem::take(&mut output.requests.host_calls);
         totals.push(&stats, task_requests.len(), output.diagnostics.len());
@@ -87,7 +87,7 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
                     )
                     .map_err(RuntimeStepRunError::from)?;
                 task_events.extend(
-                    host.complete_program_tasks(&program_completions)
+                    host.complete_program_tasks(&mut program_completions)
                         .map_err(RuntimeStepRunError::from)?,
                 );
                 host_call_results =

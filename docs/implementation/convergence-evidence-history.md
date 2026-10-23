@@ -9079,3 +9079,133 @@ Generic Match の既存受入を取り消す新規再現はない。受入時の
 資料監査の旧基点 `7b1f8f5deb64db1274632c6ec2a7b8af69147420` での
 17入力中9 blob の変更は、[比較原本](acceptance-evidence/generic-match-current-input-comparison.json)
 に保持する。この過去の比較件数を現在の blob 差分数として転記しない。
+
+## Core-owned Program results and retirement delivery — 2026-10-24
+
+基点 `b337ec4d9bf6a37ca24c6db9e38c58f904dc3a5f`、parent
+`2e36d1c09d4b893cd92fce304c90eb0b2ef8bd1f`、tree
+`f129b081b6b63d97ad26e43ffee837c4f1e34f36`。この基点の資料整理は18 entries／
+19 raw pathsで、公開 ref と12変更 blob、保持41非文書 dirty、untracked修復メモ2件の
+差分0、index emptyを確認済み。この後、33 Rust pathsとruntime仕様1件を変更し、
+保持14 tracked WIPを含む4,096入力で検証した。
+
+### 所有境界と修復
+
+実際の Program 返却値は元の返却 frame が cleanup／join／rollback 中も保持し、
+退役時に既存の producer registry の `Ready` へ移す。型検査前のラベル化や
+暗黙 Unit への置換を行わない。Program 起動を origin で区別し、Host の invocation
+token・arguments・restart policy・仮の publication cursor を持たせない。
+Compiler の受入 helper は Host なしでも実行するため、値を Host に渡してから
+echo させるモデルを採用しなかった。別の結果 map や fallback resolver は追加していない。
+
+Native Await はローカルの終端状態を直接参照する。`AlwaysStart` の取得は値を一度だけ
+移して `ReadyTransferred` を残し、Host ACK はその値を置き換えたり復活させない。
+Core の私有退役 proof だけが元 Source／完全な受理 receipt と結び付く。
+Native／Web の公開 batch は拒否時に report を同じ順序で戻し、成功後は metadata の
+`ProgramTerminal` のみを配送する。通常の Host Ready は Program の結果にならない。
+保存 origin と配送 phase は既存の version 1 grammar で直接更新し、旧 reader を残さない。
+rollback は配送 phase を保持し、resume は未ACKの退役 metadata を一度だけ再送する。
+
+実行で見つかった、空 body と最後の operation 後に Done を直接設定する経路を修復した。
+Program は空でも typed completion を通り、非Unitの implicit Unit は Failed task となる。
+新規テスト初版はこれを「awaitしない親 flow まで Failed」と観測していたため修正した。
+Task 結果の受入条件に合わせ、実際の Failed metadata、同一 failure を保管した終端 state、
+Ready 不在、Host cursor 不在を直接確認する。失敗を除外したり Completed Unit を許容していない。
+
+### 実行した検査
+
+| 検査 | 実際の結果と適用範囲 |
+|---|---|
+| R2407 Core library check | exit 0、151 warnings。途中入力の library 検査。[receipt](acceptance-evidence/task-final-r2407-local-program-result-core-check.json)。 |
+| R2408／R2409 workspace check | exit 101。R2408 は Core fixture の旧 field 4 errors。R2409 は新規テストの private error field 2、Native attempt の誤った `.task` 参照2、Driver の未移行終端分岐1。いずれも修復し、失敗原本を保持。[R2408](acceptance-evidence/task-final-r2408-local-program-result-workspace-check.json)、[R2409](acceptance-evidence/task-final-r2409-local-program-result-workspace-check.json)。 |
+| R2410 workspace check | all-target／all-feature／locked、exit 0、警告あり、1m09s。その後の空／暗黙 body 修復前の入力。[receipt](acceptance-evidence/task-final-r2410-local-program-result-workspace-check.json)。 |
+| R2411／R2412 owner5 | catalog 2,158選択、除外0。runtime は **2,152 PASS／6 FAIL、exit 100、13.292秒**。Core fallthrough と Host／Web／session の退役結果不足を検出。[terminal audit](acceptance-evidence/task-final-r2412-local-program-result-owner-runtime.terminal-audit.json)。 |
+| R2413／R2414 owner5 | 同2,158件を保持。runtime は **2,157 PASS／1 FAIL、exit 100、13.447秒**。消失した5失敗は implicit／empty body 修復に対応。残る新規テストは上記の親状態の観測で待ち続けた。[terminal audit](acceptance-evidence/task-final-r2414-local-program-retirement-owner-runtime.terminal-audit.json)。 |
+| R2415 diagnostic | その1件だけを選択し **1 FAIL／1,958 filter skipped、exit 100**。除外は診断 filter であり、既存 ignored や最終受入の免除ではない。[receipt](acceptance-evidence/task-final-r2415-program-fallthrough-diagnostic-runtime.json)。 |
+| R2416／R2417 owner5 | **2,158/2,158 PASS、除外0、exit 0、13.313秒**。Core1,959、Host60、Driver101、Web21、Scheduler17。旧Core1,956件の削除0、新規3件。5 executable／4,096入力／case set の差分0。[terminal audit](acceptance-evidence/task-final-r2417-program-final-owner-runtime.terminal-audit.json)、[既存ケース照合](acceptance-evidence/task-final-r2417-program-final-owner-runtime.acceptance-audit.json)。 |
+| R2418 workspace Clippy | all-target／all-feature／locked、exit 0、警告あり、2m06s。Core lib-test は3,181 warnings（2,481重複）、CLI check は209で、いずれも workspace 総数ではない。[receipt](acceptance-evidence/task-final-r2418-program-state-workspace-clippy.json)。 |
+| R2419 Core Clippy | needless borrow と let-else の二つの lint 修正後、all-target／all-feature／locked、exit 0、警告あり、49.04秒。API／状態形状は変更なし。Core lib-test は3,179 warnings（2,479重複）。[receipt](acceptance-evidence/task-final-r2419-program-state-final-core-clippy.json)。 |
+| R2420 doctest | owner5を選択し **76 PASS**（Core73、Driver3）。Web／Host／Scheduler は実際の対象0で、成功件数へ加算しない。[receipt](acceptance-evidence/task-final-r2420-program-state-owner-doctests.json)、[原本](acceptance-evidence/task-final-r2420-program-state-owner-doctests.log)。 |
+| R2421 structure | exit 0、3,201 files／3,071 Rust／1,736,299 physical LOC／97 packages／376 review triggers／blocking 0。[原本](acceptance-evidence/task-final-r2421-program-state-structure.log)。 |
+| R2422／R2423 reverse scope | 全targetの cargo tree inverted Core は exit 0。同じ解決済み Cargo graph の reverse53を全選択。catalog は全7,265件中 **7,226選択／39既存除外**、Cargo11m57s。R2383の旧7,220ケースを全て保持し、Core5／Scheduler1の6件を追加。[tree](acceptance-evidence/task-final-r2422-program-state-core-reverse-tree.log)、[scope audit](acceptance-evidence/task-final-r2423-program-state-core-reverse-catalog.scope-audit.json)。 |
+| R2424 full reverse runtime | **7,226実行／7,174 PASS／52 FAIL／39 skipped、実際の exit 100、1,089.280秒**。225 executable（219 test／6 non-test）、4,096入力、全 case set の差分0。wrapper exit 0を合格とは呼ばない。[receipt](acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.json)、[原本](acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.log)、[terminal audit](acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.terminal-audit.json)、[binary audit](acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.binary-audit.json)。 |
+
+R2424 は named case のある50 packageを実行。残りの `arcweft`／`arcweft-bundle-assets`／
+`arcweft-render-web` をテスト合格へ数えない。owner5の2,158件は同実行でも全 PASS。
+既存の Generic Match 151件も全 PASSで、受入・公開済みという判定を維持する。
+Compiler `flow_include` 12件は11 PASS／1 FAIL。返却 ThreadHandle のケースは今回も
+Thread pure lowering と Await projection の拒否であり、Core の非Unit body 成功を
+この言語機能や AWBC 独立 scheduling の完成へ読み替えない。
+
+52失敗は R2384 の全52識別子と一致（追加・消失0）。CLI51件と上記Compiler1件。
+今回も Background callable の typed Presentation command ABI 未接続が9件、
+published JLREQの geometry／raw cropが8件失敗し、hyphenのcolumn1169／1127や
+後続本文が左へ進まない具体的な不一致を確認した。他の原因が不変とは一括推定しない。
+[受入・失敗名照合](acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.acceptance-audit.json)
+と [上限付き診断索引](acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.failure-recon.json)
+を原本とともに保持する。全goal、Tier2、Native／Web capture parityは未受入。
+
+### 所有構造と証拠の限界
+
+R2421入力の Core `task/producer.rs` は173,052 bytes／4,525 LOC（embedded tests991、基点比+385）。
+共通 journal と値状態、Host invocation と Program 退役を同じ所有型で管理する。
+別の結果 map、I/O依存やSource authorityを追加しない。状態遷移・復元不変条件・
+それを検証するテストは同じ所有責任にあり、行数だけの分割やAPI拡大を行わない。
+Core `engine.rs` は226,265 bytes／5,624 LOC（embedded819）、`task/execution.rs` は
+19,013 bytes／540 LOC。新しい `engine/thread/tests.rs` は11,436 bytes／310 LOCで、
+実際の typed bodyを構築する一つのfixtureと結果所有権の3ケースを同じownerに置いた。
+Host `native_task.rs` は152,853 bytes／3,958 LOC（embedded1,839）で、adapter dispatch、
+退役公開transactionと計測を所有し、Program値を所有しない。
+Coreのdirect workspace fan-in35／fan-out12、99 manifest/lock、97 packagesは不変。
+[計測](acceptance-evidence/task-program-owned-state-ownership-metrics.json)、[依存計測](acceptance-evidence/task-program-owned-state-dependency-metrics.json)。
+
+最終の [入力manifest](acceptance-evidence/task-program-owned-state-final.source-freeze.json)、
+[解決済みscope](acceptance-evidence/task-program-owned-state-final.graph.json)、
+[225 binary hash](acceptance-evidence/task-program-owned-state-final.pins.json) を保持する。
+R2412の途中source-freezeのパスは修復検査で再利用したため、当初manifestが不変に
+残っているとは主張しない。当時の実測source差分0、原本、binary監査とhashは保持した。
+R2414／R2417／R2424はそれぞれ別の固定入力名とbinary hashを保持する。
+最初のowner実行前にはhelperの成功後に古い `$LASTEXITCODE` を検査して停止したが、
+その時点ではruntime未起動。catalogを再ビルドせず、既存catalogから実行した。
+
+58件の原本・派生監査を元ファイルとSHA256一致で保存した。R2418 Clippy logの5行、
+R2419の3行、R2424 runtime logの8行のtrailing whitespaceはbyte不変で保持する。
+R2420 doctest原本の末尾空行も保持し、その4原本だけをstaged whitespace検査から
+除外する。他のsource・文書・JSON・logは検査する。
+R2424 実行中のsource／資料／Cargo入力は固定した。終了後に変更した既存入力は
+現状一覧とこの履歴のみで、別途検証原本・監査を追加した。
+ユーザーの既存14 tracked WIPとuntracked修復メモ等を保持し、Nativeの既存import削除は
+公開差分から除外する。各cutの合格はここに示す範囲であり、全体goalの完了とはしない。
+
+### 最終差分での Program proof 拒否強化
+
+全閉包実行後の差分レビューで、通常 Host `TaskEvent` の Failed／Cancelled／Progress が
+Program の私有 proof と同じ受付へ入る余地を確認した。`TaskEvent` による Program 受付を
+すべて拒否し、Source 認証済み `ProgramTaskPublication` だけが通る境界へ揃えた。
+新しい結果 map、例外的な成功経路、公開の proof constructor は追加していない。
+既存の新規回帰ケースに Ready・Failed・Cancelled・Progress・偽ProgramTerminal の
+5種類の拒否を追加し、ケースやassertionを削除していない。Rust変更は2 pathsのみで、
+API署名・状態形状・有効なProgram packetの経路は変更していない。
+
+- R2425 catalog は同じ5 library／2,158件／除外0。R2426 は **2,158/2,158 PASS、
+  exit 0、13.453秒**。27必須ケースを全選択。4,154入力／5 executable／case setの差分0。
+  [terminal audit](acceptance-evidence/task-final-r2426-program-proof-final-owner-runtime.terminal-audit.json)、
+  [binary audit](acceptance-evidence/task-final-r2426-program-proof-final-owner-runtime.binary-audit.json)、
+  [入力](acceptance-evidence/task-program-proof-final.source-freeze.json)、
+  [binary hash](acceptance-evidence/task-program-proof-final.pins.json)。
+- R2427 Core all-target／all-feature／locked Clippy は **exit 0、警告あり、23.10秒**。
+  Core lib-testの警告数3,179（2,479重複）は変わらず、warningsを抑制していない。
+  [receipt](acceptance-evidence/task-final-r2427-program-proof-final-core-clippy.json)。
+- R2428 canonical structure は **exit 0、3,201 files／3,071 Rust／1,736,320 LOC／
+  97 packages／376 review triggers／blocking 0**。
+  最終 `task/publication.rs` は2,837 bytes／78 LOC、同ownerの新規テストは
+  12,345 bytes／332 LOC。[原本](acceptance-evidence/task-final-r2428-program-proof-final-structure.log)、
+  [最終計測](acceptance-evidence/task-program-proof-final-ownership-metrics.json)。
+
+R2424 の全53 package runtimeはこの拒否強化前の固定入力の結果である。
+残るconsumerのSource／API／有効なpacket経路は変わらず、その実行記録を再利用するが、
+最終入力で7,226件を再実行したとは主張しない。最終の5 ownerについては別入力として
+再検証し、全体goal・全53同一入力・Tier2・Native／Web capture parityの完了は主張しない。
+
+追加13件を含む71件の原本・派生監査の保存hash差分0。R2427 Clippyのtrailing
+whitespace 3行も保持し、staged whitespace検査の原本除外は上記4件とこの1件の計5件。

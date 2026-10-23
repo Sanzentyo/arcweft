@@ -570,7 +570,7 @@ fn run_runtime_steps_with_executor(
             step_options(mode, max_ops),
         );
         let mut result = result;
-        let program_completions =
+        let mut program_completions =
             std::mem::take(&mut result.output.requests.program_task_completions);
         let (summary, task_requests, host_call_requests, _audio_commands) =
             BundleRunnerStepSummary::from_result(step_index, result);
@@ -589,7 +589,7 @@ fn run_runtime_steps_with_executor(
                     Some(asset_context),
                 )?,
             );
-            task_events.extend(host.complete_program_tasks(&program_completions)?);
+            task_events.extend(host.complete_program_tasks(&mut program_completions)?);
             host_call_results.extend(host.complete_host_calls(
                 executor.program_owner(),
                 logical_epoch(step_index)?,

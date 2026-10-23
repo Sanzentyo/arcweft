@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "run": "task-final-r2424-program-state-core-reverse-runtime",
+  "binaries": 225,
+  "artifactDrift": 0,
+  "recordedAt": "2026-10-23T17:41:00.7288906Z"
+}

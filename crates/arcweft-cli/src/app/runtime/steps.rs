@@ -136,7 +136,7 @@ fn try_run_runtime_steps_with_executor(
             step_options(mode, max_ops),
         );
         let mut result = result;
-        let program_completions =
+        let mut program_completions =
             std::mem::take(&mut result.output.requests.program_task_completions);
         let (summary, task_requests, host_call_requests, step_status) =
             RuntimeStepRunSummary::from_result_and_task_requests(
@@ -162,7 +162,7 @@ fn try_run_runtime_steps_with_executor(
                 task_requests,
                 host_config.bundle_assets.map(|assets| assets.context),
             )?;
-            task_events.extend(host.complete_program_tasks(&program_completions)?);
+            task_events.extend(host.complete_program_tasks(&mut program_completions)?);
             host_call_results = host.complete_host_calls(
                 executor.program_owner(),
                 LogicalEpoch(

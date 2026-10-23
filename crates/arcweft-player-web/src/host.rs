@@ -2,8 +2,8 @@ use arcweft_bundle::{ArcweftBundle, BundleArtifactIdentity, BundleVirtualFileSpa
 use arcweft_bundle_assets::BundleAssetResolver;
 use arcweft_core::entry::RuntimeSchemaLimits;
 use arcweft_core::task::{
-    BoundTaskSpec, CancelScopeId, HostTaskRequest, RuntimeProgramOwner, SystemInfoKind, TaskEvent,
-    TaskEventKind,
+    BoundTaskSpec, CancelScopeId, HostTaskRequest, ProgramTaskPublicationBatch,
+    RuntimeProgramOwner, RuntimeTaskPublication, SystemInfoKind, TaskEvent, TaskEventKind,
 };
 use arcweft_core::value::{
     RuntimeBundleAssetContext, RuntimePayload, RuntimeValue, runtime_sequence_dense_bytes,
@@ -161,40 +161,14 @@ impl BrowserTaskBroker {
     /// Queues actual Core program retirement, never a host marker's success.
     pub fn queue_program_completions(
         &mut self,
-        completions: &[arcweft_core::task::ProgramTaskCompletion],
+        completions: &mut Vec<arcweft_core::task::ProgramTaskCompletion>,
     ) -> Result<usize, BrowserHostTaskError> {
-        let mut owners = BTreeSet::new();
-        let mut events = Vec::with_capacity(completions.len());
-        for completion in completions {
-            let handle = completion.handle();
-            let task_id = handle.correlation.task_id;
-            if !owners.insert(task_id) {
-                return Err(
-                    arcweft_core::task::TaskCompletionError::DuplicateTerminalEvent { task_id }
-                        .into(),
-                );
-            }
-            let (dispatch, outcome) = self
+        let batch = ProgramTaskPublicationBatch::bind(completions, |completion| {
+            let task_id = completion.handle().correlation.task_id;
+            let (dispatch, _) = self
                 .program_dispatches
                 .get(&task_id)
                 .ok_or(arcweft_core::task::TaskCompletionError::UnknownTask { task_id })?;
-            if dispatch.task.handle() != handle
-                || !matches!(&dispatch.task.spec().request,
-                    arcweft_core::task::TaskRequest::Program(source) if source == completion.source())
-            {
-                return Err(
-                    arcweft_core::task::TaskCompletionError::DispatchMismatch { task_id }.into(),
-                );
-            }
-            let kind = match completion.terminal() {
-                arcweft_core::task::ProgramTaskTerminal::Completed => {
-                    TaskEventKind::Ready(outcome.try_payload(RuntimeValue::Unit)?)
-                }
-                arcweft_core::task::ProgramTaskTerminal::Cancelled => TaskEventKind::Cancelled,
-                arcweft_core::task::ProgramTaskTerminal::Failed(failure) => {
-                    TaskEventKind::InfrastructureFailure(failure.clone())
-                }
-            };
             let revision = dispatch
                 .dispatch_start()
                 .next_publication_revision()
@@ -203,16 +177,15 @@ impl BrowserTaskBroker {
                         task_id,
                     },
                 )?;
-            events.push(TaskEvent::from_dispatch(
-                dispatch.identity(),
-                revision,
-                kind,
-            ));
+            Ok((&dispatch.task, dispatch.identity(), revision))
+        })?;
+        // Core already validated and retained the body value in its local task
+        // state. This broker acknowledges the exact original retirement only.
+        for packet in batch.packets() {
+            self.program_dispatches
+                .remove(&packet.event().correlation.task_id);
         }
-        for task_id in owners {
-            self.program_dispatches.remove(&task_id);
-        }
-        self.queued_task_events.extend(events);
+        self.queued_task_events.extend(batch.into_events());
         self.queued_task_events
             .sort_by(arcweft_core::task::compare_task_events);
         Ok(self.queued_task_events.len())
@@ -491,38 +464,40 @@ mod tests {
         assert_eq!(broker.queue_dispatches(vec![dispatch.clone()], &owner), 0);
         assert_eq!(broker.queue_dispatches(vec![dispatch.clone()], &owner), 0);
         assert_eq!(broker.program_dispatches.len(), 1);
+        let mut rejected = vec![foreign_report];
+        let expected = rejected.clone();
         assert!(matches!(
-            broker.queue_program_completions(&[foreign_report]),
+            broker.queue_program_completions(&mut rejected),
             Err(BrowserHostTaskError::TaskCompletion(
                 arcweft_core::task::TaskCompletionError::DispatchMismatch { .. }
             ))
         ));
-        assert!(
-            broker
-                .queue_program_completions(&[report.clone(), report.clone()])
-                .is_err()
-        );
+        assert_eq!(rejected, expected);
+        let mut duplicate = vec![report.clone(), report.clone()];
+        let expected = duplicate.clone();
+        assert!(broker.queue_program_completions(&mut duplicate).is_err());
+        assert_eq!(duplicate, expected);
         assert_eq!(broker.program_dispatches.len(), 1);
         assert_eq!(
             broker.program_dispatches[&report.handle().correlation.task_id].0,
             dispatch
         );
         assert!(broker.queued_task_events.is_empty());
-        assert_eq!(
-            broker
-                .queue_program_completions(std::slice::from_ref(&report))
-                .unwrap(),
-            1
-        );
+        let mut reports = vec![report.clone()];
+        assert_eq!(broker.queue_program_completions(&mut reports).unwrap(), 1);
+        assert!(reports.is_empty());
         let events = broker.drain_queued_task_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].correlation, report.handle().correlation);
         assert_eq!(events[0].cursor.sequence.0, 18);
-        assert!(
-            matches!(&events[0].kind, TaskEventKind::Ready(payload) if payload.value() == &RuntimeValue::Unit)
-        );
+        assert!(matches!(
+            &events[0].kind,
+            TaskEventKind::ProgramTerminal(arcweft_core::task::ProgramTaskTerminal::Completed)
+        ));
         assert!(broker.program_dispatches.is_empty());
-        assert!(broker.queue_program_completions(&[report]).is_err());
+        let mut replay = vec![report];
+        assert!(broker.queue_program_completions(&mut replay).is_err());
+        assert_eq!(replay.len(), 1);
         assert!(broker.queued_task_events.is_empty());
     }
 

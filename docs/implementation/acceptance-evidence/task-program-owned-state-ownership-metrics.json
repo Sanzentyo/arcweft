@@ -1,0 +1,42 @@
+[
+  {
+    "path": "crates/arcweft-core/src/task/producer.rs",
+    "bytes": 173052,
+    "physicalLoc": 4525,
+    "basePhysicalLoc": 4140,
+    "growth": 385,
+    "embeddedTestLoc": 991
+  },
+  {
+    "path": "crates/arcweft-core/src/engine.rs",
+    "bytes": 226265,
+    "physicalLoc": 5624,
+    "basePhysicalLoc": 5542,
+    "growth": 82,
+    "embeddedTestLoc": 819
+  },
+  {
+    "path": "crates/arcweft-core/src/task/execution.rs",
+    "bytes": 19013,
+    "physicalLoc": 540,
+    "basePhysicalLoc": 323,
+    "growth": 217,
+    "embeddedTestLoc": 0
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+    "bytes": 11436,
+    "physicalLoc": 310,
+    "basePhysicalLoc": 0,
+    "growth": 310,
+    "embeddedTestLoc": 0
+  },
+  {
+    "path": "crates/arcweft-runtime-host/src/native_task.rs",
+    "bytes": 152853,
+    "physicalLoc": 3958,
+    "basePhysicalLoc": 3974,
+    "growth": -16,
+    "embeddedTestLoc": 1839
+  }
+]

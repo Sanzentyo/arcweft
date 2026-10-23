@@ -81,6 +81,31 @@ before advancing the scheduler, publication frontiers or completion counters.
 Equal deterministic task coordinates from another executable are insufficient.
 Re-ensuring the same live Web dispatch preserves its pending work and frontier.
 
+The common producer registry owns a Program task's returned value in its
+`Ready` state. Its Program origin retains the accepted launch, with no synthetic
+Host invocation token, restart policy, argument packet or initial publication
+cursor. A native Await reads this local terminal state without requiring a Host
+round trip. `AlwaysStart` transfers the value once into its waiter and retains
+`ReadyTransferred`; an acknowledgement cannot restore a consumed value.
+
+`ProgramTaskCompletion` retains retirement status and the authenticated original
+launch. The private bound publication retains this Source proof until the
+scheduler accepts the matching dispatch. The delivered
+`TaskEventKind::ProgramTerminal` is a status acknowledgement, grants no execution
+authority, and carries no returned Ready payload. Ordinary Host Ready events cannot complete a
+Program task. Core validates the actual returned value before scope cleanup,
+keeps it on its returning frame through joins and rollback, and moves it into
+the registry on retirement. Empty bodies and implicit fallthrough admit Unit
+through the same original result contract; they cannot manufacture success for
+a non-Unit task.
+
+Result ownership and retirement delivery have distinct state. Rollback preserves
+the current delivery phase. Resume queues one metadata replay for an
+unacknowledged terminal task without running the body or copying its result.
+An acknowledged task does not replay. Persistence records the launch origin and
+delivery phase in the existing version-one registry grammar; Program state
+resolves its complete specification through the accepted task journal.
+
 One runtime step can issue a program request and retire its actual body before
 the executor reaches a terminal status. Hosts register the step's issued task
 requests before publishing its program completions, including in that terminal

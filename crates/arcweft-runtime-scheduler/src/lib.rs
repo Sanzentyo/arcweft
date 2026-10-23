@@ -4,10 +4,12 @@
 //! cancellation bookkeeping, and dispatch ordering. Host adapters still own
 //! actual I/O, worker pools, clocks, and OS integration.
 
+#[cfg(test)]
+use arcweft_core::task::task_events_are_normalized;
 use arcweft_core::task::{
-    BoundTaskSpec, CancelScopeId, GenerationId, LogicalEpoch, SchedulerBudget, TaskClass,
-    TaskCompletionError, TaskEnsureError, TaskEvent, TaskEventKind, TaskId, TaskKey, TaskPolicy,
-    TaskPublicationRevision, TaskSequence, compare_task_events, task_events_are_normalized,
+    BoundTaskSpec, CancelScopeId, GenerationId, LogicalEpoch, RuntimeTaskPublication,
+    SchedulerBudget, TaskClass, TaskCompletionError, TaskEnsureError, TaskEvent, TaskEventKind,
+    TaskId, TaskKey, TaskPolicy, TaskPublicationRevision, TaskSequence, compare_task_events,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -251,16 +253,24 @@ impl RuntimeScheduler {
     /// Unknown, duplicate-terminal, and waiter-owned events are rejected before
     /// scheduler state, counters, packet order, or payload custody change. The
     /// caller retains every owned payload on rejection; no value copy is needed.
-    pub fn complete(&mut self, events: &mut [TaskEvent]) -> Result<(), TaskCompletionError> {
+    pub fn complete<P: RuntimeTaskPublication>(
+        &mut self,
+        events: &mut [P],
+    ) -> Result<(), TaskCompletionError> {
         self.preflight_completions(events)?;
         self.stats.completion_events_in += events.len();
         self.normalize_completion_events(events);
 
-        for event in events.iter_mut() {
-            self.admit_ready_event(event);
+        for publication in events.iter_mut() {
+            let spec = self
+                .accepted_specs
+                .get(&publication.event().correlation.task_id)
+                .expect("completion preflight retained every accepted task");
+            publication.admit_outcome(spec.outcome());
         }
 
-        for event in events.iter() {
+        for publication in events.iter() {
+            let event = publication.event();
             self.publication_cursors
                 .insert(event.correlation.task_id.clone(), event.cursor);
             self.complete_one(event);
@@ -329,6 +339,15 @@ impl RuntimeScheduler {
         self.stats.completed_by_class.record(&task.class);
         match event.kind {
             TaskEventKind::Ready(_) => self.stats.completed += 1,
+            TaskEventKind::ProgramTerminal(arcweft_core::task::ProgramTaskTerminal::Completed) => {
+                self.stats.completed += 1
+            }
+            TaskEventKind::ProgramTerminal(arcweft_core::task::ProgramTaskTerminal::Failed(_)) => {
+                self.stats.failed += 1
+            }
+            TaskEventKind::ProgramTerminal(arcweft_core::task::ProgramTaskTerminal::Cancelled) => {
+                self.stats.cancelled += 1
+            }
             TaskEventKind::InfrastructureFailure(_) => {
                 self.stats.failed += 1;
             }
@@ -341,17 +360,21 @@ impl RuntimeScheduler {
             .insert(event.correlation.task_id.clone());
     }
 
-    fn preflight_completions(&self, events: &[TaskEvent]) -> Result<(), TaskCompletionError> {
+    fn preflight_completions<P: RuntimeTaskPublication>(
+        &self,
+        events: &[P],
+    ) -> Result<(), TaskCompletionError> {
         let mut ordered = events.iter().collect::<Vec<_>>();
-        ordered.sort_by(|left, right| compare_task_events(left, right));
+        ordered.sort_by(|left, right| compare_task_events(left.event(), right.event()));
         let mut terminal_in_batch = BTreeSet::new();
         let mut batch_cursors = BTreeMap::new();
 
-        for event in &ordered {
+        for publication in &ordered {
+            let event = publication.event();
             if self.terminal_task_ids.contains(&event.correlation.task_id)
                 || terminal_in_batch.contains(&event.correlation.task_id)
             {
-                return Err(if is_terminal_event(&event.kind) {
+                return Err(if event.kind.is_terminal() {
                     TaskCompletionError::DuplicateTerminalEvent {
                         task_id: event.correlation.task_id.clone(),
                     }
@@ -372,6 +395,7 @@ impl RuntimeScheduler {
                 .accepted_specs
                 .get(&event.correlation.task_id)
                 .expect("in-flight task retains its accepted specification");
+            publication.validate_launch(accepted)?;
             if event.correlation != accepted.handle().correlation {
                 return Err(TaskCompletionError::DispatchMismatch {
                     task_id: event.correlation.task_id,
@@ -395,7 +419,7 @@ impl RuntimeScheduler {
                 });
             }
 
-            if is_terminal_event(&event.kind) {
+            if event.kind.is_terminal() {
                 terminal_in_batch.insert(event.correlation.task_id.clone());
             }
         }
@@ -403,53 +427,30 @@ impl RuntimeScheduler {
         Ok(())
     }
 
-    fn admit_ready_event(&self, event: &mut TaskEvent) {
-        let TaskEventKind::Ready(payload) = &event.kind else {
-            return;
-        };
-        let spec = self
-            .accepted_specs
-            .get(&event.correlation.task_id)
-            .expect("completion preflight retained every accepted task");
-        if let Err(error) = spec.outcome().validate_value(payload.value()) {
-            event.kind =
-                TaskEventKind::InfrastructureFailure(arcweft_core::task::RuntimeTaskFailure::new(
-                    arcweft_core::task::RuntimeTaskFailureKind::AdapterProtocolViolation,
-                    error.to_string(),
-                ));
-        }
-    }
-
     fn refresh_in_flight_stats(&mut self) {
         self.stats.in_flight = self.in_flight.len();
         self.stats.max_in_flight = self.stats.max_in_flight.max(self.in_flight.len());
     }
 
-    fn normalize_completion_events(&mut self, events: &mut [TaskEvent]) {
+    fn normalize_completion_events<P: RuntimeTaskPublication>(&mut self, events: &mut [P]) {
         self.stats.completion_normalization_passes += 1;
         if events.len() <= 1 {
             self.stats.completion_sort_skipped_items += events.len();
             return;
         }
         self.stats.completion_normalization_checks += 1;
-        if task_events_are_normalized(events) {
+        if events
+            .windows(2)
+            .all(|pair| compare_task_events(pair[0].event(), pair[1].event()).is_le())
+        {
             self.stats.completion_sort_skipped_items += events.len();
         } else {
             self.stats.completion_sorts += 1;
             self.stats.completion_sort_items += events.len();
             self.stats.completion_sort_performed_items += events.len();
-            events.sort_by(compare_task_events);
+            events.sort_by(|left, right| compare_task_events(left.event(), right.event()));
         }
     }
-}
-
-fn is_terminal_event(kind: &TaskEventKind) -> bool {
-    matches!(
-        kind,
-        TaskEventKind::Ready(_)
-            | TaskEventKind::InfrastructureFailure(_)
-            | TaskEventKind::Cancelled
-    )
 }
 
 impl Default for RuntimeScheduler {

@@ -1,0 +1,12 @@
+[
+  {
+    "path": "crates/arcweft-core/src/task/publication.rs",
+    "bytes": 2837,
+    "physicalLoc": 78
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+    "bytes": 12345,
+    "physicalLoc": 332
+  }
+]

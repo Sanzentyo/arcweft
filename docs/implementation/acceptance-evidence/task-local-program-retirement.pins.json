@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2413-local-program-retirement-owner-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-b3accfe5c1bc7a42.exe",
+      "bytes": 78818816,
+      "nonTest": false,
+      "sha256": "7c66f9539c0e08ae762d4472e47a94a169645468327f619efdd410d828b0c0e7"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web-065aba1b82602a5c.exe",
+      "bytes": 118924800,
+      "nonTest": false,
+      "sha256": "0166882baa00982dfc2d51cf2c8c354400d66732cf3451a0b13e7f226f774afb"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_driver-64914afd083a10a4.exe",
+      "bytes": 71174144,
+      "nonTest": false,
+      "sha256": "6a0e8436031034efcf1e1c0fe93d58eeed801f11b5adafc7a4eaeb72c421f271"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_host-c586c20a44251414.exe",
+      "bytes": 156571136,
+      "nonTest": false,
+      "sha256": "65e8f2423cc0259b86f0f528f1e9a8ed47981d7ae9600a88b79e5394da99cc1c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_scheduler-b539892813243106.exe",
+      "bytes": 4205568,
+      "nonTest": false,
+      "sha256": "792352ba1b008013e611ab1292b24def2363600ffbaa6bbcaaa1560c3321d642"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-23T16:45:40.3757908Z"
+}

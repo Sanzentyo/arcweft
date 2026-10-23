@@ -32,6 +32,11 @@ impl RuntimeTaskStatus {
     #[must_use]
     pub fn from_event_kind(kind: &TaskEventKind) -> Self {
         match kind {
+            TaskEventKind::ProgramTerminal(status) => match status {
+                arcweft_core::task::ProgramTaskTerminal::Completed => Self::Completed,
+                arcweft_core::task::ProgramTaskTerminal::Failed(_) => Self::Failed,
+                arcweft_core::task::ProgramTaskTerminal::Cancelled => Self::Cancelled,
+            },
             TaskEventKind::Ready(_) => Self::Completed,
             TaskEventKind::InfrastructureFailure(_) => Self::Failed,
             TaskEventKind::Cancelled => Self::Cancelled,

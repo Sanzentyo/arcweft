@@ -138,7 +138,11 @@ impl Engine {
             Arc::clone(function.plan()),
             crate::task::GenerationId::new(0),
         );
-        engine.activate_function_prepared(NativeInvocationRoot::Function(site), site, inputs);
+        engine.activate_function_prepared(
+            FunctionReturnContinuation::Function { site },
+            site,
+            inputs,
+        );
         Ok(engine)
     }
 
@@ -255,12 +259,16 @@ impl Engine {
         site: crate::runtime_id::RuntimeFunctionSiteId,
         inputs: Vec<RuntimeValue>,
     ) {
-        self.activate_function_prepared(NativeInvocationRoot::Program(program), site, inputs);
+        self.activate_function_prepared(
+            FunctionReturnContinuation::Program { program },
+            site,
+            inputs,
+        );
     }
 
     fn activate_function_prepared(
         &mut self,
-        root: NativeInvocationRoot,
+        continuation: FunctionReturnContinuation,
         site: crate::runtime_id::RuntimeFunctionSiteId,
         inputs: Vec<RuntimeValue>,
     ) {
@@ -291,17 +299,7 @@ impl Engine {
             declaration,
             captures,
             parameters,
-            FunctionCallFrame::new(
-                site,
-                match root {
-                    NativeInvocationRoot::Program(program) => {
-                        FunctionReturnContinuation::Program { program }
-                    }
-                    NativeInvocationRoot::Function(site) => {
-                        FunctionReturnContinuation::Function { site }
-                    }
-                },
-            ),
+            FunctionCallFrame::new(site, continuation),
             None,
         )
         .expect("complete borrowed preflight admits the same owned program inputs");

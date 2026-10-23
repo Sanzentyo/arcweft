@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "root": "arcweft-core",
+  "directWorkspaceFanOut": 12,
+  "directWorkspaceFanIn": 35,
+  "workspacePackages": 97,
+  "manifestLockInputs": 99,
+  "manifestLockDrift": 0
+}

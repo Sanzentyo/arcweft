@@ -169,7 +169,7 @@ impl BundleRunnerSession {
             step_options(self.mode, self.max_ops),
         );
         let mut result = result;
-        let program_completions =
+        let mut program_completions =
             std::mem::take(&mut result.output.requests.program_task_completions);
         let (summary, task_requests, host_call_requests, audio_commands) =
             BundleRunnerStepSummary::from_result(index, result);
@@ -194,7 +194,7 @@ impl BundleRunnerSession {
         ));
 
         self.task_events
-            .extend(self.host.complete_program_tasks(&program_completions)?);
+            .extend(self.host.complete_program_tasks(&mut program_completions)?);
 
         self.steps.push(summary.clone());
         self.finished = runtime_finished || self.steps.len() >= self.max_steps;

@@ -146,31 +146,37 @@ fn actual_program_body_retirement_is_required_and_duplicate_batch_is_atomic() {
             assert!(events.is_empty(), "dispatch cannot finish a program body");
             assert_eq!(bridge.stats().completed_tasks, before_terminal_count);
             let before = bridge.stats();
+            let mut rejected = vec![foreign_report.clone()];
             assert!(matches!(
-                bridge.complete_program_tasks(std::slice::from_ref(foreign_report)),
+                bridge.complete_program_tasks(&mut rejected),
                 Err(NativeTaskBridgeError::TaskCompletion(TaskCompletionError::DispatchMismatch { task_id: rejected })) if rejected == task_id
             ));
+            assert_eq!(rejected.as_slice(), std::slice::from_ref(foreign_report));
             assert_eq!(bridge.stats(), before);
         }
-        let reports = result.output.requests.program_task_completions;
+        let mut reports = result.output.requests.program_task_completions;
         if let Some(first) = reports.first() {
             let before = bridge.stats();
             let dispatches = bridge.dispatches.clone();
-            assert!(
-                bridge
-                    .complete_program_tasks(&[first.clone(), first.clone()])
-                    .is_err()
-            );
+            let mut duplicate = vec![first.clone(), first.clone()];
+            let expected = duplicate.clone();
+            assert!(bridge.complete_program_tasks(&mut duplicate).is_err());
+            assert_eq!(duplicate, expected);
             assert_eq!(bridge.stats(), before);
             assert_eq!(bridge.dispatches, dispatches);
-            events.extend(bridge.complete_program_tasks(&reports).unwrap());
-            assert!(events.iter().all(|event| matches!(&event.kind, TaskEventKind::Ready(payload) if payload.value() == &RuntimeValue::Unit)));
+            let archived = reports.clone();
+            events.extend(bridge.complete_program_tasks(&mut reports).unwrap());
+            assert!(reports.is_empty());
+            assert!(events.iter().all(|event| matches!(
+                &event.kind,
+                TaskEventKind::ProgramTerminal(ProgramTaskTerminal::Completed)
+            )));
             assert!(
-                reports
+                archived
                     .iter()
                     .all(|report| matches!(report.terminal(), ProgramTaskTerminal::Completed))
             );
-            terminals.extend(reports);
+            terminals.extend(archived);
         }
         if let FlowFiberStatus::Done(exit) = &runtime.fiber().frame.status {
             assert_eq!(exit, &FlowExit::Return("done".into()));
@@ -183,7 +189,8 @@ fn actual_program_body_retirement_is_required_and_duplicate_batch_is_atomic() {
             assert!(logs.iter().any(|log| log == "worker"));
             assert_eq!(result.stats.child_fibers, 0);
             let before = bridge.stats();
-            assert!(bridge.complete_program_tasks(&terminals).is_err());
+            assert!(bridge.complete_program_tasks(&mut terminals).is_err());
+            assert_eq!(terminals.len(), 2);
             assert_eq!(bridge.stats(), before);
             return;
         }
@@ -202,7 +209,8 @@ fn actual_program_terminals_construct_one_ordered_publication_packet() {
         NativeTaskBridge::try_with_registry(HostCallPolicy::new(), HostAdapterRegistry::new())
             .unwrap();
     assert!(bridge.complete_tasks(owner, tasks).unwrap().is_empty());
-    let events = bridge.complete_program_tasks(&reports).unwrap();
+    let events = bridge.complete_program_tasks(&mut reports).unwrap();
+    assert!(reports.is_empty());
     assert_eq!(events.len(), 2);
     assert!(arcweft_core::task::task_events_are_normalized(&events));
     assert_eq!(bridge.stats().scheduler.completed, 2);

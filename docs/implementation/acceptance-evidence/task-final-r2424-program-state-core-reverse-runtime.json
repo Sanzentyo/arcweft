@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "b337ec4d9bf6a37ca24c6db9e38c58f904dc3a5f",
+  "name": "task-final-r2424-program-state-core-reverse-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-owned-state-final.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "rdeps(=arcweft-core)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2424-program-state-core-reverse-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-23T17:22:35.9064701Z",
+  "finishedAt": "2026-10-23T17:40:48.2749343Z"
+}

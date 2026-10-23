@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "b337ec4d9bf6a37ca24c6db9e38c58f904dc3a5f",
+  "run": "task-final-r2417-program-final-owner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  13.313s] 2158 tests run: 2158 passed, 0 skipped",
+  "executed": 2158,
+  "passed": 2158,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 5,
+  "matchedPackages": 5,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4096,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-23T16:51:15.8552350Z"
+}

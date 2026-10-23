@@ -590,7 +590,7 @@ fn redraw(
         .map_err(|error| WebPlayerError::Session(error.to_string()))?
     {
         let task_events = state.broker.drain_queued_task_events();
-        let step = state.session.step_with_clock(
+        let mut step = state.session.step_with_clock(
             clock,
             BundleStepInput {
                 task_events,
@@ -604,7 +604,7 @@ fn redraw(
             .queue_dispatches(step.requested_tasks.clone(), &program_owner);
         let queued = state
             .broker
-            .queue_program_completions(&step.program_task_completions)
+            .queue_program_completions(&mut step.program_task_completions)
             .map_err(|error| WebPlayerError::Session(error.to_string()))?;
         let report = WebObservationReport::from_step(&step, queued);
         let json = serde_json::to_string(&report)

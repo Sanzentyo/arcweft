@@ -87,13 +87,16 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        if self.return_function_call_value(
-            crate::value::RuntimeValue::String(value.clone()),
+        let Some(value) = self.return_typed_value(
+            crate::value::RuntimeValue::String(value),
             output,
             pure_backend,
-        ) {
+        ) else {
             return;
-        }
+        };
+        let crate::value::RuntimeValue::String(value) = value else {
+            unreachable!("the unhandled flow return retains its original string")
+        };
         self.fiber.frame.pending_ops.clear();
         self.fiber.frame.await_observer = None;
         self.unwind_control_stack(output, pure_backend);
@@ -137,6 +140,17 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        if matches!(&self.fiber.launch, super::FlowFiberLaunch::Program(_))
+            && self.fiber.frame.invocation_result.is_none()
+        {
+            self.complete_program_task_return(
+                crate::value::RuntimeValue::Unit,
+                false,
+                output,
+                pure_backend,
+            );
+            return;
+        }
         self.fiber.frame.pending_ops.clear();
         self.drain_root_cleanups(output, pure_backend);
         output.flow_events.push(FlowEvent::Done);

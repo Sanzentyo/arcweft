@@ -364,7 +364,7 @@ fn advance_player_runtime(
         })?;
         if let Some(host) = runtime.host.as_mut() {
             runtime.task_events.extend(
-                host.complete_program_tasks(&step.program_task_completions)
+                host.complete_program_tasks(&mut step.program_task_completions)
                     .map_err(|error| {
                         eprintln!("error: player-backed program task completion failed: {error}");
                         ExitCode::FAILURE

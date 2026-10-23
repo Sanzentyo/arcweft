@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2411-local-program-result-owner-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-b3accfe5c1bc7a42.exe",
+      "bytes": 78817792,
+      "nonTest": false,
+      "sha256": "5e60a5eb5f74fea38a759189b8b875f08eec15d6ed8b87b6d28db67bd90422c0"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web-065aba1b82602a5c.exe",
+      "bytes": 118924800,
+      "nonTest": false,
+      "sha256": "ef565bed62293302c3508c32c2e2d8dfaec300af03232a598583109c18d335f4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_driver-64914afd083a10a4.exe",
+      "bytes": 71174144,
+      "nonTest": false,
+      "sha256": "f638d9fc50443c8a1829fde6b7cafc3aa78b7960f97492f80bb733a227589430"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_host-c586c20a44251414.exe",
+      "bytes": 156570624,
+      "nonTest": false,
+      "sha256": "620b93142e96a2fcb6104c88ed5565c475bb6ed9b811ee242ded4eeb5672f438"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_scheduler-b539892813243106.exe",
+      "bytes": 4205568,
+      "nonTest": false,
+      "sha256": "3d4b828bfbbd182eb8cae45944f2daee8be88efb0f1837ea9ed23f7b4e344b48"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-23T16:40:40.3767540Z"
+}

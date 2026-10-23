@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "b337ec4d9bf6a37ca24c6db9e38c58f904dc3a5f",
+  "name": "task-final-r2426-program-proof-final-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-proof-final.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "package(=arcweft-core) | package(=arcweft-runtime-host) | package(=arcweft-runtime-scheduler) | package(=arcweft-runtime-driver) | package(=arcweft-player-web)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2426-program-proof-final-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T17:59:59.3067616Z",
+  "finishedAt": "2026-10-23T18:00:13.0049120Z"
+}

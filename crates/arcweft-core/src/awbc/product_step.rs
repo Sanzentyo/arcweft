@@ -1669,7 +1669,7 @@ impl AwbcProductStepExecutor {
         self.need_producers
             .launches()
             .filter(|launch| {
-                launch.restart() == crate::task::HostRestartPolicy::MustBeQuiescent
+                launch.restart() == Some(crate::task::HostRestartPolicy::MustBeQuiescent)
                     && !launch.task_terminal()
                     && !launch.state().is_terminal()
                     && launch.task_fault().is_none()
