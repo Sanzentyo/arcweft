@@ -43,6 +43,16 @@ impl RuntimeStoredValue for RuntimeValue {
     }
 }
 
+impl RuntimeStoredValue for super::RuntimeIterator {
+    fn borrowed_view(&self) -> RuntimeValueView<'_> {
+        RuntimeValueView::Iterator(super::RuntimeIteratorView::Live(self))
+    }
+
+    fn admission_origin() -> ValueAdmissionOrigin {
+        ValueAdmissionOrigin::Live
+    }
+}
+
 impl<V: RuntimeStoredValue + ?Sized> RuntimeStoredValue for &V {
     fn borrowed_view(&self) -> RuntimeValueView<'_> {
         V::borrowed_view(*self)

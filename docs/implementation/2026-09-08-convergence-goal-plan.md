@@ -25425,3 +25425,68 @@ the introduced collapsible_if diagnostic is removed. Existing Core warnings
 remain visible. Its process is terminal, and there are no retained validation
 jobs or runtime pins. This final repair cut includes the caller-position unwind,
 its strengthened Native/AOT regression, maintained wording and actual evidence.
+
+### 2026-10-23 Native pending-work storage switch in progress
+
+Inspected main `1be0eb4d09a958b099225a1c7fbbd506afe39d26`, the normally pushed
+root-position retirement repair. Its parent is
+`7b55dcc5f4f5a3f0dbe4f73ac1341eeebb380498`, tree
+`4eca7d4a5a5ef2f3090df206f3621cd45b296ef9`, raw patch SHA256
+`2315553307ef030138e442c37bed3223c0db7651421289d1ccc2cad9e090373e`.
+Publication verified all six blobs, 3,977 inputs, exact original 14-path held
+patch and empty index with zero drift. The root-position results above belong
+to that completed repair, not to the following unfinished queue switch.
+
+The new NativePendingWork algebra contains original source ranges or closed
+runtime continuations. Range roles preserve function-root versus queued-task/
+nested-body logical counts. Borrowed inspection includes genuine expression
+roots and owning function-body completion, without a synthetic FlowOp. Runtime
+Bind owns its values; ForNext owns its iterator and original For site. Loop,
+formatter and LetScope continuations retain their defining source operation,
+not cloned bodies/patterns/expressions. Source-operation references share the
+existing body-path Arc; child paths use the common original-body grammar and
+bound metadata before copying it. No per-operation Arc wrapper or body search
+is introduced. Stored-work admission bounds the physical and summed logical
+queue before projection and validates every value in the shared bank. Only
+inert work has Clone; projection and restoration use the existing owned value
+and iterator storage boundaries. Iterator inspection now uses the existing
+RuntimeStoredValue/RuntimeIteratorView provenance instead of a temporary value.
+
+Local declaration/type/context resolution now belongs to RuntimePlanInventory
+and is used by both environment slots and queued bindings, preserving the
+existing four failure conditions and messages. The work module is a cohesive
+storage/inspection/admission/projection owner (547 physical LOC, 22,329 bytes at
+the first measurement); the code-coordinate owner is 266 LOC, 10,000 bytes.
+There is no Cargo, feature, dependency-direction, I/O or version-marker change.
+R2360 Core library all-feature locked check passed (Cargo 40.79s) for the model
+and shared local-context preparation, before the following storage-type switch.
+
+Current migration replaces the frame/caller/formatter queue item defaults and
+rollback images with NativePendingWork. The old FlowOpRollbackImage enum,
+Static AST copy, and unevaluated formatter expression fallback are deleted.
+Frame/current/caller/formatter admission now visits the complete typed queue
+before any projection. Producer/dispatcher/control/observer migration is still
+unfinished: old FlowOp producers, root cursor/resume fields, loop control body
+copies and raw test observations remain to convert. No compilation or runtime
+validation has run after this storage switch; R2360 is not evidence for that
+later source. This is an in-progress checkpoint under the user's explicit
+permission to commit intermediate state without proving each commit operational.
+It is not accepted or complete executable behavior.
+
+Next, dispatch original ranges and runtime resumes separately, passing the
+actual NativeSourceOperation from the selected original position. Queued source
+ranges preserve the former consume-before-dispatch behavior; function-root
+advance/failure and original real completion/scope/bind/next charges remain.
+Normalize empty queued ranges without adding a poll charge. Move every root
+position into the same queue and delete the separate frame/resume cursor fields
+at the complete switch. Replace raw storage-length progress/stat/quota uses
+with logical work counts, preserving numeric span/fusion/batch barriers and
+all source/capture conditions. Do not skip runtime resumes when selecting an
+optimization prefix. Migrate Match guard arm ordinals, Await observer ordinals,
+formatter sites, line command roles and Thread body coordinates from their real
+original owner; retain the existing authenticated function context. Remove all
+nine runtime-only FlowOp variants and every obsolete reader/consumer. The five
+CLI and one RuntimePlan raw pending observers need the honest source/resume
+view. Complete all producer/consumer and original budget/restore/public-API
+checks against the actual 53-package graph; all wider goal requirements remain
+active. No validation job or executable pin is live at this entry.

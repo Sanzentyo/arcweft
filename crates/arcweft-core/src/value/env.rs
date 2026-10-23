@@ -306,37 +306,13 @@ impl<V> RuntimeEnv<V> {
                         slot.local()
                     )));
                 }
-                let declaration = plan.local_declarations().get(slot.local()).ok_or_else(|| {
-                    invalid(format!("rollback has unknown local {}", slot.local()))
-                })?;
-                if let Some(context) = declaration.context() {
-                    let expected = plan
-                        .type_table()
-                        .get(context)
-                        .ok_or_else(|| {
-                            invalid(format!(
-                                "rollback local {} has unknown context",
-                                slot.local()
-                            ))
-                        })?
-                        .semantic_identity();
-                    if instantiation.is_none_or(|binding| binding.context() != expected) {
-                        return Err(invalid(format!(
-                            "rollback local {} has a foreign function context",
-                            slot.local()
-                        )));
-                    }
-                }
-                plan.type_table().get(declaration.ty()).ok_or_else(|| {
-                    invalid(format!("rollback local {} has unknown type", slot.local()))
-                })?;
+                let ty = plan
+                    .local_type_in_context(slot.local(), instantiation)
+                    .map_err(|error| invalid(error.to_string()))?;
                 slot.storage()
                     .validate_program_type(
                         crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
-                        crate::program_types::RuntimeProgramValueType::Plan {
-                            program: plan,
-                            ty: declaration.ty(),
-                        },
+                        crate::program_types::RuntimeProgramValueType::Plan { program: plan, ty },
                         instantiation,
                         resources,
                         &view,

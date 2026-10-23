@@ -1,10 +1,11 @@
 //! Borrowed admission of native execution ownership before rollback projection.
 
+use super::NativePendingWork;
+use super::work::{NativePendingWorkKind, NativeRuntimeContinuation, NativeStoredWork};
 use super::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberOwner, FlowFiberStatus,
-    FlowOp, FlowOpRollbackImage, FunctionCallFrame, FunctionReturnContinuation, NativeCodeCursor,
-    NativeEngineRollbackImage, NativeFlowExecutionFrame, NativeFormatAttemptFrame,
-    NativeInvocationRoot, eval,
+    FunctionCallFrame, FunctionReturnContinuation, NativeCodeCursor, NativeEngineRollbackImage,
+    NativeFlowExecutionFrame, NativeFormatAttemptFrame, NativeInvocationRoot, eval,
 };
 use crate::runtime_id::DialogueActivationId;
 use crate::task::TaskPublicationCursor;
@@ -194,6 +195,7 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
         V: crate::value::RuntimeStoredValue,
+        O: NativeStoredWork,
     {
         let invalid = |message: &str| crate::value::AwbcRuntimeValueSnapshotError::Message {
             message: message.into(),
@@ -224,7 +226,6 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
         }
         if let Some(active) = &self.active {
             admission.validate_metadata(&active.ordinal)?;
-            admission.validate_metadata_collection(active.caller_pending_ops.len())?;
             if active.ordinal != self.next_operand || active.ordinal >= self.values.len() {
                 return Err(invalid(
                     "native formatter active operand differs from its source-order frontier",
@@ -233,6 +234,7 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
             if let Some(cursor) = &active.resume {
                 cursor.admit_retained(admission)?;
             }
+            O::admit_queue(&active.caller_pending_ops, admission, binding)?;
         }
         for (index, (value, operand)) in self.values.iter().zip(manifest.operands()).enumerate() {
             if (index >= self.next_operand && value.is_some())
@@ -396,6 +398,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
     where
         V: crate::value::RuntimeStoredValue,
         P: crate::value::RuntimeStoredValue,
+        O: NativeStoredWork,
         C: ScopeControl<O>,
         A: SuspendedValues,
         S: SuspendedValues,
@@ -440,6 +443,11 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         self.status
             .admit_suspended_values(admission, self.env.function_instantiation())?;
         self.env.admit_retained(admission)?;
+        O::admit_queue(
+            &self.pending_ops,
+            admission,
+            self.env.function_instantiation(),
+        )?;
         self.admit_function_contexts(admission)?;
         if let Err(message) =
             self.observations
@@ -467,6 +475,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
+        O: NativeStoredWork,
         C: ScopeControl<O>,
     {
         let invalid = || crate::value::AwbcRuntimeValueSnapshotError::Message {
@@ -524,25 +533,16 @@ pub(super) trait ScopeOperation {
     fn scope_boundary(&self) -> Option<ScopeBoundary<'_>>;
 }
 
-impl ScopeOperation for FlowOp {
+impl<V, I> ScopeOperation for NativePendingWork<V, I> {
     fn scope_boundary(&self) -> Option<ScopeBoundary<'_>> {
-        match self {
-            Self::EnterScheduledScope { identity, token } => {
-                Some(ScopeBoundary::Open(identity, *token))
-            }
-            Self::ExitScheduledScope { token } => Some(ScopeBoundary::Close(*token)),
-            _ => None,
-        }
-    }
-}
-
-impl ScopeOperation for FlowOpRollbackImage {
-    fn scope_boundary(&self) -> Option<ScopeBoundary<'_>> {
-        match self {
-            Self::EnterScheduledScope { identity, token } => {
-                Some(ScopeBoundary::Open(identity, *token))
-            }
-            Self::ExitScheduledScope { token } => Some(ScopeBoundary::Close(*token)),
+        match &self.kind {
+            NativePendingWorkKind::Resume(NativeRuntimeContinuation::EnterScheduledScope {
+                identity,
+                token,
+            }) => Some(ScopeBoundary::Open(identity, *token)),
+            NativePendingWorkKind::Resume(NativeRuntimeContinuation::ExitScheduledScope {
+                token,
+            }) => Some(ScopeBoundary::Close(*token)),
             _ => None,
         }
     }
@@ -583,6 +583,7 @@ impl<O, P, V> ScopeControl<O>
 where
     V: crate::value::RuntimeStoredValue,
     P: PendingStorage,
+    O: NativeStoredWork,
 {
     fn admit_control_values(
         &self,
@@ -596,6 +597,7 @@ where
                 if let Some(cursor) = &frame.resume {
                     cursor.admit_retained(admission)?;
                 }
+                O::admit_queue(&frame.caller_pending_ops, admission, binding)?;
                 frame
                     .continuation
                     .admit_header_and_packet(frame.site, admission)
@@ -645,7 +647,7 @@ where
     }
 }
 
-impl ScopeControl<FlowOp> for FlowControlStackEntry {
+impl ScopeControl<NativePendingWork> for FlowControlStackEntry {
     fn admit_control_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -660,7 +662,7 @@ impl ScopeControl<FlowOp> for FlowControlStackEntry {
 
     fn visit_scope_state(
         &self,
-        visit: impl FnMut(ScopeState<'_, FlowOp>) -> Result<(), String>,
+        visit: impl FnMut(ScopeState<'_, NativePendingWork>) -> Result<(), String>,
     ) -> Result<(), String> {
         self.kind.visit_scope_state(visit)
     }

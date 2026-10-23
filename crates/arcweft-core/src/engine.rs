@@ -63,6 +63,9 @@ pub mod program;
 pub mod stream;
 pub mod suspend;
 mod thread;
+mod work;
+use work::NativePendingWorkRollbackImage;
+pub use work::{NativePendingWork, NativePendingWorkView, NativeRuntimeContinuationKind};
 
 /// Ephemeral charge for the currently dispatched native operation. The driver
 /// reserves that dispatch first; physical bodies may consume only its actual
@@ -272,7 +275,7 @@ fn validate_child_task_launches<F>(
 pub struct NativeFlowExecutionFrame<
     V = RuntimeValue,
     P = RuntimePayload,
-    O = FlowOp,
+    O = NativePendingWork,
     C = FlowControlStackEntry,
     A = AwaitState,
     S = FlowFiberStatus,
@@ -312,7 +315,7 @@ impl Clone for FlowFiberRollbackImage {
 type NativeFlowExecutionFrameRollbackImage = NativeFlowExecutionFrame<
     crate::value::AwbcRuntimeValueSnapshot,
     crate::value::AwbcRuntimeValueSnapshot,
-    FlowOpRollbackImage,
+    NativePendingWorkRollbackImage,
     FlowControlStackEntryRollbackImage,
     AwaitStateRollbackImage,
     FlowFiberStatusRollbackImage,
@@ -437,7 +440,7 @@ impl NativeFlowExecutionFrame {
             pending_ops: self
                 .pending_ops
                 .iter()
-                .map(|op| FlowOpRollbackImage::from_live(op, owner))
+                .map(|op| NativePendingWorkRollbackImage::from_admitted_live(op, owner))
                 .collect::<Result<_, String>>()?,
             control_stack: self
                 .control_stack
@@ -502,7 +505,7 @@ impl NativeFlowExecutionFrame {
             pending_ops: image
                 .pending_ops
                 .into_iter()
-                .map(|op| op.into_live(owner))
+                .map(|op| op.into_admitted_live(owner))
                 .collect::<Result<_, String>>()?,
             control_stack: image
                 .control_stack
@@ -532,169 +535,6 @@ impl NativeFlowExecutionFrame {
                 })
                 .transpose()?,
             status: FlowFiberStatus::from_image_with_admitted_values(image.status, owner)?,
-        })
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum FlowOpRollbackImage {
-    EnterScheduledScope {
-        identity: crate::scope::RuntimeScopeIdentity,
-        token: crate::scope::RuntimeScheduledScopeToken,
-    },
-    ExitScheduledScope {
-        token: crate::scope::RuntimeScheduledScopeToken,
-    },
-    Bind(
-        Vec<(
-            crate::runtime_id::RuntimeLocalDeclarationId,
-            crate::value::AwbcRuntimeValueSnapshot,
-        )>,
-    ),
-    ForNext {
-        pattern: RuntimePattern,
-        iterator: crate::value::AwbcRuntimeValueSnapshot,
-        evidence: crate::plan::RuntimeIteratorEvidence,
-        body: Arc<[FlowOp]>,
-    },
-    CompleteFormatOperand {
-        attempt: RuntimeFormatAttemptId,
-        parameter: crate::value::RuntimeFmtParameterId,
-        ty: RuntimePlanTypeId,
-        value: crate::value::AwbcRuntimeValueSnapshot,
-    },
-    UnevaluatedFormatOperand {
-        attempt: RuntimeFormatAttemptId,
-        parameter: crate::value::RuntimeFmtParameterId,
-        value: RuntimeExpr,
-    },
-    /// Authored operations are immutable plan rows. Plan admission proves
-    /// every embedded literal recursively unrestricted before an operation
-    /// can be copied into a native fiber's pending queue.
-    Static(FlowOp),
-}
-
-impl FlowOpRollbackImage {
-    fn from_live(op: &FlowOp, owner: &crate::task::RuntimeProgramOwner) -> Result<Self, String> {
-        let image = |value: &RuntimeValue| {
-            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-                .map_err(|error| error.to_string())
-        };
-        Ok(match op {
-            FlowOp::EnterScheduledScope { identity, token } => Self::EnterScheduledScope {
-                identity: identity.clone(),
-                token: *token,
-            },
-            FlowOp::ExitScheduledScope { token } => Self::ExitScheduledScope { token: *token },
-            FlowOp::Bind(bindings) => Self::Bind(
-                bindings
-                    .iter()
-                    .map(|binding| Ok((binding.local, image(&binding.value)?)))
-                    .collect::<Result<_, String>>()?,
-            ),
-            FlowOp::ForNext {
-                pattern,
-                iterator,
-                evidence,
-                body,
-            } => Self::ForNext {
-                pattern: pattern.clone(),
-                iterator:
-                    crate::value::AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(
-                        iterator, owner,
-                    )
-                    .map_err(|error| error.to_string())?,
-                evidence: evidence.clone(),
-                body: Arc::clone(body),
-            },
-            FlowOp::CompleteFormatOperand {
-                attempt,
-                parameter,
-                value,
-            } => {
-                if let crate::value::RuntimeExprKind::Value(value_literal) = value.kind() {
-                    Self::CompleteFormatOperand {
-                        attempt: *attempt,
-                        parameter: *parameter,
-                        ty: value.ty(),
-                        value: image(value_literal)?,
-                    }
-                } else if value.literals_permit_copy() {
-                    Self::UnevaluatedFormatOperand {
-                        attempt: *attempt,
-                        parameter: *parameter,
-                        value: value.clone(),
-                    }
-                } else {
-                    return Err(
-                        "unevaluated formatter completion contains an affine literal".to_owned(),
-                    );
-                }
-            }
-            _ if op.literals_permit_copy() => Self::Static(op.clone()),
-            _ => return Err("static flow operation contains an affine literal".to_owned()),
-        })
-    }
-
-    fn into_live(self, owner: &crate::task::RuntimeProgramOwner) -> Result<FlowOp, String> {
-        Ok(match self {
-            Self::EnterScheduledScope { identity, token } => {
-                FlowOp::EnterScheduledScope { identity, token }
-            }
-            Self::ExitScheduledScope { token } => FlowOp::ExitScheduledScope { token },
-            Self::Bind(bindings) => FlowOp::Bind(
-                bindings
-                    .into_iter()
-                    .map(|(local, saved)| {
-                        Ok(RuntimeLocalBinding {
-                            local,
-                            value: saved
-                                .into_runtime_value_for_program(owner)
-                                .map_err(|error| error.to_string())?,
-                        })
-                    })
-                    .collect::<Result<_, String>>()?,
-            ),
-            Self::ForNext {
-                pattern,
-                iterator,
-                evidence,
-                body,
-            } => FlowOp::ForNext {
-                pattern,
-                iterator: iterator
-                    .into_runtime_iterator_for_program(owner)
-                    .map_err(|error| error.to_string())?,
-                evidence,
-                body,
-            },
-            Self::CompleteFormatOperand {
-                attempt,
-                parameter,
-                ty,
-                value,
-            } => FlowOp::CompleteFormatOperand {
-                attempt,
-                parameter,
-                value: RuntimeExpr::from_admitted_parts(
-                    ty,
-                    crate::value::RuntimeExprKind::Value(
-                        value
-                            .into_runtime_value_for_program(owner)
-                            .map_err(|error| error.to_string())?,
-                    ),
-                ),
-            },
-            Self::UnevaluatedFormatOperand {
-                attempt,
-                parameter,
-                value,
-            } => FlowOp::CompleteFormatOperand {
-                attempt,
-                parameter,
-                value,
-            },
-            Self::Static(op) => op,
         })
     }
 }
@@ -894,7 +734,7 @@ pub(crate) enum FlowControlStackEntryKind<
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct NativeFormatAttemptFrame<V = RuntimeValue, O = FlowOp> {
+pub(crate) struct NativeFormatAttemptFrame<V = RuntimeValue, O = NativePendingWork> {
     pub(crate) attempt: RuntimeFormatAttemptId,
     pub(crate) context: crate::value::RuntimeFormatContext,
     pub(crate) values: Vec<Option<V>>,
@@ -903,10 +743,12 @@ pub(crate) struct NativeFormatAttemptFrame<V = RuntimeValue, O = FlowOp> {
     pub(crate) active: Option<NativeFormatOperandFrame<O>>,
 }
 
-type NativeFormatAttemptRollbackImage =
-    NativeFormatAttemptFrame<crate::value::AwbcRuntimeValueSnapshot, FlowOpRollbackImage>;
+type NativeFormatAttemptRollbackImage = NativeFormatAttemptFrame<
+    crate::value::AwbcRuntimeValueSnapshot,
+    NativePendingWorkRollbackImage,
+>;
 
-type NativeFormatOperandRollbackImage = NativeFormatOperandFrame<FlowOpRollbackImage>;
+type NativeFormatOperandRollbackImage = NativeFormatOperandFrame<NativePendingWorkRollbackImage>;
 
 impl Clone for NativeFormatAttemptRollbackImage {
     fn clone(&self) -> Self {
@@ -967,7 +809,9 @@ impl NativeFormatAttemptFrame {
                             caller_pending_ops: active
                                 .caller_pending_ops
                                 .iter()
-                                .map(|op| FlowOpRollbackImage::from_live(op, owner))
+                                .map(|op| {
+                                    NativePendingWorkRollbackImage::from_admitted_live(op, owner)
+                                })
                                 .collect::<Result<_, String>>()?,
                         })
                     },
@@ -1007,7 +851,7 @@ impl NativeFormatAttemptFrame {
                         caller_pending_ops: active
                             .caller_pending_ops
                             .into_iter()
-                            .map(|op| op.into_live(owner))
+                            .map(|op| op.into_admitted_live(owner))
                             .collect::<Result<_, String>>()?,
                     })
                 })
@@ -1017,7 +861,7 @@ impl NativeFormatAttemptFrame {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct NativeFormatOperandFrame<O = FlowOp> {
+pub(crate) struct NativeFormatOperandFrame<O = NativePendingWork> {
     pub(crate) ordinal: usize,
     pub(crate) resume: Option<NativeCodeCursor>,
     pub(crate) caller_pending_ops: VecDeque<O>,
@@ -1025,7 +869,10 @@ pub(crate) struct NativeFormatOperandFrame<O = FlowOp> {
 
 /// One invocation frame shared by direct and value-based function calls.
 #[derive(Debug, PartialEq)]
-pub(crate) struct FunctionCallFrame<O = FlowOp, P = crate::value::RuntimeCallablePendingGroup> {
+pub(crate) struct FunctionCallFrame<
+    O = NativePendingWork,
+    P = crate::value::RuntimeCallablePendingGroup,
+> {
     site: crate::runtime_id::RuntimeFunctionSiteId,
     type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     function_scope: bool,
@@ -1035,7 +882,7 @@ pub(crate) struct FunctionCallFrame<O = FlowOp, P = crate::value::RuntimeCallabl
 }
 
 type FunctionCallFrameRollbackImage =
-    FunctionCallFrame<FlowOpRollbackImage, crate::value::RuntimeCallablePendingSnapshot>;
+    FunctionCallFrame<NativePendingWorkRollbackImage, crate::value::RuntimeCallablePendingSnapshot>;
 
 impl Clone for FunctionCallFrameRollbackImage {
     fn clone(&self) -> Self {
@@ -1073,7 +920,7 @@ impl FlowControlStackEntry {
                     caller_pending_ops: frame
                         .caller_pending_ops
                         .iter()
-                        .map(|op| FlowOpRollbackImage::from_live(op, owner))
+                        .map(|op| NativePendingWorkRollbackImage::from_admitted_live(op, owner))
                         .collect::<Result<_, String>>()?,
                     continuation: frame.continuation.snapshot_with_admitted_packet(owner)?,
                 })
@@ -1163,7 +1010,7 @@ impl FlowControlStackEntry {
                 resume,
                 caller_pending_ops: caller_pending_ops
                     .into_iter()
-                    .map(|op| op.into_live(owner))
+                    .map(|op| op.into_admitted_live(owner))
                     .collect::<Result<_, String>>()?,
                 continuation: FunctionReturnContinuation::from_image_with_admitted_packet(
                     continuation,
@@ -5282,11 +5129,12 @@ mod rollback_tests {
             "need.rollback",
         )));
         assert_eq!(
-            FlowOpRollbackImage::from_live(&affine, &owner).unwrap_err(),
+            NativePendingWorkRollbackImage::from_admitted_live(&affine, &owner).unwrap_err(),
             "static flow operation contains an affine literal"
         );
         let unrestricted = make_op(RuntimeValue::Bool(false));
-        let image = FlowOpRollbackImage::from_live(&unrestricted, &owner).unwrap();
+        let image =
+            NativePendingWorkRollbackImage::from_admitted_live(&unrestricted, &owner).unwrap();
         assert_eq!(image.into_live(&owner).unwrap(), unrestricted);
     }
 

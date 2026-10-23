@@ -58,6 +58,26 @@ pub struct RuntimePlanInventory {
     pub(crate) stream_plans: Vec<StreamPlan>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub(crate) enum RuntimeLocalTypeContextError {
+    #[error("rollback has unknown local {local}")]
+    UnknownLocal {
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    },
+    #[error("rollback local {local} has unknown context")]
+    UnknownContext {
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    },
+    #[error("rollback local {local} has a foreign function context")]
+    ForeignContext {
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    },
+    #[error("rollback local {local} has unknown type")]
+    UnknownType {
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    },
+}
+
 impl RuntimePlanInventory {
     #[must_use]
     pub const fn control_effect_contracts(&self) -> &RuntimeControlEffectContractTable {
@@ -87,6 +107,33 @@ impl RuntimePlanInventory {
     #[must_use]
     pub const fn local_declarations(&self) -> &RuntimeLocalDeclarationTable {
         &self.local_declarations
+    }
+
+    /// Scope slots and queued bindings use the same original declaration and
+    /// invocation context. Values cannot infer or substitute their local type.
+    pub(crate) fn local_type_in_context(
+        &self,
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+        instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<RuntimePlanTypeId, RuntimeLocalTypeContextError> {
+        let declaration = self
+            .local_declarations
+            .get(local)
+            .ok_or(RuntimeLocalTypeContextError::UnknownLocal { local })?;
+        if let Some(context) = declaration.context() {
+            let expected = self
+                .type_table
+                .get(context)
+                .ok_or(RuntimeLocalTypeContextError::UnknownContext { local })?
+                .semantic_identity();
+            if instantiation.is_none_or(|binding| binding.context() != expected) {
+                return Err(RuntimeLocalTypeContextError::ForeignContext { local });
+            }
+        }
+        self.type_table
+            .get(declaration.ty())
+            .ok_or(RuntimeLocalTypeContextError::UnknownType { local })?;
+        Ok(declaration.ty())
     }
 
     #[must_use]
