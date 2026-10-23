@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "2e36d1c09d4b893cd92fce304c90eb0b2ef8bd1f",
+  "name": "task-final-r2405-owned-program-result-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2405-owned-program-result-core-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T14:47:57.0436448Z",
+  "finishedAt": "2026-10-23T14:48:50.0159692Z"
+}

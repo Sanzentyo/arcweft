@@ -68,3 +68,40 @@ pinned HEAD と Git の削除2,316件へ照合した。余分・不足・対象�
 保存した検証原本84件の hash drift は0。親が追加で原資料の40桁識別子を照合して
 欠けた識別子を補った。以後の追加削除は、解決済みの絶対パスと事前の per-file
 一覧を確認して行った。この経緯を、新しい操作の承認や拒否を迂回する前例にしない。
+
+## 残存資料の整理と検証入力の訂正 — 2026-10-24
+
+既存 `main` の公開基点 `2e36d1c09d4b893cd92fce304c90eb0b2ef8bd1f` で、
+GPT-6 Luna／max の3担当が現状の根拠、overview、残存レビュー資料を分担した。
+親が差分を照合し、現状一覧と証拠の保全・公開を担当した。
+
+- `00-overview/decisions.md` の Phase 1 計画や重複した構文説明を、現行仕様の
+  所有章への索引へ置換した。旧「out destructuring」は現行 grammar の
+  `out LabelRef? Expr` と整合しないため削除し、新しい構文要件を追加していない。
+  `naming.md` の重複 ID 規則も所有章へ集約し、`architecture.md` の
+  LayerTree 説明を統合した。これらから検証結果や full SHA は削除していない。
+- 残存する2026-06-28 exact-native-golden レビュー package は29件から23件へ整理。
+  request、実装計画、二つの README、重複した dated note、未実行の後続収集 script
+  の6件を削除した。DEFER 判断、レビュー、検証報告、source inventory、実行／未実行
+  記録、drift JSON、環境、fixture snapshot は保持した。保持23件はすべて公開基点の
+  Git blob と一致。削除した本文中の40桁識別子
+  `b0b45b44b2dd34573d991839d950b58091c314b4` も保持ファイル内に残る。
+  後続の Windows promotion 成功は既存履歴にあり、古い DEFER は現在の blocker ではない。
+- 元 package の `SHA256SUMS.txt` は原本 manifest のため、削除した計画の名前も保持する。
+  inventory／connector log 中の旧 request path も当時の記録であり、現行リンクではない。
+- 旧 CLI 分類 JSON は `acceptance-evidence/2026-10-09-cli-failure-classification.json`
+  へ移し、旧基点 `df6b213f1cb31d7db5ce878501e4a24371c6987c` と全結果を byte 不変で保持。
+  SHA256 は `6029b8a1fc054673c5a033f78595da1c87ebd8afcfed32498bf9395e826811b1`。
+  `current47953` は当時の checkpoint 名であり、現在の CLI 失敗件数ではない。
+  元から untracked の二つの CLI 修復メモは変更・commit せず、現状一覧で歴史的 handoff
+  と位置付けた。新しい未完了一覧を別文書に作らない。
+- 現状一覧の「現 HEAD」の検証済みという表現を訂正した。公開 cut の R2399／R2400
+  合格と、その後の R2405／R2406 のコンパイル失敗、さらに変更された未検証入力を区別する。
+  これは証拠の適用範囲の訂正であり、Generic Match 等の受入を取り消す判断ではない。
+  実際の失敗 receipt／log 4件は元ファイルと SHA256 一致で履歴へ保存した。
+
+この整理は資料・リンク・差分・原本の照合であり、Cargo／runtime の新規実行はない。
+既存の R2406 session の終了を確認し、その失敗を保持した。Rust・fixture・sample と
+その他の非文書 dirty 41件は、整理開始時から path／SHA256 の差分0を確認した。
+変更 Markdown 7件（大きな履歴は追加行のみ）の相対リンク67件が解決し、未閉鎖 fence は0。
+追加／移動 JSON 3件の parse と、CRLF を改行として扱う差分の whitespace check も通過した。

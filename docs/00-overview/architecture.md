@@ -91,14 +91,13 @@ pub trait Activity {
 
 Snapshot は pure data。serialize、compress、encrypt、file write は host / packaging adapter の責務であり、Activity や core が path を開かない。
 
-### Layer は描画と入力の共通境界
+### LayerTree は描画と入力を統合する
 
-描画 system は `LayerTree` を持ち、world、character、effect、Activity、native View、HTML View、modal、debug overlay を明示的な layer として扱う。入力も同じ layer stack で上位から hit-test し、`Consumed` / `PassThrough` / `Blocked` を返す。詳細は [Layer System](../03-presentation/layers.md)。
-
-
-### LayerTree は描画と入力の共通単位
-
-`RenderSpec` は `LayerTree` を持ち、背景、立ち絵、dialogue、choice、native View、HTML View、modal、debug overlay、Activity を同じ tree 上で扱う。入力は derived input order の上位 layer から routing され、modal、focus、pointer capture、semantic action、Agent hit-test は layer state として管理する。詳細は [Render / Input Layer System](../03-presentation/render-input-layers.md)。
+`RenderSpec` は world、character、dialogue、View、modal、Activity、debug
+overlay を共通の `LayerTree` に載せる。描画と入力は同じ layer state を使い、
+routing、hit-test、focus、pointer capture、semantic action を扱う。詳細は
+[Layer System](../03-presentation/layers.md) と
+[Render / Input Layer System](../03-presentation/render-input-layers.md)。
 
 ### View は二系統
 

@@ -1,16 +1,24 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-23。直近の検証入力は既存 `main` の
-`3c12ee45a418f909ae0916cb65f77178a1681377` と scheduler 完了受付の2 Rust paths／runtime 仕様1件。
-調査開始時の14件の tracked WIP と既存の untracked 修復メモ等は保持し、
-検証入力にも保持 WIP を含む。過去の資料監査・公開履歴と固定入力ごとの
-実行結果は検証履歴を参照する。
+確認日: 2026-10-24。確認した既存 `main` の公開 HEAD は
+`2e36d1c09d4b893cd92fce304c90eb0b2ef8bd1f`。
+作業ツリーには、その公開後の Core Program task 結果保管／完了通知の移行と、
+従来から保持する Rust・fixture・sample の変更、untracked 修復メモ等がある。
+以下の合格実績は記載した固定入力に対する結果であり、現在の未コミット入力の合格ではない。
+
+後続移行の R2405／R2406 Core library check は、いずれも **exit 101**。
+R2406 は snapshot の旧フィールド参照や `ProgramTerminal` の未移行 match 等の
+19 errors を報告した。開始後にもソース変更があり、現在の作業ツリーに対する
+最終 check／runtime は未実行。[失敗原本と適用範囲](convergence-evidence-history.md#program-task-結果保管移行の途中検査--2026-10-24)を保持する。
 
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
 [仕様索引](../README.md)、過去の実行結果・公開 SHA は
 [収束検証履歴](convergence-evidence-history.md) と
 [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画・当時の失敗を、この一覧より優先しない。
+保持した untracked の2026-10-09 CLI 修復メモも当時の handoff であり、
+現在の失敗件数・残作業の一覧ではない。元の分類 JSON は
+[検証履歴の原本](acceptance-evidence/2026-10-09-cli-failure-classification.json)へ移した。
 
 ## 判定の扱いと訂正
 
@@ -44,15 +52,7 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **Scheduler／Host の逆依存実行に CLI 51件の失敗あり** | R2404 は reverse6 の **1,080実行、1,029 PASS／51 FAIL／23既存除外**、実際の exit 100。51件は全て CLI で、R2384 の CLI 51件と binary／test の識別子が一致する。画像9件の Background callable の typed Presentation command ABI 未接続と、published JLREQ 8件の具体的な描画不一致を再確認した。他の構文／readiness・counter・solver 等の失敗も原本に保持し、全原因が不変とは一括推定しない。[terminal audit](acceptance-evidence/task-final-r2404-scheduler-completion-reverse-runtime.terminal-audit.json)、[診断索引](acceptance-evidence/task-final-r2404-scheduler-completion-reverse-runtime.failure-recon.json)。以前の Core reverse53 の結果をこの6 package の実行で置き換えず、別途の Compiler／Thread 未達も上記に分ける。 |
-| 現 HEAD の最終 workspace／Tier 2／Native-Web capture parity | **workspace check・Clippy と完了受付の必須ケースを検証済み・全 runtime は未受入** | R2399／R2400 は workspace all-target／all-feature／locked check・Clippy が exit 0（警告あり）。R2404 は解決済み Cargo graph と tree で選んだ reverse6、32 executable／4,066入力／全 case set の drift 0。以前の Core 1,956件と Compiler 11 PASS／1 FAIL は、それぞれの固定入力の実績として保持する。同入力の Core reverse53 全体・Tier 2／Native-Web capture parity の最終受入はまだ確認していない。[固定入力ごとの実績](convergence-evidence-history.md)。 |
-
-Generic Match の151件は run `119cbafe-0a01-419e-841f-b919f03d9578` と
-`c99c9fb1-8db4-48d9-a3d2-df5f41144aea` の実績。
-資料監査の基点 `7b1f8f5deb64db1274632c6ec2a7b8af69147420` では、後続の owner 移行により
-17入力中9 blob が変わっていた。これを現 HEAD の151件再実行とは呼ばない。
-資料監査では Never・uninhabited empty Match・let-else・nested non-exhaustive atomicity
-の実装／テストを照合し、同機能を再開する
-具体的な新規不具合は確認していない。
+| 最終 workspace／Tier 2／Native-Web capture parity | **公開 cut の workspace check・Clippy は合格、後続移行はコンパイル失敗・全 runtime は未受入** | 公開 `2e36d1c09d4b893cd92fce304c90eb0b2ef8bd1f` に対応する R2399／R2400 は workspace all-target／all-feature／locked check・Clippy が exit 0（警告あり）。R2404 は reverse6、32 executable／4,066入力／全 case set の drift 0。これらを後続の未コミット移行へ転用しない。最新の実行済み check は上記 R2406 の失敗であり、その後の入力は未検証。Core reverse53 全体・Tier 2／Native-Web capture parity の最終受入も未確認。[固定入力ごとの実績](convergence-evidence-history.md)。 |
 
 旧ロードマップ、着手前の実装ガイド、重複 feature matrix、完了した runtime-boundary
 移行手順、旧レビュー依頼・設計 mirror は、現行契約への整理と検証履歴の保全後に削除した。

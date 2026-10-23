@@ -2,7 +2,10 @@
 
 [Current implementation status](current-status.md) is the single authority for live acceptance, source reconciliation, and remaining work.
 
-[Historical validation and Git identity evidence](evidence-history.md) preserves actual validation and audit outcomes and the full 40-hex references extracted from pruned notes. It is historical evidence and does not establish current status.
+Actual validation, failures, and full Git identities are preserved in the
+[convergence validation history](convergence-evidence-history.md) and
+[other validation history](evidence-history.md). These are historical evidence;
+the current status belongs only in the linked ledger.
 
 ## Operational policies
 
@@ -14,4 +17,8 @@
 - [Current image presentation contract](../03-presentation/image-presentation-objects.md)
 - [Current text layout contract](../03-presentation/text-typesetting.md)
 
-Maintained specifications and accepted contracts live under docs/00-overview/ through docs/05-build-and-security/ and docs/schemas/. Historical implementation notes have been removed from the live index; their original file identities and execution evidence are retained in Git history and the evidence ledgers. The [convergence validation history](convergence-evidence-history.md) preserves the former goal-plan results, while [review evidence](../reviews/evidence-history.md) preserves validation records from removed design packages.
+Maintained specifications and accepted contracts live under docs/00-overview/
+through docs/05-build-and-security/ and docs/schemas/. Removed notes remain
+recoverable through Git and the evidence ledgers. [Review evidence](../reviews/evidence-history.md)
+preserves validation records from removed design packages; dated receipts in
+[`acceptance-evidence/`](acceptance-evidence/) also retain historical failures.

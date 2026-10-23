@@ -9051,3 +9051,31 @@ Engine 全体の `invocation_result` を削除し、実際に返却した `Nativ
 4,066 frozen inputs、32 executable、全 case set、99 manifest/lock の drift 0。解決済み metadata SHA256 は `0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56`。検証中は source・資料・Cargo 入力を変更していない。Core の実装・owner test に変更はなく、R2394 の1,956 PASS はその固定入力に対する実績として再利用する。Compiler R2397 の返却 ThreadHandle 失敗も保持し、この reverse6 の実行を Core reverse53／最終 workspace runtime／Tier 2／Native-Web capture parity の受入へ読み替えない。
 19原本を byte 一致で保存した。原本 R2400 Clippy log の trailing whitespace 5行と R2404 runtime log の8行はそのまま保持し、その2 log だけを staged whitespace 検査から除外した。他の source・資料・JSON・log の同検査は維持する。
 Host の既存 import 整理は staged 変更から除外した。保持14件の raw patch は `37684cb7b6b73e9da826ea00f39745cc490cf6b3dc3415fa8b2d7c2ae5376057`。以前の保持 patch との差分は、今回の Host 修正に伴う同ファイルの blob index header と hunk 位置（2152→2145）の2行だけで、保持 hunk の内容・context と他13件の patch は一致した。ユーザーの変更を削除・commit していない。
+
+## Program task 結果保管移行の途中検査 — 2026-10-24
+
+確認した公開基点は `2e36d1c09d4b893cd92fce304c90eb0b2ef8bd1f`、parent
+`3c12ee45a418f909ae0916cb65f77178a1681377`、tree
+`243df6c5f4fd4ba9ea2d97b22c27df513b1f8634`。上記 R2399／R2400／R2404 は
+この公開 cut に対応する実績であり、その後の Program task 結果保管／完了通知の
+未コミット移行を検証したものではない。
+
+| 検査 | 実際の結果 | 入力と限界 |
+|---|---|---|
+| R2405 `cargo check -p arcweft-core --lib --all-features --locked` | **exit 101、2 errors／23 warnings** | 起動 identity を値で検証した後に再利用する2箇所の E0382。後続入力で借用へ修正したが、この失敗を成功に書き換えない。[receipt](acceptance-evidence/task-final-r2405-owned-program-result-core-check.json)、[原本 log](acceptance-evidence/task-final-r2405-owned-program-result-core-check.log)。 |
+| R2406 同 Core library check | **exit 101、19 errors／27 warnings emitted** | snapshot の旧 `invocation`／`start` 参照、Host restart policy の Option 化、収集型推論、`ProgramTerminal` の未移行 match 等。library summary の26 warnings と総 emitted 27を区別する。[receipt](acceptance-evidence/task-final-r2406-local-program-task-state-core-check.json)、[原本 log](acceptance-evidence/task-final-r2406-local-program-task-state-core-check.log)。 |
+
+両検査は receipt の UTC で2026-10-23に開始した。日本時間の開始日は
+R2405 が2026-10-23、R2406 が2026-10-24。
+R2406 の既存 session `31747` を再開して終了を確認した（wrapper exit 1、Cargo exit 101）。
+開始後にもソース変更があるため、その19件を現在の作業ツリーと完全に同じ入力の
+失敗数とは主張しない。最終入力の check／runtime は未実行で、これらは受入結果ではない。
+4件の receipt／log を元ファイルと SHA256 一致で保存した。資料整理中のソース変更はなく、
+既存の Rust・fixture・sample 差分と untracked 修復メモ等は保持した。
+
+Generic Match の既存受入を取り消す新規再現はない。受入時の151件は
+`119cbafe-0a01-419e-841f-b919f03d9578` と
+`c99c9fb1-8db4-48d9-a3d2-df5f41144aea` の実行であり、今回の再実行ではない。
+資料監査の旧基点 `7b1f8f5deb64db1274632c6ec2a7b8af69147420` での
+17入力中9 blob の変更は、[比較原本](acceptance-evidence/generic-match-current-input-comparison.json)
+に保持する。この過去の比較件数を現在の blob 差分数として転記しない。

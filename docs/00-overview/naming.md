@@ -180,71 +180,10 @@ signal.loading_progress
 
 engine 名は file、crate、CLI、protocol、packaging に使い、すべての in-game entity に prefix として付けない。
 
-## Relative IDs in source
+## IDs in source
 
-`@.suffix`, `@..suffix`, and longer forms such as `@...suffix` are allowed only
-in ID-bearing source contexts where the expected entity family is known:
-dialogue line IDs, choice IDs, choice option IDs, and text-key overrides. They
-are not general entity references. `@.suffix` resolves in the current ID scope.
-Each extra dot walks one parent ID scope outward. The explicit readable form is
-`@super.suffix`, `@super.super.suffix`, and so on.
-
-```arcw
-alice(id=@.greeting):
-    おはよう。[p]
-
-scope dream {
-    choice @.first {
-        @.listen "聞いてみる" -> @flow.alice_intro
-    }
-}
-```
-
-Relative IDs normalize through the current flow, speaker, choice, and named
-scope path. Dialogue lines place the speaker before the scope path; choices use
-the flow and scope path directly.
-If the named scope path is empty, the scope segment is omitted.
-
-```text
-id=@.greeting
-  -> @say.opening.alice.greeting
-
-scope rain { alice(id=@.comment): ... }
-  -> @say.opening.alice.rain.comment
-  -> @text.opening.alice.rain.comment
-  -> @voice.ja-JP.alice.opening.rain.comment
-
-choice @.first
-  -> @choice.opening.dream.first
-
-@.listen
-  -> @choice.opening.dream.first.listen
-```
-
-For ordinary entity references, use the shortest spelling that still names the
-entity family unambiguously. Prefer family-relative references for families
-with a default public-id prefix. This omits the default family from the
-referenced id path while keeping the family anchor in the reference syntax; for
-assets, write `@asset:.bg.room`, not `@asset.bg.room`. Fully qualified
-`@domain.path` spellings remain valid for generated surfaces, manifest/tooling
-output, and cases where an external system needs the stored public id verbatim:
-
-```arcw
-goto @flow:.opening.next
-bg(@asset:.bg.room)
-log("loaded", @asset:.bg.room)
-```
-
-Do not write `goto @.next` or `bg(@.bg.room)`. Relative IDs are ID
-declarations/overrides, not general references. Bare `.suffix` is not part of
-the core grammar.
-
-Declaration headers are different from reference expressions. For authored
-declaration families, the declaration keyword already supplies the default
-family, so hand-written source should prefer compact declaration IDs such as
-`content chapter_two { ... }`. Assets are catalog-only and have no declaration
-header. Their `asset.*` IDs are derived from normalized virtual paths under the
-selected `assets/` root; source only refers to those IDs.
+Declaration identity, relative IDs, family-qualified references, normalization,
+and asset ID derivation are defined by [ID and references](../01-language/ids-and-references.md).
 
 ## 予約名
 
