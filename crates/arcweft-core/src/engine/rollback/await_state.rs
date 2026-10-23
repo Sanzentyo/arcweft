@@ -21,24 +21,11 @@ fn local_type(
     local: crate::runtime_id::RuntimeLocalDeclarationId,
     binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
 ) -> Result<crate::pattern::RuntimeSemanticTypeId, AwbcRuntimeValueSnapshotError> {
-    let declaration = plan
-        .local_declarations()
-        .get(local)
-        .ok_or_else(|| invalid("native AwaitMany local is absent from its original Plan"))?;
-    if let Some(context) = declaration.context() {
-        let expected = plan
-            .type_table()
-            .get(context)
-            .ok_or_else(|| invalid("native AwaitMany local has an unknown original context"))?
-            .semantic_identity();
-        if binding.is_none_or(|binding| binding.context() != expected) {
-            return Err(invalid(
-                "native AwaitMany local belongs to a different invocation context",
-            ));
-        }
-    }
+    let ty = plan
+        .local_type_in_context(local, binding)
+        .map_err(|error| invalid(&error.to_string()))?;
     plan.type_table()
-        .get(declaration.ty())
+        .get(ty)
         .map(crate::plan::RuntimePlanTypeDeclaration::semantic_identity)
         .ok_or_else(|| invalid("native AwaitMany local has an unknown original type"))
 }
@@ -56,21 +43,36 @@ where
         self.source_context
             .admit_retained(admission, P::admission_origin())?;
         admission.validate_metadata(&self.observed_through)?;
-        admission.validate_metadata_collection(self.observers.len())?;
         admission.validate_metadata_collection(self.queued.len())?;
-        for observer in &self.observers {
-            admission.validate_metadata_collection(observer.ops.len())?;
+        let crate::engine::AwaitSource::Native(source) = &self.source else {
+            return Err(invalid("native Await requires its original Plan operation"));
+        };
+        source.operation.admit_retained(admission)?;
+        let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner().cloned()
+        else {
+            return Err(invalid(
+                "native Await requires its original Plan executable",
+            ));
+        };
+        let Some(crate::plan::FlowOp::Await { target, .. }) = source.operation.operation(&plan)
+        else {
+            return Err(invalid(
+                "native Await source is not its original Await operation",
+            ));
+        };
+        if !matches!(plan.type_table().get(target.source().ty()).map(crate::plan::RuntimePlanTypeDeclaration::projection),
+            Some(crate::plan::RuntimePlanTypeProjection::Need(item)) if *item == source.item_type)
+        {
+            return Err(invalid(
+                "native Await item type differs from its original source",
+            ));
         }
         if let Some(cursor) = &self.resume {
             cursor.admit_retained(admission)?;
         }
         let handle = RuntimeNeedView::from(&self.handle);
         handle.admit_retained(admission)?;
-        let crate::engine::AwaitItemType::Plan(item) = self.item_type else {
-            return Err(invalid(
-                "native Await requires its original Plan type domain",
-            ));
-        };
+        let item = source.item_type;
         admission.validate_metadata(&item.get())?;
         let semantic = match admission.program_owner() {
             Some(crate::task::RuntimeProgramOwner::Plan(plan)) => plan

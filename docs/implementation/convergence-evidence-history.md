@@ -8863,3 +8863,17 @@ R2361 Core library all-feature locked check actually failed with 33 errors and 2
 - `task_group` へ修正し、実在する空 TaskRoot をキューへ積まない形に変更した。R2363 の同コマンドは **exit 101、28 errors／24 warnings**、E0609 は解消。[receipt](acceptance-evidence/task-final-r2363-native-task-root-correction-check.json)、[log](acceptance-evidence/task-final-r2363-native-task-root-correction-check.log)。
 - R2363 の source freeze は3,979入力／変更8 source／保持14 tracked WIP、元の Cargo graph による Core reverse53、99 manifest/lock の drift 0。freeze SHA256: `5b532f59f3f3c6111d7c837bce1b1cb45dfd93b6bb357819e8e05050b964fec3`。依存変更はない。公開用の資料更新は、このコンパイル入力の採取後。
 - nextest／runtime は起動していない。ユーザーの途中 commit 方針に従う WIP であり、起動経路の動作受入を意味しない。Generic Match の既存受入を取り消す根拠にもならない。
+
+## Native source readers and Await continuation — 2026-10-23
+
+基点は child queue の公開 `87bd6493162454d19f57c6341d9db3020b41847f`。同公開の parent は `71a00e3eec1b43067fb9f64676b9158f7b44c113`、tree は `da9498f6336cc74cb46240fe09d54590ce77644e`、patch SHA256 は `8e33ae8398a8178ec0d231a8f944ac1b01e5882482de3b0c95d19f164aae35ea`。14 paths／3,984入力と公開 blob、保持14 tracked WIP、empty index の照合は drift 0。
+
+この入力では、観測・numeric fusion の対象を連続した元コードに限定し、runtime 継続を境界として扱う。Map の consuming schedule は元 body 内の既存 typed completion offset から参照する。dialogue activation の通常命令と Await の binding／observer も元命令から借用し、実行コードを複製する helper を削除した。Native Await source と AWBC status observation を型で区別し、元 Await 命令・Need item type を rollback admission で照合する。
+
+- `cargo fmt -p arcweft-core`: exit 0。
+- R2364 `cargo check -p arcweft-core --lib --all-features --locked`: **exit 0、151 warnings**。[receipt](acceptance-evidence/task-final-r2364-native-source-readers-await-check.json)、[log](acceptance-evidence/task-final-r2364-native-source-readers-await-check.log)。これは library のコンパイル成功であり、runtime の受入ではない。
+- Map continuation の metadata preflight を batch materialization より前へ移し、借用引数を整理した後、R2365 `cargo clippy -p arcweft-core --all-targets --all-features --locked`: **exit 101、lib test は34 compile errors／79 warnings（48 duplicates）**。[receipt](acceptance-evidence/task-final-r2365-native-queue-readers-core-clippy.json)、[log](acceptance-evidence/task-final-r2365-native-queue-readers-core-clippy.log)。library／integration target に出力された他の警告はこの79件に含めない。34件の発生箇所は child_poll_tests 13、engine.rs 内テスト8、Await rollback tests 4、formatter 3、scope tests 3、function-call tests 3。
+- 両採取時の freeze は3,984入力／変更9 source／保持14 tracked WIP、元 Cargo graph の Core reverse53、99 manifest/lock の drift 0。依存変更なし。R2365 後に新たに未使用となった親 module の import と、自分の変更の redundant closure を除去し再fmtした。この小修正と公開資料は上記コンパイル入力の採取後。
+- nextest／runtime は未実行。旧テストの型移行と独立 root cursor の除去を含む全体移行の受入を、この library check の成功から推定しない。Generic Match の受入済みという判断は維持する。
+
+原本の R2365 Clippy log には、Clippy が提示した空の置換行3箇所に trailing spaces がある。原本の SHA256 一致を確認してそのまま保持した。CRLF を許容した staged whitespace check もこの3行で失敗したため、その原本 log だけを同検査から除外し、変更した source・資料・JSON と他の log の検査は維持した。

@@ -1004,12 +1004,14 @@ impl Engine {
         let operation = group
             .activation_ops()
             .get(frame.activation_pc)
-            .cloned()
             .ok_or(LineRuntimeError::ResultNotCommitted)?;
         let assignment_before = self.activation_local_handle_owners(frame)?;
         match operation {
             FlowOp::EnterScope { identity } => {
-                frame.execution.env.push_scope_with_identity(identity);
+                frame
+                    .execution
+                    .env
+                    .push_scope_with_identity(identity.clone());
                 frame.scopes.push(DialogueActivationScope::new());
             }
             FlowOp::ExitScope => {
@@ -1035,8 +1037,8 @@ impl Engine {
                     &activation_id,
                     frame,
                     activation,
-                    &pattern,
-                    &expr,
+                    pattern,
+                    expr,
                     pure_backend,
                 )?;
             }
@@ -1066,7 +1068,7 @@ impl Engine {
                 frame.pending_host_call = Some(PendingActivationHostCall {
                     id: id.clone(),
                     result: target.result,
-                    binding,
+                    binding: binding.clone(),
                 });
                 self.commit_activation_assignment_discards(
                     &activation_id,
@@ -1084,8 +1086,10 @@ impl Engine {
                                 producer,
                                 self.generation,
                                 crate::task::HostTaskRequest::Custom {
-                                    capability: crate::task::HostCapabilityId(target.capability),
-                                    operation: target.operation,
+                                    capability: crate::task::HostCapabilityId(
+                                        target.capability.clone(),
+                                    ),
+                                    operation: target.operation.clone(),
                                     manifest_contract: target.contract,
                                     args,
                                     named_args,
@@ -1106,13 +1110,13 @@ impl Engine {
                     &activation_id,
                     frame,
                     activation,
-                    binding,
-                    operation,
+                    binding.clone(),
+                    operation.clone(),
                     pure_backend,
                 )?;
             }
             FlowOp::CommitDialogueResult { value } => {
-                let value = self.evaluate_dialogue_expr(frame, &value, pure_backend)?;
+                let value = self.evaluate_dialogue_expr(frame, value, pure_backend)?;
                 self.stage_dialogue_result(frame, activation, value)?;
                 frame.exiting_for_result = true;
             }
@@ -1121,7 +1125,7 @@ impl Engine {
                     &activation_id,
                     frame,
                     activation,
-                    &effect,
+                    effect,
                     pure_backend,
                 )?;
                 if let Some(request) = request {
@@ -1149,12 +1153,26 @@ impl Engine {
                 captures,
                 owner,
             } => {
-                self.register_dialogue_defer(frame, activation, site, outcome, &captures, owner)?;
+                self.register_dialogue_defer(frame, activation, *site, *outcome, captures, *owner)?;
             }
             operation => {
+                let mut position = super::NativeCodeCursor::root(
+                    &plan,
+                    crate::plan::code::RuntimeCodeOwner::LineTask {
+                        group: frame.task_group,
+                        body: crate::plan::code::RuntimeLineCodeBody::Activation,
+                    },
+                )
+                .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+                if !position.set_operation(frame.activation_pc) {
+                    return Err(LineRuntimeError::InvalidActivationOperation.into());
+                }
+                let source = position
+                    .source_operation(&plan)
+                    .ok_or(LineRuntimeError::InvalidActivationOperation)?;
                 let staged = self.step_dialogue_execution(
                     frame,
-                    Some(operation),
+                    Some((operation, source)),
                     input,
                     events,
                     pure_backend,
@@ -1187,7 +1205,7 @@ impl Engine {
     fn step_dialogue_execution(
         &mut self,
         frame: &mut DialogueActivationFrame,
-        operation: Option<FlowOp>,
+        operation: Option<(&FlowOp, super::code_cursor::NativeSourceOperation)>,
         input: &mut super::RuntimeStepInput,
         events: &[super::TaskEvent],
         pure_backend: &mut impl RuntimeCallBackend,
@@ -1195,9 +1213,10 @@ impl Engine {
         let mut staged = RuntimeStepOutput::default();
         let mut drop_policy = None;
         std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
-        if let Some(operation) = operation {
+        if let Some((operation, source)) = operation {
             self.execute_flow_operation(
-                std::borrow::Cow::Owned(operation),
+                std::borrow::Cow::Borrowed(operation),
+                source,
                 None,
                 &mut staged,
                 pure_backend,

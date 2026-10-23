@@ -112,8 +112,13 @@ impl Engine {
             return None;
         }
         let owner = Arc::clone(&self.plan);
-        let current = self.active_flow_operations().next()?;
-        let FlowOp::StandardMap(control) = current else {
+        self.fiber.frame.normalize_pending_source_ranges(&owner);
+        let position = match self.fiber.frame.pending_ops.front() {
+            Some(work) => work.position()?,
+            None => self.fiber.frame.cursor.as_ref()?,
+        };
+        let source_operation = position.source_operation(&owner)?;
+        let Some(FlowOp::StandardMap(control)) = source_operation.operation(&owner) else {
             return None;
         };
         let ops = self.active_flow_operations().collect::<Vec<_>>();
@@ -154,8 +159,11 @@ impl Engine {
         if projection.function.result_type() != output_type {
             return None;
         }
-        let consuming = control.consuming_body().unwrap_or_default();
-        let consuming_ops = consuming.iter().collect::<Vec<_>>();
+        let consuming_ops = control
+            .consuming_body()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         let sum = project_numeric_sum(&owner, &consuming_ops, control.result()).filter(|sum| {
             sum.aliases
                 .iter()
@@ -177,15 +185,36 @@ impl Engine {
         if consumed > remaining_ops {
             return None;
         }
+        let source = control.source();
+        let continuation = if sum.is_none() {
+            match control.completion() {
+                crate::plan::RuntimeStandardMapCompletion::Collection => None,
+                crate::plan::RuntimeStandardMapCompletion::Sum { map_operations } => {
+                    let mut position = self
+                        .original_body_range(
+                            &source_operation,
+                            crate::plan::RuntimeFlowBodyRole::Body,
+                        )
+                        .ok()?;
+                    if !position.set_operation(map_operations) {
+                        return None;
+                    }
+                    (position.remaining_operation_count()? != 0).then(|| {
+                        super::super::work::NativePendingWork::source(
+                            position,
+                            super::super::work::NativeSourceRangeRole::NestedBody,
+                        )
+                    })
+                }
+            }
+        } else {
+            None
+        };
+        let continuation = [continuation];
+        self.prepare_native_work(&continuation).ok()?;
         let batch = admission.materialize();
         backend.prepare_total_numeric_batch(batch.function(), batch.rows())?;
-        let source = control.source();
         let result_pattern = result_pattern.clone();
-        let continuation = if sum.is_none() {
-            consuming.to_vec()
-        } else {
-            Vec::new()
-        };
         let sum = sum.map(|sum| match sum.target {
             SumTarget::Bind(pattern) => OwnedSumTarget::Bind(pattern.clone()),
             SumTarget::Return => OwnedSumTarget::Return,
@@ -211,7 +240,7 @@ impl Engine {
                                     crate::value::runtime_sequence_from_literal_values(values),
                                     staged,
                                 );
-                                candidate.push_ops(continuation);
+                                candidate.prepend_admitted_native_work(continuation);
                             }
                             RuntimeNumericBatchResult::Sum(value) => {
                                 let value = RuntimeValue::i64(value);

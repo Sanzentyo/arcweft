@@ -1419,10 +1419,8 @@ pub enum FlowStatusLabelStyle {
 #[derive(Debug, PartialEq)]
 pub struct AwaitState<H = crate::task::RuntimeNeedHandle, P = RuntimeNeedPublication> {
     pub(crate) source_context: crate::value::RuntimeScopeTypeContext,
-    pub binding: Option<RuntimePattern>,
+    pub source: AwaitSource,
     pub handle: H,
-    pub item_type: AwaitItemType,
-    pub observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
     pub resume: Option<NativeCodeCursor>,
     pub observed_through: Option<TaskPublicationCursor>,
     pub queued: VecDeque<P>,
@@ -1437,10 +1435,8 @@ impl Clone for AwaitStateRollbackImage {
     fn clone(&self) -> Self {
         Self {
             source_context: self.source_context.clone(),
-            binding: self.binding.clone(),
+            source: self.source.clone(),
             handle: self.handle.clone(),
-            item_type: self.item_type,
-            observers: self.observers.clone(),
             resume: self.resume.clone(),
             observed_through: self.observed_through,
             queued: self.queued.clone(),
@@ -1472,14 +1468,12 @@ impl AwaitState {
     ) -> Result<AwaitStateRollbackImage, String> {
         Ok(AwaitStateRollbackImage {
             source_context: self.source_context.clone(),
-            binding: self.binding.clone(),
+            source: self.source.clone(),
             handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live_admitted(
                 &self.handle,
                 Some(owner),
             )
             .map_err(|error| error.to_string())?,
-            item_type: self.item_type,
-            observers: self.observers.clone(),
             resume: self.resume.clone(),
             observed_through: self.observed_through,
             queued: self
@@ -1496,13 +1490,11 @@ impl AwaitState {
     ) -> Result<Self, String> {
         Ok(Self {
             source_context: image.source_context,
-            binding: image.binding,
+            source: image.source,
             handle: image
                 .handle
                 .into_live_admitted(owner)
                 .map_err(|error| error.to_string())?,
-            item_type: image.item_type,
-            observers: image.observers,
             resume: image.resume,
             observed_through: image.observed_through,
             queued: image
@@ -1522,6 +1514,29 @@ impl AwaitState {
 pub enum AwaitItemType {
     Plan(RuntimePlanTypeId),
     Awbc(AwbcTypeId),
+}
+
+/// The source of an Await status. Native execution retains its original opcode;
+/// an AWBC observation exposes its own checked type without inventing Plan code.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AwaitSource {
+    Native(NativeAwaitSource),
+    Awbc(AwbcTypeId),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeAwaitSource {
+    operation: code_cursor::NativeSourceOperation,
+    item_type: RuntimePlanTypeId,
+}
+
+impl<H, P> AwaitState<H, P> {
+    pub const fn item_type(&self) -> AwaitItemType {
+        match &self.source {
+            AwaitSource::Native(source) => AwaitItemType::Plan(source.item_type),
+            AwaitSource::Awbc(item) => AwaitItemType::Awbc(*item),
+        }
+    }
 }
 
 /// Suspended bounded fanout await state.
@@ -2529,17 +2544,13 @@ impl Engine {
         &self.fiber
     }
 
-    /// Borrows the active frame's queued continuation or remaining original
-    /// root operations. Expression roots and exhausted bodies have no operation
-    /// rows; their frame transitions remain part of normal stepping.
+    /// Borrows the next contiguous range of authored operations. Runtime
+    /// continuations, expression roots and function completion are boundaries;
+    /// observers of all work use the frame's typed pending-work view.
     pub fn active_flow_operations(&self) -> impl DoubleEndedIterator<Item = &FlowOp> {
-        let original = if self.fiber.frame.pending_ops.is_empty() {
-            self.original_operation_remainder(&self.plan)
-                .unwrap_or_default()
-        } else {
-            &[]
-        };
-        self.fiber.frame.pending_ops.iter().chain(original)
+        self.original_operation_remainder(&self.plan)
+            .into_iter()
+            .flatten()
     }
 
     /// Remaining root code for the active frame, before any pending child work.
@@ -4566,10 +4577,8 @@ impl Engine {
                 FlowFiberStatus::NeedWaiting(state) => {
                     FlowFiberStatus::NeedWaiting(Box::new(AwaitState {
                         source_context: state.source_context.clone(),
-                        binding: state.binding.clone(),
+                        source: state.source.clone(),
                         handle: state.handle.clone(),
-                        item_type: state.item_type,
-                        observers: state.observers.clone(),
                         resume: state.resume.clone(),
                         observed_through: state.observed_through,
                         queued: VecDeque::new(),

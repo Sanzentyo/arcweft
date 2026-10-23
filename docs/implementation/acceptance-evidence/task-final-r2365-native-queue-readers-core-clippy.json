@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "87bd6493162454d19f57c6341d9db3020b41847f",
+  "name": "task-final-r2365-native-queue-readers-core-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2365-native-queue-readers-core-clippy.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T02:58:13.7292358Z",
+  "finishedAt": "2026-10-23T03:01:21.1071371Z"
+}

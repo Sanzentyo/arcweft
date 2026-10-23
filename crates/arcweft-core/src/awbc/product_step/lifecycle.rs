@@ -1,11 +1,10 @@
 use super::{
-    AwaitItemType, AwaitState, AwbcContentUnitId, AwbcFunctionId, AwbcHostCallId,
-    AwbcProductExecutorStatus, AwbcProductStepExecutor, AwbcResumePointId, AwbcTrapCode,
-    ChoiceRuntimeOption, ChoiceState, FiberAwaitTarget, FiberStatus, FiberSuspensionReason,
-    FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState, MappedEffect,
-    ProductStepError, RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId,
-    RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason,
-    runtime_value_label, source_diagnostic,
+    AwaitState, AwbcContentUnitId, AwbcFunctionId, AwbcHostCallId, AwbcProductExecutorStatus,
+    AwbcProductStepExecutor, AwbcResumePointId, AwbcTrapCode, ChoiceRuntimeOption, ChoiceState,
+    FiberAwaitTarget, FiberStatus, FiberSuspensionReason, FiberTerminalValue, FiberTrap, FlowExit,
+    FlowFiberStatus, HostCallState, MappedEffect, ProductStepError, RuntimeDiagnostic,
+    RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepMode, RuntimeStepOptions,
+    RuntimeStepOutput, RuntimeStepStopReason, runtime_value_label, source_diagnostic,
 };
 
 impl AwbcProductStepExecutor {
@@ -450,10 +449,8 @@ impl AwbcProductStepExecutor {
                 ..
             } => FlowFiberStatus::NeedWaiting(Box::new(AwaitState {
                 source_context: crate::value::RuntimeScopeTypeContext::Lexical,
-                binding: None,
+                source: crate::engine::AwaitSource::Awbc(*item_type),
                 handle: need.clone(),
-                item_type: AwaitItemType::Awbc(*item_type),
-                observers: Vec::new(),
                 resume: None,
                 observed_through: self
                     .need_publications

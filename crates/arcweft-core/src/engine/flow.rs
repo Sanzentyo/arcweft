@@ -30,7 +30,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 impl Engine {
-    fn native_work_admission(
+    pub(in crate::engine) fn native_work_admission(
         &self,
     ) -> Result<crate::value::RuntimeRetainedValueAdmission, RuntimeEvalError> {
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
@@ -46,7 +46,7 @@ impl Engine {
         ))
     }
 
-    fn prepare_native_work<const N: usize>(
+    pub(in crate::engine) fn prepare_native_work<const N: usize>(
         &self,
         work: &[Option<NativePendingWork>; N],
     ) -> Result<(), RuntimeEvalError> {
@@ -97,7 +97,7 @@ impl Engine {
         })
     }
 
-    fn prepend_admitted_native_work<const N: usize>(
+    pub(in crate::engine) fn prepend_admitted_native_work<const N: usize>(
         &mut self,
         work: [Option<NativePendingWork>; N],
     ) {
@@ -276,13 +276,7 @@ impl Engine {
     ) {
         let plan = Arc::clone(&self.plan);
         // Empty body ranges are structural transitions, not executable polls.
-        while self.fiber.frame.pending_ops.front().is_some_and(|work| {
-            matches!(&work.kind, NativePendingWorkKind::Source { position, role }
-                if *role != NativeSourceRangeRole::FunctionRoot
-                    && position.operations(&plan).is_some_and(<[FlowOp]>::is_empty))
-        }) {
-            self.fiber.frame.pending_ops.pop_front();
-        }
+        self.fiber.frame.normalize_pending_source_ranges(&plan);
         if self.fiber.frame.pending_ops.is_empty()
             && self.step_function_site_body(output, pure_backend, drop_policy)
         {
@@ -686,18 +680,8 @@ impl Engine {
                 });
             }
             FlowOp::Await { .. } => {
-                let FlowOp::Await {
-                    binding,
-                    target,
-                    observers,
-                } = op.into_owned()
-                else {
-                    unreachable!("selected await");
-                };
                 self.start_need_await(
-                    binding,
-                    target,
-                    observers,
+                    source_site,
                     self.resume_cursor(next_op_index),
                     output,
                     pure_backend,
@@ -1453,13 +1437,6 @@ impl Engine {
         })
     }
 
-    pub(super) fn push_ops(&mut self, ops: Vec<FlowOp>) {
-        self.fiber.frame.pending_ops.reserve(ops.len());
-        for op in ops.into_iter().rev() {
-            self.fiber.frame.pending_ops.push_front(op);
-        }
-    }
-
     pub(super) fn push_scope_frame(&mut self, identity: RuntimeScopeIdentity) {
         self.push_scope_frame_with_origin(
             identity,
@@ -1578,37 +1555,23 @@ impl Engine {
         }
     }
 
-    pub(super) fn push_scoped_ops(&mut self, ops: Vec<FlowOp>) {
-        self.push_owned_scoped_ops(ops, None);
-    }
-
-    pub(super) fn push_scoped_ops_with_identity(
-        &mut self,
-        identity: RuntimeScopeIdentity,
-        ops: Vec<FlowOp>,
-    ) {
-        self.push_owned_scoped_ops_with_identity(ops, None, identity);
-    }
-
-    pub(super) fn push_scoped_ops_with_bindings(
-        &mut self,
-        bindings: Vec<RuntimeLocalBinding>,
-        ops: Vec<FlowOp>,
-    ) {
-        if bindings.is_empty() && ops.is_empty() {
-            return;
-        }
-        let prefix = (!bindings.is_empty()).then_some(FlowOp::Bind(bindings));
-        self.push_owned_scoped_ops(ops, prefix);
-    }
-
     pub(super) fn push_await_observer_ops(
         &mut self,
         bindings: Vec<RuntimeLocalBinding>,
-        ops: &[FlowOp],
-    ) {
-        let prefix = (!bindings.is_empty()).then_some(FlowOp::Bind(bindings));
-        self.push_borrowed_scoped_ops(ops, prefix, Some(FlowOp::CompleteAwaitObserver));
+        source: &NativeSourceOperation,
+        ordinal: usize,
+    ) -> Result<(), RuntimeEvalError> {
+        let body = self.original_body_range(
+            source,
+            crate::plan::RuntimeFlowBodyRole::AwaitObserver { ordinal },
+        )?;
+        self.push_scoped_source(
+            body,
+            bindings,
+            RuntimeScopeIdentity::Anonymous,
+            crate::scope::RuntimeScopeFrameKind::Control,
+            Some(NativeRuntimeContinuation::CompleteAwaitObserver),
+        )
     }
 
     pub(super) fn push_loop_iteration(
@@ -1790,138 +1753,16 @@ impl Engine {
         }
     }
 
-    fn push_owned_scoped_ops(&mut self, ops: Vec<FlowOp>, prefix: Option<FlowOp>) {
-        if ops.is_empty() && prefix.is_none() {
-            return;
-        }
-        let Some(token) =
-            self.allocate_scheduled_scope(crate::scope::RuntimeScopeFrameKind::Control)
-        else {
-            return;
-        };
-        self.fiber
-            .frame
-            .pending_ops
-            .push_front(FlowOp::ExitScheduledScope { token });
-        for op in ops.into_iter().rev() {
-            self.fiber.frame.pending_ops.push_front(op)
-        }
-        if let Some(prefix) = prefix {
-            self.fiber.frame.pending_ops.push_front(prefix)
-        }
-        self.fiber
-            .frame
-            .pending_ops
-            .push_front(FlowOp::EnterScheduledScope {
-                identity: RuntimeScopeIdentity::Anonymous,
-                token,
-            });
-    }
-
-    fn push_owned_scoped_ops_with_identity(
-        &mut self,
-        ops: Vec<FlowOp>,
-        prefix: Option<FlowOp>,
-        identity: RuntimeScopeIdentity,
-    ) {
-        if ops.is_empty() && prefix.is_none() {
-            return;
-        }
-        let Some(token) =
-            self.allocate_scheduled_scope(crate::scope::RuntimeScopeFrameKind::EmittedLexical)
-        else {
-            return;
-        };
-        self.fiber
-            .frame
-            .pending_ops
-            .reserve(ops.len() + usize::from(prefix.is_some()) + 2);
-        self.fiber
-            .frame
-            .pending_ops
-            .push_front(FlowOp::ExitScheduledScope { token });
-        for op in ops.into_iter().rev() {
-            self.fiber.frame.pending_ops.push_front(op)
-        }
-        if let Some(prefix) = prefix {
-            self.fiber.frame.pending_ops.push_front(prefix)
-        }
-        self.fiber
-            .frame
-            .pending_ops
-            .push_front(FlowOp::EnterScheduledScope { identity, token });
-    }
-
-    fn push_borrowed_scoped_ops(
-        &mut self,
-        ops: &[FlowOp],
-        prefix: Option<FlowOp>,
-        tail: Option<FlowOp>,
-    ) {
-        if ops.is_empty() && prefix.is_none() && tail.is_none() {
-            return;
-        }
-        self.fiber
-            .frame
-            .pending_ops
-            .reserve(ops.len() + usize::from(prefix.is_some()) + usize::from(tail.is_some()) + 2);
-        if let Some(tail) = tail {
-            self.fiber.frame.pending_ops.push_front(tail);
-        }
-        let Some(token) =
-            self.allocate_scheduled_scope(crate::scope::RuntimeScopeFrameKind::Control)
-        else {
-            return;
-        };
-        self.fiber
-            .frame
-            .pending_ops
-            .push_front(FlowOp::ExitScheduledScope { token });
-        for op in ops.iter().rev().cloned() {
-            self.fiber.frame.pending_ops.push_front(op);
-        }
-        if let Some(prefix) = prefix {
-            self.fiber.frame.pending_ops.push_front(prefix);
-        }
-        self.fiber
-            .frame
-            .pending_ops
-            .push_front(FlowOp::EnterScheduledScope {
-                identity: RuntimeScopeIdentity::Anonymous,
-                token,
-            });
-    }
-
-    fn push_borrowed_ops_with_exit(
-        &mut self,
-        ops: &[FlowOp],
-        tail: Option<FlowOp>,
-        token: crate::scope::RuntimeScheduledScopeToken,
-    ) {
-        self.fiber
-            .frame
-            .pending_ops
-            .reserve(ops.len() + usize::from(tail.is_some()) + 1);
-        if let Some(tail) = tail {
-            self.fiber.frame.pending_ops.push_front(tail);
-        }
-        self.fiber
-            .frame
-            .pending_ops
-            .push_front(FlowOp::ExitScheduledScope { token });
-        for op in ops.iter().rev().cloned() {
-            self.fiber.frame.pending_ops.push_front(op);
-        }
-    }
-
     pub(super) fn cancel_scheduled_scope_close(
         &mut self,
         origin: crate::scope::RuntimeScopeFrameOrigin,
     ) {
         if let crate::scope::RuntimeScopeFrameOrigin::Scheduled(token) = origin {
-            self.fiber.frame.pending_ops.retain(
-                |op| !matches!(op,FlowOp::ExitScheduledScope {token:queued} if *queued==token),
-            );
+            self.fiber.frame.pending_ops.retain(|work| {
+                !matches!(&work.kind, NativePendingWorkKind::Resume(
+                    NativeRuntimeContinuation::ExitScheduledScope { token: queued }
+                ) if *queued == token)
+            });
         }
     }
 

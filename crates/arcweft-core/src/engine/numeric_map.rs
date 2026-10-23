@@ -395,25 +395,60 @@ fn operations_avoid_locals(plan: &RuntimePlan, ops: &[&FlowOp], elided: &[Local]
     }
     true
 }
-impl Engine {
-    fn consume_projected_ops(&mut self, count: usize) {
-        if self.fiber.frame.pending_ops.is_empty() {
-            if let Some(cursor) = self.fiber.frame.cursor.as_mut() {
-                let next = cursor
-                    .operation_index()
-                    .expect("numeric span owns operation code")
-                    .checked_add(count)
-                    .expect("admitted numeric span operation count");
-                assert!(
-                    cursor.set_operation(next),
-                    "numeric span remains inside original code"
-                );
-            }
-        } else {
-            for _ in 0..count {
-                self.fiber.frame.pending_ops.pop_front();
+fn pending_work_avoids_locals<'a>(
+    plan: &RuntimePlan,
+    work: impl Iterator<Item = &'a super::work::NativePendingWork>,
+    elided: &[Local],
+) -> bool {
+    use super::work::{NativePendingWorkKind as Work, NativeRuntimeContinuation as Resume};
+    work.into_iter().all(|work| match &work.kind {
+        Work::Source { position, .. } => {
+            if let Some(operations) = position.operations(plan) {
+                operations_avoid_locals(plan, &operations.iter().collect::<Vec<_>>(), elided)
+            } else {
+                position.expression(plan).is_some_and(|expression| {
+                    expression
+                        .evaluation_free_local_reads(plan)
+                        .is_ok_and(|reads| reads.iter().all(|(local, _)| !elided.contains(local)))
+                })
             }
         }
+        Work::Resume(Resume::Bind(bindings)) => bindings
+            .iter()
+            .all(|binding| !elided.contains(&binding.local)),
+        Work::Resume(
+            Resume::EnterTaskScope
+            | Resume::ExitTaskScope
+            | Resume::EnterScheduledScope { .. }
+            | Resume::ExitScheduledScope { .. },
+        ) => true,
+        Work::Resume(_) => false,
+    })
+}
+
+impl Engine {
+    fn consume_projected_ops(&mut self, count: usize) {
+        self.fiber.frame.normalize_pending_source_ranges(&self.plan);
+        let position = if let Some(work) = self.fiber.frame.pending_ops.front_mut() {
+            work.position_mut()
+                .expect("an admitted numeric span starts in original source")
+        } else {
+            self.fiber
+                .frame
+                .cursor
+                .as_mut()
+                .expect("an admitted numeric span retains its original root")
+        };
+        let next = position
+            .operation_index()
+            .expect("numeric span owns operation code")
+            .checked_add(count)
+            .expect("admitted numeric span operation count");
+        assert!(
+            position.set_operation(next),
+            "numeric span remains inside original code"
+        );
+        self.fiber.frame.normalize_pending_source_ranges(&self.plan);
     }
     fn numeric_elision_has_no_later_observer(
         &self,
@@ -428,6 +463,11 @@ impl Engine {
             })
         };
         if !operations_avoid_locals(plan, ops, elided)
+            || !pending_work_avoids_locals(
+                plan,
+                self.fiber.frame.pending_ops.iter().skip(1),
+                elided,
+            )
             || !self.fiber.frame.root_cleanups.is_empty()
             || (!self.fiber.frame.pending_ops.is_empty()
                 && self
@@ -462,15 +502,7 @@ impl Engine {
                     };
                     continuation_avoids
                         && frame.resume.as_ref().is_none_or(cursor_avoids)
-                        && operations_avoid_locals(
-                            plan,
-                            &frame.caller_pending_ops.iter().collect::<Vec<_>>(),
-                            elided,
-                        )
-                        && frame
-                            .resume
-                            .as_ref()
-                            .is_none_or(|cursor| cursor_avoids(cursor))
+                        && pending_work_avoids_locals(plan, frame.caller_pending_ops.iter(), elided)
                 }
                 Control::Loop { .. }
                 | Control::While { .. }
@@ -495,6 +527,7 @@ impl Engine {
             return None;
         }
         let owner = Arc::clone(&self.plan);
+        self.fiber.frame.normalize_pending_source_ranges(&owner);
         let ops = self.active_flow_operations().collect::<Vec<_>>();
         if matches!(ops.first().copied(), Some(FlowOp::ProjectCall { .. })) {
             let packet = self.prepare_numeric_project_calls(&owner, &ops, remaining_ops)?;

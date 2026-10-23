@@ -52,8 +52,8 @@ use crate::awbc::vm::{
     VmExecutionContext, VmExit, VmObservation, VmStepOptions, step_with_host_context,
 };
 use crate::engine::{
-    AwaitItemType, AwaitState, ChoiceState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner,
-    FlowFiberStatus, HostCallState,
+    AwaitState, ChoiceState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner, FlowFiberStatus,
+    HostCallState,
 };
 use crate::line_task::{
     AcceptedLineTaskContentEvents, ChildCancelPolicy, ChildJoinPolicy, LineRuntimeError,

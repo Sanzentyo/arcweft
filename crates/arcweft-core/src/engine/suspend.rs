@@ -348,6 +348,19 @@ impl Engine {
         mut state: AwaitState,
         output: &mut RuntimeStepOutput,
     ) {
+        let plan = Arc::clone(&self.plan);
+        let super::AwaitSource::Native(source) = &state.source else {
+            self.fail_eval(
+                "native Await cannot execute an AWBC status observation",
+                output,
+            );
+            return;
+        };
+        let Some(crate::plan::FlowOp::Await { binding, .. }) = source.operation.operation(&plan)
+        else {
+            self.fail_eval("native Await lost its original operation", output);
+            return;
+        };
         let publication = match state.queued.pop_front() {
             Some(publication) => Some(publication),
             None => {
@@ -426,7 +439,7 @@ impl Engine {
                     self.fail_eval(failure, output);
                 }
                 Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)) => {
-                    let type_matches = match state.item_type {
+                    let type_matches = match state.item_type() {
                         AwaitItemType::Plan(item_type) => self
                             .plan
                             .validate_live_value(
@@ -449,7 +462,7 @@ impl Engine {
                         ));
                         return;
                     }
-                    if let Some(binding) = &state.binding {
+                    if let Some(binding) = binding {
                         match crate::pattern::inspect_runtime_pattern_owned(
                             &self.plan,
                             binding,
@@ -477,7 +490,7 @@ impl Engine {
                         .ownership()
                         .permits_copy()
                         .then(|| value.clone());
-                    if let Some(binding) = &state.binding {
+                    if let Some(binding) = binding {
                         let bindings = crate::pattern::match_runtime_pattern_owned(
                             &self.plan,
                             binding,
@@ -520,7 +533,7 @@ impl Engine {
                         self.start_await_pending_observer(state, progress, output);
                     }
                     RuntimeNeedProducerState::Ready(value) => {
-                        let type_matches = match state.item_type {
+                        let type_matches = match state.item_type() {
                             AwaitItemType::Plan(item_type) => self
                                 .plan
                                 .validate_live_value(
@@ -538,7 +551,7 @@ impl Engine {
                             );
                             return;
                         }
-                        if let Some(binding) = &state.binding {
+                        if let Some(binding) = binding {
                             match crate::pattern::inspect_runtime_pattern_owned(
                                 &self.plan,
                                 binding,
@@ -568,7 +581,7 @@ impl Engine {
                             .need_producers
                             .take_ready_for_correlation(&state.handle.correlation())
                             .expect("checked producer Ready remains available");
-                        if let Some(binding) = &state.binding {
+                        if let Some(binding) = binding {
                             let bindings = crate::pattern::match_runtime_pattern_owned(
                                 &self.plan,
                                 binding,
@@ -604,16 +617,46 @@ impl Engine {
         output: &mut RuntimeStepOutput,
     ) {
         let value = RuntimeValue::Progress(progress);
-        for observer in &state.observers {
-            match crate::pattern::match_runtime_pattern(&self.plan, &observer.pattern, &value) {
-                Ok(Some(bindings)) => {
-                    let ops = observer.ops.clone();
+        let plan = Arc::clone(&self.plan);
+        let super::AwaitSource::Native(source) = &state.source else {
+            self.fail_eval(
+                "native Await observer requires its original Plan operation",
+                output,
+            );
+            return;
+        };
+        let Some(crate::plan::FlowOp::Await { observers, .. }) = source.operation.operation(&plan)
+        else {
+            self.fail_eval("native Await observer lost its original operation", output);
+            return;
+        };
+        for (ordinal, observer) in observers.iter().enumerate() {
+            match crate::pattern::inspect_runtime_pattern_owned(
+                &plan,
+                &observer.pattern,
+                &value,
+                state.source_context.instantiation(),
+            ) {
+                Ok(true) => {
+                    let bindings = crate::pattern::match_runtime_pattern_owned(
+                        &plan,
+                        &observer.pattern,
+                        value,
+                        state.source_context.instantiation(),
+                    )
+                    .expect("checked Pending observer remains valid")
+                    .expect("checked Pending observer matches");
+                    if let Err(error) =
+                        self.push_await_observer_ops(bindings, &source.operation, ordinal)
+                    {
+                        self.fail_eval(error, output);
+                        return;
+                    }
                     self.fiber.frame.await_observer = Some(Box::new(state));
-                    self.push_await_observer_ops(bindings, &ops);
                     self.fiber.frame.status = FlowFiberStatus::Running;
                     return;
                 }
-                Ok(None) => {}
+                Ok(false) => {}
                 Err(error) => {
                     self.fail_eval(error, output);
                     return;
@@ -867,13 +910,27 @@ impl Engine {
 
     pub(super) fn start_need_await(
         &mut self,
-        binding: Option<crate::pattern::RuntimePattern>,
-        target: crate::plan::RuntimeNeedAwaitTarget,
-        observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
+        source: super::code_cursor::NativeSourceOperation,
         resume: Option<crate::engine::NativeCodeCursor>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        let plan = Arc::clone(&self.plan);
+        let Some(crate::plan::FlowOp::Await { target, .. }) = source.operation(&plan) else {
+            self.fail_eval("native Await requires its original operation", output);
+            return;
+        };
+        let admitted = self.native_work_admission().and_then(|mut admission| {
+            source.admit_retained(&mut admission).map_err(|source| {
+                RuntimeEvalError::NativeWorkAdmission {
+                    source: Box::new(source),
+                }
+            })
+        });
+        if let Err(error) = admitted {
+            self.fail_eval(error, output);
+            return;
+        }
         let value = match self.evaluate_expr_with_backend(target.source(), pure_backend) {
             Ok(value) => value,
             Err(error) => {
@@ -922,10 +979,11 @@ impl Engine {
         let queued = VecDeque::new();
         let state = AwaitState {
             source_context: self.fiber.frame.env.source_function_context(),
-            binding,
+            source: super::AwaitSource::Native(super::NativeAwaitSource {
+                operation: source,
+                item_type,
+            }),
             handle: need,
-            item_type: AwaitItemType::Plan(item_type),
-            observers,
             resume,
             observed_through: None,
             queued,

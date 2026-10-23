@@ -1,3 +1,4 @@
+use super::work::{NativePendingWorkKind, NativeSourceRangeRole};
 use super::{Engine, FlowFiber, FlowFiberStatus, FlowOp, NativeFlowExecutionFrame};
 use crate::plan::RuntimePlan;
 
@@ -6,7 +7,29 @@ impl NativeFlowExecutionFrame {
         &self,
         plan: &'a RuntimePlan,
     ) -> Option<&'a [FlowOp]> {
+        for work in &self.pending_ops {
+            match &work.kind {
+                NativePendingWorkKind::Source { position, role } => {
+                    let operations = position.operations(plan)?;
+                    if operations.is_empty() && *role != NativeSourceRangeRole::FunctionRoot {
+                        continue;
+                    }
+                    return Some(operations);
+                }
+                NativePendingWorkKind::Resume(_) => return None,
+            }
+        }
         self.cursor.as_ref()?.operations(plan)
+    }
+
+    pub(super) fn normalize_pending_source_ranges(&mut self, plan: &RuntimePlan) {
+        while self.pending_ops.front().is_some_and(|work| {
+            matches!(&work.kind, NativePendingWorkKind::Source { position, role }
+                if *role != NativeSourceRangeRole::FunctionRoot
+                    && position.operations(plan).is_some_and(<[FlowOp]>::is_empty))
+        }) {
+            self.pending_ops.pop_front();
+        }
     }
 
     /// A task return stays at its original position until its descendants drain.
@@ -16,8 +39,21 @@ impl NativeFlowExecutionFrame {
         if function.is_some_and(|frame| frame.continuation.returns_to_caller()) {
             return false;
         }
-        if let Some(operation) = self.pending_ops.front() {
-            return matches!(operation, FlowOp::Return(_) | FlowOp::ReturnExpr(_));
+        for work in &self.pending_ops {
+            match &work.kind {
+                NativePendingWorkKind::Resume(_) => return false,
+                NativePendingWorkKind::Source { position, role } => {
+                    if let Some(operations) = position.operations(plan) {
+                        if operations.is_empty() && *role != NativeSourceRangeRole::FunctionRoot {
+                            continue;
+                        }
+                        return operations.first().is_none_or(|operation| {
+                            matches!(operation, FlowOp::Return(_) | FlowOp::ReturnExpr(_))
+                        });
+                    }
+                    return position.expression(plan).is_some();
+                }
+            }
         }
         if let Some(cursor) = &self.cursor {
             return cursor.expression(plan).is_some()
