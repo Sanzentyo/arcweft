@@ -29,17 +29,35 @@ fn original_function_code_owner_survives_restore_and_rejects_other_valid_sites()
         let restored = Engine::from_rollback_image(saved.clone(), &owner).unwrap();
         assert_eq!(restored.inert_rollback_image().unwrap(), saved);
         assert_eq!(
-            restored.fiber.frame.cursor.as_ref().unwrap().owner(),
+            restored
+                .fiber
+                .frame
+                .function_root_position()
+                .unwrap()
+                .owner(),
             RuntimeCodeOwner::Function(site)
         );
 
         let mut different = saved.clone();
-        different.fiber.frame.cursor =
-            NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(other));
+        *different
+            .fiber
+            .frame
+            .pending_ops
+            .front_mut()
+            .unwrap()
+            .position_mut()
+            .unwrap() = NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(other)).unwrap();
         assert!(Engine::from_rollback_image(different, &owner).is_err());
-        let mut missing = saved;
-        missing.fiber.frame.cursor = None;
+        let mut missing = saved.clone();
+        missing.fiber.frame.pending_ops.clear();
         assert!(Engine::from_rollback_image(missing, &owner).is_err());
+        let mut duplicate = saved;
+        duplicate
+            .fiber
+            .frame
+            .pending_ops
+            .push_back(duplicate.fiber.frame.pending_ops.front().unwrap().clone());
+        assert!(Engine::from_rollback_image(duplicate, &owner).is_err());
 
         // Flow roots have an original function context without a return frame.
         let mut flow =
@@ -48,8 +66,14 @@ fn original_function_code_owner_survives_restore_and_rejects_other_valid_sites()
         let saved = flow.inert_rollback_image().unwrap();
         assert!(Engine::from_rollback_image(saved.clone(), &owner).is_ok());
         let mut different = saved;
-        different.fiber.frame.cursor =
-            NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(other));
+        *different
+            .fiber
+            .frame
+            .pending_ops
+            .front_mut()
+            .unwrap()
+            .position_mut()
+            .unwrap() = NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(other)).unwrap();
         assert!(Engine::from_rollback_image(different, &owner).is_err());
     }
 }
@@ -65,8 +89,7 @@ fn invalid_original_flow_range_fails_instead_of_completing() {
     engine
         .fiber
         .frame
-        .cursor
-        .as_mut()
+        .function_root_position_mut()
         .unwrap()
         .corrupt_operation_for_test(usize::MAX);
     let output = engine.step(Default::default(), Default::default());
@@ -509,13 +532,15 @@ fn program_return_preserves_typed_result_and_rollback_custody() {
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();
     let mut engine =
         Engine::for_program_invocation(Arc::clone(&plan), program, Vec::new()).unwrap();
-    assert!(engine.fiber.frame.pending_ops.is_empty());
+    assert_eq!(engine.fiber.frame.pending_operation_count(), 0);
     let mut invalid_position = engine.inert_rollback_image().unwrap();
     invalid_position
         .fiber
         .frame
-        .cursor
-        .as_mut()
+        .pending_ops
+        .front_mut()
+        .unwrap()
+        .position_mut()
         .unwrap()
         .corrupt_operation_for_test(1);
     assert!(
@@ -896,7 +921,7 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
     )
     .unwrap();
     assert!(Arc::ptr_eq(&engine.plan, &plan));
-    assert!(engine.fiber.frame.pending_ops.is_empty());
+    assert_eq!(engine.fiber.frame.pending_operation_count(), 0);
     let original = plan
         .function_sites()
         .get(site)
@@ -914,7 +939,7 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
         .fiber
         .frame
         .pending_ops
-        .push_back(crate::engine::work::NativePendingWork::resume(
+        .push_front(crate::engine::work::NativePendingWork::resume(
             crate::engine::work::NativeRuntimeContinuation::Bind(Vec::new()),
         ));
     assert_eq!(engine.active_flow_operations().count(), 0);
@@ -951,7 +976,14 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
     let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));
     let saved = engine.inert_rollback_image().unwrap();
     let mut invalid_position = saved.clone();
-    let position = invalid_position.fiber.frame.cursor.as_mut().unwrap();
+    let position = invalid_position
+        .fiber
+        .frame
+        .pending_ops
+        .front_mut()
+        .unwrap()
+        .position_mut()
+        .unwrap();
     assert_eq!(position.operation_index(), Some(1));
     position.corrupt_operation_for_test(usize::MAX);
     assert!(Engine::from_rollback_image(invalid_position, &owner).is_err());
@@ -1130,7 +1162,7 @@ fn aot_exhausted_executable_frame_retains_native_fallthrough_rejection_and_clean
             "the original function frame is unwound"
         );
         assert!(
-            engine.fiber.frame.cursor.is_none(),
+            engine.fiber.frame.function_root_position().is_none(),
             "the retired root function leaves no executable code position"
         );
         assert!(engine.fiber.frame.pending_ops.is_empty());

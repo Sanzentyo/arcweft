@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "2cfd5197813492653b004f0375116eb419cbd60e",
+  "name": "task-final-r2375-native-root-queue-fixture-core-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2375-native-root-queue-fixture-core-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T04:15:15.6357490Z",
+  "finishedAt": "2026-10-23T04:15:49.8396519Z"
+}

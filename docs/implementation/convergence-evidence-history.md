@@ -8946,3 +8946,13 @@ rollback は元 program の認証後、current／formatter caller／function cal
 | R2370 Core library all-feature／locked check | **exit 101、22 errors／25 warnings** | 独立 root cursor を除去した後続 WIP。復帰・rollback 等の旧参照に E0609。R2368 の入力と異なり、runtime は未実行。[receipt](acceptance-evidence/task-final-r2370-native-unified-function-root-check.json)。 |
 | R2371 同 Core library check | **exit 101、1 error／23 warnings** | scope visitor のエラー型推論 E0283。callback の型を明示して修復。[receipt](acceptance-evidence/task-final-r2371-native-root-caller-queues-check.json)。 |
 | R2372 Core all-target／all-feature／locked check | **exit 101、lib test の17 errors／31 warnings（18重複）** | 本番側の旧 cursor 参照は除去。残る error は旧 `cursor`／`resume` を使う fixture。root 切替後の runtime は未実行。[receipt](acceptance-evidence/task-final-r2372-native-root-queue-all-target-check.json)。 |
+
+## Native root queue fixture acceptance — 2026-10-23
+
+基点 `2cfd5197813492653b004f0375116eb419cbd60e`。7 source のテスト fixture を、本番側が所有する元コードの root／caller queue へ揃えた。保持14 tracked WIP は不変。関数 root の欠落・重複・別 owner を拒否するケース、元コードの参照同一性、join 中の位置、論理 pending 件数、runtime continuation が元命令の連続範囲を遮ること、callee 退役後の再 rollback／失敗不変性を確認した。キューの物理要素数をゼロとする旧 assertion は、従来の契約である論理 pending 件数ゼロへ修正した。
+
+- R2373 Core library nextest catalog: **exit 0、1,955選択／除外0**。join／scope／Await／formatter／affine literal と、root owner／result custody／AOT fallthrough の必須15件を各1件確認。[receipt](acceptance-evidence/task-final-r2373-native-root-queue-fixture-catalog.json)、[catalog](acceptance-evidence/task-final-r2373-native-root-queue-fixture-catalog.log)。最初の必須名に末尾 `_custody` の記載漏れがあり、catalog 点検が拒否した。その時点では runtime を起動していない。実際のテスト名へ訂正後に全15件を照合した。
+- R2374 同 Core library nextest run: **exit 0、1,955 PASS／0 FAIL／0 skipped、13.988秒**。[receipt](acceptance-evidence/task-final-r2374-native-root-queue-owner-runtime.json)、[log](acceptance-evidence/task-final-r2374-native-root-queue-owner-runtime.log)、[terminal audit](acceptance-evidence/task-final-r2374-native-root-queue-owner-runtime.terminal-audit.json)、[binary audit](acceptance-evidence/task-final-r2374-native-root-queue-owner-runtime.binary-audit.json)。4,005入力／1 executable／case set の drift 0。元 Cargo metadata の Core reverse53 と99 manifest/lock に変更なし。
+- R2375 `cargo clippy -p arcweft-core --all-targets --all-features --locked`: **exit 0、警告あり**。lib test の警告は3,164（2,468重複）。[receipt](acceptance-evidence/task-final-r2375-native-root-queue-fixture-core-clippy.json)、[log](acceptance-evidence/task-final-r2375-native-root-queue-fixture-core-clippy.log)。R2374 と同じ source。
+
+R2372 の17 compile errors はこの fixture 移行で解消した。原本 R2375 Clippy log の提示コードに trailing whitespace が3行あるため、byte を保持し、その原本 log だけを staged whitespace 検査から除外する。他の source・資料・receipt/log は同検査を通す。全 reverse53／workspace／Tier 2／Native-Web parity を実行したとは主張せず、Generic Match の受入済みという判定は維持する。

@@ -1429,7 +1429,6 @@ mod tests {
                 crate::value::RuntimeValue::Unit,
             )),
             task_group: RuntimeLineTaskGroupId::from_zero_based(0).expect("task group"),
-            resume: None,
             captures: Box::default(),
             task_inputs: Box::default(),
             execution: crate::engine::NativeFlowExecutionFrame::running(
@@ -1683,7 +1682,6 @@ mod tests {
             .expect("frame release");
         transaction
             .stage_disposition(DialogueCommitDisposition::Published {
-                resume: None,
                 bindings: Vec::new(),
             })
             .expect("disposition");
@@ -1842,7 +1840,6 @@ mod tests {
         mismatch.line_mut().abandon().expect("abandon");
         mismatch
             .stage_disposition(DialogueCommitDisposition::Published {
-                resume: None,
                 bindings: Vec::new(),
             })
             .expect("stage mismatch");

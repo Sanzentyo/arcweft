@@ -244,15 +244,19 @@ fn joined_original_function_return_expression_and_fallthrough_do_not_advance() {
             } else {
                 assert_eq!(position, 0);
             }
-            engine.fiber.frame.cursor = Some(cursor);
+            engine.fiber.frame.pending_ops = [super::work::NativePendingWork::source(
+                cursor,
+                super::work::NativeSourceRangeRole::FunctionRoot,
+            )]
+            .into();
             engine.fiber.frame.control_stack = vec![FlowControlStackEntry {
                 kind: FlowControlStackEntryKind::FunctionCall(frame),
             }];
             assert!(!engine.main_fiber_can_attempt_runtime_op());
             assert!(!engine.fiber_has_internal_work(&engine.fiber));
-            let cursor = engine.fiber.frame.cursor.as_ref().unwrap();
+            let cursor = engine.fiber.frame.function_root_position().unwrap();
             assert_eq!(cursor.operation_index().unwrap_or(0), position);
-            assert!(engine.fiber.frame.pending_ops.is_empty());
+            assert_eq!(engine.fiber.frame.pending_operation_count(), 0);
             cases += 1;
         }
     }

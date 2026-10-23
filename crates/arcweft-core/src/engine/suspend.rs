@@ -1959,7 +1959,6 @@ mod host_result_tests {
             binding: None,
             id: RuntimeHostCallId("host.probe".to_owned()),
             result_type: HostCallResultType::Plan(admission.type_ids()[0]),
-            resume: None,
         };
         let mut input = RuntimeStepInput {
             host_call_results: vec![RuntimeHostCallResult {

@@ -3058,7 +3058,6 @@ mod tests {
                 RuntimeValue::Unit,
             )),
             task_group: RuntimeLineTaskGroupId::from_zero_based(0).expect("group"),
-            resume: None,
             captures: Box::new([]),
             task_inputs: Box::new([]),
             execution: crate::engine::NativeFlowExecutionFrame::running(

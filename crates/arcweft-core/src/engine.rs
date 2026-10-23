@@ -4742,7 +4742,6 @@ mod rollback_tests {
                 item_type,
             }),
             handle,
-            resume: None,
             observed_through: None,
             queued: VecDeque::new(),
         }));

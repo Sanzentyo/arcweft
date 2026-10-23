@@ -65,7 +65,6 @@ fn waiting() -> (
                 item_type,
             }),
             handle,
-            resume: None,
             observed_through: Some(cursor),
             queued,
         },

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "2cfd5197813492653b004f0375116eb419cbd60e",
+  "name": "task-final-r2374-native-root-queue-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-native-root-queue-fixtures.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "package(=arcweft-core)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2374-native-root-queue-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T04:14:46.1841136Z",
+  "finishedAt": "2026-10-23T04:15:00.4455586Z"
+}

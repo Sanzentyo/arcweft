@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "2cfd5197813492653b004f0375116eb419cbd60e",
+  "name": "task-final-r2373-native-root-queue-fixture-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-core)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2373-native-root-queue-fixture-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T04:12:57.7557757Z",
+  "finishedAt": "2026-10-23T04:14:09.4065034Z"
+}
