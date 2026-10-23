@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "base": "859274b97d71d3c6664dcb4d14a43be1f461e3a1",
+  "run": "task-final-r2384-native-final-grammar-reverse-runtime",
+  "coreLibraryPassed": 1954,
+  "requiredPassed": 27,
+  "required": [
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-plan",
+      "test": "awbc_lower::scope_exit_tests::aggregate_emitted_scope_cancels_its_own_implicit_close_before_outer_continuation"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::flow::function_call::tests::aot_exhausted_executable_frame_retains_native_fallthrough_rejection_and_cleanup"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::authored_map_callback_failure_retains_its_owning_execution_and_no_result"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::rollback_tests::await_observer_admits_the_whole_selection_before_moving_affine_ready"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::choices_preserve_a_missing_id_without_synthesizing_from_the_label"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::construction::source::flow::tests::flow_source_authenticates_complete_task_namespace_before_materialization"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::construction::source::flow::tests::flow_source_checks_aggregate_quotas_and_preserves_terminal_resource_failure"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::construction::source::flow::tests::flow_source_preflights_deep_prefixes_iteratively_and_retains_zero_based_line_sites"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::construction::source::flow::tests::flow_source_preserves_nested_guard_bodies_never_results_and_actual_native_execution"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::construction::source::flow::tests::flow_source_rejects_truncation_bad_prefixes_unknown_operations_and_insufficient_output"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::construction::source::flow::tests::flow_source_restores_complete_host_bodies_and_actual_completed_program_keys"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::child_poll_tests::joined_child_return_keeps_its_queue_position_while_a_descendant_runs"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::child_poll_tests::joined_return_keeps_its_position_across_steps_and_restore_without_poll_charges"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::flow::format_attempt::tests::native_flow_attempt_catches_source_failure_then_evaluates_later_operand"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::flow::format_attempt::tests::native_flow_attempt_does_not_convert_fatal_source_error"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::flow::scope_tests::native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::dialogue_readiness_tests::native_terminal_root_retains_the_issued_blocked_child_until_resume_and_cleanup"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::rollback::await_state::tests::native_waits_reject_wrong_types_correlations_and_cursor_frontiers_before_projection"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::rollback::await_state::tests::native_waits_share_live_inert_and_parent_node_limits"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::flow::function_call::tests::original_function_code_owner_survives_restore_and_rejects_other_valid_sites"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::flow::function_call::tests::program_return_preserves_typed_result_and_rollback_custody"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::flow::function_call::tests::scalar_executable_function_root_preserves_full_formals_budget_rollback_and_result_custody"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_array_map_charges_its_exact_existing_apply_span"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::collection_owner_tests::source_collection_sum_retains_first_exact_rejection_in_native_and_canonical_awbc"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_batch_uses_the_exact_existing_loop_budget"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::flow_ops::tests::static_control_copy_rejects_affine_pattern_audio_and_deep_child_literals"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::construction::lower::static_effect_tests::static_literal_sources_reject_affine_and_runtime_only_descendants_before_live_mapping"
+    }
+  ],
+  "failuresByBinary": [
+    {
+      "binary": "arcweft-cli::check",
+      "count": 51
+    },
+    {
+      "binary": "arcweft-compiler::flow_include",
+      "count": 1
+    }
+  ],
+  "priorFailureIdentityDrift": 0,
+  "identityDifference": [],
+  "sourceInputs": 4025,
+  "sourceDrift": 0,
+  "binaries": 225,
+  "artifactDrift": 0,
+  "recordedAt": "2026-10-23T06:07:22.5110954Z"
+}

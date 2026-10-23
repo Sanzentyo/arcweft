@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "859274b97d71d3c6664dcb4d14a43be1f461e3a1",
+  "name": "task-final-r2384-native-final-grammar-reverse-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-native-final-grammar-reverse.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "rdeps(=arcweft-core)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2384-native-final-grammar-reverse-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-23T05:23:46.7240923Z",
+  "finishedAt": "2026-10-23T06:06:36.1397662Z"
+}
