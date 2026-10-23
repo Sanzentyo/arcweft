@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "dd7ce52715d3beda046ad465063623ece4ea5092",
+  "name": "task-final-r2455-await-observer-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2455-await-observer-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T20:02:36.9386000Z",
+  "finishedAt": "2026-10-23T20:03:11.2556747Z"
+}

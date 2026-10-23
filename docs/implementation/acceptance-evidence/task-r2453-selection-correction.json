@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "initialCatalog": "task-final-r2453-await-observer-regression-catalog",
+  "expected": 7,
+  "actual": 5,
+  "runtimeStarted": false,
+  "reason": "Two exact name predicates omitted their module path. Same compiled binaries were relisted with fully qualified test names. No test or assertion was excluded.",
+  "correctedFilter": "test(=final_analysis::tests::local_use::pending_observers_complete_before_the_enclosing_context_call) | test(=external_id_is_opaque) | test(=removed_and_session_identity_public_api_contract) | test(=checked_statement_authorities_have_no_external_constructors) | test(=flow::tests::thread_expression_statement_lowers_through_the_sole_expression_owner) | test(=await_context_option_boundaries_fixture_passes) | test(=spec_should_pass_check_fixtures_pass_after_refactor)"
+}

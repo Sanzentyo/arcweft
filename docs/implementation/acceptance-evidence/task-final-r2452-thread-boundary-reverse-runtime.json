@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "dd7ce52715d3beda046ad465063623ece4ea5092",
+  "name": "task-final-r2452-thread-boundary-reverse-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-thread-boundary-published.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "rdeps(=arcweft-lang-hir)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2452-thread-boundary-reverse-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-23T19:33:18.2816926Z",
+  "finishedAt": "2026-10-23T19:48:15.9440662Z"
+}

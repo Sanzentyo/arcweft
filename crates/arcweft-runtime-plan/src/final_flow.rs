@@ -9844,11 +9844,31 @@ mod tests {
             .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
             .map(arcweft_lang_hir::project::HirProjectItemRef::id)
             .expect("Flow item");
-        let mut input = complete_type_input(&project);
+        let mut input = RuntimePlanSemanticFactInput::new();
         input.attach_checked_local_uses(Arc::clone(analysis.checked_local_uses()));
-        for (owner, _) in analysis.expressions() {
+        for (owner, checked) in analysis.expressions() {
             let expression = module.resolve_expr(owner).unwrap();
             if matches!(expression.kind(), HirExprKind::Thread(_)) {
+                let ty = checked.value_type().expect("Thread is a value");
+                let arcweft_lang_sema::types::TypeKind::ThreadHandle(result) = ty else {
+                    panic!("Thread owns its complete handle result");
+                };
+                assert_eq!(result.as_ref(), &arcweft_lang_sema::types::TypeKind::Unit);
+                input.push_expression_type(
+                    owner,
+                    RuntimeNormalizedType::new(
+                        RuntimeSemanticTypeId::from_bytes(
+                            *ty.semantic_identity_digest().unwrap().as_bytes(),
+                        ),
+                        RuntimeTypeShape::ThreadHandle(Box::new(RuntimeNormalizedType::new(
+                            RuntimeSemanticTypeId::from_bytes(
+                                *result.semantic_identity_digest().unwrap().as_bytes(),
+                            ),
+                            RuntimeTypeShape::Unit,
+                        ))),
+                    ),
+                    super::super::semantic_facts::tests::fixture_expression_origin(&project, owner),
+                );
                 input.push_thread_producer(
                     owner,
                     analysis
@@ -9871,10 +9891,7 @@ mod tests {
             if row.has_runtime_type() {
                 crate::semantic_facts::RuntimeProjectFunctionTypeProjection::Value {
                     owner,
-                    ty: RuntimeNormalizedType::new(
-                        arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
-                        RuntimeTypeShape::Unit,
-                    ),
+                    ty: facts.expression_type(row.owner()).unwrap().clone(),
                 }
             } else {
                 crate::semantic_facts::RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { owner: row.owner() }

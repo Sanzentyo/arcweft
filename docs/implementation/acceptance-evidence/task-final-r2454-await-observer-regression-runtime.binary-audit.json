@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "run": "task-final-r2454-await-observer-regression-runtime",
+  "binaries": 119,
+  "artifactDrift": 0,
+  "recordedAt": "2026-10-23T20:02:23.0594288Z"
+}

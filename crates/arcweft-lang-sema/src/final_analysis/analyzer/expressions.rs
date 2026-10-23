@@ -2096,7 +2096,8 @@ impl Analyzer<'_, '_, '_> {
                         return Err(AnalyzerExpressionError::rejected(owner));
                     }
                 };
-                let observers = self.check_await_pending_observers(module, operation.branches())?;
+                let observers =
+                    self.check_await_pending_observers(context, module, operation.branches())?;
                 let resolution = CheckedExpressionResolution::Await(CheckedAwait::new(
                     operation.operand(),
                     observers,
@@ -2117,6 +2118,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn check_await_pending_observers(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         branches: &[arcweft_lang_hir::expr::HirAwaitBranch],
     ) -> Result<Vec<CheckedAwaitPendingObserver>, AnalyzerExpressionError> {
@@ -2138,6 +2140,17 @@ impl Analyzer<'_, '_, '_> {
                 })?;
                 self.seed_contextual_pattern_locals(module, pattern, &TypeKind::Progress)
                     .map_err(AnalyzerExpressionError::fatal)?;
+                // An enclosing call may seal its effect graph immediately.
+                // Complete the observer in the Await owner's transaction,
+                // after its Progress binding and before that call is checked.
+                match branch.body() {
+                    arcweft_lang_hir::stmt::HirContextualStmtBody::Ordinary {
+                        statements, ..
+                    } => self.evaluate_block_statement_uses(context, module, statements)?,
+                    arcweft_lang_hir::stmt::HirContextualStmtBody::Thread(body) => {
+                        self.evaluate_thread_body_uses(context, module, body)?;
+                    }
+                }
                 Ok(CheckedAwaitPendingObserver::new(pattern))
             })
             .collect()

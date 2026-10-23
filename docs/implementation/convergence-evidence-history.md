@@ -9313,3 +9313,106 @@ workspace direct fan-in／fan-outはHIR11／3、Sema12／14、RuntimePlan10／10
 元ファイルとSHA256一致で保存した。R2446 Clippy原本のtrailing whitespace 5行は保持し、
 staged whitespace検査ではその原本1件だけを除外する。他のsource・文書・JSON・logは検査する。
 既存WIPは検証入力には含まれるが公開差分からは除外し、全体goalの完了は主張しない。
+
+## Thread 境界の公開照合と全 consumer 実行 — 2026-10-24
+
+18 Rust paths・現行仕様1件と検証原本等98 pathsは、通常 commit/push の
+`dd7ce52715d3beda046ad465063623ece4ea5092` で公開した。
+parent は `81932804da3d150b6039bc99d5d8c39c43dbd4c8`、tree は
+`289085b6744b4d5e9f1a9fd1e9dc803d8c3cdcf0`、raw patch SHA256 は
+`e6f567022c912da5c7d1dae76a5d3280e0566b2ee242a49a48678b5f06197788`。
+[公開 receipt](acceptance-evidence/task-thread-boundary-checkpoint.verified.json) は
+98公開 blob・4,245入力・parent/tree/patch・取得済み origin と advertised ref の差分0、
+index empty を記録する。既存14 tracked WIP と6 untracked ファイルを保持した。
+
+### 公開入力の広域結果
+
+R2451 は、解決済み Cargo graph の HIR とその推移的逆依存23 package を
+all-feature／locked の全 library・binary・integration 対象で列挙した。
+全4,845件のうち **4,814選択／31既存 ignored**。23 package のすべてに選択ケースがある。
+[scope audit](acceptance-evidence/task-final-r2451-thread-boundary-reverse-catalog.scope-audit.json)
+では、以前の Core 逆依存と交差する22 package の3,851選択ケースと、HIR owner の951件を
+すべて保持した。HIR は Core の逆依存ではないので、当時の Core 実行から除外されたことを
+新しい検証漏れや0件合格とは呼ばない。追加12件には既存の HIR integration 7件も含まれ、
+12件すべてを新規テストと呼ばない。今回実装した新規 Thread テストは6件。
+
+R2452 は同じ compiled binary metadata から実際に実行し、
+**4,814実行／4,756 PASS／58 FAIL／31既存除外、895.963秒、Cargo exit 100**。
+[terminal audit](acceptance-evidence/task-final-r2452-thread-boundary-reverse-runtime.terminal-audit.json)、
+[raw log](acceptance-evidence/task-final-r2452-thread-boundary-reverse-runtime.log) を保持する。
+wrapper の外側の exit 0 は後処理の成功であり、この runtime の合格を意味しない。
+4,245入力・case set・119 executable の hash drift はいずれも0。
+
+[必須ケース照合](acceptance-evidence/task-final-r2452-thread-boundary-reverse-runtime.acceptance-audit.json)
+では、受入済み Generic Match 151件と新規 Thread 6件がすべて PASS。
+Compiler `flow_include` は **12 PASS／1 FAIL** で、関数から ThreadHandle を返して
+await する既知ケースだけが失敗した。Sema library 1,303件は全 PASS。
+package 全体では Sema 1,326 PASS／1 FAIL、HIR 956 PASS／2 FAIL、RuntimePlan 157 PASS／1 FAIL。
+Host 72・Driver 177・LSP 223件はすべて PASS。Core 自体はこの graph の実行対象ではなく、
+以前の Core 1,959件を新しい合格へ数えない。
+
+R2424 の52失敗はすべて残り、追加6失敗があった。CLI は53件、Compiler は1件、
+HIR は2件、Sema と RuntimePlan は各1件。識別子の一致だけで原因も同一とは判断せず、
+58件の[実際の stderr index](acceptance-evidence/task-final-r2452-thread-boundary-reverse-runtime.failure-recon.json)
+を保持した。typed Presentation ABI 未接続9件、published JLREQ geometry／raw crop 8件も
+この入力で失敗している。Generic Match の受入を取り消す新しい失敗はなかった。
+
+### 追加6差分の原因と修復
+
+- CLI の `await_context_option_boundaries_fixture_passes` と
+  `spec_should_pass_check_fixtures_pass_after_refactor` は、同じ
+  `049_await_context_option_boundaries.arcw` で checked callable catalog の構築に失敗した。
+  式が所有する body を親の transaction へ揃えた変更後も、Await は Progress の pattern を
+  seed するだけで pending observer の本文を後回しにしていた。Await が型付き contextual
+  body を、binding の直後、外側の `.context` call を完了する前に既存の statement／Thread
+  evaluator でチェックする。元の実ソースを直接使う Sema 回帰を追加した。
+- RuntimePlan の `thread_expression_statement_lowers_through_the_sole_expression_owner` は、
+  Thread を含めた全式へ手製の Unit 投影を渡していた。checked ThreadHandle の形と元の
+  semantic digest を使い、instance projection も同じ facts から参照する fixture に修復した。
+  production の結果契約チェックを緩めていない。
+- HIR の `external_id_is_opaque` と
+  `removed_and_session_identity_public_api_contract` は、同じ私有 constructor の拒否を保ちつつ、
+  compiler の namespace note／E0423文言が期待値と異なった。観測した診断へ揃えた。
+  元の拒否1件・12件は同数で、fixture source と私有境界を変更していない。
+- Sema の `checked_statement_authorities_have_no_external_constructors` は、追加した私有
+  `CheckedThread.result` が fixture にないため、欠けた field に関する1診断で止まり、従来の
+  他の私有 field の拒否証拠まで出なくなっていた。fixture に `result: any()` を足した。
+  従来の拒否10件をすべて維持し、Thread の body／mode／result の私有性も検査する。
+  欠損 field の1診断だけを承認する期待値更新は行っていない。
+
+R2453 の最初の catalog は5件選択だった。新規 Sema テストと RuntimePlan テストの
+exact-name predicate から module path が欠けており、7件を要求する preflight が
+**runtime の起動前に停止**した。[訂正記録](acceptance-evidence/task-r2453-selection-correction.json)
+のとおり、同じ binary metadata を fully qualified predicate で再列挙した R2453b は7件。
+再ビルド、assertion の削除、filter による必要ケースの除外は行っていない。
+
+R2454 は **7/7 PASS／4,839 skip、40.311秒、exit 0**。
+4,245入力・case set・119 executable の drift は0。
+[修復照合](acceptance-evidence/task-r2454-repair-acceptance-audit.json) と
+[terminal audit](acceptance-evidence/task-final-r2454-await-observer-regression-runtime.terminal-audit.json)
+を保持する。追加6失敗の全識別子と新規 Sema 回帰1件を確認した限定実行であり、
+23 package 分の metadata のうち実行したのは4 package の7件。
+他の19 package にテストが存在しないという意味ではなく、その filter では未選択。
+4,839 skip は既存 ignored と filter skip の合計で、全件を ignored と呼ばない。
+従来の52失敗と Generic Match 151件はこの限定実行では再実行していない。
+
+### 修復入力の check・構造と保全
+
+最終7 paths の修復入力で、R2455 workspace all-target／all-feature／locked check は
+**exit 0、32.77秒、警告あり**。R2456 の同じ workspace Clippy も
+**exit 0、36.15秒、警告あり**。CLI check の209警告は workspace 全体の件数ではない。
+[check receipt](acceptance-evidence/task-final-r2455-await-observer-workspace-check.json)、
+[Clippy receipt](acceptance-evidence/task-final-r2456-await-observer-workspace-clippy.json)。
+
+[計測](acceptance-evidence/task-await-observer-ownership-metrics.json) では、
+Sema expressions は5,543 LOC（公開基点比+13）、独立 test module の local_use は2,190（+29）、
+compile-fail source は63（+1）、RuntimePlan final_flow は10,338（+17、変更は embedded test のみ）。
+新しい state／I/O／依存／公開 API／codec を加えず、既存の所有者と evaluator を使う。
+大きい既存 owner の責任と fan-in／fan-out は変わらず、R2447 の構造 disposition を再利用する。
+push だけを理由に workspace scanner を反復していない。
+
+37原本を元ファイルと SHA256／Git blob が同じ状態で保全した。
+R2452 raw log の trailing whitespace 8行と R2456 Clippy raw log の5行は、証拠の byte を
+保つため書き換えない。staged whitespace 検査からその原本2件だけを除外し、他は検査する。
+修復後の全 consumer runtime の合格や新しい広域失敗件数は、この限定結果から推定しない。
+現状一覧は引き続き `current-status.md` の一か所とする。

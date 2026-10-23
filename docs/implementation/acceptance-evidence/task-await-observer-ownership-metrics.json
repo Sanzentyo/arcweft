@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "base": "dd7ce52715d3beda046ad465063623ece4ea5092",
+  "dirty": true,
+  "paths": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "bytes": 240352,
+      "physicalLoc": 5543,
+      "baseLoc": 5530,
+      "growth": 13,
+      "classification": "production owner; existing embedded tests unchanged"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs",
+      "bytes": 71341,
+      "physicalLoc": 2190,
+      "baseLoc": 2161,
+      "growth": 29,
+      "classification": "test"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/tests/ui/checked_statement_authorities_are_not_constructible.rs",
+      "bytes": 1396,
+      "physicalLoc": 63,
+      "baseLoc": 62,
+      "growth": 1,
+      "classification": "test"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "bytes": 442062,
+      "physicalLoc": 10338,
+      "baseLoc": 10321,
+      "growth": 17,
+      "classification": "production owner; this cut changes only embedded tests"
+    }
+  ],
+  "ownership": "Await observes its own typed contextual body after binding. Existing statement/thread evaluators and fact authority are reused. No new state, I/O, dependency, public API, schema, codec, fallback, or parallel result table. Existing R2447 structural disposition and resolved graph reused. Final_flow changes are tests only."
+}

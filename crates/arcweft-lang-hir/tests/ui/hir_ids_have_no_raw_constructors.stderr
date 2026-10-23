@@ -1,50 +1,66 @@
-error[E0423]: expected value, found struct `ItemId`
+error[E0423]: cannot find value `ItemId` in this scope
   --> tests/ui/hir_ids_have_no_raw_constructors.rs:22:13
    |
 22 |     let _ = ItemId;
    |             ^^^^^^ constructor is not visible here due to private fields
+   |
+   = note: a struct named `ItemId` exists in another namespace
 
-error[E0423]: expected value, found struct `ScopeId`
+error[E0423]: cannot find value `ScopeId` in this scope
   --> tests/ui/hir_ids_have_no_raw_constructors.rs:23:13
    |
 23 |     let _ = ScopeId;
    |             ^^^^^^^ constructor is not visible here due to private fields
+   |
+   = note: a struct named `ScopeId` exists in another namespace
 
-error[E0423]: expected value, found struct `LocalId`
+error[E0423]: cannot find value `LocalId` in this scope
   --> tests/ui/hir_ids_have_no_raw_constructors.rs:24:13
    |
 24 |     let _ = LocalId;
    |             ^^^^^^^ constructor is not visible here due to private fields
+   |
+   = note: a struct named `LocalId` exists in another namespace
 
-error[E0423]: expected value, found struct `ExprId`
+error[E0423]: cannot find value `ExprId` in this scope
   --> tests/ui/hir_ids_have_no_raw_constructors.rs:25:13
    |
 25 |     let _ = ExprId;
    |             ^^^^^^ constructor is not visible here due to private fields
+   |
+   = note: a struct named `ExprId` exists in another namespace
 
-error[E0423]: expected value, found struct `StmtId`
+error[E0423]: cannot find value `StmtId` in this scope
   --> tests/ui/hir_ids_have_no_raw_constructors.rs:26:13
    |
 26 |     let _ = StmtId;
    |             ^^^^^^ constructor is not visible here due to private fields
+   |
+   = note: a struct named `StmtId` exists in another namespace
 
-error[E0423]: expected value, found struct `TypeId`
+error[E0423]: cannot find value `TypeId` in this scope
   --> tests/ui/hir_ids_have_no_raw_constructors.rs:27:13
    |
 27 |     let _ = TypeId;
    |             ^^^^^^ constructor is not visible here due to private fields
+   |
+   = note: a struct named `TypeId` exists in another namespace
 
-error[E0423]: expected value, found struct `PatternId`
+error[E0423]: cannot find value `PatternId` in this scope
   --> tests/ui/hir_ids_have_no_raw_constructors.rs:28:13
    |
 28 |     let _ = PatternId;
    |             ^^^^^^^^^ constructor is not visible here due to private fields
+   |
+   = note: a struct named `PatternId` exists in another namespace
 
-error[E0423]: expected value, found struct `CaptureId`
+error[E0423]: cannot find value `CaptureId` in this scope
   --> tests/ui/hir_ids_have_no_raw_constructors.rs:29:13
    |
 29 |     let _ = CaptureId;
    |             ^^^^^^^^^ constructor is not visible here due to private fields
+   |
+   = note: a struct named `CaptureId` exists in another namespace
 
 error[E0423]: cannot initialize a tuple struct which contains private fields
   --> tests/ui/hir_ids_have_no_raw_constructors.rs:17:13
@@ -52,6 +68,7 @@ error[E0423]: cannot initialize a tuple struct which contains private fields
 17 |     let _ = HirDatabaseId(NonZeroU64::MIN);
    |             ^^^^^^^^^^^^^
    |
+   = note: a struct named `HirDatabaseId` exists in another namespace
 note: constructor is not visible here due to private fields
   --> src/identity.rs
    |
@@ -64,6 +81,7 @@ error[E0423]: cannot initialize a tuple struct which contains private fields
 18 |     let _ = HirRevision(NonZeroU32::MIN);
    |             ^^^^^^^^^^^
    |
+   = note: a struct named `HirRevision` exists in another namespace
 note: constructor is not visible here due to private fields
   --> src/identity.rs
    |
@@ -76,6 +94,7 @@ error[E0423]: cannot initialize a tuple struct which contains private fields
 19 |     let _ = LocalGeneration(NonZeroU32::MIN);
    |             ^^^^^^^^^^^^^^^
    |
+   = note: a struct named `LocalGeneration` exists in another namespace
 note: constructor is not visible here due to private fields
   --> src/identity.rs
    |
@@ -88,6 +107,7 @@ error[E0423]: cannot initialize a tuple struct which contains private fields
 20 |     let _ = SourceGeneration(NonZeroU32::MIN);
    |             ^^^^^^^^^^^^^^^^
    |
+   = note: a struct named `SourceGeneration` exists in another namespace
 note: constructor is not visible here due to private fields
   --> $WORKSPACE/crates/arcweft-source/src/identity.rs
    |

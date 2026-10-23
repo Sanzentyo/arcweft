@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "base": "dd7ce52715d3beda046ad465063623ece4ea5092",
+  "beforeRun": "task-final-r2452-thread-boundary-reverse-runtime",
+  "beforeActualExit": 100,
+  "beforeFailed": 58,
+  "additionalFailureIdentities": [
+    "arcweft-cli::arcw_fixtures_check_run::await_context_option_boundaries_fixture_passes",
+    "arcweft-cli::arcw_fixtures_check_run::spec_should_pass_check_fixtures_pass_after_refactor",
+    "arcweft-runtime-plan::flow::tests::thread_expression_statement_lowers_through_the_sole_expression_owner",
+    "arcweft-lang-hir::project_symbols::external_id_is_opaque",
+    "arcweft-lang-hir::public_api::removed_and_session_identity_public_api_contract",
+    "arcweft-lang-sema::api_compile::checked_statement_authorities_have_no_external_constructors"
+  ],
+  "afterRun": "task-final-r2454-await-observer-regression-runtime",
+  "afterActualExit": 0,
+  "selected": 7,
+  "passed": 7,
+  "failed": 0,
+  "skipped": 4839,
+  "metadataPackages": 23,
+  "matchedPackages": 4,
+  "rows": [
+    {
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "await_context_option_boundaries_fixture_passes",
+      "status": "PASS",
+      "failedBefore": true
+    },
+    {
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_pass_check_fixtures_pass_after_refactor",
+      "status": "PASS",
+      "failedBefore": true
+    },
+    {
+      "binary": "arcweft-lang-hir::project_symbols",
+      "test": "external_id_is_opaque",
+      "status": "PASS",
+      "failedBefore": true
+    },
+    {
+      "binary": "arcweft-lang-hir::public_api",
+      "test": "removed_and_session_identity_public_api_contract",
+      "status": "PASS",
+      "failedBefore": true
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::local_use::pending_observers_complete_before_the_enclosing_context_call",
+      "status": "PASS",
+      "failedBefore": false
+    },
+    {
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "checked_statement_authorities_have_no_external_constructors",
+      "status": "PASS",
+      "failedBefore": true
+    },
+    {
+      "binary": "arcweft-runtime-plan",
+      "test": "flow::tests::thread_expression_statement_lowers_through_the_sole_expression_owner",
+      "status": "PASS",
+      "failedBefore": true
+    }
+  ],
+  "missingRepairs": [],
+  "privacyDiagnosticCounts": [
+    {
+      "after": 1,
+      "before": 1,
+      "fixture": "external_id_constructor"
+    },
+    {
+      "after": 12,
+      "before": 12,
+      "fixture": "hir_ids_have_no_raw_constructors"
+    },
+    {
+      "after": 10,
+      "before": 10,
+      "fixture": "checked_statement_authorities_are_not_constructible"
+    }
+  ],
+  "scope": "All six newly observed failure identities plus one source-backed Await regression passed. The remaining prior 52 failures and accepted Generic Match 151 were not selected in this narrow run; their R2452 evidence remains scoped to the published input. No full-closure pass is inferred."
+}

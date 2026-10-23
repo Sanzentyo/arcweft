@@ -9,6 +9,35 @@ use crate::types::TypeKind;
 use super::{analyze, character_nominal_fixture, fixture};
 
 #[test]
+fn pending_observers_complete_before_the_enclosing_context_call() {
+    use crate::final_analysis::CheckedExpressionResolution;
+
+    let world = fixture(
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/arcw/spec_should_pass/check/049_await_context_option_boundaries.arcw"
+        )),
+        None,
+    );
+    let report =
+        analyze(&world).expect("Await observers complete before Result.context seals calls");
+    let awaits = report
+        .expressions()
+        .filter_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Await(awaited) => Some(awaited),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(awaits.len(), 3);
+    assert!(awaits.iter().all(|awaited| awaited.observers().len() == 1));
+    assert!(
+        report
+            .calls()
+            .all(|(_, call)| call.selected_application().is_some())
+    );
+}
+
+#[test]
 fn thread_producers_retain_the_exact_checked_body_and_execution_mode() {
     use crate::final_analysis::{CheckedExpressionResolution, CheckedLocalUseAuthority};
     use arcweft_lang_hir::expr::HirThreadMode;

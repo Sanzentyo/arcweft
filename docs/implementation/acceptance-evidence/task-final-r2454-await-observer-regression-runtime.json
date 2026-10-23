@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "dd7ce52715d3beda046ad465063623ece4ea5092",
+  "name": "task-final-r2454-await-observer-regression-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-await-observer-r2453.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "test(=final_analysis::tests::local_use::pending_observers_complete_before_the_enclosing_context_call) | test(=external_id_is_opaque) | test(=removed_and_session_identity_public_api_contract) | test(=checked_statement_authorities_have_no_external_constructors) | test(=flow::tests::thread_expression_statement_lowers_through_the_sole_expression_owner) | test(=await_context_option_boundaries_fixture_passes) | test(=spec_should_pass_check_fixtures_pass_after_refactor)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2454-await-observer-regression-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T20:01:31.9010801Z",
+  "finishedAt": "2026-10-23T20:02:13.9977306Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "dd7ce52715d3beda046ad465063623ece4ea5092",
+  "name": "task-final-r2456-await-observer-workspace-clippy",
+  "command": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2456-await-observer-workspace-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T20:03:11.3539143Z",
+  "finishedAt": "2026-10-23T20:03:49.1814244Z"
+}
