@@ -9416,3 +9416,55 @@ R2452 raw log の trailing whitespace 8行と R2456 Clippy raw log の5行は、
 保つため書き換えない。staged whitespace 検査からその原本2件だけを除外し、他は検査する。
 修復後の全 consumer runtime の合格や新しい広域失敗件数は、この限定結果から推定しない。
 現状一覧は引き続き `current-status.md` の一か所とする。
+
+## Await 修復の公開照合と Sema 全逆依存 — 2026-10-24
+
+前節の7 pathsの修復・37原本・現状一覧／履歴は、通常 commit/push の
+`ad41aa6babf1c8c85d73db54021b943a099fb267` で公開した。
+parent は `dd7ce52715d3beda046ad465063623ece4ea5092`、tree は
+`75e340b5c6294c03699a697cd81ad65de2cca15e`、raw patch SHA256 は
+`acee8dc60c20e9e7aafc1fa743807d905dd03ccd14564d1d9ba6734dbcd4aa5a`。
+最初の fetch は GitHub の DNS 解決に失敗したが、local commit 後の通常 push と
+fresh fetch／advertised ref の再照合は成功した。
+[公開 receipt](acceptance-evidence/task-await-observer-checkpoint.verified.json) は
+46公開 blob・4,282入力・parent/tree/patch・index empty・既存WIPの差分0を記録する。
+
+R2457 は解決済み Cargo graph から Sema の全22逆依存 package を選び、修復した
+HIR compile-fail owner 2件も加えた。metadata には23 packageがあるが、HIRは2件のみの
+新規実行であり、全23 packageをすべて新しく実行したとは呼ばない。
+全4,846件中 **3,859選択／987除外**。以前の同22 packageの3,856選択ケースを欠落なく保持し、
+新規 Await 回帰1件と HIR 修復2件を追加した。
+[scope audit](acceptance-evidence/task-final-r2457-await-observer-reverse-catalog.scope-audit.json)
+には Generic Match 151件・Compiler flow_include 13件など171必須識別子を保持する。
+
+[再利用照合](acceptance-evidence/task-await-observer-published.reuse-audit.json) では、
+R2454以降の既存入力の変更は現状一覧と履歴だけで、Rust／fixture／manifest／lockと
+119 executableの差分0。37検証原本の追加は新しいRust入力ではない。
+同じ binary metadata を使い、再ビルドせずに次の実行へ進めた。
+
+R2458 は **3,859実行／3,807 PASS／52 FAIL／987 skip、604.750秒、実際の Cargo exit 100**。
+[terminal audit](acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.terminal-audit.json)、
+[raw log](acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.log) を保持する。
+4,282入力・case set・119 executableの drift はすべて0。
+987 skipの内訳は31既存 ignoredと、再利用した変更のないHIR 956件。
+この956件はR2452で実際に合格したケースであり、新しいPASSへ数えない。
+HIRの新規 Thread 境界1件もこの再利用に含まれる。
+
+[受入・修復照合](acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.acceptance-audit.json)
+では、Generic Match **151/151 PASS**、前節の追加6失敗と新規 Await 回帰の
+**7/7 PASS**を確認した。新規Threadの5件は今回PASSで、残るHIRの1件は前述の再利用。
+Semaは **1,328/1,328 PASS**、RuntimePlanは **158/158 PASS**、HIRの修復2件も全PASS。
+Compiler flow_includeは **12 PASS／1 FAIL**で、返却 ThreadHandleの既知ケースが残る。
+CLIは **640 PASS／51 FAIL**。Host72・Driver177・LSP223件も全PASS。
+Core自体はこの選択の実行対象ではなく、以前のCore合格を新しい合格と呼ばない。
+
+従来の52失敗識別子と完全一致し、新しい失敗は0、R2452の追加6失敗はすべて解消した。
+原因の同一性は識別子だけでは判断せず、[今回の52診断](acceptance-evidence/task-final-r2458-await-observer-reverse-runtime.failure-recon.json)
+を保持する。published JLREQ hyphenのgeometryは今回も同じ縦columnを要求する箇所で
+1169／1127へ分かれている。typed Presentation ABI未接続9件、JLREQ geometry／raw crop8件、
+返却ThreadHandle等の未達を、Generic Matchや個別の受入済み境界へ広げない。
+
+新たなRust変更はなく、R2455 workspace check／R2456 workspace Clippyと構造dispositionを
+再利用する。新しいdoctest／Tier2／最終workspace／Native-Web capture parityは実行していない。
+16原本をbyte・SHA256・Git blob一致で保持した。R2458 raw logのtrailing whitespace8行は
+保持し、staged whitespace検査から原本1件のみを除外する。現状の一覧は `current-status.md` のみ。

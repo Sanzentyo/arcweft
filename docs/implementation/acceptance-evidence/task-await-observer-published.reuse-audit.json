@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "base": "ad41aa6babf1c8c85d73db54021b943a099fb267",
+  "priorRun": "task-final-r2454-await-observer-regression-runtime",
+  "binaries": 119,
+  "binaryDrift": 0,
+  "changedExistingInputs": [
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "sourceChangesAffectingCompilation": 0,
+  "scope": "No rebuild. Only the two published prose records and 37 new evidence archives differ from the tested input."
+}

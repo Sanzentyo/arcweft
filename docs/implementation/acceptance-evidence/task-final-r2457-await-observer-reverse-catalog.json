@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "ad41aa6babf1c8c85d73db54021b943a099fb267",
+  "name": "task-final-r2457-await-observer-reverse-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "--binaries-metadata",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-await-observer-r2453.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "rdeps(=arcweft-lang-sema) | test(=external_id_is_opaque) | test(=removed_and_session_identity_public_api_contract)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2457-await-observer-reverse-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T20:09:37.4897898Z",
+  "finishedAt": "2026-10-23T20:09:39.0333124Z"
+}
