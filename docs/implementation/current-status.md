@@ -1,14 +1,11 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-23。資料監査の基点となった既存 `main` は
+確認日: 2026-10-23。資料監査の基点は既存 `main` の
 `7b1f8f5deb64db1274632c6ec2a7b8af69147420`。
-調査開始時の14件の tracked WIP、既存の untracked 修復メモ等は保持した。
-資料整理は `71a00e3eec1b43067fb9f64676b9158f7b44c113` として公開した。
-Native child queue 移行は `87bd6493162454d19f57c6341d9db3020b41847f` として公開した。
-queue reader／Await 移行は `d64d236091748a13b7b3f25f535f08a53e0dec23` として公開した。
-元コード fixture と空 range の処理は `a5ad3b4ae1cf0cb3b5461490878e08c082213355` で公開・検証した。
-独立 root cursor の除去は `e2519939403a7fea0a9ffd8e058d8936d53049b9` で公開した。
-その後の caller／待機キュー統合と R2371／R2372 の結果を下記に反映した。
+最新のソース照合対象は `84c40982c11d8f085c33502bfd9bb23148898ac8`。
+資料整理は `71a00e3eec1b43067fb9f64676b9158f7b44c113` として公開済み。
+調査開始時の14件の tracked WIP と既存の untracked 修復メモ等は保持した。
+途中の公開履歴と固定入力ごとの実行結果は検証履歴を参照する。
 
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
 [仕様索引](../README.md)、過去の実行結果・公開 SHA は
@@ -57,27 +54,6 @@ Generic Match の151件は run `119cbafe-0a01-419e-841f-b919f03d9578` と
 資料監査では Never・uninhabited empty Match・let-else・nested non-exhaustive atomicity
 の実装／テストを照合し、同機能を再開する
 具体的な新規不具合は確認していない。
-
-## 直近の検証入力を取り違えないための記録
-
-| 検証 | 実際の結果 | 適用範囲 |
-|---|---|---|
-| R2342 Core 逆依存 | 7,165 PASS／52 FAIL／39 skipped、exit 100 | 53 package を選択。host 上に named test がない3 package は合格件数に含めない。3,976入力・225 executable と case set の drift は0。 |
-| R2355 original code position 修復 | 2,463 PASS／0 FAIL／0 skipped、exit 0 | 8 library。3,977入力・8 executable・case set の drift は0。現キュー WIP より前の入力。[terminal audit](acceptance-evidence/task-final-r2355-native-code-position-owner-runtime.terminal-audit.json)。 |
-| R2356 workspace all-target／all-feature／locked check | exit 0 | キュー切替前の入力。[receipt](acceptance-evidence/task-final-r2356-native-code-position-workspace-check.json)。 |
-| R2359 Core all-target／all-feature／locked Clippy | exit 0、既存警告あり | キュー切替前の入力。警告なしとは言わない。[receipt](acceptance-evidence/task-final-r2359-native-code-position-final-core-clippy.json)。 |
-| R2361 `cargo check -p arcweft-core --lib --all-features --locked` | **exit 101、33 errors／24 warnings** | `7b1f8f5deb64db1274632c6ec2a7b8af69147420` の source dispatcher 移行入力。runtime 実行は始めていない。[receipt](acceptance-evidence/task-final-r2361-native-work-producer-migration-check.json)。 |
-| R2362 同 Core library check | **exit 101、29 errors／25 warnings** | child queue 移行の途中。誤った `DialogueActivationFrame.group` 参照の E0609 を含む。[receipt](acceptance-evidence/task-final-r2362-native-task-root-producer-check.json)。 |
-| R2363 同 Core library check | **exit 101、28 errors／24 warnings** | 正しい `task_group` 参照へ修正し、検証済みの空 task body をキューへ積まない形にした入力。上記 E0609 は解消。runtime 実行なし。[receipt](acceptance-evidence/task-final-r2363-native-task-root-correction-check.json)。 |
-| R2364 同 Core library check | **exit 0、151 warnings** | queue reader／join／numeric Map／dialogue activation／Await source 移行の入力。テストや runtime の成功を意味しない。[receipt](acceptance-evidence/task-final-r2364-native-source-readers-await-check.json)。 |
-| R2365 Core all-target／all-feature／locked Clippy | **exit 101、lib test の34 compile errors／79 warnings** | library の検査とテストのコンパイルを区別する。nextest／runtime は未実行。[receipt](acceptance-evidence/task-final-r2365-native-queue-readers-core-clippy.json)。 |
-| R2366 Core all-target／all-feature／locked check | **exit 101、lib test の1 compile error／31 warnings** | formatter fixture の空入力配列の型推論で失敗。その後、slice 型を明示して修復。[receipt](acceptance-evidence/task-final-r2366-native-original-fixture-check.json)。 |
-| R2367 Core library nextest list | **exit 0、1,955件選択／除外0** | 全件と、join／scope／Await／formatter／affine literal の必須11件を確認。[receipt](acceptance-evidence/task-final-r2367-native-original-fixture-owner-catalog.json)。 |
-| R2368 Core library nextest run | **1,955 PASS／0 FAIL／0 skipped、exit 0、33.712秒** | 全 feature、3,988入力／1 executable／case set の drift 0。保持14 tracked WIP を含む固定 working tree で実行。[terminal audit](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.terminal-audit.json)。 |
-| R2369 Core all-target／all-feature／locked Clippy | **exit 0、警告あり** | lib test の警告は3,163（2,466重複）。警告ゼロとはしない。R2368 と同じ source。[receipt](acceptance-evidence/task-final-r2369-native-original-fixture-core-clippy.json)。 |
-| R2370 Core library all-feature／locked check | **exit 101、22 errors／25 warnings** | 独立 root cursor を除去した後続 WIP。復帰・rollback 等の旧参照に E0609。R2368 の入力と異なり、runtime は未実行。[receipt](acceptance-evidence/task-final-r2370-native-unified-function-root-check.json)。 |
-| R2371 同 Core library check | **exit 101、1 error／23 warnings** | scope visitor のエラー型推論 E0283。callback の型を明示して修復。[receipt](acceptance-evidence/task-final-r2371-native-root-caller-queues-check.json)。 |
-| R2372 Core all-target／all-feature／locked check | **exit 101、lib test の17 errors／31 warnings（18重複）** | 本番側の旧 cursor 参照は除去。残る error は旧 `cursor`／`resume` を使う fixture。root 切替後の runtime は未実行。[receipt](acceptance-evidence/task-final-r2372-native-root-queue-all-target-check.json)。 |
 
 旧ロードマップ、着手前の実装ガイド、重複 feature matrix、完了した runtime-boundary
 移行手順、旧レビュー依頼・設計 mirror は、現行契約への整理と検証履歴の保全後に削除した。
