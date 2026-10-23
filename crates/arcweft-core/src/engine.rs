@@ -211,6 +211,7 @@ struct NativePreparedLineTaskCommands {
         crate::line_task::RuntimePreparedScheduledPacketTake,
     >,
     next_fiber_id: u64,
+    work: VecDeque<(LineTaskWorkTag, VecDeque<NativePendingWork>)>,
 }
 
 struct NativePreparedDeferredLineChild {
@@ -220,6 +221,7 @@ struct NativePreparedDeferredLineChild {
     ordinal: u64,
     allocated: std::num::NonZeroU64,
     next_fiber_id: u64,
+    pending_ops: VecDeque<NativePendingWork>,
 }
 
 pub(super) struct NativePreparedDialogueEffectCallback {
@@ -229,6 +231,7 @@ pub(super) struct NativePreparedDialogueEffectCallback {
     allocated: std::num::NonZeroU64,
     site: crate::runtime_id::RuntimeFunctionSiteId,
     invocation: RuntimeCallableZeroArgInvocationProof,
+    pending_ops: VecDeque<NativePendingWork>,
 }
 
 /// Executor identity and its current owned execution frame.
@@ -3201,7 +3204,7 @@ impl Engine {
 
     fn prepare_child_fiber(
         &self,
-        body: &[FlowOp],
+        pending_ops: VecDeque<NativePendingWork>,
         captures: &[crate::runtime_id::RuntimeLocalDeclarationId],
     ) -> Result<(FlowFiber, u64), RuntimeEvalError> {
         let ordinal = self.next_fiber_id;
@@ -3210,16 +3213,6 @@ impl Engine {
             .and_then(std::num::NonZeroU64::new)
             .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
         let env = self.fiber.frame.env.try_capture_unrestricted(captures)?;
-        let mut pending_ops = VecDeque::with_capacity(body.len().saturating_add(2));
-        if !body.is_empty() {
-            pending_ops.push_front(FlowOp::ExitScope);
-            for op in body.iter().rev() {
-                pending_ops.push_front(op.clone());
-            }
-            pending_ops.push_front(FlowOp::EnterScope {
-                identity: crate::scope::RuntimeScopeIdentity::Anonymous,
-            });
-        }
         Ok((
             FlowFiber {
                 frame: crate::engine::NativeFlowExecutionFrame {
@@ -3319,6 +3312,14 @@ impl Engine {
             allocated,
             site: function,
             invocation,
+            pending_ops: self.prepare_task_root_work(
+                NativeCodeCursor::root(
+                    &self.plan,
+                    crate::plan::code::RuntimeCodeOwner::Function(function),
+                )
+                .expect("an admitted callback retains its original executable row"),
+                true,
+            )?,
         })
     }
 
@@ -3338,9 +3339,6 @@ impl Engine {
             .function_sites()
             .get(prepared.site)
             .expect("prepared callback function site remains present");
-        let RuntimeFunctionSiteBody::Executable(executable) = site.body() else {
-            unreachable!("prepared callback selected executable body")
-        };
         let mut env = RuntimeEnv::default();
         env.push_function_scope(
             prepared.site,
@@ -3381,18 +3379,12 @@ impl Engine {
             .expect("prepared callback pattern remains matched");
             env.bind_all(bindings);
         }
-        let mut pending_ops = VecDeque::with_capacity(executable.ops().len().saturating_add(2));
-        pending_ops.push_back(FlowOp::EnterScope {
-            identity: crate::scope::RuntimeScopeIdentity::Anonymous,
-        });
-        pending_ops.extend(executable.ops().iter().cloned());
-        pending_ops.push_back(FlowOp::ExitScope);
         FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: self.fiber.frame.program.clone(),
                 line_cursor: 0,
                 cursor: None,
-                pending_ops,
+                pending_ops: prepared.pending_ops,
                 control_stack: Vec::new(),
                 await_observer: None,
                 root_cleanups: Vec::new(),
@@ -3566,10 +3558,29 @@ impl Engine {
         }
         let mut packets = BTreeMap::new();
         let mut planned = Vec::new();
+        let mut work = VecDeque::new();
+        let group_id = transaction.frame().task_group;
+        let group = self
+            .plan
+            .line_task_groups()
+            .get(group_id.index())
+            .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
         let mut next_fiber_id = self.next_fiber_id;
         for command in &activation.commands {
             match command {
                 crate::line_task::LineTaskCommand::Run { tag, policy } => {
+                    let body = group
+                        .command_code_body(tag)
+                        .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
+                    let position = NativeCodeCursor::root(
+                        &self.plan,
+                        crate::plan::code::RuntimeCodeOwner::LineTask {
+                            group: group_id,
+                            body,
+                        },
+                    )
+                    .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
+                    let pending_ops = self.prepare_task_root_work(position, true)?;
                     if let Some(token) = tag.scheduled_token() {
                         if completed.contains(token) || packets.contains_key(token) {
                             return Err(crate::line_task::LineRuntimeError::InvalidScheduledCaptureTransition.into());
@@ -3585,6 +3596,7 @@ impl Engine {
                         .checked_add(1)
                         .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
                     planned.push((tag, policy.cancel));
+                    work.push_back((tag.clone(), pending_ops));
                 }
                 crate::line_task::LineTaskCommand::Cancel { tag } => {
                     if self.child_fibers.iter().any(|child| {
@@ -3606,13 +3618,13 @@ impl Engine {
             scheduled,
             packets,
             next_fiber_id,
+            work,
         })
     }
 
     pub(super) fn prepare_line_task_commands(
         &self,
         transaction: &mut dialogue::DialogueActivationTransaction,
-        group: &LineTaskGroup,
         activation: crate::line_task::LineTaskActivation,
         captures: &[RuntimeLocalBinding],
         request_cancellation: bool,
@@ -3621,6 +3633,7 @@ impl Engine {
             scheduled,
             mut packets,
             next_fiber_id,
+            mut work,
         } = self.inspect_line_task_commands(
             transaction,
             &activation,
@@ -3658,15 +3671,10 @@ impl Engine {
         for command in activation.commands {
             match command {
                 crate::line_task::LineTaskCommand::Run { tag, policy } => {
-                    let ops = group.command_ops(&tag);
-                    let mut pending_ops = VecDeque::with_capacity(ops.len().saturating_add(2));
-                    pending_ops.push_front(FlowOp::ExitScope);
-                    for op in ops.iter().rev().cloned() {
-                        pending_ops.push_front(op);
-                    }
-                    pending_ops.push_front(FlowOp::EnterScope {
-                        identity: crate::scope::RuntimeScopeIdentity::Anonymous,
-                    });
+                    let (prepared_tag, pending_ops) = work
+                        .pop_front()
+                        .expect("each Run command retains its prepared original code");
+                    assert_eq!(prepared_tag, tag);
                     let selected_captures = if let Some(token) = tag.scheduled_token().cloned() {
                         let proof = packets
                             .remove(&token)
@@ -3860,6 +3868,14 @@ impl Engine {
             ordinal,
             allocated,
             next_fiber_id,
+            pending_ops: self.prepare_task_root_work(
+                NativeCodeCursor::root(
+                    &self.plan,
+                    crate::plan::code::RuntimeCodeOwner::Function(site_id),
+                )
+                .expect("an admitted deferred child retains its original executable row"),
+                true,
+            )?,
         })
     }
 
@@ -3879,9 +3895,6 @@ impl Engine {
             .function_sites()
             .get(prepared.site_id)
             .expect("checked deferred function site remains present");
-        let RuntimeFunctionSiteBody::Executable(body) = site.body() else {
-            unreachable!("checked deferred function body remains executable")
-        };
         let mut env = RuntimeEnv::default();
         env.push_function_scope(
             prepared.site_id,
@@ -3907,12 +3920,6 @@ impl Engine {
             .expect("checked deferred pattern remains matched");
             env.bind_all(bindings);
         }
-        let mut pending_ops = VecDeque::with_capacity(body.ops().len().saturating_add(2));
-        pending_ops.push_back(FlowOp::EnterScope {
-            identity: crate::scope::RuntimeScopeIdentity::Anonymous,
-        });
-        pending_ops.extend(body.ops().iter().cloned());
-        pending_ops.push_back(FlowOp::ExitScope);
         let mut batch = NativeLineTaskExecutionBatch {
             child_fibers: VecDeque::new(),
             closing_existing: BTreeSet::new(),
@@ -3925,7 +3932,7 @@ impl Engine {
                 program: self.fiber.frame.program.clone(),
                 line_cursor: 0,
                 cursor: None,
-                pending_ops,
+                pending_ops: prepared.pending_ops,
                 control_stack: Vec::new(),
                 await_observer: None,
                 root_cleanups: Vec::new(),
@@ -4420,8 +4427,7 @@ impl Engine {
         if joined {
             transaction.frame_mut().line_task = dialogue::DialogueLineTaskState::Live(live);
         }
-        let batch =
-            self.prepare_line_task_commands(&mut transaction, group, next, &captures, false)?;
+        let batch = self.prepare_line_task_commands(&mut transaction, next, &captures, false)?;
         let receipt = self.dialogue_activations.commit_transaction(transaction)?;
         Self::publish_dialogue_line_receipt(receipt.into_line(), output);
         self.commit_line_task_execution_batch(batch);

@@ -166,22 +166,26 @@ impl LineTaskGroup {
         self.nodes.get(id.index())
     }
 
-    /// Resolves a reducer command only at the native executor boundary. The
-    /// shared reducer intentionally never sees `FlowOp` payloads.
+    /// Resolves a reducer command to its original owning body. Missing commands
+    /// are invalid coordinates, rather than successful empty instruction lists.
     #[must_use]
-    pub(crate) fn command_ops(&self, tag: &LineTaskWorkTag) -> &[FlowOp] {
+    pub(crate) fn command_code_body(
+        &self,
+        tag: &LineTaskWorkTag,
+    ) -> Option<crate::plan::code::RuntimeLineCodeBody> {
+        use crate::plan::code::RuntimeLineCodeBody;
         match tag.work() {
             LineTaskWork::Node(node) => match self.node(node) {
-                Some(LineTaskNode::Action(ops)) => ops,
-                _ => &[],
+                Some(LineTaskNode::Action(_)) => Some(RuntimeLineCodeBody::Action(node)),
+                _ => None,
             },
             LineTaskWork::Cancellation(action) => self
                 .cancel_rules
                 .iter()
-                .find(|rule| rule.trigger == action)
-                .map_or(&[], LineCancelRule::action),
-            LineTaskWork::Cleanup(exit) => self.cleanup.actions(exit),
-            LineTaskWork::Defer(_) => &[],
+                .position(|rule| rule.trigger == action)
+                .map(|rule| RuntimeLineCodeBody::Cancellation { rule }),
+            LineTaskWork::Cleanup(exit) => Some(RuntimeLineCodeBody::Cleanup(exit)),
+            LineTaskWork::Defer(_) => None,
         }
     }
 }

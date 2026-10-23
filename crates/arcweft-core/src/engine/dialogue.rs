@@ -199,15 +199,19 @@ impl Engine {
                     );
                     return;
                 }
-                let plan = std::sync::Arc::clone(&self.plan);
-                let Some(group) = plan.line_task_groups().get(start.group.index()) else {
+                if self
+                    .plan
+                    .line_task_groups()
+                    .get(start.group.index())
+                    .is_none()
+                {
                     self.begin_dialogue_failure(
                         transaction,
                         LineRuntimeError::UnknownTaskGroup.into(),
                         output,
                     );
                     return;
-                };
+                }
                 let commit_proof = match self
                     .dialogue_activations
                     .inspect_commit_transaction(&transaction)
@@ -251,7 +255,6 @@ impl Engine {
                 };
                 let mut batch = match self.prepare_line_task_commands(
                     &mut transaction,
-                    group,
                     start.activation,
                     &start.captures,
                     start.request_cancellation,
@@ -2968,7 +2971,7 @@ mod tests {
         };
         assert!(
             engine
-                .prepare_line_task_commands(&mut transaction, &group, activation_step, &[], false)
+                .prepare_line_task_commands(&mut transaction, activation_step, &[], false)
                 .is_err()
         );
         assert!(matches!(

@@ -19,6 +19,14 @@ impl Engine {
         let plan = Arc::clone(&self.plan);
         match resume {
             Resume::Bind(bindings) => self.fiber.frame.env.bind_all(bindings),
+            Resume::EnterTaskScope => {
+                self.push_scope_frame(crate::scope::RuntimeScopeIdentity::Anonymous);
+            }
+            Resume::ExitTaskScope => {
+                if let Err(error) = self.exit_emitted_scope(output, backend) {
+                    self.fail_eval(error, output);
+                }
+            }
             Resume::LoopNext { source } => {
                 if !matches!(source.operation(&plan), Some(FlowOp::Loop { .. })) {
                     self.fail_eval("native loop continuation lost its original header", output);

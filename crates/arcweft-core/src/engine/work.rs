@@ -99,6 +99,8 @@ pub(super) enum NativeRuntimeContinuation<V = RuntimeValue, I = RuntimeIterator>
     EnterLetScope {
         source: NativeSourceOperation,
     },
+    EnterTaskScope,
+    ExitTaskScope,
     EnterScheduledScope {
         identity: RuntimeScopeIdentity,
         token: RuntimeScheduledScopeToken,
@@ -129,6 +131,8 @@ pub enum NativeRuntimeContinuationKind {
     CompleteFormatOperand,
     CompleteLetScope,
     EnterLetScope,
+    EnterTaskScope,
+    ExitTaskScope,
     EnterScheduledScope,
     ExitScheduledScope { token: RuntimeScheduledScopeToken },
     CompleteAwaitObserver,
@@ -145,6 +149,8 @@ impl NativeRuntimeContinuationKind {
             Self::CompleteFormatOperand => 5,
             Self::CompleteLetScope => 6,
             Self::EnterLetScope => 10,
+            Self::EnterTaskScope => 11,
+            Self::ExitTaskScope => 12,
             Self::EnterScheduledScope => 7,
             Self::ExitScheduledScope { .. } => 8,
             Self::CompleteAwaitObserver => 9,
@@ -165,6 +171,8 @@ impl<V, I> NativeRuntimeContinuation<V, I> {
             }
             Self::CompleteLetScope { .. } => NativeRuntimeContinuationKind::CompleteLetScope,
             Self::EnterLetScope { .. } => NativeRuntimeContinuationKind::EnterLetScope,
+            Self::EnterTaskScope => NativeRuntimeContinuationKind::EnterTaskScope,
+            Self::ExitTaskScope => NativeRuntimeContinuationKind::ExitTaskScope,
             Self::EnterScheduledScope { .. } => NativeRuntimeContinuationKind::EnterScheduledScope,
             Self::ExitScheduledScope { token } => {
                 NativeRuntimeContinuationKind::ExitScheduledScope { token: *token }
@@ -316,6 +324,8 @@ impl<V, I> NativePendingWork<V, I> {
                 Resume::EnterLetScope { source } => Resume::EnterLetScope {
                     source: source.clone(),
                 },
+                Resume::EnterTaskScope => Resume::EnterTaskScope,
+                Resume::ExitTaskScope => Resume::ExitTaskScope,
                 Resume::EnterScheduledScope { identity, token } => Resume::EnterScheduledScope {
                     identity: identity.clone(),
                     token: *token,
@@ -368,6 +378,8 @@ impl<V, I> NativePendingWork<V, I> {
                 }
                 Resume::CompleteLetScope { source } => Resume::CompleteLetScope { source },
                 Resume::EnterLetScope { source } => Resume::EnterLetScope { source },
+                Resume::EnterTaskScope => Resume::EnterTaskScope,
+                Resume::ExitTaskScope => Resume::ExitTaskScope,
                 Resume::EnterScheduledScope { identity, token } => {
                     Resume::EnterScheduledScope { identity, token }
                 }
@@ -467,7 +479,9 @@ impl<V, I> NativePendingWork<V, I> {
                         admission.validate_metadata(token)?;
                     }
                     Resume::ExitScheduledScope { token } => admission.validate_metadata(token)?,
-                    Resume::CompleteAwaitObserver => {}
+                    Resume::EnterTaskScope
+                    | Resume::ExitTaskScope
+                    | Resume::CompleteAwaitObserver => {}
                 }
             }
         }

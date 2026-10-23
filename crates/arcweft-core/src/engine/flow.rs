@@ -207,6 +207,67 @@ impl Engine {
         })
     }
 
+    /// Prepares an original task root before its capture packet is moved.
+    /// Task lexical boundaries are runtime continuations, never invented AST.
+    pub(in crate::engine) fn prepare_task_root_work(
+        &self,
+        position: NativeCodeCursor,
+        scope_empty: bool,
+    ) -> Result<std::collections::VecDeque<NativePendingWork>, RuntimeEvalError> {
+        let mut admission = self.native_work_admission()?;
+        let work = NativePendingWork::source(position, NativeSourceRangeRole::TaskRoot);
+        let logical =
+            work.logical_pending_count()
+                .ok_or_else(|| RuntimeEvalError::NativeWorkAdmission {
+                    source: Box::new(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "native task root has an invalid operation range".into(),
+                    }),
+                })?;
+        let scoped = scope_empty || logical != 0;
+        let boundaries = if scoped { 2 } else { 0 };
+        let physical = usize::from(logical != 0) + boundaries;
+        let count = logical.checked_add(boundaries).ok_or_else(|| {
+            RuntimeEvalError::NativeWorkAdmission {
+                source: Box::new(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: "native task root operation count overflows".into(),
+                }),
+            }
+        })?;
+        let admit = (|| {
+            admission.validate_metadata_collection(count)?;
+            admission.validate_metadata_collection(physical)?;
+            work.admit_metadata(&mut admission, None)?;
+            if scoped {
+                for boundary in [
+                    NativeRuntimeContinuation::EnterTaskScope,
+                    NativeRuntimeContinuation::ExitTaskScope,
+                ] {
+                    let boundary: NativePendingWork = NativePendingWork::resume(boundary);
+                    boundary.admit_metadata(&mut admission, None)?;
+                }
+            }
+            Ok::<_, crate::value::AwbcRuntimeValueSnapshotError>(())
+        })();
+        admit.map_err(|source| RuntimeEvalError::NativeWorkAdmission {
+            source: Box::new(source),
+        })?;
+        let mut queue = std::collections::VecDeque::with_capacity(physical);
+        if scoped {
+            queue.push_back(NativePendingWork::resume(
+                NativeRuntimeContinuation::EnterTaskScope,
+            ));
+        }
+        if logical != 0 {
+            queue.push_back(work);
+        }
+        if scoped {
+            queue.push_back(NativePendingWork::resume(
+                NativeRuntimeContinuation::ExitTaskScope,
+            ));
+        }
+        Ok(queue)
+    }
+
     pub(super) fn step_flow(
         &mut self,
         output: &mut RuntimeStepOutput,
@@ -874,7 +935,7 @@ impl Engine {
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::Thread { producer, .. } => {
+            FlowOp::Thread { .. } => {
                 if self.task_request_quota_remaining == 0 {
                     self.fail_task_request_quota(
                         "Thread start exceeds the remaining task request quota",
@@ -886,7 +947,7 @@ impl Engine {
                     spec,
                     mut child,
                     next_fiber_id,
-                } = match self.prepare_thread(&producer.plan) {
+                } = match self.prepare_thread(&source_site) {
                     Ok(prepared) => prepared,
                     Err(error) => {
                         self.fail_eval(error, output);

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "71a00e3eec1b43067fb9f64676b9158f7b44c113",
+  "name": "task-final-r2362-native-task-root-producer-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2362-native-task-root-producer-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T02:36:54.1639210Z",
+  "finishedAt": "2026-10-23T02:38:40.0988792Z"
+}

@@ -8853,3 +8853,13 @@ R2361 Core library all-feature locked check actually failed with 33 errors and 2
 | `ab9879594224ffaba47b384527592f2b6069e6f1` | 2026-10-23 Original-source dispatcher migration in progress |
 
 | `4d68062adeaa917c15324feb82b579ebf4b9c399` | 2026-10-23 Original-source dispatcher migration in progress |
+
+## Native child original-code queue — 2026-10-23
+
+基点 `71a00e3eec1b43067fb9f64676b9158f7b44c113`。Thread、line task、dialogue callback、deferred child の body 複製を除去し、元 executable 内の body 座標と runtime の task scope 継続へ移行した途中の記録。存在しない body を空の成功として扱わず、実在する空 body も先に検証する。child capture の移動・複製より前にキューの論理件数、物理件数、元 program 座標を検証する。
+
+- `cargo fmt -p arcweft-core`: exit 0。
+- R2362 `cargo check -p arcweft-core --lib --all-features --locked`: **exit 101、29 errors／25 warnings**。[receipt](acceptance-evidence/task-final-r2362-native-task-root-producer-check.json)、[log](acceptance-evidence/task-final-r2362-native-task-root-producer-check.log)。この入力には誤った activation frame の `group` フィールド参照があり、E0609 を含んだ。
+- `task_group` へ修正し、実在する空 TaskRoot をキューへ積まない形に変更した。R2363 の同コマンドは **exit 101、28 errors／24 warnings**、E0609 は解消。[receipt](acceptance-evidence/task-final-r2363-native-task-root-correction-check.json)、[log](acceptance-evidence/task-final-r2363-native-task-root-correction-check.log)。
+- R2363 の source freeze は3,979入力／変更8 source／保持14 tracked WIP、元の Cargo graph による Core reverse53、99 manifest/lock の drift 0。freeze SHA256: `5b532f59f3f3c6111d7c837bce1b1cb45dfd93b6bb357819e8e05050b964fec3`。依存変更はない。公開用の資料更新は、このコンパイル入力の採取後。
+- nextest／runtime は起動していない。ユーザーの途中 commit 方針に従う WIP であり、起動経路の動作受入を意味しない。Generic Match の既存受入を取り消す根拠にもならない。

@@ -3,7 +3,7 @@
 use super::{Engine, FlowFiber};
 use crate::entry::RuntimeSchemaLimits;
 use crate::plan::task_source::{RuntimeTaskSourceError, RuntimeTaskSourceProgram};
-use crate::plan::{FlowOp, RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanSealLimits};
+use crate::plan::{FlowOp, RuntimeFlowBodyRole, RuntimeTaskPlanSealLimits};
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::task::{
     NeedProducerInstance, RuntimeTaskTemplateArguments, TaskIdentityError, TaskRequest, TaskSpec,
@@ -38,8 +38,11 @@ pub(super) struct PreparedThread {
 impl Engine {
     pub(super) fn prepare_thread(
         &self,
-        coordinate: &RuntimeTaskPlanBuildCoordinate,
+        operation: &super::code_cursor::NativeSourceOperation,
     ) -> Result<PreparedThread, ThreadPreparationError> {
+        let Some(FlowOp::Thread { producer, .. }) = operation.operation(&self.plan) else {
+            return Err(crate::task::RuntimeTaskProducerSourceError::RequestKind.into());
+        };
         let program = RuntimeTaskSourceProgram::native(Arc::clone(&self.plan));
         let mut admission = RuntimeRetainedValueAdmission::for_program(
             program.program_owner(),
@@ -49,12 +52,9 @@ impl Engine {
         let mut meter = admission.task_source_meter(limits)?;
         let source = program
             .original()
-            .task_source(coordinate, limits, &mut meter)?;
+            .task_source(&producer.plan, limits, &mut meter)?;
         let Some(FlowOp::Thread {
-            producer,
-            captures,
-            body,
-            ..
+            producer, captures, ..
         }) = source.request_endpoint().operation()
         else {
             return Err(crate::task::RuntimeTaskProducerSourceError::RequestKind.into());
@@ -79,7 +79,13 @@ impl Engine {
         admission.validate_metadata_string(&producer.debug_label)?;
         admission.validate_metadata(&checked.source().assertion())?;
         let instance = NeedProducerInstance::try_from(&checked)?;
-        let (child, next_fiber_id) = self.prepare_child_fiber(body, captures).map_err(Box::new)?;
+        let body = self
+            .original_body_range(operation, RuntimeFlowBodyRole::Body)
+            .map_err(Box::new)?;
+        let pending_ops = self.prepare_task_root_work(body, false).map_err(Box::new)?;
+        let (child, next_fiber_id) = self
+            .prepare_child_fiber(pending_ops, captures)
+            .map_err(Box::new)?;
         let spec = TaskSpec {
             generation: self.generation,
             producer: instance,

@@ -98,7 +98,7 @@ impl Engine {
             .validate_owned_patterns(&[], &inputs.arguments)
             .map_err(|error| error.to_string())?;
         let (mut child, next_fiber_id) = self
-            .prepare_child_fiber(&[], &[])
+            .prepare_child_fiber(std::collections::VecDeque::new(), &[])
             .map_err(|error| error.to_string())?;
         let entry = root.active().entry.clone();
         child.owner = FlowFiberOwner::RootReducer {
