@@ -1,0 +1,362 @@
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+  --> crates\arcweft-core\src\engine\flow\function_call.rs:15:5
+   |
+15 | use crate::plan::code::RuntimeCodeOwner;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:19:43
+   |
+19 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+22 |     SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
+   |                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:67:33
+   |
+67 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:12:5
+   |
+12 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcSelectedSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:56:32
+   |
+56 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\dialogue.rs:163:34
+    |
+163 |                 self.fiber.frame.cursor = resume;
+    |                                  ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `&NativeFlowExecutionFrame<V, P, O, C, A, S>`
+   --> crates\arcweft-core\src\engine\rollback.rs:354:29
+    |
+354 |                     && self.cursor.is_some() =>
+    |                             ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `&NativeFlowExecutionFrame<V, P, O, C, A, S>`
+   --> crates\arcweft-core\src\engine\rollback.rs:371:25
+    |
+371 |                 && self.cursor.is_some() =>
+    |                         ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `&NativeFlowExecutionFrame<V, P, O, C, A, S>`
+   --> crates\arcweft-core\src\engine\rollback.rs:430:21
+    |
+430 |             && self.cursor.as_ref().map(NativeCodeCursor::owner)
+    |                     ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `&NativeFlowExecutionFrame<V, P, O, C, A, S>`
+   --> crates\arcweft-core\src\engine\rollback.rs:437:37
+    |
+437 |         if let Some(cursor) = &self.cursor {
+    |                                     ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `&NativeFlowExecutionFrame<V, P, O, C, A, S>`
+   --> crates\arcweft-core\src\engine\rollback.rs:485:37
+    |
+485 |         if let Some(cursor) = &self.cursor
+    |                                     ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+  --> crates\arcweft-core\src\engine\flow\format_attempt.rs:38:30
+   |
+38 |             self.fiber.frame.cursor = active.resume;
+   |                              ^^^^^^ unknown field
+   |
+   = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\flow\format_attempt.rs:147:26
+    |
+147 |         self.fiber.frame.cursor = resume;
+    |                          ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\flow\format_attempt.rs:202:26
+    |
+202 |         self.fiber.frame.cursor = active.resume;
+    |                          ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\flow\format_attempt.rs:260:26
+    |
+260 |         self.fiber.frame.cursor = active.resume;
+    |                          ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\flow\function_call.rs:163:42
+    |
+163 |                         self.fiber.frame.cursor = None;
+    |                                          ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\flow\function_call.rs:185:34
+    |
+185 |                 self.fiber.frame.cursor = None;
+    |                                  ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\flow\function_call.rs:204:34
+    |
+204 |                 self.fiber.frame.cursor = None;
+    |                                  ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\flow\function_call.rs:236:34
+    |
+236 |                 self.fiber.frame.cursor = resume;
+    |                                  ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\flow\function_call.rs:276:38
+    |
+276 |                     self.fiber.frame.cursor = frame.resume.clone();
+    |                                      ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\flow.rs:638:46
+    |
+638 |                     resume: self.fiber.frame.cursor.clone(),
+    |                                              ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\line.rs:121:38
+    |
+121 |                     self.fiber.frame.cursor = frame.resume;
+    |                                      ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\suspend.rs:508:38
+    |
+508 |                     self.fiber.frame.cursor = state.resume;
+    |                                      ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\suspend.rs:599:42
+    |
+599 |                         self.fiber.frame.cursor = state.resume;
+    |                                          ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\suspend.rs:835:34
+    |
+835 |                 self.fiber.frame.cursor = state.resume;
+    |                                  ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+   --> crates\arcweft-core\src\engine\suspend.rs:906:30
+    |
+906 |             self.fiber.frame.cursor = state.resume;
+    |                              ^^^^^^ unknown field
+    |
+    = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+error[E0609]: no field `cursor` on type `NativeFlowExecutionFrame`
+    --> crates\arcweft-core\src\engine\suspend.rs:1423:26
+     |
+1423 |         self.fiber.frame.cursor = state.resume;
+     |                          ^^^^^^ unknown field
+     |
+     = note: available fields are: `program`, `line_cursor`, `pending_ops`, `control_stack`, `await_observer` ... and 6 others
+
+warning: unreachable pattern
+   --> crates\arcweft-core\src\engine\rollback.rs:632:13
+    |
+632 |             _ => Ok(()),
+    |             ^ no value can reach this
+    |
+note: multiple earlier patterns match some of the same values
+   --> crates\arcweft-core\src\engine\rollback.rs:632:13
+    |
+594 |             Self::Scope { match_guard, .. } => {
+    |             ------------------------------- matches some of the same values
+...
+600 |             Self::Loop { source } | Self::While { source } | Self::WhileLet { source } => {
+    |             -------------------------------------------------------------------------- matches some of the same values
+...
+621 |             Self::FormatAttempt(frame) => frame.admit_owned_values(admission, binding),
+    |             -------------------------- matches some of the same values
+622 |             Self::FunctionCall(frame) => {
+    |             ------------------------- matches some of the same values
+...
+632 |             _ => Ok(()),
+    |             ^ collectively making this unreachable
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+For more information about this error, try `rustc --explain E0609`.
+warning: `arcweft-core` (lib) generated 25 warnings
+error: could not compile `arcweft-core` (lib) due to 22 previous errors; 25 warnings emitted

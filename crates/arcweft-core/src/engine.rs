@@ -287,7 +287,6 @@ pub struct NativeFlowExecutionFrame<
     /// Immutable code and type authority retained by this execution frame.
     pub(crate) program: crate::task::RuntimeProgramOwner,
     pub line_cursor: usize,
-    pub cursor: Option<NativeCodeCursor>,
     pub(crate) pending_ops: VecDeque<O>,
     pub(crate) control_stack: Vec<C>,
     pub await_observer: Option<Box<A>>,
@@ -330,7 +329,6 @@ impl Clone for NativeFlowExecutionFrameRollbackImage {
         Self {
             program: self.program.clone(),
             line_cursor: self.line_cursor,
-            cursor: self.cursor.clone(),
             pending_ops: self.pending_ops.clone(),
             control_stack: self.control_stack.clone(),
             await_observer: self.await_observer.clone(),
@@ -478,7 +476,6 @@ impl NativeFlowExecutionFrame {
         Ok(NativeFlowExecutionFrameRollbackImage {
             program: self.program.clone(),
             line_cursor: self.line_cursor,
-            cursor: self.cursor.clone(),
             pending_ops: self
                 .pending_ops
                 .iter()
@@ -543,7 +540,6 @@ impl NativeFlowExecutionFrame {
         Ok(Self {
             program: image.program,
             line_cursor: image.line_cursor,
-            cursor: image.cursor,
             pending_ops: image
                 .pending_ops
                 .into_iter()
@@ -1835,7 +1831,6 @@ impl NativeFlowExecutionFrame {
         Self {
             program,
             line_cursor: 0,
-            cursor: None,
             pending_ops: VecDeque::new(),
             control_stack: Vec::new(),
             await_observer: None,
@@ -2157,7 +2152,6 @@ impl Engine {
                 frame: crate::engine::NativeFlowExecutionFrame {
                     program: crate::task::RuntimeProgramOwner::Plan(plan),
                     line_cursor: 0,
-                    cursor: None,
                     pending_ops: VecDeque::new(),
                     control_stack: Vec::new(),
                     await_observer: None,
@@ -2338,6 +2332,11 @@ impl Engine {
             .map_err(|error| EngineStartError::InvalidFlowInvocation {
                 message: error.to_string(),
             })?;
+        let pending_ops = self
+            .prepare_function_root_work(declaration.site())
+            .map_err(|error| EngineStartError::InvalidFlowInvocation {
+                message: error.to_string(),
+            })?;
         let staged = declaration
             .stage_owned_inputs([], bindings.into_iter().map(|binding| binding.value))
             .map_err(|error| EngineStartError::InvalidFlowInvocation {
@@ -2348,10 +2347,7 @@ impl Engine {
             declaration.type_instantiation.clone(),
             staged,
         );
-        self.fiber.frame.cursor = Some(
-            NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(declaration.site()))
-                .expect("an admitted Flow retains its original function body"),
-        );
+        self.fiber.frame.pending_ops = pending_ops;
         self.fiber.frame.status = FlowFiberStatus::Running;
         self.main_started = true;
         Ok(())
@@ -2488,6 +2484,7 @@ impl Engine {
         // The complete Flow ingress is admitted while the return value is
         // still borrowed, before Root copies it for the two owning candidates.
         let declaration = plan.validate_function_site_input_refs(flow_site, &[], &[&value])?;
+        let pending_ops = self.prepare_function_root_work(flow_site)?;
         let root = self
             .root
             .take()
@@ -2519,10 +2516,7 @@ impl Engine {
             .frame
             .env
             .bind_root_function(site, instantiation, staged);
-        self.fiber.frame.cursor = Some(
-            NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(site))
-                .expect("an admitted initialized Flow retains its original function body"),
-        );
+        self.fiber.frame.pending_ops = pending_ops;
         self.fiber.frame.status = FlowFiberStatus::Running;
         self.root = Some(root);
         output.root_initializations.push(outcome);
@@ -3022,10 +3016,7 @@ impl Engine {
         if !matches!(self.fiber.frame.status, FlowFiberStatus::Running) {
             return;
         }
-        if self.fiber.frame.cursor.is_some()
-            || !self.fiber.frame.pending_ops.is_empty()
-            || self.has_active_project_call()
-        {
+        if !self.fiber.frame.pending_ops.is_empty() || self.has_active_project_call() {
             self.step_main_flow_transaction(output, pure_backend);
         } else {
             self.step_line_only(input, output, pure_backend);
@@ -3229,7 +3220,6 @@ impl Engine {
                 frame: crate::engine::NativeFlowExecutionFrame {
                     program: self.fiber.frame.program.clone(),
                     line_cursor: 0,
-                    cursor: None,
                     pending_ops,
                     control_stack: Vec::new(),
                     await_observer: None,
@@ -3394,7 +3384,6 @@ impl Engine {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: self.fiber.frame.program.clone(),
                 line_cursor: 0,
-                cursor: None,
                 pending_ops: prepared.pending_ops,
                 control_stack: Vec::new(),
                 await_observer: None,
@@ -3712,7 +3701,6 @@ impl Engine {
                         frame: crate::engine::NativeFlowExecutionFrame {
                             program: self.fiber.frame.program.clone(),
                             line_cursor: 0,
-                            cursor: None,
                             pending_ops,
                             control_stack: Vec::new(),
                             await_observer: None,
@@ -3942,7 +3930,6 @@ impl Engine {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: self.fiber.frame.program.clone(),
                 line_cursor: 0,
-                cursor: None,
                 pending_ops: prepared.pending_ops,
                 control_stack: Vec::new(),
                 await_observer: None,
@@ -4467,10 +4454,7 @@ impl Engine {
         if !matches!(self.fiber.frame.status, FlowFiberStatus::Running) {
             return;
         }
-        if self.fiber.frame.cursor.is_some()
-            || !self.fiber.frame.pending_ops.is_empty()
-            || self.has_active_project_call()
-        {
+        if !self.fiber.frame.pending_ops.is_empty() || self.has_active_project_call() {
             self.step_flow(output, pure_backend, drop_policy);
         }
     }
@@ -4487,7 +4471,6 @@ impl Engine {
             }
         }
         self.drain_root_cleanups(output, pure_backend);
-        self.fiber.frame.cursor = None;
         self.fiber.frame.pending_ops.clear();
         self.fiber.frame.await_observer = None;
         self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
@@ -4495,7 +4478,6 @@ impl Engine {
 
     fn finish_active_child_if_exhausted(&mut self) {
         if matches!(self.fiber.frame.status, FlowFiberStatus::Running)
-            && self.fiber.frame.cursor.is_none()
             && self.fiber.frame.pending_ops.is_empty()
             && !self.has_active_project_call()
             && !self.has_joined_work()

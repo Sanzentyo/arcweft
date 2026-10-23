@@ -84,8 +84,7 @@ impl Engine {
     ) -> Result<(), RuntimeEvalError> {
         let site = declaration.site();
         debug_assert_eq!(frame.site, site);
-        let cursor = NativeCodeCursor::root(&self.plan, RuntimeCodeOwner::Function(site))
-            .expect("an admitted function retains its original code row");
+        let pending_ops = self.prepare_function_root_work(site)?;
         let staged = declaration.stage_owned_inputs(captures, args)?;
         frame.type_instantiation = declaration.type_instantiation;
         self.fiber.frame.env.push_function_scope(
@@ -99,67 +98,8 @@ impl Engine {
         self.fiber.frame.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FunctionCall(frame),
         });
-        self.fiber.frame.cursor = Some(cursor);
+        self.fiber.frame.pending_ops = pending_ops;
         Ok(())
-    }
-
-    /// Fetches one root from the original function row. Nested control work is
-    /// drained first; each suspended caller retains its own root position.
-    pub(super) fn step_function_site_body(
-        &mut self,
-        output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
-        drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
-    ) -> bool {
-        let Some(frame) = self.fiber.frame.active_function() else {
-            return false;
-        };
-        let site = frame.site;
-        let plan = Arc::clone(&self.plan);
-        let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
-            self.fail_eval("active function lost its original code position", output);
-            return true;
-        };
-        if cursor.owner() != RuntimeCodeOwner::Function(site) {
-            self.fail_eval(
-                "active function references another original code owner",
-                output,
-            );
-            return true;
-        }
-        if let Some(operations) = cursor.operations(&plan) {
-            if let Some(operation) = operations.first() {
-                let next = cursor.operation_index().expect("operation code position") + 1;
-                self.execute_flow_operation(
-                    std::borrow::Cow::Borrowed(operation),
-                    cursor
-                        .source_operation(&plan)
-                        .expect("selected original function operation"),
-                    Some(next),
-                    output,
-                    pure_backend,
-                    drop_policy,
-                );
-            } else {
-                self.complete_function_call_fallthrough(output, pure_backend);
-            }
-        } else if let Some(expression) = cursor.expression(&plan) {
-            match self.evaluate_expr_with_backend(expression, pure_backend) {
-                Ok(value) => {
-                    let returned = self.return_function_call_value(value, output, pure_backend);
-                    debug_assert!(returned, "the active function retains its return frame");
-                }
-                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-            }
-        } else {
-            self.fail_eval(
-                RuntimeEvalError::FunctionApply(RuntimeFunctionApplyError::UnknownStructuredSite {
-                    site,
-                }),
-                output,
-            );
-        }
-        true
     }
 
     fn complete_function_call_return(

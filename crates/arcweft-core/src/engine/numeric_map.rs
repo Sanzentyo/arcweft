@@ -429,16 +429,13 @@ fn pending_work_avoids_locals<'a>(
 impl Engine {
     fn consume_projected_ops(&mut self, count: usize) {
         self.fiber.frame.normalize_pending_source_ranges(&self.plan);
-        let position = if let Some(work) = self.fiber.frame.pending_ops.front_mut() {
-            work.position_mut()
-                .expect("an admitted numeric span starts in original source")
-        } else {
-            self.fiber
-                .frame
-                .cursor
-                .as_mut()
-                .expect("an admitted numeric span retains its original root")
-        };
+        let position = self
+            .fiber
+            .frame
+            .pending_ops
+            .front_mut()
+            .and_then(super::work::NativePendingWork::position_mut)
+            .expect("an admitted numeric span starts in queued original source");
         let next = position
             .operation_index()
             .expect("numeric span owns operation code")
@@ -469,13 +466,6 @@ impl Engine {
                 elided,
             )
             || !self.fiber.frame.root_cleanups.is_empty()
-            || (!self.fiber.frame.pending_ops.is_empty()
-                && self
-                    .fiber
-                    .frame
-                    .cursor
-                    .as_ref()
-                    .is_some_and(|cursor| !cursor_avoids(cursor)))
         {
             return false;
         }

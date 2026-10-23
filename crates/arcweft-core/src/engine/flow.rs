@@ -268,6 +268,26 @@ impl Engine {
         Ok(queue)
     }
 
+    /// Admits the complete replacement root before function inputs are moved.
+    /// The queue owns both executable roots and their completion transitions.
+    pub(in crate::engine) fn prepare_function_root_work(
+        &self,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+    ) -> Result<std::collections::VecDeque<NativePendingWork>, RuntimeEvalError> {
+        self.native_work_admission()?;
+        let position = NativeCodeCursor::root(
+            &self.plan,
+            crate::plan::code::RuntimeCodeOwner::Function(site),
+        )
+        .ok_or(crate::value::RuntimeFunctionApplyError::UnknownStructuredSite { site })?;
+        let work = [Some(NativePendingWork::source(
+            position,
+            NativeSourceRangeRole::FunctionRoot,
+        ))];
+        self.prepare_replacement_native_work(&work)?;
+        Ok(work.into_iter().flatten().collect())
+    }
+
     pub(super) fn step_flow(
         &mut self,
         output: &mut RuntimeStepOutput,
@@ -277,11 +297,6 @@ impl Engine {
         let plan = Arc::clone(&self.plan);
         // Empty body ranges are structural transitions, not executable polls.
         self.fiber.frame.normalize_pending_source_ranges(&plan);
-        if self.fiber.frame.pending_ops.is_empty()
-            && self.step_function_site_body(output, pure_backend, drop_policy)
-        {
-            return;
-        }
         if self
             .fiber
             .frame
@@ -355,24 +370,10 @@ impl Engine {
                 self.fiber.frame.normalize_pending_source_ranges(&plan);
                 (Cow::Borrowed(op), source, advance)
             } else {
-                let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
-                    return;
-                };
-                let Some(operations) = cursor.operations(&plan) else {
-                    self.fail_eval("active flow lost its original operation range", output);
-                    return;
-                };
-                let Some(op) = operations.first() else {
-                    self.finish(output, pure_backend);
-                    return;
-                };
-                (
-                    Cow::Borrowed(op),
-                    cursor
-                        .source_operation(&plan)
-                        .expect("selected original root operation"),
-                    Some(cursor.operation_index().expect("operation code position") + 1),
-                )
+                if self.fiber.frame.active_function().is_some() {
+                    self.fail_eval("active function lost its queued original root", output);
+                }
+                return;
             };
         self.execute_flow_operation(
             op,
@@ -488,7 +489,6 @@ impl Engine {
                         self.fiber.frame.selected_dialogue_result = Some(selected);
                         *drop_policy = Some(crate::effect::RuntimeDropPolicy::Default);
                         self.fiber.frame.pending_ops.clear();
-                        self.fiber.frame.cursor = None;
                         self.unwind_control_stack(output, pure_backend);
                         self.fiber.frame.status = FlowFiberStatus::Done(super::FlowExit::Done);
                     }
@@ -1399,9 +1399,12 @@ impl Engine {
     }
 
     pub(super) fn advance_if_needed(&mut self, next_op_index: Option<usize>) {
-        if let Some(next_op_index) = next_op_index
-            && let Some(cursor) = self.fiber.frame.cursor.as_mut()
-        {
+        if let Some(next_op_index) = next_op_index {
+            let cursor = self
+                .fiber
+                .frame
+                .function_root_position_mut()
+                .expect("a root operation retains its queued source until commit");
             assert!(
                 cursor.set_operation(next_op_index),
                 "source operation stays inside its admitted code range"
@@ -1429,16 +1432,18 @@ impl Engine {
     }
 
     fn resume_cursor(&self, next_op_index: Option<usize>) -> Option<NativeCodeCursor> {
-        self.fiber.frame.cursor.as_ref().map(|cursor| {
-            let mut cursor = cursor.clone();
-            if let Some(next_op_index) = next_op_index {
-                assert!(
-                    cursor.set_operation(next_op_index),
-                    "source continuation stays inside its admitted code range"
-                );
-            }
-            cursor
-        })
+        let next = next_op_index?;
+        let mut cursor = self
+            .fiber
+            .frame
+            .function_root_position()
+            .expect("a root continuation is prepared from its queued original root")
+            .clone();
+        assert!(
+            cursor.set_operation(next),
+            "source continuation stays inside its admitted code range"
+        );
+        Some(cursor)
     }
 
     pub(super) fn push_scope_frame(&mut self, identity: RuntimeScopeIdentity) {

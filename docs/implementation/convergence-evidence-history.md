@@ -8894,3 +8894,14 @@ child polling、scope／function-call／Await／formatter のテストを、実�
 - owner は Core、元 graph の reverse53 と99 manifest/lock は変更なし。今回の runtime は Core library だけであり、reverse53／workspace／Tier 2／Native-Web parity の再実行と読み替えない。Generic Match の既存受入は維持する。
 
 R2369 原本 Clippy log の提示コードには trailing whitespace が 3 行ある。原本の SHA256 一致を保ち、この log のみ staged whitespace 検査から除外した。変更 source・資料・JSON・他 log の検査は維持した。
+
+## Native root queue switch, first producer cut — 2026-10-23
+
+基点 `a5ad3b4ae1cf0cb3b5461490878e08c082213355` の parent は `d64d236091748a13b7b3f25f535f08a53e0dec23`、tree は `16ef168c9c8702f1fa15103d824fa7c99d720af4`、patch SHA256 は `b6f0f814b02e2099ea3bdbb33f1c0ee7fd986ebdabc24bb14ea336ea21f52ceb`。同公開は21 paths／3,998入力／保持14 tracked WIP、公開 blob・raw patch の drift 0、index empty を確認した。R2368 の Core 1,955 PASS と R2369 Clippy exit 0 はこの公開の source の受入実績であり、後続 WIP の検証結果へ読み替えない。
+
+独立 `NativeFlowExecutionFrame.cursor` とその clone／snapshot／復元・空 constructor field を削除した。Flow、Root initializer の Flow、Goto、budgeted function の入口を元コードの `FunctionRoot` work へ移し、入力の移動より前に replacement root の metadata を検証する。旧 `step_function_site_body` reader と通常 dispatch の root cursor fallback も削除し、AOT と numeric span はキューの元コード座標を参照する。空 task/body range と異なり、実際の FunctionRoot EOF はキュー内に残す。既存 loop-next 境界が後続 queue を保持するため、別の loop/code catalog は導入していない。
+
+- `cargo fmt -p arcweft-core`: exit 0。
+- R2370 `cargo check -p arcweft-core --lib --all-features --locked`: **exit 101、22 errors／25 warnings**。[receipt](acceptance-evidence/task-final-r2370-native-unified-function-root-check.json)、[log](acceptance-evidence/task-final-r2370-native-unified-function-root-check.log)。全 error は削除した `frame.cursor` に対する E0609。dialogue、function／formatter の復帰、Host／Await／Choice 等の再開、rollback の code-owner 検証が旧参照を持つ。
+- freeze は3,998入力／変更9 source／保持14 tracked WIP、Core reverse53 と99 manifest/lock は変更なし、outside-owned／held drift 0。
+- nextest／runtime は未実行。ユーザーの途中 commit 方針に従う WIP。現在の source が稼働すると主張せず、前段 cut の PASS と Generic Match の既存受入を保持する。後続は caller／suspension の後続位置をキューへ揃え、rollback の function owner を実在する current／caller queue と環境から検証する。

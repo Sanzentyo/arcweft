@@ -19,7 +19,7 @@ impl NativeFlowExecutionFrame {
                 NativePendingWorkKind::Resume(_) => return None,
             }
         }
-        self.cursor.as_ref()?.operations(plan)
+        None
     }
 
     pub(super) fn normalize_pending_source_ranges(&mut self, plan: &RuntimePlan) {
@@ -55,15 +55,27 @@ impl NativeFlowExecutionFrame {
                 }
             }
         }
-        if let Some(cursor) = &self.cursor {
-            return cursor.expression(plan).is_some()
-                || cursor.operations(plan).is_some_and(|operations| {
-                    operations.first().is_none_or(|operation| {
-                        matches!(operation, FlowOp::Return(_) | FlowOp::ReturnExpr(_))
-                    })
-                });
-        }
         true
+    }
+
+    pub(super) fn function_root_position(&self) -> Option<&super::NativeCodeCursor> {
+        match &self.pending_ops.front()?.kind {
+            NativePendingWorkKind::Source {
+                position,
+                role: NativeSourceRangeRole::FunctionRoot,
+            } => Some(position),
+            _ => None,
+        }
+    }
+
+    pub(super) fn function_root_position_mut(&mut self) -> Option<&mut super::NativeCodeCursor> {
+        match &mut self.pending_ops.front_mut()?.kind {
+            NativePendingWorkKind::Source {
+                position,
+                role: NativeSourceRangeRole::FunctionRoot,
+            } => Some(position),
+            _ => None,
+        }
     }
 }
 

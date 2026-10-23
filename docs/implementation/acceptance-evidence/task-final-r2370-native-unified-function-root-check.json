@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "a5ad3b4ae1cf0cb3b5461490878e08c082213355",
+  "name": "task-final-r2370-native-unified-function-root-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2370-native-unified-function-root-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T03:38:40.0291203Z",
+  "finishedAt": "2026-10-23T03:38:52.7155695Z"
+}

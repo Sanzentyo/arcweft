@@ -113,10 +113,7 @@ impl Engine {
         }
         let owner = Arc::clone(&self.plan);
         self.fiber.frame.normalize_pending_source_ranges(&owner);
-        let position = match self.fiber.frame.pending_ops.front() {
-            Some(work) => work.position()?,
-            None => self.fiber.frame.cursor.as_ref()?,
-        };
+        let position = self.fiber.frame.pending_ops.front()?.position()?;
         let source_operation = position.source_operation(&owner)?;
         let Some(FlowOp::StandardMap(control)) = source_operation.operation(&owner) else {
             return None;

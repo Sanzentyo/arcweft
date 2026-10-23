@@ -2164,7 +2164,6 @@ impl AwbcProductStepExecutor {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: crate::task::RuntimeProgramOwner::Awbc(program.program_arc()),
                 line_cursor: 0,
-                cursor: None,
                 pending_ops: VecDeque::new(),
                 control_stack: Vec::new(),
                 await_observer: None,

@@ -1,6 +1,6 @@
 use super::{
     Engine, FlowControlStackEntryKind, FlowEvent, FlowExit, FlowFiberStatus, LineEffectRequest,
-    NativeCodeCursor, RuntimeStepInput, RuntimeStepOutput,
+    RuntimeStepInput, RuntimeStepOutput,
 };
 use crate::plan::FlowRuntimeId;
 use crate::pure::RuntimeCallBackend;
@@ -59,6 +59,13 @@ impl Engine {
                 return;
             }
         };
+        let pending_ops = match self.prepare_function_root_work(declaration.site()) {
+            Ok(work) => work,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
         self.fiber.frame.pending_ops.clear();
         self.fiber.frame.await_observer = None;
         self.unwind_control_stack(output, pure_backend);
@@ -70,13 +77,7 @@ impl Engine {
             declaration.type_instantiation.clone(),
             [],
         );
-        self.fiber.frame.cursor = Some(
-            NativeCodeCursor::root(
-                &plan,
-                crate::plan::code::RuntimeCodeOwner::Function(declaration.site()),
-            )
-            .expect("an admitted Goto retains its original function body"),
-        );
+        self.fiber.frame.pending_ops = pending_ops;
         self.fiber.frame.status = FlowFiberStatus::Running;
     }
 

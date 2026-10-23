@@ -42,7 +42,8 @@ impl Engine {
             // active function whose exhausted pending body must reject fallthrough.
             if self.has_executor_work()
                 || self.has_active_project_call()
-                || !self.fiber.frame.pending_ops.is_empty()
+                || self.fiber.frame.pending_ops.len() != 1
+                || self.fiber.frame.function_root_position().is_none()
             {
                 let (_, control_ops) = self.with_scalar_operation_budget(
                     options.mode,
@@ -57,7 +58,7 @@ impl Engine {
                 }
                 continue;
             }
-            let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
+            let Some(cursor) = self.fiber.frame.function_root_position() else {
                 self.finish(&mut output, pure_backend);
                 executed_ops += 1;
                 if self.should_return_to_host(options.mode, &output, executed_ops) {
@@ -163,19 +164,23 @@ impl Engine {
             && self.root.is_none()
             && !self.has_executor_work()
             && self.plan.stream_plans.is_empty()
-            && self.fiber.frame.pending_ops.is_empty()
+            && self.fiber.frame.pending_ops.len() == 1
             && self.fiber.frame.control_stack.is_empty()
             && matches!(self.fiber.frame.status, FlowFiberStatus::Running)
-            && self.fiber.frame.cursor.as_ref().is_some_and(|cursor| {
-                (match cursor.owner() {
-                    crate::plan::code::RuntimeCodeOwner::Function(site) if cursor.is_root() => {
-                        program.flow_block(site)
-                    }
-                    _ => None,
+            && self
+                .fiber
+                .frame
+                .function_root_position()
+                .is_some_and(|cursor| {
+                    (match cursor.owner() {
+                        crate::plan::code::RuntimeCodeOwner::Function(site) if cursor.is_root() => {
+                            program.flow_block(site)
+                        }
+                        _ => None,
+                    })
+                    .and_then(|flow| flow.linear_op(cursor.operation_index()?))
+                    .is_some()
                 })
-                .and_then(|flow| flow.linear_op(cursor.operation_index()?))
-                .is_some()
-            })
     }
 
     fn step_aot_linear_op(
@@ -265,7 +270,7 @@ impl Engine {
     }
 
     fn advance_aot_linear_cursor(&mut self, next_op_index: usize) {
-        if let Some(cursor) = self.fiber.frame.cursor.as_mut() {
+        if let Some(cursor) = self.fiber.frame.function_root_position_mut() {
             assert!(
                 cursor.set_operation(next_op_index),
                 "AOT operation remains inside original code"
