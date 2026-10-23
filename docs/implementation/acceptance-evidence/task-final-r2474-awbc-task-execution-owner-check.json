@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "name": "task-final-r2474-awbc-task-execution-owner-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2474-awbc-task-execution-owner-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T22:13:55.5826476Z",
+  "finishedAt": "2026-10-23T22:15:25.6130186Z"
+}

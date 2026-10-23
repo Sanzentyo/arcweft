@@ -13,10 +13,10 @@ use crate::awbc::schema::{
     AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
     AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionInputOwnership,
     AwbcFunctionKind, AwbcHostArgument, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode,
-    AwbcInstruction, AwbcLineCancelHandler, AwbcPattern, AwbcPatternId, AwbcProgram,
-    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape,
-    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTaskClass,
-    AwbcTaskPlan, AwbcTaskPlanKind, AwbcTaskPolicy, AwbcTaskRequestProjection,
+    AwbcHostTaskPlanKind, AwbcInstruction, AwbcLineCancelHandler, AwbcPattern, AwbcPatternId,
+    AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType,
+    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
+    AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPolicy, AwbcTaskRequestProjection,
     AwbcTaskRestartPolicy, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
@@ -6305,24 +6305,28 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
                 .with(AwbcFunctionFlag::MaySuspend),
         }],
         task_plans: vec![AwbcTaskPlan {
-            signature: AwbcSignatureId(1),
-            request: AwbcTaskRequestProjection::ExternCapability {
-                capability: AwbcStringId(1),
-                operation: AwbcStringId(2),
-                contract: host_contract,
-            },
             class: AwbcTaskClass::Io,
             priority: 0,
             cancel_scope: AwbcStringId(3),
             policy: AwbcTaskPolicy::JoinSameKey,
             payload_type: item_ty,
-            arguments: Vec::<AwbcHostArgument>::new(),
-            kind: AwbcTaskPlanKind::NeedProducer {
-                plan: expected,
-                contract,
-                site,
-                restart,
-            },
+            execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
+                crate::awbc::schema::AwbcHostTaskPlan {
+                    signature: AwbcSignatureId(1),
+                    request: AwbcTaskRequestProjection::ExternCapability {
+                        capability: AwbcStringId(1),
+                        operation: AwbcStringId(2),
+                        contract: host_contract,
+                    },
+                    arguments: Vec::<AwbcHostArgument>::new(),
+                    kind: AwbcHostTaskPlanKind::NeedProducer {
+                        plan: expected,
+                        contract,
+                        site,
+                        restart,
+                    },
+                },
+            ),
         }],
         flow_bindings: vec![test_flow_binding()],
         flow_executables: vec![test_flow_executable()],
@@ -6508,27 +6512,31 @@ fn await_many_product_program() -> AwbcProgram {
                 .with(AwbcFunctionFlag::MaySuspend),
         }],
         task_plans: vec![AwbcTaskPlan {
-            signature: AwbcSignatureId(2),
-            request: AwbcTaskRequestProjection::CustomCapability {
-                capability: AwbcStringId(1),
-                operation: AwbcStringId(2),
-            },
             class: AwbcTaskClass::Io,
             priority: 0,
             cancel_scope: AwbcStringId(3),
             policy: AwbcTaskPolicy::JoinSameKey,
             payload_type: sequence_ty,
-            arguments: vec![],
-            kind: AwbcTaskPlanKind::AwaitMany {
-                contract: crate::task::NeedProducerContractDigest::from_bytes([0x95; 32]),
-                site: crate::task::NeedProducerSiteDigest::from_bytes([0x96; 32]),
-                plan: crate::task::TaskPlanSemanticDigest::from_bytes([0x97; 32]),
-                child: crate::awbc::schema::AwbcTaskPlanId(1),
-                captures: vec![],
-                request_function: AwbcFunctionId(1),
-                item_binding: AwbcRegisterId(0),
-                limit: 3,
-            },
+            execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
+                crate::awbc::schema::AwbcHostTaskPlan {
+                    signature: AwbcSignatureId(2),
+                            request: AwbcTaskRequestProjection::CustomCapability {
+                        capability: AwbcStringId(1),
+                        operation: AwbcStringId(2),
+                    },
+                            arguments: vec![],
+                            kind: AwbcHostTaskPlanKind::AwaitMany {
+                        contract: crate::task::NeedProducerContractDigest::from_bytes([0x95; 32]),
+                        site: crate::task::NeedProducerSiteDigest::from_bytes([0x96; 32]),
+                        plan: crate::task::TaskPlanSemanticDigest::from_bytes([0x97; 32]),
+                        child: crate::awbc::schema::AwbcTaskPlanId(1),
+                        captures: vec![],
+                        request_function: AwbcFunctionId(1),
+                        item_binding: AwbcRegisterId(0),
+                        limit: 3,
+                    },
+                        },
+            ),
         }],
         flow_bindings: vec![test_flow_binding()],
         flow_executables: vec![test_flow_executable()],
@@ -6546,27 +6554,31 @@ fn await_many_product_program() -> AwbcProgram {
         ..AwbcProgram::default()
     };
     program.task_plans.push(AwbcTaskPlan {
-        signature: AwbcSignatureId(1),
-        request: AwbcTaskRequestProjection::CustomCapability {
-            capability: AwbcStringId(1),
-            operation: AwbcStringId(2),
-        },
         class: AwbcTaskClass::Io,
         priority: 0,
         cancel_scope: AwbcStringId(3),
         policy: AwbcTaskPolicy::JoinSameKey,
         payload_type: item_ty,
-        arguments: vec![AwbcHostArgument {
-            name: None,
-            spread: false,
-        }],
-        kind: AwbcTaskPlanKind::Template {
-            family: crate::task::NeedProducerFamily::AwaitManyChild,
-            contract: crate::task::NeedProducerContractDigest::from_bytes([0x95; 32]),
-            site: crate::task::NeedProducerSiteDigest::from_bytes([0x96; 32]),
-            plan: crate::task::TaskPlanSemanticDigest::from_bytes([0x97; 32]),
-            request_function: AwbcFunctionId(2),
-        },
+        execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
+            crate::awbc::schema::AwbcHostTaskPlan {
+                signature: AwbcSignatureId(1),
+                request: AwbcTaskRequestProjection::CustomCapability {
+                    capability: AwbcStringId(1),
+                    operation: AwbcStringId(2),
+                },
+                arguments: vec![AwbcHostArgument {
+                    name: None,
+                    spread: false,
+                }],
+                kind: AwbcHostTaskPlanKind::Template {
+                    family: crate::task::NeedProducerFamily::AwaitManyChild,
+                    contract: crate::task::NeedProducerContractDigest::from_bytes([0x95; 32]),
+                    site: crate::task::NeedProducerSiteDigest::from_bytes([0x96; 32]),
+                    plan: crate::task::TaskPlanSemanticDigest::from_bytes([0x97; 32]),
+                    request_function: AwbcFunctionId(2),
+                },
+            },
+        ),
     });
     program.instructions = vec![
         AwbcInstruction::MakeTuple {

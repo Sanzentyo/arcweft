@@ -345,46 +345,50 @@ pub(in crate::plan::task_source) fn executable() -> AwbcProgram {
             source_map: None,
         });
         code.task_plans.push(AwbcTaskPlan {
-            signature: AwbcSignatureId(0),
-            request: AwbcTaskRequestProjection::CustomCapability {
-                capability: string("source"),
-                operation: string("request"),
-            },
             class: AwbcTaskClass::Cpu,
             priority: -3,
             cancel_scope: string("元scope"),
             policy: AwbcTaskPolicy::AlwaysStart,
             payload_type: AwbcTypeId(if index == 0 { 1 } else { 0 }),
-            arguments: vec![
-                AwbcHostArgument {
-                    name: None,
-                    spread: false,
+            execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
+                crate::awbc::schema::AwbcHostTaskPlan {
+                    signature: AwbcSignatureId(0),
+                    request: AwbcTaskRequestProjection::CustomCapability {
+                        capability: string("source"),
+                        operation: string("request"),
+                    },
+                    arguments: vec![
+                        AwbcHostArgument {
+                            name: None,
+                            spread: false,
+                        },
+                        AwbcHostArgument {
+                            name: Some(string("条件")),
+                            spread: false,
+                        },
+                    ],
+                    kind: if index == 0 {
+                        AwbcHostTaskPlanKind::AwaitMany {
+                            contract: producer.definition.contract,
+                            site: producer.definition.producer_site,
+                            plan: original.task_plan(&producer.definition.plan).unwrap().key(),
+                            child: AwbcTaskPlanId(1),
+                            captures: vec![AwbcRegisterId(0), AwbcRegisterId(1)],
+                            request_function: function,
+                            item_binding: AwbcRegisterId(2),
+                            limit: target.limit,
+                        }
+                    } else {
+                        AwbcHostTaskPlanKind::Template {
+                            family: producer.definition.family,
+                            contract: producer.definition.contract,
+                            site: producer.definition.producer_site,
+                            plan: original.task_plan(&producer.definition.plan).unwrap().key(),
+                            request_function: function,
+                        }
+                    },
                 },
-                AwbcHostArgument {
-                    name: Some(string("条件")),
-                    spread: false,
-                },
-            ],
-            kind: if index == 0 {
-                AwbcTaskPlanKind::AwaitMany {
-                    contract: producer.definition.contract,
-                    site: producer.definition.producer_site,
-                    plan: original.task_plan(&producer.definition.plan).unwrap().key(),
-                    child: AwbcTaskPlanId(1),
-                    captures: vec![AwbcRegisterId(0), AwbcRegisterId(1)],
-                    request_function: function,
-                    item_binding: AwbcRegisterId(2),
-                    limit: target.limit,
-                }
-            } else {
-                AwbcTaskPlanKind::Template {
-                    family: producer.definition.family,
-                    contract: producer.definition.contract,
-                    site: producer.definition.producer_site,
-                    plan: original.task_plan(&producer.definition.plan).unwrap().key(),
-                    request_function: function,
-                }
-            },
+            ),
         });
     }
     code.strings = strings;
@@ -480,8 +484,13 @@ fn awbc_template_owning_source_preserves_checked_rows_and_rechecks_the_new_allow
 fn awbc_templates_reject_foreign_keys_without_metadata_fallback() {
     for task in [AwbcTaskPlanId(0), AwbcTaskPlanId(1)] {
         let mut code = executable();
-        match &mut code.task_plans[task.index()].kind {
-            AwbcTaskPlanKind::AwaitMany { plan, .. } | AwbcTaskPlanKind::Template { plan, .. } => {
+        match &mut code.task_plans[task.index()]
+            .host_mut()
+            .expect("Host fixture")
+            .kind
+        {
+            AwbcHostTaskPlanKind::AwaitMany { plan, .. }
+            | AwbcHostTaskPlanKind::Template { plan, .. } => {
                 *plan = TaskPlanSemanticDigest::from_bytes([0; 32])
             }
             _ => unreachable!(),
@@ -597,19 +606,21 @@ fn awbc_await_many_rejects_another_genuine_admitted_child_from_the_same_source()
             .task_source_artifact(RuntimeTaskSourceArtifactLimits::default())
             .unwrap(),
     );
-    let AwbcTaskPlanKind::AwaitMany { plan, .. } = &mut code.task_plans[0].kind else {
+    let AwbcHostTaskPlanKind::AwaitMany { plan, .. } =
+        &mut code.task_plans[0].host_mut().expect("Host fixture").kind
+    else {
         unreachable!()
     };
     *plan = original
         .task_plan(&target(&original).base.definition.plan)
         .unwrap()
         .key();
-    let AwbcTaskPlanKind::Template {
+    let AwbcHostTaskPlanKind::Template {
         plan,
         contract,
         site,
         ..
-    } = &mut code.task_plans[1].kind
+    } = &mut code.task_plans[1].host_mut().expect("Host fixture").kind
     else {
         unreachable!()
     };
@@ -665,25 +676,28 @@ fn awbc_await_many_rejects_another_genuine_admitted_child_from_the_same_source()
 fn awbc_templates_reject_changed_original_family_and_base_row_kind() {
     for child in [false, true] {
         let mut code = executable();
-        let AwbcTaskPlanKind::AwaitMany {
+        let AwbcHostTaskPlanKind::AwaitMany {
             contract,
             site,
             plan,
             request_function,
             ..
-        } = code.task_plans[0].kind
+        } = code.task_plans[0].host_mut().expect("Host fixture").kind
         else {
             unreachable!()
         };
-        code.task_plans[0].kind = AwbcTaskPlanKind::Template {
-            family: NeedProducerFamily::AwaitManyBase,
-            contract,
-            site,
-            plan,
-            request_function,
-        };
+        code.task_plans[0].host_mut().expect("Host fixture").kind =
+            AwbcHostTaskPlanKind::Template {
+                family: NeedProducerFamily::AwaitManyBase,
+                contract,
+                site,
+                plan,
+                request_function,
+            };
         let task = if child {
-            let AwbcTaskPlanKind::Template { family, .. } = &mut code.task_plans[1].kind else {
+            let AwbcHostTaskPlanKind::Template { family, .. } =
+                &mut code.task_plans[1].host_mut().expect("Host fixture").kind
+            else {
                 unreachable!()
             };
             *family = NeedProducerFamily::StructuredTaskPlan;
@@ -721,22 +735,25 @@ fn awbc_templates_reject_independently_valid_metadata_and_capture_changes() {
             u32::try_from(code.strings.iter().position(|text| text == "別").unwrap()).unwrap(),
         );
         let row = &mut code.task_plans[0];
+        let crate::awbc::schema::AwbcTaskPlanExecution::Host(host) = &mut row.execution else {
+            panic!("fixture owns a Host execution contract")
+        };
         match field {
             Field::Contract => {
-                let AwbcTaskPlanKind::AwaitMany { contract, .. } = &mut row.kind else {
+                let AwbcHostTaskPlanKind::AwaitMany { contract, .. } = &mut host.kind else {
                     unreachable!()
                 };
                 *contract = NeedProducerContractDigest::from_bytes([0; 32]);
             }
             Field::Site => {
-                let AwbcTaskPlanKind::AwaitMany { site, .. } = &mut row.kind else {
+                let AwbcHostTaskPlanKind::AwaitMany { site, .. } = &mut host.kind else {
                     unreachable!()
                 };
                 *site = NeedProducerSiteDigest::from_bytes([0; 32]);
             }
             Field::Capability => {
                 let AwbcTaskRequestProjection::CustomCapability { capability, .. } =
-                    &mut row.request
+                    &mut host.request
                 else {
                     unreachable!()
                 };
@@ -744,7 +761,7 @@ fn awbc_templates_reject_independently_valid_metadata_and_capture_changes() {
             }
             Field::Operation => {
                 let AwbcTaskRequestProjection::CustomCapability { operation, .. } =
-                    &mut row.request
+                    &mut host.request
                 else {
                     unreachable!()
                 };
@@ -754,15 +771,15 @@ fn awbc_templates_reject_independently_valid_metadata_and_capture_changes() {
             Field::Priority => row.priority += 1,
             Field::CancelScope => row.cancel_scope = wrong,
             Field::Policy => row.policy = AwbcTaskPolicy::JoinSameKey,
-            Field::ArgumentName { index } => row.arguments[index].name = None,
-            Field::ArgumentSpread { index } => row.arguments[index].spread = true,
+            Field::ArgumentName { index } => host.arguments[index].name = None,
+            Field::ArgumentSpread { index } => host.arguments[index].spread = true,
             Field::RequestDefinition => code.functions[0].definition = definition(99),
             Field::Capture { .. } => {
                 code.functions[0].input_ownership[0].origin =
                     code.functions[0].input_ownership[1].origin
             }
             Field::Limit => {
-                let AwbcTaskPlanKind::AwaitMany { limit, .. } = &mut row.kind else {
+                let AwbcHostTaskPlanKind::AwaitMany { limit, .. } = &mut host.kind else {
                     unreachable!()
                 };
                 *limit += 1;
@@ -846,7 +863,9 @@ fn awbc_templates_bound_roles_before_a_forged_key_and_admit_shared_capture_prefi
         .awbc_template_source(AwbcTaskPlanId(0), exact, &mut meter())
         .unwrap();
     let mut code = executable();
-    let AwbcTaskPlanKind::AwaitMany { plan, .. } = &mut code.task_plans[0].kind else {
+    let AwbcHostTaskPlanKind::AwaitMany { plan, .. } =
+        &mut code.task_plans[0].host_mut().expect("Host fixture").kind
+    else {
         unreachable!()
     };
     *plan = TaskPlanSemanticDigest::from_bytes([0; 32]);
@@ -904,7 +923,9 @@ fn awbc_templates_reject_real_other_endpoint_kinds_and_absent_or_native_rows() {
                 .task_source_artifact(RuntimeTaskSourceArtifactLimits::default())
                 .unwrap(),
         );
-        let AwbcTaskPlanKind::AwaitMany { plan, .. } = &mut code.task_plans[0].kind else {
+        let AwbcHostTaskPlanKind::AwaitMany { plan, .. } =
+            &mut code.task_plans[0].host_mut().expect("Host fixture").kind
+        else {
             unreachable!()
         };
         *plan = original

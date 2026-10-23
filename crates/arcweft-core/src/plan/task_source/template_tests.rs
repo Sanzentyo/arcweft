@@ -612,7 +612,7 @@ fn template_source_container_graphs_reject_same_identity_with_another_shape_befo
     ));
 }
 
-fn thread() -> RuntimeTaskSourceProgram {
+pub(in crate::plan::task_source) fn thread() -> RuntimeTaskSourceProgram {
     let mut builder = RuntimePlanBuilder::new();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
@@ -789,7 +789,7 @@ fn thread_source_codec_retains_program_definition_and_capture_roles() {
 
 #[test]
 fn awbc_host_request_kernel_cannot_claim_an_original_thread_source() {
-    use crate::awbc::schema::{AwbcTaskPlanKind, AwbcTypeId};
+    use crate::awbc::schema::{AwbcHostTaskPlanKind, AwbcTypeId};
     let native = thread();
     let original = native.original();
     let row = original
@@ -814,13 +814,13 @@ fn awbc_host_request_kernel_cannot_claim_an_original_thread_source() {
             .task_source_artifact(RuntimeTaskSourceArtifactLimits::default())
             .unwrap(),
     );
-    let AwbcTaskPlanKind::AwaitMany {
+    let AwbcHostTaskPlanKind::AwaitMany {
         request_function, ..
-    } = code.task_plans[0].kind
+    } = code.task_plans[0].host_mut().expect("Host fixture").kind
     else {
         panic!("fixture owns a real Host request kernel");
     };
-    code.task_plans[0].kind = AwbcTaskPlanKind::Template {
+    code.task_plans[0].host_mut().expect("Host fixture").kind = AwbcHostTaskPlanKind::Template {
         family: definition.family,
         contract: definition.contract,
         site: definition.producer_site,

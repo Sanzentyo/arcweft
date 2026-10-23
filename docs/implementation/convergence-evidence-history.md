@@ -9560,3 +9560,83 @@ staged whitespace検査から原本2件のみ除外する。他のsource／文�
 実行していない。現状一覧は引き続き `current-status.md` の一か所とする。
 変更した5文書の相対リンク232件は解決可能、未閉鎖fenceは0。最終文書更新時にも、
 検証した21 Rust pathsのhash差分0を確認した。
+
+## AWBC Program の元Source・型境界 — 2026-10-24
+
+前節の変更は `a74957e455597a0d3160af11c914e2e93f58d144` で公開した。
+parentは `a8ea56ed7a6293800dc05fafade3b6b687f44c55`、treeは
+`b7ab208af6cc3f6989e621224625fafbd615323a`、raw patch SHA256は
+`9086584f7827f56ef5e49468fae1285a0cf8c7cf9e5351dcc60860731bf6624f`。
+[公開照合](acceptance-evidence/task-thread-handle-checkpoint.verified.json) は95公開blob、
+4,367入力、empty index、保持14 tracked WIPの差分0、fresh origin／advertised ref一致を記録する。
+
+同基点から25 Rust pathsを変更した。共通のschedulingとpayloadを保ち、AWBCのtask行を
+Host request／Programへ直接置換した。Program行は元expected-keyと専用kernelを持ち、
+Host signature・argument packetを持たない。version-one codecをその形へ揃え、
+置換されたHost-only行のreader・kind名は残していない。
+
+元Thread operationを所有するSourceが、実際の元executableからkeyを解決し、
+TaskBody定義・scheduling・payload・captureのlocal、順序、transferと完全な型関係を検査する。
+同じcaller meterでcountとtype traversalを制限し、拒否はそのallowanceを無効にする。
+kernelのOwned ingressから言語のCopy／Moveを捏造せず、元のExternalBindingを維持する。
+通常のfunction call／rootからProgramTask kernelへ入れない。
+
+`lower_producer_definition`はpayload型を解決するが、再利用可能なfunction-site ABIや
+bodyを証明しない。Threadの元operationから生成するTaskBody定義を選び、Host requestを
+返すkernelで代用しなかった。このcutはSource／型境界であり、独立kernel生成・起動・
+child実行・結果退役・公開saveへの接続を完了とはしない。
+
+### 途中の失敗と最終owner結果
+
+| 実行 | 実際の結果・修復との関係 |
+|---|---|
+| R2473 Core check | exit 101。schemaのstring visitor、function-kindの全列挙、既存fixtureのHost field移行漏れを修復した。 |
+| R2474 owner check | exit 101。変数indexで参照するtest fixtureの旧kind fieldをtyped Host projectionへ揃えた。 |
+| R2475 owner check | exit 101。StdErrorを実装しないsemantic encoding errorの変換を既存契約に従うmanual Fromへ修正し、Source descriptorへProgram行のtagを追加した。 |
+| R2476 owner check | exit 101。Core all-targetはcompileし、RuntimePlan公開parity fixtureに残った旧kind fieldを修正した。 |
+| R2477 catalog／R2478 runtime | catalogはexit 0、2 owner／2,176全件選択。runtimeは2,173 PASS／3 FAIL／0 skip、215.456秒、exit 100。Source 4件はPASS。kind inventoryとkind／flag行列の旧期待、および通常rootからProgram kernelを構築できる実際の検査漏れを検出した。 |
+| R2479 catalog／R2480 runtime | catalogはexit 0。kind 11種と未知tag拒否、全11×64 kind／flag行列を保ち、frame allocationでもroot／kernelを検査するよう修復。2,176 PASS（2 slow）／0 FAIL／0 skip、332.547秒、実際のexit 0。 |
+
+[R2480 terminal audit](acceptance-evidence/task-final-r2480-awbc-program-source-final-runtime.terminal-audit.json)、
+[受入範囲の照合](acceptance-evidence/task-final-r2480-awbc-program-source-final-runtime.acceptance-audit.json)
+を保持する。Core **2,018件**、RuntimePlan **158件**。新規Source 5件とkind行列2件は全PASS。
+正しいSourceのcodec roundtrip／再借用に加え、別の実際のprogram、Host行、誤った
+scheduling・定義・capture transfer・payload／capture型、予算枯渇を拒否する。
+通常functionへ戻した同じframeのpositive controlも成功し、単に入口をすべて拒否していない。
+4,369固定入力・case set・18 executableのdriftは0。
+
+対象は実際に選択した **2 owner package**。解決済みgraphのCore全53逆依存とは異なる。
+99 manifest／lockの差分は0。Sema／Compilerを含むGeneric Match 151件は今回未実行で、
+前回R2469の全PASSと公開済み受入を維持する。今回の新shapeによる全53逆依存runtimeは
+独立実行の接続後に必要であり、このowner結果で代用しない。
+
+### check・構造・保全
+
+R2481 workspace checkとR2482 workspace Clippyはall-target／all-feature／locked、
+いずれもexit 0、警告あり。receiptの経過時間は150.154秒／181.111秒。
+18個の固定binaryによるowner runtimeと並行し、check／Clippy／別cargo-script cacheの
+構造gateを順に実行した。最終binary hashの差分は0。
+R2483 canonical gateは3,203 files・3,073 Rust files・1,738,068 physical LOC・97 package・
+376 review triggers、**blocking 0**。report5件を原本のまま保持する。
+
+[owner計測](acceptance-evidence/task-program-source-ownership-metrics.json)では、新規Source ownerは
+251 LOC、新規test ownerは332 LOC。後者の300 LOC以上の増加を明示的にreviewした。
+同じ元Thread fixtureとSource認証の成功／拒否を所有する5ケースであり、別の状態authorityや
+実行モデルを持たない。productionのadmissionとtest fixtureを分離した現在の境界を維持する。
+既存ownerはcodec 1,526 LOC（+36）、fiber 7,026（+8、embedded test 1,667）、
+schema 3,821（+49）、verify/code 6,495（+19）、verify/structure 3,854（+48）、
+RuntimePlan inventory 2,409（+10）。Coreのnormal／development fan-inは31／4、
+fan-outは7／5。RuntimePlanは5／5と10／0。schemaは閉じたHost／Program algebra、
+codecはそのgrammar、Sourceは元operationとの対応を所有し、既存fiber／verifier／lowererは
+そのtyped projectionを利用する。新しいI/O・crate edge・結果table・互換readerは追加していない。
+
+ユーザーの途中commit方針に従い、このSource／型基盤を独立実行全体より先に公開する。
+全53逆依存runtime未実行という検証上の逸脱を明記し、Threadや全14 familyの最終受入とは
+報告しない。新しいdoctest、ignored、Tier2、全workspace runtime、Native-Web capture parityの
+最終gateも実行していない。
+
+今回の50原本、16,052,185 bytesをbyte・SHA256・Git blob一致で保全する。
+R2482 Clippy raw logのtrailing whitespace5行は保持し、staged whitespace検査から
+その原本1件のみ除外する。旧結果・full SHAを保持し、現状一覧は `current-status.md` のみとする。
+変更した3文書の相対リンク226件は解決可能、未閉鎖fenceは0。
+文書更新後にも、検証済み25 Rust pathsのformatと全Rust入力のhash差分0を確認した。

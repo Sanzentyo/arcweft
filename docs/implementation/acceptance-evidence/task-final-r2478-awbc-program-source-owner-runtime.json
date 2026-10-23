@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "name": "task-final-r2478-awbc-program-source-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-source-r2477.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "package(=arcweft-core) | package(=arcweft-runtime-plan)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2478-awbc-program-source-owner-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-23T22:37:33.9331686Z",
+  "finishedAt": "2026-10-23T22:41:10.1954389Z"
+}

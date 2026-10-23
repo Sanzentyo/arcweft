@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "dirty": true,
+  "owned": 25,
+  "held": 14,
+  "rows": [
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+      "bytes": 53990,
+      "physicalLoc": 1526,
+      "baseLoc": 1490,
+      "growth": 36,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "bytes": 267372,
+      "physicalLoc": 7026,
+      "baseLoc": 7018,
+      "growth": 8,
+      "embeddedTestLoc": 1667
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/await_many.rs",
+      "bytes": 15997,
+      "physicalLoc": 431,
+      "baseLoc": 429,
+      "growth": 2,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+      "bytes": 15915,
+      "physicalLoc": 403,
+      "baseLoc": 402,
+      "growth": 1,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/mapping.rs",
+      "bytes": 24263,
+      "physicalLoc": 594,
+      "baseLoc": 591,
+      "growth": 3,
+      "embeddedTestLoc": 170
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "bytes": 117849,
+      "physicalLoc": 2867,
+      "baseLoc": 2852,
+      "growth": 15,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "bytes": 277946,
+      "physicalLoc": 7049,
+      "baseLoc": 7037,
+      "growth": 12,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "bytes": 123554,
+      "physicalLoc": 3821,
+      "baseLoc": 3772,
+      "growth": 49,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests.rs",
+      "bytes": 326297,
+      "physicalLoc": 8916,
+      "baseLoc": 8909,
+      "growth": 7,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+      "bytes": 252146,
+      "physicalLoc": 6495,
+      "baseLoc": 6476,
+      "growth": 19,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+      "bytes": 154463,
+      "physicalLoc": 3854,
+      "baseLoc": 3806,
+      "growth": 48,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/function_sites.rs",
+      "bytes": 23141,
+      "physicalLoc": 717,
+      "baseLoc": 712,
+      "growth": 5,
+      "embeddedTestLoc": 46
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/owned.rs",
+      "bytes": 5365,
+      "physicalLoc": 150,
+      "baseLoc": 147,
+      "growth": 3,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program.rs",
+      "bytes": 6160,
+      "physicalLoc": 166,
+      "baseLoc": 164,
+      "growth": 2,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/execution.rs",
+      "bytes": 6367,
+      "physicalLoc": 157,
+      "baseLoc": 144,
+      "growth": 13,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+      "bytes": 9472,
+      "physicalLoc": 251,
+      "baseLoc": 0,
+      "growth": 251,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+      "bytes": 11845,
+      "physicalLoc": 332,
+      "baseLoc": 0,
+      "growth": 332,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/selected.rs",
+      "bytes": 12697,
+      "physicalLoc": 353,
+      "baseLoc": 349,
+      "growth": 4,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/selected/tests.rs",
+      "bytes": 18902,
+      "physicalLoc": 534,
+      "baseLoc": 524,
+      "growth": 10,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/template.rs",
+      "bytes": 20899,
+      "physicalLoc": 574,
+      "baseLoc": 576,
+      "growth": -2,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/template/tests.rs",
+      "bytes": 34967,
+      "physicalLoc": 949,
+      "baseLoc": 928,
+      "growth": 21,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "bytes": 35730,
+      "physicalLoc": 1008,
+      "baseLoc": 1008,
+      "growth": 0,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/tests/program_custody.rs",
+      "bytes": 25356,
+      "physicalLoc": 685,
+      "baseLoc": 681,
+      "growth": 4,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+      "bytes": 100226,
+      "physicalLoc": 2409,
+      "baseLoc": 2399,
+      "growth": 10,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/tests/awbc_product_parity.rs",
+      "bytes": 47538,
+      "physicalLoc": 1248,
+      "baseLoc": 1246,
+      "growth": 2,
+      "embeddedTestLoc": 0
+    }
+  ],
+  "packages": [
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+      "workspace_fan_in": "5",
+      "workspace_fan_out": "10",
+      "development_workspace_fan_in": "5",
+      "development_workspace_fan_out": "0"
+    }
+  ]
+}

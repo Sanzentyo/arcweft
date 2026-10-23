@@ -5,7 +5,7 @@
 use super::types::{RuntimeAwbcSourceTypeError, RuntimeAwbcSourceTypeRelation};
 use super::{RuntimeTaskSourceProgram, RuntimeTaskSourceProgramData};
 use crate::awbc::schema::{
-    AwbcFunctionId, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPlanKind, AwbcTaskPolicy,
+    AwbcFunctionId, AwbcHostTaskPlanKind, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy,
     AwbcTaskRequestProjection,
 };
 use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
@@ -150,7 +150,11 @@ impl RuntimeTaskSourceProgram {
             types: Vec::new(),
         };
         let source = admission.row(task, row)?;
-        if let AwbcTaskPlanKind::AwaitMany { child, limit, .. } = &row.kind {
+        let host = row.host().ok_or(RuntimeAwbcTemplateSourceError::Mismatch {
+            task,
+            field: Field::RequestKind,
+        })?;
+        if let AwbcHostTaskPlanKind::AwaitMany { child, limit, .. } = &host.kind {
             let Some(FlowOp::AwaitMany { target, .. }) = source.request_endpoint().operation()
             else {
                 return Err(RuntimeAwbcTemplateSourceError::Mismatch {
@@ -255,8 +259,12 @@ impl<'program> TemplateAdmission<'program, '_> {
         else {
             return Err(RuntimeAwbcTemplateSourceError::Backend);
         };
-        let (family, contract, site, plan, request_function) = match &row.kind {
-            AwbcTaskPlanKind::AwaitMany {
+        let host = row.host().ok_or(RuntimeAwbcTemplateSourceError::Mismatch {
+            task,
+            field: Field::RequestKind,
+        })?;
+        let (family, contract, site, plan, request_function) = match &host.kind {
+            AwbcHostTaskPlanKind::AwaitMany {
                 contract,
                 site,
                 plan,
@@ -269,14 +277,14 @@ impl<'program> TemplateAdmission<'program, '_> {
                 *plan,
                 *request_function,
             ),
-            AwbcTaskPlanKind::Template {
+            AwbcHostTaskPlanKind::Template {
                 family,
                 contract,
                 site,
                 plan,
                 request_function,
             } => (*family, *contract, *site, *plan, *request_function),
-            AwbcTaskPlanKind::NeedProducer { .. } => {
+            AwbcHostTaskPlanKind::NeedProducer { .. } => {
                 return Err(RuntimeAwbcTemplateSourceError::Mismatch {
                     task,
                     field: Field::RequestKind,
@@ -286,7 +294,7 @@ impl<'program> TemplateAdmission<'program, '_> {
         self.roles(
             task,
             Field::ArgumentCount,
-            row.arguments.len(),
+            host.arguments.len(),
             self.limits.max_request_roles,
         )?;
         let kernel = &executable.functions[request_function.index()];
@@ -317,16 +325,16 @@ impl<'program> TemplateAdmission<'program, '_> {
         self.check(
             task,
             Field::RequestKind,
-            match &row.kind {
-                AwbcTaskPlanKind::AwaitMany { .. } => {
+            match &host.kind {
+                AwbcHostTaskPlanKind::AwaitMany { .. } => {
                     original_kind
                         == crate::plan::body_semantic::function::EndpointKind::AwaitManyBase
                 }
-                AwbcTaskPlanKind::Template { .. } => {
+                AwbcHostTaskPlanKind::Template { .. } => {
                     original_kind
                         != crate::plan::body_semantic::function::EndpointKind::AwaitManyBase
                 }
-                AwbcTaskPlanKind::NeedProducer { .. } => false,
+                AwbcHostTaskPlanKind::NeedProducer { .. } => false,
             },
         )?;
         self.check(
@@ -336,7 +344,7 @@ impl<'program> TemplateAdmission<'program, '_> {
         )?;
         self.check(task, Field::Contract, contract == producer.contract)?;
         self.check(task, Field::Site, site == producer.producer_site)?;
-        match &row.request {
+        match &host.request {
             AwbcTaskRequestProjection::CustomCapability {
                 capability,
                 operation,
@@ -398,17 +406,17 @@ impl<'program> TemplateAdmission<'program, '_> {
             args.len(),
             self.limits.max_request_roles,
         )?;
-        let signature = &executable.signatures[row.signature.index()];
+        let signature = &executable.signatures[host.signature.index()];
         self.check(
             task,
             Field::ArgumentCount,
-            args.len() == row.arguments.len()
+            args.len() == host.arguments.len()
                 && signature.params.len() == args.len()
                 && signature.result.is_none(),
         )?;
         for (index, ((expected, actual), ty)) in args
             .iter()
-            .zip(&row.arguments)
+            .zip(&host.arguments)
             .zip(&signature.params)
             .enumerate()
         {
@@ -475,16 +483,6 @@ impl<'program> TemplateAdmission<'program, '_> {
         use RuntimeAwbcTemplateSourceField as Field;
         let mut inputs: Vec<RuntimeLocalDeclarationId> = Vec::new();
         match source.request_endpoint().operation() {
-            Some(FlowOp::Thread { captures, .. }) => {
-                self.roles(
-                    task,
-                    Field::CaptureCount,
-                    captures.len(),
-                    self.limits.max_function_roles,
-                )?;
-                self.meter.charge_work(captures.len() as u64)?;
-                inputs.extend_from_slice(captures);
-            }
             Some(FlowOp::AwaitMany { target, .. }) => {
                 self.roles(
                     task,

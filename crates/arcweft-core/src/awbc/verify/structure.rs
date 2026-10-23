@@ -8,11 +8,10 @@ use crate::awbc::schema::{
     AWBC_ABI_VERSION, AwbcAgentTypeShape, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlockId,
     AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPayload,
     AwbcEffectPlan, AwbcEffectSetId, AwbcEntryKind, AwbcEntryTarget, AwbcFrameSlotRole,
-    AwbcFunctionId, AwbcFunctionKind, AwbcLineOperation, AwbcLineTaskNode, AwbcPattern,
-    AwbcPatternId, AwbcProgram, AwbcRoute, AwbcRouteBindingSource, AwbcRouteSegment,
+    AwbcFunctionId, AwbcFunctionKind, AwbcHostTaskPlanKind, AwbcLineOperation, AwbcLineTaskNode,
+    AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRoute, AwbcRouteBindingSource, AwbcRouteSegment,
     AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignatureId, AwbcStringId, AwbcTableRange,
-    AwbcTaskPlanKind, AwbcTaskRequestProjection, AwbcTraitMethod, AwbcTraitReceiverMode,
-    AwbcTypeId,
+    AwbcTaskRequestProjection, AwbcTraitMethod, AwbcTraitReceiverMode, AwbcTypeId,
 };
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{
@@ -1123,27 +1122,63 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
         let at = format!("task plan {index}");
         check_string(program, task.cancel_scope, &at)?;
         check_index(
-            program.signatures.len(),
-            task.signature.0,
-            "signatures",
-            &at,
-        )?;
-        check_index(
             program.runtime_types.len(),
             task.payload_type.0,
             "runtime_types",
             &at,
         )?;
-        for argument in &task.arguments {
+        let host = match &task.execution {
+            crate::awbc::schema::AwbcTaskPlanExecution::Host(host) => host,
+            crate::awbc::schema::AwbcTaskPlanExecution::Program(program_task) => {
+                if program.original_source.is_none() {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "Program task requires its original Task Source".into(),
+                    });
+                }
+                check_index(
+                    program.functions.len(),
+                    program_task.kernel.0,
+                    "functions",
+                    &at,
+                )?;
+                let kernel = &program.functions[program_task.kernel.index()];
+                check_index(
+                    program.signatures.len(),
+                    kernel.signature.0,
+                    "signatures",
+                    &at,
+                )?;
+                if kernel.kind != AwbcFunctionKind::ProgramTask
+                    || program.signatures[kernel.signature.index()].result
+                        != Some(task.payload_type)
+                {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message:
+                            "Program task requires its own kernel with the exact payload result"
+                                .into(),
+                    });
+                }
+                continue;
+            }
+        };
+        check_index(
+            program.signatures.len(),
+            host.signature.0,
+            "signatures",
+            &at,
+        )?;
+        for argument in &host.arguments {
             check_optional_string(program, argument.name, &at)?;
         }
-        if task.arguments.len() != program.signatures[task.signature.index()].params.len() {
+        if host.arguments.len() != program.signatures[host.signature.index()].params.len() {
             return Err(AwbcVerifyError::InvalidInvariant {
                 at,
                 message: "task argument descriptors must match signature arity".to_owned(),
             });
         }
-        match &task.request {
+        match &host.request {
             AwbcTaskRequestProjection::AssetLoad { argument_name, .. } => {
                 check_string(program, *argument_name, &at)?
             }
@@ -1160,21 +1195,21 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 check_string(program, *operation, &at)?;
             }
         }
-        match &task.kind {
-            AwbcTaskPlanKind::NeedProducer { .. } => {
-                if task.arguments.iter().any(|argument| argument.spread) {
+        match &host.kind {
+            AwbcHostTaskPlanKind::NeedProducer { .. } => {
+                if host.arguments.iter().any(|argument| argument.spread) {
                     return Err(AwbcVerifyError::InvalidInvariant {
                         at,
                         message: "Need producer argument rows cannot contain spreads".to_owned(),
                     });
                 }
-                let AwbcTaskPlanKind::NeedProducer { contract, .. } = &task.kind else {
+                let AwbcHostTaskPlanKind::NeedProducer { contract, .. } = &host.kind else {
                     unreachable!("the selected kind was matched")
                 };
-                let valid = match &task.request {
+                let valid = match &host.request {
                     AwbcTaskRequestProjection::AssetLoad { argument_name, .. } => {
                         !program.strings[argument_name.index()].is_empty()
-                            && task.arguments.len() == 1
+                            && host.arguments.len() == 1
                     }
                     AwbcTaskRequestProjection::ExternCapability {
                         capability,
@@ -1184,7 +1219,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                         !program.strings[capability.index()].is_empty()
                             && !program.strings[operation.index()].is_empty()
                             && request_contract.as_bytes() == contract.as_bytes()
-                            && u32::try_from(task.arguments.len()).is_ok()
+                            && u32::try_from(host.arguments.len()).is_ok()
                     }
                     AwbcTaskRequestProjection::CustomCapability { .. } => false,
                 };
@@ -1195,7 +1230,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                     });
                 }
             }
-            AwbcTaskPlanKind::AwaitMany {
+            AwbcHostTaskPlanKind::AwaitMany {
                 child,
                 captures,
                 request_function,
@@ -1203,7 +1238,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 ..
             } => {
                 if !matches!(
-                    &task.request,
+                    &host.request,
                     AwbcTaskRequestProjection::CustomCapability { .. }
                 ) {
                     return Err(AwbcVerifyError::InvalidInvariant {
@@ -1214,6 +1249,14 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                     });
                 }
                 check_index(program.task_plans.len(), child.0, "task_plans", &at)?;
+                let child_plan = &program.task_plans[child.index()];
+                let child_host =
+                    child_plan
+                        .host()
+                        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "AwaitMany child requires a Host execution contract".into(),
+                        })?;
                 check_index(
                     program.functions.len(),
                     request_function.0,
@@ -1221,8 +1264,8 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                     &at,
                 )?;
                 if !matches!(
-                    program.task_plans[child.index()].kind,
-                    AwbcTaskPlanKind::Template {
+                    child_host.kind,
+                    AwbcHostTaskPlanKind::Template {
                         family: crate::task::NeedProducerFamily::AwaitManyChild,
                         ..
                     }
@@ -1241,11 +1284,10 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                     });
                 }
                 verify_task_request_kernel(program, task, *request_function, &at)?;
-                let child_plan = &program.task_plans[child.index()];
-                let AwbcTaskPlanKind::Template {
+                let AwbcHostTaskPlanKind::Template {
                     request_function: child_function,
                     ..
-                } = child_plan.kind
+                } = child_host.kind
                 else {
                     unreachable!("child kind checked above");
                 };
@@ -1266,7 +1308,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                     return Err(AwbcVerifyError::InvalidInvariant { at, message: "AwaitMany capture ABI or aggregate payload differs from its child template".into() });
                 }
             }
-            AwbcTaskPlanKind::Template {
+            AwbcHostTaskPlanKind::Template {
                 request_function, ..
             } => {
                 check_index(
@@ -1467,6 +1509,12 @@ fn verify_task_request_kernel(
     function: AwbcFunctionId,
     at: &str,
 ) -> Result<(), AwbcVerifyError> {
+    let host = task
+        .host()
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.into(),
+            message: "request kernel requires a Host task".into(),
+        })?;
     let function = program.functions.get(function.index()).ok_or_else(|| {
         AwbcVerifyError::InvalidInvariant {
             at: at.into(),
@@ -1491,7 +1539,7 @@ fn verify_task_request_kernel(
             .effect_sets
             .get(signature.effects.index())
             .is_some_and(|effects| effects.effects.is_empty())
-        || !matches!(result.map(AwbcRuntimeType::shape), Some(AwbcRuntimeTypeShape::Tuple(items)) if *items == program.signatures[task.signature.index()].params)
+        || !matches!(result.map(AwbcRuntimeType::shape), Some(AwbcRuntimeTypeShape::Tuple(items)) if *items == program.signatures[host.signature.index()].params)
     {
         return Err(AwbcVerifyError::InvalidInvariant {
             at: at.into(),

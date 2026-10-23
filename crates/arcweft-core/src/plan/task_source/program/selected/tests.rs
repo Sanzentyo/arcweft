@@ -85,26 +85,30 @@ pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
         })
         .collect();
     let row = AwbcTaskPlan {
-        signature: AwbcSignatureId(0),
-        request,
         class: AwbcTaskClass::Io,
         priority: metadata.priority().0,
         cancel_scope: string(&metadata.cancel_scope().0),
         policy: AwbcTaskPolicy::JoinSameKey,
         payload_type: AwbcTypeId(0),
-        arguments: args
-            .iter()
-            .map(|arg| AwbcHostArgument {
-                name: arg.name().map(string),
-                spread: arg.is_spread(),
-            })
-            .collect(),
-        kind: AwbcTaskPlanKind::NeedProducer {
-            plan: original.task_plan(target.task_plan()).unwrap().key().into(),
-            contract: metadata.contract(),
-            site: metadata.site(),
-            restart: AwbcTaskRestartPolicy::MustBeQuiescent,
-        },
+        execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
+            crate::awbc::schema::AwbcHostTaskPlan {
+                signature: AwbcSignatureId(0),
+                request,
+                arguments: args
+                    .iter()
+                    .map(|arg| AwbcHostArgument {
+                        name: arg.name().map(string),
+                        spread: arg.is_spread(),
+                    })
+                    .collect(),
+                kind: AwbcHostTaskPlanKind::NeedProducer {
+                    plan: original.task_plan(target.task_plan()).unwrap().key().into(),
+                    contract: metadata.contract(),
+                    site: metadata.site(),
+                    restart: AwbcTaskRestartPolicy::MustBeQuiescent,
+                },
+            },
+        ),
     };
     AwbcProgram {
         original_source: Some(
@@ -245,7 +249,9 @@ fn decoded_selected_assertions_cannot_fall_back_to_matching_request_metadata() {
         .key();
     for assertion in [ExpectedTaskPlanKey::new([0; 32]), foreign.into()] {
         let mut code = executable(2);
-        let AwbcTaskPlanKind::NeedProducer { plan, .. } = &mut code.task_plans[0].kind else {
+        let AwbcHostTaskPlanKind::NeedProducer { plan, .. } =
+            &mut code.task_plans[0].host_mut().expect("Host fixture").kind
+        else {
             unreachable!()
         };
         *plan = assertion;
@@ -296,19 +302,23 @@ fn awbc_selected_construction_checks_verified_metadata_changes_without_reconstru
             u32::try_from(code.strings.iter().position(|text| text == "別").unwrap()).unwrap(),
         );
         let row = &mut code.task_plans[0];
-        let AwbcTaskPlanKind::NeedProducer {
+        let crate::awbc::schema::AwbcTaskPlanExecution::Host(host) = &mut row.execution else {
+            panic!("fixture owns a Host execution contract")
+        };
+        let AwbcHostTaskPlanKind::NeedProducer {
             contract,
             site,
             restart,
             ..
-        } = &mut row.kind
+        } = &mut host.kind
         else {
             unreachable!()
         };
         match field {
             Field::Contract => {
                 *contract = NeedProducerContractDigest::from_bytes([0x33; 32]);
-                let AwbcTaskRequestProjection::ExternCapability { contract, .. } = &mut row.request
+                let AwbcTaskRequestProjection::ExternCapability { contract, .. } =
+                    &mut host.request
                 else {
                     unreachable!()
                 };
@@ -317,7 +327,7 @@ fn awbc_selected_construction_checks_verified_metadata_changes_without_reconstru
             Field::Site => *site = NeedProducerSiteDigest::from_bytes([0x33; 32]),
             Field::Capability => {
                 let AwbcTaskRequestProjection::ExternCapability { capability, .. } =
-                    &mut row.request
+                    &mut host.request
                 else {
                     unreachable!()
                 };
@@ -325,7 +335,7 @@ fn awbc_selected_construction_checks_verified_metadata_changes_without_reconstru
             }
             Field::Operation => {
                 let AwbcTaskRequestProjection::ExternCapability { operation, .. } =
-                    &mut row.request
+                    &mut host.request
                 else {
                     unreachable!()
                 };
@@ -336,7 +346,7 @@ fn awbc_selected_construction_checks_verified_metadata_changes_without_reconstru
             Field::CancelScope => row.cancel_scope = wrong,
             Field::Policy => row.policy = AwbcTaskPolicy::AlwaysStart,
             Field::Restart => *restart = AwbcTaskRestartPolicy::Restartable,
-            Field::ArgumentName { index } => row.arguments[index].name = None,
+            Field::ArgumentName { index } => host.arguments[index].name = None,
             _ => unreachable!(),
         }
         let program = admit(Arc::new(code));

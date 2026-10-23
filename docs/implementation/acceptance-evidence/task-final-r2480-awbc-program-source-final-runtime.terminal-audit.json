@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "run": "task-final-r2480-awbc-program-source-final-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 332.547s] 2176 tests run: 2176 passed (2 slow), 0 skipped",
+  "executed": 2176,
+  "passed": 2176,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4369,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-23T22:51:05.4860943Z"
+}

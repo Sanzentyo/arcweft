@@ -38,6 +38,20 @@ The common Q definition records each Program capture's original type, source
 order and local/capture/Need provenance through capture roles. It checks the
 complete role allowance before constructing those metadata rows.
 
+AWBC task plans keep scheduling and the payload type in one common row.
+`AwbcTaskPlanExecution::Host` owns the Host request projection, signature,
+arguments and closed Host plan kind. `Program` owns only the original expected
+task-plan key and its `ProgramTask` kernel. The version-one wire grammar encodes
+this distinction directly; a Program row has no synthetic Host argument packet.
+Its Source admission resolves the key in the retained original executable and
+checks the Thread operation, generated task-body definition, scheduling,
+payload, and complete capture type relation. Capture metadata must preserve the
+original local, source order and `ExternalBinding` transfer; owned kernel input
+does not grant a language Copy or Move operation. One caller-owned semantic
+meter bounds this work before a Source lease is copied. An assertion or decoded
+row alone grants no execution authority, and ordinary function roots and calls
+cannot enter a `ProgramTask` kernel.
+
 Native Thread operations also own a checked `ThreadHandle<T>` result pattern.
 Statement use has a typed discard pattern; value use binds the actual accepted
 task receipt. Child preparation checks the original Source and captures without

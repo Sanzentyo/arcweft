@@ -4636,6 +4636,7 @@ fn function_kind_numeric_inventory_is_total_and_closed() {
         AwbcFunctionKind::LineActivation,
         AwbcFunctionKind::LineTask,
         AwbcFunctionKind::LineCancellationHandler,
+        AwbcFunctionKind::ProgramTask,
     ];
     assert_eq!(AwbcFunctionKind::ALL, expected);
     for (encoded, kind) in expected.into_iter().enumerate() {
@@ -4647,7 +4648,7 @@ fn function_kind_numeric_inventory_is_total_and_closed() {
             serde_json::json!(encoded)
         );
     }
-    for encoded in 10..=u8::MAX {
+    for encoded in 11..=u8::MAX {
         assert_eq!(AwbcFunctionKind::from_encoded(encoded), None);
     }
 }
@@ -4788,6 +4789,12 @@ fn function_kind_and_producer_role_matrix_is_closed() {
                 Err(AwbcFunctionRoleError::StreamProducerFlags)
             } else if stream && kind != AwbcFunctionKind::GeneratorProducer {
                 Err(AwbcFunctionRoleError::StreamProducerKind { actual: kind })
+            } else if kind == AwbcFunctionKind::ProgramTask
+                && (!flags.contains(AwbcFunctionFlag::Deterministic)
+                    || !flags.contains(AwbcFunctionFlag::MayAllocate)
+                    || !flags.contains(AwbcFunctionFlag::MaySuspend))
+            {
+                Err(AwbcFunctionRoleError::ProgramTaskFlags)
             } else {
                 Ok(())
             };

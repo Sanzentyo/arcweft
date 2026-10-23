@@ -18,7 +18,9 @@ mod host;
 #[cfg(test)]
 pub(super) use host::tests::executable as host_executable_fixture;
 pub(crate) use host::{RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField};
+mod program_task;
 mod selected;
+pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
 mod template;
 pub(crate) use selected::{RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField};
 #[cfg(test)]

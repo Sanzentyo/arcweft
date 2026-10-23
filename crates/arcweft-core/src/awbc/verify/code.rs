@@ -17,12 +17,12 @@ use super::structure::{
 use crate::awbc::schema::{
     AwbcAgentTypeShape, AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcDeferOwner,
     AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectSetId, AwbcFrameLayout, AwbcFrameSlotRole,
-    AwbcFunctionFlag, AwbcFunctionKind, AwbcInstruction, AwbcMutablePlace, AwbcPattern,
-    AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcProjectCallAttachedPresence,
+    AwbcFunctionFlag, AwbcFunctionKind, AwbcHostTaskPlanKind, AwbcInstruction, AwbcMutablePlace,
+    AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcProjectCallAttachedPresence,
     AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization, AwbcRegisterId,
     AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
-    AwbcSignatureId, AwbcTaskPlanKind, AwbcTerminator, AwbcTraitReceiverMode, AwbcTypeId,
-    AwbcUnaryOp, AwbcUnsignedIntKind, AwbcVariantIdentity,
+    AwbcSignatureId, AwbcTerminator, AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp,
+    AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{
@@ -787,6 +787,7 @@ fn verify_entry_safe_point(
         | AwbcFunctionKind::StreamTransform
         | AwbcFunctionKind::LineActivation
         | AwbcFunctionKind::LineTask
+        | AwbcFunctionKind::ProgramTask
         | AwbcFunctionKind::LineCancellationHandler => AwbcSafePointKind::CallableBoundary,
     };
     let actual = verifier.program.blocks[block_index].safe_point;
@@ -2121,7 +2122,13 @@ fn apply_instruction(
         AwbcInstruction::StartNeed { dst, plan, args } => {
             check_index(program.task_plans.len(), plan.0, "task_plans", &at)?;
             let task = &program.task_plans[plan.index()];
-            if !matches!(&task.kind, AwbcTaskPlanKind::NeedProducer { .. }) {
+            let host = task
+                .host()
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "StartNeed requires a Host task".into(),
+                })?;
+            if !matches!(&host.kind, AwbcHostTaskPlanKind::NeedProducer { .. }) {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at,
                     message: "StartNeed requires a NeedProducer task plan".to_owned(),
@@ -2131,7 +2138,7 @@ fn apply_instruction(
                 verifier,
                 function,
                 block,
-                task.signature,
+                host.signature,
                 args,
                 state,
                 &at,
@@ -3312,6 +3319,9 @@ fn apply_terminator(
             resume,
         } => {
             check_index(program.functions.len(), callee.0, "functions", &at)?;
+            if program.functions[callee.index()].kind == AwbcFunctionKind::ProgramTask {
+                return invalid_type(&at, "Program task kernel entered through task admission");
+            }
             let mut next = state.clone();
             verify_callable(
                 verifier,
@@ -3657,10 +3667,14 @@ fn apply_terminator(
             resume,
         } => {
             check_index(program.task_plans.len(), plan.0, "task_plans", &at)?;
-            if !matches!(
-                &program.task_plans[plan.index()].kind,
-                AwbcTaskPlanKind::AwaitMany { .. }
-            ) {
+            let task = &program.task_plans[plan.index()];
+            let host = task
+                .host()
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "AwaitMany requires a Host task".into(),
+                })?;
+            if !matches!(&host.kind, AwbcHostTaskPlanKind::AwaitMany { .. }) {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
                     message: "await-many references a single-task plan".to_owned(),
@@ -3677,13 +3691,12 @@ fn apply_terminator(
             if !state.copy_proofs[source.index()].permits_copy() {
                 return invalid_type(&at, "await-many source with admitted deep Copy ownership");
             }
-            let task = &program.task_plans[plan.index()];
-            if let AwbcTaskPlanKind::AwaitMany {
+            if let AwbcHostTaskPlanKind::AwaitMany {
                 captures,
                 request_function,
                 child,
                 ..
-            } = &task.kind
+            } = &host.kind
             {
                 let capture_types = &program.signatures[program.functions
                     [request_function.index()]
@@ -3700,9 +3713,15 @@ fn apply_terminator(
                         );
                     }
                 }
-                let AwbcTaskPlanKind::Template {
+                let child_host = program.task_plans[child.index()].host().ok_or_else(|| {
+                    AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "AwaitMany child requires a Host template".into(),
+                    }
+                })?;
+                let AwbcHostTaskPlanKind::Template {
                     request_function, ..
-                } = program.task_plans[child.index()].kind
+                } = child_host.kind
                 else {
                     unreachable!("structurally verified child template");
                 };

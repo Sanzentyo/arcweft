@@ -350,6 +350,9 @@ pub(super) fn task_request(
         .task_plans
         .get(plan.index())
         .ok_or_else(|| ProductStepError::Internal("task plan is absent".into()))?;
+    let host = record.host().ok_or_else(|| {
+        ProductStepError::Internal("Host request requires a Host task execution contract".into())
+    })?;
     let string = |id: AwbcStringId| {
         program
             .strings
@@ -360,20 +363,20 @@ pub(super) fn task_request(
     let AwbcTaskRequestProjection::CustomCapability {
         capability,
         operation,
-    } = record.request
+    } = host.request
     else {
         return Err(ProductStepError::Internal(
             "template requires a custom task request".into(),
         ));
     };
-    if args.len() != record.arguments.len() {
+    if args.len() != host.arguments.len() {
         return Err(ProductStepError::Input(
             "task request kernel result has the wrong arity".into(),
         ));
     }
     let mut positional = Vec::new();
     let mut named = Vec::new();
-    for (argument, value) in record.arguments.iter().zip(args) {
+    for (argument, value) in host.arguments.iter().zip(args) {
         if argument.spread {
             let values = runtime_value_into_sequence_values(value).map_err(|value| {
                 ProductStepError::Type(format!(

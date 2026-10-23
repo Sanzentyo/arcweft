@@ -511,7 +511,10 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
     }
     for task in &mut program.task_plans {
         visit_string_id(&mut task.cancel_scope, visitor);
-        match &mut task.request {
+        let Some(host) = task.host_mut() else {
+            continue;
+        };
+        match &mut host.request {
             AwbcTaskRequestProjection::AssetLoad { argument_name, .. } => {
                 visit_string_id(argument_name, visitor);
             }
@@ -528,7 +531,7 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
                 visit_string_id(operation, visitor);
             }
         }
-        for argument in &mut task.arguments {
+        for argument in &mut host.arguments {
             visit_optional_string_id(&mut argument.name, visitor);
         }
     }
@@ -1343,6 +1346,7 @@ pub enum AwbcFunctionKind {
     LineActivation = 7,
     LineTask = 8,
     LineCancellationHandler = 9,
+    ProgramTask = 10,
 }
 
 impl AwbcFunctionKind {
@@ -1357,6 +1361,7 @@ impl AwbcFunctionKind {
         Self::LineActivation,
         Self::LineTask,
         Self::LineCancellationHandler,
+        Self::ProgramTask,
     ];
 
     const DECODE: [Option<Self>; 256] = {
@@ -1510,6 +1515,13 @@ impl AwbcFunctionFlags {
         } else if stream {
             return Err(AwbcFunctionRoleError::StreamProducerKind { actual: kind });
         }
+        if matches!(kind, AwbcFunctionKind::ProgramTask)
+            && (!self.contains(AwbcFunctionFlag::Deterministic)
+                || !self.contains(AwbcFunctionFlag::MayAllocate)
+                || !self.contains(AwbcFunctionFlag::MaySuspend))
+        {
+            return Err(AwbcFunctionRoleError::ProgramTaskFlags);
+        }
         Ok(())
     }
 }
@@ -1534,6 +1546,8 @@ pub enum AwbcFunctionRoleError {
     StreamProducerKind { actual: AwbcFunctionKind },
     #[error("AWBC GeneratorProducer requires MaySuspend and OwnsStreamProducer flags")]
     StreamProducerFlags,
+    #[error("AWBC ProgramTask requires deterministic, allocating and suspending flags")]
+    ProgramTaskFlags,
 }
 
 impl Serialize for AwbcFunctionFlags {
@@ -2787,19 +2801,37 @@ awbc_u8_enum! {
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AwbcTaskPlan {
-    pub signature: AwbcSignatureId,
-    /// The single checked request projection shared by the closed task-plan
-    /// kinds. Producer plans use the selected manifest projection; AwaitMany
-    /// retains the host request it fans out.
-    pub request: AwbcTaskRequestProjection,
     pub class: AwbcTaskClass,
     pub priority: i32,
     pub cancel_scope: AwbcStringId,
     pub policy: AwbcTaskPolicy,
     /// Checked type of the unary temporal Ready payload.
     pub payload_type: AwbcTypeId,
+    pub execution: AwbcTaskPlanExecution,
+}
+
+/// Backend work and original program work have distinct execution contracts.
+/// Scheduling and the Ready payload remain owned by their common task row.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum AwbcTaskPlanExecution {
+    Host(AwbcHostTaskPlan),
+    Program(AwbcProgramTaskPlan),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct AwbcHostTaskPlan {
+    pub signature: AwbcSignatureId,
+    pub request: AwbcTaskRequestProjection,
     pub arguments: Vec<AwbcHostArgument>,
-    pub kind: AwbcTaskPlanKind,
+    pub kind: AwbcHostTaskPlanKind,
+}
+
+/// Inert assertions joining a kernel to its retained original Task Source.
+/// Source admission, rather than this row, grants execution authority.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct AwbcProgramTaskPlan {
+    pub source: crate::task::ExpectedTaskPlanKey,
+    pub kernel: AwbcFunctionId,
 }
 
 /// Request shape is recorded exactly once on the common task-plan row.
@@ -2827,7 +2859,7 @@ pub enum AwbcTaskRequestProjection {
 /// static AwaitMany base task. The closed variant prevents static task IDs
 /// from becoming a fallback identity for Need producers.
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-pub enum AwbcTaskPlanKind {
+pub enum AwbcHostTaskPlanKind {
     NeedProducer {
         /// Inert assertion selecting an already completed original Task row.
         /// It cannot issue a producer or reconstruct its original Source.
@@ -2858,6 +2890,22 @@ pub enum AwbcTaskPlanKind {
 }
 
 impl AwbcTaskPlan {
+    #[must_use]
+    pub fn host(&self) -> Option<&AwbcHostTaskPlan> {
+        match &self.execution {
+            AwbcTaskPlanExecution::Host(host) => Some(host),
+            AwbcTaskPlanExecution::Program(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn host_mut(&mut self) -> Option<&mut AwbcHostTaskPlan> {
+        match &mut self.execution {
+            AwbcTaskPlanExecution::Host(host) => Some(host),
+            AwbcTaskPlanExecution::Program(_) => None,
+        }
+    }
+
     /// Derives the producer from borrowed arguments without constructing a task
     /// specification or copying the stored request during admission.
     pub(crate) fn template_producer_input(
@@ -2867,21 +2915,22 @@ impl AwbcTaskPlan {
         max_encoded_bytes: usize,
     ) -> Result<crate::task::NeedProducerSpec, String> {
         use crate::task::{NeedProducerFamily, NeedProducerSpec, RuntimeTypeSemanticDigest};
-        let (family, contract, site, plan) = match self.kind {
-            AwbcTaskPlanKind::AwaitMany {
+        let host = self.host().ok_or("Program work is not a Host template")?;
+        let (family, contract, site, plan) = match host.kind {
+            AwbcHostTaskPlanKind::AwaitMany {
                 contract,
                 site,
                 plan,
                 ..
             } => (NeedProducerFamily::AwaitManyBase, contract, site, plan),
-            AwbcTaskPlanKind::Template {
+            AwbcHostTaskPlanKind::Template {
                 family,
                 contract,
                 site,
                 plan,
                 ..
             } => (family, contract, site, plan),
-            AwbcTaskPlanKind::NeedProducer { .. } => {
+            AwbcHostTaskPlanKind::NeedProducer { .. } => {
                 return Err("selected producer is not a template".into());
             }
         };

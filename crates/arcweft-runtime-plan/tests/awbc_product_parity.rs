@@ -732,8 +732,10 @@ fn decoded_selected_code_asserts_the_original_completed_task_key() {
     let assertions: Vec<_> = decoded
         .task_plans
         .iter()
-        .filter_map(|row| match &row.kind {
-            arcweft_core::awbc::schema::AwbcTaskPlanKind::NeedProducer { plan, .. } => Some(*plan),
+        .filter_map(|row| match row.host().map(|host| &host.kind) {
+            Some(arcweft_core::awbc::schema::AwbcHostTaskPlanKind::NeedProducer {
+                plan, ..
+            }) => Some(*plan),
             _ => None,
         })
         .collect();

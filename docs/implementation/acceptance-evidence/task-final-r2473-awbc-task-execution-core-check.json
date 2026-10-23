@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "name": "task-final-r2473-awbc-task-execution-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2473-awbc-task-execution-core-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T22:11:08.2404678Z",
+  "finishedAt": "2026-10-23T22:12:11.9851987Z"
+}

@@ -1,7 +1,8 @@
 //! A checked row binding belongs to one immutable original/executable pair.
 
 use super::{
-    RuntimeAwbcHostSourceError, RuntimeAwbcSelectedSourceError, RuntimeAwbcTemplateSourceError,
+    RuntimeAwbcHostSourceError, RuntimeAwbcProgramSourceError, RuntimeAwbcSelectedSourceError,
+    RuntimeAwbcTemplateSourceError,
 };
 use super::{RuntimeTaskSourceProgram, RuntimeTaskSourceProgramData};
 use crate::awbc::schema::{AwbcHostCallId, AwbcTaskPlanId};
@@ -14,6 +15,7 @@ pub(in crate::plan::task_source) enum RuntimeTaskExecutionRow {
     HostCall(AwbcHostCallId),
     Selected(AwbcTaskPlanId),
     Template(AwbcTaskPlanId),
+    Program(AwbcTaskPlanId),
 }
 
 /// No constructor is available outside this original-program owner. A Source
@@ -39,6 +41,8 @@ pub(crate) enum RuntimeTaskSourceBorrowError {
     Selected(#[from] RuntimeAwbcSelectedSourceError),
     #[error(transparent)]
     Template(#[from] RuntimeAwbcTemplateSourceError),
+    #[error(transparent)]
+    Program(#[from] RuntimeAwbcProgramSourceError),
 }
 
 impl RuntimeTaskSourceProgram {
@@ -77,6 +81,12 @@ impl RuntimeTaskSourceProgram {
                     )),
                     RuntimeTaskSourceProgramData::Awbc { .. },
                 ) => self.awbc_template_source(*row, limits, meter)?,
+                (
+                    RuntimeTaskSourceExecutionAssertion::Awbc(RuntimeTaskExecutionRow::Program(
+                        row,
+                    )),
+                    RuntimeTaskSourceProgramData::Awbc { .. },
+                ) => self.awbc_program_source(*row, limits, meter)?,
                 _ => return Err(RuntimeTaskSourceError::ForeignExecution.into()),
             };
             if source.task_plan().key().as_bytes() != assertion.expected.bytes() {
@@ -129,6 +139,9 @@ impl RuntimeTaskSourceProgram {
                 }
                 Some(RuntimeTaskExecutionRow::Selected(task)) => {
                     self.awbc_selected_source(task, limits, meter)?
+                }
+                Some(RuntimeTaskExecutionRow::Program(task)) => {
+                    self.awbc_program_source(task, limits, meter)?
                 }
             };
             if self.original().task_plan(coordinate) != Some(source.task_plan()) {

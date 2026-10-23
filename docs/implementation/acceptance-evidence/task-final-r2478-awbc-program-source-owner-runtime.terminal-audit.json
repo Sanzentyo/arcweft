@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "run": "task-final-r2478-awbc-program-source-owner-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 215.456s] 2176 tests run: 2173 passed (2 slow), 3 failed, 0 skipped",
+  "executed": 2176,
+  "passed": 2173,
+  "failed": 3,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4369,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::function_kind_and_producer_role_matrix_is_closed"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::function_kind_numeric_inventory_is_total_and_closed"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_requires_its_task_kind_and_suspending_role_flags"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-23T22:41:12.1760724Z"
+}

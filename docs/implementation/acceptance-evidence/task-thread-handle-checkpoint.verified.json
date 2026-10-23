@@ -1,0 +1,586 @@
+{
+  "version": 1,
+  "commit": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "parent": "a8ea56ed7a6293800dc05fafade3b6b687f44c55",
+  "tree": "b7ab208af6cc3f6989e621224625fafbd615323a",
+  "remote": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "advertised": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/tests/flow_include.rs",
+      "blob": "6b0bbb8728a0e6ab94200006415a06855f66a20e",
+      "workingBlob": "6b0bbb8728a0e6ab94200006415a06855f66a20e",
+      "workingSha256": "0e30cf3868a002d6f6511ec577f4090786cd94c1992b46e4a6080a6ee3bdb91e"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/value_admission.rs",
+      "blob": "d08b188c8a84bae84eee753d043ef2173cabc544",
+      "workingBlob": "d08b188c8a84bae84eee753d043ef2173cabc544",
+      "workingSha256": "3dbf3237d43b1f004656103586569d7ef82c729969ab6b46f0cebf6630a1cb46"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow.rs",
+      "blob": "102de31595988f218aa91d754217f517395a7d6c",
+      "workingBlob": "102de31595988f218aa91d754217f517395a7d6c",
+      "workingSha256": "6685456dffec7c2202a3ac851611685509749baf1623c5a8a42cb77649fabd7c"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/rollback/await_state.rs",
+      "blob": "3967cc96ba85c898b49091af47536dfeb88a551d",
+      "workingBlob": "3967cc96ba85c898b49091af47536dfeb88a551d",
+      "workingSha256": "3ff0dd663417b619e4be33c6274b6bf6f00e7a4968e2c52110e5288ac82a02a2"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/suspend.rs",
+      "blob": "6cc29a9a61d8407de2d0494be88d8acdc79fa4d1",
+      "workingBlob": "6cc29a9a61d8407de2d0494be88d8acdc79fa4d1",
+      "workingSha256": "a2a8f7adbf810af50d6748fcd5c0d22fafd3fde84335dd878ee77e0a182f2128"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread.rs",
+      "blob": "a5a73aaf89855bc1e777db744a7bb96b3d689e3b",
+      "workingBlob": "a5a73aaf89855bc1e777db744a7bb96b3d689e3b",
+      "workingSha256": "5b6d9237551f7bc88b3c522004358ffff9a3c8d737e591d464669074c9f17a0a"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+      "blob": "0b38a6aa105d7dbb9471d334917d5d26cdc075bf",
+      "workingBlob": "0b38a6aa105d7dbb9471d334917d5d26cdc075bf",
+      "workingSha256": "924f87de612d5a05187cefbb74e5036299d8d72326836432596ffc046807c3d1"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan.rs",
+      "blob": "4de20bf1414785aca68533a304cdbaaa96f7cf3b",
+      "workingBlob": "4de20bf1414785aca68533a304cdbaaa96f7cf3b",
+      "workingSha256": "41e085092f74e7386a0002326e40703323a0cd5873ffa14a57c30f48a182a01d"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/tests/request_endpoints.rs",
+      "blob": "0e0895259b05960fb9991f699e2ea3e371e8eac9",
+      "workingBlob": "0e0895259b05960fb9991f699e2ea3e371e8eac9",
+      "workingSha256": "a7b1919721ed2b634a7c27bb4b664da2ddfddeabdce0ef56342e467b917b589f"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "blob": "6d1eb61d56df46c4059490974b56f0c640e25d67",
+      "workingBlob": "6d1eb61d56df46c4059490974b56f0c640e25d67",
+      "workingSha256": "68f9c08af27757efecbf5239b57d75c93aec4c02c4ba809b48983ee4dcbb72b5"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+      "blob": "a54b9453d433f107a33c7c3883dd86a34f993fb9",
+      "workingBlob": "a54b9453d433f107a33c7c3883dd86a34f993fb9",
+      "workingSha256": "2e8f1b8a229f9d1d1ca388d7be1bf61fd6a7e13136d259344569939bcde7bb72"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+      "blob": "2065626b0fd9e77d4790d030fee384fe463beeb5",
+      "workingBlob": "2065626b0fd9e77d4790d030fee384fe463beeb5",
+      "workingSha256": "c9adee0ddef81c8141f6b92cdee128b9bb1dc79250fae6d0b24d81b0af231bd6"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+      "blob": "de77f1a64951b2e9e1baff97d0d2ba5b87bb52cd",
+      "workingBlob": "de77f1a64951b2e9e1baff97d0d2ba5b87bb52cd",
+      "workingSha256": "38bc4d238f9514293e26e3f8f60f10e32468e6de722d4821bf8d7db938fe54a0"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/flow_ops.rs",
+      "blob": "076e0d0d129dacdaa6e4eaf67102d2632ceb714e",
+      "workingBlob": "076e0d0d129dacdaa6e4eaf67102d2632ceb714e",
+      "workingSha256": "268b6a39c5c6e9d79695d2777c4f21ca88938e2807c85e63583e39040886e443"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "blob": "2a66e761f4ecf4d1520e39e4f83fe1f6da2959dd",
+      "workingBlob": "2a66e761f4ecf4d1520e39e4f83fe1f6da2959dd",
+      "workingSha256": "5f2b741309447b903eeaaf9c9b357eb598c0bf72489f8b8b0425bf6ff7e56bc8"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/value_admission.rs",
+      "blob": "7afac43570f35b9e874a09e0abb0de4f8d081bd6",
+      "workingBlob": "7afac43570f35b9e874a09e0abb0de4f8d081bd6",
+      "workingSha256": "c1fb732763e5ccb53e8eff8068519869a9d49f29e689defd9d318fa1c86b1bda"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/execution.rs",
+      "blob": "82414c0f35268e2d338b1ffef72d1916a3444c6e",
+      "workingBlob": "82414c0f35268e2d338b1ffef72d1916a3444c6e",
+      "workingSha256": "f049e98e379c3d71eb4aca966a95c06f2a733b2d4c18f1a9895116ee148cdd8d"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/need_handle.rs",
+      "blob": "31e7717e46038059c71f8ea546d4f7807d439686",
+      "workingBlob": "31e7717e46038059c71f8ea546d4f7807d439686",
+      "workingSha256": "709d8bce15b88b0a32955cd6fac11a814292e6b88bac3cf82b80aad16cb62f6d"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer.rs",
+      "blob": "f189ec0784c0f51afe098094088014ee90cd6335",
+      "workingBlob": "f189ec0784c0f51afe098094088014ee90cd6335",
+      "workingSha256": "7d999b9c7c38cd360bb2565606bc9b891fcdb6cff11fc116a6cbe04cab7b539e"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/view/need.rs",
+      "blob": "4ef3205837f1578d2c00771ebb7112a18ac3ec7e",
+      "workingBlob": "4ef3205837f1578d2c00771ebb7112a18ac3ec7e",
+      "workingSha256": "2535a55184d96087a727bfd55b5cacb469f03e4c811e093c310b9cb18d26931f"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "blob": "06a4ce16a493508ee85430b1ec0369d41c3f76b3",
+      "workingBlob": "06a4ce16a493508ee85430b1ec0369d41c3f76b3",
+      "workingSha256": "60fc7741e6b49b8cde33d9470b278bceb187b33bc45232296d364b1ff5e24422"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "blob": "2495da03c7c775a031656c24e6404196073b8b22",
+      "workingBlob": "2495da03c7c775a031656c24e6404196073b8b22",
+      "workingSha256": "e1bc81726f6877dc6b88cb02091b80d7497f3c5a6d09b95ebdcb3b6626cbeb99"
+    },
+    {
+      "path": "docs/02-runtime/control-flow-runtime.md",
+      "blob": "de1eb2a1ae9ffc99a82dacbe4543e5c46a554f45",
+      "workingBlob": "de1eb2a1ae9ffc99a82dacbe4543e5c46a554f45",
+      "workingSha256": "fd435430bece24d5f2f09fafc3776f0d8f8b442995dcc290d49c4f35f47a77a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-consumer-checkpoint.verified.json",
+      "blob": "c6b199d9827950554a9691ba3c89c7819a21b826",
+      "workingBlob": "c6b199d9827950554a9691ba3c89c7819a21b826",
+      "workingSha256": "97deae0c69739d993cc71724c6594aaaa4c1728c54df55ed4685002aeafdb142"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2459-thread-handle-workspace-check.json",
+      "blob": "64bce8c4a34de90f1e6eb564462ff4e5a47d01dc",
+      "workingBlob": "64bce8c4a34de90f1e6eb564462ff4e5a47d01dc",
+      "workingSha256": "7b70dd5e15eb0275cc00997fd755f4888263482d955ab9f7b3754c73a6e0f0ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2459-thread-handle-workspace-check.log",
+      "blob": "3d109a28c833d4fcadf1103417c1c038f2f80ed7",
+      "workingBlob": "3d109a28c833d4fcadf1103417c1c038f2f80ed7",
+      "workingSha256": "4057ea409b8ab3d823a81878ec31d783f93286a64997d3362ab8d1336257f85a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2460-thread-handle-workspace-check.json",
+      "blob": "a6bc6d451446996c8f999e33b501830987d3f2b4",
+      "workingBlob": "a6bc6d451446996c8f999e33b501830987d3f2b4",
+      "workingSha256": "e95fe91b07c01b53d84c24ac01674a4a03f6514ca4d6e0d34abce474a5e7a1e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2460-thread-handle-workspace-check.log",
+      "blob": "617f7fb7c5045bb7c913909aa030a695ae902400",
+      "workingBlob": "617f7fb7c5045bb7c913909aa030a695ae902400",
+      "workingSha256": "362587537d5b59db8638e5a855209827924bdbcd0f8bd1e52246a3dca4e69669"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2461-thread-handle-owner-catalog.inventory.json",
+      "blob": "545b32199bcc3710fefc6e218cddfe4a67d4556d",
+      "workingBlob": "545b32199bcc3710fefc6e218cddfe4a67d4556d",
+      "workingSha256": "a50c43f404434c589c6c9975faa9fca35413a65e899b789522a0c2371595fdb3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2461-thread-handle-owner-catalog.json",
+      "blob": "8950124d8d405041bcf5c20431724d19cf0028fc",
+      "workingBlob": "8950124d8d405041bcf5c20431724d19cf0028fc",
+      "workingSha256": "e7c03407156fd9b00ae647945fe35010292db21cb048b73478c1711fcbffad87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2461-thread-handle-owner-catalog.log",
+      "blob": "831f323610fb652d9a1b71092f71cfe9c0dbb555",
+      "workingBlob": "831f323610fb652d9a1b71092f71cfe9c0dbb555",
+      "workingSha256": "c19933370a09199e6fdef0ce5cfcbca97d3bba5fe1c7d643b4fd86ed1608378d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2461-thread-handle-owner-catalog.scope-audit.json",
+      "blob": "9042f81d1b367f2d8329280bf8b4fcfabd435667",
+      "workingBlob": "9042f81d1b367f2d8329280bf8b4fcfabd435667",
+      "workingSha256": "af9185b8c39f1c655fd1e1a7bf5c05704c5cfea41a45b86c58c3db8ee041dcb1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2462-thread-handle-owner-runtime.binary-audit.json",
+      "blob": "0cde34b6350597f03bbaecdeb4d2140f19c0fbb3",
+      "workingBlob": "0cde34b6350597f03bbaecdeb4d2140f19c0fbb3",
+      "workingSha256": "1355c67fe6e1a03c67b4fce24edf9b54d0e99426db23745ee01d42e97aa14467"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2462-thread-handle-owner-runtime.json",
+      "blob": "e038b76920ea5c45fac3f6f78442cc05c1024fae",
+      "workingBlob": "e038b76920ea5c45fac3f6f78442cc05c1024fae",
+      "workingSha256": "f844c0ef789ab968fa46e2026b30d0a9305646011e3f96356e100560a3cfe7e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2462-thread-handle-owner-runtime.log",
+      "blob": "9b7a3163bfa0682b9c2b9ca61e4fe603e84a75ae",
+      "workingBlob": "9b7a3163bfa0682b9c2b9ca61e4fe603e84a75ae",
+      "workingSha256": "1a9f5b5e3669f05be7da2a91f28cc83beedeedacefa557cd92c973545de7758b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2462-thread-handle-owner-runtime.terminal-audit.json",
+      "blob": "9c6faca3aebaf12c61d8d9f2eee822461f7c484a",
+      "workingBlob": "9c6faca3aebaf12c61d8d9f2eee822461f7c484a",
+      "workingSha256": "16c53ace09f328fd7c6500eb02dab92d44f8d6dde929bbb73a4f1457d8d4319b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2463-thread-handle-connect-catalog.inventory.json",
+      "blob": "fbf77ccfc64e8148afc8c271ddb8f99f7a2415b5",
+      "workingBlob": "fbf77ccfc64e8148afc8c271ddb8f99f7a2415b5",
+      "workingSha256": "998954ab20d10bb567351b90cbd0d0e256fee3de8d2ef8ed44075d7aa392a047"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2463-thread-handle-connect-catalog.json",
+      "blob": "fd8bad185fb2b0120c2a90feef82fe278a3fa817",
+      "workingBlob": "fd8bad185fb2b0120c2a90feef82fe278a3fa817",
+      "workingSha256": "add4b052a1ed64070f88835facbd60a4aed35386cf5f87e56fa8d2dc1ebfacf7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2463-thread-handle-connect-catalog.log",
+      "blob": "e05937f6d6b0f339361b492a5d15a7821f3a630d",
+      "workingBlob": "e05937f6d6b0f339361b492a5d15a7821f3a630d",
+      "workingSha256": "9537e6d7d1fd3e10b02ddec6fe1c91dda0ea40e1ca3125b512951668ce0c6237"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2464-thread-handle-connect-runtime.binary-audit.json",
+      "blob": "6c42f077a6f54dbabdafa22b52ce818b9506e4e0",
+      "workingBlob": "6c42f077a6f54dbabdafa22b52ce818b9506e4e0",
+      "workingSha256": "de6090e3f6fdf72435423012613c31c13dabc8409c20fdca92491ee15a48edab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2464-thread-handle-connect-runtime.json",
+      "blob": "495b44b9bc079cbf02545864351e8a1383e86bf8",
+      "workingBlob": "495b44b9bc079cbf02545864351e8a1383e86bf8",
+      "workingSha256": "7593ccc26b0b32d97a40480cf6aa2eae702cf68080fab92f5eff960319f30b5b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2464-thread-handle-connect-runtime.log",
+      "blob": "b834f8668aa153437dd73e05197efab5bfdbdb81",
+      "workingBlob": "b834f8668aa153437dd73e05197efab5bfdbdb81",
+      "workingSha256": "b1c475a0592bdb991f77f31448ab51b6d1c4a225581de9c055b2d6a6edb4470c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2464-thread-handle-connect-runtime.terminal-audit.json",
+      "blob": "f2880079520bf6bca3010d75f640a0e3ecc9db22",
+      "workingBlob": "f2880079520bf6bca3010d75f640a0e3ecc9db22",
+      "workingSha256": "99005aead77ea88ba99383ef17fa19a4d0c561b811b5798ac568cf6a9b4a397d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2465-thread-handle-final-catalog.json",
+      "blob": "fbf790c2adcf7b91ab922d54e011ce08e253c630",
+      "workingBlob": "fbf790c2adcf7b91ab922d54e011ce08e253c630",
+      "workingSha256": "40a0a443a0f102fb8514440236a5dc98e2837a78c8b802065ab01143006ab95f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2465-thread-handle-final-catalog.log",
+      "blob": "3627a26a5fd630c4aaf2b8cdad8fb6032112532a",
+      "workingBlob": "3627a26a5fd630c4aaf2b8cdad8fb6032112532a",
+      "workingSha256": "894a27dd7dd9e8e355aee3a32294f28a14910d78ff256c669a408767fe52e517"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2466-thread-handle-final-catalog.inventory.json",
+      "blob": "09c351cbe53896bd870d9bc8ec129bf16d398c35",
+      "workingBlob": "09c351cbe53896bd870d9bc8ec129bf16d398c35",
+      "workingSha256": "59159618b6390c09af706f2fac4a38f53b01f25d312c4b24cc636adca21fe4bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2466-thread-handle-final-catalog.json",
+      "blob": "de0d6cb90714a4e2222f8d26ecef73f0d0a40434",
+      "workingBlob": "de0d6cb90714a4e2222f8d26ecef73f0d0a40434",
+      "workingSha256": "772ebcaaae829a1158c12d33b08dc3f8cffcd5aec0f7a028cc9c8f01d75edaf6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2466-thread-handle-final-catalog.log",
+      "blob": "6f688c718db53a5eb74632e470d46aadadf61972",
+      "workingBlob": "6f688c718db53a5eb74632e470d46aadadf61972",
+      "workingSha256": "44a3f060f59b2de0fb3296c934425ee590e064dbccb374ae989ab5319224af08"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2467-thread-handle-final-runtime.binary-audit.json",
+      "blob": "f1aa10db77a4b77593fd099c10810f9e2093e5af",
+      "workingBlob": "f1aa10db77a4b77593fd099c10810f9e2093e5af",
+      "workingSha256": "b3b4f14f9b44fb308cce037ac3922b2214569fcbc09a02b492b9be46433c6ece"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2467-thread-handle-final-runtime.json",
+      "blob": "f0580e7d4d02de7d4486d123a705facd16258a7c",
+      "workingBlob": "f0580e7d4d02de7d4486d123a705facd16258a7c",
+      "workingSha256": "ddbc8fde20e385d178f6fb8dc0fefe9583b701e85691e0fe760c9347f5f4c8fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2467-thread-handle-final-runtime.log",
+      "blob": "6f3b96ca750da1b38b1367dd3595b7af8184ba06",
+      "workingBlob": "6f3b96ca750da1b38b1367dd3595b7af8184ba06",
+      "workingSha256": "0b7489cc315d0babd9479839d3a114bbdf2c316fa98e01f81e1e2bb07b2174fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2467-thread-handle-final-runtime.terminal-audit.json",
+      "blob": "922a2df4db3a053500a89ee49b9d69931cebb547",
+      "workingBlob": "922a2df4db3a053500a89ee49b9d69931cebb547",
+      "workingSha256": "db610efabab894f50cb8307178d5c1d6037bf1d74c12fdacce24bf011f930b48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2468-thread-handle-reverse-catalog.inventory.json",
+      "blob": "869c196a57a0ff54a22f8ee410ce877b310e7a81",
+      "workingBlob": "869c196a57a0ff54a22f8ee410ce877b310e7a81",
+      "workingSha256": "872cd3747b6d56b126f0f4715d070ab1a1493bea946e0f5e69f47bf4a8b15d7f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2468-thread-handle-reverse-catalog.json",
+      "blob": "2f931a20d94309d704131cf2322dff484fcf2f08",
+      "workingBlob": "2f931a20d94309d704131cf2322dff484fcf2f08",
+      "workingSha256": "0ab461a75aecc523468e9a14ad2ba90a1ce2bc4146a1f84f8e7777a94aa804a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2468-thread-handle-reverse-catalog.log",
+      "blob": "74bc1c6dc71a0db80790230fd51ea472011f5996",
+      "workingBlob": "74bc1c6dc71a0db80790230fd51ea472011f5996",
+      "workingSha256": "5913f331a1eda296ef74801768825a2d5fb3c3206e8df28efb208a8e105d32bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2468-thread-handle-reverse-catalog.scope-audit.json",
+      "blob": "b0577d898db02fcbd04aedefd9aae73ceca4efa3",
+      "workingBlob": "b0577d898db02fcbd04aedefd9aae73ceca4efa3",
+      "workingSha256": "94ec2e62385c69b9e32a2f2a6f53df6e3cdf2f0230f8420ce3c19c3c24378604"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.acceptance-audit.json",
+      "blob": "575933eef239cfeb9d96fdc2fa9f3c35a8568bd4",
+      "workingBlob": "575933eef239cfeb9d96fdc2fa9f3c35a8568bd4",
+      "workingSha256": "b529d8c8d1d0ca2b4dd1e4b5693393a2e123a0912bc45bdde97d34f7d588e2b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.binary-audit.json",
+      "blob": "a4a49d6d65ecd3ff336a54f4595c725735afaaab",
+      "workingBlob": "a4a49d6d65ecd3ff336a54f4595c725735afaaab",
+      "workingSha256": "e13c5b19d15e7e9bfb9246360c2925f151e839eed258d605c65c73d008ae63ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.failure-recon.json",
+      "blob": "9accdea82d4337b1884e4b67a7fd103e079e0a63",
+      "workingBlob": "9accdea82d4337b1884e4b67a7fd103e079e0a63",
+      "workingSha256": "9b7036b224a7bb2158fa73c65f3a0820434a87b1489ae2c77bcd9a60e03c758d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.json",
+      "blob": "9344f78c898159ea62cc477e20e4222e481ed945",
+      "workingBlob": "9344f78c898159ea62cc477e20e4222e481ed945",
+      "workingSha256": "7d7caa19613423ea741baee6cfcfccd7279602bb5b34053888dca0d79221cf26"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.log",
+      "blob": "3dd50adbba9a4090470e96a75582d497ed867ef7",
+      "workingBlob": "3dd50adbba9a4090470e96a75582d497ed867ef7",
+      "workingSha256": "1c656a60f6887baa2d4b1ffa4d0b500fd491fb28ab0a8f7cebf3cb1fc0e18fb5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.terminal-audit.json",
+      "blob": "59718255870f84a22e8d1f5f781343c4443ee944",
+      "workingBlob": "59718255870f84a22e8d1f5f781343c4443ee944",
+      "workingSha256": "a2d7db3c5171d09c2326c854458010ca71763bd0d96d7f001e2969d405470024"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2470-thread-handle-workspace-check.json",
+      "blob": "452101c8fce73b4c188ddcfabf407b9f2657e95d",
+      "workingBlob": "452101c8fce73b4c188ddcfabf407b9f2657e95d",
+      "workingSha256": "d4021d1a11ec7097445f254463b65a4425a14e4c33c0753095c33d727e415a14"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2470-thread-handle-workspace-check.log",
+      "blob": "43aca51affde9d9a4a4093d010a9818f430f7400",
+      "workingBlob": "43aca51affde9d9a4a4093d010a9818f430f7400",
+      "workingSha256": "792da5f2b4f3d6b2e2fd98b6afd8a83aee834e0b4245154d785883ed259c8655"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2471-thread-handle-workspace-clippy.json",
+      "blob": "88b38bb4cc49c7885ec257d3e3c81faec261a8eb",
+      "workingBlob": "88b38bb4cc49c7885ec257d3e3c81faec261a8eb",
+      "workingSha256": "ed756d91e3a9d07d747492eae3c1d494269f64dcdc8c9ed102b26599f77e0d94"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2471-thread-handle-workspace-clippy.log",
+      "blob": "982e2ebfe21038cafaffd1b644964b68aa68a882",
+      "workingBlob": "982e2ebfe21038cafaffd1b644964b68aa68a882",
+      "workingSha256": "a8993ace8661c185718171454203a389c48b91a7f00be7e6275adacdb927c584"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2472-thread-handle-structure.json",
+      "blob": "4c0bd00f226ab1ad0f2d2449057f788179f4f6f2",
+      "workingBlob": "4c0bd00f226ab1ad0f2d2449057f788179f4f6f2",
+      "workingSha256": "dfae2c16fd21de73f48862a5db82542cb6e4b35d6377dc2be717bf911a910648"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2472-thread-handle-structure.log",
+      "blob": "d7ddc4131e37c61cb17659de7de5a3d1cad8aeb9",
+      "workingBlob": "d7ddc4131e37c61cb17659de7de5a3d1cad8aeb9",
+      "workingSha256": "f1c47ac8c3cdb0825c2704cfc75ff2e534688947407d8f9914b30327f30a825d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-connect-r2463.binaries.json",
+      "blob": "9e6c11d94651af8c3805c48aae767f7acf5ef72d",
+      "workingBlob": "9e6c11d94651af8c3805c48aae767f7acf5ef72d",
+      "workingSha256": "98c6f380675af5926b121d7085eb03acb1698059c769dba4d68cdadcfd8bf65b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-connect-r2463.graph.json",
+      "blob": "daf35f3315724026fa6997e86ba4bb2f6d4081ee",
+      "workingBlob": "daf35f3315724026fa6997e86ba4bb2f6d4081ee",
+      "workingSha256": "469aaf1685c00f3239e9dc433feef4e9c64d8bb9fe0bfc5697a04a783ac505a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-connect-r2463.pins.json",
+      "blob": "46447ec5b9c83fa059d0f5020ad5c64edfb410f5",
+      "workingBlob": "46447ec5b9c83fa059d0f5020ad5c64edfb410f5",
+      "workingSha256": "4f657e33f46afcb2ecc7247be3a263e387737cb5624b809abe39bf5358ce7f73"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-connect-r2463.source-freeze.json",
+      "blob": "1b0ef740bcc0083d36c4ea878f228bbcacac267e",
+      "workingBlob": "1b0ef740bcc0083d36c4ea878f228bbcacac267e",
+      "workingSha256": "d849239fe7c63a0198a940a5b64e6c2d83f0d6b0418fe2619bad44ed3aa86567"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-final-r2465.graph.json",
+      "blob": "dc44d45b63f8a4363da35245a546537f51a29e48",
+      "workingBlob": "dc44d45b63f8a4363da35245a546537f51a29e48",
+      "workingSha256": "be65f12c492a67c36a64322c198e712eb8925d9ba297f73749a44f2f56446d7c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-final-r2465.source-freeze.json",
+      "blob": "8a606799892a0490150e7fffbb6a4aec99a5f34a",
+      "workingBlob": "8a606799892a0490150e7fffbb6a4aec99a5f34a",
+      "workingSha256": "37662f28cb93abc0bf64efd891ed4112fe09a48f127b592453ea7520b1d07056"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-final-r2466.binaries.json",
+      "blob": "87ae8a3b20ecc5f9855f472bf5ec9b11a2385507",
+      "workingBlob": "87ae8a3b20ecc5f9855f472bf5ec9b11a2385507",
+      "workingSha256": "8447a09c2f4e4e67c9e726482709974e40ee8e0d987ad290627396350e5eea1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-final-r2466.graph.json",
+      "blob": "dc44d45b63f8a4363da35245a546537f51a29e48",
+      "workingBlob": "dc44d45b63f8a4363da35245a546537f51a29e48",
+      "workingSha256": "be65f12c492a67c36a64322c198e712eb8925d9ba297f73749a44f2f56446d7c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-final-r2466.pins.json",
+      "blob": "4b9102824163181371faaed71a829f4c95be7605",
+      "workingBlob": "4b9102824163181371faaed71a829f4c95be7605",
+      "workingSha256": "310a5e0f23460abffed4135bd4582fbaca13001f3b817802a57d7fd280c29eb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-final-r2466.source-freeze.json",
+      "blob": "a1bd764e69b819adf3d9ae6cd7e8389c4486738a",
+      "workingBlob": "a1bd764e69b819adf3d9ae6cd7e8389c4486738a",
+      "workingSha256": "25d188840a70097587122c148c22e37632529082af84df75abd067efd45c7e10"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-owner.binaries.json",
+      "blob": "9e6c11d94651af8c3805c48aae767f7acf5ef72d",
+      "workingBlob": "9e6c11d94651af8c3805c48aae767f7acf5ef72d",
+      "workingSha256": "98c6f380675af5926b121d7085eb03acb1698059c769dba4d68cdadcfd8bf65b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-owner.graph.json",
+      "blob": "20a6c5cb9aced64ac5d24989ed0e8a21aaa52a32",
+      "workingBlob": "20a6c5cb9aced64ac5d24989ed0e8a21aaa52a32",
+      "workingSha256": "d03419a34c62ae1ee2c85c1408db1e65c94df1c7d53c01e9ae1ead7fcba613f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-owner.pins.json",
+      "blob": "acba88365837a3a3cbc53e942156b71e5089a24f",
+      "workingBlob": "acba88365837a3a3cbc53e942156b71e5089a24f",
+      "workingSha256": "7cbacd54d666b2db2f2183421c8262a9e1de38d035ed5793f9b1d682fb822b42"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-owner.source-freeze.json",
+      "blob": "96fbcc3997772dce88af2573c67f92bcc68dcee7",
+      "workingBlob": "96fbcc3997772dce88af2573c67f92bcc68dcee7",
+      "workingSha256": "189e65679ffb4f4ac6ada74f9935a1fac5e66666b61e9e7e6b55d98ec0259301"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-ownership-metrics.json",
+      "blob": "4af92c7575ba77ae9e83520c4ac2024f178d2f01",
+      "workingBlob": "4af92c7575ba77ae9e83520c4ac2024f178d2f01",
+      "workingSha256": "f451e1625fcef281b914c02515c6a030633614ab1d29e055b08218b2790f5f21"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-reverse-r2468.binaries.json",
+      "blob": "8f9da56316bfe479af7ee305ac1441bf776bf2bb",
+      "workingBlob": "8f9da56316bfe479af7ee305ac1441bf776bf2bb",
+      "workingSha256": "7401380875becacb7195d920d2e44b3bb99c7ccaa0df353dc34353b285584267"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-reverse-r2468.graph.json",
+      "blob": "dc44d45b63f8a4363da35245a546537f51a29e48",
+      "workingBlob": "dc44d45b63f8a4363da35245a546537f51a29e48",
+      "workingSha256": "be65f12c492a67c36a64322c198e712eb8925d9ba297f73749a44f2f56446d7c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-reverse-r2468.pins.json",
+      "blob": "a74b6647e02eb4b11eb44c31e5229b29ce2ca222",
+      "workingBlob": "a74b6647e02eb4b11eb44c31e5229b29ce2ca222",
+      "workingSha256": "62bbe72dca6c09f542004cd0a9ef4539fd231b1cb3ed385132a3376de58d53a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-reverse-r2468.source-freeze.json",
+      "blob": "13b5f06661c833afce2e8dd60ca6f9eb21ca9df0",
+      "workingBlob": "13b5f06661c833afce2e8dd60ca6f9eb21ca9df0",
+      "workingSha256": "bd06dbb41d4aa874e252cf79c72602397376a2ba5550b02687f209106aebd0bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-structure-r2472/dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingBlob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingSha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-structure-r2472/file_metrics.csv",
+      "blob": "a523c719a6cef575b2cc9d997cbf17c9b7eeaff1",
+      "workingBlob": "a523c719a6cef575b2cc9d997cbf17c9b7eeaff1",
+      "workingSha256": "fd1be41cb55f066c7a2d3888eea567ace1a7e26398203b173012f60bf1665690"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-structure-r2472/findings.md",
+      "blob": "de6b3833cefac852263a706a837713bf69e26a54",
+      "workingBlob": "de6b3833cefac852263a706a837713bf69e26a54",
+      "workingSha256": "ae5d1f9bf2dfebf79f7c051374026a3396771ab79706e3dd9c43c342cb220cfe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-structure-r2472/package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingBlob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingSha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-thread-handle-structure-r2472/public_type_duplicates.csv",
+      "blob": "213afdd60ef33bcdbff12cc9f6a46b71d2852310",
+      "workingBlob": "213afdd60ef33bcdbff12cc9f6a46b71d2852310",
+      "workingSha256": "27be929a2b5160ee02626bdd5ba94e1ce0e1dc2c81596ae070d33662d5282434"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "bf3e41db840a36cc316773529c33df140cb393d0",
+      "workingBlob": "bf3e41db840a36cc316773529c33df140cb393d0",
+      "workingSha256": "edc90d0e9174ece61b064c20d177c12bd975d726f59b51bfebfc421aaaab8783"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "292688e2833482c258c56a4dc00bdff25720a53a",
+      "workingBlob": "292688e2833482c258c56a4dc00bdff25720a53a",
+      "workingSha256": "4315993ba38faa626da171be166326e9f06e693b284eb3b7ddf70f228e94cb4e"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "9d635beccbefc325af4eb7b939184411ed3704e2",
+      "workingBlob": "9d635beccbefc325af4eb7b939184411ed3704e2",
+      "workingSha256": "35ded74cb93f1add4e579a356103fcb9d1a35ad4704e084ab9a976a2476967f7"
+    }
+  ],
+  "sourceCount": 4367,
+  "sourceDrift": 0,
+  "heldPatchSha256": "19984db578254ef3c99a418175e11cd3c5eb442e0d3a42fe4ccf189e88a71983",
+  "patchSha256": "9086584f7827f56ef5e49468fae1285a0cf8c7cf9e5351dcc60860731bf6624f",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-23T22:01:33.9228587Z"
+}

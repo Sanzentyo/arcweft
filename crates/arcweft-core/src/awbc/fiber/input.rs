@@ -165,11 +165,12 @@ impl super::FiberFrame {
             .task_plans
             .get(plan.index())
             .ok_or(FiberStateError::InvalidFrame)?;
-        let crate::awbc::schema::AwbcTaskPlanKind::AwaitMany {
+        let host = plan.host().ok_or(FiberStateError::InvalidFrame)?;
+        let crate::awbc::schema::AwbcHostTaskPlanKind::AwaitMany {
             captures,
             request_function,
             ..
-        } = &plan.kind
+        } = &host.kind
         else {
             return Err(FiberStateError::InvalidFrame);
         };

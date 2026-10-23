@@ -66,6 +66,9 @@ impl RuntimeFunctionDefinitionIdentity {
             RuntimeGeneratedFunctionRole::StandardMapContinuation => {
                 hash.update(&[6]);
             }
+            RuntimeGeneratedFunctionRole::TaskBody => {
+                hash.update(&[7]);
+            }
         }
         Self(*hash.finalize().as_bytes())
     }
@@ -87,6 +90,7 @@ impl RuntimeFunctionDefinitionIdentity {
 pub enum RuntimeGeneratedFunctionRole {
     StandardMapContinuation,
     TaskRequest,
+    TaskBody,
     FormatOperand {
         parameter: crate::value::RuntimeFmtParameterId,
     },
@@ -675,6 +679,7 @@ mod generated_definition_tests {
         let other = RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x32; 32]);
         let mut roles = vec![
             RuntimeGeneratedFunctionRole::TaskRequest,
+            RuntimeGeneratedFunctionRole::TaskBody,
             RuntimeGeneratedFunctionRole::LineActivation,
             RuntimeGeneratedFunctionRole::LineAction { source_node: 0 },
             RuntimeGeneratedFunctionRole::LineAction { source_node: 1 },

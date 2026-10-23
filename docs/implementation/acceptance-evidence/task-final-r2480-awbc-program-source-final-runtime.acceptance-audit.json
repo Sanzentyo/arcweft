@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "catalog": "task-final-r2479-awbc-program-source-final-catalog",
+  "run": "task-final-r2480-awbc-program-source-final-runtime",
+  "actualExitCode": 0,
+  "executed": 2176,
+  "passed": 2176,
+  "failed": 0,
+  "excluded": 0,
+  "ownerPackages": [
+    "arcweft-core",
+    "arcweft-runtime-plan"
+  ],
+  "ownerPackageCount": 2,
+  "resolvedCoreReversePackages": 53,
+  "fullReverseRuntimeExecuted": false,
+  "selectedCaseDrift": 0,
+  "required": [
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::function_kind_and_producer_role_matrix_is_closed"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::function_kind_numeric_inventory_is_total_and_closed"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_requires_its_task_kind_and_suspending_role_flags"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_checks_payload_and_capture_types_against_the_original"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_round_trips_without_a_host_request_and_reborrows_its_actual_row"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drift"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_source_rejects_host_rows_and_exhausted_work_without_issuing_a_lease"
+    }
+  ],
+  "generic151FreshlyExecuted": false,
+  "packages": [
+    {
+      "package": "arcweft-core",
+      "tests": 2018
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "tests": 158
+    }
+  ],
+  "scope": "Complete Core and RuntimePlan named suites on this host. Compiler/Sema/other reverse runtime, ignored/Tier2/parity/doctest are not this owner result. Full 53-package runtime acceptance remains required after the Program execution connection."
+}

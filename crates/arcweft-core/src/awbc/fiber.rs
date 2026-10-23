@@ -263,6 +263,14 @@ impl AwbcFiberRoot {
         function: Option<AwbcFunctionId>,
     ) -> Result<Option<AwbcFunctionId>, FiberStateError> {
         let expected = self.validate(program)?;
+        if function.is_some_and(|function| {
+            program
+                .functions
+                .get(function.index())
+                .is_some_and(|row| row.kind == crate::awbc::schema::AwbcFunctionKind::ProgramTask)
+        }) {
+            return Err(FiberStateError::InvalidFrame);
+        }
         if let (Some(expected), Some(function)) = (expected, function)
             && expected != function
             && !(matches!(self, Self::Function(_))
@@ -2063,7 +2071,7 @@ impl FiberState {
     ) -> Result<Self, FiberStateError> {
         if root == AwbcFiberRoot::Empty
             || root
-                .validate(program)?
+                .validate_root_frame(program, Some(function))?
                 .is_some_and(|expected| expected != function)
         {
             return Err(FiberStateError::InvalidFrame);

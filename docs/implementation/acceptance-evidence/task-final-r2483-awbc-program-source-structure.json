@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "name": "task-final-r2483-awbc-program-source-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-source-structure-r2483",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2483-awbc-program-source-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T22:52:00.9337357Z",
+  "finishedAt": "2026-10-23T22:52:04.7680200Z"
+}

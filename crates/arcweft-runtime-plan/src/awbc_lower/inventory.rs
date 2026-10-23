@@ -9,14 +9,14 @@ use arcweft_core::awbc::schema::{
     AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
     AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
     AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall, AwbcHostCallId,
-    AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
-    AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcProgram,
-    AwbcPureProgramBinding, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRoute,
-    AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType,
-    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
-    AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcStructuralRuntimeTypeKind,
-    AwbcSyntheticRuntimeTypeKind, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
-    AwbcTaskPlanKind, AwbcTaskPolicy, AwbcTaskRequestProjection, AwbcTaskRestartPolicy,
+    AwbcHostCallMode, AwbcHostTaskPlanKind, AwbcInstruction, AwbcInstructionId,
+    AwbcLineCleanupPolicy, AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId,
+    AwbcPresentationCleanup, AwbcProgram, AwbcPureProgramBinding, AwbcRegisterId, AwbcResumePoint,
+    AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment,
+    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+    AwbcSignedIntKind, AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId,
+    AwbcStructuralRuntimeTypeKind, AwbcSyntheticRuntimeTypeKind, AwbcTableRange, AwbcTaskClass,
+    AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTaskRequestProjection, AwbcTaskRestartPolicy,
     AwbcTerminator, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeWaitTarget};
@@ -1681,7 +1681,7 @@ impl AwbcInventory {
         let child_function = self.intern_task_request_function(&target.child, child_inputs);
         let child = self.intern_producer_template(
             &target.child,
-            AwbcTaskPlanKind::Template {
+            AwbcHostTaskPlanKind::Template {
                 family: target.child.definition.family,
                 contract: target.child.definition.contract,
                 site: target.child.definition.producer_site,
@@ -1692,7 +1692,7 @@ impl AwbcInventory {
         let request_function = self.intern_task_request_function(&target.base, inputs);
         self.intern_producer_template(
             &target.base,
-            AwbcTaskPlanKind::AwaitMany {
+            AwbcHostTaskPlanKind::AwaitMany {
                 contract: target.base.definition.contract,
                 site: target.base.definition.producer_site,
                 plan: base_key,
@@ -1729,7 +1729,7 @@ impl AwbcInventory {
     fn intern_producer_template(
         &mut self,
         template: &arcweft_core::task::NeedProducerTemplate,
-        kind: AwbcTaskPlanKind,
+        kind: AwbcHostTaskPlanKind,
     ) -> Option<AwbcTaskPlanId> {
         let params = template
             .request
@@ -1749,18 +1749,22 @@ impl AwbcInventory {
             return None;
         };
         let row = AwbcTaskPlan {
-            signature,
-            request: AwbcTaskRequestProjection::CustomCapability {
-                capability: self.intern_string(&template.request.capability.0),
-                operation: self.intern_string(&template.request.operation),
-            },
             class: awbc_task_class(&template.definition.class),
             priority: template.definition.priority.0,
             cancel_scope: self.intern_string(&template.definition.cancel_scope.0),
             policy: awbc_task_policy(template.definition.policy),
             payload_type,
-            arguments,
-            kind,
+            execution: arcweft_core::awbc::schema::AwbcTaskPlanExecution::Host(
+                arcweft_core::awbc::schema::AwbcHostTaskPlan {
+                    signature,
+                    request: AwbcTaskRequestProjection::CustomCapability {
+                        capability: self.intern_string(&template.request.capability.0),
+                        operation: self.intern_string(&template.request.operation),
+                    },
+                    arguments,
+                    kind,
+                },
+            ),
         };
         Some(self.intern_task_plan(row))
     }
@@ -1853,23 +1857,29 @@ impl AwbcInventory {
             },
         };
         let row = AwbcTaskPlan {
-            signature,
-            request,
             class: awbc_task_class(plan.class()),
             priority: plan.priority().0,
             cancel_scope: self.intern_string(&plan.cancel_scope().0),
             policy: awbc_task_policy(plan.policy()),
             payload_type,
-            arguments,
-            kind: AwbcTaskPlanKind::NeedProducer {
-                plan: key.into(),
-                contract: plan.contract(),
-                site: plan.site(),
-                restart: match plan.restart() {
-                    HostRestartPolicy::MustBeQuiescent => AwbcTaskRestartPolicy::MustBeQuiescent,
-                    HostRestartPolicy::Restartable => AwbcTaskRestartPolicy::Restartable,
+            execution: arcweft_core::awbc::schema::AwbcTaskPlanExecution::Host(
+                arcweft_core::awbc::schema::AwbcHostTaskPlan {
+                    signature,
+                    request,
+                    arguments,
+                    kind: AwbcHostTaskPlanKind::NeedProducer {
+                        plan: key.into(),
+                        contract: plan.contract(),
+                        site: plan.site(),
+                        restart: match plan.restart() {
+                            HostRestartPolicy::MustBeQuiescent => {
+                                AwbcTaskRestartPolicy::MustBeQuiescent
+                            }
+                            HostRestartPolicy::Restartable => AwbcTaskRestartPolicy::Restartable,
+                        },
+                    },
                 },
-            },
+            ),
         };
         Some(self.intern_task_plan(row))
     }

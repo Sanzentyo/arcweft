@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "name": "task-final-r2481-awbc-program-source-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2481-awbc-program-source-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T22:46:26.4732618Z",
+  "finishedAt": "2026-10-23T22:48:56.6279389Z"
+}

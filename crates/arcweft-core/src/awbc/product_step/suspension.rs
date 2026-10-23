@@ -604,8 +604,11 @@ impl AwbcProductStepExecutor {
         &self,
         plan: crate::awbc::schema::AwbcTaskPlanId,
     ) -> crate::awbc::schema::AwbcTaskPlanId {
-        match self.program.task_plans[plan.index()].kind {
-            crate::awbc::schema::AwbcTaskPlanKind::AwaitMany { child, .. } => child,
+        match self.program.task_plans[plan.index()]
+            .host()
+            .map(|host| &host.kind)
+        {
+            Some(crate::awbc::schema::AwbcHostTaskPlanKind::AwaitMany { child, .. }) => *child,
             _ => unreachable!("verified AwaitMany state owns an aggregate plan"),
         }
     }
@@ -638,19 +641,22 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         backend: &mut impl crate::pure::RuntimeCallBackend,
     ) -> Result<(), ProductStepError> {
-        use crate::awbc::schema::AwbcTaskPlanKind;
+        use crate::awbc::schema::AwbcHostTaskPlanKind;
         use crate::value::{RuntimeTupleView, RuntimeValueView};
         let record = self
             .program
             .task_plans
             .get(state.plan.index())
             .ok_or_else(|| ProductStepError::Internal("AwaitMany plan is absent".into()))?;
-        let AwbcTaskPlanKind::AwaitMany {
+        let host = record.host().ok_or_else(|| {
+            ProductStepError::Internal("AwaitMany requires a Host execution contract".into())
+        })?;
+        let AwbcHostTaskPlanKind::AwaitMany {
             child,
             limit,
             request_function,
             ..
-        } = record.kind
+        } = host.kind
         else {
             return Err(ProductStepError::Internal(
                 "AwaitMany suspension has the wrong plan kind".into(),
@@ -701,9 +707,12 @@ impl AwbcProductStepExecutor {
         let child_record = self.program.task_plans.get(child.index()).ok_or_else(|| {
             ProductStepError::Internal("AwaitMany child template is absent".into())
         })?;
-        let AwbcTaskPlanKind::Template {
+        let child_host = child_record.host().ok_or_else(|| {
+            ProductStepError::Internal("AwaitMany child requires a Host execution contract".into())
+        })?;
+        let AwbcHostTaskPlanKind::Template {
             request_function, ..
-        } = child_record.kind
+        } = child_host.kind
         else {
             return Err(ProductStepError::Internal(
                 "AwaitMany child has the wrong template kind".into(),
@@ -805,10 +814,13 @@ impl AwbcProductStepExecutor {
             ));
         };
         let record = &self.program.task_plans[plan.index()];
+        let host = record.host().ok_or_else(|| {
+            ProductStepError::Internal("request kernel requires a Host execution contract".into())
+        })?;
         let signature = self
             .program
             .signatures
-            .get(record.signature.index())
+            .get(host.signature.index())
             .ok_or_else(|| ProductStepError::Internal("task signature is absent".into()))?;
         if signature.params.len() != args.len() {
             return Err(ProductStepError::Type(
@@ -2775,20 +2787,23 @@ impl AwbcProductStepExecutor {
                     plan_id.0
                 ))
             })?;
+        let host = row.host().ok_or_else(|| {
+            ProductStepError::Internal("Need producer requires a Host execution contract".into())
+        })?;
         let signature = self
             .program
             .signatures
-            .get(row.signature.index())
+            .get(host.signature.index())
             .ok_or_else(|| {
                 ProductStepError::Internal("Need producer signature is absent".to_owned())
             })?;
-        if values.len() != row.arguments.len() || values.len() != signature.params.len() {
+        if values.len() != host.arguments.len() || values.len() != signature.params.len() {
             return Err(ProductStepError::Internal(
                 "Need producer runtime arguments disagree with its verified signature".to_owned(),
             ));
         }
         let mut arguments = Vec::with_capacity(values.len());
-        for (descriptor, value) in row.arguments.iter().zip(values) {
+        for (descriptor, value) in host.arguments.iter().zip(values) {
             let name = descriptor
                 .name
                 .map(|name| {

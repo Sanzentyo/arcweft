@@ -1,0 +1,675 @@
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:19:43
+   |
+19 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+22 |     SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
+   |                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:67:33
+   |
+67 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:12:5
+   |
+12 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcSelectedSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:56:32
+   |
+56 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+warning: unused imports: `NeedId`, `TaskId`, and `TaskPublicationRevision`
+  --> crates\arcweft-core\src\awbc\product_step\tests.rs:31:33
+   |
+31 |     GenerationId, LogicalEpoch, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId,
+   |                                 ^^^^^^                                              ^^^^^^
+32 |     TaskPublicationRevision, TaskSequence,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+  --> crates\arcweft-core\src\engine\flow\iterator_tests.rs:10:5
+   |
+10 | use crate::task::NeedId;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+    --> crates\arcweft-core\src\engine\flow.rs:1923:9
+     |
+1923 |     use crate::task::NeedId;
+     |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::num::NonZeroU32`
+    --> crates\arcweft-core\src\engine.rs:4794:9
+     |
+4794 |     use std::num::NonZeroU32;
+     |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AwbcRuntimeValueSnapshotError`
+  --> crates\arcweft-core\src\plan\task_source\program\tests.rs:12:5
+   |
+12 |     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue, RuntimeValue,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:12:61
+   |
+12 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcSelectedSourceError,
+   |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+   --> crates\arcweft-core\src\pure\program\tests.rs:161:9
+    |
+161 |     use crate::task::NeedId;
+    |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskClass`, `TaskId`, `TaskKey`, `TaskPolicy`, `TaskPriority`, and `TaskSpec`
+  --> crates\arcweft-core\src\task\outcome\tests.rs:16:9
+   |
+16 |         CancelScopeId, FileReadTextRequest, HostTaskRequest, TaskClass, TaskId, TaskKey,
+   |         ^^^^^^^^^^^^^                                        ^^^^^^^^^  ^^^^^^  ^^^^^^^
+17 |         TaskOutcomeContract, TaskPolicy, TaskPriority, TaskSpec,
+   |                              ^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `task::NeedId`
+ --> crates\arcweft-core\src\tests\affine_intrinsics.rs:4:5
+  |
+4 |     task::NeedId,
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `RuntimeNeedState`
+  --> crates\arcweft-core\src\tests\flow.rs:31:26
+   |
+31 |     task::{LogicalEpoch, NeedId, RuntimeNeedState, TaskSequence},
+   |                          ^^^^^^  ^^^^^^^^^^^^^^^^
+
+error[E0609]: no field `request` on type `&mut AwbcTaskPlan`
+   --> crates\arcweft-core\src\awbc\schema.rs:514:25
+    |
+514 |         match &mut task.request {
+    |                         ^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\awbc\schema.rs:516:33
+    |
+516 |                 visit_string_id(argument_name, visitor);
+    |                 --------------- ^^^^^^^^^^^^^ expected `&mut AwbcStringId`, found `AwbcStringId`
+    |                 |
+    |                 arguments to this function are incorrect
+    |
+note: function defined here
+   --> crates\arcweft-core\src\awbc\schema.rs:462:4
+    |
+462 | fn visit_string_id(id: &mut AwbcStringId, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
+    |    ^^^^^^^^^^^^^^^ ---------------------
+help: consider mutably borrowing here
+    |
+516 |                 visit_string_id(&mut argument_name, visitor);
+    |                                 ++++
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\awbc\schema.rs:527:33
+    |
+527 |                 visit_string_id(capability, visitor);
+    |                 --------------- ^^^^^^^^^^ expected `&mut AwbcStringId`, found `AwbcStringId`
+    |                 |
+    |                 arguments to this function are incorrect
+    |
+note: function defined here
+   --> crates\arcweft-core\src\awbc\schema.rs:462:4
+    |
+462 | fn visit_string_id(id: &mut AwbcStringId, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
+    |    ^^^^^^^^^^^^^^^ ---------------------
+help: consider mutably borrowing here
+    |
+527 |                 visit_string_id(&mut capability, visitor);
+    |                                 ++++
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\awbc\schema.rs:528:33
+    |
+528 |                 visit_string_id(operation, visitor);
+    |                 --------------- ^^^^^^^^^ expected `&mut AwbcStringId`, found `AwbcStringId`
+    |                 |
+    |                 arguments to this function are incorrect
+    |
+note: function defined here
+   --> crates\arcweft-core\src\awbc\schema.rs:462:4
+    |
+462 | fn visit_string_id(id: &mut AwbcStringId, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
+    |    ^^^^^^^^^^^^^^^ ---------------------
+help: consider mutably borrowing here
+    |
+528 |                 visit_string_id(&mut operation, visitor);
+    |                                 ++++
+
+error[E0609]: no field `arguments` on type `&mut AwbcTaskPlan`
+   --> crates\arcweft-core\src\awbc\schema.rs:531:35
+    |
+531 |         for argument in &mut task.arguments {
+    |                                   ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0609]: no field `request` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\awbc\schema.rs:514:25
+    |
+514 |         match &mut task.request {
+    |                         ^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0609]: no field `arguments` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\awbc\schema.rs:531:35
+    |
+531 |         for argument in &mut task.arguments {
+    |                                   ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:252:87
+    |
+252 |         let AwbcHostTaskPlanKind::NeedProducer { plan, .. } = &mut code.task_plans[0].kind else {
+    |                                                                                       ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::ExpectedTaskPlanKey` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:255:9
+    |
+255 |         *plan = assertion;
+    |         ^^^^^ can't be dereferenced
+
+error[E0609]: no field `kind` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:308:22
+    |
+308 |         } = &mut row.kind
+    |                      ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::NeedProducerContractDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:314:17
+    |
+314 |                 *contract = NeedProducerContractDigest::from_bytes([0x33; 32]);
+    |                 ^^^^^^^^^ can't be dereferenced
+
+error[E0609]: no field `request` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:315:93
+    |
+315 |                 let AwbcTaskRequestProjection::ExternCapability { contract, .. } = &mut row.request
+    |                                                                                             ^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `HostCallContractDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:319:17
+    |
+319 |                 *contract = crate::step::HostCallContractDigest::from_bytes([0x33; 32]);
+    |                 ^^^^^^^^^ can't be dereferenced
+
+error[E0614]: type `producer::NeedProducerSiteDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:321:28
+    |
+321 |             Field::Site => *site = NeedProducerSiteDigest::from_bytes([0x33; 32]),
+    |                            ^^^^^ can't be dereferenced
+
+error[E0609]: no field `request` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:324:30
+    |
+324 |                     &mut row.request
+    |                              ^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `awbc::schema::AwbcStringId` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:328:17
+    |
+328 |                 *capability = wrong;
+    |                 ^^^^^^^^^^^ can't be dereferenced
+
+error[E0609]: no field `request` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:332:30
+    |
+332 |                     &mut row.request
+    |                              ^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `awbc::schema::AwbcStringId` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:336:17
+    |
+336 |                 *operation = wrong;
+    |                 ^^^^^^^^^^ can't be dereferenced
+
+error[E0614]: type `awbc::schema::AwbcTaskRestartPolicy` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:342:31
+    |
+342 |             Field::Restart => *restart = AwbcTaskRestartPolicy::Restartable,
+    |                               ^^^^^^^^ can't be dereferenced
+
+error[E0609]: no field `arguments` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\selected\tests.rs:343:50
+    |
+343 |             Field::ArgumentName { index } => row.arguments[index].name = None,
+    |                                                  ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:487:50
+    |
+487 |         match &mut code.task_plans[task.index()].kind {
+    |                                                  ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::TaskPlanSemanticDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:490:17
+    |
+490 |                 *plan = TaskPlanSemanticDigest::from_bytes([0; 32])
+    |                 ^^^^^ can't be dereferenced
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:605:80
+    |
+605 |     let AwbcHostTaskPlanKind::AwaitMany { plan, .. } = &mut code.task_plans[0].kind else {
+    |                                                                                ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::TaskPlanSemanticDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:608:5
+    |
+608 |     *plan = original
+    |     ^^^^^ can't be dereferenced
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:617:33
+    |
+617 |     } = &mut code.task_plans[1].kind
+    |                                 ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::TaskPlanSemanticDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:621:5
+    |
+621 |     *plan = original
+    |     ^^^^^ can't be dereferenced
+
+error[E0614]: type `producer::NeedProducerContractDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:625:5
+    |
+625 |     *contract = other.child.definition.contract;
+    |     ^^^^^^^^^ can't be dereferenced
+
+error[E0614]: type `producer::NeedProducerSiteDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:626:5
+    |
+626 |     *site = other.child.definition.producer_site;
+    |     ^^^^^ can't be dereferenced
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:679:32
+    |
+679 |         } = code.task_plans[0].kind
+    |                                ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:683:28
+    |
+683 |         code.task_plans[0].kind = AwbcHostTaskPlanKind::Template {
+    |                            ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:691:89
+    |
+691 |             let AwbcHostTaskPlanKind::Template { family, .. } = &mut code.task_plans[1].kind else {
+    |                                                                                         ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::NeedProducerFamily` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:694:13
+    |
+694 |             *family = NeedProducerFamily::StructuredTaskPlan;
+    |             ^^^^^^^ can't be dereferenced
+
+error[E0609]: no field `kind` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:731:81
+    |
+731 |                 let AwbcHostTaskPlanKind::AwaitMany { contract, .. } = &mut row.kind else {
+    |                                                                                 ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::NeedProducerContractDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:734:17
+    |
+734 |                 *contract = NeedProducerContractDigest::from_bytes([0; 32]);
+    |                 ^^^^^^^^^ can't be dereferenced
+
+error[E0609]: no field `kind` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:737:77
+    |
+737 |                 let AwbcHostTaskPlanKind::AwaitMany { site, .. } = &mut row.kind else {
+    |                                                                             ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::NeedProducerSiteDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:740:17
+    |
+740 |                 *site = NeedProducerSiteDigest::from_bytes([0; 32]);
+    |                 ^^^^^ can't be dereferenced
+
+error[E0609]: no field `request` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:744:30
+    |
+744 |                     &mut row.request
+    |                              ^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `awbc::schema::AwbcStringId` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:748:17
+    |
+748 |                 *capability = wrong;
+    |                 ^^^^^^^^^^^ can't be dereferenced
+
+error[E0609]: no field `request` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:752:30
+    |
+752 |                     &mut row.request
+    |                              ^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `awbc::schema::AwbcStringId` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:756:17
+    |
+756 |                 *operation = wrong;
+    |                 ^^^^^^^^^^ can't be dereferenced
+
+error[E0609]: no field `arguments` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:762:50
+    |
+762 |             Field::ArgumentName { index } => row.arguments[index].name = None,
+    |                                                  ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0609]: no field `arguments` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:763:52
+    |
+763 |             Field::ArgumentSpread { index } => row.arguments[index].spread = true,
+    |                                                    ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0609]: no field `kind` on type `&mut awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:770:78
+    |
+770 |                 let AwbcHostTaskPlanKind::AwaitMany { limit, .. } = &mut row.kind else {
+    |                                                                              ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `u32` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:773:17
+    |
+773 |                 *limit += 1;
+    |                 ^^^^^^ can't be dereferenced
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:854:80
+    |
+854 |     let AwbcHostTaskPlanKind::AwaitMany { plan, .. } = &mut code.task_plans[0].kind else {
+    |                                                                                ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::TaskPlanSemanticDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:857:5
+    |
+857 |     *plan = TaskPlanSemanticDigest::from_bytes([0; 32]);
+    |     ^^^^^ can't be dereferenced
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:912:84
+    |
+912 |         let AwbcHostTaskPlanKind::AwaitMany { plan, .. } = &mut code.task_plans[0].kind else {
+    |                                                                                    ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0614]: type `producer::TaskPlanSemanticDigest` cannot be dereferenced
+   --> crates\arcweft-core\src\plan\task_source\program\template\tests.rs:915:9
+    |
+915 |         *plan = original
+    |         ^^^^^ can't be dereferenced
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\template_tests.rs:819:28
+    |
+819 |     } = code.task_plans[0].kind
+    |                            ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0609]: no field `kind` on type `awbc::schema::AwbcTaskPlan`
+   --> crates\arcweft-core\src\plan\task_source\template_tests.rs:823:24
+    |
+823 |     code.task_plans[0].kind = AwbcHostTaskPlanKind::Template {
+    |                        ^^^^ unknown field
+    |
+    = note: available fields are: `class`, `priority`, `cancel_scope`, `policy`, `payload_type`, `execution`
+
+error[E0004]: non-exhaustive patterns: `AwbcFunctionKind::ProgramTask` not covered
+    --> crates\arcweft-core\src\awbc\verify\code.rs:780:26
+     |
+ 780 |     let expected = match function.kind {
+     |                          ^^^^^^^^^^^^^ pattern `AwbcFunctionKind::ProgramTask` not covered
+     |
+note: `AwbcFunctionKind` defined here
+    --> crates\arcweft-core\src\awbc\schema.rs:1335:10
+     |
+1335 | pub enum AwbcFunctionKind {
+     |          ^^^^^^^^^^^^^^^^
+...
+1346 |     ProgramTask = 10,
+     |     ----------- not covered
+     = note: the matched value is of type `AwbcFunctionKind`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+ 790 ~         | AwbcFunctionKind::LineCancellationHandler => AwbcSafePointKind::CallableBoundary,
+ 791 ~         AwbcFunctionKind::ProgramTask => todo!(),
+     |
+
+warning: unused variable: `type_instantiation`
+   --> crates\arcweft-core\src\awbc\value_admission\tests.rs:849:13
+    |
+849 |             type_instantiation,
+    |             ^^^^^^^^^^^^^^^^^^ help: try ignoring the field: `type_instantiation: _`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+error[E0004]: non-exhaustive patterns: `awbc::schema::AwbcFunctionKind::ProgramTask` not covered
+    --> crates\arcweft-core\src\awbc\verify\code.rs:780:26
+     |
+ 780 |     let expected = match function.kind {
+     |                          ^^^^^^^^^^^^^ pattern `awbc::schema::AwbcFunctionKind::ProgramTask` not covered
+     |
+note: `awbc::schema::AwbcFunctionKind` defined here
+    --> crates\arcweft-core\src\awbc\schema.rs:1335:10
+     |
+1335 | pub enum AwbcFunctionKind {
+     |          ^^^^^^^^^^^^^^^^
+...
+1346 |     ProgramTask = 10,
+     |     ----------- not covered
+     = note: the matched value is of type `awbc::schema::AwbcFunctionKind`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+ 790 ~         | AwbcFunctionKind::LineCancellationHandler => AwbcSafePointKind::CallableBoundary,
+ 791 ~         awbc::schema::AwbcFunctionKind::ProgramTask => todo!(),
+     |
+
+Some errors have detailed explanations: E0004, E0308, E0609.
+For more information about an error, try `rustc --explain E0004`.
+warning: `arcweft-core` (lib) generated 23 warnings
+error: could not compile `arcweft-core` (lib) due to 6 previous errors; 23 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: unused variable: `group`
+    --> crates\arcweft-core\src\engine\dialogue.rs:2964:13
+     |
+2964 |         let group = LineTaskGroup::new(
+     |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_group`
+
+Some errors have detailed explanations: E0004, E0308, E0609, E0614.
+warning: `arcweft-core` (lib test) generated 30 warnings (18 duplicates)
+error: could not compile `arcweft-core` (lib test) due to 49 previous errors; 30 warnings emitted

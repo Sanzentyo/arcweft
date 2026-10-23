@@ -61,6 +61,9 @@ impl RuntimeTaskSourceAssertion {
             RuntimeTaskSourceExecutionAssertion::Awbc(RuntimeTaskExecutionRow::Template(row)) => {
                 (3, Some(row.0))
             }
+            RuntimeTaskSourceExecutionAssertion::Awbc(RuntimeTaskExecutionRow::Program(row)) => {
+                (4, Some(row.0))
+            }
         };
         visitor.fixed(&[kind], depth + 1)?;
         if let Some(row) = row {

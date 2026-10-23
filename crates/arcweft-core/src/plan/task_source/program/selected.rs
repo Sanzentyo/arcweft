@@ -4,7 +4,7 @@
 use super::types::{RuntimeAwbcSourceTypeError, RuntimeAwbcSourceTypeRelation};
 use super::{RuntimeTaskSourceProgram, RuntimeTaskSourceProgramData};
 use crate::awbc::schema::{
-    AwbcTaskPlanId, AwbcTaskPlanKind, AwbcTaskPolicy, AwbcTaskRequestProjection,
+    AwbcHostTaskPlanKind, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTaskRequestProjection,
     AwbcTaskRestartPolicy,
 };
 use crate::plan::RuntimeTaskPlanSealLimits;
@@ -141,6 +141,10 @@ impl RuntimeTaskSourceProgram {
             .task_plans
             .get(task.index())
             .ok_or(RuntimeAwbcSelectedSourceError::MissingTask { task })?;
+        let host = row.host().ok_or(RuntimeAwbcSelectedSourceError::Mismatch {
+            task,
+            field: Field::RequestKind,
+        })?;
         let roles = |actual: usize, meter: &mut TaskSemanticMeter| {
             meter.charge_work(1)?;
             if actual > limits.max_request_roles as usize {
@@ -153,13 +157,13 @@ impl RuntimeTaskSourceProgram {
                 Ok(())
             }
         };
-        roles(row.arguments.len(), meter)?;
-        let AwbcTaskPlanKind::NeedProducer {
+        roles(host.arguments.len(), meter)?;
+        let AwbcHostTaskPlanKind::NeedProducer {
             plan,
             contract,
             site,
             restart,
-        } = &row.kind
+        } = &host.kind
         else {
             return Err(RuntimeAwbcSelectedSourceError::Mismatch {
                 task,
@@ -198,7 +202,7 @@ impl RuntimeTaskSourceProgram {
         )?;
         check(Field::Contract, *contract == metadata.contract(), meter)?;
         check(Field::Site, *site == metadata.site(), meter)?;
-        match (&row.request, metadata.request()) {
+        match (&host.request, metadata.request()) {
             (
                 AwbcTaskRequestProjection::AssetLoad {
                     kind,
@@ -295,15 +299,15 @@ impl RuntimeTaskSourceProgram {
             meter,
         )?;
         let args = target.arguments();
-        let signature = &executable.signatures[row.signature.index()];
+        let signature = &executable.signatures[host.signature.index()];
         check(
             Field::ArgumentCount,
-            args.len() == row.arguments.len()
+            args.len() == host.arguments.len()
                 && signature.params.len() == args.len()
                 && signature.result.is_none(),
             meter,
         )?;
-        for (index, (expected, actual)) in args.iter().zip(&row.arguments).enumerate() {
+        for (index, (expected, actual)) in args.iter().zip(&host.arguments).enumerate() {
             let canonical_name = metadata
                 .argument_name(index)
                 .expect("the original selected Source has its exact binding count");

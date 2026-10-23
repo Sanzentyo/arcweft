@@ -127,7 +127,7 @@ impl<V, N> FiberAwaitManyState<V, N> {
         view: impl Fn(&V) -> RuntimeValueView<'_> + Copy,
         need: impl Fn(&N) -> RuntimeNeedView<'_> + Copy,
     ) -> Result<(), FiberStateError> {
-        use crate::awbc::schema::AwbcTaskPlanKind;
+        use crate::awbc::schema::AwbcHostTaskPlanKind;
         self.validate_site(frame, cursor, resume, resources)?;
         resources
             .work()
@@ -149,13 +149,14 @@ impl<V, N> FiberAwaitManyState<V, N> {
             .task_plans
             .get(self.plan.index())
             .ok_or(FiberStateError::InvalidFrame)?;
-        let AwbcTaskPlanKind::AwaitMany {
+        let host = plan.host().ok_or(FiberStateError::InvalidFrame)?;
+        let AwbcHostTaskPlanKind::AwaitMany {
             child,
             limit,
             captures,
             request_function,
             ..
-        } = &plan.kind
+        } = &host.kind
         else {
             return Err(FiberStateError::InvalidFrame);
         };
@@ -163,10 +164,11 @@ impl<V, N> FiberAwaitManyState<V, N> {
             .task_plans
             .get(child.index())
             .ok_or(FiberStateError::InvalidFrame)?;
-        let AwbcTaskPlanKind::Template {
+        let child_host = child_plan.host().ok_or(FiberStateError::InvalidFrame)?;
+        let AwbcHostTaskPlanKind::Template {
             request_function: child_request,
             ..
-        } = child_plan.kind
+        } = child_host.kind
         else {
             return Err(FiberStateError::InvalidFrame);
         };

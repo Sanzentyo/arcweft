@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2477-awbc-program-source-owner-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-6e2000001d45bf94.exe",
+      "bytes": 3241472,
+      "nonTest": false,
+      "sha256": "07be8e08422f6ed69113c9f99f989eb7ed755845d7f37df02b92149511600446"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-bb9cbc4f5c977d38.exe",
+      "bytes": 3241472,
+      "nonTest": false,
+      "sha256": "18666cf5c945fffd03ce51b131ec3df9f6a3f3b2ec185e32ec0302eb748cb7f4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+      "bytes": 78847488,
+      "nonTest": false,
+      "sha256": "a3797d3642ca27a4721736ea31d1450c992d9c3f31761379c23b215f27fb5d85"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+      "bytes": 103254016,
+      "nonTest": false,
+      "sha256": "fb86a7dee29dfe28568f403edff2926e06b5aeb7522d5cb026e47d41847b50d0"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertion_identity-b9a829b80143cd8f.exe",
+      "bytes": 73827328,
+      "nonTest": false,
+      "sha256": "821da15b3e5337e8991e43ae6ff57ca58daa87757b616f376153bd8fd8530b8e"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_parity-bc3ba9328538a84c.exe",
+      "bytes": 43776512,
+      "nonTest": false,
+      "sha256": "6ca64a368ca417c22efdc3259a1719a981ab9e3c886d34495a81eebb112f1bbf"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_record_type-daf926a2b3a5f3d5.exe",
+      "bytes": 7312896,
+      "nonTest": false,
+      "sha256": "79d83dc26e77e57a722bc07be14bb56978a0ffcdc09e3f2965f1055fa0a939e5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_variant_types-337b28a5be2931c9.exe",
+      "bytes": 9902080,
+      "nonTest": false,
+      "sha256": "25eba67dffd2b01c56ade00179598c282e6fe2e7d4a529e375e068a60d884a5b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\builtin_payload_admission-621fe742f78543f0.exe",
+      "bytes": 6106112,
+      "nonTest": false,
+      "sha256": "ecce38f16f555f90b880e578280de227e23f5ef73eb447a56a108fd4481aa2a0"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\direct_suspension-3b7c44dc713d6239.exe",
+      "bytes": 14469632,
+      "nonTest": false,
+      "sha256": "d08792df7109ca7aa6a58ef45b16964209656f69889ac7ad75512a3982abf99b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\iterator_witness_awbc-06cd64c4d41b817d.exe",
+      "bytes": 34248192,
+      "nonTest": false,
+      "sha256": "db718e047aa84f9dc4b6955b64add43a2372d926d698bbc823eb33b0641b34a0"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\nominal_schema_admission-e075e424987f9a1a.exe",
+      "bytes": 6985216,
+      "nonTest": false,
+      "sha256": "956e2f4d810a18a66cf6804bc3ba44cf3a50680c25cba4a41cebd35f4da3ef7b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\record_admission-dbaf49793e035a1f.exe",
+      "bytes": 6172160,
+      "nonTest": false,
+      "sha256": "44e16395eb2dde9bbd7e1569279e660462d06d5cc24fc765db95bc77182ea93d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\record_field_names-3a2e4f4bfe634d21.exe",
+      "bytes": 5052416,
+      "nonTest": false,
+      "sha256": "10633dbb271a6293210af4c2a482e75876b54507c7b7892cd4c10067c30cf5e8"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_identity-cc0e359be56b0aa1.exe",
+      "bytes": 2336768,
+      "nonTest": false,
+      "sha256": "ca791627dfb51b596292c367eebb9bc1b0b58151840af185b3fe270ab142a0c1"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_id_boundaries-449da3e824872fb7.exe",
+      "bytes": 6896128,
+      "nonTest": false,
+      "sha256": "45e7a4a9affcf93a411b89edac091ed50f230d303600c8ccb19b8c43b24f5ee2"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_admission-61e652a3958070a2.exe",
+      "bytes": 2383360,
+      "nonTest": false,
+      "sha256": "300f40f6ed4f2c882443ab28e255851f190bc2ecb491da6d9ace4e62cd07c8da"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_plan_view_prefix-70a85ba450df797b.exe",
+      "bytes": 739840,
+      "nonTest": false,
+      "sha256": "1bc0e8b7db1855e72ff523a9d1da4cf791c605a3d4525d1ca97ce7fc5d9893d3"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-23T22:37:33.8161552Z"
+}

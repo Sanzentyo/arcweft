@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "a74957e455597a0d3160af11c914e2e93f58d144",
+  "name": "task-final-r2479-awbc-program-source-final-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-core) | package(=arcweft-runtime-plan)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2479-awbc-program-source-final-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T22:43:02.6674235Z",
+  "finishedAt": "2026-10-23T22:44:06.1093110Z"
+}

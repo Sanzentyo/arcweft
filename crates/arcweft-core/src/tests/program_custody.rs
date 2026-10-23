@@ -398,24 +398,28 @@ pub(crate) fn awbc_handle_program(
         effects: AwbcEffectSetId(0),
     });
     program.task_plans.push(AwbcTaskPlan {
-        signature: AwbcSignatureId(1),
-        request: AwbcTaskRequestProjection::ExternCapability {
-            capability: AwbcStringId(1),
-            operation: AwbcStringId(2),
-            contract: crate::step::HostCallContractDigest::from_bytes([7; 32]),
-        },
         class: AwbcTaskClass::Io,
         priority: 4,
         cancel_scope: AwbcStringId(1),
         policy: AwbcTaskPolicy::JoinSameKey,
         payload_type: AwbcTypeId(0),
-        arguments: Vec::new(),
-        kind: AwbcTaskPlanKind::NeedProducer {
-            plan: crate::task::ExpectedTaskPlanKey::new([0; 32]),
-            contract: crate::task::NeedProducerContractDigest::from_bytes([7; 32]),
-            site: need_plan.site(),
-            restart: AwbcTaskRestartPolicy::Restartable,
-        },
+        execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
+            crate::awbc::schema::AwbcHostTaskPlan {
+                signature: AwbcSignatureId(1),
+                request: AwbcTaskRequestProjection::ExternCapability {
+                    capability: AwbcStringId(1),
+                    operation: AwbcStringId(2),
+                    contract: crate::step::HostCallContractDigest::from_bytes([7; 32]),
+                },
+                arguments: Vec::new(),
+                kind: AwbcHostTaskPlanKind::NeedProducer {
+                    plan: crate::task::ExpectedTaskPlanKey::new([0; 32]),
+                    contract: crate::task::NeedProducerContractDigest::from_bytes([7; 32]),
+                    site: need_plan.site(),
+                    restart: AwbcTaskRestartPolicy::Restartable,
+                },
+            },
+        ),
     });
     program.canonicalize_string_table();
     program
