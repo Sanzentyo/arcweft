@@ -58,13 +58,28 @@ impl Engine {
 
     pub(super) fn start_format_operand_attempt(
         &mut self,
-        attempt: RuntimeFormatAttemptId,
-        parameter: RuntimeFmtParameterId,
-        body: Vec<FlowOp>,
-        value: RuntimeExpr,
+        source: crate::engine::code_cursor::NativeSourceOperation,
         next_op_index: Option<usize>,
     ) -> Result<(), RuntimeEvalError> {
-        let manifest = self.plan.format_attempt(attempt).ok_or_else(|| {
+        use crate::engine::NativePendingWork;
+        use crate::engine::work::{NativeRuntimeContinuation, NativeSourceRangeRole};
+        let plan = std::sync::Arc::clone(&self.plan);
+        let Some(FlowOp::FormatOperandAttempt {
+            attempt,
+            parameter,
+            value,
+            ..
+        }) = source.operation(&plan)
+        else {
+            return Err(RuntimeEvalError::NativeWorkAdmission {
+                source: Box::new(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: "formatter operand lost its original source declaration".into(),
+                }),
+            });
+        };
+        let attempt = *attempt;
+        let parameter = *parameter;
+        let manifest = plan.format_attempt(attempt).ok_or_else(|| {
             RuntimeEvalError::DialogueContentConstruction(format!(
                 "unknown format attempt {attempt}"
             ))
@@ -77,7 +92,26 @@ impl Engine {
         if value.ty() != manifest.operands()[ordinal].ty() {
             return Err(RuntimeEvalError::InvalidExpressionType(value.ty()));
         }
+        let body = self.original_body_range(&source, crate::plan::RuntimeFlowBodyRole::Body)?;
+        let work = [
+            Some(NativePendingWork::source(
+                body,
+                NativeSourceRangeRole::NestedBody,
+            )),
+            Some(NativePendingWork::resume(
+                NativeRuntimeContinuation::CompleteFormatOperand { source },
+            )),
+        ];
+        self.prepare_replacement_native_work(&work)?;
         if ordinal == 0 {
+            let mut admission = self.native_work_admission()?;
+            (|| {
+                admission.validate_metadata_collection(manifest.operands().len())?;
+                admission.validate_metadata(&self.format_context)
+            })()
+            .map_err(|source| RuntimeEvalError::NativeWorkAdmission {
+                source: Box::new(source),
+            })?;
             self.fiber.frame.control_stack.push(FlowControlStackEntry {
                 kind: FlowControlStackEntryKind::FormatAttempt(NativeFormatAttemptFrame {
                     attempt,
@@ -97,13 +131,13 @@ impl Engine {
         else {
             self.fiber.frame.pending_ops = caller_pending_ops;
             return Err(RuntimeEvalError::DialogueContentConstruction(
-                "format operand has no current attempt frame".to_owned(),
+                "format operand has no current attempt frame".into(),
             ));
         };
         if frame.attempt != attempt || frame.next_operand != ordinal || frame.active.is_some() {
             self.fiber.frame.pending_ops = caller_pending_ops;
             return Err(RuntimeEvalError::DialogueContentConstruction(
-                "format operands are out of source order".to_owned(),
+                "format operands are out of source order".into(),
             ));
         }
         frame.active = Some(NativeFormatOperandFrame {
@@ -113,18 +147,9 @@ impl Engine {
         });
         self.fiber.frame.env.push_scope_with_capacity(0);
         self.fiber.frame.cursor = resume;
-        self.fiber.frame.pending_ops = VecDeque::from(body);
-        self.fiber
-            .frame
-            .pending_ops
-            .push_back(FlowOp::CompleteFormatOperand {
-                attempt,
-                parameter,
-                value,
-            });
+        self.fiber.frame.pending_ops = work.into_iter().flatten().collect();
         Ok(())
     }
-
     pub(super) fn complete_format_operand_attempt(
         &mut self,
         attempt: RuntimeFormatAttemptId,

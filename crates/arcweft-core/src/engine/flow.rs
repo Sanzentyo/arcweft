@@ -2,8 +2,12 @@ mod callable;
 mod format_attempt;
 mod function_call;
 pub(super) mod match_guard;
+mod resume;
 
+use super::NativePendingWork;
+use super::code_cursor::NativeSourceOperation;
 use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState};
+use super::work::{NativePendingWorkKind, NativeRuntimeContinuation, NativeSourceRangeRole};
 use super::{
     ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowEvent,
     FlowFiberStatus, FlowOp, FlowScopeCleanup, HostCallState, NativeCodeCursor, RuntimeDiagnostic,
@@ -26,60 +30,314 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 impl Engine {
+    fn native_work_admission(
+        &self,
+    ) -> Result<crate::value::RuntimeRetainedValueAdmission, RuntimeEvalError> {
+        let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
+        self.fiber
+            .frame
+            .ensure_program_owner(&owner)
+            .map_err(|message| RuntimeEvalError::NativeWorkAdmission {
+                source: Box::new(crate::value::AwbcRuntimeValueSnapshotError::Message { message }),
+            })?;
+        Ok(crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ))
+    }
+
+    fn prepare_native_work<const N: usize>(
+        &self,
+        work: &[Option<NativePendingWork>; N],
+    ) -> Result<(), RuntimeEvalError> {
+        self.prepare_native_work_with_prefix(self.fiber.frame.pending_ops.iter(), work)
+    }
+
+    fn prepare_replacement_native_work<const N: usize>(
+        &self,
+        work: &[Option<NativePendingWork>; N],
+    ) -> Result<(), RuntimeEvalError> {
+        self.prepare_native_work_with_prefix(std::iter::empty(), work)
+    }
+
+    fn prepare_native_work_with_prefix<'a, const N: usize>(
+        &self,
+        current: impl ExactSizeIterator<Item = &'a NativePendingWork>,
+        work: &'a [Option<NativePendingWork>; N],
+    ) -> Result<(), RuntimeEvalError> {
+        let mut admission = self.native_work_admission()?;
+        let invalid_count = || RuntimeEvalError::NativeWorkAdmission {
+            source: Box::new(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "native pending work count exceeds its metadata domain".into(),
+            }),
+        };
+        let physical = current
+            .len()
+            .checked_add(work.iter().flatten().count())
+            .ok_or_else(invalid_count)?;
+        let logical = current
+            .chain(work.iter().flatten())
+            .try_fold(0_usize, |total, item| {
+                total.checked_add(item.logical_pending_count()?)
+            })
+            .ok_or_else(invalid_count)?;
+        let admitted = (|| {
+            admission.validate_metadata_collection(physical)?;
+            admission.validate_metadata_collection(logical)?;
+            for item in work.iter().flatten() {
+                item.admit_metadata(
+                    &mut admission,
+                    self.fiber.frame.env.function_instantiation(),
+                )?;
+            }
+            Ok::<_, crate::value::AwbcRuntimeValueSnapshotError>(())
+        })();
+        admitted.map_err(|source| RuntimeEvalError::NativeWorkAdmission {
+            source: Box::new(source),
+        })
+    }
+
+    fn prepend_admitted_native_work<const N: usize>(
+        &mut self,
+        work: [Option<NativePendingWork>; N],
+    ) {
+        self.fiber
+            .frame
+            .pending_ops
+            .reserve(work.iter().flatten().count());
+        for item in work.into_iter().rev().flatten() {
+            self.fiber.frame.pending_ops.push_front(item);
+        }
+    }
+
+    fn prepare_native_scope(
+        &self,
+        kind: crate::scope::RuntimeScopeFrameKind,
+    ) -> Result<(crate::scope::RuntimeScheduledScopeToken, u64), RuntimeEvalError> {
+        self.native_work_admission()?;
+        let ordinal = std::num::NonZeroU64::new(self.next_scheduled_scope_sequence)
+            .ok_or(crate::scope::RuntimeScopeExitError::IdentityCapacityExhausted)?;
+        let next = self
+            .next_scheduled_scope_sequence
+            .checked_add(1)
+            .ok_or(crate::scope::RuntimeScopeExitError::IdentityCapacityExhausted)?;
+        Ok((
+            crate::scope::RuntimeScheduledScopeToken::from_runtime(
+                self.fiber.execution,
+                self.fiber.persistent_id,
+                ordinal,
+                kind,
+            ),
+            next,
+        ))
+    }
+
+    fn push_scoped_source(
+        &mut self,
+        body: NativeCodeCursor,
+        bindings: Vec<RuntimeLocalBinding>,
+        identity: RuntimeScopeIdentity,
+        kind: crate::scope::RuntimeScopeFrameKind,
+        tail: Option<NativeRuntimeContinuation>,
+    ) -> Result<(), RuntimeEvalError> {
+        if body.remaining_operation_count() == Some(0) && bindings.is_empty() && tail.is_none() {
+            return Ok(());
+        }
+        let (token, next) = self.prepare_native_scope(kind)?;
+        let work = [
+            Some(NativePendingWork::resume(
+                NativeRuntimeContinuation::EnterScheduledScope { identity, token },
+            )),
+            (!bindings.is_empty())
+                .then(|| NativePendingWork::resume(NativeRuntimeContinuation::Bind(bindings))),
+            Some(NativePendingWork::source(
+                body,
+                NativeSourceRangeRole::NestedBody,
+            )),
+            Some(NativePendingWork::resume(
+                NativeRuntimeContinuation::ExitScheduledScope { token },
+            )),
+            tail.map(NativePendingWork::resume),
+        ];
+        self.prepare_native_work(&work)?;
+        self.prepend_admitted_native_work(work);
+        self.next_scheduled_scope_sequence = next;
+        Ok(())
+    }
+
+    fn push_source_range(&mut self, body: NativeCodeCursor) -> Result<(), RuntimeEvalError> {
+        if body.remaining_operation_count() == Some(0) {
+            return Ok(());
+        }
+        let work = [Some(NativePendingWork::source(
+            body,
+            NativeSourceRangeRole::NestedBody,
+        ))];
+        self.prepare_native_work(&work)?;
+        self.prepend_admitted_native_work(work);
+        Ok(())
+    }
+
+    pub(in crate::engine) fn push_scoped_source_body(
+        &mut self,
+        source: &NativeSourceOperation,
+        role: crate::plan::RuntimeFlowBodyRole,
+        bindings: Vec<RuntimeLocalBinding>,
+    ) -> Result<(), RuntimeEvalError> {
+        let body = self.original_body_range(source, role)?;
+        self.push_scoped_source(
+            body,
+            bindings,
+            RuntimeScopeIdentity::Anonymous,
+            crate::scope::RuntimeScopeFrameKind::Control,
+            None,
+        )
+    }
+
+    pub(in crate::engine) fn original_body_range(
+        &self,
+        source: &super::code_cursor::NativeSourceOperation,
+        role: crate::plan::RuntimeFlowBodyRole,
+    ) -> Result<NativeCodeCursor, RuntimeEvalError> {
+        let mut admission = self.native_work_admission()?;
+        source.child_body(role, &mut admission).map_err(|source| {
+            RuntimeEvalError::NativeWorkAdmission {
+                source: Box::new(source),
+            }
+        })
+    }
+
     pub(super) fn step_flow(
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
     ) {
+        let plan = Arc::clone(&self.plan);
+        // Empty body ranges are structural transitions, not executable polls.
+        while self.fiber.frame.pending_ops.front().is_some_and(|work| {
+            matches!(&work.kind, NativePendingWorkKind::Source { position, role }
+                if *role != NativeSourceRangeRole::FunctionRoot
+                    && position.operations(&plan).is_some_and(<[FlowOp]>::is_empty))
+        }) {
+            self.fiber.frame.pending_ops.pop_front();
+        }
         if self.fiber.frame.pending_ops.is_empty()
             && self.step_function_site_body(output, pure_backend, drop_policy)
         {
             return;
         }
-        let plan = Arc::clone(&self.plan);
-        let (op, next_op_index) = if let Some(op) = self.fiber.frame.pending_ops.pop_front() {
-            (Cow::Owned(op), None)
-        } else {
-            let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
-                return;
+        if self
+            .fiber
+            .frame
+            .pending_ops
+            .front()
+            .is_some_and(|work| matches!(work.kind, NativePendingWorkKind::Resume(_)))
+        {
+            let work = self
+                .fiber
+                .frame
+                .pending_ops
+                .pop_front()
+                .expect("selected native resume");
+            let NativePendingWorkKind::Resume(resume) = work.kind else {
+                unreachable!("the selected work is a runtime continuation")
             };
-            let Some(operations) = cursor.operations(&plan) else {
-                self.fail_eval("active flow lost its original operation range", output);
-                return;
+            self.execute_native_resume(resume, output, pure_backend);
+            return;
+        }
+        let (op, source_site, next_op_index) =
+            if let Some(work) = self.fiber.frame.pending_ops.front_mut() {
+                let NativePendingWorkKind::Source { position, role } = &mut work.kind else {
+                    unreachable!("runtime continuations were dispatched before source lookup")
+                };
+                if let Some(expression) = position.expression(&plan) {
+                    if *role != NativeSourceRangeRole::FunctionRoot {
+                        self.fiber.frame.pending_ops.pop_front();
+                    }
+                    match self.evaluate_expr_with_backend(expression, pure_backend) {
+                        Ok(value) => {
+                            let label = runtime_value_label(&value);
+                            if !self.return_function_call_value(value, output, pure_backend) {
+                                self.return_value(label, output, pure_backend);
+                            }
+                        }
+                        Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+                    }
+                    return;
+                }
+                let Some(operations) = position.operations(&plan) else {
+                    self.fail_eval("native queued source lost its original body", output);
+                    return;
+                };
+                let Some(op) = operations.first() else {
+                    if self.fiber.frame.active_function().is_some() {
+                        self.complete_function_call_fallthrough(output, pure_backend);
+                    } else {
+                        self.finish(output, pure_backend);
+                    }
+                    return;
+                };
+                let source = position
+                    .source_operation(&plan)
+                    .expect("selected original operation");
+                let next = position
+                    .operation_index()
+                    .expect("original operation ordinal")
+                    + 1;
+                let advance = if *role == NativeSourceRangeRole::FunctionRoot {
+                    Some(next)
+                } else {
+                    assert!(
+                        position.set_operation(next),
+                        "queued source stays in its original body"
+                    );
+                    None
+                };
+                (Cow::Borrowed(op), source, advance)
+            } else {
+                let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
+                    return;
+                };
+                let Some(operations) = cursor.operations(&plan) else {
+                    self.fail_eval("active flow lost its original operation range", output);
+                    return;
+                };
+                let Some(op) = operations.first() else {
+                    self.finish(output, pure_backend);
+                    return;
+                };
+                (
+                    Cow::Borrowed(op),
+                    cursor
+                        .source_operation(&plan)
+                        .expect("selected original root operation"),
+                    Some(cursor.operation_index().expect("operation code position") + 1),
+                )
             };
-            let Some(op) = operations.first() else {
-                self.finish(output, pure_backend);
-                return;
-            };
-            (
-                Cow::Borrowed(op),
-                Some(cursor.operation_index().expect("operation code position") + 1),
-            )
-        };
-        self.execute_flow_operation(op, next_op_index, output, pure_backend, drop_policy);
+        self.execute_flow_operation(
+            op,
+            source_site,
+            next_op_index,
+            output,
+            pure_backend,
+            drop_policy,
+        );
     }
 
-    // One dispatcher owns the complete FlowOp algebra for every native frame.
-    // Borrowed rows come from the admitted original plan. Pending runtime values
-    // enter owned, so Bind and iterator continuations move their inputs.
+    // Authored dispatch borrows original plan rows. Runtime state is consumed
+    // separately by the closed native continuation dispatcher.
     #[allow(clippy::too_many_lines)]
     pub(super) fn execute_flow_operation(
         &mut self,
         op: Cow<'_, FlowOp>,
+        source_site: NativeSourceOperation,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
     ) {
         match op.as_ref() {
-            FlowOp::Bind(_) => {
-                let FlowOp::Bind(bindings) = op.into_owned() else {
-                    unreachable!("the selected operation binds its owned values");
-                };
-                self.fiber.frame.env.bind_all(bindings);
-                self.advance_if_needed(next_op_index);
-            }
             FlowOp::Let { pattern, expr } => {
                 self.evaluate_let_with_backend(pattern, expr, output, pure_backend);
                 self.advance_if_needed(next_op_index);
@@ -97,36 +355,15 @@ impl Engine {
                     return;
                 }
                 self.advance_if_needed(next_op_index);
-                self.push_ops(control.body().to_vec());
-            }
-            FlowOp::FormatOperandAttempt { .. } => {
-                let FlowOp::FormatOperandAttempt {
-                    attempt,
-                    parameter,
-                    body,
-                    value,
-                } = op.into_owned()
-                else {
-                    unreachable!("selected formatter operand");
-                };
-                if let Err(error) = self.start_format_operand_attempt(
-                    attempt,
-                    parameter,
-                    body,
-                    value,
-                    next_op_index,
-                ) {
+                if let Err(error) = self
+                    .original_body_range(&source_site, crate::plan::RuntimeFlowBodyRole::Body)
+                    .and_then(|body| self.push_source_range(body))
+                {
                     self.fail_format_aware_eval(error, output, pure_backend);
                 }
             }
-            FlowOp::CompleteFormatOperand {
-                attempt,
-                parameter,
-                value,
-            } => {
-                if let Err(error) =
-                    self.complete_format_operand_attempt(*attempt, *parameter, value, pure_backend)
-                {
+            FlowOp::FormatOperandAttempt { .. } => {
+                if let Err(error) = self.start_format_operand_attempt(source_site, next_op_index) {
                     self.fail_format_aware_eval(error, output, pure_backend);
                 }
             }
@@ -138,10 +375,16 @@ impl Engine {
                     Ok(None) => self.advance_if_needed(next_op_index),
                     Ok(Some(value)) => {
                         self.advance_if_needed(next_op_index);
-                        let FlowOp::LetElse { else_ops, .. } = op.into_owned() else {
-                            unreachable!("selected let-else body");
-                        };
-                        self.push_ops(else_ops);
+                        if let Err(error) = self
+                            .original_body_range(
+                                &source_site,
+                                crate::plan::RuntimeFlowBodyRole::Else,
+                            )
+                            .and_then(|body| self.push_source_range(body))
+                        {
+                            self.fail_format_aware_eval(error, output, pure_backend);
+                            return;
+                        }
                         output.diagnostics.push(RuntimeDiagnostic::new(format!(
                             "let-else pattern did not match {}",
                             runtime_value_label(&value)
@@ -511,22 +754,16 @@ impl Engine {
                 match self.evaluate_bool_with_backend(condition, pure_backend) {
                     Ok(selected) => {
                         self.advance_if_needed(next_op_index);
-                        let body = match op {
-                            Cow::Owned(FlowOp::If {
-                                then_ops, else_ops, ..
-                            }) => {
-                                if selected {
-                                    then_ops
-                                } else {
-                                    else_ops
-                                }
-                            }
-                            Cow::Borrowed(FlowOp::If {
-                                then_ops, else_ops, ..
-                            }) => (if selected { then_ops } else { else_ops }).clone(),
-                            _ => unreachable!("selected if operation"),
+                        let role = if selected {
+                            crate::plan::RuntimeFlowBodyRole::Then
+                        } else {
+                            crate::plan::RuntimeFlowBodyRole::Else
                         };
-                        self.push_scoped_ops(body);
+                        if let Err(error) =
+                            self.push_scoped_source_body(&source_site, role, Vec::new())
+                        {
+                            self.fail_format_aware_eval(error, output, pure_backend);
+                        }
                     }
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
@@ -541,39 +778,27 @@ impl Engine {
                 {
                     Ok(bindings) => {
                         self.advance_if_needed(next_op_index);
-                        let selected = bindings.is_some();
-                        let body = match op {
-                            Cow::Owned(FlowOp::IfLet {
-                                then_ops, else_ops, ..
-                            }) => {
-                                if selected {
-                                    then_ops
-                                } else {
-                                    else_ops
-                                }
-                            }
-                            Cow::Borrowed(FlowOp::IfLet {
-                                then_ops, else_ops, ..
-                            }) => (if selected { then_ops } else { else_ops }).clone(),
-                            _ => unreachable!("selected if-let operation"),
-                        };
-                        if let Some(bindings) = bindings {
-                            self.push_scoped_ops_with_bindings(bindings, body);
+                        let role = if bindings.is_some() {
+                            crate::plan::RuntimeFlowBodyRole::Then
                         } else {
-                            self.push_scoped_ops(body);
+                            crate::plan::RuntimeFlowBodyRole::Else
+                        };
+                        if let Err(error) = self.push_scoped_source_body(
+                            &source_site,
+                            role,
+                            bindings.unwrap_or_default(),
+                        ) {
+                            self.fail_format_aware_eval(error, output, pure_backend);
                         }
                     }
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::Match { .. } => {
-                let FlowOp::Match { scrutinee, arms } = op.into_owned() else {
-                    unreachable!("selected match operation");
-                };
-                match self.evaluate_expr_with_backend(&scrutinee, pure_backend) {
+            FlowOp::Match { scrutinee, .. } => {
+                match self.evaluate_expr_with_backend(scrutinee, pure_backend) {
                     Ok(value) => {
                         self.advance_if_needed(next_op_index);
-                        if let Err(error) = self.select_match_candidate(value, arms) {
+                        if let Err(error) = self.select_match_candidate(value, source_site) {
                             self.fail_format_aware_eval(error, output, pure_backend);
                         }
                     }
@@ -581,158 +806,73 @@ impl Engine {
                 }
             }
             FlowOp::Loop { .. } => {
-                let FlowOp::Loop { result, body } = op.into_owned() else {
-                    unreachable!("selected loop operation");
-                };
                 self.advance_if_needed(next_op_index);
-                let body = Arc::from(body);
                 self.fiber.frame.control_stack.push(FlowControlStackEntry {
                     kind: FlowControlStackEntryKind::Loop {
-                        body: Arc::clone(&body),
-                        result,
+                        source: source_site.clone(),
                     },
                 });
-                self.push_loop_iteration(&body);
+                if let Err(error) = self.push_loop_iteration(&source_site) {
+                    self.fail_format_aware_eval(error, output, pure_backend);
+                }
             }
-            FlowOp::LoopNext { body } => {
-                self.push_loop_iteration(body);
-            }
-            FlowOp::While { .. } => {
-                let FlowOp::While { condition, body } = op.into_owned() else {
-                    unreachable!("selected while operation");
-                };
-                match self.evaluate_bool_with_backend(&condition, pure_backend) {
+            FlowOp::While { condition, .. } => {
+                match self.evaluate_bool_with_backend(condition, pure_backend) {
                     Ok(true) => {
                         self.advance_if_needed(next_op_index);
-                        let body = Arc::from(body);
                         self.fiber.frame.control_stack.push(FlowControlStackEntry {
                             kind: FlowControlStackEntryKind::While {
-                                condition: condition.clone(),
-                                body: Arc::clone(&body),
+                                source: source_site.clone(),
                             },
                         });
-                        self.push_while_iteration(condition, &body);
+                        if let Err(error) = self.push_while_iteration(&source_site) {
+                            self.fail_format_aware_eval(error, output, pure_backend);
+                        }
                     }
                     Ok(false) => self.advance_if_needed(next_op_index),
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::WhileNext { .. } => {
-                let FlowOp::WhileNext { condition, body } = op.into_owned() else {
-                    unreachable!("selected while continuation");
-                };
-                match self.evaluate_bool_with_backend(&condition, pure_backend) {
-                    Ok(true) => {
-                        self.push_while_iteration(condition, &body);
-                    }
-                    Ok(false) => {
-                        self.pop_loop_frame(output, pure_backend);
-                    }
-                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-                }
-            }
-            FlowOp::WhileLet { .. } => {
-                let FlowOp::WhileLet {
-                    pattern,
-                    expr,
-                    guard,
-                    body,
-                } = op.into_owned()
-                else {
-                    unreachable!("selected while-let operation");
-                };
-                match self.evaluate_if_let_with_backend(
-                    &pattern,
-                    &expr,
-                    guard.as_ref(),
-                    pure_backend,
-                ) {
+            FlowOp::WhileLet {
+                pattern,
+                expr,
+                guard,
+                ..
+            } => {
+                match self.evaluate_if_let_with_backend(pattern, expr, guard.as_ref(), pure_backend)
+                {
                     Ok(Some(bindings)) => {
                         self.advance_if_needed(next_op_index);
-                        let body = Arc::from(body);
                         self.fiber.frame.control_stack.push(FlowControlStackEntry {
                             kind: FlowControlStackEntryKind::WhileLet {
-                                pattern: pattern.clone(),
-                                expr: Box::new(expr.clone()),
-                                guard: guard.clone().map(Box::new),
-                                body: Arc::clone(&body),
+                                source: source_site.clone(),
                             },
                         });
-                        self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
+                        if let Err(error) = self.push_while_let_iteration(&source_site, bindings) {
+                            self.fail_format_aware_eval(error, output, pure_backend);
+                        }
                     }
                     Ok(None) => self.advance_if_needed(next_op_index),
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::WhileLetNext { .. } => {
-                let FlowOp::WhileLetNext {
-                    pattern,
-                    expr,
-                    guard,
-                    body,
-                } = op.into_owned()
-                else {
-                    unreachable!("selected while-let continuation");
-                };
-                match self.evaluate_if_let_with_backend(
-                    &pattern,
-                    &expr,
-                    guard.as_ref(),
-                    pure_backend,
-                ) {
-                    Ok(Some(bindings)) => {
-                        self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
-                    }
-                    Ok(None) => {
-                        self.pop_loop_frame(output, pure_backend);
-                    }
-                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-                }
-            }
-            FlowOp::For { .. } => {
-                let FlowOp::For {
-                    pattern,
-                    source,
-                    evidence,
-                    body,
-                } = op.into_owned()
-                else {
-                    unreachable!("selected for operation");
-                };
+            FlowOp::For {
+                source, evidence, ..
+            } => {
                 self.advance_if_needed(next_op_index);
-                match self.evaluate_expr_with_backend(&source, pure_backend) {
+                match self.evaluate_expr_with_backend(source, pure_backend) {
                     Ok(value) => match self.runtime_iterator_from_value_with_backend(
                         value,
-                        &evidence,
+                        evidence,
                         pure_backend,
                     ) {
                         Ok(iterator) => {
-                            let body = Arc::from(body);
-                            self.push_for_next(
-                                pattern,
-                                iterator,
-                                evidence,
-                                &body,
-                                output,
-                                pure_backend,
-                            );
+                            self.push_for_next(&source_site, iterator, output, pure_backend);
                         }
                         Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                     },
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
-            }
-            FlowOp::ForNext { .. } => {
-                let FlowOp::ForNext {
-                    pattern,
-                    iterator,
-                    evidence,
-                    body,
-                } = op.into_owned()
-                else {
-                    unreachable!("the selected continuation owns its iterator");
-                };
-                self.push_for_next(pattern, iterator, evidence, &body, output, pure_backend);
             }
             FlowOp::Thread { producer, .. } => {
                 if self.task_request_quota_remaining == 0 {
@@ -772,30 +912,55 @@ impl Engine {
                 self.advance_if_needed(next_op_index);
                 output.requests.tasks.push(accepted);
             }
-            FlowOp::Scope { .. } => {
-                let FlowOp::Scope { identity, body } = op.into_owned() else {
-                    unreachable!("selected scope operation");
-                };
+            FlowOp::Scope { identity, .. } => {
                 self.advance_if_needed(next_op_index);
-                self.push_scoped_ops_with_identity(identity, body);
+                let inserted = self
+                    .original_body_range(&source_site, crate::plan::RuntimeFlowBodyRole::Body)
+                    .and_then(|body| {
+                        self.push_scoped_source(
+                            body,
+                            Vec::new(),
+                            identity.clone(),
+                            crate::scope::RuntimeScopeFrameKind::EmittedLexical,
+                            None,
+                        )
+                    });
+                if let Err(error) = inserted {
+                    self.fail_format_aware_eval(error, output, pure_backend);
+                }
             }
             FlowOp::LetScope { .. } => {
-                let FlowOp::LetScope {
-                    identity,
-                    pattern,
-                    mut ops,
-                    value,
-                } = op.into_owned()
-                else {
-                    unreachable!("selected let scope operation");
+                let body = match self
+                    .original_body_range(&source_site, crate::plan::RuntimeFlowBodyRole::Body)
+                {
+                    Ok(body) => body,
+                    Err(error) => {
+                        self.fail_format_aware_eval(error, output, pure_backend);
+                        return;
+                    }
                 };
+                let work = [
+                    Some(NativePendingWork::resume(
+                        NativeRuntimeContinuation::EnterLetScope {
+                            source: source_site.clone(),
+                        },
+                    )),
+                    Some(NativePendingWork::source(
+                        body,
+                        NativeSourceRangeRole::NestedBody,
+                    )),
+                    Some(NativePendingWork::resume(
+                        NativeRuntimeContinuation::CompleteLetScope {
+                            source: source_site,
+                        },
+                    )),
+                ];
+                if let Err(error) = self.prepare_native_work(&work) {
+                    self.fail_format_aware_eval(error, output, pure_backend);
+                    return;
+                }
                 self.advance_if_needed(next_op_index);
-                ops.insert(0, FlowOp::EnterScope { identity });
-                ops.push(FlowOp::ExitScopeBind {
-                    pattern,
-                    expr: value,
-                });
-                self.push_ops(ops);
+                self.prepend_admitted_native_work(work);
             }
             FlowOp::Break(expr) => {
                 let value = match expr {
@@ -888,59 +1053,12 @@ impl Engine {
                 self.push_scope_frame(identity.clone());
                 self.advance_if_needed(next_op_index);
             }
-            FlowOp::EnterScheduledScope { identity, token } => {
-                if !token.belongs_to(self.fiber.execution, self.fiber.persistent_id)
-                    || token.ordinal().get() >= self.next_scheduled_scope_sequence
-                    || (token.kind() == crate::scope::RuntimeScopeFrameKind::Control
-                        && !matches!(identity, RuntimeScopeIdentity::Anonymous))
-                {
-                    self.fail_eval(
-                        crate::scope::RuntimeScopeExitError::ScheduledTargetMismatch,
-                        output,
-                    );
-                    return;
-                }
-                self.push_scope_frame_with_origin(
-                    identity.clone(),
-                    crate::scope::RuntimeScopeFrameOrigin::Scheduled(*token),
-                );
-                self.advance_if_needed(next_op_index);
-            }
-            FlowOp::ExitScheduledScope { token } => {
-                let expected = Some(*token);
-                let valid = crate::scope::RuntimeScopeExitTarget::Frame(expected)
-                    .resolve(self.active_scope_targets())
-                    .is_ok();
-                if !valid {
-                    self.fail_eval(
-                        crate::scope::RuntimeScopeExitError::ScheduledTargetMismatch,
-                        output,
-                    );
-                    return;
-                }
-                self.advance_if_needed(next_op_index);
-                if !self.complete_match_guard(output, pure_backend) {
-                    self.pop_scope_frame(output, pure_backend)
-                }
-            }
             FlowOp::ExitScope => {
                 if let Err(error) = self.exit_emitted_scope(output, pure_backend) {
                     self.fail_eval(error, output);
                     return;
                 }
                 self.advance_if_needed(next_op_index);
-            }
-            FlowOp::CompleteAwaitObserver => {
-                let Some(state) = self.fiber.frame.await_observer.take() else {
-                    self.fiber.frame.status = FlowFiberStatus::Failed(
-                        "Await observer completed without an active Await context".to_owned(),
-                    );
-                    output.diagnostics.push(RuntimeDiagnostic::new(
-                        "Await observer completed without an active Await context".to_owned(),
-                    ));
-                    return;
-                };
-                self.fiber.frame.status = FlowFiberStatus::NeedWaiting(state);
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
                 let value = match self.evaluate_expr_with_backend(expr, pure_backend) {
@@ -959,6 +1077,20 @@ impl Engine {
             }
             FlowOp::Noop => {
                 self.advance_if_needed(next_op_index);
+            }
+            FlowOp::Bind(_)
+            | FlowOp::LoopNext { .. }
+            | FlowOp::WhileNext { .. }
+            | FlowOp::WhileLetNext { .. }
+            | FlowOp::ForNext { .. }
+            | FlowOp::CompleteFormatOperand { .. }
+            | FlowOp::EnterScheduledScope { .. }
+            | FlowOp::ExitScheduledScope { .. }
+            | FlowOp::CompleteAwaitObserver => {
+                self.fail_eval(
+                    "runtime continuation escaped the original source grammar",
+                    output,
+                );
             }
         }
     }
@@ -1418,48 +1550,69 @@ impl Engine {
         self.push_borrowed_scoped_ops(ops, prefix, Some(FlowOp::CompleteAwaitObserver));
     }
 
-    pub(super) fn push_loop_iteration(&mut self, body: &Arc<[FlowOp]>) {
-        let tail = FlowOp::LoopNext {
-            body: Arc::clone(body),
-        };
-        self.push_borrowed_scoped_ops(body.as_ref(), None, Some(tail));
+    pub(super) fn push_loop_iteration(
+        &mut self,
+        source: &NativeSourceOperation,
+    ) -> Result<(), RuntimeEvalError> {
+        let body = self.original_body_range(source, crate::plan::RuntimeFlowBodyRole::Body)?;
+        self.push_scoped_source(
+            body,
+            Vec::new(),
+            RuntimeScopeIdentity::Anonymous,
+            crate::scope::RuntimeScopeFrameKind::Control,
+            Some(NativeRuntimeContinuation::LoopNext {
+                source: source.clone(),
+            }),
+        )
     }
 
-    pub(super) fn push_while_iteration(&mut self, condition: RuntimeExpr, body: &Arc<[FlowOp]>) {
-        let tail = FlowOp::WhileNext {
-            condition,
-            body: Arc::clone(body),
-        };
-        self.push_borrowed_scoped_ops(body.as_ref(), None, Some(tail));
+    pub(super) fn push_while_iteration(
+        &mut self,
+        source: &NativeSourceOperation,
+    ) -> Result<(), RuntimeEvalError> {
+        let body = self.original_body_range(source, crate::plan::RuntimeFlowBodyRole::Body)?;
+        self.push_scoped_source(
+            body,
+            Vec::new(),
+            RuntimeScopeIdentity::Anonymous,
+            crate::scope::RuntimeScopeFrameKind::Control,
+            Some(NativeRuntimeContinuation::WhileNext {
+                source: source.clone(),
+            }),
+        )
     }
 
     pub(super) fn push_while_let_iteration(
         &mut self,
-        pattern: RuntimePattern,
-        expr: RuntimeExpr,
-        guard: Option<RuntimeExpr>,
-        body: &Arc<[FlowOp]>,
+        source: &NativeSourceOperation,
         bindings: Vec<RuntimeLocalBinding>,
-    ) {
-        let prefix = (!bindings.is_empty()).then_some(FlowOp::Bind(bindings));
-        let tail = FlowOp::WhileLetNext {
-            pattern,
-            expr,
-            guard,
-            body: Arc::clone(body),
-        };
-        self.push_borrowed_scoped_ops(body.as_ref(), prefix, Some(tail));
+    ) -> Result<(), RuntimeEvalError> {
+        let body = self.original_body_range(source, crate::plan::RuntimeFlowBodyRole::Body)?;
+        self.push_scoped_source(
+            body,
+            bindings,
+            RuntimeScopeIdentity::Anonymous,
+            crate::scope::RuntimeScopeFrameKind::Control,
+            Some(NativeRuntimeContinuation::WhileLetNext {
+                source: source.clone(),
+            }),
+        )
     }
-
     pub(super) fn push_for_next(
         &mut self,
-        pattern: RuntimePattern,
+        source: &NativeSourceOperation,
         mut iterator: RuntimeIterator,
-        evidence: RuntimeIteratorEvidence,
-        body: &Arc<[FlowOp]>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        let plan = Arc::clone(&self.plan);
+        let Some(FlowOp::For { pattern, .. }) = source.operation(&plan) else {
+            self.fail_eval(
+                "native iterator continuation lost its original For declaration",
+                output,
+            );
+            return;
+        };
         let item = match self.next_runtime_iterator_item(&mut iterator, pure_backend) {
             Ok(Some(item)) => item,
             Ok(None) => return,
@@ -1468,44 +1621,50 @@ impl Engine {
                 return;
             }
         };
-        self.push_for_item(pattern, iterator, evidence, body, item, output);
-    }
-
-    fn push_for_item(
-        &mut self,
-        pattern: RuntimePattern,
-        iterator: RuntimeIterator,
-        evidence: RuntimeIteratorEvidence,
-        body: &Arc<[FlowOp]>,
-        item: RuntimeValue,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let Some(token) = self.push_control_scope_frame() else {
-            return;
-        };
-        match self.try_bind_pattern_owned(&pattern, item) {
-            Ok(None) => {}
-            Ok(Some(item)) => {
-                self.fail_eval(
-                    RuntimeEvalError::PatternMismatch(runtime_value_label(&item)),
-                    output,
-                );
-                return;
-            }
+        let prepared = (|| {
+            let body = self.original_body_range(source, crate::plan::RuntimeFlowBodyRole::Body)?;
+            let (token, next) =
+                self.prepare_native_scope(crate::scope::RuntimeScopeFrameKind::Control)?;
+            let work = [
+                Some(NativePendingWork::source(
+                    body,
+                    NativeSourceRangeRole::NestedBody,
+                )),
+                Some(NativePendingWork::resume(
+                    NativeRuntimeContinuation::ExitScheduledScope { token },
+                )),
+                Some(NativePendingWork::resume(
+                    NativeRuntimeContinuation::ForNext {
+                        source: source.clone(),
+                        iterator,
+                    },
+                )),
+            ];
+            self.prepare_native_work(&work)?;
+            Ok::<_, RuntimeEvalError>((token, next, work))
+        })();
+        let (token, next, work) = match prepared {
+            Ok(prepared) => prepared,
             Err(error) => {
-                self.fail_eval(error, output);
+                self.fail_format_aware_eval(error, output, pure_backend);
                 return;
             }
-        }
-        let tail = FlowOp::ForNext {
-            pattern,
-            iterator,
-            evidence,
-            body: Arc::clone(body),
         };
-        self.push_borrowed_ops_with_exit(body.as_ref(), Some(tail), token);
+        self.next_scheduled_scope_sequence = next;
+        self.push_scope_frame_with_origin(
+            RuntimeScopeIdentity::Anonymous,
+            crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
+        );
+        self.prepend_admitted_native_work(work);
+        match self.try_bind_pattern_owned(pattern, item) {
+            Ok(None) => {}
+            Ok(Some(item)) => self.fail_eval(
+                RuntimeEvalError::PatternMismatch(runtime_value_label(&item)),
+                output,
+            ),
+            Err(error) => self.fail_eval(error, output),
+        }
     }
-
     fn runtime_iterator_from_value_with_backend(
         &mut self,
         value: RuntimeValue,
@@ -1771,8 +1930,12 @@ impl Engine {
     pub(super) fn discard_pending_until_loop_next(&mut self) {
         while let Some(op) = self.fiber.frame.pending_ops.pop_front() {
             if matches!(
-                op,
-                FlowOp::LoopNext { .. } | FlowOp::WhileNext { .. } | FlowOp::WhileLetNext { .. }
+                op.kind,
+                NativePendingWorkKind::Resume(
+                    NativeRuntimeContinuation::LoopNext { .. }
+                        | NativeRuntimeContinuation::WhileNext { .. }
+                        | NativeRuntimeContinuation::WhileLetNext { .. }
+                )
             ) {
                 break;
             }
@@ -1790,16 +1953,21 @@ impl Engine {
             return false;
         };
         self.fiber.frame.await_observer = None;
+        let plan = Arc::clone(&self.plan);
         match kind {
-            FlowControlStackEntryKind::Loop {
-                result: Some(pattern),
-                ..
-            } => self.bind_value(
-                &pattern,
-                value.take().expect("selected break value remains owned"),
-                output,
-            ),
-            FlowControlStackEntryKind::Loop { result: None, .. } => {}
+            FlowControlStackEntryKind::Loop { source } => {
+                let Some(FlowOp::Loop { result, .. }) = source.operation(&plan) else {
+                    self.fail_eval("native value loop lost its original declaration", output);
+                    return true;
+                };
+                if let Some(pattern) = result {
+                    self.bind_value(
+                        pattern,
+                        value.take().expect("selected break value remains owned"),
+                        output,
+                    );
+                }
+            }
             FlowControlStackEntryKind::While { .. }
             | FlowControlStackEntryKind::WhileLet { .. } => {
                 if value.as_ref() != Some(&RuntimeValue::Unit) {
@@ -1831,31 +1999,33 @@ impl Engine {
         };
         self.fiber.frame.await_observer = None;
         match kind {
-            FlowControlStackEntryKind::Loop { body, .. } => {
-                let body = std::sync::Arc::clone(body);
-                self.push_loop_iteration(&body);
+            FlowControlStackEntryKind::Loop { source } => {
+                let source = source.clone();
+                if let Err(error) = self.push_loop_iteration(&source) {
+                    self.fail_format_aware_eval(error, output, pure_backend);
+                }
             }
-            FlowControlStackEntryKind::While { condition, body } => {
-                let condition = condition.clone();
-                let body = std::sync::Arc::clone(body);
-                self.push_ops(vec![FlowOp::WhileNext { condition, body }]);
+            FlowControlStackEntryKind::While { source } => {
+                let work = [Some(NativePendingWork::resume(
+                    NativeRuntimeContinuation::WhileNext {
+                        source: source.clone(),
+                    },
+                ))];
+                match self.prepare_native_work(&work) {
+                    Ok(()) => self.prepend_admitted_native_work(work),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+                }
             }
-            FlowControlStackEntryKind::WhileLet {
-                pattern,
-                expr,
-                guard,
-                body,
-            } => {
-                let pattern = pattern.clone();
-                let expr = expr.as_ref().clone();
-                let guard = guard.clone();
-                let body = std::sync::Arc::clone(body);
-                self.push_ops(vec![FlowOp::WhileLetNext {
-                    pattern,
-                    expr,
-                    guard: guard.map(|guard| *guard),
-                    body,
-                }]);
+            FlowControlStackEntryKind::WhileLet { source } => {
+                let work = [Some(NativePendingWork::resume(
+                    NativeRuntimeContinuation::WhileLetNext {
+                        source: source.clone(),
+                    },
+                ))];
+                match self.prepare_native_work(&work) {
+                    Ok(()) => self.prepend_admitted_native_work(work),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+                }
             }
             FlowControlStackEntryKind::Scope { .. } => {
                 self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);

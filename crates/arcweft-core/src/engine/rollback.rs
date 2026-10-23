@@ -591,6 +591,33 @@ where
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         match self {
+            Self::Scope { match_guard, .. } => {
+                if let Some(guard) = match_guard {
+                    guard.admit_retained(admission)?;
+                }
+                Ok(())
+            }
+            Self::Loop { source } | Self::While { source } | Self::WhileLet { source } => {
+                source.admit_retained(admission)?;
+                let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
+                else {
+                    unreachable!("an admitted Native source reference has its Plan owner")
+                };
+                if !matches!(
+                    (self, source.operation(plan)),
+                    (Self::Loop { .. }, Some(crate::plan::FlowOp::Loop { .. }))
+                        | (Self::While { .. }, Some(crate::plan::FlowOp::While { .. }))
+                        | (
+                            Self::WhileLet { .. },
+                            Some(crate::plan::FlowOp::WhileLet { .. })
+                        )
+                ) {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "native loop frame differs from its original header".into(),
+                    });
+                }
+                Ok(())
+            }
             Self::FormatAttempt(frame) => frame.admit_owned_values(admission, binding),
             Self::FunctionCall(frame) => {
                 frame.admit_code_position(admission)?;

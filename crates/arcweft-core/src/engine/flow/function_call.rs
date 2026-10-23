@@ -132,6 +132,9 @@ impl Engine {
                 let next = cursor.operation_index().expect("operation code position") + 1;
                 self.execute_flow_operation(
                     std::borrow::Cow::Borrowed(operation),
+                    cursor
+                        .source_operation(&plan)
+                        .expect("selected original function operation"),
                     Some(next),
                     output,
                     pure_backend,

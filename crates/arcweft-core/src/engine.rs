@@ -48,6 +48,7 @@ pub mod audio;
 mod child_poll_tests;
 mod code_cursor;
 pub use code_cursor::NativeCodeCursor;
+use code_cursor::NativeSourceOperation;
 pub mod dialogue;
 pub mod eval;
 mod frame_progress;
@@ -284,7 +285,7 @@ pub struct NativeFlowExecutionFrame<
     pub(crate) program: crate::task::RuntimeProgramOwner,
     pub line_cursor: usize,
     pub cursor: Option<NativeCodeCursor>,
-    pub pending_ops: VecDeque<O>,
+    pub(crate) pending_ops: VecDeque<O>,
     pub(crate) control_stack: Vec<C>,
     pub await_observer: Option<Box<A>>,
     pub root_cleanups: Vec<FlowScopeCleanup>,
@@ -404,6 +405,44 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
 }
 
 impl NativeFlowExecutionFrame {
+    /// Counts logical queued operations independently from range compression.
+    pub fn pending_operation_count(&self) -> usize {
+        self.pending_ops
+            .iter()
+            .try_fold(0_usize, |total, work| {
+                total.checked_add(work.logical_pending_count()?)
+            })
+            .expect("native work counts are bounded before queue mutation")
+    }
+
+    /// Borrows actual source rows or runtime continuation kinds under this
+    /// frame's retained original executable. Inspection creates no values.
+    pub fn pending_work(
+        &self,
+    ) -> impl Iterator<
+        Item = Result<NativePendingWorkView<'_>, crate::value::AwbcRuntimeValueSnapshotError>,
+    > {
+        self.pending_ops.iter().flat_map(|work| {
+            let (views, failure) = match &self.program {
+                crate::task::RuntimeProgramOwner::Plan(plan) => match work.views(plan) {
+                    Ok(views) => (Some(views), None),
+                    Err(error) => (None, Some(error)),
+                },
+                crate::task::RuntimeProgramOwner::Awbc(_) => (
+                    None,
+                    Some(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "native queued work has no original Plan executable".into(),
+                    }),
+                ),
+            };
+            views
+                .into_iter()
+                .flatten()
+                .map(Ok)
+                .chain(failure.into_iter().map(Err))
+        })
+    }
+
     fn active_function(&self) -> Option<&FunctionCallFrame> {
         self.control_stack
             .iter()
@@ -711,18 +750,13 @@ pub(crate) enum FlowControlStackEntryKind<
         match_guard: Option<flow::match_guard::NativeMatchGuardContinuation>,
     },
     Loop {
-        body: std::sync::Arc<[FlowOp]>,
-        result: Option<RuntimePattern>,
+        source: NativeSourceOperation,
     },
     While {
-        condition: RuntimeExpr,
-        body: std::sync::Arc<[FlowOp]>,
+        source: NativeSourceOperation,
     },
     WhileLet {
-        pattern: RuntimePattern,
-        expr: Box<RuntimeExpr>,
-        guard: Option<Box<RuntimeExpr>>,
-        body: std::sync::Arc<[FlowOp]>,
+        source: NativeSourceOperation,
     },
     /// One source-ordered formatter occurrence. The frame remains the sole
     /// outcome authority until its matching FormatContent expression consumes it.
@@ -934,29 +968,21 @@ impl FlowControlStackEntry {
                 cleanups: cleanups.clone(),
                 match_guard: match_guard.clone(),
             },
-            FlowControlStackEntryKind::Loop { body, result } => {
+            FlowControlStackEntryKind::Loop { source } => {
                 FlowControlStackEntryRollbackImage::Loop {
-                    body: Arc::clone(body),
-                    result: result.clone(),
+                    source: source.clone(),
                 }
             }
-            FlowControlStackEntryKind::While { condition, body } => {
+            FlowControlStackEntryKind::While { source } => {
                 FlowControlStackEntryRollbackImage::While {
-                    condition: condition.clone(),
-                    body: Arc::clone(body),
+                    source: source.clone(),
                 }
             }
-            FlowControlStackEntryKind::WhileLet {
-                pattern,
-                expr,
-                guard,
-                body,
-            } => FlowControlStackEntryRollbackImage::WhileLet {
-                pattern: pattern.clone(),
-                expr: expr.clone(),
-                guard: guard.clone(),
-                body: Arc::clone(body),
-            },
+            FlowControlStackEntryKind::WhileLet { source } => {
+                FlowControlStackEntryRollbackImage::WhileLet {
+                    source: source.clone(),
+                }
+            }
         })
     }
 
@@ -974,23 +1000,15 @@ impl FlowControlStackEntry {
                 cleanups,
                 match_guard,
             },
-            FlowControlStackEntryRollbackImage::Loop { body, result } => {
-                FlowControlStackEntryKind::Loop { body, result }
+            FlowControlStackEntryRollbackImage::Loop { source } => {
+                FlowControlStackEntryKind::Loop { source }
             }
-            FlowControlStackEntryRollbackImage::While { condition, body } => {
-                FlowControlStackEntryKind::While { condition, body }
+            FlowControlStackEntryRollbackImage::While { source } => {
+                FlowControlStackEntryKind::While { source }
             }
-            FlowControlStackEntryRollbackImage::WhileLet {
-                pattern,
-                expr,
-                guard,
-                body,
-            } => FlowControlStackEntryKind::WhileLet {
-                pattern,
-                expr,
-                guard,
-                body,
-            },
+            FlowControlStackEntryRollbackImage::WhileLet { source } => {
+                FlowControlStackEntryKind::WhileLet { source }
+            }
             FlowControlStackEntryRollbackImage::FormatAttempt(frame) => {
                 FlowControlStackEntryKind::FormatAttempt(
                     NativeFormatAttemptFrame::from_rollback_image(frame, owner)?,
@@ -3173,12 +3191,12 @@ impl Engine {
     }
 
     fn pending_ops_len(&self) -> usize {
-        self.fiber.frame.pending_ops.len()
-            + self
-                .child_fibers
-                .iter()
-                .map(|fiber| fiber.frame.pending_ops.len())
-                .sum::<usize>()
+        std::iter::once(&self.fiber)
+            .chain(&self.child_fibers)
+            .try_fold(0_usize, |total, fiber| {
+                total.checked_add(fiber.frame.pending_operation_count())
+            })
+            .expect("native frame work counts are bounded before queue mutation")
     }
 
     fn prepare_child_fiber(

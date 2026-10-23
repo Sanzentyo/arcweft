@@ -25490,3 +25490,59 @@ CLI and one RuntimePlan raw pending observers need the honest source/resume
 view. Complete all producer/consumer and original budget/restore/public-API
 checks against the actual 53-package graph; all wider goal requirements remain
 active. No validation job or executable pin is live at this entry.
+
+### 2026-10-23 Original-source dispatcher migration in progress
+
+The storage checkpoint was normally pushed as
+`ab9879594224ffaba47b384527592f2b6069e6f1`, parent
+`1be0eb4d09a958b099225a1c7fbbd506afe39d26`, tree
+`4d68062adeaa917c15324feb82b579ebf4b9c399`, raw patch SHA256
+`0af269438afc719de2482e15bd97d809f8cb4c8b55cc56f34b0f465dc6daf08f`.
+All eight published blobs, 3,978 inputs, original held patch and empty index
+were verified with zero drift. It remains an unfinished intermediate state.
+
+Current work adds a separate runtime continuation dispatcher, including genuine
+LetScope entry/completion references rather than generated source AST nodes.
+Empty queued ranges normalize without an operation charge. Queued source
+ranges consume before dispatch, matching the prior owned queue; the current
+function-root advance behavior is retained pending the complete root switch.
+Loop/While/WhileLet control frames and their rollback images now retain original
+source sites instead of body/pattern/expression copies. For retains the actual
+iterator and borrows its original pattern/evidence/body; metadata-only movement
+preflight avoids repeatedly walking the remaining iterator. Scope tokens are
+prepared before commit, and incoming physical/logical queue counts and original
+code/metadata are bounded before queue reservation. Original token ownership,
+ordinal and anonymous-control-scope guards are preserved.
+
+Conditional, StandardMap, ordinary scope, LetScope and formatter bodies now use
+original body roles. Match guards retain their original Match site and arm
+ordinal, including admission of the guarded-arm frontier; arms and guards are
+not copied into a second catalog. Formatter completion reads its original value
+expression; saved formatter runtime values retain their existing owner. Added
+borrowed pending-work and logical-count accessors, narrowing raw queue storage
+to crate visibility. The source-expression and real function-body-end views do
+not fabricate FlowOps. Source grammar EnterScope/ExitScope/ExitScopeBind remains.
+
+R2361 Core library all-feature locked check actually failed with 33 errors and
+24 warnings (outer exit 1). The wrapper has terminated; no runtime or pin window
+was opened. This is failed compilation of the unfinished producer switch, not
+passing evidence or an unavailable environment. Errors identify old FlowOp
+producers/readers: dialogue dispatch, frame progress, active operations/numeric
+conservation, remaining body helpers, callback/line/Thread initialization and
+related consumers. Do not restore an Owned(FlowOp) or Static fallback to clear
+them. All existing behavioral/metadata limits, source order, budgets, batch,
+fusion and copy/capture assertions remain acceptance criteria.
+
+Next: complete Await/line/Thread/callback source producers and all borrowed
+consumers; finish source dispatcher conversion and delete remaining runtime-only
+FlowOp variants and obsolete body helpers; move every root position into the
+queue and remove separate frame/resume cursors. The numeric control fast path
+also copies `consuming.to_vec()` in numeric_map/control.rs: replace that actual
+consumer with the original StandardMap body plus its typed consuming offset,
+without body/pointer/name search. Preserve runtime barriers in optimization
+selection and logical-count progress. Await already retains an authenticated
+source_context; reuse it rather than inventing another function context. The
+AWBC public facade remains a projection of its actual admitted backend, not a
+Native executable source. Finish every producer/consumer before acceptance,
+then run the original owner/consumer/restore/budget/public-API and full reverse
+matrix. All broader goal obligations and prior full-suite failures remain open.

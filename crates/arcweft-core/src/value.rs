@@ -2699,6 +2699,13 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
     #[error(transparent)]
+    Scope(#[from] crate::scope::RuntimeScopeExitError),
+    #[error("native work admission failed: {source}")]
+    NativeWorkAdmission {
+        #[source]
+        source: Box<AwbcRuntimeValueSnapshotError>,
+    },
+    #[error(transparent)]
     RootRuntime(Box<crate::root::RootRuntimeError>),
     #[error(transparent)]
     IteratorWitness(#[from] RuntimeIteratorWitnessError),

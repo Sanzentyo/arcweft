@@ -75,7 +75,7 @@ pub(super) enum NativeSourceRangeRole {
 }
 
 #[derive(Debug, PartialEq)]
-pub(super) enum NativeRuntimeContinuation<V, I> {
+pub(super) enum NativeRuntimeContinuation<V = RuntimeValue, I = RuntimeIterator> {
     Bind(Vec<RuntimeLocalBinding<V>>),
     LoopNext {
         source: NativeSourceOperation,
@@ -94,6 +94,9 @@ pub(super) enum NativeRuntimeContinuation<V, I> {
         source: NativeSourceOperation,
     },
     CompleteLetScope {
+        source: NativeSourceOperation,
+    },
+    EnterLetScope {
         source: NativeSourceOperation,
     },
     EnterScheduledScope {
@@ -125,6 +128,7 @@ pub enum NativeRuntimeContinuationKind {
     ForNext,
     CompleteFormatOperand,
     CompleteLetScope,
+    EnterLetScope,
     EnterScheduledScope,
     ExitScheduledScope { token: RuntimeScheduledScopeToken },
     CompleteAwaitObserver,
@@ -140,6 +144,7 @@ impl NativeRuntimeContinuationKind {
             Self::ForNext => 4,
             Self::CompleteFormatOperand => 5,
             Self::CompleteLetScope => 6,
+            Self::EnterLetScope => 10,
             Self::EnterScheduledScope => 7,
             Self::ExitScheduledScope { .. } => 8,
             Self::CompleteAwaitObserver => 9,
@@ -159,6 +164,7 @@ impl<V, I> NativeRuntimeContinuation<V, I> {
                 NativeRuntimeContinuationKind::CompleteFormatOperand
             }
             Self::CompleteLetScope { .. } => NativeRuntimeContinuationKind::CompleteLetScope,
+            Self::EnterLetScope { .. } => NativeRuntimeContinuationKind::EnterLetScope,
             Self::EnterScheduledScope { .. } => NativeRuntimeContinuationKind::EnterScheduledScope,
             Self::ExitScheduledScope { token } => {
                 NativeRuntimeContinuationKind::ExitScheduledScope { token: *token }
@@ -204,7 +210,8 @@ impl<V, I> NativePendingWork<V, I> {
                 | NativeRuntimeContinuation::WhileLetNext { source }
                 | NativeRuntimeContinuation::ForNext { source, .. }
                 | NativeRuntimeContinuation::CompleteFormatOperand { source }
-                | NativeRuntimeContinuation::CompleteLetScope { source },
+                | NativeRuntimeContinuation::CompleteLetScope { source }
+                | NativeRuntimeContinuation::EnterLetScope { source },
             ) => Some(source.owner()),
             NativePendingWorkKind::Resume(_) => None,
         }
@@ -306,6 +313,9 @@ impl<V, I> NativePendingWork<V, I> {
                 Resume::CompleteLetScope { source } => Resume::CompleteLetScope {
                     source: source.clone(),
                 },
+                Resume::EnterLetScope { source } => Resume::EnterLetScope {
+                    source: source.clone(),
+                },
                 Resume::EnterScheduledScope { identity, token } => Resume::EnterScheduledScope {
                     identity: identity.clone(),
                     token: *token,
@@ -357,6 +367,7 @@ impl<V, I> NativePendingWork<V, I> {
                     Resume::CompleteFormatOperand { source }
                 }
                 Resume::CompleteLetScope { source } => Resume::CompleteLetScope { source },
+                Resume::EnterLetScope { source } => Resume::EnterLetScope { source },
                 Resume::EnterScheduledScope { identity, token } => {
                     Resume::EnterScheduledScope { identity, token }
                 }
@@ -368,17 +379,16 @@ impl<V, I> NativePendingWork<V, I> {
     }
 }
 
-impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue>
-    NativePendingWork<V, I>
-{
-    pub(super) fn admit_retained(
+impl<V, I> NativePendingWork<V, I> {
+    pub(super) fn admit_metadata(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
-    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
-        admission.status()?;
+    ) -> Result<std::sync::Arc<crate::plan::RuntimePlan>, crate::value::AwbcRuntimeValueSnapshotError>
+    {
         use crate::plan::FlowOp;
         use NativeRuntimeContinuation as Resume;
+        admission.status()?;
         let invalid = |message: &str| crate::value::AwbcRuntimeValueSnapshotError::Message {
             message: message.into(),
         };
@@ -389,12 +399,11 @@ impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue>
         match &self.kind {
             NativePendingWorkKind::Source { position, role } => {
                 position.admit_retained(admission)?;
-                let tag = match role {
+                admission.validate_metadata(&match role {
                     NativeSourceRangeRole::FunctionRoot => 0_u8,
                     NativeSourceRangeRole::TaskRoot => 1,
                     NativeSourceRangeRole::NestedBody => 2,
-                };
-                admission.validate_metadata(&tag)?;
+                })?;
                 if *role == NativeSourceRangeRole::FunctionRoot
                     && (!position.is_root()
                         || !matches!(
@@ -422,9 +431,10 @@ impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue>
                     | Resume::WhileLetNext { source }
                     | Resume::ForNext { source, .. }
                     | Resume::CompleteFormatOperand { source }
-                    | Resume::CompleteLetScope { source } => {
+                    | Resume::CompleteLetScope { source }
+                    | Resume::EnterLetScope { source } => {
                         source.admit_retained(admission)?;
-                        let matches = matches!(
+                        if !matches!(
                             (resume, source.operation(&plan)),
                             (Resume::LoopNext { .. }, Some(FlowOp::Loop { .. }))
                                 | (Resume::WhileNext { .. }, Some(FlowOp::While { .. }))
@@ -435,72 +445,84 @@ impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue>
                                     Some(FlowOp::FormatOperandAttempt { .. })
                                 )
                                 | (
-                                    Resume::CompleteLetScope { .. },
+                                    Resume::CompleteLetScope { .. } | Resume::EnterLetScope { .. },
                                     Some(FlowOp::LetScope { .. })
                                 )
-                        );
-                        if !matches {
+                        ) {
                             return Err(invalid(
                                 "native continuation differs from its original operation",
                             ));
                         }
                     }
-                    Resume::Bind(_)
-                    | Resume::EnterScheduledScope { .. }
-                    | Resume::ExitScheduledScope { .. }
-                    | Resume::CompleteAwaitObserver => {}
-                }
-                match resume {
-                    Resume::Bind(bindings) => {
-                        admission.validate_metadata_collection(bindings.len())?;
-                        for field in bindings {
+                    Resume::Bind(fields) => {
+                        admission.validate_metadata_collection(fields.len())?;
+                        for field in fields {
                             admission.validate_metadata(&field.local.get())?;
-                            let ty = plan
-                                .local_type_in_context(field.local, binding)
+                            plan.local_type_in_context(field.local, binding)
                                 .map_err(|error| invalid(&error.to_string()))?;
-                            let expected = plan
-                                .type_table()
-                                .get(ty)
-                                .expect(
-                                    "the original local type was checked before value admission",
-                                )
-                                .semantic_identity();
-                            admission.validate_owned_typed_borrowed_in_invocation(
-                                field.value.borrowed_value(),
-                                expected,
-                                binding,
-                            )?;
                         }
-                    }
-                    Resume::ForNext { iterator, .. } => {
-                        if !matches!(
-                            iterator.borrowed_view(),
-                            crate::value::RuntimeValueView::Iterator(_)
-                        ) {
-                            return Err(invalid(
-                                "native iterator continuation contains another value kind",
-                            ));
-                        }
-                        admission.validate_owned_borrowed(iterator.borrowed_value())?;
                     }
                     Resume::EnterScheduledScope { identity, token } => {
                         admission.validate_metadata(identity)?;
                         admission.validate_metadata(token)?;
                     }
                     Resume::ExitScheduledScope { token } => admission.validate_metadata(token)?,
-                    Resume::LoopNext { .. }
-                    | Resume::WhileNext { .. }
-                    | Resume::WhileLetNext { .. }
-                    | Resume::CompleteFormatOperand { .. }
-                    | Resume::CompleteLetScope { .. }
-                    | Resume::CompleteAwaitObserver => {}
+                    Resume::CompleteAwaitObserver => {}
                 }
             }
+        }
+        Ok(plan)
+    }
+}
+
+impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue>
+    NativePendingWork<V, I>
+{
+    pub(super) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        use NativeRuntimeContinuation as Resume;
+        let plan = self.admit_metadata(admission, binding)?;
+        match &self.kind {
+            NativePendingWorkKind::Resume(Resume::Bind(fields)) => {
+                for field in fields {
+                    let ty = plan
+                        .local_type_in_context(field.local, binding)
+                        .map_err(
+                            |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                                message: error.to_string(),
+                            },
+                        )?;
+                    let expected = plan
+                        .type_table()
+                        .get(ty)
+                        .expect("the original local type was checked before value admission")
+                        .semantic_identity();
+                    admission.validate_owned_typed_borrowed_in_invocation(
+                        field.value.borrowed_value(),
+                        expected,
+                        binding,
+                    )?;
+                }
+            }
+            NativePendingWorkKind::Resume(Resume::ForNext { iterator, .. }) => {
+                if !matches!(
+                    iterator.borrowed_view(),
+                    crate::value::RuntimeValueView::Iterator(_)
+                ) {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "native iterator continuation contains another value kind".into(),
+                    });
+                }
+                admission.validate_owned_borrowed(iterator.borrowed_value())?;
+            }
+            NativePendingWorkKind::Source { .. } | NativePendingWorkKind::Resume(_) => {}
         }
         Ok(())
     }
 }
-
 impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue> NativeStoredWork
     for NativePendingWork<V, I>
 {
