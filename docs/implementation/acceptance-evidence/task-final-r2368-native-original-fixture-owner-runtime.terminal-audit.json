@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "d64d236091748a13b7b3f25f535f08a53e0dec23",
+  "run": "task-final-r2368-native-original-fixture-owner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  33.712s] 1955 tests run: 1955 passed, 0 skipped",
+  "executed": 1955,
+  "passed": 1955,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3988,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-23T03:21:09.7784126Z"
+}

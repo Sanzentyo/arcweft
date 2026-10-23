@@ -5,7 +5,8 @@
 調査開始時の14件の tracked WIP、既存の untracked 修復メモ等は保持した。
 資料整理は `71a00e3eec1b43067fb9f64676b9158f7b44c113` として公開した。
 Native child queue 移行は `87bd6493162454d19f57c6341d9db3020b41847f` として公開した。
-その後の queue reader／Await 移行と R2364／R2365 の結果を下記に反映した。
+queue reader／Await 移行は `d64d236091748a13b7b3f25f535f08a53e0dec23` として公開した。
+その後の元コード fixture 移行と R2366–R2369 の結果を下記に反映した。
 
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
 [仕様索引](../README.md)、過去の実行結果・公開 SHA は
@@ -38,20 +39,21 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | Need／TaskPlan の共通 seal・Source admission | **各 cut は公開済み・全14の最終受入は未確認** | sealed `RuntimeTaskPlanTable`／非Serde `RuntimeTaskPlanRef`、元 program の Source lease と expected-key lookup がある。`748c8da92b6d7c5a2f9bddbac068f4b5948d0aa1` の Program capture role は R2275、8 owner／2,451 PASS。全 producer/builder/decoder/consumer の F/Q/C/E14・private-codec・View capability をまとめた最終公開／受入 receipt は今回確認できていない。`HostTaskRequest` の14 variant と `NeedProducerFamily` の10 tag は異なる分類であり、「14 family」という略記から未実装数を推定しない。 |
 | 構造的 nominal | **複数の境界は公開済み・最終 C6 監査は未確認** | record construction `c4ec6d1109ca37b222f7238fd345b3a17caea612`、snapshot/program authority `faff95041f0d36bd492918cce57bc65c0ef428e2`、private Variant carrier `1c994218a25444e14b58e1111f65581f8bbdd73a`、bounded task-image source `4c8844d70baf81ae7bb031766360738050875b35` が公開されている。最後の cut は Core 1,497 PASS、逆依存実行は6,633 PASS／57保持された FAIL。C1–C6 を一括して未実装とはしない。ownership-success／旧経路削除までの最終 C6 受入を確認できていないことと、個別境界の具体的な不具合を区別する。 |
 | 元 executable lease・Native root/callee 座標 | **当該修復は公開・検証済み** | `6a86816246cd8e1bfae8f8250324cdbf0a2c559a` の必須 program lease と、`1be0eb4d09a958b099225a1c7fbbd506afe39d26` の callee 退役処理。キュー切替前の修復入力で R2355 は8 library／2,463 PASS。現在のキュー移行全体の runtime 合格を意味しない。 |
-| Native の original-source queue／runtime continuation 移行 | **実装途中・テストのコンパイル要修復** | `ab9879594224ffaba47b384527592f2b6069e6f1` からの WIP。child 起動に続き、active operation／join 判定／numeric Map／dialogue activation／Await observer を元コード参照へ移行した。R2364 の Core library check は exit 0。R2365 の Core all-target Clippy は旧 fixture／rollback 型等の34 compile errors、exit 101。[失敗ログ](acceptance-evidence/task-final-r2365-native-queue-readers-core-clippy.log)。独立 root cursor と runtime 専用の旧 `FlowOp` variant は残り、移行全体の runtime 合格は未確認。 |
+| Native の original-source queue／runtime continuation 移行 | **Core の今回の cut は検証済み・全体移行は途中** | child 起動、active operation／join 判定／numeric Map／dialogue activation／Await observer と各 fixture を元コード参照へ移行した。R2365 の34 compile errors は修復し、R2368 は Core library 1,955/1,955 PASS、R2369 の Core all-target Clippy は exit 0（警告あり）。[実行監査](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.terminal-audit.json)。独立 root cursor と runtime 専用の旧 `FlowOp` variant は残る。全 reverse53 の受入をこの Core library 結果から推定しない。 |
 | Thread の返り値／返却 handle | **具体的な未達あり** | `crates/arcweft-runtime-plan/src/final_expr.rs` は `HirExprKind::Thread` を pure runtime expression として拒否する。返却された ThreadHandle の compiler 受入を、statement Thread の既存実装で代替しない。これは Generic Match の未達ではない。 |
 | AWBC の独立 Thread scheduling | **具体的な未達あり** | `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` の `FlowOp::Thread` は body を同じ frame の scope 内へ inline lowering する。独立 task/kernel の起動を証明しておらず、Native の program task 経路の成功を AWBC scheduling の成功へ読み替えない。 |
 | 公開 executor save | **バックエンドごとに異なる** | `crates/arcweft-core/src/executor.rs` の `snapshot_for_save` は Product AWBC を扱う一方、RuntimePlanVm／StructuredAot は `UnsupportedTier` を返す。Product の既存 save/restore の成功は保持し、Native 公開 save の未対応を別項目として扱う。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **直近の全閉包実行に失敗あり** | R2342 は7,217実行、7,165 PASS／52 FAIL／39既存除外。失敗内訳は CLI 51・Compiler 1。失敗ケースの完全な一覧は [terminal audit](acceptance-evidence/task-final-r2342-joined-frame-reverse-runtime.terminal-audit.json)。後の狭い PASS を加算して、この全閉包を合格としない。 |
-| 現 HEAD の最終 workspace／Tier 2／Native-Web capture parity | **新たな合格なし** | 再実行していない。以前の検証の結果はそれぞれの固定入力の履歴として保持する。現在のテストのコンパイル失敗を解消した後に必要な対象を選ぶことと、既に受入済みの各機能を再実装することは別。 |
+| 現 HEAD の最終 workspace／Tier 2／Native-Web capture parity | **新たな全体合格なし** | Core library の今回の PASS と、未再実行の workspace／Tier 2／parity を区別する。以前の検証の結果はそれぞれの固定入力の履歴として保持し、既に受入済みの各機能を再実装対象へ戻さない。 |
 
 Generic Match の151件は run `119cbafe-0a01-419e-841f-b919f03d9578` と
 `c99c9fb1-8db4-48d9-a3d2-df5f41144aea` の実績。
-監査後の owner 移行で17入力中9 blob が現 HEAD では変わっているため、これを
-現 HEAD の151件再実行とは呼ばない。現在の Never・uninhabited empty Match・
-let-else・nested non-exhaustive atomicity の実装／テストを照合し、同機能を再開する
+資料監査の基点 `7b1f8f5deb64db1274632c6ec2a7b8af69147420` では、後続の owner 移行により
+17入力中9 blob が変わっていた。これを現 HEAD の151件再実行とは呼ばない。
+資料監査では Never・uninhabited empty Match・let-else・nested non-exhaustive atomicity
+の実装／テストを照合し、同機能を再開する
 具体的な新規不具合は確認していない。
 
 ## 直近の検証入力を取り違えないための記録
@@ -67,6 +69,10 @@ let-else・nested non-exhaustive atomicity の実装／テストを照合し、�
 | R2363 同 Core library check | **exit 101、28 errors／24 warnings** | 正しい `task_group` 参照へ修正し、検証済みの空 task body をキューへ積まない形にした入力。上記 E0609 は解消。runtime 実行なし。[receipt](acceptance-evidence/task-final-r2363-native-task-root-correction-check.json)。 |
 | R2364 同 Core library check | **exit 0、151 warnings** | queue reader／join／numeric Map／dialogue activation／Await source 移行の入力。テストや runtime の成功を意味しない。[receipt](acceptance-evidence/task-final-r2364-native-source-readers-await-check.json)。 |
 | R2365 Core all-target／all-feature／locked Clippy | **exit 101、lib test の34 compile errors／79 warnings** | library の検査とテストのコンパイルを区別する。nextest／runtime は未実行。[receipt](acceptance-evidence/task-final-r2365-native-queue-readers-core-clippy.json)。 |
+| R2366 Core all-target／all-feature／locked check | **exit 101、lib test の1 compile error／31 warnings** | formatter fixture の空入力配列の型推論で失敗。その後、slice 型を明示して修復。[receipt](acceptance-evidence/task-final-r2366-native-original-fixture-check.json)。 |
+| R2367 Core library nextest list | **exit 0、1,955件選択／除外0** | 全件と、join／scope／Await／formatter／affine literal の必須11件を確認。[receipt](acceptance-evidence/task-final-r2367-native-original-fixture-owner-catalog.json)。 |
+| R2368 Core library nextest run | **1,955 PASS／0 FAIL／0 skipped、exit 0、33.712秒** | 全 feature、3,988入力／1 executable／case set の drift 0。保持14 tracked WIP を含む固定 working tree で実行。[terminal audit](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.terminal-audit.json)。 |
+| R2369 Core all-target／all-feature／locked Clippy | **exit 0、警告あり** | lib test の警告は3,163（2,466重複）。警告ゼロとはしない。R2368 と同じ source。[receipt](acceptance-evidence/task-final-r2369-native-original-fixture-core-clippy.json)。 |
 
 旧ロードマップ、着手前の実装ガイド、重複 feature matrix、完了した runtime-boundary
 移行手順、旧レビュー依頼・設計 mirror は、現行契約への整理と検証履歴の保全後に削除した。

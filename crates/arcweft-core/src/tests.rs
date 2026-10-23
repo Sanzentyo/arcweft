@@ -7,6 +7,86 @@ macro_rules! runtime_record {
 
 pub(crate) use runtime_record;
 
+/// Original Await code shared by suspended-state fixtures. The Need is a real
+/// formal input, rather than an affine literal embedded in synthetic code.
+pub(crate) fn await_function(
+    builder: &mut crate::plan::RuntimePlanBuilder,
+    need: crate::pattern::RuntimeSemanticTypeId,
+) -> crate::plan::RuntimeFunctionSiteSeedId {
+    use crate::plan::*;
+    let declaration = |identity| RuntimeLocalDeclarationSource::Binding {
+        identity: [identity; 32],
+        declaration: RuntimeLocalBindingDeclaration::new(
+            RuntimeLocalBindingKind::PatternBinding,
+            false,
+            RuntimeLocalBindingStorage::Derived,
+        ),
+    };
+    let locals = builder
+        .admit_type_batch(
+            [],
+            [
+                RuntimeLocalDeclarationSeed::new(declaration(0xa9), need),
+                RuntimeLocalDeclarationSeed::new(declaration(0xab), need),
+            ],
+        )
+        .unwrap();
+    let input = locals.local_ids()[0].clone();
+    let binding = locals.local_ids()[1].clone();
+    let site = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xa8; 32]),
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                transfer: RuntimeFunctionInputTransfer::Formal,
+                origin: RuntimeFunctionInputOrigin::Parameter(
+                    RuntimeFunctionParameterIdentity::from_accepted_identity([0xaa; 32]),
+                ),
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: RuntimeFunctionParameterPassing::Value,
+                },
+                input_local: input,
+                pattern: RuntimePatternSeed::new(
+                    need,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: binding.clone(),
+                    },
+                ),
+            }]),
+            result: crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+            body_kind: RuntimeFunctionSiteBodyKind::Executable,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &site,
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([RuntimeFlowOpSeed::Await {
+                    binding: None,
+                    target: RuntimeAwaitTargetSeed {
+                        source: RuntimeExprSeed::new(
+                            need,
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                binding,
+                                crate::value::RuntimeLocalReadMode::Move,
+                            )),
+                        ),
+                    },
+                    observers: Vec::new(),
+                }]),
+            }),
+        )
+        .unwrap();
+    site
+}
+
 pub(crate) fn host_task_control(
     builder: &mut crate::plan::RuntimePlanBuilder,
     output: crate::pattern::RuntimeSemanticTypeId,

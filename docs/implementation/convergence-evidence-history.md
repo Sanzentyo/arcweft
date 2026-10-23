@@ -8877,3 +8877,20 @@ R2361 Core library all-feature locked check actually failed with 33 errors and 2
 - nextest／runtime は未実行。旧テストの型移行と独立 root cursor の除去を含む全体移行の受入を、この library check の成功から推定しない。Generic Match の受入済みという判断は維持する。
 
 原本の R2365 Clippy log には、Clippy が提示した空の置換行3箇所に trailing spaces がある。原本の SHA256 一致を確認してそのまま保持した。CRLF を許容した staged whitespace check もこの3行で失敗したため、その原本 log だけを同検査から除外し、変更した source・資料・JSON と他の log の検査は維持した。
+
+## Native original-code fixture acceptance — 2026-10-23
+
+基点 `d64d236091748a13b7b3f25f535f08a53e0dec23` の parent は `87bd6493162454d19f57c6341d9db3020b41847f`、tree は `dd7b4ab49c52eb54bca3fb5dc01b07bf1883fc0a`、patch SHA256 は `eb4bfbf381be5a5c3468fbfa44d8e2a42e16040531b0d476177b8f9b994587fc`。同公開は16 paths／3,988入力／保持14 tracked WIP、公開 blob と raw patch の drift 0、index empty を確認した。
+
+child polling、scope／function-call／Await／formatter のテストを、実在する original Plan の関数・body と typed runtime continuation へ移行した。最後の task/nested-body 命令は、停止や caller 保存の前に元 range を進め、空 range を除く。FunctionRoot EOF は実際の完了遷移として保持する。操作数、join 中の位置、scope close の bijection、共有 budget、失敗原子性の assertion は維持した。
+
+旧 `native_static_rollback_rejects_nested_affine_literal_before_copy` は、削除済みの「キューに所有する AST を複製する」API のテストだったため削除した。Plan admission の `static_literal_sources_reject_affine_and_runtime_only_descendants_before_live_mapping` と深い静的子の `static_control_copy_rejects_affine_pattern_audio_and_deep_child_literals` を必須選択し、両方の PASS を確認した。formatter の fatal fixture は受入後の AST に不正な型を挿す方式をやめ、元の型付き関数の必須入力を欠く runtime 状態で fatal error を確認する方式にした。recoverable な除算失敗、後続 operand、locale 保存、rollback の assertion も維持した。
+
+- `cargo fmt -p arcweft-core`: exit 0。
+- R2366 `cargo check -p arcweft-core --all-targets --all-features --locked`: **exit 101、lib test は1 compile error／31 warnings（17重複）**。formatter fixture の空配列と slice の型推論を修正した。[receipt](acceptance-evidence/task-final-r2366-native-original-fixture-check.json)、[log](acceptance-evidence/task-final-r2366-native-original-fixture-check.log)。
+- R2367 `cargo nextest list -p arcweft-core --lib --all-features --locked -E 'package(=arcweft-core)' --message-format json`: **exit 0、1,955選択／除外0**。実行対象の11必須ケースが各1件あることを確認した。[receipt](acceptance-evidence/task-final-r2367-native-original-fixture-owner-catalog.json)、[catalog](acceptance-evidence/task-final-r2367-native-original-fixture-owner-catalog.log)。
+- R2368 は同 catalog の1 executable を固定し、binaries metadata と元 Cargo metadata を指定して nextest run（`--no-tests fail --no-fail-fast`）を実行した。**exit 0、1,955 PASS／0 FAIL／0 skipped、33.712秒**。[receipt](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.json)、[log](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.log)、[terminal audit](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.terminal-audit.json)、[binary audit](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.binary-audit.json)。3,988 source／1 executable／case set の drift 0、保持14 tracked WIP。実行中は source・資料・Cargo 入力を変更していない。
+- R2369 `cargo clippy -p arcweft-core --all-targets --all-features --locked`: **exit 0、警告あり**。lib test の警告は3,163（2,466重複）であり、他 target の警告を含む総数ではない。[receipt](acceptance-evidence/task-final-r2369-native-original-fixture-core-clippy.json)、[log](acceptance-evidence/task-final-r2369-native-original-fixture-core-clippy.log)。R2368 と同じ source に対する検査。
+- owner は Core、元 graph の reverse53 と99 manifest/lock は変更なし。今回の runtime は Core library だけであり、reverse53／workspace／Tier 2／Native-Web parity の再実行と読み替えない。Generic Match の既存受入は維持する。
+
+R2369 原本 Clippy log の提示コードには trailing whitespace が 3 行ある。原本の SHA256 一致を保ち、この log のみ staged whitespace 検査から除外した。変更 source・資料・JSON・他 log の検査は維持した。

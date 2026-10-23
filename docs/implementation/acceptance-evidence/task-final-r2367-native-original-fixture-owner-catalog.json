@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "d64d236091748a13b7b3f25f535f08a53e0dec23",
+  "name": "task-final-r2367-native-original-fixture-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-core)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2367-native-original-fixture-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T03:14:07.5790038Z",
+  "finishedAt": "2026-10-23T03:19:20.4650661Z"
+}

@@ -349,6 +349,10 @@ impl Engine {
                     );
                     None
                 };
+                // The selected source operation has been consumed before it
+                // can suspend or save its caller. Only function-root EOF is
+                // an executable completion transition.
+                self.fiber.frame.normalize_pending_source_ranges(&plan);
                 (Cow::Borrowed(op), source, advance)
             } else {
                 let Some(cursor) = self.fiber.frame.cursor.as_ref() else {

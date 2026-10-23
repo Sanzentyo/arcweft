@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::work::{NativePendingWorkKind as Work, NativeRuntimeContinuation as Resume};
 use crate::plan::{
     RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind,
     RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed, RuntimeFunctionDefinitionIdentity,
@@ -80,7 +81,7 @@ fn at_control_frame() -> Engine {
         assert!(step.output.diagnostics.is_empty(), "{step:?}");
         if matches!(engine.fiber.frame.control_stack.last().map(|entry|&entry.kind),Some(FlowControlStackEntryKind::Scope {origin:RuntimeScopeFrameOrigin::Scheduled(token),..}) if token.kind()==crate::scope::RuntimeScopeFrameKind::Control)
             && matches!(
-                engine.fiber.frame.pending_ops.front(),
+                engine.active_flow_operations().next(),
                 Some(FlowOp::ExitScopeBind { .. })
             )
         {
@@ -109,7 +110,7 @@ fn native_scope_snapshot_retains_exact_closes_and_consumes_them_once_after_emitt
             .frame
             .pending_ops
             .iter()
-            .any(|op| matches!(op, FlowOp::ExitScheduledScope { .. }))
+            .any(|work| matches!(work.kind, Work::Resume(Resume::ExitScheduledScope { .. })))
     );
     let image = restored.inert_rollback_image().unwrap();
     let mut restored = Engine::from_rollback_image(image, &owner).unwrap();
@@ -119,7 +120,6 @@ fn native_scope_snapshot_retains_exact_closes_and_consumes_them_once_after_emitt
 }
 #[test]
 fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
-    use crate::engine::FlowOpRollbackImage;
     let engine = at_control_frame();
     let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
     let image = engine.inert_rollback_image().unwrap();
@@ -128,7 +128,7 @@ fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
         .fiber
         .frame
         .pending_ops
-        .retain(|op| !matches!(op, FlowOpRollbackImage::ExitScheduledScope { .. }));
+        .retain(|work| !matches!(work.kind, Work::Resume(Resume::ExitScheduledScope { .. })));
     assert_eq!(
         Engine::from_rollback_image(missing, &owner).unwrap_err(),
         "native scope frames and queued exact close markers are not bijective"
@@ -139,7 +139,7 @@ fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
         .frame
         .pending_ops
         .iter()
-        .find(|op| matches!(op, FlowOpRollbackImage::ExitScheduledScope { .. }))
+        .find(|work| matches!(work.kind, Work::Resume(Resume::ExitScheduledScope { .. })))
         .unwrap()
         .clone();
     duplicate.fiber.frame.pending_ops.push_back(close);
@@ -153,9 +153,9 @@ fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
         .frame
         .pending_ops
         .iter_mut()
-        .find(|op| matches!(op, FlowOpRollbackImage::ExitScheduledScope { .. }))
+        .find(|work| matches!(work.kind, Work::Resume(Resume::ExitScheduledScope { .. })))
         .unwrap();
-    let FlowOpRollbackImage::ExitScheduledScope { token } = close else {
+    let Work::Resume(Resume::ExitScheduledScope { token }) = &mut close.kind else {
         unreachable!()
     };
     *token = crate::scope::RuntimeScheduledScopeToken::from_runtime(

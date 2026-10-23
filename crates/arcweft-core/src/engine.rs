@@ -4725,20 +4725,30 @@ mod rollback_tests {
     fn await_observer_admits_the_whole_selection_before_moving_affine_ready() {
         use crate::plan::{RuntimePlanTypeProjection, RuntimePlanTypeSeed};
         use crate::task::{RuntimeNeedOutcome, RuntimeProgramOwner, TaskOutcomeContract};
-        let unit = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xf2; 32]);
+        let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
         let need = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xf3; 32]);
+        let outer_need = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xf4; 32]);
         let mut builder = RuntimePlanBuilder::new();
         let admitted = builder
             .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                     RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(unit)),
+                    RuntimePlanTypeSeed::new(outer_need, RuntimePlanTypeProjection::Need(need)),
                 ],
                 [],
             )
             .unwrap();
-        let item_type = AwaitItemType::Plan(admitted.type_ids()[1]);
+        let item_type = admitted.type_ids()[1];
+        let site = crate::tests::await_function(&mut builder, outer_need).id();
         let mut engine = Engine::new(builder.finish().unwrap());
+        let operation = NativeCodeCursor::root(
+            &engine.plan,
+            crate::plan::code::RuntimeCodeOwner::Function(site),
+        )
+        .unwrap()
+        .source_operation(&engine.plan)
+        .unwrap();
         let owner = RuntimeProgramOwner::Plan(Arc::clone(&engine.plan));
         let handle = crate::tests::reusable_need_with_outcome(
             "observer.original-outcome",
@@ -4763,11 +4773,15 @@ mod rollback_tests {
             VecDeque::from([publication(1, affine), publication(2, RuntimeValue::Unit)]),
         );
         engine.fiber.frame.await_observer = Some(Box::new(AwaitState {
-            source_context: crate::value::RuntimeScopeTypeContext::Lexical,
-            binding: None,
+            source_context: crate::value::RuntimeScopeTypeContext::Function {
+                site,
+                instantiation: None,
+            },
+            source: AwaitSource::Native(NativeAwaitSource {
+                operation,
+                item_type,
+            }),
             handle,
-            item_type,
-            observers: vec![],
             resume: None,
             observed_through: None,
             queued: VecDeque::new(),
@@ -5003,7 +5017,7 @@ mod rollback_tests {
             "equal code is not the same executable lease"
         );
         assert_eq!(engine.fiber.frame.program_owner(), &owner);
-        let (mut child, _) = engine.prepare_child_fiber(&[], &[]).unwrap();
+        let (mut child, _) = engine.prepare_child_fiber(VecDeque::new(), &[]).unwrap();
         assert_eq!(child.frame.program_owner(), &owner);
         drop(engine);
 
@@ -5139,36 +5153,6 @@ mod rollback_tests {
             Engine::from_rollback_image(malformed, &foreign).unwrap_err(),
             "native rollback belongs to a different original executable",
         );
-    }
-
-    #[test]
-    fn native_static_rollback_rejects_nested_affine_literal_before_copy() {
-        let owner = crate::task::RuntimeProgramOwner::Plan(Arc::new(
-            RuntimePlanBuilder::new().finish().unwrap(),
-        ));
-        let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
-        let make_op = |value| FlowOp::If {
-            condition: RuntimeExpr::from_admitted_parts(
-                ty,
-                crate::value::RuntimeExprKind::Value(RuntimeValue::Bool(true)),
-            ),
-            then_ops: vec![FlowOp::ReturnExpr(RuntimeExpr::from_admitted_parts(
-                ty,
-                crate::value::RuntimeExprKind::Value(value),
-            ))],
-            else_ops: vec![],
-        };
-        let affine = make_op(RuntimeValue::NeedHandle(crate::tests::reusable_need(
-            "need.rollback",
-        )));
-        assert_eq!(
-            NativePendingWorkRollbackImage::from_admitted_live(&affine, &owner).unwrap_err(),
-            "static flow operation contains an affine literal"
-        );
-        let unrestricted = make_op(RuntimeValue::Bool(false));
-        let image =
-            NativePendingWorkRollbackImage::from_admitted_live(&unrestricted, &owner).unwrap();
-        assert_eq!(image.into_live(&owner).unwrap(), unrestricted);
     }
 
     fn assert_publication_rollback_correspondence(
@@ -5499,18 +5483,15 @@ mod dialogue_readiness_tests {
             )
             .unwrap();
         let plan = builder.finish().expect("unit plan seals");
-        let child_ops = plan
-            .function_sites()
-            .get(function.id())
-            .unwrap()
-            .body()
-            .executable()
-            .unwrap()
-            .ops()
-            .to_vec();
         let mut engine = Engine::new(plan);
+        let position = NativeCodeCursor::root(
+            &engine.plan,
+            crate::plan::code::RuntimeCodeOwner::Function(function.id()),
+        )
+        .unwrap();
+        let work = engine.prepare_task_root_work(position, true).unwrap();
         let (child, next_fiber_id) = engine
-            .prepare_child_fiber(&child_ops, &[])
+            .prepare_child_fiber(work, &[])
             .expect("the owning constructor issues the child and lexical scope");
         engine.child_fibers.push_back(child);
         engine.next_fiber_id = next_fiber_id;

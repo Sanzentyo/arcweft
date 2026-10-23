@@ -3,12 +3,87 @@ use crate::{
     plan::{FlowOp, RuntimeFunctionSiteBodyKind},
     pure::{RuntimePureCallBackend, VmRuntimePureCallBackend},
     step::{RuntimeStepInput, RuntimeStepOutput},
-    tests::function_application::returning_function_plan,
+    tests::function_application::returning_function_builder,
     value::RuntimeValue,
 };
 
+fn child_plan() -> crate::plan::RuntimePlan {
+    use crate::plan::*;
+    let mut builder = returning_function_builder(RuntimeFunctionSiteBodyKind::Executable);
+    let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+    for (index, (name, operations)) in [
+        ("child.empty", vec![]),
+        ("child.one", vec![RuntimeFlowOpSeed::Noop]),
+        (
+            "child.two",
+            vec![RuntimeFlowOpSeed::Noop, RuntimeFlowOpSeed::Noop],
+        ),
+        (
+            "child.return",
+            vec![RuntimeFlowOpSeed::Return("child".into())],
+        ),
+        (
+            "child.joined",
+            vec![RuntimeFlowOpSeed::Return("joined".into())],
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let flow = FlowRuntimeId::canonical(name).unwrap();
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: vec![],
+            })
+            .unwrap();
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow,
+                RuntimeFunctionSiteDeclarationSeed::flow(
+                    RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [100 + index as u8; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    unit,
+                    RuntimeEffectSet::empty(),
+                ),
+                RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: operations.into_boxed_slice(),
+                },
+            ))
+            .unwrap();
+    }
+    builder.finish().unwrap()
+}
+
+fn task_position(engine: &Engine, name: &str) -> super::NativeCodeCursor {
+    let flow = crate::plan::FlowRuntimeId::canonical(name).unwrap();
+    let site = engine
+        .plan
+        .validate_flow_invocation(&flow, &[])
+        .unwrap()
+        .site();
+    super::NativeCodeCursor::root(
+        &engine.plan,
+        crate::plan::code::RuntimeCodeOwner::Function(site),
+    )
+    .unwrap()
+}
+
+fn task_work(
+    engine: &Engine,
+    name: &str,
+) -> std::collections::VecDeque<super::work::NativePendingWork> {
+    engine
+        .prepare_task_root_work(task_position(engine, name), false)
+        .unwrap()
+}
+
 fn main_with_unadmitted_value() -> Engine {
-    let plan = returning_function_plan(RuntimeFunctionSiteBodyKind::Executable);
+    let plan = child_plan();
     let local = plan
         .function_sites()
         .iter_with_ids()
@@ -47,7 +122,9 @@ fn empty_child_poll_does_not_admit_the_main_frame() {
 #[test]
 fn nonempty_child_poll_still_requires_atomic_admission() {
     let mut engine = main_with_unadmitted_value();
-    let (child, next) = engine.prepare_child_fiber(&[FlowOp::Noop], &[]).unwrap();
+    let (child, next) = engine
+        .prepare_child_fiber(task_work(&engine, "child.one"), &[])
+        .unwrap();
     engine.next_fiber_id = next;
     engine.child_fibers.push_back(child);
     let mut input = RuntimeStepInput::default();
@@ -67,17 +144,19 @@ fn joined_return_keeps_its_position_across_steps_and_restore_without_poll_charge
     use super::{FlowExit, FlowFiberStatus};
     use crate::step::RuntimeStepOptions;
 
-    let mut engine = Engine::new(returning_function_plan(
-        RuntimeFunctionSiteBodyKind::Executable,
-    ));
+    let mut engine = Engine::new(child_plan());
     engine.main_started = true;
+    let position = task_position(&engine, "child.joined");
     engine
         .fiber
         .frame
         .pending_ops
-        .push_back(FlowOp::Return("joined".into()));
+        .push_back(super::work::NativePendingWork::source(
+            position,
+            super::work::NativeSourceRangeRole::TaskRoot,
+        ));
     let (child, next) = engine
-        .prepare_child_fiber(&[FlowOp::Noop, FlowOp::Noop], &[])
+        .prepare_child_fiber(task_work(&engine, "child.two"), &[])
         .unwrap();
     engine.next_fiber_id = next;
     engine.child_fibers.push_back(child);
@@ -88,8 +167,8 @@ fn joined_return_keeps_its_position_across_steps_and_restore_without_poll_charge
         if joining {
             assert!(!engine.main_fiber_can_attempt_runtime_op());
             assert!(matches!(
-                engine.fiber.frame.pending_ops.front(),
-                Some(FlowOp::Return(value)) if value == "joined"
+                engine.fiber.frame.pending_work().next(),
+                Some(Ok(super::work::NativePendingWorkView::Source(FlowOp::Return(value)))) if value == "joined"
             ));
             assert_eq!(engine.fiber.frame.pending_ops.len(), 1);
         }
@@ -130,11 +209,11 @@ fn joined_original_function_return_expression_and_fallthrough_do_not_advance() {
     };
     use crate::plan::code::{RuntimeCodeBodyRef, RuntimeCodeOwner};
 
-    let mut engine = Engine::new(returning_function_plan(
-        RuntimeFunctionSiteBodyKind::Executable,
-    ));
+    let mut engine = Engine::new(child_plan());
     engine.main_started = true;
-    let (child, next) = engine.prepare_child_fiber(&[FlowOp::Noop], &[]).unwrap();
+    let (child, next) = engine
+        .prepare_child_fiber(task_work(&engine, "child.one"), &[])
+        .unwrap();
     engine.next_fiber_id = next;
     engine.child_fibers.push_back(child);
     let sites = engine
@@ -186,17 +265,15 @@ fn joined_original_function_return_expression_and_fallthrough_do_not_advance() {
 
 #[test]
 fn joined_child_return_keeps_its_queue_position_while_a_descendant_runs() {
-    let mut engine = Engine::new(returning_function_plan(
-        RuntimeFunctionSiteBodyKind::Executable,
-    ));
+    let mut engine = Engine::new(child_plan());
     let (mut parent, next) = engine
-        .prepare_child_fiber(&[FlowOp::Return("child".into())], &[])
+        .prepare_child_fiber(task_work(&engine, "child.return"), &[])
         .unwrap();
     engine.next_fiber_id = next;
     let parent_id = parent.id;
     std::mem::swap(&mut engine.fiber, &mut parent);
     let (descendant, next) = engine
-        .prepare_child_fiber(&[FlowOp::Noop, FlowOp::Noop], &[])
+        .prepare_child_fiber(task_work(&engine, "child.two"), &[])
         .unwrap();
     engine.next_fiber_id = next;
     std::mem::swap(&mut engine.fiber, &mut parent);
@@ -211,8 +288,8 @@ fn joined_child_return_keeps_its_queue_position_while_a_descendant_runs() {
     assert_eq!(engine.child_fibers.front().unwrap().id, parent_id);
     let parent_before = engine.child_fibers.front().unwrap().frame.pending_ops.len();
     assert!(matches!(
-        engine.child_fibers.front().unwrap().frame.pending_ops.front(),
-        Some(FlowOp::Return(value)) if value == "child"
+        engine.child_fibers.front().unwrap().frame.pending_work().next(),
+        Some(Ok(super::work::NativePendingWorkView::Source(FlowOp::Return(value)))) if value == "child"
     ));
     assert_eq!(engine.next_child_fiber_index(), Some(1));
     assert!(engine.step_next_child_fiber(&mut input, &[], &mut output, &mut backend));
@@ -230,7 +307,7 @@ fn joined_child_return_keeps_its_queue_position_while_a_descendant_runs() {
 
 #[test]
 fn child_identity_exhaustion_precedes_capture_admission_and_preserves_the_last_identity() {
-    let plan = returning_function_plan(RuntimeFunctionSiteBodyKind::Executable);
+    let plan = child_plan();
     let local = plan
         .function_sites()
         .iter_with_ids()
@@ -241,7 +318,7 @@ fn child_identity_exhaustion_precedes_capture_admission_and_preserves_the_last_i
     let mut engine = Engine::new(plan);
     engine.next_fiber_id = u64::MAX;
     assert!(matches!(
-        engine.prepare_child_fiber(&[FlowOp::Noop], &[local]),
+        engine.prepare_child_fiber(task_work(&engine, "child.one"), &[local]),
         Err(crate::value::RuntimeEvalError::FiberIdentityOverflow)
     ));
     assert_eq!(engine.next_fiber_id, u64::MAX);
@@ -249,7 +326,9 @@ fn child_identity_exhaustion_precedes_capture_admission_and_preserves_the_last_i
     assert!(engine.fiber.frame.env.get(local).is_none());
 
     engine.next_fiber_id = u64::MAX - 1;
-    let (child, next) = engine.prepare_child_fiber(&[FlowOp::Noop], &[]).unwrap();
+    let (child, next) = engine
+        .prepare_child_fiber(task_work(&engine, "child.one"), &[])
+        .unwrap();
     assert_eq!(child.id, super::FlowFiberId(u64::MAX - 1));
     assert_eq!(child.persistent_id.get(), u64::MAX);
     assert_eq!(child.execution.get().get(), u64::MAX);
@@ -260,13 +339,15 @@ fn child_identity_exhaustion_precedes_capture_admission_and_preserves_the_last_i
 
 #[test]
 fn child_scope_joins_its_descendants_and_keeps_its_parent_until_they_finish() {
-    let mut engine = Engine::new(returning_function_plan(
-        RuntimeFunctionSiteBodyKind::Executable,
-    ));
-    let (mut parent, next) = engine.prepare_child_fiber(&[], &[]).unwrap();
+    let mut engine = Engine::new(child_plan());
+    let (mut parent, next) = engine
+        .prepare_child_fiber(task_work(&engine, "child.empty"), &[])
+        .unwrap();
     engine.next_fiber_id = next;
     let parent_id = parent.id;
-    let (sibling, next) = engine.prepare_child_fiber(&[], &[]).unwrap();
+    let (sibling, next) = engine
+        .prepare_child_fiber(task_work(&engine, "child.empty"), &[])
+        .unwrap();
     engine.next_fiber_id = next;
     let retired_sibling = sibling.id;
     engine.child_fibers.push_back(sibling);
@@ -277,7 +358,7 @@ fn child_scope_joins_its_descendants_and_keeps_its_parent_until_they_finish() {
         "a sibling belongs to the outer task"
     );
     let (descendant, next) = engine
-        .prepare_child_fiber(&[FlowOp::Noop, FlowOp::Noop], &[])
+        .prepare_child_fiber(task_work(&engine, "child.two"), &[])
         .unwrap();
     engine.next_fiber_id = next;
     assert_eq!(descendant.parent, Some(parent_id));

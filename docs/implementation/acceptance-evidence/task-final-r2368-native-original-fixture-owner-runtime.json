@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "d64d236091748a13b7b3f25f535f08a53e0dec23",
+  "name": "task-final-r2368-native-original-fixture-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-native-original-fixture-owner.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "package(=arcweft-core)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2368-native-original-fixture-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T03:20:30.6364670Z",
+  "finishedAt": "2026-10-23T03:21:04.7274850Z"
+}

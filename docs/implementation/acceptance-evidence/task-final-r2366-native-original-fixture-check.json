@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d64d236091748a13b7b3f25f535f08a53e0dec23",
+  "name": "task-final-r2366-native-original-fixture-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2366-native-original-fixture-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T03:11:42.6747328Z",
+  "finishedAt": "2026-10-23T03:13:31.2653133Z"
+}

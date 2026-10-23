@@ -1,5 +1,5 @@
 use super::*;
-use crate::engine::{AwaitItemType, AwaitStateRollbackImage};
+use crate::engine::{AwaitSource, AwaitStateRollbackImage, NativeAwaitSource, NativeCodeCursor};
 use crate::entry::RuntimeSchemaLimits;
 use crate::plan::{RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed};
 use crate::task::{
@@ -16,19 +16,28 @@ fn waiting() -> (
 ) {
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+    let need = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xb7; 32]);
     let mut builder = RuntimePlanBuilder::new();
     let admitted = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(boolean)),
             ],
             [],
         )
         .unwrap();
     let item_type = admitted.type_ids()[0];
     let wrong_type = admitted.type_ids()[1];
-    let owner = RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
+    let site = crate::tests::await_function(&mut builder, need).id();
+    let plan = std::sync::Arc::new(builder.finish().unwrap());
+    let operation =
+        NativeCodeCursor::root(&plan, crate::plan::code::RuntimeCodeOwner::Function(site))
+            .unwrap()
+            .source_operation(&plan)
+            .unwrap();
+    let owner = RuntimeProgramOwner::Plan(plan);
     let handle = crate::tests::reusable_need_with_outcome(
         "native-wait",
         TaskOutcomeContract::program(boolean),
@@ -47,11 +56,15 @@ fn waiting() -> (
     (
         owner,
         AwaitState {
-            source_context: crate::value::RuntimeScopeTypeContext::Lexical,
-            binding: None,
+            source_context: crate::value::RuntimeScopeTypeContext::Function {
+                site,
+                instantiation: None,
+            },
+            source: AwaitSource::Native(NativeAwaitSource {
+                operation,
+                item_type,
+            }),
             handle,
-            item_type: AwaitItemType::Plan(item_type),
-            observers: vec![],
             resume: None,
             observed_through: Some(cursor),
             queued,
@@ -98,7 +111,12 @@ fn native_waits_reject_wrong_types_correlations_and_cursor_frontiers_before_proj
     for case in 0..6 {
         let mut corrupt: AwaitStateRollbackImage = inert.clone();
         match case {
-            0 => corrupt.item_type = AwaitItemType::Plan(wrong_type),
+            0 => {
+                let AwaitSource::Native(source) = &mut corrupt.source else {
+                    unreachable!()
+                };
+                source.item_type = wrong_type;
+            }
             1 => {
                 let RuntimeNeedPublication::State { correlation, .. } =
                     corrupt.queued.front_mut().unwrap()
@@ -122,7 +140,7 @@ fn native_waits_reject_wrong_types_correlations_and_cursor_frontiers_before_proj
             5 => {
                 corrupt.source_context = crate::value::RuntimeScopeTypeContext::Function {
                     site: crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
-                        std::num::NonZeroU32::new(1).unwrap(),
+                        std::num::NonZeroU32::MAX,
                     ),
                     instantiation: None,
                 };

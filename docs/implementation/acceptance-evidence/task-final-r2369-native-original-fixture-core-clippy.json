@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d64d236091748a13b7b3f25f535f08a53e0dec23",
+  "name": "task-final-r2369-native-original-fixture-core-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2369-native-original-fixture-core-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T03:21:36.0847474Z",
+  "finishedAt": "2026-10-23T03:22:56.6688026Z"
+}

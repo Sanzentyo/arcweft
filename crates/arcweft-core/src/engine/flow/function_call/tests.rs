@@ -914,15 +914,23 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
         .fiber
         .frame
         .pending_ops
-        .push_back(crate::plan::FlowOp::Noop);
-    assert!(std::ptr::eq(
-        engine.active_flow_operations().next().unwrap(),
-        engine.fiber.frame.pending_ops.front().unwrap()
+        .push_back(crate::engine::work::NativePendingWork::resume(
+            crate::engine::work::NativeRuntimeContinuation::Bind(Vec::new()),
+        ));
+    assert_eq!(engine.active_flow_operations().count(), 0);
+    assert!(matches!(
+        engine.fiber.frame.pending_work().next(),
+        Some(Ok(crate::engine::work::NativePendingWorkView::Resume(
+            crate::engine::work::NativeRuntimeContinuationKind::Bind,
+        )))
     ));
-    assert_eq!(engine.active_flow_operations().count(), 1);
     assert!(matches!(
         engine.fiber.frame.pending_ops.pop_front(),
-        Some(crate::plan::FlowOp::Noop)
+        Some(crate::engine::work::NativePendingWork {
+            kind: crate::engine::work::NativePendingWorkKind::Resume(
+                crate::engine::work::NativeRuntimeContinuation::Bind(_)
+            )
+        })
     ));
     let options = crate::step::RuntimeStepOptions {
         mode: crate::step::RuntimeStepMode::OneOp,

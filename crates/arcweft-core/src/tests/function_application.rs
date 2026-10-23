@@ -14,11 +14,19 @@ use crate::{
     value::{RuntimeExprKind, RuntimeValue},
 };
 
+pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) -> RuntimePlan {
+    returning_function_builder(body_kind)
+        .finish()
+        .expect("application fixture seals")
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "one complete typed plan is shared by the evaluator admission tests"
 )]
-pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) -> RuntimePlan {
+pub(crate) fn returning_function_builder(
+    body_kind: RuntimeFunctionSiteBodyKind,
+) -> RuntimePlanBuilder {
     let unit = RuntimeCheckedType::Unit.semantic_identity_digest();
     let inner = RuntimeSemanticTypeId::from_bytes([0x71; 32]);
     let outer = RuntimeSemanticTypeId::from_bytes([0x72; 32]);
@@ -158,7 +166,7 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
             },
         ))
         .expect("exact-group caller admits");
-    builder.finish().expect("application fixture seals")
+    builder
 }
 
 pub(crate) fn returning_callable_state(plan: &RuntimePlan) -> RuntimeCallableStateId {

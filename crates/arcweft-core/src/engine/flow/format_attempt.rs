@@ -1,7 +1,5 @@
 //! Native same-fiber continuation for source-ordered formatter operands.
 
-use std::collections::VecDeque;
-
 use crate::engine::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberStatus,
     NativeFormatAttemptFrame, NativeFormatOperandFrame, RuntimeCallBackend, RuntimeEvalError,
@@ -315,19 +313,20 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::entry::RuntimeDialogueContentTemplateDigest;
-    use crate::pattern::{RuntimeCheckedType, RuntimePattern, RuntimePatternKind};
-    use crate::plan::{
-        RuntimeDialogueContentSlotSeed, RuntimeDialogueContentTemplateManifestSeed,
-        RuntimeDialogueValueRole, RuntimeFormatAttemptDeclarationSeed,
-        RuntimeFormatAttemptOperandSeed, RuntimePlanBuilder, RuntimePlanTypeProjection,
-        RuntimePlanTypeSeed,
-    };
+    use crate::pattern::RuntimeCheckedType;
+    use crate::plan::*;
     use crate::runtime_id::{RuntimeDialogueContentTemplateId, RuntimeDialogueValueSlotId};
     use crate::value::{
-        RuntimeBinaryOp, RuntimeDialogueOpaqueRole, RuntimeExprKind, RuntimeSignedIntWidth,
+        RuntimeBinaryOp, RuntimeDialogueOpaqueRole, RuntimeLocalReadMode, RuntimeSignedIntWidth,
     };
 
-    fn format_attempt_engine() -> (Engine, RuntimeFormatAttemptId) {
+    enum FormatFixture {
+        Complete,
+        Recoverable,
+        Fatal,
+    }
+
+    fn format_attempt_engine(fixture: FormatFixture) -> (Engine, RuntimeFormatAttemptId) {
         let integer =
             RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest();
         let string = RuntimeCheckedType::String.semantic_identity_digest();
@@ -353,6 +352,10 @@ mod tests {
                             arguments: Box::new([]),
                         },
                     ),
+                    RuntimePlanTypeSeed::new(
+                        RuntimeCheckedType::Unit.semantic_identity_digest(),
+                        RuntimePlanTypeProjection::Unit,
+                    ),
                 ],
                 [],
             )
@@ -369,7 +372,7 @@ mod tests {
                 effects: Box::new([]),
             })
             .expect("attempt template registers");
-        builder
+        let attempt = builder
             .reserve_format_attempt_seed(RuntimeFormatAttemptDeclarationSeed {
                 template,
                 operands: Box::new([
@@ -378,36 +381,145 @@ mod tests {
                 ]),
             })
             .expect("typed attempt reserves");
+        let (inputs, body): (
+            Box<[RuntimeFunctionInputBindingSeed]>,
+            Vec<RuntimeFlowOpSeed>,
+        ) = match fixture {
+            FormatFixture::Complete => (Box::new([]), Vec::new()),
+            FormatFixture::Recoverable => (
+                Box::new([]),
+                vec![RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(integer, RuntimePatternSeedKind::Discard),
+                    expr: RuntimeExprSeed::new(
+                        integer,
+                        RuntimeExprSeedKind::Binary {
+                            lhs: Box::new(RuntimeExprSeed::new(
+                                integer,
+                                RuntimeExprSeedKind::Value(RuntimeValue::i64(1)),
+                            )),
+                            op: RuntimeBinaryOp::Div,
+                            rhs: Box::new(RuntimeExprSeed::new(
+                                integer,
+                                RuntimeExprSeedKind::Value(RuntimeValue::i64(0)),
+                            )),
+                        },
+                    ),
+                }],
+            ),
+            FormatFixture::Fatal => {
+                let locals = builder
+                    .admit_type_batch(
+                        [],
+                        [
+                            RuntimeLocalDeclarationSeed::new(
+                                crate::engine::manual_local_source("formatter.input"),
+                                integer,
+                            ),
+                            RuntimeLocalDeclarationSeed::new(
+                                crate::engine::manual_local_source("formatter.binding"),
+                                integer,
+                            ),
+                        ],
+                    )
+                    .unwrap();
+                let input = locals.local_ids()[0].clone();
+                let binding = locals.local_ids()[1].clone();
+                let inputs = Box::new([RuntimeFunctionInputBindingSeed {
+                    transfer: RuntimeFunctionInputTransfer::Formal,
+                    origin: RuntimeFunctionInputOrigin::Parameter(
+                        RuntimeFunctionParameterIdentity::from_accepted_identity([0xb1; 32]),
+                    ),
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
+                    source: RuntimeFunctionInputSource::Parameter {
+                        position: 0,
+                        passing: RuntimeFunctionParameterPassing::Value,
+                    },
+                    input_local: input,
+                    pattern: RuntimePatternSeed::new(
+                        integer,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: binding.clone(),
+                        },
+                    ),
+                }]);
+                // The original code is typed; this negative runtime fixture
+                // deliberately supplies no value for its required input.
+                (
+                    inputs,
+                    vec![RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(integer, RuntimePatternSeedKind::Discard),
+                        expr: RuntimeExprSeed::new(
+                            integer,
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                binding,
+                                RuntimeLocalReadMode::Move,
+                            )),
+                        ),
+                    }],
+                )
+            }
+        };
+        let site = builder
+            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xb2; 32]),
+                role: RuntimeFunctionSemanticRole::Ordinary,
+                function_type: None,
+                inputs,
+                result: RuntimeCheckedType::Unit.semantic_identity_digest(),
+                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                effects: RuntimeEffectSet::empty(),
+            })
+            .unwrap();
+        builder
+            .define_function_site_seed(
+                &site,
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: Box::new([
+                        RuntimeFlowOpSeed::FormatOperandAttempt {
+                            attempt: attempt.clone(),
+                            parameter: RuntimeFmtParameterId::Value,
+                            body,
+                            value: RuntimeExprSeed::new(
+                                integer,
+                                RuntimeExprSeedKind::Value(RuntimeValue::i64(17)),
+                            ),
+                        },
+                        RuntimeFlowOpSeed::FormatOperandAttempt {
+                            attempt,
+                            parameter: RuntimeFmtParameterId::Style,
+                            body: Vec::new(),
+                            value: RuntimeExprSeed::new(
+                                string,
+                                RuntimeExprSeedKind::Value(RuntimeValue::String("number".into())),
+                            ),
+                        },
+                    ]),
+                }),
+            )
+            .unwrap();
         let plan = builder.finish().expect("attempt plan seals");
-        (
-            Engine::new(plan),
-            RuntimeFormatAttemptId::from_zero_based(0).unwrap(),
+        let mut engine = Engine::new(plan);
+        let position = crate::engine::NativeCodeCursor::root(
+            &engine.plan,
+            crate::plan::code::RuntimeCodeOwner::Function(site.id()),
         )
-    }
-
-    fn literal(ty: RuntimePlanTypeId, value: RuntimeValue) -> RuntimeExpr {
-        RuntimeExpr::from_admitted_parts(ty, RuntimeExprKind::Value(value))
+        .unwrap();
+        engine
+            .fiber
+            .frame
+            .pending_ops
+            .push_back(crate::engine::work::NativePendingWork::source(
+                position,
+                crate::engine::work::NativeSourceRangeRole::TaskRoot,
+            ));
+        (engine, RuntimeFormatAttemptId::from_zero_based(0).unwrap())
     }
 
     fn completed_format_engine() -> (Engine, RuntimeFormatAttemptId) {
-        let (mut engine, attempt) = format_attempt_engine();
-        let integer = engine.plan.format_attempt(attempt).unwrap().operands()[0].ty();
-        let string = engine.plan.format_attempt(attempt).unwrap().operands()[1].ty();
-        engine.fiber.frame.status = FlowFiberStatus::Running;
-        engine.fiber.frame.pending_ops = VecDeque::from([
-            FlowOp::FormatOperandAttempt {
-                attempt,
-                parameter: RuntimeFmtParameterId::Value,
-                body: Vec::new(),
-                value: literal(integer, RuntimeValue::i64(17)),
-            },
-            FlowOp::FormatOperandAttempt {
-                attempt,
-                parameter: RuntimeFmtParameterId::Style,
-                body: Vec::new(),
-                value: literal(string, RuntimeValue::String("number".into())),
-            },
-        ]);
+        let (mut engine, attempt) = format_attempt_engine(FormatFixture::Complete);
         let mut output = RuntimeStepOutput::default();
         let mut backend = crate::pure::VmRuntimePureCallBackend::default();
         for _ in 0..4 {
@@ -524,39 +636,9 @@ mod tests {
 
     #[test]
     fn native_flow_attempt_catches_source_failure_then_evaluates_later_operand() {
-        let (mut engine, attempt) = format_attempt_engine();
+        let (mut engine, attempt) = format_attempt_engine(FormatFixture::Recoverable);
         let initial_locale = arcweft_id::LocaleTag::try_new("de-DE").unwrap();
         engine.set_format_context(RuntimeFormatContext::new(initial_locale.clone()));
-        let integer = engine.plan.format_attempt(attempt).unwrap().operands()[0].ty();
-        let string = engine.plan.format_attempt(attempt).unwrap().operands()[1].ty();
-        let failed_source = RuntimeExpr::from_admitted_parts(
-            integer,
-            RuntimeExprKind::Binary {
-                lhs: Box::new(literal(integer, RuntimeValue::i64(1))),
-                op: RuntimeBinaryOp::Div,
-                rhs: Box::new(literal(integer, RuntimeValue::i64(0))),
-            },
-        );
-        engine.fiber.frame.pending_ops = VecDeque::from(vec![
-            FlowOp::FormatOperandAttempt {
-                attempt,
-                parameter: RuntimeFmtParameterId::Value,
-                body: vec![FlowOp::Let {
-                    pattern: RuntimePattern::from_admitted_parts(
-                        integer,
-                        RuntimePatternKind::Discard,
-                    ),
-                    expr: failed_source,
-                }],
-                value: literal(integer, RuntimeValue::i64(17)),
-            },
-            FlowOp::FormatOperandAttempt {
-                attempt,
-                parameter: RuntimeFmtParameterId::Style,
-                body: Vec::new(),
-                value: literal(string, RuntimeValue::String("number".to_owned())),
-            },
-        ]);
         let mut output = RuntimeStepOutput::default();
         let mut backend = crate::pure::VmRuntimePureCallBackend::default();
         let mut drop_policy = None;
@@ -595,37 +677,7 @@ mod tests {
 
     #[test]
     fn native_flow_attempt_does_not_convert_fatal_source_error() {
-        let (mut engine, attempt) = format_attempt_engine();
-        let integer = engine.plan.format_attempt(attempt).unwrap().operands()[0].ty();
-        let string = engine.plan.format_attempt(attempt).unwrap().operands()[1].ty();
-        let invalid_source = RuntimeExpr::from_admitted_parts(
-            integer,
-            RuntimeExprKind::Binary {
-                lhs: Box::new(literal(integer, RuntimeValue::i64(1))),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(literal(string, RuntimeValue::String("bad".to_owned()))),
-            },
-        );
-        engine.fiber.frame.pending_ops = VecDeque::from(vec![
-            FlowOp::FormatOperandAttempt {
-                attempt,
-                parameter: RuntimeFmtParameterId::Value,
-                body: vec![FlowOp::Let {
-                    pattern: RuntimePattern::from_admitted_parts(
-                        integer,
-                        RuntimePatternKind::Discard,
-                    ),
-                    expr: invalid_source,
-                }],
-                value: literal(integer, RuntimeValue::i64(17)),
-            },
-            FlowOp::FormatOperandAttempt {
-                attempt,
-                parameter: RuntimeFmtParameterId::Style,
-                body: Vec::new(),
-                value: literal(string, RuntimeValue::String("number".to_owned())),
-            },
-        ]);
+        let (mut engine, _) = format_attempt_engine(FormatFixture::Fatal);
         let mut output = RuntimeStepOutput::default();
         let mut backend = crate::pure::VmRuntimePureCallBackend::default();
         let mut drop_policy = None;
