@@ -4,9 +4,10 @@ use crate::entry::RuntimeCallableExecutableCode;
 use crate::line_task::{ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskWorkTag};
 use crate::observation::RuntimeObservationState;
 use crate::pattern::RuntimePattern;
+use crate::plan::code::RuntimeCodeOwner;
 use crate::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryTarget,
-    RuntimeFlow, RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimePlan,
+    RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimePlan,
 };
 use crate::pure::{RuntimeCallBackend, VmRuntimePureCallBackend};
 use crate::root::{
@@ -45,6 +46,8 @@ pub mod aot;
 pub mod audio;
 #[cfg(test)]
 mod child_poll_tests;
+mod code_cursor;
+pub use code_cursor::NativeCodeCursor;
 pub mod dialogue;
 pub mod eval;
 mod frame_progress;
@@ -277,7 +280,7 @@ pub struct NativeFlowExecutionFrame<
     /// Immutable code and type authority retained by this execution frame.
     pub(crate) program: crate::task::RuntimeProgramOwner,
     pub line_cursor: usize,
-    pub cursor: Option<FlowCursor>,
+    pub cursor: Option<NativeCodeCursor>,
     pub pending_ops: VecDeque<O>,
     pub(crate) control_stack: Vec<C>,
     pub await_observer: Option<Box<A>>,
@@ -320,7 +323,7 @@ impl Clone for NativeFlowExecutionFrameRollbackImage {
         Self {
             program: self.program.clone(),
             line_cursor: self.line_cursor,
-            cursor: self.cursor,
+            cursor: self.cursor.clone(),
             pending_ops: self.pending_ops.clone(),
             control_stack: self.control_stack.clone(),
             await_observer: self.await_observer.clone(),
@@ -408,16 +411,6 @@ impl NativeFlowExecutionFrame {
             })
     }
 
-    fn active_function_mut(&mut self) -> Option<&mut FunctionCallFrame> {
-        self.control_stack
-            .iter_mut()
-            .rev()
-            .find_map(|entry| match &mut entry.kind {
-                FlowControlStackEntryKind::FunctionCall(frame) => Some(frame),
-                _ => None,
-            })
-    }
-
     fn inert_rollback_image(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
@@ -440,7 +433,7 @@ impl NativeFlowExecutionFrame {
         Ok(NativeFlowExecutionFrameRollbackImage {
             program: self.program.clone(),
             line_cursor: self.line_cursor,
-            cursor: self.cursor,
+            cursor: self.cursor.clone(),
             pending_ops: self
                 .pending_ops
                 .iter()
@@ -932,7 +925,7 @@ impl Clone for NativeFormatOperandRollbackImage {
     fn clone(&self) -> Self {
         Self {
             ordinal: self.ordinal,
-            resume: self.resume,
+            resume: self.resume.clone(),
             caller_pending_ops: self.caller_pending_ops.clone(),
         }
     }
@@ -970,7 +963,7 @@ impl NativeFormatAttemptFrame {
                     |active| -> Result<NativeFormatOperandRollbackImage, String> {
                         Ok(NativeFormatOperandRollbackImage {
                             ordinal: active.ordinal,
-                            resume: active.resume,
+                            resume: active.resume.clone(),
                             caller_pending_ops: active
                                 .caller_pending_ops
                                 .iter()
@@ -1010,7 +1003,7 @@ impl NativeFormatAttemptFrame {
                 .map(|active| -> Result<NativeFormatOperandFrame, String> {
                     Ok(NativeFormatOperandFrame {
                         ordinal: active.ordinal,
-                        resume: active.resume,
+                        resume: active.resume.clone(),
                         caller_pending_ops: active
                             .caller_pending_ops
                             .into_iter()
@@ -1026,7 +1019,7 @@ impl NativeFormatAttemptFrame {
 #[derive(Debug, PartialEq)]
 pub(crate) struct NativeFormatOperandFrame<O = FlowOp> {
     pub(crate) ordinal: usize,
-    pub(crate) resume: Option<FlowCursor>,
+    pub(crate) resume: Option<NativeCodeCursor>,
     pub(crate) caller_pending_ops: VecDeque<O>,
 }
 
@@ -1034,11 +1027,9 @@ pub(crate) struct NativeFormatOperandFrame<O = FlowOp> {
 #[derive(Debug, PartialEq)]
 pub(crate) struct FunctionCallFrame<O = FlowOp, P = crate::value::RuntimeCallablePendingGroup> {
     site: crate::runtime_id::RuntimeFunctionSiteId,
-    /// Next root operation in this frame's original `FunctionSite` body.
-    next_instruction: usize,
     type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     function_scope: bool,
-    resume: Option<FlowCursor>,
+    resume: Option<NativeCodeCursor>,
     caller_pending_ops: VecDeque<O>,
     continuation: FunctionReturnContinuation<P>,
 }
@@ -1050,10 +1041,9 @@ impl Clone for FunctionCallFrameRollbackImage {
     fn clone(&self) -> Self {
         Self {
             site: self.site,
-            next_instruction: self.next_instruction,
             type_instantiation: self.type_instantiation.clone(),
             function_scope: self.function_scope,
-            resume: self.resume,
+            resume: self.resume.clone(),
             caller_pending_ops: self.caller_pending_ops.clone(),
             continuation: self.continuation.clone(),
         }
@@ -1077,10 +1067,9 @@ impl FlowControlStackEntry {
             FlowControlStackEntryKind::FunctionCall(frame) => {
                 FlowControlStackEntryRollbackImage::FunctionCall(FunctionCallFrameRollbackImage {
                     site: frame.site,
-                    next_instruction: frame.next_instruction,
                     type_instantiation: frame.type_instantiation.clone(),
                     function_scope: frame.function_scope,
-                    resume: frame.resume,
+                    resume: frame.resume.clone(),
                     caller_pending_ops: frame
                         .caller_pending_ops
                         .iter()
@@ -1162,7 +1151,6 @@ impl FlowControlStackEntry {
             }
             FlowControlStackEntryRollbackImage::FunctionCall(FunctionCallFrameRollbackImage {
                 site,
-                next_instruction,
                 type_instantiation,
                 function_scope,
                 resume,
@@ -1170,7 +1158,6 @@ impl FlowControlStackEntry {
                 continuation,
             }) => FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
                 site,
-                next_instruction,
                 type_instantiation,
                 function_scope,
                 resume,
@@ -1191,12 +1178,11 @@ impl FlowControlStackEntry {
 impl FunctionCallFrame {
     fn new(
         site: crate::runtime_id::RuntimeFunctionSiteId,
-        resume: Option<FlowCursor>,
+        resume: Option<NativeCodeCursor>,
         continuation: FunctionReturnContinuation,
     ) -> Self {
         Self {
             site,
-            next_instruction: 0,
             type_instantiation: None,
             function_scope: false,
             resume,
@@ -1344,13 +1330,6 @@ impl FunctionReturnContinuation {
             FunctionReturnContinuationRollbackImage::Bind { result } => Self::Bind { result },
         })
     }
-}
-
-/// Position in a lowered flow program.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct FlowCursor {
-    pub flow_index: usize,
-    pub op_index: usize,
 }
 
 /// Failure to select an explicit flow program before execution.
@@ -1576,7 +1555,7 @@ pub struct AwaitState<H = crate::task::RuntimeNeedHandle, P = RuntimeNeedPublica
     pub handle: H,
     pub item_type: AwaitItemType,
     pub observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
-    pub resume: Option<FlowCursor>,
+    pub resume: Option<NativeCodeCursor>,
     pub observed_through: Option<TaskPublicationCursor>,
     pub queued: VecDeque<P>,
 }
@@ -1594,7 +1573,7 @@ impl Clone for AwaitStateRollbackImage {
             handle: self.handle.clone(),
             item_type: self.item_type,
             observers: self.observers.clone(),
-            resume: self.resume,
+            resume: self.resume.clone(),
             observed_through: self.observed_through,
             queued: self.queued.clone(),
         }
@@ -1633,7 +1612,7 @@ impl AwaitState {
             .map_err(|error| error.to_string())?,
             item_type: self.item_type,
             observers: self.observers.clone(),
-            resume: self.resume,
+            resume: self.resume.clone(),
             observed_through: self.observed_through,
             queued: self
                 .queued
@@ -1686,7 +1665,7 @@ pub struct AwaitManyState<H = crate::task::RuntimeNeedHandle, V = RuntimeValue, 
     pub target: AwaitManyTarget,
     pub base: H,
     pub captured: Vec<V>,
-    pub resume: Option<FlowCursor>,
+    pub resume: Option<NativeCodeCursor>,
     pub items: Vec<V>,
     pub next_index: usize,
     pub in_flight: Vec<AwaitManyInFlight<H>>,
@@ -1707,7 +1686,7 @@ impl Clone for AwaitManyStateRollbackImage {
             target: self.target.clone(),
             base: self.base.clone(),
             captured: self.captured.clone(),
-            resume: self.resume,
+            resume: self.resume.clone(),
             items: self.items.clone(),
             next_index: self.next_index,
             in_flight: self.in_flight.clone(),
@@ -1735,7 +1714,7 @@ impl AwaitManyState {
             )
             .map_err(|error| error.to_string())?,
             captured: self.captured.iter().map(image).collect::<Result<_, _>>()?,
-            resume: self.resume,
+            resume: self.resume.clone(),
             items: self
                 .items
                 .iter()
@@ -1881,7 +1860,7 @@ pub struct HostCallState {
     pub binding: Option<RuntimePattern>,
     pub id: RuntimeHostCallId,
     pub result_type: HostCallResultType,
-    pub resume: Option<FlowCursor>,
+    pub resume: Option<NativeCodeCursor>,
 }
 
 /// Suspended choice state.
@@ -1889,7 +1868,7 @@ pub struct HostCallState {
 pub struct ChoiceState {
     pub id: Option<String>,
     pub options: Vec<ChoiceRuntimeOption>,
-    pub resume: Option<FlowCursor>,
+    pub resume: Option<NativeCodeCursor>,
 }
 
 /// Terminal flow result observed by the minimal runtime.
@@ -2466,8 +2445,7 @@ impl Engine {
         if self.main_started {
             return Err(EngineStartError::AlreadyStarted);
         }
-        let flow_index = self
-            .flow_index(flow)
+        self.flow_index(flow)
             .ok_or_else(|| EngineStartError::MissingFlow {
                 flow: flow.canonical_label(),
             })?;
@@ -2487,10 +2465,10 @@ impl Engine {
             declaration.type_instantiation.clone(),
             staged,
         );
-        self.fiber.frame.cursor = Some(FlowCursor {
-            flow_index,
-            op_index: 0,
-        });
+        self.fiber.frame.cursor = Some(
+            NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(declaration.site()))
+                .expect("an admitted Flow retains its original function body"),
+        );
         self.fiber.frame.status = FlowFiberStatus::Running;
         self.main_started = true;
         Ok(())
@@ -2619,9 +2597,6 @@ impl Engine {
         let crate::root::RootPhase::Initializing { flow, .. } = &root.active().phase else {
             return Err(RootRuntimeError::InitializationAlreadyCompleted.into());
         };
-        let flow_index = self.flow_index(flow).ok_or_else(|| {
-            RootRuntimeError::MissingInitialFlowExecutable(entry.canonical_label())
-        })?;
         let flow_site = plan
             .flows
             .flow(flow)
@@ -2661,10 +2636,10 @@ impl Engine {
             .frame
             .env
             .bind_root_function(site, instantiation, staged);
-        self.fiber.frame.cursor = Some(FlowCursor {
-            flow_index,
-            op_index: 0,
-        });
+        self.fiber.frame.cursor = Some(
+            NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(site))
+                .expect("an admitted initialized Flow retains its original function body"),
+        );
         self.fiber.frame.status = FlowFiberStatus::Running;
         self.root = Some(root);
         output.root_initializations.push(outcome);
@@ -2697,10 +2672,6 @@ impl Engine {
             &[]
         };
         self.fiber.frame.pending_ops.iter().chain(original)
-    }
-
-    pub(super) fn flow_at_cursor(&self, cursor: &FlowCursor) -> Option<&RuntimeFlow> {
-        self.plan.flows.get(cursor.flow_index)
     }
 
     /// Remaining root code for the active frame, before any pending child work.
@@ -4728,7 +4699,7 @@ impl Engine {
                         handle: state.handle.clone(),
                         item_type: state.item_type,
                         observers: state.observers.clone(),
-                        resume: state.resume,
+                        resume: state.resume.clone(),
                         observed_through: state.observed_through,
                         queued: VecDeque::new(),
                     }))

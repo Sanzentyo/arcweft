@@ -25301,3 +25301,39 @@ RuntimePlan/Compiler library evidence, not a repeat of the just-completed full
 53-package acceptance matrix. Full consumer/CLI/budget/restore checks remain
 necessary when native executable state and queues actually switch. These helpers
 and tests do not constitute completion of that switch.
+
+### 2026-10-23 Unified original Native root code position in progress
+
+Inspected main `6dbfe275017964508c06470aebe6846901a12fae`, with the original
+14 held tracked paths and six held untracked files preserved. Native root code
+now has one `NativeCodeCursor`: the original code owner, shared immutable body
+coordinates, and an expression frontier or checked operation range. The frame's
+exact immutable program lease remains its authority. Cursor copies share only
+path metadata. `FunctionCallFrame.next_instruction` and the old numeric Flow
+cursor are removed; function calls and their return continuations use the same
+position type, including Host/Await/dialogue/formatter suspension consumers.
+AOT retains source-ordered Flow blocks and a derived function-identity index,
+without a second code catalog. Numeric projection advances the same position.
+
+The original function context and active function frame must agree with the
+cursor before rollback projection. Tests retain the genuine original Plan and
+exercise missing active positions, another valid function in the same Plan,
+invalid expression/operation shapes, original budgets and restore. An invalid
+live Flow range now fails instead of silently manufacturing normal completion.
+The shared structural-role encoding retains its existing tag/ordinal transcript.
+The root-only change leaves the existing pending AST queue, nine runtime-only
+FlowOp variants, copied guards/observers/formatter bodies and Static rollback
+fallback unresolved. Those producers and consumers still require the complete
+original-source range/runtime-continuation migration; this is not its completion.
+
+R2347 Core library check failed on private imports and non-Copy moves introduced
+by this migration; those errors were fixed. R2348 Core library check and R2349
+Core+Compiler all-target/all-feature locked check passed. R2349's wrapper process
+has terminated; its receipt records actual exit 0. New owner regressions were
+then added. R2350 did not compile tests because the invocation used an incorrect
+package name; the actual retained Cargo graph corrected that selection. R2351
+found two own test uses of Default on GenerationId; both now use its real typed
+constructor. No runtime was started from either failed catalog and neither is
+passing evidence. Corrected owner/consumer validation is pending at this entry.
+The earlier body-coordinate and R2342 full-suite evidence retain their original
+source identity and do not validate this changed executable state.

@@ -380,7 +380,8 @@ fn named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity() {
 
     let aot = crate::aot::AotProgram::from_runtime_plan(&plan);
     assert!(matches!(
-        aot.flow_block(0).and_then(|block| block.linear_op(0)),
+        aot.flow_block(plan.flows()[0].function_site())
+            .and_then(|block| block.linear_op(0)),
         Some(crate::aot::AotLinearOp::EnterScope { identity: projected })
             if projected == &identity
     ));

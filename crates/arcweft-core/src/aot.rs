@@ -1,6 +1,7 @@
 use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
 use crate::pattern::RuntimePattern;
 use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
+use crate::runtime_id::RuntimeFunctionSiteId;
 use crate::value::{RuntimeExpr, RuntimeLocalBinding};
 
 /// Typed AOT compilation artifact for a runtime plan.
@@ -10,6 +11,7 @@ use crate::value::{RuntimeExpr, RuntimeLocalBinding};
 #[derive(Clone, Debug, PartialEq)]
 pub struct AotProgram {
     flows: Vec<AotFlowBlock>,
+    by_function: Vec<usize>,
     stats: AotProgramStats,
 }
 
@@ -17,6 +19,7 @@ pub struct AotProgram {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AotFlowBlock {
     pub id: FlowRuntimeId,
+    function: RuntimeFunctionSiteId,
     pub ops: usize,
     pub linear_prefix_ops: usize,
     pub dispatch: AotDispatchShape,
@@ -190,15 +193,28 @@ impl AotProgram {
         for flow in &plan.flows {
             stats.record_ops(flow.body().ops());
         }
-        Self { flows, stats }
+        let mut by_function = (0..flows.len()).collect::<Vec<_>>();
+        by_function.sort_unstable_by_key(|&index| flows[index].function);
+        Self {
+            flows,
+            by_function,
+            stats,
+        }
     }
 
     pub fn flows(&self) -> &[AotFlowBlock] {
         &self.flows
     }
 
-    pub fn flow_block(&self, index: usize) -> Option<&AotFlowBlock> {
-        self.flows.get(index)
+    /// Resolves the original function identity, independently from the order
+    /// in which Flow wrappers appear in the source. The admitted plan gives
+    /// each Flow one distinct function row; the index owns no duplicate code.
+    pub fn flow_block(&self, function: RuntimeFunctionSiteId) -> Option<&AotFlowBlock> {
+        let position = self
+            .by_function
+            .binary_search_by_key(&function, |&index| self.flows[index].function)
+            .ok()?;
+        Some(&self.flows[self.by_function[position]])
     }
 
     pub const fn stats(&self) -> &AotProgramStats {
@@ -223,6 +239,7 @@ impl AotFlowBlock {
         };
         Self {
             id: flow.id.clone(),
+            function: flow.function_site(),
             ops: flow.body().ops().len(),
             linear_prefix_ops,
             dispatch,

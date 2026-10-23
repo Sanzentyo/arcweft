@@ -108,7 +108,7 @@ impl Engine {
         }
         frame.active = Some(NativeFormatOperandFrame {
             ordinal,
-            resume,
+            resume: resume.clone(),
             caller_pending_ops,
         });
         self.fiber.frame.env.push_scope_with_capacity(0);

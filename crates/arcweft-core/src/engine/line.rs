@@ -1,6 +1,6 @@
 use super::{
-    Engine, FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowExit, FlowFiberStatus,
-    LineEffectRequest, RuntimeStepInput, RuntimeStepOutput,
+    Engine, FlowControlStackEntryKind, FlowEvent, FlowExit, FlowFiberStatus, LineEffectRequest,
+    NativeCodeCursor, RuntimeStepInput, RuntimeStepOutput,
 };
 use crate::plan::FlowRuntimeId;
 use crate::pure::RuntimeCallBackend;
@@ -46,11 +46,11 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let Some(flow_index) = self.flow_index(target) else {
+        if self.flow_index(target).is_none() {
             self.fiber.frame.status =
                 FlowFiberStatus::Failed(format!("missing goto target {target}"));
             return;
-        };
+        }
         let plan = std::sync::Arc::clone(&self.plan);
         let declaration = match plan.validate_flow_invocation(target, &[]) {
             Ok(declaration) => declaration,
@@ -70,10 +70,13 @@ impl Engine {
             declaration.type_instantiation.clone(),
             [],
         );
-        self.fiber.frame.cursor = Some(FlowCursor {
-            flow_index,
-            op_index: 0,
-        });
+        self.fiber.frame.cursor = Some(
+            NativeCodeCursor::root(
+                &plan,
+                crate::plan::code::RuntimeCodeOwner::Function(declaration.site()),
+            )
+            .expect("an admitted Goto retains its original function body"),
+        );
         self.fiber.frame.status = FlowFiberStatus::Running;
     }
 

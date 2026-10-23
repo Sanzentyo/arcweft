@@ -63,6 +63,14 @@ identity before projecting or restoring frame values. Equal program contents do
 not authorize rebinding a frame to another executable. Frames have no ownerless
 default, and public persistence does not serialize this executable lease.
 
+Native root execution keeps one code position within that original executable.
+The position records its function owner and an original expression or operation
+range; it carries no independent executable authority. Function calls install
+their own position and retain the caller's position in the return continuation.
+Restoration rejects positions that disagree with the original body or the
+retained function context. AOT Flow blocks resolve by the same function identity,
+independently of the order of Flow wrappers in the plan.
+
 Program dispatch remains in flight while Core executes its body and joins its
 attached descendants. Core issues `ProgramTaskCompletion` on actual retirement;
 the report retains the actual issuing Source lease, and the host checks it

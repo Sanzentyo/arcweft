@@ -1,8 +1,8 @@
 //! Borrowed admission of native execution ownership before rollback projection.
 
 use super::{
-    Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor, FlowFiberOwner,
-    FlowFiberStatus, FlowOp, FlowOpRollbackImage, FunctionCallFrame, FunctionReturnContinuation,
+    Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberOwner, FlowFiberStatus,
+    FlowOp, FlowOpRollbackImage, FunctionCallFrame, FunctionReturnContinuation, NativeCodeCursor,
     NativeEngineRollbackImage, NativeFlowExecutionFrame, NativeFormatAttemptFrame,
     NativeInvocationRoot, eval,
 };
@@ -163,59 +163,23 @@ impl<P> FunctionReturnContinuation<P> {
     }
 }
 
-impl FlowCursor {
-    fn admit_retained(
-        &self,
-        admission: &mut crate::value::RuntimeRetainedValueAdmission,
-    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
-        let invalid = |message: &str| crate::value::AwbcRuntimeValueSnapshotError::Message {
-            message: message.into(),
-        };
-        admission.validate_metadata(&(self.flow_index, self.op_index))?;
-        let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
-            return Err(invalid(
-                "native cursor requires its original Plan executable",
-            ));
-        };
-        let flow = plan
-            .flows
-            .get(self.flow_index)
-            .ok_or_else(|| invalid("native cursor references an unknown original flow"))?;
-        if self.op_index > flow.body().ops().len() {
-            return Err(invalid("native cursor exceeds its original flow body"));
-        }
-        Ok(())
-    }
-}
-
 impl<O, P> FunctionCallFrame<O, P> {
     fn admit_code_position(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
-        use crate::plan::code::{RuntimeCodeBodyRef, RuntimeCodeOwner};
         let invalid = |message: &str| crate::value::AwbcRuntimeValueSnapshotError::Message {
             message: message.into(),
         };
-        admission.validate_metadata(&(self.site.get(), self.next_instruction))?;
+        admission.validate_metadata(&self.site.get())?;
         let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
             return Err(invalid(
                 "native function position requires its original Plan executable",
             ));
         };
-        let valid = match plan
-            .inventory
-            .code_body(RuntimeCodeOwner::Function(self.site))
-        {
-            Some(RuntimeCodeBodyRef::Operations(operations)) => {
-                self.next_instruction <= operations.len()
-            }
-            Some(RuntimeCodeBodyRef::Expression(_)) => self.next_instruction == 0,
-            None => false,
-        };
-        if !valid {
+        if plan.function_sites().get(self.site).is_none() {
             return Err(invalid(
-                "native function position exceeds its original body",
+                "native function frame is absent from its original executable",
             ));
         }
         Ok(())
@@ -266,7 +230,7 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
                     "native formatter active operand differs from its source-order frontier",
                 ));
             }
-            if let Some(cursor) = active.resume {
+            if let Some(cursor) = &active.resume {
                 cursor.admit_retained(admission)?;
             }
         }
@@ -385,7 +349,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                         root.active().phase,
                         crate::root::RootPhase::Initializing { .. }
                     )
-                    && self.cursor.is_none() =>
+                    && self.cursor.is_some() =>
             {
                 Ok(())
             }
@@ -402,7 +366,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                         ..
                     }
                 )
-                && self.cursor.is_none() =>
+                && self.cursor.is_some() =>
             {
                 Ok(())
             }
@@ -454,7 +418,22 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             admission.validate_metadata_string(&cleanup.key)?;
         }
         admission.validate_metadata_collection(self.stream_states.len())?;
-        if let Some(cursor) = self.cursor {
+        admission.validate_metadata_collection(self.control_stack.len())?;
+        if let Some(function) = self
+            .control_stack
+            .iter()
+            .rev()
+            .find_map(ScopeControl::function_context)
+        {
+            if self.cursor.as_ref().map(NativeCodeCursor::owner)
+                != Some(crate::plan::code::RuntimeCodeOwner::Function(function.site))
+            {
+                return Err(invalid(
+                    "active function differs from its original code owner".into(),
+                ));
+            }
+        }
+        if let Some(cursor) = &self.cursor {
             cursor.admit_retained(admission)?;
         }
         if let Some(state) = &self.await_observer {
@@ -496,7 +475,17 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             message: "native function frames disagree with their retained environment contexts"
                 .into(),
         };
-        admission.validate_metadata_collection(self.control_stack.len())?;
+        if let Some(cursor) = &self.cursor
+            && let crate::plan::code::RuntimeCodeOwner::Function(site) = cursor.owner()
+            && self
+                .env
+                .function_contexts()
+                .next_back()
+                .map(|(site, _)| site)
+                != Some(site)
+        {
+            return Err(invalid());
+        }
         let mut contexts = self.env.function_contexts().rev().peekable();
         for entry in self.control_stack.iter().rev() {
             if let Some(frame) = entry.function_context() {
@@ -606,7 +595,7 @@ where
             Self::FormatAttempt(frame) => frame.admit_owned_values(admission, binding),
             Self::FunctionCall(frame) => {
                 frame.admit_code_position(admission)?;
-                if let Some(cursor) = frame.resume {
+                if let Some(cursor) = &frame.resume {
                     cursor.admit_retained(admission)?;
                 }
                 frame

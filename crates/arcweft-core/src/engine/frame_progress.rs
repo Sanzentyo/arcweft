@@ -1,21 +1,12 @@
 use super::{Engine, FlowFiber, FlowFiberStatus, FlowOp, NativeFlowExecutionFrame};
 use crate::plan::RuntimePlan;
-use crate::plan::code::{RuntimeCodeBodyRef, RuntimeCodeOwner};
 
 impl NativeFlowExecutionFrame {
     pub(super) fn original_operation_remainder<'a>(
         &self,
         plan: &'a RuntimePlan,
     ) -> Option<&'a [FlowOp]> {
-        if let Some(frame) = self.active_function() {
-            return frame.original_operation_remainder(plan);
-        }
-        let cursor = self.cursor.as_ref()?;
-        plan.flows
-            .get(cursor.flow_index)?
-            .body()
-            .ops()
-            .get(cursor.op_index..)
+        self.cursor.as_ref()?.operations(plan)
     }
 
     /// A task return stays at its original position until its descendants drain.
@@ -28,30 +19,13 @@ impl NativeFlowExecutionFrame {
         if let Some(operation) = self.pending_ops.front() {
             return matches!(operation, FlowOp::Return(_) | FlowOp::ReturnExpr(_));
         }
-        if let Some(frame) = function {
-            return match plan
-                .inventory
-                .code_body(RuntimeCodeOwner::Function(frame.site))
-            {
-                Some(RuntimeCodeBodyRef::Expression(_)) => true,
-                Some(RuntimeCodeBodyRef::Operations(operations)) => operations
-                    .get(frame.next_instruction)
-                    .is_none_or(|operation| {
-                        matches!(operation, FlowOp::Return(_) | FlowOp::ReturnExpr(_))
-                    }),
-                // Invalid code must reach its ordinary diagnostic boundary.
-                None => false,
-            };
-        }
         if let Some(cursor) = &self.cursor {
-            return plan.flows.get(cursor.flow_index).is_some_and(|flow| {
-                flow.body()
-                    .ops()
-                    .get(cursor.op_index)
-                    .is_none_or(|operation| {
+            return cursor.expression(plan).is_some()
+                || cursor.operations(plan).is_some_and(|operations| {
+                    operations.first().is_none_or(|operation| {
                         matches!(operation, FlowOp::Return(_) | FlowOp::ReturnExpr(_))
                     })
-            });
+                });
         }
         true
     }

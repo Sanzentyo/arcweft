@@ -22,26 +22,25 @@ pub enum RuntimeFlowBodyRole {
     MatchArm { arm: usize },
 }
 impl RuntimeFlowBodyRole {
+    pub(crate) const fn tag_and_ordinal(self) -> (u8, Option<usize>) {
+        match self {
+            Self::Body => (0, None),
+            Self::Then => (1, None),
+            Self::Else => (2, None),
+            Self::AwaitObserver { ordinal } => (3, Some(ordinal)),
+            Self::MatchGuard { arm } => (4, Some(arm)),
+            Self::MatchArm { arm } => (5, Some(arm)),
+        }
+    }
+
     pub(crate) fn encode_semantic_path(
         self,
         encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
     ) {
-        match self {
-            Self::Body => encoder.tag(0),
-            Self::Then => encoder.tag(1),
-            Self::Else => encoder.tag(2),
-            Self::AwaitObserver { ordinal } => {
-                encoder.tag(3);
-                encoder.count(ordinal);
-            }
-            Self::MatchGuard { arm } => {
-                encoder.tag(4);
-                encoder.count(arm);
-            }
-            Self::MatchArm { arm } => {
-                encoder.tag(5);
-                encoder.count(arm);
-            }
+        let (tag, ordinal) = self.tag_and_ordinal();
+        encoder.tag(tag);
+        if let Some(ordinal) = ordinal {
+            encoder.count(ordinal);
         }
     }
 }

@@ -1543,7 +1543,7 @@ mod tests {
         };
         let failure = failure.clone();
         let bindings = engine.fiber().frame.env.bindings_snapshot();
-        let cursor = engine.fiber().frame.cursor;
+        let cursor = engine.fiber().frame.cursor.clone();
         let execution = engine.fiber().execution;
         engine.step_with_pure_backend(
             Default::default(),
@@ -1887,7 +1887,7 @@ mod tests {
                     );
                     assert!(engine.take_program_result().unwrap().is_none());
                     let execution = engine.fiber().execution;
-                    let cursor = engine.fiber().frame.cursor;
+                    let cursor = engine.fiber().frame.cursor.clone();
                     let second = engine.step(Default::default(), options);
                     assert_eq!(second.stats.executed_ops, 0);
                     assert!(

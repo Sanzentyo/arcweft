@@ -65,15 +65,23 @@ impl Engine {
                 }
                 continue;
             };
-            let Some(flow) = program.flow_block(cursor.flow_index) else {
+            let Some(flow) = (match cursor.owner() {
+                crate::plan::code::RuntimeCodeOwner::Function(site) if cursor.is_root() => {
+                    program.flow_block(site)
+                }
+                _ => None,
+            }) else {
                 self.fail_aot_linear_precondition(
                     "AOT linear cursor no longer references a flow",
                     &mut output,
                 );
                 break;
             };
-            let Some(op) = flow.linear_op(cursor.op_index) else {
-                if cursor.op_index >= flow.ops {
+            let position = cursor
+                .operation_index()
+                .expect("AOT block owns operation code");
+            let Some(op) = flow.linear_op(position) else {
+                if position >= flow.ops {
                     self.finish(&mut output, pure_backend);
                 } else {
                     let (_, control_ops) = self.with_scalar_operation_budget(
@@ -96,7 +104,7 @@ impl Engine {
                 }
                 continue;
             };
-            let next_op_index = cursor.op_index + 1;
+            let next_op_index = position + 1;
             let (_, control_ops) = self.with_scalar_operation_budget(
                 options.mode,
                 options.budget.max_ops - executed_ops - 1,
@@ -159,10 +167,14 @@ impl Engine {
             && self.fiber.frame.control_stack.is_empty()
             && matches!(self.fiber.frame.status, FlowFiberStatus::Running)
             && self.fiber.frame.cursor.as_ref().is_some_and(|cursor| {
-                program
-                    .flow_block(cursor.flow_index)
-                    .and_then(|flow| flow.linear_op(cursor.op_index))
-                    .is_some()
+                (match cursor.owner() {
+                    crate::plan::code::RuntimeCodeOwner::Function(site) if cursor.is_root() => {
+                        program.flow_block(site)
+                    }
+                    _ => None,
+                })
+                .and_then(|flow| flow.linear_op(cursor.operation_index()?))
+                .is_some()
             })
     }
 
@@ -254,7 +266,10 @@ impl Engine {
 
     fn advance_aot_linear_cursor(&mut self, next_op_index: usize) {
         if let Some(cursor) = self.fiber.frame.cursor.as_mut() {
-            cursor.op_index = next_op_index;
+            assert!(
+                cursor.set_operation(next_op_index),
+                "AOT operation remains inside original code"
+            );
         }
     }
 }

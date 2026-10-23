@@ -61,7 +61,7 @@ where
         for observer in &self.observers {
             admission.validate_metadata_collection(observer.ops.len())?;
         }
-        if let Some(cursor) = self.resume {
+        if let Some(cursor) = &self.resume {
             cursor.admit_retained(admission)?;
         }
         let handle = RuntimeNeedView::from(&self.handle);
@@ -141,7 +141,7 @@ where
                 "native AwaitMany inventories disagree with its frontier",
             ));
         }
-        if let Some(cursor) = self.resume {
+        if let Some(cursor) = &self.resume {
             cursor.admit_retained(admission)?;
         }
         let base = RuntimeNeedView::from(&self.base);

@@ -5,10 +5,10 @@ pub(super) mod match_guard;
 
 use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState};
 use super::{
-    ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor, FlowEvent,
-    FlowFiberStatus, FlowOp, FlowScopeCleanup, HostCallState, RuntimeDiagnostic, RuntimeEvalError,
-    RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput, RuntimeValue,
-    runtime_value_label,
+    ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowEvent,
+    FlowFiberStatus, FlowOp, FlowScopeCleanup, HostCallState, NativeCodeCursor, RuntimeDiagnostic,
+    RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+    RuntimeValue, runtime_value_label,
 };
 use crate::effect::LineEffectRequest;
 use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
@@ -44,15 +44,18 @@ impl Engine {
             let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
                 return;
             };
-            let Some(op) = plan
-                .flows
-                .get(cursor.flow_index)
-                .and_then(|flow| flow.body().ops().get(cursor.op_index))
-            else {
+            let Some(operations) = cursor.operations(&plan) else {
+                self.fail_eval("active flow lost its original operation range", output);
+                return;
+            };
+            let Some(op) = operations.first() else {
                 self.finish(output, pure_backend);
                 return;
             };
-            (Cow::Borrowed(op), Some(cursor.op_index + 1))
+            (
+                Cow::Borrowed(op),
+                Some(cursor.operation_index().expect("operation code position") + 1),
+            )
         };
         self.execute_flow_operation(op, next_op_index, output, pure_backend, drop_policy);
     }
@@ -330,7 +333,7 @@ impl Engine {
                     content,
                     target: Some(target_value),
                     task_group,
-                    resume: self.fiber.frame.cursor,
+                    resume: self.fiber.frame.cursor.clone(),
                     captures: capture_locals,
                     task_inputs: Box::new([]),
                     execution: super::NativeFlowExecutionFrame::running(
@@ -1218,7 +1221,10 @@ impl Engine {
         if let Some(next_op_index) = next_op_index
             && let Some(cursor) = self.fiber.frame.cursor.as_mut()
         {
-            cursor.op_index = next_op_index;
+            assert!(
+                cursor.set_operation(next_op_index),
+                "source operation stays inside its admitted code range"
+            );
         }
     }
 
@@ -1241,11 +1247,14 @@ impl Engine {
         self.next_host_call_sequence = self.next_host_call_sequence.saturating_add(1);
     }
 
-    fn resume_cursor(&self, next_op_index: Option<usize>) -> Option<FlowCursor> {
-        self.fiber.frame.cursor.map(|cursor| {
-            let mut cursor = cursor;
+    fn resume_cursor(&self, next_op_index: Option<usize>) -> Option<NativeCodeCursor> {
+        self.fiber.frame.cursor.as_ref().map(|cursor| {
+            let mut cursor = cursor.clone();
             if let Some(next_op_index) = next_op_index {
-                cursor.op_index = next_op_index;
+                assert!(
+                    cursor.set_operation(next_op_index),
+                    "source continuation stays inside its admitted code range"
+                );
             }
             cursor
         })

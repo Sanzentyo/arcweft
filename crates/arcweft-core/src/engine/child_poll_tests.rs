@@ -156,23 +156,24 @@ fn joined_original_function_return_expression_and_fallthrough_do_not_advance() {
             RuntimeCodeBodyRef::Operations(_) => continue,
         };
         for position in positions {
-            let mut frame =
+            let frame =
                 FunctionCallFrame::new(site, None, FunctionReturnContinuation::Function { site });
-            frame.next_instruction = position;
+            let mut cursor =
+                super::NativeCodeCursor::root(&engine.plan, RuntimeCodeOwner::Function(site))
+                    .unwrap();
+            if cursor.operation_index().is_some() {
+                assert!(cursor.set_operation(position));
+            } else {
+                assert_eq!(position, 0);
+            }
+            engine.fiber.frame.cursor = Some(cursor);
             engine.fiber.frame.control_stack = vec![FlowControlStackEntry {
                 kind: FlowControlStackEntryKind::FunctionCall(frame),
             }];
             assert!(!engine.main_fiber_can_attempt_runtime_op());
             assert!(!engine.fiber_has_internal_work(&engine.fiber));
-            assert_eq!(
-                engine
-                    .fiber
-                    .frame
-                    .active_function()
-                    .unwrap()
-                    .next_instruction,
-                position
-            );
+            let cursor = engine.fiber.frame.cursor.as_ref().unwrap();
+            assert_eq!(cursor.operation_index().unwrap_or(0), position);
             assert!(engine.fiber.frame.pending_ops.is_empty());
             cases += 1;
         }

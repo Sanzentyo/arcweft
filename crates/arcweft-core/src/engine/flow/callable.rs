@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::engine::{
-    Engine, FlowCursor, FunctionCallFrame, FunctionReturnContinuation, RuntimeCallBackend,
+    Engine, FunctionCallFrame, FunctionReturnContinuation, NativeCodeCursor, RuntimeCallBackend,
     RuntimeEvalError, RuntimeStepOutput, runtime_value_label,
 };
 use crate::pattern::RuntimePattern;
@@ -19,7 +19,7 @@ impl Engine {
         callee: RuntimeValue,
         args: Vec<RuntimeValue>,
         result: RuntimePattern,
-        resume: Option<FlowCursor>,
+        resume: Option<NativeCodeCursor>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
@@ -50,7 +50,7 @@ impl Engine {
         arguments: Vec<RuntimeValue>,
         attached: Option<RuntimeValue>,
         result: RuntimePattern,
-        resume: Option<FlowCursor>,
+        resume: Option<NativeCodeCursor>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
@@ -66,7 +66,7 @@ impl Engine {
         pending: RuntimeCallablePendingGroup,
         attached: RuntimeValue,
         result: RuntimePattern,
-        resume: Option<FlowCursor>,
+        resume: Option<NativeCodeCursor>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
@@ -80,7 +80,7 @@ impl Engine {
         &mut self,
         application: RuntimeCallableApplication,
         result: RuntimePattern,
-        resume: Option<FlowCursor>,
+        resume: Option<NativeCodeCursor>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {

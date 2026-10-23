@@ -398,10 +398,16 @@ fn operations_avoid_locals(plan: &RuntimePlan, ops: &[&FlowOp], elided: &[Local]
 impl Engine {
     fn consume_projected_ops(&mut self, count: usize) {
         if self.fiber.frame.pending_ops.is_empty() {
-            if let Some(frame) = self.fiber.frame.active_function_mut() {
-                frame.next_instruction += count;
-            } else if let Some(cursor) = self.fiber.frame.cursor.as_mut() {
-                cursor.op_index += count;
+            if let Some(cursor) = self.fiber.frame.cursor.as_mut() {
+                let next = cursor
+                    .operation_index()
+                    .expect("numeric span owns operation code")
+                    .checked_add(count)
+                    .expect("admitted numeric span operation count");
+                assert!(
+                    cursor.set_operation(next),
+                    "numeric span remains inside original code"
+                );
             }
         } else {
             for _ in 0..count {
@@ -416,12 +422,10 @@ impl Engine {
         elided: &[Local],
     ) -> bool {
         use super::{FlowControlStackEntryKind as Control, FunctionReturnContinuation as Return};
-        let cursor_avoids = |cursor: &super::FlowCursor| {
-            self.flow_at_cursor(cursor)
-                .and_then(|flow| flow.body().ops().get(cursor.op_index..))
-                .is_some_and(|ops| {
-                    operations_avoid_locals(plan, &ops.iter().collect::<Vec<_>>(), elided)
-                })
+        let cursor_avoids = |cursor: &super::NativeCodeCursor| {
+            cursor.operations(plan).is_some_and(|ops| {
+                operations_avoid_locals(plan, &ops.iter().collect::<Vec<_>>(), elided)
+            })
         };
         if !operations_avoid_locals(plan, ops, elided)
             || !self.fiber.frame.root_cleanups.is_empty()
@@ -457,15 +461,7 @@ impl Engine {
                         Return::CallableDefault { .. } => false,
                     };
                     continuation_avoids
-                        && frame
-                            .original_operation_remainder(plan)
-                            .is_some_and(|operations| {
-                                operations_avoid_locals(
-                                    plan,
-                                    &operations.iter().collect::<Vec<_>>(),
-                                    elided,
-                                )
-                            })
+                        && frame.resume.as_ref().is_none_or(cursor_avoids)
                         && operations_avoid_locals(
                             plan,
                             &frame.caller_pending_ops.iter().collect::<Vec<_>>(),

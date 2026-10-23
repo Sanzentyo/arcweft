@@ -17,7 +17,9 @@ mod dialogue_content;
 pub mod entry_inventory;
 mod executable_body;
 mod flow_ops;
-pub(crate) use flow_ops::{RuntimeFlowTreeEvent, try_visit_ops_events};
+pub(crate) use flow_ops::{
+    RuntimeFlowBodyLocation, RuntimeFlowLocationStep, RuntimeFlowTreeEvent, try_visit_ops_events,
+};
 mod flows;
 mod format_attempt;
 mod function_inputs;

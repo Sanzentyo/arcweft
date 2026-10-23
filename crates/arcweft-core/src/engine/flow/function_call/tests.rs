@@ -9,6 +9,75 @@ use crate::tests::function_application::{
 use crate::value::{RuntimeCallableValue, RuntimeEvalError, RuntimeValue};
 
 #[test]
+fn original_function_code_owner_survives_restore_and_rejects_other_valid_sites() {
+    use crate::engine::NativeCodeCursor;
+    use crate::plan::code::RuntimeCodeOwner;
+    use crate::pure::RuntimePureFunctionRef;
+
+    for kind in [
+        RuntimeFunctionSiteBodyKind::Expression,
+        RuntimeFunctionSiteBodyKind::Executable,
+    ] {
+        let plan = Arc::new(returning_function_plan(kind));
+        let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));
+        let mut sites = plan.function_sites().iter_with_ids();
+        let other = sites.next().unwrap().0;
+        let site = sites.next().unwrap().0;
+        let function = RuntimePureFunctionRef::resolve(&plan, site).unwrap();
+        let engine = Engine::for_function_invocation(function, vec![]).unwrap();
+        let saved = engine.inert_rollback_image().unwrap();
+        let restored = Engine::from_rollback_image(saved.clone(), &owner).unwrap();
+        assert_eq!(restored.inert_rollback_image().unwrap(), saved);
+        assert_eq!(
+            restored.fiber.frame.cursor.as_ref().unwrap().owner(),
+            RuntimeCodeOwner::Function(site)
+        );
+
+        let mut different = saved.clone();
+        different.fiber.frame.cursor =
+            NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(other));
+        assert!(Engine::from_rollback_image(different, &owner).is_err());
+        let mut missing = saved;
+        missing.fiber.frame.cursor = None;
+        assert!(Engine::from_rollback_image(missing, &owner).is_err());
+
+        // Flow roots have an original function context without a return frame.
+        let mut flow =
+            Engine::new_with_shared_plan(Arc::clone(&plan), crate::task::GenerationId::new(0));
+        flow.start_flow(&plan.flows()[0].id).unwrap();
+        let saved = flow.inert_rollback_image().unwrap();
+        assert!(Engine::from_rollback_image(saved.clone(), &owner).is_ok());
+        let mut different = saved;
+        different.fiber.frame.cursor =
+            NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(other));
+        assert!(Engine::from_rollback_image(different, &owner).is_err());
+    }
+}
+
+#[test]
+fn invalid_original_flow_range_fails_instead_of_completing() {
+    let plan = Arc::new(returning_function_plan(
+        RuntimeFunctionSiteBodyKind::Executable,
+    ));
+    let mut engine =
+        Engine::new_with_shared_plan(Arc::clone(&plan), crate::task::GenerationId::new(0));
+    engine.start_flow(&plan.flows()[0].id).unwrap();
+    engine
+        .fiber
+        .frame
+        .cursor
+        .as_mut()
+        .unwrap()
+        .corrupt_operation_for_test(usize::MAX);
+    let output = engine.step(Default::default(), Default::default());
+    assert!(matches!(
+        output.fiber_status,
+        crate::engine::FlowFiberStatus::Failed(_)
+    ));
+    assert!(!output.output.diagnostics.is_empty());
+}
+
+#[test]
 fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
     use crate::effect_row::{DecisionControl, DecisionWork, EffectFormula};
     use crate::pattern::RuntimeSemanticTypeId;
@@ -442,12 +511,13 @@ fn program_return_preserves_typed_result_and_rollback_custody() {
         Engine::for_program_invocation(Arc::clone(&plan), program, Vec::new()).unwrap();
     assert!(engine.fiber.frame.pending_ops.is_empty());
     let mut invalid_position = engine.inert_rollback_image().unwrap();
-    let Some(crate::engine::FlowControlStackEntryRollbackImage::FunctionCall(frame)) =
-        invalid_position.fiber.frame.control_stack.last_mut()
-    else {
-        panic!("the program starts at its actual function frame");
-    };
-    frame.next_instruction = 1;
+    invalid_position
+        .fiber
+        .frame
+        .cursor
+        .as_mut()
+        .unwrap()
+        .corrupt_operation_for_test(1);
     assert!(
         Engine::from_rollback_image(
             invalid_position,
@@ -873,13 +943,9 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
     let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));
     let saved = engine.inert_rollback_image().unwrap();
     let mut invalid_position = saved.clone();
-    let Some(crate::engine::FlowControlStackEntryRollbackImage::FunctionCall(frame)) =
-        invalid_position.fiber.frame.control_stack.last_mut()
-    else {
-        panic!("the invocation retains its original function frame");
-    };
-    assert_eq!(frame.next_instruction, 1);
-    frame.next_instruction = usize::MAX;
+    let position = invalid_position.fiber.frame.cursor.as_mut().unwrap();
+    assert_eq!(position.operation_index(), Some(1));
+    position.corrupt_operation_for_test(usize::MAX);
     assert!(Engine::from_rollback_image(invalid_position, &owner).is_err());
     let mut restored = Engine::from_rollback_image(saved, &owner).unwrap();
     assert!(Arc::ptr_eq(&restored.plan, &plan));

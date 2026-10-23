@@ -18,6 +18,25 @@ use crate::{
 };
 
 #[test]
+fn aot_blocks_use_function_identity_when_flow_and_function_orders_differ() {
+    let plan = crate::tests::function_application::returning_function_plan(
+        crate::plan::RuntimeFunctionSiteBodyKind::Executable,
+    );
+    let flow = &plan.flows()[0];
+    assert_ne!(flow.function_site().get().get(), 1);
+    let program = AotProgram::from_runtime_plan(&plan);
+    let block = program.flow_block(flow.function_site()).unwrap();
+    assert_eq!(block.id, flow.id);
+    assert_eq!(block.ops, flow.body().ops().len());
+    assert!(std::ptr::eq(block, &program.flows()[0]));
+    for (site, _) in plan.function_sites().iter_with_ids() {
+        if site != flow.function_site() {
+            assert!(program.flow_block(site).is_none());
+        }
+    }
+}
+
+#[test]
 fn typed_log_effect_uses_the_pre_lowered_path_with_native_one_op_parity() {
     let (plan, flow) = effect_plan(None);
     assert_eq!(

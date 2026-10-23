@@ -870,7 +870,7 @@ impl Engine {
         binding: Option<crate::pattern::RuntimePattern>,
         target: crate::plan::RuntimeNeedAwaitTarget,
         observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
-        resume: Option<crate::engine::FlowCursor>,
+        resume: Option<crate::engine::NativeCodeCursor>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
@@ -1071,7 +1071,7 @@ impl Engine {
         &mut self,
         binding: Option<crate::pattern::RuntimePattern>,
         target: AwaitManyTarget,
-        resume: Option<crate::engine::FlowCursor>,
+        resume: Option<crate::engine::NativeCodeCursor>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
