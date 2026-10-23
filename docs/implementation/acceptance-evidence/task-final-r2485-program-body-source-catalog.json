@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "e9a1894f76059e47d4a56868c8f5269bd2990f8b",
+  "name": "task-final-r2485-program-body-source-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(plan::task_source::)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2485-program-body-source-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T23:09:24.7211814Z",
+  "finishedAt": "2026-10-23T23:11:44.4695063Z"
+}

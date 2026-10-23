@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "e9a1894f76059e47d4a56868c8f5269bd2990f8b",
+  "name": "task-final-r2484-program-body-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2484-program-body-core-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T23:07:20.5644555Z",
+  "finishedAt": "2026-10-23T23:08:39.6881016Z"
+}

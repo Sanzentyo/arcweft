@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2485-program-body-source-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 78889472,
+      "nonTest": false,
+      "sha256": "9adf038145e20dc4e0d99a73a8834cac0aaf12d3d1829e8adc4cf826a327777a"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-23T23:13:22.8553362Z"
+}

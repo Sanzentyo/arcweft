@@ -52,6 +52,12 @@ meter bounds this work before a Source lease is copied. An assertion or decoded
 row alone grants no execution authority, and ordinary function roots and calls
 cannot enter a `ProgramTask` kernel.
 
+`RuntimePlan::task_program_body` gives code generators a borrowed projection of
+the actual sealed Thread operation and its enclosing declaration. Its shared
+`RuntimeTaskSourceReadContext` bounds cumulative Source lookup work and remains
+rejected after an invalid lookup. The projection contains the original capture
+order, body and producer; it grants neither a launch receipt nor a runtime task.
+
 Native Thread operations also own a checked `ThreadHandle<T>` result pattern.
 Statement use has a typed discard pattern; value use binds the actual accepted
 task receipt. Child preparation checks the original Source and captures without

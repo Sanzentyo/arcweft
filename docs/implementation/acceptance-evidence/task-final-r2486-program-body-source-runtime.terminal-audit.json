@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "e9a1894f76059e47d4a56868c8f5269bd2990f8b",
+  "run": "task-final-r2486-program-body-source-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.856s] 92 tests run: 92 passed, 1876 skipped",
+  "executed": 92,
+  "passed": 92,
+  "failed": 0,
+  "skipped": 1876,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4421,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-23T23:13:40.7327691Z"
+}

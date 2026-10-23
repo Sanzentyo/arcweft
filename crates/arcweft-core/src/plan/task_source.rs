@@ -5,6 +5,7 @@
 mod artifact;
 mod owned;
 mod program;
+mod program_body;
 pub use artifact::{
     RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits,
 };
@@ -13,6 +14,7 @@ pub(crate) use program::{
     RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField,
     RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
 };
+pub use program_body::{RuntimeProgramTaskBodyRef, RuntimeTaskSourceReadContext};
 #[cfg(test)]
 mod host_tests;
 #[cfg(test)]
@@ -30,7 +32,7 @@ use super::{
 use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum RuntimeTaskSourceError {
+pub enum RuntimeTaskSourceError {
     #[error("Task source coordinate does not belong to this completed program")]
     ForeignCoordinate,
     #[error("Task source row does not belong to this completed program")]
@@ -39,6 +41,8 @@ pub(crate) enum RuntimeTaskSourceError {
     ForeignExecution,
     #[error("Task source expected key does not resolve in this completed program")]
     MissingExpectedKey,
+    #[error("Task source is not an original Thread body")]
+    NotProgramBody,
     #[error("completed Task source has no request endpoint {request:?}")]
     MissingEndpoint { request: RuntimeTaskRequestSource },
     #[error("original Task function admission failed: {0}")]

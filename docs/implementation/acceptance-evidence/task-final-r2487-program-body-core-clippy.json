@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "e9a1894f76059e47d4a56868c8f5269bd2990f8b",
+  "name": "task-final-r2487-program-body-core-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2487-program-body-core-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T23:14:05.3763222Z",
+  "finishedAt": "2026-10-23T23:15:30.3357626Z"
+}

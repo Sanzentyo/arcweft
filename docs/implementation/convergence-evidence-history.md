@@ -9640,3 +9640,48 @@ R2482 Clippy raw logのtrailing whitespace5行は保持し、staged whitespace�
 その原本1件のみ除外する。旧結果・full SHAを保持し、現状一覧は `current-status.md` のみとする。
 変更した3文書の相対リンク226件は解決可能、未閉鎖fenceは0。
 文書更新後にも、検証済み25 Rust pathsのformatと全Rust入力のhash差分0を確認した。
+
+## 元Thread本体のcompiler向け借用 — 2026-10-24
+
+前節の基盤は `e9a1894f76059e47d4a56868c8f5269bd2990f8b` で公開した。
+parentは `a74957e455597a0d3160af11c914e2e93f58d144`、treeは
+`afb274ff40dd0cb1c233f14843a30ff89cbe2725`、raw patch SHA256は
+`3ec9a920e7a918b771ad290b41b11f98390c71a5fdd9ff9ecb3cd84231399ca2`。
+[公開照合](acceptance-evidence/task-program-source-checkpoint.verified.json) は78公開blob、
+4,419入力、empty index、保持14 tracked WIPの差分0、fresh origin／advertised ref一致を記録する。
+
+同基点から4 Rust pathsを変更した。`RuntimePlan::task_program_body`は既存のSource ownerを
+通して元Thread operationとenclosing functionを借りる。bodyやcaptureを別の実行modelへ
+コピーせず、元のproducerとcapture順序をそのまま返す。読み取りcontextが同じsemantic meterを
+保持し、異なるprogramの座標、Host endpoint、予算枯渇を拒否する。contextはCloneを実装せず、
+拒否後に同じcontextを再利用しても成功しない。公開したread-only viewは起動receiptを発行しない。
+
+R2484はCoreのall-target／all-feature／locked check、exit 0、receipt経過79.12秒。
+R2485 catalogはCore libraryの1,968件中、`test(plan::task_source::)`で92件を選択した。
+残る1,876件は名前filterによる対象外であり、全Coreの合格や既存ignoredの件数へ数えない。
+R2486は **92 PASS／0 FAIL／1,876 filter skip、0.856秒、実際のexit 0**。
+[terminal audit](acceptance-evidence/task-final-r2486-program-body-source-runtime.terminal-audit.json)
+に実行済みcase set、4,421固定入力、保持14 WIPの差分0を記録した。固定executable 1件も差分0。
+
+新規3件では、返したproducer・capture slice・body sliceが元operationと同じ参照であること、
+実際のenclosing functionを返すことを確認した。同じ内容の別programの座標、実際のHost endpoint、
+work／byte allowance 0を拒否し、その後も同じcontextが拒否を保つ。既存Source 89件もPASS。
+kernel生成・実際の独立起動へのconsumer接続はまだ行っておらず、これをThread実行の受入とはしない。
+
+R2487はCoreのall-target／all-feature／locked Clippy、exit 0、警告あり、receipt経過84.96秒。
+今回は追加のread APIとそのowner検証の区切りであり、workspace check／Clippyと全53逆依存runtimeは
+新規実行していない。前節までのworkspace・owner結果とGeneric Matchの受入を履歴として維持する。
+新しいdoctest／ignored／Tier2／Native-Web capture parityも実行していない。
+
+R2488 canonical gateは3,205 files・3,075 Rust files・1,738,285 physical LOC・97 package・
+376 review triggers、blocking 0。[owner計測](acceptance-evidence/task-program-body-ownership-metrics.json)
+では新規Source API owner 111 LOC、test owner 99 LOC、plan facade 1,557（+3）、
+Source module 153（+4）。Coreのnormal／development fan-inは31／4、fan-outは7／5。
+増加300 LOC以上のfileはない。既存Source認証の公開read projectionを同じownerに置き、
+facadeはre-exportのみで、新しいI/O・crate edge・実行authority・結果tableは追加していない。
+
+今回の23原本、5,885,520 bytesをbyte・SHA256・Git blob一致で保全する。
+R2487 Clippy raw logのtrailing whitespace3行を保持し、staged whitespace検査から
+その原本1件のみ除外する。現状一覧は `current-status.md` の一か所を維持する。
+変更した3文書の相対リンク229件は解決可能、未閉鎖fenceは0。
+文書更新後も検証済み4 Rust pathsのformatと全Rust入力のhash差分0を確認した。

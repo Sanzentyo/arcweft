@@ -1,11 +1,12 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-24。基点 `a74957e455597a0d3160af11c914e2e93f58d144` に
-AWBC Program Source／型境界の25 Rust pathsと既存14 tracked WIPを含めた入力で、
-R2480はCore／RuntimePlanの **2,176 PASS／0 FAIL／0 skip**。
-4,369固定入力・case set・18 executableのdriftは0。対象は2 owner packageで、
-全53逆依存のruntimeは今回未実行。広域の直近結果R2469は前回入力の履歴として保持し、
-今回の合格範囲へ数えない。Generic Matchの受入・公開済み判定は維持する。
+確認日: 2026-10-24。基点 `e9a1894f76059e47d4a56868c8f5269bd2990f8b` に
+元Thread本体の読み取りAPIの4 Rust pathsと既存14 tracked WIPを含めた入力で、
+R2486はCore Source境界の **92 PASS／0 FAIL**。1,876件は名前filterで対象外とし、
+既存ignoredの件数へ混ぜない。4,421固定入力・case set・1 executableのdriftは0。
+公開基盤のR2480は2 owner／2,176全PASS、広域R2469は前回入力の履歴として保持する。
+全53逆依存runtimeとGeneric Match 151件は今回未実行。
+Generic Matchの受入・公開済み判定を維持する。
 公開 SHA・固定入力・実際の途中失敗と修復は [検証履歴](convergence-evidence-history.md) に保持する。
 
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
@@ -44,12 +45,12 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | 元 executable lease・Native root/callee 座標 | **当該修復は公開・検証済み** | `6a86816246cd8e1bfae8f8250324cdbf0a2c559a` の必須 program lease と、`1be0eb4d09a958b099225a1c7fbbd506afe39d26` の callee 退役処理。キュー切替前の修復入力で R2355 は8 library／2,463 PASS。現在のキュー移行全体の runtime 合格を意味しない。 |
 | Native の original-source queue／runtime continuation・結果保管 | **Program の結果保管・退役は owner／consumer 検証済み** | 実際の返却 frame が値を cleanup／join／rollback 中も保持し、退役時に共通 registry の `Ready` へ移す。ローカル await が一度だけ値を取得し、`ReadyTransferred` をHost ACKで復活させない。R2424／R2426の結果を保持し、公開 `a74957e455597a0d3160af11c914e2e93f58d144` のR2469では実際のlive handleを親環境へ束縛した状態で、非Unit返却・各step後rollback・ACK・metadata再送・fallthrough失敗の3件も全PASS。Core全2,013件がPASS。[前回入力の照合](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.acceptance-audit.json)。公開Native saveとAWBCの受入は別項目。 |
 | Thread の返り値／返却 handle | **意味解析とNativeのhandle受渡し・awaitを検証済み／全backend受入は未達** | 公開 `dd7ce52715d3beda046ad465063623ece4ea5092` の子task結果型・Return／Try所有境界を維持し、公開 `a74957e455597a0d3160af11c914e2e93f58d144` の21 Rust pathsでstatement/valueを同じCPS loweringへ統合した。必須の型付きresult patternへ実際のaccepted receiptを束縛し、拒否／panicは起動公開前にjournalを戻す。Host NeedとProgram ThreadHandle、payload型の取り違えを拒否する新規Coreケースと、関数から返したhandleをawaitして実際のBool false／trueを取得する新規NativeケースがR2469で全PASS。既存の複合ケースもNative分岐は通過したが、次項のAWBCで失敗する。Compiler `flow_include` は13 PASS／1 FAIL。[必須8件と全151受入の照合](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.acceptance-audit.json)。 |
-| AWBC の独立 Thread scheduling | **Host／Program schema・元Source admissionは検証済み／独立実行は具体的な未達あり** | Program行をHost requestから分離し、元expected-key・生成kernel定義・scheduling・payload・captureの完全な型関係を同じmeterで認証する。R2480はCore 2,018件・RuntimePlan 158件が全PASS。新規Source 5件とkind行列2件も全PASSし、通常function rootからのkernel入口の実際の検査漏れを修復した。[今回の照合](acceptance-evidence/task-final-r2480-awbc-program-source-final-runtime.acceptance-audit.json)。一方、`crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` のThreadはbodyを親frame内へinline loweringし、result bindingを作らない。前回R2469はNative完了後、`awbc_lower/expr.rs:78` の未割当local `1`でpanicした。[実診断](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.failure-recon.json)。独立kernelの生成・child・結果・保存復元の接続は、このSource検証の合格へ含めない。 |
+| AWBC の独立 Thread scheduling | **Host／Program schema・元Source admissionは検証済み／独立実行は具体的な未達あり** | Program行をHost requestから分離し、元expected-key・生成kernel定義・scheduling・payload・captureの完全な型関係を同じmeterで認証する。R2480はCore 2,018件・RuntimePlan 158件が全PASS。新規Source 5件とkind行列2件も全PASSし、通常function rootからのkernel入口の実際の検査漏れを修復した。[公開基盤の照合](acceptance-evidence/task-final-r2480-awbc-program-source-final-runtime.acceptance-audit.json)。元Thread本体を借りるAPIはR2486のSource 92件（新規3件を含む）が全PASS。kernel生成への接続はまだ行っていない。一方、`crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` のThreadはbodyを親frame内へinline loweringし、result bindingを作らない。前回R2469はNative完了後、`awbc_lower/expr.rs:78` の未割当local `1`でpanicした。[実診断](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.failure-recon.json)。独立kernelの生成・child・結果・保存復元の接続は、このSource検証の合格へ含めない。 |
 | 公開 executor save | **バックエンドごとに異なる** | `crates/arcweft-core/src/executor.rs` の `snapshot_for_save` は Product AWBC を扱う一方、RuntimePlanVm／StructuredAot は `UnsupportedTier` を返す。Product の既存 save/restore の成功は保持し、Native 公開 save の未対応を別項目として扱う。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **広域実行に CLI 51件／Compiler 1件の失敗** | R2469はCoreの全53逆依存を選択。CLIは640 PASS／51 FAIL、Compilerは612 PASS／1 FAIL。52失敗識別子はR2458と一致し、新規・消失とも0。前回入力でもtyped Presentation ABI未接続9件、JLREQ geometry／raw crop8件を再現し、hyphenのcolumnは1169／1127。ThreadHandleの失敗地点は前項のとおり進んだ。識別子だけで原因を同一視しない。[前回入力の全診断](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.failure-recon.json)、[件数・受入照合](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.acceptance-audit.json)。 |
-| 最終 workspace／Tier 2／Native-Web capture parity | **直近の workspace check／Clippy・構造gateは合格。最終受入は未達** | 今回の最終Rust入力でR2481 check・R2482 Clippyはworkspace all-target／all-feature／locked、exit 0（警告あり）。R2483のcanonical構造gateもexit 0、blocking 0。今回のruntimeは2 ownerのみ。前回の広域R2469は7,182 PASS／52 FAILであり、全workspace runtime合格ではない。全53逆依存の新shape確認、39既存ignored、Tier2、Native-Web capture parityの最終受入は未実行。R2420の76 doctestも当時の実績として保持する。[固定入力・owner disposition・実結果](convergence-evidence-history.md)。 |
+| 最終 workspace／Tier 2／Native-Web capture parity | **直近の workspace check／Clippy・構造gateは合格。最終受入は未達** | 今回の追加APIはCore all-target／all-feature／lockedのR2484 check・R2487 Clippyがexit 0（警告あり）、R2488 canonical構造gateもexit 0、blocking 0。workspace check／Clippyの直近R2481／R2482は前回入力の合格として保持する。今回のruntimeはSource 92件のみ。前回の広域R2469は7,182 PASS／52 FAILであり、全workspace runtime合格ではない。全53逆依存の新shape確認、39既存ignored、Tier2、Native-Web capture parityの最終受入は未実行。R2420の76 doctestも当時の実績として保持する。[固定入力・owner disposition・実結果](convergence-evidence-history.md)。 |
 
 旧ロードマップ、着手前の実装ガイド、重複 feature matrix、完了した runtime-boundary
 移行手順、旧レビュー依頼・設計 mirror は、現行契約への整理と検証履歴の保全後に削除した。

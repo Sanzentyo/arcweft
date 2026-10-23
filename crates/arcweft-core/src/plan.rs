@@ -44,7 +44,10 @@ mod task_semantic;
 pub(crate) mod task_source;
 pub use body_semantic::task_image::codec::RuntimeTaskSourceCodecLimits;
 pub use construction::source::program::RuntimeProgramSourceLimits;
-pub use task_source::{RuntimeTaskSource, RuntimeTaskSourceAssertion};
+pub use task_source::{
+    RuntimeProgramTaskBodyRef, RuntimeTaskSource, RuntimeTaskSourceAssertion,
+    RuntimeTaskSourceError, RuntimeTaskSourceReadContext,
+};
 pub use task_source::{
     RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits,
 };

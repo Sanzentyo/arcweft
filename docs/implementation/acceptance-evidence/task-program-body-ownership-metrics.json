@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "base": "e9a1894f76059e47d4a56868c8f5269bd2990f8b",
+  "owned": 4,
+  "held": 14,
+  "rows": [
+    {
+      "path": "crates/arcweft-core/src/plan.rs",
+      "physicalLoc": 1557,
+      "baseLoc": 1554,
+      "growth": 3,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source.rs",
+      "physicalLoc": 153,
+      "baseLoc": 149,
+      "growth": 4,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body.rs",
+      "physicalLoc": 111,
+      "baseLoc": 0,
+      "growth": 111,
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body/tests.rs",
+      "physicalLoc": 99,
+      "baseLoc": 0,
+      "growth": 99,
+      "embeddedTestLoc": 0
+    }
+  ],
+  "package": [
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    }
+  ]
+}
