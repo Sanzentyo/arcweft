@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "base": "3c12ee45a418f909ae0916cb65f77178a1681377",
+  "run": "task-final-r2404-scheduler-completion-reverse-runtime",
+  "schedulerLibraryPassed": 17,
+  "requiredPassed": 19,
+  "required": [
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::always_start_does_not_join_same_key_tasks"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::cancellation_requests_are_dispatched_once"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::completion_updates_stats_and_normalizes_events"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::conflicting_receipt_rejects_whole_submission_batch"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::dispatch_avoids_sort_when_submissions_are_already_ordered"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::dispatches_by_priority_then_submission_order"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::invalid_completion_batches_are_rejected_without_state_changes"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::joined_receipt_has_one_owner_publication"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::joins_same_key_in_flight_tasks"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::progress_keeps_joined_work_in_flight_until_terminal_delivery"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::repeated_or_mismatched_publications_reject_atomically"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::same_key_join_compares_all_non_identity_task_semantics"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::shuffled_progress_and_ready_revisions_are_normalized_before_commit"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::task_id_resubmission_ignores_only_diagnostic_changes"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::terminal_task_rejects_later_completion"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::wrong_ready_payload_becomes_one_protocol_failure"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-scheduler",
+      "test": "tests::rejected_completion_retains_owned_packets_and_retries_without_copying_payloads"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::program_execution_tests::actual_program_body_retirement_is_required_and_duplicate_batch_is_atomic"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::program_execution_tests::actual_program_terminals_construct_one_ordered_publication_packet"
+    }
+  ],
+  "failuresByBinary": [
+    {
+      "binary": "arcweft-cli::check",
+      "count": 51
+    }
+  ],
+  "priorFailureIdentityDrift": 0,
+  "identityDifference": [],
+  "sourceInputs": 4066,
+  "sourceDrift": 0,
+  "binaries": 32,
+  "artifactDrift": 0,
+  "recordedAt": "2026-10-23T14:09:16.2534208Z",
+  "previousClosureCases": 1079,
+  "catalogDifference": [
+    {
+      "InputObject": "arcweft-runtime-scheduler\ttests::rejected_completion_retains_owned_packets_and_retries_without_copying_payloads",
+      "SideIndicator": "=>"
+    }
+  ]
+}

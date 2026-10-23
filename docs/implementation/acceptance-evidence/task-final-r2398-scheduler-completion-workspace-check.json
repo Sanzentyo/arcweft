@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "3c12ee45a418f909ae0916cb65f77178a1681377",
+  "name": "task-final-r2398-scheduler-completion-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2398-scheduler-completion-workspace-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T07:23:36.1040815Z",
+  "finishedAt": "2026-10-23T07:25:04.6646062Z"
+}

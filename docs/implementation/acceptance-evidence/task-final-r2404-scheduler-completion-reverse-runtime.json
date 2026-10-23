@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "3c12ee45a418f909ae0916cb65f77178a1681377",
+  "name": "task-final-r2404-scheduler-completion-reverse-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-scheduler-completion-custody.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "rdeps(=arcweft-runtime-scheduler) | rdeps(=arcweft-runtime-host)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2404-scheduler-completion-reverse-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-23T07:42:44.8380779Z",
+  "finishedAt": "2026-10-23T07:55:47.6679260Z"
+}

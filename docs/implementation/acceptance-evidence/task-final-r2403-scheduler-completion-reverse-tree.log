@@ -1,0 +1,13 @@
+arcweft-runtime-host v0.1.0 (D:\git\arcweft\crates\arcweft-runtime-host)
+├── arcweft-cli v0.1.0 (D:\git\arcweft\crates\arcweft-cli)
+├── arcweft-lsp v0.1.0 (D:\git\arcweft\crates\arcweft-lsp)
+│   [dev-dependencies]
+│   └── arcweft-cli v0.1.0 (D:\git\arcweft\crates\arcweft-cli)
+├── arcweft-player-native v0.1.0 (D:\git\arcweft\crates\arcweft-player-native)
+│   └── arcweft-cli v0.1.0 (D:\git\arcweft\crates\arcweft-cli)
+└── arcweft-verify-lsp v0.1.0 (D:\git\arcweft\crates\arcweft-verify-lsp)
+    └── arcweft-lsp v0.1.0 (D:\git\arcweft\crates\arcweft-lsp) (*)
+
+arcweft-runtime-scheduler v0.1.0 (D:\git\arcweft\crates\arcweft-runtime-scheduler)
+├── arcweft-cli v0.1.0 (D:\git\arcweft\crates\arcweft-cli)
+└── arcweft-runtime-host v0.1.0 (D:\git\arcweft\crates\arcweft-runtime-host) (*)

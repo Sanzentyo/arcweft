@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "base": "3c12ee45a418f909ae0916cb65f77178a1681377",
+  "name": "task-final-r2402-scheduler-completion-reverse-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-cli",
+    "-p",
+    "arcweft-lsp",
+    "-p",
+    "arcweft-player-native",
+    "-p",
+    "arcweft-runtime-host",
+    "-p",
+    "arcweft-runtime-scheduler",
+    "-p",
+    "arcweft-verify-lsp",
+    "--all-features",
+    "--locked",
+    "-E",
+    "rdeps(=arcweft-runtime-scheduler) | rdeps(=arcweft-runtime-host)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2402-scheduler-completion-reverse-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T07:30:46.3892420Z",
+  "finishedAt": "2026-10-23T07:41:47.2954242Z"
+}

@@ -384,16 +384,13 @@ impl NativeTaskBridge {
             return Err(error);
         }
         let mut scheduler_after = self.scheduler.clone();
-        let events = match scheduler_after.complete(task_events) {
-            Ok(events) => events,
-            Err(error) => {
-                self.stats = saved_stats;
-                self.sequence = saved_sequence;
-                return Err(error.into());
-            }
-        };
-        self.record_scheduler_owner_outcomes(&owner_ids, &events);
-        let events = normalize_task_events(events);
+        if let Err(error) = scheduler_after.complete(&mut task_events) {
+            self.stats = saved_stats;
+            self.sequence = saved_sequence;
+            return Err(error.into());
+        }
+        self.record_scheduler_owner_outcomes(&owner_ids, &task_events);
+        let events = normalize_task_events(task_events);
         let frontiers = match self.prepare_task_event_frontiers(&events) {
             Ok(frontiers) => frontiers,
             Err(error) => {
@@ -473,12 +470,12 @@ impl NativeTaskBridge {
             let event = self.event_for_task(&task_id, revision, kind)?;
             publications.insert(event.publication_order(), event);
         }
-        let events = publications.into_values().collect::<Vec<_>>();
+        let mut events = publications.into_values().collect::<Vec<_>>();
         self.prepare_task_event_frontiers(&events)?;
         let event_build_elapsed_ns = started.elapsed().as_nanos();
         let started = Instant::now();
         let mut scheduler = self.scheduler.clone();
-        let events = scheduler.complete(events)?;
+        scheduler.complete(&mut events)?;
         let frontiers = self.prepare_task_event_frontiers(&events)?;
         let scheduler_complete_elapsed_ns = started.elapsed().as_nanos();
         self.record_scheduler_owner_outcomes(&owners, &events);
@@ -1051,12 +1048,8 @@ impl NativeTaskBridge {
 
         let started = Instant::now();
         let mut scheduler_after = self.scheduler.clone();
-        let scheduler_events = match scheduler_after.complete(std::mem::take(&mut events)) {
-            Ok(events) => events,
-            Err(error) => return Err(error.into()),
-        };
-        self.record_scheduler_owner_outcomes(&owner_ids, &scheduler_events);
-        events = scheduler_events;
+        scheduler_after.complete(&mut events)?;
+        self.record_scheduler_owner_outcomes(&owner_ids, &events);
         events.extend(
             unauthorized
                 .into_iter()

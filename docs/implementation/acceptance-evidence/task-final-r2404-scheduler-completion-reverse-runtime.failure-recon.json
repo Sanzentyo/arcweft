@@ -1,0 +1,707 @@
+{
+  "version": 1,
+  "run": "task-final-r2404-scheduler-completion-reverse-runtime",
+  "partial": false,
+  "completedAtLeast": 1080,
+  "observedFailures": 51,
+  "groups": [
+    {
+      "kind": "PresentationABI.Background",
+      "count": 9
+    },
+    {
+      "kind": "Unclassified",
+      "count": 42
+    }
+  ],
+  "newFailureNames": [],
+  "failures": [
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata",
+      "kind": "PresentationABI.Background",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata' (52892) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:3624:5:",
+        "    image animation sample hit-test should succeed, stderr: error[compiler.runtime_semantic_projection]: call ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) is not an accepted executable call: presentation callable Background requires the pending typed Presentation command ABI",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob",
+      "kind": "PresentationABI.Background",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob' (51908) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:3266:5:",
+        "    animated image object MCP tool-result should succeed, stderr: error[compiler.runtime_semantic_projection]: call ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) is not an accepted executable call: presentation callable Background requires the pending typed Presentation command ABI",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata",
+      "kind": "PresentationABI.Background",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata' (21740) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:3624:5:",
+        "    image animation sample hit-test should succeed, stderr: error[compiler.runtime_semantic_projection]: call ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) is not an accepted executable call: presentation callable Background requires the pending typed Presentation command ABI",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry",
+      "kind": "PresentationABI.Background",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry' (23420) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:3563:5:",
+        "    image animation sample observe should succeed, stderr: error[compiler.runtime_semantic_projection]: call ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) is not an accepted executable call: presentation callable Background requires the pending typed Presentation command ABI",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object",
+      "kind": "PresentationABI.Background",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_captures_clipped_animated_image_object' (40904) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:3563:5:",
+        "    image animation sample observe should succeed, stderr: error[compiler.runtime_semantic_projection]: call ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) is not an accepted executable call: presentation callable Background requires the pending typed Presentation command ABI",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry' (51780) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+        "    body text after the Greek+Latin unit should continue after the unit: next column should advance leftward",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry' (51228) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+        "    body text after the accented Latin word should continue after the word: next column should advance leftward",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry' (55188) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:58:10:",
+        "    target dialogue_view object is observed",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs' (39664) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/shared.rs:485:13:",
+        "    dialogue_view object for rich-text line `say.full.001.extreme` should be observed: {\"status\":\"ok\",\"session_id\":\"cli\",\"tick\":3,\"frame_id\":\"frame.3\",\"state_hash\":\"8098865c1a79779f90d0adbdd34093d00d3a38229ea979c191b5145245366074\",\"render_hash\":\"dac5efc47438db221831c70062c54c464e1e1e15a120f52204a8c48879c68c17\",\"source\":\"../..\\\\samples/rich-text-full-grammar.arcw\",\"viewport\":{\"width\":1280,\"height\":720,\"scale\":1.0},\"images\":[{\"kind\":\"color\",\"renderer\":\"native\",\"scope\":{\"kind\":\"layer\",\"id\":\"dialogue.rich_text\"},\"composition\":\"masked_framebuffer_crop\",\"capture_step\":4,\"capture_time_millis\":60000,\"uri\":\"arcweft://session/cli/frame/3/layer.dialogue.rich_text.png\",\"mime_type\":\"image/png\",\"width\":1166,\"height\":203,\"hash\":\"dac5efc47438db221831c70062c54c464e1e1e15a120f52204a8c48879c68c17\",\"crop_origin\":{\"space\":\"viewport\",\"x\":57,\"y\":460},\"content_bbox\":{\"x\":0,\"y\":0,\"width\":1166,\"height\":203},\"content_viewport_bbox\":{\"x\":57,\"y\":460,\"width\":1166,\"height\":203},\"content_pixels\":6190,\"selected_captur",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry' (44824) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/shared.rs:1638:5:",
+        "    assertion `left == right` failed: published JLREQ letters after a word-internal hyphen should stay attached: clusters should share the same vertical column",
+        "      left: Number(1169)",
+        "     right: Number(1127)",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry' (56748) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+        "    body text after the numeric unit symbol should continue in the next column: next column should advance leftward",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops' (14228) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+        "    body text after the accented Latin word should continue after the word: next column should advance leftward",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops' (47204) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+        "    body text after the Greek+Latin unit should continue after the unit: next column should advance leftward",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops' (26716) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/shared.rs:1638:5:",
+        "    assertion `left == right` failed: published JLREQ letters after a word-internal hyphen should stay attached: clusters should share the same vertical column",
+        "      left: Number(1169)",
+        "     right: Number(1127)",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops' (51504) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+        "    body text after the numeric unit symbol should continue in the next column: next column should advance leftward",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures' (56624) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/shared.rs:1139:28:",
+        "    rich-text run `吾輩は猫である。ABC 123 2026` should be observed: {\"status\":\"ok\",\"session_id\":\"cli\",\"tick\":3,\"frame_id\":\"frame.3\",\"state_hash\":\"8098865c1a79779f90d0adbdd34093d00d3a38229ea979c191b5145245366074\",\"render_hash\":\"de7ce700b12bbbdf28307a8f252f93d9f2c8bbc0c85078a0ade201c907811468\",\"source\":\"../..\\\\samples/rich-text-full-grammar.arcw\",\"viewport\":{\"width\":1280,\"height\":720,\"scale\":1.0},\"images\":[{\"kind\":\"color\",\"renderer\":\"native\",\"scope\":{\"kind\":\"viewport\"},\"composition\":\"framebuffer\",\"capture_step\":4,\"capture_time_millis\":60000,\"uri\":\"arcweft://session/cli/frame/3/color.png\",\"mime_type\":\"image/png\",\"width\":1280,\"height\":720,\"hash\":\"de7ce700b12bbbdf28307a8f252f93d9f2c8bbc0c85078a0ade201c907811468\",\"content_bbox\":{\"x\":57,\"y\":460,\"width\":1166,\"height\":203},\"content_viewport_bbox\":{\"x\":57,\"y\":460,\"width\":1166,\"height\":203},\"content_pixels\":236698,\"written\":\"full-grammar-full-frame.png\"}],\"layers\":[{\"id\":\"dialogue\",\"visible\":true,\"bbox\":{\"space\":\"viewport\",\"x\":57,\"y\":460,\"width\":1166,\"h",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels",
+      "kind": "PresentationABI.Background",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels' (51504) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:3563:5:",
+        "    image animation sample observe should succeed, stderr: error[compiler.runtime_semantic_projection]: call ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) is not an accepted executable call: presentation callable Background requires the pending typed Presentation command ABI",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata",
+      "kind": "PresentationABI.Background",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata' (57332) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:3563:5:",
+        "    image animation sample observe should succeed, stderr: error[compiler.runtime_semantic_projection]: call ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) is not an accepted executable call: presentation callable Background requires the pending typed Presentation command ABI",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering' (13600) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:3103:5:",
+        "    authored Scroll live observe should succeed, stderr: error[syntax.declaration.invalid_name]: action declaration name must be one non-keyword identifier",
+        "     --> C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-cli-agent-observe-authored-scroll-view-41520.arcw:2:12",
+        "      |",
+        "    2 | pub action feedback.submit(value: String)",
+        "      |            ^^^^^^^^^^^^^^^",
+        "    error[hir.project.analysis]: HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_indexes_multiple_sources",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_rag_query_indexes_multiple_sources' (12524) panicked at crates\\arcweft-cli\\tests\\check/agent_script_debug.rs:2871:5:",
+        "    agent rag query should index repeated --source inputs",
+        "    stdout:",
+        "    stderr:",
+        "    error[syntax.view.invalid_value]: View body values must use the typed View expression grammar",
+        "      --> D:\\git\\arcweft\\crates\\arcweft-cli\\../..\\samples/rich-text-showcase/src/main.arcw:30:5",
+        "       |",
+        "    30 | /     Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = dialogue_panel) {",
+        "    31 | |         Text(dialogue.speaker)",
+        "    32 | |             .x(85.6px)",
+        "    33 | |             .y(480.8px)",
+        "    ...  |",
+        "    44 | |             .on_click { dialogue.primary_action }",
+        "    45 | |     }",
+        "       | |_____^",
+        "    error[hir.project.analysis]: HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(2), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+        "    2 sources: agent rag query failed to compile source: ExitCode(ExitCode(1))",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object",
+      "kind": "PresentationABI.Background",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object' (24348) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:2740:5:",
+        "    released image handle observe should succeed with a structured diagnostic, stderr: error[compiler.runtime_semantic_projection]: call ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) is not an accepted executable call: presentation callable Background requires the pending typed Presentation command ABI",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_checks_runtime_assert_sections",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_checks_runtime_assert_sections' (10680) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:6367:5:",
+        "    bench assertions should pass, stderr: ",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_measures_branching_for_loop_pure_jit_characteristics' (42352) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:3577:5:",
+        "    assertion `left == right` failed",
+        "      left: Number(96)",
+        "     right: 192",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard' (3432) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:4106:5:",
+        "    assertion `left == right` failed",
+        "      left: Number(15)",
+        "     right: 16",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture' (54984) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:4204:5:",
+        "    assertion `left == right` failed",
+        "      left: Number(39)",
+        "     right: 40",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'agent_observe_native::agent_observe_reports_text_presentation_z_index_depth' (3088) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/core.rs:661:5:",
+        "    assertion `left == right` failed",
+        "      left: Null",
+        "     right: \"caption\"",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_headless_runtime_sections",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_measures_headless_runtime_sections' (26796) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:2778:5:",
+        "    bench JSON should include headless measurement and compiler profiling: {",
+        "      \"source\": \"arcweft-cli-script-bench-measured-52512.arcw\",",
+        "      \"syntax_warnings\": 0,",
+        "      \"line_task_groups\": 0,",
+        "      \"compiler\": {",
+        "        \"syntax\": {",
+        "          \"accepted_source_bytes\": 201,",
+        "          \"lexer_tokens\": 69,",
+        "          \"grammar_events\": 188,",
+        "          \"top_level_items\": 3,",
+        "          \"statements\": 4,",
+        "          \"expressions\": 9,",
+        "          \"type_nodes\": 2,",
+        "          \"pattern_nodes\": 0,",
+        "          \"identity_bearing_nodes\": 46,",
+        "          \"diagnostic_identities\": 0",
+        "        },"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_measures_runtime_match_to_pure_jit_characteristics' (10592) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:3660:5:",
+        "    assertion `left == right` failed",
+        "      left: Number(9)",
+        "     right: 7",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_traverse_parallel_file_tasks",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_measures_traverse_parallel_file_tasks' (56644) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:6549:5:",
+        "    traverse parallel bench should succeed, stderr: error[sema.call.unknown_target]: unknown method `traverse`",
+        "      |",
+        "      = note: source text is unavailable; span labels were omitted",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_large_map_pure_batch_fixture",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_measures_checked_in_large_map_pure_batch_fixture' (532) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:4480:5:",
+        "    checked-in large map pure batch bench should succeed, stderr: error: product AWBC source encoding failed: task source resource admission failed: SemanticWork",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_skips_adapter_only_script_benches",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_skips_adapter_only_script_benches' (17700) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:6757:5:",
+        "    adapter-only bench should be skipped, stderr: ",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_validates_headless_script_benches",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'bench_json_validates_headless_script_benches' (48072) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:2724:5:",
+        "    bench validation should succeed, stderr: ",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them",
+      "kind": "PresentationABI.Background",
+      "stderr": [
+        "    thread 'bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them' (30116) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:1738:5:",
+        "    image animation sample bundle should succeed, stderr: error[compiler.runtime_semantic_projection]: call ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) is not an accepted executable call: presentation callable Background requires the pending typed Presentation command ABI",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "plan_json_lists_runtime_task_graph",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'plan_json_lists_runtime_task_graph' (51456) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:670:5:",
+        "    plan listing should succeed, stderr: ",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "profile_check_rejects_ambient_route_params",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'profile_check_rejects_ambient_route_params' (51180) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:7190:5:",
+        "    stderr should reject route_params:     Checking project",
+        "    error[sema.final_analysis]: semantic value resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(2), slot: 1 }, slot: 11, kind: Expr })",
+        "          Failed project in 81ms",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source' (52344) panicked at crates\\arcweft-cli\\tests\\check.rs:582:5:",
+        "    runtime execution counters should be populated: {\"host_system\":{\"physical_cores\":12,\"logical_threads\":20,\"available_parallelism\":20},\"executor\":\"bytecode_vm\",\"executor_stats\":{\"aot_fast_path_ops\":0,\"pure_config\":{\"backend\":\"auto\",\"workers\":\"auto\",\"resolved_workers\":20,\"worker_pool_active\":false,\"batch_min_len\":1024,\"emit_object_artifacts\":false,\"math_backend\":\"auto\",\"math_wgpu_min_elements\":67108864},\"pure_acceleration\":{\"annotated\":0,\"inferred\":0,\"jit\":0,\"aot\":0,\"vm\":0},\"pure_compile\":{\"jit_attempts\":0,\"jit_successes\":0,\"jit_failures\":0,\"aot_attempts\":0,\"aot_successes\":0,\"aot_failures\":0,\"auto_jit_selected\":0,\"auto_aot_selected\":0,\"auto_vm_selected\":0,\"auto_jit_deferred\":0,\"auto_jit_promotions\":0,\"auto_jit_skipped_small\":0,\"cache_hits\":0,\"cache_misses\":0,\"object_attempts\":0,\"object_successes\":0,\"object_failures\":0,\"object_bytes\":0,\"compile_elapsed_ns\":75300},\"math\":{\"scalar_calls\":0,\"glam_calls\":0,\"ndarray_calls\":0,\"wgpu_calls\":0,\"fused_matmul_bias_add_calls\":0,\"fallback_calls\":0,",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_runs_native_file_tasks_without_absolute_source",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'profile_json_runs_native_file_tasks_without_absolute_source' (54492) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:1349:5:",
+        "    profile JSON should include native task event and I/O counters without absolute source: {",
+        "      \"source\": \"profile.arcw\",",
+        "      \"syntax_warnings\": 0,",
+        "      \"line_task_groups\": 0,",
+        "      \"compiler\": {",
+        "        \"syntax\": {",
+        "          \"accepted_source_bytes\": 693,",
+        "          \"lexer_tokens\": 275,",
+        "          \"grammar_events\": 794,",
+        "          \"top_level_items\": 4,",
+        "          \"statements\": 3,",
+        "          \"expressions\": 33,",
+        "          \"type_nodes\": 21,",
+        "          \"pattern_nodes\": 18,",
+        "          \"identity_bearing_nodes\": 213,",
+        "          \"diagnostic_identities\": 0",
+        "        },"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_scope_and_loop_value_bindings",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'run_json_executes_scope_and_loop_value_bindings' (57456) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:2501:5:",
+        "    runtime dry-run should execute scope/loop value bindings, stderr: error[hir.project.analysis]: HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_traverse_parallel_file_tasks",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'run_json_executes_traverse_parallel_file_tasks' (54748) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:2156:5:",
+        "    traverse parallel run should succeed, stderr: error[sema.call.unknown_target]: unknown method `traverse`",
+        "      |",
+        "      = note: source text is unavailable; span labels were omitted",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "run_json_observes_line_child_tasks_through_scheduler",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'run_json_observes_line_child_tasks_through_scheduler' (10848) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:2278:5:",
+        "    line child task run should succeed, stderr: error[hir.project.analysis]: HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "run_json_steps_runtime_plan",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'run_json_steps_runtime_plan' (21792) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:843:5:",
+        "    runtime dry-run should succeed, stderr: error[sema.final_analysis]: semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 14, kind: Expr }) has no admissible final type",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "spec_valid_run_edge_fixture_now_executes",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'spec_valid_run_edge_fixture_now_executes' (52512) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:6907:5:",
+        "    D:\\git\\arcweft\\crates\\arcweft-cli\\../..\\tests/fixtures/arcw/spec_should_pass/check/011_dialogue_line_value_and_handle_discard.arcw should now execute, stdout: {",
+        "      \"host_system\": {",
+        "        \"physical_cores\": 12,",
+        "        \"logical_threads\": 20,",
+        "        \"available_parallelism\": 20",
+        "      },",
+        "      \"executor\": \"bytecode_vm\",",
+        "      \"executor_stats\": {",
+        "        \"aot_fast_path_ops\": 0,",
+        "        \"pure_config\": {",
+        "          \"backend\": \"auto\",",
+        "          \"workers\": \"auto\",",
+        "          \"resolved_workers\": 20,",
+        "          \"worker_pool_active\": false,",
+        "          \"batch_min_len\": 1024,",
+        "          \"emit_object_artifacts\": false,",
+        "          \"math_backend\": \"auto\","
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "spec_rejected_edge_fixtures_fail_with_diagnostics",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'spec_rejected_edge_fixtures_fail_with_diagnostics' (44016) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:6960:9:",
+        "    stderr for D:\\git\\arcweft\\crates\\arcweft-cli\\../..\\tests/fixtures/arcw/spec_should_fail/015_break_value_in_while_rejected.arcw should contain `break expr`:",
+        "    error[sema.final_analysis]: break statement StmtId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 11, kind: Stmt }) with a value requires a loop expression target",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "test_json_executes_headless_scenario_expectations",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'test_json_executes_headless_scenario_expectations' (13032) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:2687:5:",
+        "    headless scenario test should pass, stderr: ",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "unsafe_json_lists_audit_regions",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'unsafe_json_lists_audit_regions' (56872) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:647:5:",
+        "    unsafe listing should succeed, stderr: ",
+        "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_records_required_solver_checks",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'verify_json_records_required_solver_checks' (3060) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:381:5:",
+        "    JSON report should include the required solver check: {",
+        "      \"version\": 1,",
+        "      \"status\": \"denied\",",
+        "      \"stage\": \"type-check\",",
+        "      \"diagnostics\": [",
+        "        {",
+        "          \"module\": null,",
+        "          \"stage\": \"type-check\",",
+        "          \"diagnostic\": {",
+        "            \"severity\": \"error\",",
+        "            \"code\": \"sema.final_analysis\",",
+        "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\",",
+        "            \"span\": null,",
+        "            \"labels\": [],",
+        "            \"notes\": [],",
+        "            \"suggestions\": [],",
+        "            \"commands\": []"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_invalid_proof_body",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'verify_json_reports_invalid_proof_body' (15324) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:548:5:",
+        "    JSON report should include the proof body obligation: {",
+        "      \"version\": 1,",
+        "      \"status\": \"denied\",",
+        "      \"stage\": \"readiness\",",
+        "      \"diagnostics\": [",
+        "        {",
+        "          \"module\": \"crate\",",
+        "          \"stage\": \"parse\",",
+        "          \"diagnostic\": {",
+        "            \"severity\": \"error\",",
+        "            \"code\": \"syntax.proof.missing_parameters\",",
+        "            \"message\": \"`proof` requires exactly one fixed parameter group\",",
+        "            \"span\": {",
+        "              \"source\": {",
+        "                \"id\": \"arcweft-project://arcweft-cli-verify-proof-body-43156/arcweft-cli-verify-proof-body-43156.arcw\",",
+        "                \"revision\": \"e0fec25fea50538e1b16bead8678bd3e61755fea63a7da9d7031c8b6c6943bed\",",
+        "                \"source_len\": 64"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_missing_promotion_proof",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'verify_json_reports_missing_promotion_proof' (40672) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:348:5:",
+        "    JSON report should include the promotion obligation: {",
+        "      \"version\": 1,",
+        "      \"status\": \"denied\",",
+        "      \"stage\": \"type-check\",",
+        "      \"diagnostics\": [",
+        "        {",
+        "          \"module\": null,",
+        "          \"stage\": \"type-check\",",
+        "          \"diagnostic\": {",
+        "            \"severity\": \"error\",",
+        "            \"code\": \"sema.final_analysis\",",
+        "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\",",
+        "            \"span\": null,",
+        "            \"labels\": [],",
+        "            \"notes\": [],",
+        "            \"suggestions\": [],",
+        "            \"commands\": []"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_semantic_thread_join_conflict",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'verify_json_reports_semantic_thread_join_conflict' (42500) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:421:5:",
+        "    JSON report should include the semantic thread-join obligation: {",
+        "      \"version\": 1,",
+        "      \"status\": \"denied\",",
+        "      \"stage\": \"readiness\",",
+        "      \"diagnostics\": [",
+        "        {",
+        "          \"module\": null,",
+        "          \"stage\": \"readiness\",",
+        "          \"diagnostic\": {",
+        "            \"severity\": \"error\",",
+        "            \"code\": \"hir.project.analysis\",",
+        "            \"message\": \"HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis\",",
+        "            \"span\": null,",
+        "            \"labels\": [],",
+        "            \"notes\": [],",
+        "            \"suggestions\": [],",
+        "            \"commands\": []"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_unknown_proof_dependency",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'verify_json_reports_unknown_proof_dependency' (30116) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:580:5:",
+        "    JSON report should include the unknown proof dependency obligation: {",
+        "      \"version\": 1,",
+        "      \"status\": \"denied\",",
+        "      \"stage\": \"readiness\",",
+        "      \"diagnostics\": [",
+        "        {",
+        "          \"module\": \"crate\",",
+        "          \"stage\": \"parse\",",
+        "          \"diagnostic\": {",
+        "            \"severity\": \"error\",",
+        "            \"code\": \"syntax.proof.missing_parameters\",",
+        "            \"message\": \"`proof` requires exactly one fixed parameter group\",",
+        "            \"span\": {",
+        "              \"source\": {",
+        "                \"id\": \"arcweft-project://arcweft-cli-verify-proof-dependency-47484/arcweft-cli-verify-proof-dependency-47484.arcw\",",
+        "                \"revision\": \"21ac68bc143cd6d5e2153e86ed6790ee96673ce47e3678f1b5f3ed49cb6b53de\",",
+        "                \"source_len\": 101"
+      ]
+    },
+    {
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_respects_semantic_defer_cancel_discharge",
+      "kind": "Unclassified",
+      "stderr": [
+        "    thread 'verify_json_respects_semantic_defer_cancel_discharge' (8240) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:618:5:",
+        "    completed and cancelled defers should discharge line focus, stdout: {",
+        "      \"version\": 1,",
+        "      \"status\": \"denied\",",
+        "      \"stage\": \"type-check\",",
+        "      \"diagnostics\": [",
+        "        {",
+        "          \"module\": null,",
+        "          \"stage\": \"type-check\",",
+        "          \"diagnostic\": {",
+        "            \"severity\": \"error\",",
+        "            \"code\": \"sema.final_analysis\",",
+        "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 21, kind: Expr }) has no admissible final type\",",
+        "            \"span\": null,",
+        "            \"labels\": [],",
+        "            \"notes\": [],",
+        "            \"suggestions\": [],",
+        "            \"commands\": []"
+      ]
+    }
+  ],
+  "recordedAt": "2026-10-23T14:09:16.4167822Z"
+}

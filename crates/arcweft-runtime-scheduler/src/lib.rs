@@ -247,30 +247,27 @@ impl RuntimeScheduler {
         }
     }
 
-    /// Completes in-flight tasks and returns replay-normalized task events.
+    /// Completes in-flight tasks and normalizes the caller's events in place.
     /// Unknown, duplicate-terminal, and waiter-owned events are rejected before
-    /// scheduler state or counters change.
-    pub fn complete(
-        &mut self,
-        events: impl IntoIterator<Item = TaskEvent>,
-    ) -> Result<Vec<TaskEvent>, TaskCompletionError> {
-        let mut events = events.into_iter().collect::<Vec<_>>();
-        self.preflight_completions(&events)?;
+    /// scheduler state, counters, packet order, or payload custody change. The
+    /// caller retains every owned payload on rejection; no value copy is needed.
+    pub fn complete(&mut self, events: &mut [TaskEvent]) -> Result<(), TaskCompletionError> {
+        self.preflight_completions(events)?;
         self.stats.completion_events_in += events.len();
-        self.normalize_completion_events(&mut events);
+        self.normalize_completion_events(events);
 
-        for event in &mut events {
+        for event in events.iter_mut() {
             self.admit_ready_event(event);
         }
 
-        for event in &events {
+        for event in events.iter() {
             self.publication_cursors
                 .insert(event.correlation.task_id.clone(), event.cursor);
             self.complete_one(event);
         }
         self.stats.completion_events_out += events.len();
         self.refresh_in_flight_stats();
-        Ok(events)
+        Ok(())
     }
 
     /// Whether this scheduler has accepted the task identity. Accepted ids stay
@@ -587,7 +584,8 @@ mod tests {
         scheduler.submit([owner.clone()]).unwrap();
         scheduler.dispatch(SchedulerBudget { max_events: 8 });
         scheduler.submit([owner.clone(), owner.clone()]).unwrap();
-        let events = scheduler.complete([ready(&owner, 1)]).unwrap();
+        let mut events = [ready(&owner, 1)];
+        scheduler.complete(&mut events).unwrap();
         assert_eq!(events, [ready(&owner, 1)]);
         assert_eq!(scheduler.stats().joined, 2);
         assert_eq!(scheduler.stats().completed, 1);
@@ -672,7 +670,8 @@ mod tests {
         let mut shuffled = vec![fault(), ready(&a, 1)];
         shuffled.sort_by(compare_task_events);
         shuffled.reverse();
-        assert_eq!(scheduler.complete(shuffled).unwrap(), expected);
+        scheduler.complete(&mut shuffled).unwrap();
+        assert_eq!(shuffled, expected);
         assert_eq!(scheduler.stats().completed, 1);
         assert_eq!(scheduler.stats().failed, 1);
         assert_eq!(scheduler.stats().in_flight, 0);
@@ -683,18 +682,16 @@ mod tests {
         let mut scheduler = RuntimeScheduler::default();
         let owner = task("asset.bg", TaskPolicy::JoinSameKey, 0);
         scheduler.submit([owner.clone(), owner.clone()]).unwrap();
-        assert_eq!(
-            scheduler.complete([progress(&owner, 1)]).unwrap(),
-            [progress(&owner, 1)]
-        );
+        let mut events = [progress(&owner, 1)];
+        scheduler.complete(&mut events).unwrap();
+        assert_eq!(events, [progress(&owner, 1)]);
         assert_eq!(scheduler.stats().in_flight, 1);
         assert_eq!(scheduler.stats().completed, 0);
         assert_eq!(scheduler.stats().completion_sort_skipped_items, 1);
         scheduler.submit([owner.clone()]).unwrap();
-        assert_eq!(
-            scheduler.complete([ready(&owner, 2)]).unwrap(),
-            [ready(&owner, 2)]
-        );
+        let mut events = [ready(&owner, 2)];
+        scheduler.complete(&mut events).unwrap();
+        assert_eq!(events, [ready(&owner, 2)]);
         assert_eq!(scheduler.stats().completed_by_class.io, 1);
         assert_eq!(scheduler.stats().in_flight, 0);
     }
@@ -775,13 +772,12 @@ mod tests {
         let mut scheduler = RuntimeScheduler::default();
         let owner = task("asset.bg", TaskPolicy::JoinSameKey, 0);
         scheduler.submit([owner.clone(), owner.clone()]).unwrap();
-        let events = scheduler
-            .complete([event(
-                &owner,
-                1,
-                TaskEventKind::Ready(RuntimeValue::Bool(true).into()),
-            )])
-            .unwrap();
+        let mut events = [event(
+            &owner,
+            1,
+            TaskEventKind::Ready(RuntimeValue::Bool(true).into()),
+        )];
+        scheduler.complete(&mut events).unwrap();
         assert_eq!(events.len(), 1);
         assert!(
             matches!(&events[0].kind, TaskEventKind::InfrastructureFailure(f)
@@ -798,7 +794,7 @@ mod tests {
         let unknown = task("unknown", TaskPolicy::AlwaysStart, 0);
         let before = scheduler.clone();
         assert_eq!(
-            scheduler.complete([
+            scheduler.complete(&mut [
                 ready(&owner, 1),
                 event(&unknown, 1, TaskEventKind::Cancelled)
             ]),
@@ -808,29 +804,110 @@ mod tests {
         );
         assert_eq!(scheduler, before);
         assert_eq!(
-            scheduler.complete([ready(&owner, 1), event(&owner, 2, TaskEventKind::Cancelled)]),
+            scheduler.complete(&mut [ready(&owner, 1), event(&owner, 2, TaskEventKind::Cancelled)]),
             Err(TaskCompletionError::DuplicateTerminalEvent {
                 task_id: owner.task_id()
             })
         );
         assert_eq!(scheduler, before);
     }
+
+    #[test]
+    fn rejected_completion_retains_owned_packets_and_retries_without_copying_payloads() {
+        let mut scheduler = RuntimeScheduler::default();
+        let first = task("first", TaskPolicy::AlwaysStart, 0);
+        let second = task("second", TaskPolicy::AlwaysStart, 0);
+        let unknown = task("unknown", TaskPolicy::AlwaysStart, 0);
+        scheduler.submit([first.clone(), second.clone()]).unwrap();
+        let before = scheduler.clone();
+        let mut packets = vec![
+            event(
+                &second,
+                1,
+                TaskEventKind::Ready(RuntimeValue::Bool(true).into()),
+            ),
+            ready(&first, 1),
+            event(&unknown, 1, TaskEventKind::Cancelled),
+        ];
+        packets.sort_by(compare_task_events);
+        packets.reverse();
+        let original_order = packets
+            .iter()
+            .map(|packet| (packet.correlation, packet.cursor))
+            .collect::<Vec<_>>();
+        let storage = packets.as_ptr();
+        let payload_storage = packets
+            .iter()
+            .find_map(|packet| match &packet.kind {
+                TaskEventKind::Ready(payload) => match payload.value() {
+                    RuntimeValue::String(text) => Some(text.as_ptr()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            scheduler.complete(&mut packets),
+            Err(TaskCompletionError::UnknownTask {
+                task_id: unknown.task_id()
+            })
+        );
+        assert_eq!(scheduler, before);
+        assert_eq!(
+            packets
+                .iter()
+                .map(|packet| (packet.correlation, packet.cursor))
+                .collect::<Vec<_>>(),
+            original_order,
+            "no packet sorting before admission"
+        );
+        assert!(
+            packets.iter().any(|packet| matches!(&packet.kind,
+            TaskEventKind::Ready(payload) if payload.value() == &RuntimeValue::Bool(true))),
+            "no protocol replacement before batch admission"
+        );
+        assert_eq!(packets.as_ptr(), storage);
+
+        packets.retain(|packet| packet.correlation.task_id != unknown.task_id());
+        scheduler.complete(&mut packets).unwrap();
+        assert!(task_events_are_normalized(&packets));
+        let TaskEventKind::Ready(payload) = &packets
+            .iter()
+            .find(|packet| packet.correlation.task_id == first.task_id())
+            .unwrap()
+            .kind
+        else {
+            panic!("the original Ready packet remains owned by the caller")
+        };
+        let RuntimeValue::String(text) = payload.value() else {
+            panic!("the original string payload remains intact")
+        };
+        assert_eq!(text.as_ptr(), payload_storage);
+        assert!(packets.iter().any(|packet| matches!(&packet.kind,
+            TaskEventKind::InfrastructureFailure(failure)
+                if failure.kind == RuntimeTaskFailureKind::AdapterProtocolViolation)));
+        assert_eq!(scheduler.stats().completed, 1);
+        assert_eq!(scheduler.stats().failed, 1);
+        assert_eq!(scheduler.stats().completion_events_in, 2);
+        assert_eq!(scheduler.stats().completion_normalization_passes, 1);
+    }
+
     #[test]
     fn terminal_task_rejects_later_completion() {
         let mut scheduler = RuntimeScheduler::default();
         let owner = task("done", TaskPolicy::AlwaysStart, 0);
         scheduler.submit([owner.clone()]).unwrap();
-        scheduler.complete([ready(&owner, 1)]).unwrap();
+        scheduler.complete(&mut [ready(&owner, 1)]).unwrap();
         let before = scheduler.clone();
         assert_eq!(
-            scheduler.complete([event(&owner, 2, TaskEventKind::Cancelled)]),
+            scheduler.complete(&mut [event(&owner, 2, TaskEventKind::Cancelled)]),
             Err(TaskCompletionError::DuplicateTerminalEvent {
                 task_id: owner.task_id()
             })
         );
         assert_eq!(scheduler, before);
         assert_eq!(
-            scheduler.complete([progress(&owner, 2)]),
+            scheduler.complete(&mut [progress(&owner, 2)]),
             Err(TaskCompletionError::EventAfterTerminal {
                 task_id: owner.task_id()
             })
@@ -842,9 +919,8 @@ mod tests {
         let mut scheduler = RuntimeScheduler::default();
         let owner = task("owner", TaskPolicy::AlwaysStart, 0);
         scheduler.submit([owner.clone()]).unwrap();
-        let events = scheduler
-            .complete([ready(&owner, 3), progress(&owner, 2), progress(&owner, 1)])
-            .unwrap();
+        let mut events = [ready(&owner, 3), progress(&owner, 2), progress(&owner, 1)];
+        scheduler.complete(&mut events).unwrap();
         assert_eq!(
             events
                 .iter()
@@ -859,10 +935,10 @@ mod tests {
         let mut scheduler = RuntimeScheduler::default();
         let owner = task("owner", TaskPolicy::AlwaysStart, 0);
         scheduler.submit([owner.clone()]).unwrap();
-        scheduler.complete([progress(&owner, 2)]).unwrap();
+        scheduler.complete(&mut [progress(&owner, 2)]).unwrap();
         let before = scheduler.clone();
         assert_eq!(
-            scheduler.complete([progress(&owner, 2)]),
+            scheduler.complete(&mut [progress(&owner, 2)]),
             Err(TaskCompletionError::StalePublication {
                 task_id: owner.task_id()
             })
@@ -871,14 +947,14 @@ mod tests {
         let mut mismatched = ready(&owner, 3);
         mismatched.correlation.generation = GenerationId::new(2);
         assert_eq!(
-            scheduler.complete([mismatched]),
+            scheduler.complete(&mut [mismatched]),
             Err(TaskCompletionError::DispatchMismatch {
                 task_id: owner.task_id()
             })
         );
         assert_eq!(scheduler, before);
         assert_eq!(
-            scheduler.complete([progress(&owner, u64::MAX)]),
+            scheduler.complete(&mut [progress(&owner, u64::MAX)]),
             Err(TaskCompletionError::PublicationRevisionExhausted {
                 task_id: owner.task_id()
             })

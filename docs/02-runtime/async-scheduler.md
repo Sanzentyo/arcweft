@@ -204,8 +204,15 @@ The current Rust implementation keeps the deterministic scheduling layer in
 `arcweft-runtime-scheduler`. It depends only on `arcweft-core`, accepts
 `BoundTaskSpec` values, joins in-flight `JoinSameKey` tasks, sorts dispatch by
 priority and stable submission order, records cancellation requests as data,
-and normalizes completed `TaskEvent` values. CLI native file tasks and
-source-level flow `thread` work use this scheduler. Joinable source
+and normalizes completed `TaskEvent` values.
+
+Adapter completions pass a mutable event slice to the scheduler's single
+completion boundary. The scheduler preflights the complete batch before
+reordering packets, replacing invalid Ready outcomes, or advancing its state
+and counters. A rejected batch retains its original packet order and owned
+payloads with the caller; no payload clone or independently reusable admission
+token is required. Successful completion normalizes the same packets in place.
+CLI native file tasks and source-level flow `thread` work use this scheduler. Joinable source
 `thread name { ... }` lowers to `FlowOp::Thread`; entering the op publishes its
 admitted Program submission and spawns the body as a scoped VM child fiber.
 The scheduler retains that submission until Core's actual terminal report.

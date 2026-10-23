@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "base": "3c12ee45a418f909ae0916cb65f77178a1681377",
+  "catalog": "task-final-r2402-scheduler-completion-reverse-catalog",
+  "packageArgs": [
+    "arcweft-cli",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-runtime-host",
+    "arcweft-runtime-scheduler",
+    "arcweft-verify-lsp"
+  ],
+  "all": 1103,
+  "matched": 1080,
+  "excluded": 23,
+  "selectedPackages": [
+    "arcweft-cli",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-runtime-host",
+    "arcweft-runtime-scheduler",
+    "arcweft-verify-lsp"
+  ],
+  "required": 19,
+  "requiredCases": [
+    "tests::always_start_does_not_join_same_key_tasks",
+    "tests::cancellation_requests_are_dispatched_once",
+    "tests::completion_updates_stats_and_normalizes_events",
+    "tests::conflicting_receipt_rejects_whole_submission_batch",
+    "tests::dispatch_avoids_sort_when_submissions_are_already_ordered",
+    "tests::dispatches_by_priority_then_submission_order",
+    "tests::invalid_completion_batches_are_rejected_without_state_changes",
+    "tests::joined_receipt_has_one_owner_publication",
+    "tests::joins_same_key_in_flight_tasks",
+    "tests::progress_keeps_joined_work_in_flight_until_terminal_delivery",
+    "tests::repeated_or_mismatched_publications_reject_atomically",
+    "tests::same_key_join_compares_all_non_identity_task_semantics",
+    "tests::shuffled_progress_and_ready_revisions_are_normalized_before_commit",
+    "tests::task_id_resubmission_ignores_only_diagnostic_changes",
+    "tests::terminal_task_rejects_later_completion",
+    "tests::wrong_ready_payload_becomes_one_protocol_failure",
+    "rejected_completion_retains_owned_packets_and_retries_without_copying_payloads",
+    "actual_program_body_retirement_is_required_and_duplicate_batch_is_atomic",
+    "actual_program_terminals_construct_one_ordered_publication_packet"
+  ],
+  "priorCliFailures": 51,
+  "missingPriorCliFailures": 0,
+  "sourceInputs": 4066,
+  "sourceDrift": 0,
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "manifestLockDrift": 0,
+  "recordedAt": "2026-10-23T07:42:28.7206782Z"
+}

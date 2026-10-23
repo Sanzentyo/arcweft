@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "3c12ee45a418f909ae0916cb65f77178a1681377",
+  "name": "task-final-r2403-scheduler-completion-reverse-tree",
+  "command": [
+    "tree",
+    "--workspace",
+    "--all-features",
+    "--target",
+    "all",
+    "--locked",
+    "--invert",
+    "arcweft-runtime-scheduler",
+    "--invert",
+    "arcweft-runtime-host"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2403-scheduler-completion-reverse-tree.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T07:35:36.4107088Z",
+  "finishedAt": "2026-10-23T07:35:48.7799482Z"
+}
