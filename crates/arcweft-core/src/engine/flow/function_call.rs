@@ -182,7 +182,7 @@ impl Engine {
                     );
                     return;
                 }
-                self.invocation_result =
+                self.fiber.frame.invocation_result =
                     Some((crate::engine::NativeInvocationRoot::Program(program), value));
                 self.fiber.frame.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
             }
@@ -200,7 +200,7 @@ impl Engine {
                     );
                     return;
                 }
-                self.invocation_result =
+                self.fiber.frame.invocation_result =
                     Some((crate::engine::NativeInvocationRoot::Function(site), value));
                 self.fiber.frame.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
             }

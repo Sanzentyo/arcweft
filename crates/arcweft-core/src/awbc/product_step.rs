@@ -2167,6 +2167,7 @@ impl AwbcProductStepExecutor {
                 pending_ops: VecDeque::new(),
                 control_stack: Vec::new(),
                 await_observer: None,
+                invocation_result: None,
                 selected_dialogue_result: None,
                 root_cleanups: Vec::new(),
                 env: RuntimeEnv::default(),

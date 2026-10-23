@@ -82,7 +82,7 @@ struct NativeScalarStepCharge {
 /// invocations of the exact admitted site; program roots retain their public
 /// program binding. Both use the same frame, transaction and value custody.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum NativeInvocationRoot {
+pub(crate) enum NativeInvocationRoot {
     Program(arcweft_id::runtime_program::RuntimePureProgramId),
     Function(crate::runtime_id::RuntimeFunctionSiteId),
 }
@@ -104,7 +104,6 @@ enum NativeInvocationRoot {
 /// ```
 #[derive(Debug, PartialEq)]
 pub struct Engine<
-    V = RuntimeValue,
     N = NeedProducerRegistry,
     P = RuntimePayload,
     R = RootRuntime,
@@ -112,7 +111,6 @@ pub struct Engine<
     D = dialogue::DialogueActivationStore,
 > {
     evaluation_stats: crate::pure::PureFunctionStats,
-    invocation_result: Option<(NativeInvocationRoot, V)>,
     plan: Arc<RuntimePlan>,
     format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
@@ -152,7 +150,6 @@ pub struct Engine<
 /// values enter the image through the sealed value snapshot authority; the
 /// image may coexist with a live Engine because it carries no live values.
 type NativeEngineRollbackImage = Engine<
-    crate::value::AwbcRuntimeValueSnapshot,
     crate::task::NeedProducerRegistryRollbackImage,
     crate::value::AwbcRuntimeValueSnapshot,
     crate::root::RootRuntimeRollbackImage,
@@ -164,7 +161,6 @@ impl Clone for NativeEngineRollbackImage {
     fn clone(&self) -> Self {
         Self {
             evaluation_stats: self.evaluation_stats.clone(),
-            invocation_result: self.invocation_result.clone(),
             plan: Arc::clone(&self.plan),
             format_context: self.format_context.clone(),
             generation: self.generation,
@@ -294,6 +290,8 @@ pub struct NativeFlowExecutionFrame<
     pub env: RuntimeEnv<V>,
     pub observations: RuntimeObservationState<P>,
     pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState<P>>,
+    /// The terminal value remains with the exact fiber that returned it.
+    pub(crate) invocation_result: Option<(NativeInvocationRoot, V)>,
     /// Terminal cancellation selection awaiting the owning activation transaction.
     pub(crate) selected_dialogue_result: Option<V>,
     pub status: S,
@@ -336,6 +334,7 @@ impl Clone for NativeFlowExecutionFrameRollbackImage {
             env: self.env.clone(),
             observations: self.observations.clone(),
             stream_states: self.stream_states.clone(),
+            invocation_result: self.invocation_result.clone(),
             selected_dialogue_result: self.selected_dialogue_result.clone(),
             status: self.status.clone(),
         }
@@ -511,6 +510,17 @@ impl NativeFlowExecutionFrame {
                 .iter()
                 .map(|(id, state)| Ok((id.clone(), state.snapshot_admitted(owner)?)))
                 .collect::<Result<_, String>>()?,
+            invocation_result: self
+                .invocation_result
+                .as_ref()
+                .map(|(program, value)| {
+                    crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
+                        value, owner,
+                    )
+                    .map(|snapshot| (*program, snapshot))
+                    .map_err(|error| error.to_string())
+                })
+                .transpose()?,
             selected_dialogue_result: self
                 .selected_dialogue_result
                 .as_ref()
@@ -572,6 +582,15 @@ impl NativeFlowExecutionFrame {
                 .into_iter()
                 .map(|(id, state)| Ok((id, StreamRuntimeState::from_rollback_image(state, owner)?)))
                 .collect::<Result<_, String>>()?,
+            invocation_result: image
+                .invocation_result
+                .map(|(root, value)| {
+                    value
+                        .into_admitted_runtime_value(owner)
+                        .map(|value| (root, value))
+                        .map_err(|error| error.to_string())
+                })
+                .transpose()?,
             selected_dialogue_result: image
                 .selected_dialogue_result
                 .map(|saved| {
@@ -716,6 +735,20 @@ fn flow_fiber_line_handle_owners(
                 if owners.insert(handle.token().clone(), owner).is_some() {
                     return Err(crate::line_task::LineRuntimeError::DuplicateHandleOccurrence);
                 }
+            }
+        }
+    }
+    if let Some((_, value)) = &fiber.frame.invocation_result {
+        let owner = crate::value::ownership::RuntimeOwnedSlotId::ProgramResult {
+            execution: fiber.execution,
+            fiber: fiber.persistent_id,
+        };
+        for handle in value
+            .affine_line_handles()
+            .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
+        {
+            if owners.insert(handle.token().clone(), owner).is_some() {
+                return Err(crate::line_task::LineRuntimeError::DuplicateHandleOccurrence);
             }
         }
     }
@@ -1825,6 +1858,7 @@ impl NativeFlowExecutionFrame {
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
+            invocation_result: None,
             selected_dialogue_result: None,
             status: FlowFiberStatus::Done(FlowExit::Done),
         }
@@ -1862,8 +1896,6 @@ impl Engine {
         );
         self.admit_metadata(&mut admission)
             .map_err(|error| error.to_string())?;
-        self.admit_invocation_result(&mut admission)
-            .map_err(|error| error.to_string())?;
         self.need_producers
             .admit_retained(&mut admission)
             .map_err(|error| error.to_string())?;
@@ -1890,17 +1922,6 @@ impl Engine {
             |publication: &RuntimeNeedPublication| publication.snapshot_admitted(&owner);
         Ok(NativeEngineRollbackImage {
             evaluation_stats: self.evaluation_stats.clone(),
-            invocation_result: self
-                .invocation_result
-                .as_ref()
-                .map(|(program, value)| {
-                    crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
-                        value, &owner,
-                    )
-                    .map(|snapshot| (*program, snapshot))
-                    .map_err(|error| error.to_string())
-                })
-                .transpose()?,
             plan: Arc::clone(&self.plan),
             format_context: self.format_context.clone(),
             generation: self.generation,
@@ -1967,15 +1988,6 @@ impl Engine {
         let expected_deferred_children = image.admit_rollback_values(owner)?;
         let restored = Self {
             evaluation_stats: image.evaluation_stats,
-            invocation_result: image
-                .invocation_result
-                .map(|(root, value)| {
-                    value
-                        .into_admitted_runtime_value(owner)
-                        .map(|value| (root, value))
-                        .map_err(|error| error.to_string())
-                })
-                .transpose()?,
             plan: image.plan,
             format_context: image.format_context,
             generation: image.generation,
@@ -2123,7 +2135,6 @@ impl Engine {
         let pure_helper_i64_call_shapes = pure_helper_i64_call_shapes(&plan);
         Self {
             evaluation_stats: crate::pure::PureFunctionStats::default(),
-            invocation_result: None,
             plan: Arc::clone(&plan),
             format_context: crate::value::RuntimeFormatContext::default(),
             generation,
@@ -2146,6 +2157,7 @@ impl Engine {
                     env: RuntimeEnv::default(),
                     observations: RuntimeObservationState::default(),
                     stream_states,
+                    invocation_result: None,
                     selected_dialogue_result: None,
                     status,
                 },
@@ -2196,18 +2208,25 @@ impl Engine {
         )>,
         crate::value::ownership::RuntimeDetachedValueError,
     > {
-        if let Some((_, value)) = &self.invocation_result {
+        if let Some((_, value)) = &self.fiber.frame.invocation_result {
             value.validate_detached_custody()?;
         }
-        let Some((NativeInvocationRoot::Program(_), _)) = self.invocation_result.as_ref() else {
+        let Some((NativeInvocationRoot::Program(_), _)) =
+            self.fiber.frame.invocation_result.as_ref()
+        else {
             return Ok(None);
         };
-        Ok(self.invocation_result.take().map(|(root, value)| {
-            let NativeInvocationRoot::Program(program) = root else {
-                unreachable!("the borrowed preflight selected this program result")
-            };
-            (program, value)
-        }))
+        Ok(self
+            .fiber
+            .frame
+            .invocation_result
+            .take()
+            .map(|(root, value)| {
+                let NativeInvocationRoot::Program(program) = root else {
+                    unreachable!("the borrowed preflight selected this program result")
+                };
+                (program, value)
+            }))
     }
 
     #[must_use]
@@ -3214,6 +3233,7 @@ impl Engine {
                     env,
                     observations: RuntimeObservationState::default(),
                     stream_states: BTreeMap::new(),
+                    invocation_result: None,
                     selected_dialogue_result: None,
                     status: FlowFiberStatus::Running,
                 },
@@ -3378,6 +3398,7 @@ impl Engine {
                 env,
                 observations: RuntimeObservationState::default(),
                 stream_states: BTreeMap::new(),
+                invocation_result: None,
                 selected_dialogue_result: None,
                 status: FlowFiberStatus::Running,
             },
@@ -3695,6 +3716,7 @@ impl Engine {
                             env,
                             observations: RuntimeObservationState::default(),
                             stream_states: BTreeMap::new(),
+                            invocation_result: None,
                             selected_dialogue_result: None,
                             status: FlowFiberStatus::Running,
                         },
@@ -3924,6 +3946,7 @@ impl Engine {
                 env,
                 observations: RuntimeObservationState::default(),
                 stream_states: BTreeMap::new(),
+                invocation_result: None,
                 selected_dialogue_result: None,
                 status: FlowFiberStatus::Running,
             },
@@ -5100,7 +5123,7 @@ mod rollback_tests {
             "execution frame belongs to a different original executable",
         );
         let mut malformed = image;
-        malformed.invocation_result = Some((
+        malformed.fiber.frame.invocation_result = Some((
             NativeInvocationRoot::Function(
                 crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
                     std::num::NonZeroU32::MIN,

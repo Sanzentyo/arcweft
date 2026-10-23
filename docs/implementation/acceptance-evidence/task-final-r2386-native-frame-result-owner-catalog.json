@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "df92704ae1697fd31f5774e787004bc0c656d02c",
+  "name": "task-final-r2386-native-frame-result-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-core)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2386-native-frame-result-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T06:22:40.9887790Z",
+  "finishedAt": "2026-10-23T06:24:58.2759327Z"
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "df92704ae1697fd31f5774e787004bc0c656d02c",
+  "name": "task-final-r2385-native-frame-result-owner-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2385-native-frame-result-owner-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T06:20:10.2366671Z",
+  "finishedAt": "2026-10-23T06:21:36.6795969Z"
+}

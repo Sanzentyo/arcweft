@@ -230,7 +230,7 @@ fn completed_handle_program_with_prefix(
     );
     engine.dialogue_activations =
         crate::engine::dialogue::DialogueActivationStore::from_published(custody);
-    engine.invocation_result = Some((
+    engine.fiber.frame.invocation_result = Some((
         crate::engine::NativeInvocationRoot::Program(fixture.program),
         value,
     ));
@@ -261,6 +261,8 @@ fn program_continuation_accepts_detached_prefix_and_retains_native_need_result_c
     assert!(output.output.diagnostics.is_empty());
     assert_eq!(
         engine
+            .fiber
+            .frame
             .invocation_result
             .as_ref()
             .unwrap()
@@ -280,7 +282,7 @@ fn program_continuation_accepts_detached_prefix_and_retains_native_need_result_c
     // Detached activation correctly rejects an accepted Need without that owner.
     let mut engine = Engine::new_with_shared_plan(plan, crate::task::GenerationId::new(0));
     engine.need_producers = registry;
-    engine.invocation_result = Some((
+    engine.fiber.frame.invocation_result = Some((
         crate::engine::NativeInvocationRoot::Program(id),
         RuntimeValue::NeedHandle(need.clone()),
     ));
@@ -313,7 +315,7 @@ fn program_continuation_accepts_detached_prefix_and_retains_native_need_result_c
             .is_empty()
     );
     assert_eq!(
-        &engine.invocation_result.as_ref().unwrap().1,
+        &engine.fiber.frame.invocation_result.as_ref().unwrap().1,
         &RuntimeValue::NeedHandle(need.clone())
     );
     assert!(engine.need_producers.launch_for_handle(&need).is_some());
@@ -335,7 +337,7 @@ fn program_continuation_moves_live_handle_with_need_context_and_returns_it_again
         engine.need_producers.inert_rollback_image(&owner).unwrap(),
         needs
     );
-    assert!(engine.invocation_result.is_none());
+    assert!(engine.fiber.frame.invocation_result.is_none());
     let output = engine.step_with_pure_backend(
         Default::default(),
         Default::default(),
@@ -349,6 +351,8 @@ fn program_continuation_moves_live_handle_with_need_context_and_returns_it_again
     assert!(output.output.requests.line_commands.is_empty());
     assert_eq!(
         engine
+            .fiber
+            .frame
             .invocation_result
             .as_ref()
             .unwrap()
@@ -377,6 +381,8 @@ fn program_continuation_moves_live_handle_with_need_context_and_returns_it_again
     assert!(output.output.diagnostics.is_empty());
     assert_eq!(
         engine
+            .fiber
+            .frame
             .invocation_result
             .as_ref()
             .unwrap()
@@ -482,14 +488,14 @@ fn detached_program_result_rejection_retains_native_value() {
     );
     engine.dialogue_activations =
         crate::engine::dialogue::DialogueActivationStore::from_published(custody);
-    engine.invocation_result = Some((
+    engine.fiber.frame.invocation_result = Some((
         crate::engine::NativeInvocationRoot::Program(fixture.program),
         value,
     ));
     let before = engine.inert_rollback_image().unwrap();
     assert!(engine.take_program_result().is_err());
     assert!(engine.take_program_result().is_err());
-    let (_, value) = engine.invocation_result.as_ref().unwrap();
+    let (_, value) = engine.fiber.frame.invocation_result.as_ref().unwrap();
     assert_eq!(
         value.affine_line_handles().unwrap()[0].token(),
         &fixture.token
@@ -599,6 +605,98 @@ fn program_return_preserves_typed_result_and_rollback_custody() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn native_completed_fibers_preserve_distinct_typed_results_across_rollback() {
+    use crate::plan::{
+        RuntimeExprSeed, RuntimeExprSeedKind, RuntimePlanBuilder, RuntimePlanTypeProjection,
+        RuntimePlanTypeSeed, RuntimePureProgramBindingSeed,
+    };
+    let ty = crate::pattern::RuntimeSemanticTypeId::from_bytes([86; 32]);
+    let programs = [87, 88].map(|byte| {
+        arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([byte; 32])
+    });
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                ty,
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [],
+        )
+        .unwrap();
+    for (index, program) in programs.into_iter().enumerate() {
+        let site = builder
+            .push_function_site_seed(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [89 + u8::try_from(index).unwrap(); 32],
+                ),
+                crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+                [],
+                RuntimeExprSeed::new(
+                    ty,
+                    RuntimeExprSeedKind::Value(RuntimeValue::Bool(index == 0)),
+                ),
+            )
+            .unwrap();
+        builder
+            .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
+            .unwrap();
+    }
+    let plan = Arc::new(builder.finish().unwrap());
+    let [mut parent, mut child] = programs.map(|program| {
+        Engine::for_program_invocation(Arc::clone(&plan), program, Vec::new()).unwrap()
+    });
+    for engine in [&mut parent, &mut child] {
+        let result = engine.step(
+            Default::default(),
+            crate::step::RuntimeStepOptions {
+                mode: crate::step::RuntimeStepMode::OneOp,
+                ..Default::default()
+            },
+        );
+        assert_eq!(result.stats.executed_ops, 1);
+        assert!(result.output.diagnostics.is_empty());
+    }
+    let (mut retained, next) = parent
+        .prepare_child_fiber(std::collections::VecDeque::new(), &[])
+        .unwrap();
+    retained.frame = child.fiber.frame;
+    parent.next_fiber_id = next;
+    parent.child_fibers.push_back(retained);
+
+    let owner = crate::task::RuntimeProgramOwner::Plan(plan);
+    let saved = parent.inert_rollback_image().unwrap();
+    let mut forged = saved.clone();
+    forged.child_fibers[0]
+        .frame
+        .invocation_result
+        .as_mut()
+        .unwrap()
+        .1 = crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+        &RuntimeValue::String("wrong child result".into()),
+        &owner,
+    )
+    .unwrap();
+    assert!(Engine::from_rollback_image(forged, &owner).is_err());
+
+    let mut restored = Engine::from_rollback_image(saved, &owner).unwrap();
+    assert_eq!(
+        restored.take_program_result().unwrap(),
+        Some((programs[0], RuntimeValue::Bool(true)))
+    );
+    assert!(restored.take_program_result().unwrap().is_none());
+    let mut child = restored.child_fibers.pop_front().unwrap();
+    assert_eq!(
+        child.frame.invocation_result.take(),
+        Some((
+            crate::engine::NativeInvocationRoot::Program(programs[1]),
+            RuntimeValue::Bool(false)
+        ))
+    );
+    assert!(child.frame.invocation_result.is_none());
 }
 
 #[test]
@@ -1014,12 +1112,17 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
     );
     let saved_result = restored.inert_rollback_image().unwrap();
     let mut forged_result = saved_result.clone();
-    forged_result.invocation_result.as_mut().unwrap().1 =
-        crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
-            &RuntimeValue::Bool(true),
-            &owner,
-        )
-        .unwrap();
+    forged_result
+        .fiber
+        .frame
+        .invocation_result
+        .as_mut()
+        .unwrap()
+        .1 = crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+        &RuntimeValue::Bool(true),
+        &owner,
+    )
+    .unwrap();
     assert!(
         Engine::from_rollback_image(forged_result, &owner).is_err(),
         "the retained function result must have its original type"
@@ -1073,7 +1176,7 @@ fn scalar_executable_declined_division_retains_the_engine_failure_transaction() 
         }
     }
     assert!(failed);
-    assert!(engine.invocation_result.is_none());
+    assert!(engine.fiber.frame.invocation_result.is_none());
     let before = engine.inert_rollback_image().unwrap();
     let result = engine.step(Default::default(), options);
     assert!(matches!(

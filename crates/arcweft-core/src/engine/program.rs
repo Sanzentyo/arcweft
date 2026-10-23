@@ -146,7 +146,7 @@ impl Engine {
         &mut self,
         site: crate::runtime_id::RuntimeFunctionSiteId,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
-        let Some((target, value)) = &self.invocation_result else {
+        let Some((target, value)) = &self.fiber.frame.invocation_result else {
             return Ok(None);
         };
         if *target != NativeInvocationRoot::Function(site) {
@@ -156,7 +156,12 @@ impl Engine {
             });
         }
         value.validate_detached_custody()?;
-        Ok(self.invocation_result.take().map(|(_, value)| value))
+        Ok(self
+            .fiber
+            .frame
+            .invocation_result
+            .take()
+            .map(|(_, value)| value))
     }
 
     pub(super) fn main_fiber_line_handle_owners(
@@ -168,22 +173,7 @@ impl Engine {
         >,
         crate::line_task::LineRuntimeError,
     > {
-        let mut owners = super::flow_fiber_line_handle_owners(&self.fiber)?;
-        if let Some((_, value)) = &self.invocation_result {
-            let owner = crate::value::ownership::RuntimeOwnedSlotId::ProgramResult {
-                execution: self.fiber.execution,
-                fiber: self.fiber.persistent_id,
-            };
-            for handle in value
-                .affine_line_handles()
-                .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
-            {
-                if owners.insert(handle.token().clone(), owner).is_some() {
-                    return Err(crate::line_task::LineRuntimeError::DuplicateHandleOccurrence);
-                }
-            }
-        }
-        Ok(owners)
+        super::flow_fiber_line_handle_owners(&self.fiber)
     }
 
     /// Activates the exact program on its retained plan. Inputs transfer only
@@ -341,6 +331,8 @@ impl Engine {
                 return Err(RuntimeProgramContinuationFailure::NotCompleted);
             }
             let (root, result) = self
+                .fiber
+                .frame
                 .invocation_result
                 .as_ref()
                 .ok_or(RuntimeProgramContinuationFailure::NotCompleted)?;
@@ -388,6 +380,8 @@ impl Engine {
         self.dialogue_activations =
             super::dialogue::DialogueActivationStore::from_published(custody);
         let (_, result) = self
+            .fiber
+            .frame
             .invocation_result
             .take()
             .expect("borrowed continuation preflight retains its result");

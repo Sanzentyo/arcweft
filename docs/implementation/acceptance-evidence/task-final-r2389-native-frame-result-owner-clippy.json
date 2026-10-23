@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "df92704ae1697fd31f5774e787004bc0c656d02c",
+  "name": "task-final-r2389-native-frame-result-owner-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2389-native-frame-result-owner-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T06:27:08.4686856Z",
+  "finishedAt": "2026-10-23T06:28:16.5042811Z"
+}

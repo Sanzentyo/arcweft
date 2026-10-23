@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "df92704ae1697fd31f5774e787004bc0c656d02c",
+  "name": "task-final-r2387-native-frame-result-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2387-native-frame-result-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T06:23:45.4711457Z",
+  "finishedAt": "2026-10-23T06:23:50.8699991Z"
+}

@@ -262,9 +262,8 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
     }
 }
 
-impl<V, N, P, Q, FV, FP, O, C, A, AS, MS, D>
+impl<N, P, Q, FV, FP, O, C, A, AS, MS, D>
     Engine<
-        V,
         N,
         P,
         crate::root::RootRuntime<Q>,
@@ -447,7 +446,47 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         if let Some(value) = &self.selected_dialogue_result {
             admission.validate_owned_borrowed(value.borrowed_value())?;
         }
+        self.admit_invocation_result(admission)?;
         Ok(())
+    }
+
+    fn admit_invocation_result(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        let Some((root, value)) = &self.invocation_result else {
+            return Ok(());
+        };
+        let invalid =
+            |message: String| crate::value::AwbcRuntimeValueSnapshotError::Message { message };
+        let crate::task::RuntimeProgramOwner::Plan(plan) = &self.program else {
+            return Err(invalid(
+                "native invocation result has no original Plan".into(),
+            ));
+        };
+        let expected = match root {
+            NativeInvocationRoot::Program(program) => {
+                admission.validate_metadata(program)?;
+                plan.pure_program_binding(*program)
+                    .map_err(|error| invalid(error.to_string()))?
+                    .result_type()
+            }
+            NativeInvocationRoot::Function(site) => {
+                admission.validate_metadata(&site.get())?;
+                let function = crate::pure::RuntimePureFunctionRef::resolve(plan, *site)
+                    .map_err(|error| invalid(error.to_string()))?;
+                plan.type_table()
+                    .get(function.result_type())
+                    .ok_or_else(|| {
+                        invalid("native function result has an unknown original type".into())
+                    })?
+                    .semantic_identity()
+            }
+        };
+        admission.validate_owned_typed_borrowed(value.borrowed_value(), expected)
     }
 
     fn admit_function_contexts(
@@ -688,8 +727,8 @@ impl ScopeControl<NativePendingWork> for FlowControlStackEntry {
     }
 }
 
-impl<V, N, P, R, FV, FP, O, C, A, S, D>
-    Engine<V, N, P, R, NativeFlowExecutionFrame<FV, FP, O, C, A, S>, D>
+impl<N, P, R, FV, FP, O, C, A, S, D>
+    Engine<N, P, R, NativeFlowExecutionFrame<FV, FP, O, C, A, S>, D>
 {
     pub(super) fn validate_scheduled_scope_state(
         &self,
@@ -790,7 +829,7 @@ impl<V, N, P, R, FV, FP, O, C, A, S, D>
     }
 }
 
-impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
+impl<N, P, R, F, D> Engine<N, P, R, F, D> {
     pub(super) fn admit_metadata(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -892,42 +931,6 @@ impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
             }
         }
         Ok(())
-    }
-
-    pub(super) fn admit_invocation_result(
-        &self,
-        admission: &mut crate::value::RuntimeRetainedValueAdmission,
-    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
-    where
-        V: crate::value::RuntimeStoredValue,
-    {
-        let Some((root, value)) = &self.invocation_result else {
-            return Ok(());
-        };
-        let invalid =
-            |message: String| crate::value::AwbcRuntimeValueSnapshotError::Message { message };
-        let expected = match root {
-            NativeInvocationRoot::Program(program) => {
-                admission.validate_metadata(program)?;
-                self.plan
-                    .pure_program_binding(*program)
-                    .map_err(|error| invalid(error.to_string()))?
-                    .result_type()
-            }
-            NativeInvocationRoot::Function(site) => {
-                admission.validate_metadata(&site.get())?;
-                let function = crate::pure::RuntimePureFunctionRef::resolve(&self.plan, *site)
-                    .map_err(|error| invalid(error.to_string()))?;
-                self.plan
-                    .type_table()
-                    .get(function.result_type())
-                    .ok_or_else(|| {
-                        invalid("native function result has an unknown original type".into())
-                    })?
-                    .semantic_identity()
-            }
-        };
-        admission.validate_owned_typed_borrowed(value.borrowed_value(), expected)
     }
 
     pub(super) fn admit_publications(
@@ -1049,8 +1052,6 @@ impl NativeEngineRollbackImage {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         self.admit_metadata(&mut admission)
-            .map_err(|error| error.to_string())?;
-        self.admit_invocation_result(&mut admission)
             .map_err(|error| error.to_string())?;
         self.need_producers
             .admit_retained(&mut admission)
