@@ -1,6 +1,6 @@
 # Arcweft Engine 設計仕様
 
-このフォルダは、wgpu を中核にしたノベルゲームエンジンの設計仕様です。独自 DSL、Rust 拡張、WASM、Cranelift JIT、LayerTree、Object Hook、Memoization、Servo/DOM View、リアクティブ View、Typst 級テキスト、WGSL シェーダー、音声、マイク/カメラ入力、USB/HIDデバイス、タッチ向けバーチャルコントローラー、形式検証、RAG、Git 履歴管理、LLM デバッグインターフェースを統合した実装方針をまとめています。
+このフォルダは Arcweft の現行仕様を整理しています。実装の受入・公開状況、具体的な不具合、未検証の範囲は [現状一覧](implementation/current-status.md) を参照してください。検証履歴と旧計画を現在の仕様や残作業として読み替えないでください。
 
 ## 読み方
 
@@ -9,7 +9,6 @@
 1. [全体アーキテクチャ](00-overview/architecture.md)
 2. [命名・拡張子・公開識別子](00-overview/naming.md)
 3. [決定事項と設計原則](00-overview/decisions.md)
-4. [Runtime Boundary Refactor Direction](00-overview/runtime-boundary-refactor.md)
 5. [DSL 概要](01-language/README.md)
 6. [Converged Language, Content, and Presentation Surface](01-language/converged-language-surface.md)
 7. [Entries and Capabilities](01-language/entries-and-capabilities.md)
@@ -79,7 +78,7 @@
 
 ## エージェント運用
 
-プロンプト・指示の保守や作業再開の整理には [Agent workflow](implementation/agent-workflow.md)、検証範囲の選択には [Test execution policy](implementation/test-execution-policy.md)、返却 ZIP の取り込みには [Review package intake](reviews/README.md) を参照してください。これらは該当作業の参照先であり、全作業共通の必読文書ではありません。
+プロンプト・指示の保守や作業再開の整理には [Agent workflow](implementation/agent-workflow.md)、検証範囲の選択には [Test execution policy](implementation/test-execution-policy.md)、返却 ZIP の取り込みには [Review references and evidence](reviews/README.md) を参照してください。これらは該当作業の参照先であり、全作業共通の必読文書ではありません。
 
 ## Documentation conventions
 

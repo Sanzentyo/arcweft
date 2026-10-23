@@ -1,8 +1,9 @@
 # Manual real Windows IME capture steps
 
-These steps are retained for backend diagnostics only. Final Arcweft acceptance
-must move to the seq06.4j player/DSL path described in
-`docs/reviews/requests/2026-06-29-seq-06.4j-native-player-platform-text-input-bridge-package.md`.
+These steps are retained for backend diagnostics. Arcweft player acceptance
+uses a DSL-backed scene through the normal native player and cross-platform
+text-input bridge, as defined by the maintained
+[text-control contract](../../docs/03-presentation/view-input-text-field.md).
 
 1. Use a Windows machine with MSVC Rust toolchain and Microsoft Japanese IME.
 2. For low-level TSF diagnostics only, run:

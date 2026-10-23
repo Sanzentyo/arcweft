@@ -39,7 +39,25 @@ alice()[
 - typewriter reveal
 - hit testing
 - selection
-- vertical writing roadmap
+- vertical writing (`vertical_rl` / `vertical_lr`)
+
+### Layout ownership and vertical orientation
+
+`arcweft-text-layout` owns renderer-independent shaping/layout data, logical
+axes, ruby, text-combine, cluster geometry and hit/capture bounds. The
+`arcweft-glyphon` adapter converts that layout to glyphon `GlyphArea` input;
+glyphon/WGPU, atlas lifetime and renderer-coordinate adjustments stay above
+the Sans-I/O layout owner. Native, Web and headless consumers use the common
+layout rather than selecting different break plans.
+
+UAX #29 grapheme boundaries keep combining sequences and emoji ZWJ sequences
+intact through layout, hit testing and capture source ranges. UAX #50 vertical
+orientation distinguishes upright, sideways and alternate-form requests.
+`Tu` and `Tr` retain `UprightAlternate` and `RotatedAlternate` metadata through
+observation and renderer submission. The adapter shapes these with `vert` and
+`vrtr`, respectively, using the selected font metrics. Sideways runs use
+engine-side clockwise rotation; already rotated alternate paths are not
+rotated a second time.
 
 ### RichText style defaults
 
@@ -187,6 +205,36 @@ The request carries only the closed `balanced_v1` identity. Unknown serialized
 policy names are rejected, arbitrary weights are not authored, and the policy
 identity participates in `TextLayoutHash`. Policy changes require curated
 corpus delta review; regenerating expectations is not approval.
+
+The exact minimized tuple is `(forced_overflow_units,
+forced_overflow_columns, soft_cost, column_count,
+reverse_lexicographic_break_offsets)`. The final component prefers later
+offsets only when the four integer fields are equal.
+
+| Soft term | `balanced_v1` equation |
+|---|---|
+| Intermediate raggedness | `round(4096 * (remaining / capacity)^3)` |
+| Final shortness | `round(1536 * (deficit / threshold)^2)`, `threshold = min(capacity / 3, 2em)` |
+| Permitted hanging | `round(192 * (used_hanging / allowed_hanging)^2)` |
+| Intermediate break | `64` |
+| Generated pair preference | `16 * generated_break_penalty` |
+
+Ratio terms use checked integer powers and round half-up. A single final
+column pays no short-final penalty; a later final column pays no ordinary
+raggedness, pair-preference or intermediate-break term. The representative
+advance is the lower median positive shaped advance for the hard-line segment,
+and `normalized(x) = floor(x / representative_advance * 4096 + 0.5)`.
+One request admits at most 4,096 clusters and normalized metrics up to 4,096em
+(16,777,216 units). Powers and coefficient products use checked `u128`, with
+checked `u64`/`u32` accumulated fields. Invalid, negative, non-finite,
+out-of-domain, overflowing or resource-limit inputs return `VerticalBreakError`.
+
+The same selection evaluation produces `VerticalBreakExplain`: policy identity,
+representative advance, normalized capacities/unit scale, partial-column
+restart, objective/status, rejected hard-constraint counts and tie-break use.
+It retains at most 64 selected-column term records plus an omitted count, with
+no rejected source text or unbounded candidate graph. The layout hash uses the
+version-one `arcweft.text-layout.v1` domain.
 
 ## Content functions
 

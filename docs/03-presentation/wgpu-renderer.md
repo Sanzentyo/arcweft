@@ -1,65 +1,17 @@
-# wgpu renderer
+# WGPU renderer
 
-## RenderSpec
+## Frame ownership
 
-```rust
-pub struct RenderSpec {
-    pub size: UVec2,
-    pub clear: Color,
-    pub layers: Vec<LayerSpec>,
-    pub postprocess: Vec<ShaderPassSpec>,
-}
+`PreparedFrame` is the shared renderer input. It carries the frame’s rectangle and image paint data, controls, text, and attached `PreparedViewScene`s. Each prepared View pairs a renderer-facing `ViewScene` with `PreparedViewSceneResources`; the player/runtime resolves image and mask assets before submission, so the resource payload itself performs no I/O. Prepared text IDs refer to the frame’s canonical prepared text batch.
 
-pub enum LayerSpec {
-    Sprite(SpriteSpec),
-    Text(TextSpec),
-    Vector(VectorSpec),
-    View(ViewRenderSpec),
-    Group(GroupSpec),
-    Video(VideoSpec),
-    CustomShader(CustomMaterialSpec),
-}
-```
+`SharedRenderer` draws into its scene target in this order: background and frame images, attached View scenes in attachment order, then the ordered frame content including runtime controls. It composites the completed target to the caller’s texture last. Each attached View scene is rendered by `ViewCompositor`.
 
-## Render owner
+## Direct primitives and compositing
 
-GPU object は `RenderOwner` だけが作る。
+`ViewScene` preserves paint order as direct context ranges and compositing groups. The direct renderer draws solid and rounded rectangles, borders, linear gradients, images, and prepared text into the active target. A group is rendered through an offscreen target so its children and effects can be composed as one subtree. The group pass order is specified in [Layered rendering](layered-rendering.md).
 
-```rust
-pub enum GpuRequest {
-    CreateTexture(TextureUpload),
-    CreatePipeline(PipelineDesc),
-    CreateShaderModule(ValidatedShader),
-    UpdateBuffer(BufferUpdate),
-}
-```
+The current compositor supports color-matrix filters (brightness, contrast, grayscale, saturation, hue rotation, invert, sepia, and opacity), blur, and drop-shadow filters; outer and inset box shadows; all declared `ViewBlendMode` values; and inset, circle, ellipse, polygon, and vector-path clips. Vector paths accept move, line, horizontal/vertical line, quadratic/cubic curve, and close commands under non-zero or even-odd fill, with curves flattened into bounded edge plans. URL clip resources and unsupported path commands return typed planning errors.
 
-worker は CPU 側準備だけ行い、GPU request を返す。
+Masks accept prepared external textures and linear, radial, or conic gradients. External mask textures carry alpha or luminance sampling; sizing, positioning, and repeat modes are resolved by a typed mask plan. Element masks need a prepared capture resource, which the current compositor does not receive, and return a typed error. Missing mask/image resources and unsupported filters, clips, blend modes, or shadow plans also propagate through `ViewCompositorError` rather than being silently substituted.
 
-## Headless
-
-headless は offscreen texture へ描画し、readback して PNG / raw RGBA / object-id / mask を生成する。
-
-```rust
-pub struct RenderCaptureOptions {
-    pub size: UVec2,
-    pub scale_factor: f32,
-    pub color: bool,
-    pub overlay: bool,
-    pub object_id: bool,
-    pub masks: MaskCaptureMode,
-    pub include_view: bool,
-}
-```
-
-## Object ID pass
-
-通常 color pass とは別に object-id texture を作る。
-
-```text
-sprite alice       → object id 101
-choice listen     → object id 205
-dialogue view     → object id 300
-```
-
-これにより bbox / polygon / segmentation mask をエンジン情報から生成できる。
+The frame and scene owners are [`geometry.rs`](../../crates/arcweft-render-wgpu/src/geometry.rs), [`view_scene.rs`](../../crates/arcweft-render-wgpu/src/view_scene.rs), [`view_compositor.rs`](../../crates/arcweft-render-wgpu/src/view_compositor.rs), and [`renderer.rs`](../../crates/arcweft-render-wgpu/src/renderer.rs). Effect, clip, mask, blend, and shadow plans are owned by their corresponding `view_*` modules in the same crate.

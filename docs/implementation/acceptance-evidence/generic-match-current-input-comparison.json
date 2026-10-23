@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "acceptedCommit": "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+  "inspectedCommit": "7b1f8f5deb64db1274632c6ec2a7b8af69147420",
+  "sourceRows": 17,
+  "changedBlobs": 9,
+  "acceptanceRerun": false,
+  "disposition": "accepted/published retained; committed owner evolution is not by itself a new defect",
+  "rows": [
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "acceptedBlob": "7fdc3dcd316b3820d575f2a1bc34cf15b6d0fd7c",
+      "inspectedBlob": "c65e48357e6bc33da97911ce909abac74ed7651a",
+      "changed": true
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/generic_continuation_snapshot.rs",
+      "acceptedBlob": "89a3a84217e0672bd42a9a7560030e9a44300bb5",
+      "inspectedBlob": "8d5ee90b74b028f75f00ead1cdebf33c5163a388",
+      "changed": true
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/dialogue/candidate/block.rs",
+      "acceptedBlob": "d58e392ac5458d9d6d7b10ff90a12ed0d4c2af84",
+      "inspectedBlob": "d58e392ac5458d9d6d7b10ff90a12ed0d4c2af84",
+      "changed": false
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/statement_lowering.rs",
+      "acceptedBlob": "097f29f4ea3a80d443bf9f18a2f7d7a65070e353",
+      "inspectedBlob": "097f29f4ea3a80d443bf9f18a2f7d7a65070e353",
+      "changed": false
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/block_projection.rs",
+      "acceptedBlob": "245b00946ce68eb44356610bae3c3b646e1dd1ec",
+      "inspectedBlob": "245b00946ce68eb44356610bae3c3b646e1dd1ec",
+      "changed": false
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/candidate_projection/block.rs",
+      "acceptedBlob": "edc9de9743e4c38f6ae0f982d54757c6d164b16a",
+      "inspectedBlob": "edc9de9743e4c38f6ae0f982d54757c6d164b16a",
+      "changed": false
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/stmt.rs",
+      "acceptedBlob": "5bac131b282dedbcb4364f5a8786ab283b778f9d",
+      "inspectedBlob": "5bac131b282dedbcb4364f5a8786ab283b778f9d",
+      "changed": false
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/stmt/thread.rs",
+      "acceptedBlob": "ddadf7fa1c9f14846fd6205c313078b86b647158",
+      "inspectedBlob": "ddadf7fa1c9f14846fd6205c313078b86b647158",
+      "changed": false
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/arguments.rs",
+      "acceptedBlob": "3d3ed0a0c77a8e5b64e91335c0732a23cf5652fa",
+      "inspectedBlob": "041bd03fd8e94de655a5827aed808aec3e65dd00",
+      "changed": true
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+      "acceptedBlob": "ea9b0515a400e6fdc7433e98c0f8e940e4303dd5",
+      "inspectedBlob": "05b784c60ff6d78f2517bd9700492ea30e41658e",
+      "changed": true
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+      "acceptedBlob": "23e388716eee02b9a8a01a1f5670548684c8590c",
+      "inspectedBlob": "997daa57c4a4e548e6e6614254000811b889eb82",
+      "changed": true
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/function_body.rs",
+      "acceptedBlob": "d301d7cd364cac24b6396072f620d4378767aaa2",
+      "inspectedBlob": "d301d7cd364cac24b6396072f620d4378767aaa2",
+      "changed": false
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/preparation.rs",
+      "acceptedBlob": "96cf36ca32d95589bfde75986c12bddf35401eb7",
+      "inspectedBlob": "96cf36ca32d95589bfde75986c12bddf35401eb7",
+      "changed": false
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+      "acceptedBlob": "780262a989e81376ac88d52e3d8f031fa7faa917",
+      "inspectedBlob": "9fe2a8c1615881d369667453d0325f684fb7a3b3",
+      "changed": true
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/callable_values.rs",
+      "acceptedBlob": "f7d9611bc2bcc32d6378e660e38fc8e5f4bd9796",
+      "inspectedBlob": "3390368649b49703780e59cb8fc7887dff46b22a",
+      "changed": true
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/execution_inputs.rs",
+      "acceptedBlob": "e44fc62e8dbc742404b8306d04821f93f2d30595",
+      "inspectedBlob": "b2e7e7976eacee341aabafd9c3527b52ad53d4ef",
+      "changed": true
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/match_coverage.rs",
+      "acceptedBlob": "77c1b17f4ac6fba5522585faa482227bc0557129",
+      "inspectedBlob": "2f67403da0bc033797068c77fa2e7dd0f5aba055",
+      "changed": true
+    }
+  ]
+}

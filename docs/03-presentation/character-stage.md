@@ -13,6 +13,22 @@ pub character alice {
 Sprite, voice, and look resources are selected by the typed stage and audio
 authorities; they are not nested fields in the character declaration.
 
+## `.awchar` character packages
+
+Character visuals are carried as a Sans I/O `CharacterPackage`: a validated
+`CharacterManifest`, its exact manifest bytes, and package-relative PNG layer
+payloads. A package contains `character.awchar.json` and the layer files named by
+its declared part variants. Validation rejects duplicate or missing payloads,
+unreferenced payload entries, incomplete PNGs, and dimensions that disagree with
+the manifest.
+
+The player decodes the validated layers into a `BundleCharacterCatalog` and
+prepares the selected look as a `CharacterRenderSpec` and retained `CharacterView`
+shared by native and web rendering. The composition remains a typed layer stack;
+its stable stage bounds come from the manifest canvas and anchor rather than a
+flattened image object. Bundle transport and admission are specified in
+[Packaging](../05-build-and-security/packaging.md#character-packages).
+
 ## Stage object
 
 When a character is shown, the runtime creates a stage object:

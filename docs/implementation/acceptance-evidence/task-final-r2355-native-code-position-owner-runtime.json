@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "7b55dcc5f4f5a3f0dbe4f73ac1341eeebb380498",
+  "name": "task-final-r2355-native-code-position-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-native-code-position-repair.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "rdeps(=arcweft-core)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2355-native-code-position-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T00:11:29.3674098Z",
+  "finishedAt": "2026-10-23T00:12:03.8152811Z"
+}

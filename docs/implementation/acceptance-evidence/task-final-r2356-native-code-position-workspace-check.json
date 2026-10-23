@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "7b55dcc5f4f5a3f0dbe4f73ac1341eeebb380498",
+  "name": "task-final-r2356-native-code-position-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2356-native-code-position-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T00:12:45.9083950Z",
+  "finishedAt": "2026-10-23T00:15:42.4502271Z"
+}

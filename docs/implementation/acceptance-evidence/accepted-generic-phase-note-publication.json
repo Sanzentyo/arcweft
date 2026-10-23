@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "commit": "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+  "parent": "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+  "remote": "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+  "path": "docs/implementation/2026-09-08-convergence-goal-plan.md",
+  "blob": "d269909a772f88789ce66cb8a1d8f2df7a4ce343",
+  "cached_diff_sha256": "434a3879be58ffaf4af5d240e585a49f59c07651455fc53d030e1f7f094c0a32",
+  "source_drift": [],
+  "status": "reviewed phase note published; accepted Generic C3/C5 closure distinguished from active whole goal"
+}

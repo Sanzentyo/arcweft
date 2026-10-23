@@ -63,6 +63,15 @@ alignment, full opacity, and capture-time playback. It accepts the same
 objects so static and animated backgrounds can be observed through the same
 debug surface.
 
+Background state is addressed by a typed target/slot pair. The defaults are
+`@target.scene` and `@slot.background.default`; a later valid write replaces
+only the same pair, while other pairs coexist. `bg.clear(...)` clears exactly
+the selected pair. A malformed replacement or clear rejects the presentation
+update atomically, leaving its previously committed state intact. The shared
+target/slot ownership rules are described in [Presentation Layers](layers.md).
+Stable object identity preserves distinct target/slot pairs. Slot names do not
+imply depth or layering; explicit depth and semantic identity own paint order.
+
 `image(asset = ..., ...)` creates a bounded image object. It carries authored
 object identity, target, layer, bounds, fit/alignment, opacity, depth,
 transform, playback policy, lifecycle flags, semantic actions, custom
@@ -136,6 +145,17 @@ dimensions. Source-level `asset.image(...)`, `bg(...)`, and `image(...)`
 references are checked against bundle image assets when statically known, and
 `run-bundle` validates the encoded payload records before execution.
 
+## Placement resolution
+
+The typed `StagePlacement` value carried by an image bundle object supports an
+output-logical absolute rectangle or a responsive anchor resolved against the
+design and output viewports. Player frame planning produces design, output, and
+physical bounds that the image renderer and observation path consume together.
+The current bounded `image(...)` call lowers its explicit `x`, `y`, `width`, and
+`height` to absolute placement; background staging constructs its own top-left
+design placement. This typed runtime model does not define a source-level anchor
+spelling or connect character-stage placement to image objects.
+
 ## Animation Time
 
 Animated images select their active frame from presentation visual time. Agent
@@ -147,6 +167,11 @@ time for that image object. `playback.start`, `playback.paused_at`, and
 `playback.rate` are deterministic presentation parameters, not wall-clock
 state. Decode caches may reuse decoded bytes/frames, but cache access must not
 advance animation.
+
+The active native runtime and Agent observation state retain a decoded
+`BundleImageCatalog` built from their bundle. Backgrounds and bounded image
+objects reuse those decoded assets through shared frame preparation, so render,
+hit-test, capture, and observation do not create object-local decode paths.
 
 ## Capture and Hit-Test
 

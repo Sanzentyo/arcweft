@@ -1,0 +1,772 @@
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `std::collections::VecDeque`
+ --> crates\arcweft-core\src\engine\flow\format_attempt.rs:3:5
+  |
+3 | use std::collections::VecDeque;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:19:43
+   |
+19 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+22 |     SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
+   |                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:67:33
+   |
+67 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:12:5
+   |
+12 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcSelectedSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:56:32
+   |
+56 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+error[E0271]: type mismatch resolving `<&[FlowOp] as IntoIterator>::Item == &NativePendingWork`
+    --> crates\arcweft-core\src\engine.rs:2539:51
+     |
+2539 |         self.fiber.frame.pending_ops.iter().chain(original)
+     |                                             ----- ^^^^^^^^ expected `&NativePendingWork`, found `&FlowOp`
+     |                                             |
+     |                                             required by a bound introduced by this call
+     |
+     = note: expected reference `&NativePendingWork`
+                found reference `&plan::FlowOp`
+note: required by a bound in `std::iter::Iterator::chain`
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\iter\traits\iterator.rs:513:33
+     |
+ 510 |     fn chain<U>(self, other: U) -> Chain<Self, U::IntoIter>
+     |        ----- required by a bound in this associated function
+...
+ 513 |         U: [const] IntoIterator<Item = Self::Item>,
+     |                                 ^^^^^^^^^^^^^^^^^ required by this bound in `Iterator::chain`
+
+error[E0271]: expected `Chain<Iter<'_, NativePendingWork>, Iter<'_, FlowOp>>` to be an iterator that yields `&FlowOp`, but it yields `&NativePendingWork`
+    --> crates\arcweft-core\src\engine.rs:2532:45
+     |
+2532 |     pub fn active_flow_operations(&self) -> impl DoubleEndedIterator<Item = &FlowOp> {
+     |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&FlowOp`, found `&NativePendingWork`
+...
+2539 |         self.fiber.frame.pending_ops.iter().chain(original)
+     |         --------------------------------------------------- return type was inferred to be `Chain<Iter<'_, NativePendingWork>, Iter<'_, FlowOp>>` here
+     |
+     = note: expected reference `&plan::FlowOp`
+                found reference `&NativePendingWork`
+     = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-d2719b996c7378bc.long-type-8209863452613577589.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0271]: expected `Iter<'_, FlowOp>` to be an iterator that yields `&NativePendingWork`, but it yields `&FlowOp`
+    --> crates\arcweft-core\src\engine.rs:2532:45
+     |
+2532 |     pub fn active_flow_operations(&self) -> impl DoubleEndedIterator<Item = &FlowOp> {
+     |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&NativePendingWork`, found `&FlowOp`
+...
+2539 |         self.fiber.frame.pending_ops.iter().chain(original)
+     |         --------------------------------------------------- return type was inferred to be `Chain<Iter<'_, NativePendingWork>, Iter<'_, FlowOp>>` here
+     |
+     = note: expected reference `&NativePendingWork`
+                found reference `&plan::FlowOp`
+     = note: required for `Chain<Iter<'_, NativePendingWork>, Iter<'_, FlowOp>>` to implement `DoubleEndedIterator`
+     = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-d2719b996c7378bc.long-type-8209863452613577589.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `std::option::Option<_>: pure::RuntimeCallBackend` is not satisfied
+    --> crates\arcweft-core\src\engine\dialogue.rs:1201:17
+     |
+1196 |             self.execute_flow_operation(
+     |                  ---------------------- required by a bound introduced by this call
+...
+1201 |                 &mut drop_policy,
+     |                 ^^^^^^^^^^^^^^^^ the trait `pure::RuntimePureCallBackend` is not implemented for `std::option::Option<_>`
+     |
+help: the trait `pure::RuntimePureCallBackend` is implemented for `VmRuntimePureCallBackend<E>`
+    --> crates\arcweft-core\src\pure\runtime_backend.rs:20:1
+     |
+  20 | impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCallBackend<E> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required for `std::option::Option<_>` to implement `pure::RuntimeCallBackend`
+    --> crates\arcweft-core\src\pure.rs:683:9
+     |
+ 683 | impl<T> RuntimeCallBackend for T where
+     |         ^^^^^^^^^^^^^^^^^^     ^
+ 684 |     T: RuntimePureCallBackend + RuntimeMathCallBackend + RuntimeExternalCallBackend
+     |        ---------------------- unsatisfied trait bound introduced here
+note: required by a bound in `engine::flow::<impl engine::Engine>::execute_flow_operation`
+    --> crates\arcweft-core\src\engine\flow.rs:337:33
+     |
+ 331 |     pub(super) fn execute_flow_operation(
+     |                   ---------------------- required by a bound in this associated function
+...
+ 337 |         pure_backend: &mut impl RuntimeCallBackend,
+     |                                 ^^^^^^^^^^^^^^^^^^ required by this bound in `engine::flow::<impl Engine>::execute_flow_operation`
+
+error[E0277]: the trait bound `std::option::Option<_>: pure::RuntimeCallBackend` is not satisfied
+    --> crates\arcweft-core\src\engine\dialogue.rs:1201:17
+     |
+1196 |             self.execute_flow_operation(
+     |                  ---------------------- required by a bound introduced by this call
+...
+1201 |                 &mut drop_policy,
+     |                 ^^^^^^^^^^^^^^^^ the trait `RuntimeMathCallBackend` is not implemented for `std::option::Option<_>`
+     |
+help: the trait `RuntimeMathCallBackend` is implemented for `VmRuntimePureCallBackend<E>`
+    --> crates\arcweft-core\src\pure\runtime_backend.rs:927:1
+     |
+ 927 | impl<E> RuntimeMathCallBackend for VmRuntimePureCallBackend<E> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required for `std::option::Option<_>` to implement `pure::RuntimeCallBackend`
+    --> crates\arcweft-core\src\pure.rs:683:9
+     |
+ 683 | impl<T> RuntimeCallBackend for T where
+     |         ^^^^^^^^^^^^^^^^^^     ^
+ 684 |     T: RuntimePureCallBackend + RuntimeMathCallBackend + RuntimeExternalCallBackend
+     |                                 ---------------------- unsatisfied trait bound introduced here
+note: required by a bound in `engine::flow::<impl engine::Engine>::execute_flow_operation`
+    --> crates\arcweft-core\src\engine\flow.rs:337:33
+     |
+ 331 |     pub(super) fn execute_flow_operation(
+     |                   ---------------------- required by a bound in this associated function
+...
+ 337 |         pure_backend: &mut impl RuntimeCallBackend,
+     |                                 ^^^^^^^^^^^^^^^^^^ required by this bound in `engine::flow::<impl Engine>::execute_flow_operation`
+
+error[E0277]: the trait bound `std::option::Option<_>: pure::RuntimeCallBackend` is not satisfied
+    --> crates\arcweft-core\src\engine\dialogue.rs:1201:17
+     |
+1196 |             self.execute_flow_operation(
+     |                  ---------------------- required by a bound introduced by this call
+...
+1201 |                 &mut drop_policy,
+     |                 ^^^^^^^^^^^^^^^^ the trait `pure::RuntimeExternalCallBackend` is not implemented for `std::option::Option<_>`
+     |
+help: the following other types implement trait `pure::RuntimeExternalCallBackend`
+    --> crates\arcweft-core\src\pure.rs:735:1
+     |
+ 735 | impl RuntimeExternalCallBackend for NoRuntimeExternalCalls {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `NoRuntimeExternalCalls`
+     |
+    ::: crates\arcweft-core\src\pure\runtime_backend.rs:1007:1
+     |
+1007 | impl<E: RuntimeExternalCallBackend> RuntimeExternalCallBackend for VmRuntimePureCallBackend<E> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `VmRuntimePureCallBackend<E>`
+note: required for `std::option::Option<_>` to implement `pure::RuntimeCallBackend`
+    --> crates\arcweft-core\src\pure.rs:683:9
+     |
+ 683 | impl<T> RuntimeCallBackend for T where
+     |         ^^^^^^^^^^^^^^^^^^     ^
+ 684 |     T: RuntimePureCallBackend + RuntimeMathCallBackend + RuntimeExternalCallBackend
+     |                                                          -------------------------- unsatisfied trait bound introduced here
+note: required by a bound in `engine::flow::<impl engine::Engine>::execute_flow_operation`
+    --> crates\arcweft-core\src\engine\flow.rs:337:33
+     |
+ 331 |     pub(super) fn execute_flow_operation(
+     |                   ---------------------- required by a bound in this associated function
+...
+ 337 |         pure_backend: &mut impl RuntimeCallBackend,
+     |                                 ^^^^^^^^^^^^^^^^^^ required by this bound in `engine::flow::<impl Engine>::execute_flow_operation`
+
+error[E0061]: this method takes 6 arguments but 5 arguments were supplied
+    --> crates\arcweft-core\src\engine\dialogue.rs:1196:18
+     |
+1196 |             self.execute_flow_operation(
+     |                  ^^^^^^^^^^^^^^^^^^^^^^
+1197 |                 std::borrow::Cow::Owned(operation),
+1198 |                 None,
+     |                 ---- argument #2 of type `NativeSourceOperation` is missing
+     |
+note: expected `&mut Option<RuntimeDropPolicy>`, found `&mut impl RuntimeCallBackend`
+    --> crates\arcweft-core\src\engine\dialogue.rs:1200:17
+     |
+1200 |                 pure_backend,
+     |                 ^^^^^^^^^^^^
+     = note: expected mutable reference `&mut std::option::Option<RuntimeDropPolicy>`
+                found mutable reference `&mut impl RuntimeCallBackend`
+note: method defined here
+    --> crates\arcweft-core\src\engine\flow.rs:331:19
+     |
+ 331 |     pub(super) fn execute_flow_operation(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^
+...
+ 334 |         source_site: NativeSourceOperation,
+     |         ----------------------------------
+...
+ 338 |         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
+     |         ----------------------------------------------------------
+help: provide the argument
+     |
+1196 ~             self.execute_flow_operation(
+1197 +                 std::borrow::Cow::Owned(operation),
+1198 +                 /* NativeSourceOperation */,
+1199 +                 None,
+1200 +                 &mut staged,
+1201 +                 &mut drop_policy,
+1202 +                 /* &mut Option<RuntimeDropPolicy> */,
+1203 ~             );
+     |
+
+error[E0308]: mismatched types
+  --> crates\arcweft-core\src\engine\frame_progress.rs:20:40
+   |
+20 |             return matches!(operation, FlowOp::Return(_) | FlowOp::ReturnExpr(_));
+   |                             ---------  ^^^^^^^^^^^^^^^^^ expected `NativePendingWork`, found `FlowOp`
+   |                             |
+   |                             this expression has type `&NativePendingWork`
+   |
+   = note: expected struct `NativePendingWork`
+                found enum `plan::FlowOp`
+
+error[E0308]: mismatched types
+  --> crates\arcweft-core\src\engine\frame_progress.rs:20:60
+   |
+20 |             return matches!(operation, FlowOp::Return(_) | FlowOp::ReturnExpr(_));
+   |                             ---------                      ^^^^^^^^^^^^^^^^^^^^^ expected `NativePendingWork`, found `FlowOp`
+   |                             |
+   |                             this expression has type `&NativePendingWork`
+   |
+   = note: expected struct `NativePendingWork`
+                found enum `plan::FlowOp`
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\engine\numeric_map.rs:467:29
+    |
+465 |                         && operations_avoid_locals(
+    |                            ----------------------- arguments to this function are incorrect
+466 |                             plan,
+467 |                             &frame.caller_pending_ops.iter().collect::<Vec<_>>(),
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&[&FlowOp]`, found `&Vec<&NativePendingWork>`
+    |
+    = note: expected reference `&[&plan::FlowOp]`
+               found reference `&Vec<&NativePendingWork>`
+note: function defined here
+   --> crates\arcweft-core\src\engine\numeric_map.rs:322:4
+    |
+322 | fn operations_avoid_locals(plan: &RuntimePlan, ops: &[&FlowOp], elided: &[Local]) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^                     ---------------
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1398:53
+     |
+1398 |             self.fiber.frame.pending_ops.push_front(op);
+     |                                          ---------- ^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1744:25
+     |
+1744 |             .push_front(FlowOp::ExitScheduledScope { token });
+     |              ---------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `NativePendingWork`, found `FlowOp`
+     |              |
+     |              arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1746:53
+     |
+1746 |             self.fiber.frame.pending_ops.push_front(op)
+     |                                          ---------- ^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1749:53
+     |
+1749 |             self.fiber.frame.pending_ops.push_front(prefix)
+     |                                          ---------- ^^^^^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1754:25
+     |
+1754 |               .push_front(FlowOp::EnterScheduledScope {
+     |  ______________----------_^
+     | |              |
+     | |              arguments to this method are incorrect
+1755 | |                 identity: RuntimeScopeIdentity::Anonymous,
+1756 | |                 token,
+1757 | |             });
+     | |_____________^ expected `NativePendingWork`, found `FlowOp`
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1781:25
+     |
+1781 |             .push_front(FlowOp::ExitScheduledScope { token });
+     |              ---------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `NativePendingWork`, found `FlowOp`
+     |              |
+     |              arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1783:53
+     |
+1783 |             self.fiber.frame.pending_ops.push_front(op)
+     |                                          ---------- ^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1786:53
+     |
+1786 |             self.fiber.frame.pending_ops.push_front(prefix)
+     |                                          ---------- ^^^^^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1791:25
+     |
+1791 |             .push_front(FlowOp::EnterScheduledScope { identity, token });
+     |              ---------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `NativePendingWork`, found `FlowOp`
+     |              |
+     |              arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1808:53
+     |
+1808 |             self.fiber.frame.pending_ops.push_front(tail);
+     |                                          ---------- ^^^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1818:25
+     |
+1818 |             .push_front(FlowOp::ExitScheduledScope { token });
+     |              ---------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `NativePendingWork`, found `FlowOp`
+     |              |
+     |              arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1820:53
+     |
+1820 |             self.fiber.frame.pending_ops.push_front(op);
+     |                                          ---------- ^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1823:53
+     |
+1823 |             self.fiber.frame.pending_ops.push_front(prefix);
+     |                                          ---------- ^^^^^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1828:25
+     |
+1828 |               .push_front(FlowOp::EnterScheduledScope {
+     |  ______________----------_^
+     | |              |
+     | |              arguments to this method are incorrect
+1829 | |                 identity: RuntimeScopeIdentity::Anonymous,
+1830 | |                 token,
+1831 | |             });
+     | |_____________^ expected `NativePendingWork`, found `FlowOp`
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1845:53
+     |
+1845 |             self.fiber.frame.pending_ops.push_front(tail);
+     |                                          ---------- ^^^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1850:25
+     |
+1850 |             .push_front(FlowOp::ExitScheduledScope { token });
+     |              ---------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `NativePendingWork`, found `FlowOp`
+     |              |
+     |              arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1852:53
+     |
+1852 |             self.fiber.frame.pending_ops.push_front(op);
+     |                                          ---------- ^^ expected `NativePendingWork`, found `FlowOp`
+     |                                          |
+     |                                          arguments to this method are incorrect
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2295:12
+     |
+2295 |     pub fn push_front(&mut self, value: T) {
+     |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine\flow.rs:1862:35
+     |
+1862 |                 |op| !matches!(op,FlowOp::ExitScheduledScope {token:queued} if *queued==token),
+     |                                -- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `NativePendingWork`, found `FlowOp`
+     |                                |
+     |                                this expression has type `&NativePendingWork`
+     |
+     = note: expected struct `NativePendingWork`
+                  found enum `plan::FlowOp`
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine.rs:3229:21
+     |
+3215 |             pending_ops.push_front(FlowOp::ExitScope);
+     |             -----------            ----------------- this argument has type `plan::FlowOp`...
+     |             |
+     |             ... which causes `pending_ops` to have type `VecDeque<plan::FlowOp>`
+...
+3229 |                     pending_ops,
+     |                     ^^^^^^^^^^^ expected `VecDeque<NativePendingWork>`, found `VecDeque<FlowOp>`
+     |
+     = note: expected struct `VecDeque<NativePendingWork>`
+                found struct `VecDeque<plan::FlowOp>`
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine.rs:3395:17
+     |
+3385 |           pending_ops.push_back(FlowOp::EnterScope {
+     |  _________-----------___________-
+     | |         |
+     | |         ... which causes `pending_ops` to have type `VecDeque<plan::FlowOp>`
+3386 | |             identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+3387 | |         });
+     | |_________- this argument has type `plan::FlowOp`...
+...
+3395 |                   pending_ops,
+     |                   ^^^^^^^^^^^ expected `VecDeque<NativePendingWork>`, found `VecDeque<FlowOp>`
+     |
+     = note: expected struct `VecDeque<NativePendingWork>`
+                found struct `VecDeque<plan::FlowOp>`
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine.rs:3697:29
+     |
+3663 |                     pending_ops.push_front(FlowOp::ExitScope);
+     |                     -----------            ----------------- this argument has type `plan::FlowOp`...
+     |                     |
+     |                     ... which causes `pending_ops` to have type `VecDeque<plan::FlowOp>`
+...
+3697 |                             pending_ops,
+     |                             ^^^^^^^^^^^ expected `VecDeque<NativePendingWork>`, found `VecDeque<FlowOp>`
+     |
+     = note: expected struct `VecDeque<NativePendingWork>`
+                found struct `VecDeque<plan::FlowOp>`
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine.rs:3954:43
+     |
+3954 |             flow_fiber_line_handle_tokens(&child)
+     |             ----------------------------- ^^^^^^ expected `&FlowFiber`, found `&FlowFiber<_>`
+     |             |
+     |             arguments to this function are incorrect
+     |
+     = note: expected reference `&FlowF...me<_, value:...ayload, NativePendingWork, FlowCo...kEntry, AwaitState, FlowFiberStatus<AwaitState, WaitingManyStatus>>>`
+                found reference `&FlowFiber<NativeFlowExecutionFrame<_, _, plan::FlowOp, _, _, FlowFiberStatus<_, _>>>`
+note: function defined here
+    --> crates\arcweft-core\src\engine.rs:646:4
+     |
+ 646 | fn flow_fiber_line_handle_tokens(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 647 |     fiber: &FlowFiber,
+     |     -----------------
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\engine.rs:3958:38
+     |
+3958 |         batch.child_fibers.push_back(child);
+     |                            --------- ^^^^^ expected `FlowFiber`, found `FlowFiber<_>`
+     |                            |
+     |                            arguments to this method are incorrect
+     |
+     = note: expected struct `FlowFi...me<_, value:...ayload, NativePendingWork, FlowCo...kEntry, AwaitState, FlowFiberStatus<AwaitState, WaitingManyStatus>>>`
+                found struct `FlowFiber<NativeFlowExecutionFrame<_, _, plan::FlowOp, _, _, FlowFiberStatus<_, _>>>`
+note: method defined here
+    --> C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\alloc\src\collections\vec_deque\mod.rs:2338:12
+     |
+2338 |     pub fn push_back(&mut self, value: T) {
+     |            ^^^^^^^^^
+
+warning: unreachable pattern
+   --> crates\arcweft-core\src\engine\rollback.rs:632:13
+    |
+632 |             _ => Ok(()),
+    |             ^ no value can reach this
+    |
+note: multiple earlier patterns match some of the same values
+   --> crates\arcweft-core\src\engine\rollback.rs:632:13
+    |
+594 |             Self::Scope { match_guard, .. } => {
+    |             ------------------------------- matches some of the same values
+...
+600 |             Self::Loop { source } | Self::While { source } | Self::WhileLet { source } => {
+    |             -------------------------------------------------------------------------- matches some of the same values
+...
+621 |             Self::FormatAttempt(frame) => frame.admit_owned_values(admission, binding),
+    |             -------------------------- matches some of the same values
+622 |             Self::FunctionCall(frame) => {
+    |             ------------------------- matches some of the same values
+...
+632 |             _ => Ok(()),
+    |             ^ collectively making this unreachable
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+Some errors have detailed explanations: E0061, E0271, E0277, E0308.
+For more information about an error, try `rustc --explain E0061`.
+warning: `arcweft-core` (lib) generated 24 warnings
+error: could not compile `arcweft-core` (lib) due to 33 previous errors; 24 warnings emitted

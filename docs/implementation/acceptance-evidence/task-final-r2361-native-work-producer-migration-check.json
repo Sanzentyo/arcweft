@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "ab9879594224ffaba47b384527592f2b6069e6f1",
+  "name": "task-final-r2361-native-work-producer-migration-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2361-native-work-producer-migration-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T01:35:28.6615677Z",
+  "finishedAt": "2026-10-23T01:37:14.2055664Z"
+}

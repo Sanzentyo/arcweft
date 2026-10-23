@@ -50,9 +50,10 @@ request from another terminal to complete the process.
 
 - `src/game.arcw` uses scenario-style `with:` because it is the formatter's
   preferred human-authored form.
-- `src/game.arcw` is currently a checker/tooling sample. Full runtime execution
-  of user-defined helper functions remains tied to the launch-profile/runtime
-  boundary decision documented under `docs/reviews/requests/`.
+- `src/game.arcw` is an authoring/tooling fixture. Launch-profile and execution
+  behavior follows the maintained [entry contract](../../docs/01-language/entries-and-capabilities.md)
+  and [runtime boundary](../../docs/02-runtime/runtime-step-and-executors.md).
+  Fixture execution results are distinct from a historical design request.
 - The server and CLI samples are separate files so they can stay Sans I/O at
   the language/runtime boundary and leave host I/O in `arcweft-cli`.
 - `arcw.toml` defines launch profiles. Profile mode is the canonical project

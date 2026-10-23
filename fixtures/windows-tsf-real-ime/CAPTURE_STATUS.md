@@ -11,11 +11,11 @@ cargo run -p arcweft-player-native --bin windows-tsf-ime-sample -- \
   --trace-out fixtures/windows-tsf-real-ime/microsoft-japanese-ime-hiragana.real.json
 ```
 
-This command must not be treated as final Arcweft player acceptance. The final
-capture path is tracked by
-`docs/reviews/requests/2026-06-29-seq-06.4j-native-player-platform-text-input-bridge-package.md`
-and must run a DSL-backed scene through the normal native player path, with the
-platform backend connected through the cross-platform native text-input bridge.
+This command is backend-diagnostic evidence. Player acceptance runs a DSL-backed
+scene through the normal native player, with the platform backend connected
+through the cross-platform text-input bridge. The maintained
+[text-control contract](../../docs/03-presentation/view-input-text-field.md)
+defines that boundary; an old design request is not current acceptance evidence.
 
 The captured file must be checked against `schema.json` and compared to
 `expected-microsoft-japanese-ime-hiragana.trace.json` for event coverage.

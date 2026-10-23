@@ -131,6 +131,26 @@ public ID とは別の occurrence identity であり、`dialogue.41` や `view.s
 既存の有効な文字列と version `1` の wire shape を保持する。enclosing codec の byte・
 string・collection 上限と、元の View/program に対する復元時の照合は別途維持する。
 
+Presentation lifecycle state is part of the version-1 presentation snapshot.
+`presentation_handle_epoch` and `presentation_handles` preserve each typed
+`PresentationHandleRecord`: occurrence id, resource kind and id, optional owner,
+state, layer/depth metadata, and creation/update epochs. The runtime driver
+interprets the known `presentation.handle.create`, `show`, `hide`, `unmount`,
+`release`, `dispose`, and `destroy` calls from line effects and advances the
+operation epoch for each recognized operation. A handle id remains tied to its
+resource kind and identity; terminal ids cannot be reused. `Mounted` is the only
+render-visible state. Hidden, unmounted, released, and destroyed handles are
+excluded from the corresponding image, View/control, surface, focus, and
+navigation projections. Unknown handles, incompatible reuse, operations on
+terminal handles, and hidden-but-focusable inputs produce typed diagnostics.
+
+Display updates build candidate handle tables and filtered presentation data
+before publishing a changed snapshot revision. Save/restore retains the table
+and epoch; restore validation rejects duplicate ids, creation epochs after
+update epochs, and records updated beyond the table epoch. These records define
+runtime snapshot lifecycle only; they do not add lexical handle syntax or
+language-scope cleanup rules.
+
 Core の inert value graph は、live/inert 共通の borrowed logical view と
 canonical visitor の counting sink を使い、live value を構築する前に
 depth・node・collection・string・validation-work・encoded-byte を検証する。

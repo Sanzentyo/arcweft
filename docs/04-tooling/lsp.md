@@ -205,6 +205,16 @@ Transport code refreshes metadata when the selected profile, metadata JSON,
 adapter manifest, or Cargo build output changes, and can continue showing the
 last valid metadata while reporting stale or missing metadata.
 
+Character metadata follows character resources reached by the selected profile's
+content roots. Project topology loads each corresponding `.awchar` manifest and
+its layer payloads, validates the package, and projects the typed manifest into
+the profile's `CharacterCatalog`. Completion and hover use that catalog for
+character, look, part, and variant metadata; hover includes source-layer names
+when present.
+Missing or invalid package data is reported through typed
+`profile.character_manifest.*` and `profile.character_layer_payload.*`
+diagnostics; it does not create a fallback character catalog.
+
 The stdio transport resolves project metadata from `arcw.toml` near each opened
 document and caches the resolved profile per document URI. On `didOpen` and
 `didSave` it refreshes that document's selected launch profile, admits its

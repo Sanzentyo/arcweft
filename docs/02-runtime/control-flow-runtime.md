@@ -1,220 +1,77 @@
-# Runtime Notes: Control Flow, Patterns, and Loops
+# Control flow, patterns, and semantic input
 
-## HIR representation
+## Control-flow contracts
 
-```rust
-pub enum Expr {
-    If(IfExpr),
-    Match(MatchExpr),
-    Loop(LoopExpr),
-    Block(BlockExpr),
-    Scope(ScopeExpr),
-    Await(AwaitExpr),
-    TryAwait(TryAwaitExpr),
-    // ...
-}
+Expression and statement positions share the checked HIR and pattern authority.
+A block or `scope` expression returns its final expression. A statement scope
+returns Unit unless a control transfer leaves it. A named scope changes relative
+ID and diagnostic paths, not local lookup or the value type. The language rules
+are defined by [block scopes](../01-language/block-scopes.md) and the
+[converged language surface](../01-language/converged-language-surface.md).
 
-pub enum Stmt {
-    Let { pattern: Pattern, value: Expr },
-    LetElse { pattern: Pattern, value: Expr, else_block: Block },
-    Scope(ScopeStmt),
-    While(WhileStmt),
-    WhileLet(WhileLetStmt),
-    For(ForStmt),
-    Break(Option<Expr>),
-    Continue,
-    Return(Expr),
-    Out(Expr),
-    Yield(Expr),
-    Expr(Expr),
-}
-```
+An `if` used as a value has an `else` and compatible branch results. A statement
+`if` may omit `else`. Expression and statement `match` require exhaustiveness;
+value-producing arms have a checked common result. A `loop` obtains its result
+from reachable `break expr` transfers; no reachable break gives Never. `while`,
+`while let`, and `for` return Unit. Their bindings and lexical body scopes do
+not escape an iteration.
 
-`ScopeExpr` / `ScopeStmt` represent `scope name? { ... }`; a bare statement
-`{ ... }` lowers as the same scope node with no name. Scope nodes behave like
-lexical blocks for evaluation and type checking. When present, the name is
-carried in HIR so diagnostics, trace frames, LSP/debug views, and ID generation
-can recover the author-visible scope path.
+Pattern shape, binding collection, coverage, and unreachable alternatives use
+one checked pattern/coverage model. Exact record or sequence patterns reject
+unmatched elements; an ignored rest accepts them without a binding. A bound
+record rest retains the original complete record, and a bound sequence rest
+receives the unmatched tail. Guards use the selected semantic Copy obligations
+for their temporary bindings; the original scrutinee remains owned until an arm
+is selected. A rejected guard discards its temporary scope before continuing.
 
-## Type checking
+`let PAT = EXPR else { ... }` makes its bindings available afterward only when
+the else continuation diverges. Return, goto, an enclosing break/continue, and
+a Never-returning computation are control transfers rather than fabricated
+ordinary values.
 
-`block` / `scope`:
+## Generic Match semantic transcript and publication
 
-```text
-expression position:
-  final expression determines the value type
+`FinalSemanticAnalysis::checked_match` validates the exact accepted HIR/symbol
+generation and returns one complete `CheckedMatch`. Its bounded transaction
+covers the requested expression or statement Match, its accepted expression,
+pattern, statement and body subtree, and every nested Match. Source-ordered
+arms, guards, binding/result types, callable and body evidence, and the closed
+coverage result feed that same transaction. Core's `MatchSourceDefinition` and
+`MatchSourceWriter` provide the typed semantic source grammar used by the
+transcript; consumers do not maintain a second Match authority.
 
-statement position:
-  lexical scope returns Unit unless an explicit transfer leaves the continuation
+Semantic atoms use accepted identities and structural coordinates. Raw arena
+IDs, source spans, formatting, debug/Serde spelling, and authored scope labels
+do not supply semantic identity. Complete checked type/substitution evidence
+owns the coverage universe. Missing or unresolved evidence, cancellation, work
+or byte-limit exhaustion, non-exhaustiveness, and invalid nested evidence fail
+the transaction before a complete product is published. Work and byte lengths
+are checked before writes; limits do not produce sentinel success digests.
 
-named scope:
-  same typing as block; name does not change the value type
-  omitted name creates no generated-ID scope segment
-```
+A zero-arm Match is exhaustive only for an actually uninhabited domain, such as
+Never; an inhabited domain is rejected. Unreachable alternatives remain typed
+coverage evidence. Never and `let-else` preserve their real continuation and
+single-consumption behavior in Native and decoded AWBC execution and restoration.
+The compiler consumes exhaustive checked products for expression and statement
+owners and publishes no partially checked subtree.
 
-`if`:
+This semantic product does not create another runtime Match decoder or make
+semantic acceptance depend on retained View admission. View, executable task
+admission and save formats consume their own owning contracts.
 
-```text
-value position:
-  else required, branch types unify
+## Execution and replay
 
-statement position:
-  else optional, type Unit
-```
+The runtime executes the accepted plan without reconstructing authored source.
+Original function/body coordinates identify code; live values, iterators,
+scopes and continuations belong to their execution state. The owning scope and
+loop control entries handle break/continue cleanup and result custody.
+Flow parameters enter once through a complete coordinate-addressed
+`RuntimeFlowInvocation`; runtime steps carry event/result ingress.
+See [the runtime step boundary](runtime-step-and-executors.md) and
+[task scheduling](async-scheduler.md) for the executable contracts.
 
-`match`:
-
-```text
-exhaustive when used in value or statement position
-arm types unify when value-producing
-```
-
-`loop`:
-
-```text
-break expr values determine loop type
-break without expr contributes Unit
-no reachable break => Never
-```
-
-`while` / `for`:
-
-```text
-Unit
-break expr disallowed
-```
-
-## Pattern checking
-
-Pattern checking has three phases:
-
-```text
-1. Shape check:
-   Does pattern shape match scrutinee type?
-
-2. Binding collection:
-   Introduce locals with inferred types.
-
-3. Exhaustiveness / reachability:
-   match arms checked for completeness and unreachable arms.
-```
-
-## let-else definite assignment
-
-Bindings from `let PAT = EXPR else { ... }` become available after the statement only if the else block diverges.
-
-Divergence examples:
-
-```text
-return
-goto
-break
-continue
-panic
-Never-returning function
-```
-
-## Interpreter/VM lowering
-
-The current Rust runtime slice lowers checked HIR into pure data:
-
-```rust
-pub enum RuntimeExpr {
-    Value(RuntimeValue),
-    Local(String),
-    EntityRef(String),
-    Tuple(Vec<RuntimeExpr>),
-    List(Vec<RuntimeExpr>),
-    Record(Vec<RuntimeFieldExpr>),
-    Variant { path: Option<String>, name: String, payload: Option<Box<RuntimeExpr>> },
-    Field { target: Box<RuntimeExpr>, field: String },
-    Unary { op: RuntimeUnaryOp, expr: Box<RuntimeExpr> },
-    Binary { lhs: Box<RuntimeExpr>, op: RuntimeBinaryOp, rhs: Box<RuntimeExpr> },
-    If { condition: Box<RuntimeExpr>, then_expr: Box<RuntimeExpr>, else_expr: Box<RuntimeExpr> },
-    Match { scrutinee: Box<RuntimeExpr>, arms: Vec<RuntimeExprMatchArm> },
-}
-
-pub enum RuntimePattern {
-    Ident(String),
-    MutIdent(String),
-    Discard,
-    Literal(RuntimeValue),
-    Entity(String),
-    Tuple(Vec<RuntimePattern>),
-    Record { path: Option<String>, fields: Vec<RuntimeRecordPatternField>, rest: RuntimePatternRest },
-    List { items: Vec<RuntimePattern>, rest: RuntimePatternRest },
-    Variant { path: Option<String>, name: String, payload: Option<Box<RuntimePattern>> },
-    Whole { name: String, pattern: Box<RuntimePattern> },
-    Typed { name: String, ty: String },
-}
-
-pub enum RuntimePatternRest {
-    Exact,
-    Ignore,
-    Bind(String),
-}
-```
-
-For both records and bracket sequences, `Exact` rejects unmentioned values and
-`Ignore` accepts them without a binding. Record `Bind` receives the original
-complete record; sequence `Bind` receives the unmatched tail.
-
-This evaluator is deliberately small and Sans I/O. It handles deterministic
-bool/int/string/entity/list/tuple/record/variant values and structured lexical
-bindings. Flow invocation parameters are admitted once through a complete,
-coordinate-addressed `RuntimeFlowInvocation` before execution; they are not
-step input. Function calls, overloads, numeric unit coercions, and full
-type-directed evaluation remain semantic/HIR work before this runtime layer.
-
-`scope name { ... }` lowers to the same control-flow shape as a lexical block,
-plus a scope-name push/pop around ID-bearing constructs and trace/debug frames.
-
-```text
-PushNamedScope(name)
-  body
-PopNamedScope(name)
-```
-
-The scope path affects only generated or relative line, text-key, choice, and
-option IDs created inside the scope. It does not change ordinary entity
-references, local variable lookup, or the value returned by the block.
-
-`loop` lowers to a runtime loop frame plus scoped body operations. The frame is
-the continuation target for `break` and `continue`; the body scope is popped
-before either transfer, so body-local bindings do not leak.
-
-```text
-PushLoopFrame(body)
-  EnterScope
-    body
-  ExitScope
-  LoopNext(body)
-Break(value?) -> pop body scopes, discard queued body ops, pop loop frame
-Continue -> pop body scopes, discard queued body ops, enqueue LoopNext(body)
-```
-
-`while` and `while let` use the same frame stack. `while let` keeps successful
-pattern bindings in the body scope only. Guard evaluation receives temporary
-copies of only the pattern-bound values selected by semantic Copy obligations;
-the original scrutinee remains owned until the guard succeeds. A failed guard
-discards those temporary copies before trying the next arm or restoring the
-outer environment.
-
-```text
-PushWhileLetFrame(pattern, expr, guard, body)
-  EnterScope
-    Bind(pattern bindings)
-    body
-  ExitScope
-  WhileLetNext(pattern, expr, guard, body)
-```
-
-Type checking still keeps `while` and `while let` as `Unit`; only `loop` can
-produce a value through `break expr`.
-
-## Replay
-
-Control-flow constructs are deterministic as long as expression evaluation is deterministic. Loop iteration count is recorded only for debug traces, not as semantic state.
+Evaluation and observable event order are deterministic under their admitted
+inputs. Debug loop counters do not replace the semantic continuation state.
 
 ## Function semantic input evidence
 

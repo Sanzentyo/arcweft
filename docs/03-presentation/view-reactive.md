@@ -195,6 +195,37 @@ interaction state はその target に独立して適用する。canonical selec
 `target` を保持する。obsolete な bare `element` selector reader は持たず、contract
 version は `1` のままとする。
 
+## Native computed Style resolution and projection
+
+Retained View nodes and runtime controls use the single typed
+`arcweft-view::style::ViewStyleResolver`. `ViewStyleProgram` owns sheets and
+inline patches; the bundle codec validates and transports that program but does
+not run another cascade. Resolution uses the node's mount/path/instruction
+identity and typed facts, visible root-to-parent ancestry, authored-order
+applications, inherited axes, parent computed style, presentation environment,
+and explicit revisions. Only properties marked inherited seed a child's
+computed style. Per-property winners follow scope depth, application order,
+predicate specificity, element specificity, rule source order, and declaration
+order, in that order.
+
+Named-sheet tokens resolve only within their sheet. An inline patch may use a
+token only when it has one unambiguous sheet owner. Missing, ambiguous, cyclic,
+inapplicable, or over-budget input produces a typed model, resolution, or
+projection error. The resolver bounds application, rule, contribution, token,
+selector, axis-invalidation, and cache work; its cache identity includes node
+and ancestry facts, revisions, inherited values, axes, and relevant environment
+values. Cache eviction is deterministic FIFO, and full tracing bypasses the
+cache.
+
+`ViewRuntimeNodeStyle` partitions each computed property into its typed runtime
+owner. Its `ViewRuntimeControlVisualStyle` is a renderer packet projected from
+the current computed result, not a second Style model. Selectors use the
+simultaneously active interaction and element-state facts from the same
+resolver. Filter and backdrop-filter lists remain typed through player
+lowering; `None` means the property was absent, while `Some(empty)` represents
+an explicit `none` that clears the list. The renderer consumes those lists as
+per-control effects in paint order.
+
 ## Binding
 
 Binding は直接 state を破壊的に書き換えず、lens + event/command。

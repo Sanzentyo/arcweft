@@ -266,6 +266,12 @@ arcweft-launch
   build/CLI/adapter responsibilities and are read as resolved metadata by the
   transport.
 - `arcweft-test` は `test` / `bench` 宣言を HIR から Sans I/O manifest に変換する。ファイルI/O、clock、renderer/audio driving、benchmark timers、headless player 実行は CLI / player / adapter crate に置く。
+- `arcweft-text-layout` は Sans I/O の文字組版を所有する。shaping/layout data、
+  論理軸、縦書き、ruby、text-combine、改行・列分割、hit/capture geometry を
+  renderer に依存せず決定する。glyphon、WGPU、filesystem を依存先に持たない。
+- `arcweft-glyphon` は共通 layout を glyphon `GlyphArea` へ変換する adapter。
+  glyphon/WGPU の型、atlas/cache の寿命、描画座標への調整をこの境界より上に置く。
+  renderer が文字組版や列分割を再計算する第二の authority は作らない。
 - `arcweft-render-wgpu` は native/Web が共有する `SharedRenderer`、View
   compositor、prepared text submission、Color/ObjectId/Mask attachment と
   offscreen readback を所有する。Text layout、Fx semantics、Agent object

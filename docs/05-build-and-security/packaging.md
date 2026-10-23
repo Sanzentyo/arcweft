@@ -95,6 +95,14 @@ game.awfb
     dimensions?
       width
       height
+  character_dialogue_generation?
+    generation?
+    character_packages[]
+      character
+      manifest = asset virtual-file reference
+      layers[]
+        part, variant, asset_path, file reference
+        rect, z, opacity, blend, clipping, source_layer?
 ```
 
 The product `.awfb` codec is the AWFB v1 fixed-header container owned by
@@ -229,22 +237,23 @@ whose encoded bytes cannot be decoded as the declared format, or whose recorded
 static/animated state or dimensions contradict the decoded payload is a bundle
 structure error and fails before bytecode execution starts.
 
-Future product bundle slices can replace the remaining structured
-`BytecodeProgram` payload inside the `AWBC` envelope with compact deterministic
-opcode tables and can replace JSON resource payloads with compact graph
-indexes, entity tables, source maps, contracts, shaders, View, audio, and text
-resources as typed AWFB v1 sections. Those are separate design tracks: the
-executable `AWBC` table is tracked by
-`docs/reviews/requests/2026-06-24-awbc-executable-compact-table-design.md`,
-and compact resource section codecs are tracked by
-`docs/reviews/requests/2026-06-24-product-resource-section-codecs-design.md`.
+### Character packages
 
-The compact opcode table verifier already lives as a Sans I/O core model under
-`arcweft-core::compact_bytecode`: it validates raw opcodes and all operand
-indices against explicit function, constant, content-unit, and runtime-type
-table bounds. Product `AWBC` payloads carry that compact validation table now;
-the final executable constant/function/type table design remains pending before
-runtime execution can drop the structured program payload.
+`.awchar` packages use typed `BundleCharacterPackage` metadata alongside their
+manifest and PNG layer bytes in the existing asset virtual-file space. Product
+bundle validation resolves each reference, reconstructs a `CharacterPackage`
+from the exact manifest and layer bytes, checks layer coverage and PNG dimensions,
+and requires the reconstructed package metadata to match the bundled metadata.
+When character-dialogue generation metadata is present, its visual-character
+fingerprint must also match the validated manifest. A mismatch rejects bundle
+validation before the runtime character catalog is published; character packages
+do not introduce a separate container format.
+
+The executable table, typed constants/functions/types and admission rules are
+defined by the maintained [executable runtime contract](../02-runtime/executable-runtime-core.md).
+Bundle resource sections retain their declared version-one schema and validated
+section identities. Old design-request schedules do not define the current
+codec or imply that an already implemented executable table is still pending.
 
 ```text
 game.awfb

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "7b55dcc5f4f5a3f0dbe4f73ac1341eeebb380498",
+  "run": "task-final-r2355-native-code-position-owner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  33.903s] 2463 tests run: 2463 passed, 0 skipped",
+  "executed": 2463,
+  "passed": 2463,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 8,
+  "matchedPackages": 8,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3977,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-23T00:12:08.1313529Z"
+}

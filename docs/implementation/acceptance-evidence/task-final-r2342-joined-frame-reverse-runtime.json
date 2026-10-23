@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "a3942c2c6da1cce12c77bd593fca0944c0cf677a",
+  "name": "task-final-r2342-joined-frame-reverse-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-joined-frame-reverse.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "rdeps(=arcweft-core)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2342-joined-frame-reverse-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-22T22:32:55.8767346Z",
+  "finishedAt": "2026-10-22T22:56:34.1690276Z"
+}

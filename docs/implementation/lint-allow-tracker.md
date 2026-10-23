@@ -14,11 +14,12 @@ baseline, or a trigger listed in **When to re-audit**.  Do not run a new
 repository-wide subjective classification merely because a related Rust change
 touches a file with an existing allow.
 
-This tracker owns current status and scheduling.  The detailed, historical
-enumeration and command output remain in
-[`agents-policy-audit-response-2026-06-27.md`](agents-policy-audit-response-2026-06-27.md#f1-baseline-update-allow-usage-inventory-2026-07-21-historical-evidence).
-The older external-search audit is historical context only:
-[`agents-policy-audit-2026-06-27.md`](agents-policy-audit-2026-06-27.md).
+This tracker owns the suppression inventory and re-audit triggers. Project
+acceptance status lives in [current status](current-status.md). The historical
+enumeration and command results from `agents-policy-audit-response-2026-06-27.md`
+and `agents-policy-audit-2026-06-27.md` are retained by source filename in the
+[evidence history](evidence-history.md); their old inventories are not a fresh
+measurement of the current tree.
 
 ## Recorded baseline
 
