@@ -1,12 +1,10 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-23。資料監査の基点は既存 `main` の
-`7b1f8f5deb64db1274632c6ec2a7b8af69147420`。
-今回の逆依存実行の入力は `859274b97d71d3c6664dcb4d14a43be1f461e3a1` と保持14件の tracked WIP。
-後続の frame 返却値移行は `df92704ae1697fd31f5774e787004bc0c656d02c` と6 Rust paths の owner 検証。
-資料整理は `71a00e3eec1b43067fb9f64676b9158f7b44c113` として公開済み。
-調査開始時の14件の tracked WIP と既存の untracked 修復メモ等は保持した。
-途中の公開履歴と固定入力ごとの実行結果は検証履歴を参照する。
+確認日: 2026-10-23。直近の検証入力は既存 `main` の
+`2575f06370d000840b1ef0dc001976e7534c9356` と Program 起動 receipt の8 Rust paths。
+調査開始時の14件の tracked WIP と既存の untracked 修復メモ等は保持し、
+検証入力にも保持 WIP を含む。過去の資料監査・公開履歴と固定入力ごとの
+実行結果は検証履歴を参照する。
 
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
 [仕様索引](../README.md)、過去の実行結果・公開 SHA は
@@ -39,14 +37,14 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | Need／TaskPlan の共通 seal・Source admission | **各 cut は公開済み・全14の最終受入は未確認** | sealed `RuntimeTaskPlanTable`／非Serde `RuntimeTaskPlanRef`、元 program の Source lease と expected-key lookup がある。`748c8da92b6d7c5a2f9bddbac068f4b5948d0aa1` の Program capture role は R2275、8 owner／2,451 PASS。全 producer/builder/decoder/consumer の F/Q/C/E14・private-codec・View capability をまとめた最終公開／受入 receipt は今回確認できていない。`HostTaskRequest` の14 variant と `NeedProducerFamily` の10 tag は異なる分類であり、「14 family」という略記から未実装数を推定しない。 |
 | 構造的 nominal | **複数の境界は公開済み・最終 C6 監査は未確認** | record construction `c4ec6d1109ca37b222f7238fd345b3a17caea612`、snapshot/program authority `faff95041f0d36bd492918cce57bc65c0ef428e2`、private Variant carrier `1c994218a25444e14b58e1111f65581f8bbdd73a`、bounded task-image source `4c8844d70baf81ae7bb031766360738050875b35` が公開されている。最後の cut は Core 1,497 PASS、逆依存実行は6,633 PASS／57保持された FAIL。C1–C6 を一括して未実装とはしない。ownership-success／旧経路削除までの最終 C6 受入を確認できていないことと、個別境界の具体的な不具合を区別する。 |
 | 元 executable lease・Native root/callee 座標 | **当該修復は公開・検証済み** | `6a86816246cd8e1bfae8f8250324cdbf0a2c559a` の必須 program lease と、`1be0eb4d09a958b099225a1c7fbbd506afe39d26` の callee 退役処理。キュー切替前の修復入力で R2355 は8 library／2,463 PASS。現在のキュー移行全体の runtime 合格を意味しない。 |
-| Native の original-source queue／runtime continuation・結果保管 | **元 source queue と frame の結果保管は owner 検証済み・全 consumer 統合は継続中** | R2384 は共有 grammar 入力の Core library **1,954/1,954 PASS**、join／scope／Await／formatter／元 program／source codec／正確な予算等の必須27件も全件 PASS。[必須ケース監査](acceptance-evidence/task-final-r2384-native-final-grammar-reverse-runtime.acceptance-audit.json)。後続で返却値を Engine の共通スロットから実際の返却 frame へ移し、rollback／値型 admission／line handle 所有者列挙を統合した。R2388 は Core library **1,955/1,955 PASS**（異なる二つの完了値と子の不正型拒否の回帰1件を追加）。[実行監査](acceptance-evidence/task-final-r2388-native-frame-result-owner-runtime.terminal-audit.json)。R2389 Core all-target／all-feature／locked Clippy は exit 0、警告あり。この owner 検証を Thread 返却・AWBC scheduling・全 reverse53 の受入へ読み替えない。 |
-| Thread の返り値／返却 handle | **具体的な未達あり** | R2384 の `include_in_a_function_owned_thread_joins_before_its_flow_caller_returns` が失敗。ThreadHandle<Unit> を関数から返して await する入力が、`crates/arcweft-runtime-plan/src/final_expr.rs` の HirExprKind::Thread を pure expression として拒否する分岐へ到達する。statement Thread の起動／capture の既存 PASS や Generic Match の受入と、この返却 handle の未達を分ける。 |
+| Native の original-source queue／runtime continuation・結果保管 | **元 source queue・frame 結果保管・Program 起動 receipt は owner 検証済み・全 consumer 統合は継続中** | 返却値は実際の返却 frame が保管する。子 Program は journal で受理した receipt と元 Source を保持し、rollback／退役時も起動契約全体を照合する。Host payload や同じ Unit digest の Standalone outcome は Program 起動として受理しない。R2394 は Core library **1,956/1,956 PASS**、R2395 Core all-target／all-feature／locked Clippy は exit 0（警告あり）。[実行監査](acceptance-evidence/task-final-r2394-native-program-launch-runtime.terminal-audit.json)。R2397 は Native の capture・起動数制限・親子 join と Native/decoded-AWBC Include 継続を含む11件 PASS、返却 ThreadHandle の1件 FAIL。この owner 検証を Thread 返却・AWBC scheduling・全 reverse53 の受入へ読み替えない。 |
+| Thread の返り値／返却 handle | **具体的な未達あり** | R2397 の `include_in_a_function_owned_thread_joins_before_its_flow_caller_returns` が再び失敗（関連12件を全選択）。ThreadHandle<Unit> を関数から返して await する入力が、`crates/arcweft-runtime-plan/src/final_expr.rs` の HirExprKind::Thread を pure expression として拒否する分岐へ到達し、Await projection も拒否される。[実行原本](acceptance-evidence/task-final-r2397-native-program-launch-compiler-runtime.log)。statement Thread の起動／capture の既存 PASS や Generic Match の受入と、この返却 handle の未達を分ける。 |
 | AWBC の独立 Thread scheduling | **具体的な未達あり** | `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` の `FlowOp::Thread` は body を同じ frame の scope 内へ inline lowering する。独立 task/kernel の起動を証明しておらず、Native の program task 経路の成功を AWBC scheduling の成功へ読み替えない。 |
 | 公開 executor save | **バックエンドごとに異なる** | `crates/arcweft-core/src/executor.rs` の `snapshot_for_save` は Product AWBC を扱う一方、RuntimePlanVm／StructuredAot は `UnsupportedTier` を返す。Product の既存 save/restore の成功は保持し、Native 公開 save の未対応を別項目として扱う。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **直近の全閉包実行に失敗あり** | R2384 は **7,220実行、7,168 PASS／52 FAIL／39既存除外**、実際の exit 100。CLI 51・Compiler 1。R2342 の52件と binary／test の識別子は一致するが、原因が不変と一括推定しない。[terminal audit](acceptance-evidence/task-final-r2384-native-final-grammar-reverse-runtime.terminal-audit.json)、[診断索引](acceptance-evidence/task-final-r2384-native-final-grammar-reverse-runtime.failure-recon.json)。画像9件は compiler の Background callable の typed Presentation command ABI 未接続で失敗する。他に古い構文／readiness、実行カウンタ、solver、描画座標の検証失敗があり、全体を合格としない。 |
-| 現 HEAD の最終 workspace／Tier 2／Native-Web capture parity | **後続 frame 入力は Core 検証済み・最終 workspace／全 runtime は未受入** | R2381／R2382 workspace check・Clippy と R2384 reverse53 は、後続 frame 返却値移行より前の固定入力の実績。R2384 の50 package／7,220実行、named test のない3 package、4,025入力／225 executable の drift 0 は履歴に保持する。最新の frame 入力では R2388 Core 1,955件と R2389 Core Clippy を確認した。Core reverse53 と99 manifest/lock は不変だが、同入力の全 consumer runtime・workspace check/Clippy・Tier 2／Native-Web capture parity の最終受入はまだ確認していない。保持14件の WIP を含む入力を clean な公開 HEAD のみの実行とも呼ばない。 |
+| 現 HEAD の最終 workspace／Tier 2／Native-Web capture parity | **上記の Core／Compiler 範囲を検証済み・最終 workspace／全 runtime は未受入** | R2381／R2382 workspace check・Clippy と R2384 reverse53 は、後続 frame／Program 起動移行より前の固定入力の実績。直近 R2394／R2397 は各1 executable、4,046入力、source／case／binary drift 0。Core reverse53 と99 manifest/lock は不変だが、同入力の全 consumer runtime・workspace check/Clippy・Tier 2／Native-Web capture parity の最終受入はまだ確認していない。[固定入力ごとの実績](convergence-evidence-history.md)。 |
 
 Generic Match の151件は run `119cbafe-0a01-419e-841f-b919f03d9578` と
 `c99c9fb1-8db4-48d9-a3d2-df5f41144aea` の実績。

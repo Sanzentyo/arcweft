@@ -1,0 +1,48 @@
+────────────
+ Nextest run ID 976de9fc-977b-45b3-8b4a-4023f4948838 with nextest profile: default
+    Starting 12 tests across 1 binary
+        FAIL [   0.296s] ( 1/12) arcweft-compiler::flow_include include_in_a_function_owned_thread_joins_before_its_flow_caller_returns
+  stdout ───
+
+    running 1 test
+    test include_in_a_function_owned_thread_joins_before_its_flow_caller_returns ... FAILED
+
+    failures:
+
+    failures:
+        include_in_a_function_owned_thread_joins_before_its_flow_caller_returns
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.16s
+
+  stderr ───
+
+    thread 'include_in_a_function_owned_thread_joins_before_its_flow_caller_returns' (43608) panicked at crates\arcweft-compiler\tests\flow_include.rs:34:32:
+    Include source compiles through its checked target: Project(ProjectCompileError { stage: "runtime-plan-lower", diagnostics: [ProjectCompileDiagnostic { module: None, stage: RuntimePlanLower, source: None, syntax_diagnostic: None, diagnostic: Diagnostic { severity: Error, code: Some(DiagnosticCode("compiler.runtime_plan_lower")), message: "final-HIR expression family Thread(HirThreadExpr { name: None, mode: Attached, body: HirThreadBody { scope: ScopeId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 12, kind: Scope }), items: [Include(StmtId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 13, kind: Stmt }))] } }) at ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 11, kind: Expr }) is not a pure runtime expression", span: None, labels: [], notes: [], suggestions: [], commands: [] } }, ProjectCompileDiagnostic { module: None, stage: RuntimePlanLower, source: None, syntax_diagnostic: None, diagnostic: Diagnostic { severity: Error, code: Some(DiagnosticCode("compiler.runtime_plan_lower")), message: "Await source cannot use plan type 32 with its admitted projection", span: None, labels: [], notes: [], suggestions: [], commands: [] } }, ProjectCompileDiagnostic { module: None, stage: RuntimePlanLower, source: None, syntax_diagnostic: None, diagnostic: Diagnostic { severity: Error, code: Some(DiagnosticCode("compiler.runtime_plan_lower")), message: "runtime-plan construction is poisoned by an earlier post-admission failure", span: None, labels: [], notes: [], suggestions: [], commands: [] } }], lease: Some(Analyzed(ProjectAnalysisLease { tooling: ProjectToolingLease { hir_database: HirDatabaseId(1), modules: 1, compile_units: 1, symbol_world: ProjectSymbolWorldId { package: CallablePackageId("local.arcweft.single-source"), root_document: SourceDocumentId("arcweft-source://src/main.arcw"), profile: "single-source" }, symbol_revision: ProjectSymbolRevision(SourceSetRevision([162, 45, 98, 66, 77, 36, 241, 89, 224, 179, 239, 186, 210, 142, 197, 12, 125, 66, 185, 159, 11, 192, 11, 43, 192, 83, 233, 80, 191, 5, 143, 2])), diagnostics: 0 }, world: ProjectSymbolWorldId { package: CallablePackageId("local.arcweft.single-source"), root_document: SourceDocumentId("arcweft-source://src/main.arcw"), profile: "single-source" }, symbol_revision: ProjectSymbolRevision(SourceSetRevision([162, 45, 98, 66, 77, 36, 241, 89, 224, 179, 239, 186, 210, 142, 197, 12, 125, 66, 185, 159, 11, 192, 11, 43, 192, 83, 233, 80, 191, 5, 143, 2])), assertion_build_profile: Debug, semantic_work: FinalSemanticAnalysisWork { type_facts: 3, local_facts: 1, capture_facts: 0, expression_facts: 8, pattern_facts: 1, statement_facts: 4, item_facts: 4, call_facts: 1, call_diagnostics: 0, logical_argument_checks: 0, resolver_invocations: 1, candidate_argument_probes: 0, selected_replay_argument_visits: 0, retained_argument_fact_publications: 0 }, program_hash: ProgramHash("91cbffc00cc48fb1926dc8bc1c781f4ca54f2949e8a6d90bd85217930a676462") })), semantic_error: None })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.306s] ( 2/12) arcweft-compiler::flow_include native_thread_quota_rejection_publishes_no_child_or_task
+        PASS [   0.303s] ( 3/12) arcweft-compiler::flow_include native_sibling_thread_includes_return_to_their_callers_without_mutual_join
+        PASS [   0.307s] ( 4/12) arcweft-compiler::flow_include native_thread_capture_source_and_child_resume_under_one_operation_steps
+        PASS [   0.326s] ( 5/12) arcweft-compiler::flow_include native_nested_thread_finishes_its_own_descendants_before_the_outer_flow
+        PASS [   0.337s] ( 6/12) arcweft-compiler::flow_include native_spawn_function_returns_before_its_child_finishes
+        PASS [   0.348s] ( 7/12) arcweft-compiler::flow_include include_rejects_a_parameterized_flow_before_executable_publication
+        PASS [   0.429s] ( 8/12) arcweft-compiler::flow_include goto_inside_an_include_replaces_the_actual_flow_without_returning_to_its_caller
+        PASS [   0.434s] ( 9/12) arcweft-compiler::flow_include forward_include_implicitly_completes_and_resumes_native_and_decoded_awbc
+        PASS [   0.502s] (10/12) arcweft-compiler::flow_include repeated_and_nested_includes_share_original_functions_and_resume_their_callers
+        PASS [   0.585s] (11/12) arcweft-compiler::flow_include mutually_recursive_includes_execute_under_the_original_one_operation_budget
+        PASS [   0.630s] (12/12) arcweft-compiler::flow_include include_explicit_unit_and_value_returns_resume_native_and_decoded_awbc
+────────────
+     Summary [   0.632s] 12 tests run: 11 passed, 1 failed, 0 skipped
+        PASS [   0.306s] ( 2/12) arcweft-compiler::flow_include native_thread_quota_rejection_publishes_no_child_or_task
+        PASS [   0.303s] ( 3/12) arcweft-compiler::flow_include native_sibling_thread_includes_return_to_their_callers_without_mutual_join
+        PASS [   0.307s] ( 4/12) arcweft-compiler::flow_include native_thread_capture_source_and_child_resume_under_one_operation_steps
+        PASS [   0.326s] ( 5/12) arcweft-compiler::flow_include native_nested_thread_finishes_its_own_descendants_before_the_outer_flow
+        PASS [   0.337s] ( 6/12) arcweft-compiler::flow_include native_spawn_function_returns_before_its_child_finishes
+        PASS [   0.348s] ( 7/12) arcweft-compiler::flow_include include_rejects_a_parameterized_flow_before_executable_publication
+        PASS [   0.429s] ( 8/12) arcweft-compiler::flow_include goto_inside_an_include_replaces_the_actual_flow_without_returning_to_its_caller
+        PASS [   0.434s] ( 9/12) arcweft-compiler::flow_include forward_include_implicitly_completes_and_resumes_native_and_decoded_awbc
+        PASS [   0.502s] (10/12) arcweft-compiler::flow_include repeated_and_nested_includes_share_original_functions_and_resume_their_callers
+        PASS [   0.585s] (11/12) arcweft-compiler::flow_include mutually_recursive_includes_execute_under_the_original_one_operation_budget
+        PASS [   0.630s] (12/12) arcweft-compiler::flow_include include_explicit_unit_and_value_returns_resume_native_and_decoded_awbc
+        FAIL [   0.296s] ( 1/12) arcweft-compiler::flow_include include_in_a_function_owned_thread_joins_before_its_flow_caller_returns
+error: test run failed

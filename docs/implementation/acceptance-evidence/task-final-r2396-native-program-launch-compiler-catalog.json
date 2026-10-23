@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "2575f06370d000840b1ef0dc001976e7534c9356",
+  "name": "task-final-r2396-native-program-launch-compiler-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "flow_include",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-compiler)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2396-native-program-launch-compiler-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T07:04:42.4749498Z",
+  "finishedAt": "2026-10-23T07:10:47.1289089Z"
+}

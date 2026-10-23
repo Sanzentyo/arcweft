@@ -204,6 +204,11 @@ impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
         if !self.request.matches_plan(self.producer.plan()) {
             return Err(super::TaskEnsureError::ProgramSourceMismatch);
         }
+        if matches!(&self.request, TaskRequest::Program(_))
+            && !matches!(&self.outcome, TaskOutcomeContract::Program { .. })
+        {
+            return Err(super::TaskEnsureError::OutcomeContractMismatch);
+        }
         self.outcome.validate_producer(&self.producer)
     }
 
@@ -224,6 +229,24 @@ impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
         P: PartialEq,
         S: PartialEq,
     {
+        self.same_execution_contract(other) && self.request == other.request
+    }
+
+    /// A Program receipt has no runtime request payload. Its complete contract
+    /// can therefore be checked across live and inert value storage roles.
+    pub(crate) fn same_program_contract<Q>(
+        &self,
+        other: &TaskSpec<Q, TaskPlanSemanticDigest, S>,
+    ) -> bool
+    where
+        S: PartialEq,
+    {
+        self.same_execution_contract(other)
+            && matches!((&self.request, &other.request),
+                (TaskRequest::Program(left), TaskRequest::Program(right)) if left == right)
+    }
+
+    fn same_execution_contract<Q>(&self, other: &TaskSpec<Q, TaskPlanSemanticDigest, S>) -> bool {
         self.generation == other.generation
             && self.producer == other.producer
             && self.class == other.class
@@ -231,7 +254,6 @@ impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
             && self.cancel_scope == other.cancel_scope
             && self.policy == other.policy
             && self.outcome == other.outcome
-            && self.request == other.request
     }
     /// The launch journal supplies the ordinal at admission. This projection
     /// does not allocate or consume it, start work, or publish a handle.

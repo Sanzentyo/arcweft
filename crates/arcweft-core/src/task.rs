@@ -64,6 +64,7 @@ pub(crate) mod descriptor;
 mod execution;
 mod failure;
 mod request;
+pub(crate) use execution::ProgramTaskLaunch;
 pub(crate) use execution::TaskExecutionSource;
 pub use execution::{ProgramTaskCompletion, ProgramTaskTerminal, TaskExecutionKind, TaskRequest};
 pub use failure::{

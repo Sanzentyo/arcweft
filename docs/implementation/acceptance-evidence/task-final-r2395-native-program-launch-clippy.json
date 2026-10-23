@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "2575f06370d000840b1ef0dc001976e7534c9356",
+  "name": "task-final-r2395-native-program-launch-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2395-native-program-launch-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T07:00:42.1655816Z",
+  "finishedAt": "2026-10-23T07:02:29.4856364Z"
+}

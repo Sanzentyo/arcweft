@@ -896,7 +896,7 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
             admission.validate_metadata(&(
                 fiber.id,
                 fiber.parent,
-                fiber.launch,
+                &fiber.launch,
                 fiber.persistent_id,
                 fiber.execution,
                 &fiber.owner,

@@ -909,6 +909,51 @@ fn thread_source_uses_original_capture_order_and_retains_only_an_admitted_source
         expected.instance_key().unwrap()
     );
     assert_eq!(spec.source().task_plan().key(), key);
+    let task = TaskSpec {
+        generation: GenerationId::new(0),
+        producer: NeedProducerInstance::try_from(&spec).unwrap(),
+        class: original.class.clone(),
+        priority: original.priority,
+        cancel_scope: original.cancel_scope.clone(),
+        policy: original.policy,
+        outcome: original.outcome(),
+        request: TaskRequest::Program(spec.source().clone()),
+        debug_label: original.debug_label.clone(),
+    };
+    let mut registry = NeedProducerRegistry::default();
+    let before = registry.launch_frontiers();
+    let mut standalone = task.clone();
+    standalone.outcome = TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::Unit);
+    assert_eq!(
+        standalone.outcome.payload_semantic_identity(),
+        task.outcome.payload_semantic_identity(),
+        "equal payload digests do not replace the original program type authority"
+    );
+    assert_eq!(
+        registry.ensure_program_task_with_publication(standalone, |_| {
+            panic!("a standalone predicate cannot publish original program work")
+        }),
+        Err(TaskEnsureError::OutcomeContractMismatch)
+    );
+    assert_eq!(registry.launch_frontiers(), before);
+    assert!(registry.task_admissions().next().is_none());
+
+    let mut retained = None;
+    let accepted = registry
+        .ensure_program_task_with_publication(task.clone(), |launch| retained = Some(launch))
+        .unwrap();
+    let launch = retained.unwrap();
+    assert_eq!(launch.handle(), accepted.handle());
+    assert_eq!(launch.handle().correlation.launch_ordinal.get(), 1);
+    assert_eq!(launch.source(), spec.source());
+    assert!(launch.matches_spec(&task));
+    let mut changed = task;
+    changed.priority = TaskPriority(changed.priority.0 + 1);
+    changed.validate_handle(accepted.handle()).unwrap();
+    assert!(
+        !launch.matches_spec(&changed),
+        "the accepted correlation alone does not authenticate scheduling metadata"
+    );
     assert!(matches!(
         source.template_producer_spec(
             &program,

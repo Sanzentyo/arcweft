@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "2575f06370d000840b1ef0dc001976e7534c9356",
+  "name": "task-final-r2392-native-program-launch-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-core)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2392-native-program-launch-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T06:54:27.0921471Z",
+  "finishedAt": "2026-10-23T06:57:13.1916603Z"
+}

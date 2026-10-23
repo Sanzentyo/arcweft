@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "2575f06370d000840b1ef0dc001976e7534c9356",
+  "run": "task-final-r2394-native-program-launch-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  38.809s] 1956 tests run: 1956 passed, 0 skipped",
+  "executed": 1956,
+  "passed": 1956,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4046,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-23T06:59:35.3557674Z"
+}

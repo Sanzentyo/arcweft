@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "2575f06370d000840b1ef0dc001976e7534c9356",
+  "name": "task-final-r2393-native-program-launch-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2393-native-program-launch-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T06:57:47.6121896Z",
+  "finishedAt": "2026-10-23T06:57:51.2425108Z"
+}

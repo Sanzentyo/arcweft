@@ -12,6 +12,71 @@ pub enum TaskExecutionKind {
     Program,
 }
 
+/// Retains the exact accepted Program launch. Its private constructor excludes
+/// Host request payloads, so cloning this immutable receipt cannot clone a live
+/// runtime value. The original Source remains its only executable authority.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub(crate) struct ProgramTaskLaunch {
+    receipt: std::sync::Arc<super::TaskSubmission>,
+}
+
+impl ProgramTaskLaunch {
+    pub(super) fn retain(receipt: &super::TaskSubmission) -> Result<Self, super::TaskEnsureError> {
+        if !matches!(&receipt.spec().request, TaskRequest::Program(_)) {
+            return Err(super::TaskEnsureError::ProgramSourceMismatch);
+        }
+        receipt.spec().validate_task_descriptor()?;
+        receipt.spec().validate_handle(receipt.handle())?;
+        Ok(Self {
+            receipt: std::sync::Arc::new(receipt.clone()),
+        })
+    }
+
+    pub(crate) fn handle(&self) -> super::TaskHandle {
+        self.receipt.handle()
+    }
+
+    pub(crate) fn source(&self) -> &RuntimeTaskSource {
+        let TaskRequest::Program(source) = &self.receipt.spec().request else {
+            unreachable!("the retained launch has no Host request payload")
+        };
+        source
+    }
+
+    pub(crate) fn matches_spec<P>(&self, spec: &super::TaskSpec<P>) -> bool {
+        self.receipt.spec().same_program_contract(spec)
+    }
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use super::*;
+
+    #[test]
+    fn host_launch_rejection_preserves_the_original_journal_and_ordinal() {
+        let need = crate::tests::reusable_need("program-launch-host-rejection");
+        let mut spec = need.reusable_spec().unwrap().clone();
+        spec.policy = super::super::TaskPolicy::AlwaysStart;
+        let mut registry = super::super::NeedProducerRegistry::default();
+        let frontiers = registry.launch_frontiers();
+        assert_eq!(
+            registry.ensure_program_task_with_publication(spec.clone(), |_| {
+                panic!("a Host packet must never publish a Program launch")
+            }),
+            Err(super::super::TaskEnsureError::ProgramSourceMismatch)
+        );
+        assert_eq!(registry.launch_frontiers(), frontiers);
+        assert!(registry.task_admissions().next().is_none());
+
+        let accepted = registry.ensure_task(spec).unwrap();
+        assert_eq!(accepted.handle().correlation.launch_ordinal.get(), 1);
+        assert!(matches!(
+            ProgramTaskLaunch::retain(&accepted),
+            Err(super::super::TaskEnsureError::ProgramSourceMismatch)
+        ));
+    }
+}
+
 /// A terminal report issued only when Core retires the corresponding program
 /// task body. Dispatch coordinates and publication order remain driver-owned.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -44,14 +109,10 @@ impl ProgramTaskCompletion {
         &self.source
     }
 
-    pub(crate) const fn completed(
-        handle: super::TaskHandle,
-        source: RuntimeTaskSource,
-        cancelled: bool,
-    ) -> Self {
+    pub(crate) fn completed(launch: &ProgramTaskLaunch, cancelled: bool) -> Self {
         Self {
-            handle,
-            source,
+            handle: launch.handle(),
+            source: launch.source().clone(),
             terminal: if cancelled {
                 ProgramTaskTerminal::Cancelled
             } else {
@@ -60,14 +121,10 @@ impl ProgramTaskCompletion {
         }
     }
 
-    pub(crate) fn failed(
-        handle: super::TaskHandle,
-        source: RuntimeTaskSource,
-        message: &str,
-    ) -> Self {
+    pub(crate) fn failed(launch: &ProgramTaskLaunch, message: &str) -> Self {
         Self {
-            handle,
-            source,
+            handle: launch.handle(),
+            source: launch.source().clone(),
             terminal: ProgramTaskTerminal::Failed(super::RuntimeTaskFailure {
                 kind: super::RuntimeTaskFailureKind::WorkerFailure,
                 diagnostic: super::BoundedRuntimeDiagnostic::from_borrowed_message(message),

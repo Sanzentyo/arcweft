@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "2575f06370d000840b1ef0dc001976e7534c9356",
+  "name": "task-final-r2390-native-program-launch-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2390-native-program-launch-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T06:45:07.2038180Z",
+  "finishedAt": "2026-10-23T06:47:47.8069265Z"
+}

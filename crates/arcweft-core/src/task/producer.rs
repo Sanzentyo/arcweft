@@ -2278,15 +2278,20 @@ impl NeedProducerRegistry {
             .accepted_spec(super::TaskHandle { correlation })
     }
 
-    pub(crate) fn ensure_task_with_publication(
+    pub(crate) fn ensure_program_task_with_publication(
         &mut self,
         spec: TaskSpec,
-        publish: impl FnOnce(&TaskSubmission),
+        publish: impl FnOnce(super::ProgramTaskLaunch),
     ) -> Result<TaskSubmission, TaskEnsureError> {
+        if !matches!(&spec.request, super::TaskRequest::Program(_)) {
+            return Err(TaskEnsureError::ProgramSourceMismatch);
+        }
+        spec.validate_task_descriptor()?;
         let prepared = self.task_journal.inspect_task(spec.clone())?;
         self.task_journal.with_admission(prepared, |handle| {
             let submission = TaskSubmission::try_from_accepted(spec, handle)?;
-            publish(&submission);
+            let launch = super::ProgramTaskLaunch::retain(&submission)?;
+            publish(launch);
             Ok(submission)
         })
     }

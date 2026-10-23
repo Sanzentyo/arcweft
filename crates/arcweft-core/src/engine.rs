@@ -242,20 +242,20 @@ pub struct FlowFiber<F = NativeFlowExecutionFrame> {
     pub(crate) owner: FlowFiberOwner,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub(crate) enum FlowFiberLaunch {
     Local,
-    Task(crate::task::TaskHandle),
+    Program(crate::task::ProgramTaskLaunch),
 }
 
 fn validate_child_task_launches<F>(
     children: &VecDeque<FlowFiber<F>>,
-    mut accepted_program: impl FnMut(crate::task::TaskHandle) -> bool,
+    mut accepted_program: impl FnMut(&crate::task::ProgramTaskLaunch) -> bool,
 ) -> Result<(), String> {
     let mut tasks = BTreeSet::new();
     for child in children {
-        if let FlowFiberLaunch::Task(handle) = child.launch
-            && (!tasks.insert(handle.correlation.task_id) || !accepted_program(handle))
+        if let FlowFiberLaunch::Program(launch) = &child.launch
+            && (!tasks.insert(launch.handle().correlation.task_id) || !accepted_program(launch))
         {
             return Err("native child launch differs from its accepted program task".into());
         }
@@ -305,7 +305,7 @@ impl Clone for FlowFiberRollbackImage {
             frame: self.frame.clone(),
             id: self.id,
             parent: self.parent,
-            launch: self.launch,
+            launch: self.launch.clone(),
             persistent_id: self.persistent_id,
             execution: self.execution,
             owner: self.owner.clone(),
@@ -366,7 +366,7 @@ impl FlowFiber {
             frame: self.frame.snapshot_with_admitted_values(owner)?,
             id: self.id,
             parent: self.parent,
-            launch: self.launch,
+            launch: self.launch.clone(),
             persistent_id: self.persistent_id,
             execution: self.execution,
             owner: self.owner.clone(),
@@ -1882,10 +1882,12 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 
 impl Engine {
     fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
-        validate_child_task_launches(&self.child_fibers, |handle| {
-            self.need_producers.accepted_task_spec(handle).is_some_and(|spec| {
-                matches!(&spec.request, crate::task::TaskRequest::Program(source) if source.belongs_to(&self.plan))
-            })
+        validate_child_task_launches(&self.child_fibers, |launch| {
+            self.need_producers
+                .accepted_task_spec(launch.handle())
+                .is_some_and(|spec| {
+                    launch.matches_spec(spec) && launch.source().belongs_to(&self.plan)
+                })
         })?;
         self.dialogue_activations
             .validate_parent_allocations(self.next_fiber_id)?;
@@ -1977,10 +1979,13 @@ impl Engine {
         image: NativeEngineRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        validate_child_task_launches(&image.child_fibers, |handle| {
-            image.need_producers.task_spec(handle.correlation).is_some_and(|spec| {
-                matches!(&spec.request, crate::task::TaskRequest::Program(source) if source.belongs_to(&image.plan))
-            })
+        validate_child_task_launches(&image.child_fibers, |launch| {
+            image
+                .need_producers
+                .task_spec(launch.handle().correlation)
+                .is_some_and(|spec| {
+                    launch.matches_spec(spec) && launch.source().belongs_to(&image.plan)
+                })
         })?;
         image
             .dialogue_activations
@@ -4129,23 +4134,25 @@ impl Engine {
             self.child_fibers.push_back(child);
             return Ok(true);
         }
-        let completion_source = if matches!(
+        let completion_launch = if matches!(
             child.frame.status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         ) {
-            match child.launch {
+            match &child.launch {
                 FlowFiberLaunch::Local => None,
-                FlowFiberLaunch::Task(handle) => {
-                    let Some(crate::task::TaskRequest::Program(source)) = self
+                FlowFiberLaunch::Program(launch) => {
+                    if !self
                         .need_producers
-                        .accepted_task_spec(handle)
-                        .map(|spec| &spec.request)
-                    else {
+                        .accepted_task_spec(launch.handle())
+                        .is_some_and(|spec| launch.matches_spec(spec))
+                        || !launch.source().belongs_to(&self.plan)
+                    {
                         return Err(dialogue::DialogueExecutionError::ChildFailed {
-                            message: "retiring program task lost its accepted Source".into(),
+                            message: "retiring program task differs from its accepted launch"
+                                .into(),
                         });
-                    };
-                    Some(source)
+                    }
+                    Some(launch)
                 }
             }
         } else {
@@ -4153,13 +4160,10 @@ impl Engine {
         };
         match child.frame.status {
             FlowFiberStatus::Done(_) => {
-                if let FlowFiberLaunch::Task(handle) = child.launch {
+                if let Some(launch) = completion_launch {
                     output.requests.program_task_completions.push(
                         crate::task::ProgramTaskCompletion::completed(
-                            handle,
-                            completion_source
-                                .expect("terminal program task has its Source")
-                                .clone(),
+                            launch,
                             owner.requests_scope_close(),
                         ),
                     );
@@ -4187,16 +4191,11 @@ impl Engine {
                 }
             }
             FlowFiberStatus::Failed(message) => {
-                if let FlowFiberLaunch::Task(handle) = child.launch {
-                    output.requests.program_task_completions.push(
-                        crate::task::ProgramTaskCompletion::failed(
-                            handle,
-                            completion_source
-                                .expect("terminal program task has its Source")
-                                .clone(),
-                            &message,
-                        ),
-                    );
+                if let Some(launch) = completion_launch {
+                    output
+                        .requests
+                        .program_task_completions
+                        .push(crate::task::ProgramTaskCompletion::failed(launch, &message));
                 }
                 let failed_activation = match &owner {
                     FlowFiberOwner::DialogueEffectCallback { activation, .. } => {
