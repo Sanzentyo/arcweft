@@ -33,7 +33,6 @@ pub(super) fn preflight(
         meter,
     };
     match row.tag {
-        0 | 3 | 21 | 23 | 25 | 27 | 30 | 44 | 47 | 48 => return Err(Error::Continuation),
         1 | 45 => {
             reader.pattern()?;
             reader.expression()?;

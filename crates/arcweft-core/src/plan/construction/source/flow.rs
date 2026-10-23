@@ -80,8 +80,6 @@ pub(in crate::plan) enum RuntimeFlowSourceError {
     Trailing { offset: usize },
     #[error("Flow Source has an incomplete or excessive operation prefix")]
     Prefix,
-    #[error("Flow Source contains a runtime-only operation")]
-    Continuation,
     #[error("invalid Flow Source {kind} tag {tag}")]
     Tag { kind: &'static str, tag: u8 },
     #[error("Flow Source {kind} coordinate {actual} is outside {maximum} rows")]

@@ -5475,11 +5475,6 @@ impl RuntimePlanBodyConstruction<'_> {
                             .map(RuntimePatternBindingDeclaration::local),
                     )?;
                 }
-                FlowOp::LetScope { .. } => {
-                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
-                        operation: "LetScope",
-                    });
-                }
             }
         }
         Ok(())

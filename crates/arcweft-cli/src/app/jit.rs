@@ -1711,7 +1711,7 @@ fn julia_i64_ops(
             | FlowOp::Break(_)
             | FlowOp::Continue => Some("loop control"),
             FlowOp::Thread { .. } => Some("thread"),
-            FlowOp::LetScope { .. } | FlowOp::ExitScopeBind { .. } => Some("scope value binding"),
+            FlowOp::ExitScopeBind { .. } => Some("scope value binding"),
             FlowOp::Goto(_) | FlowOp::GotoExpr(_) => Some("flow transfer"),
             FlowOp::Return(_) => Some("flow label return"),
             FlowOp::Effect(_)

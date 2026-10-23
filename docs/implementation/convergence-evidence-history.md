@@ -8974,3 +8974,16 @@ Cargo graph の Core reverse53 と99 manifest/lock は不変。初回 freeze は
 維持仕様 `executable-runtime-core.md` の古い proposed 表示、基点 `23fc9206f08340df438aece556065d5235bb27eb` の現状説明、実装順序 Cut 1–8、当時の overlay 完了／未完了列挙を削除した。現在の Native queue 所有境界へ置き換え、旧 continuation から CFG を再構成する記述も除去した。規範的な product／AWBC の受入契約は残し、実装済みという主張へ読み替えない。
 
 混在する CLI ファイルは自身の公開変更によって base／working blob が変わるため、保持 raw patch の hash も変わった。比較差分は同ファイルの index header 1行だけで、14件すべての hunk 内容・位置・context は一致した。ユーザーの 8→32 と他13件の保持差分に変更はなく、その hunk を index に含めていない。
+
+## Final authored grammar and workspace type closure — 2026-10-23
+
+基点 `87f804617a524b507ffca207d57f25a8adba0d1f`、parent `45c42006353159546cf45f53028552264dd2adcd`、tree `fc180c539219e477e680f5e9b91a8f4e473056e9`、patch SHA256 `a9b53da2fc35d8fd14869b6a81bf3bdebdb229906dc4f808f2c9662f721791ef`。34 paths／4,019入力／保持14 tracked WIP、公開 ref／blob／raw patch／source の drift 0、index empty を確認した。CLI の混在 hunk を除外した保持 raw patch SHA256 は `0e677c9b488b2ebc621af75ac29f7ecabdeedbf7de83c03ce8592bd6b53eabb7`。元の14件の hunk 内容は維持している。
+
+完成 Plan の局所検証が常に拒否し、対応する構築 seed もなかった `FlowOp::LetScope` を削除した。専用 native continuation 2種、AWBC の唯一の呼び出ししか持たない helper と入力型、訪問・metadata／source field の分岐、非 canonical 専用診断を同時に除去した。言語の scope 機能は元の EnterScope／ExitScopeBind と cleanup を使用する。codec は旧 runtime-only tag を特別な診断で読まず、未知の operation tag として一律に拒否する。未知 tag の10ケースと u8::MAX を検査する test を保持し、truncation／prefix／resource／output-capacity の拒否、元 program の実行と key／task namespace の認証テストも保持した。
+
+- R2379 `cargo check --workspace --all-targets --all-features --locked`: **exit 101**。削除した canonical helper の呼び出しが encoder emit の1箇所に残り、lib／lib-test が E0425 で失敗した。その呼び出しも削除した。[receipt](acceptance-evidence/task-final-r2379-native-authored-scope-workspace-check.json)、[log](acceptance-evidence/task-final-r2379-native-authored-scope-workspace-check.log)。後続 R2380 Clippy は失敗時停止のため起動していない。
+- R2381 同 workspace check: **exit 0、警告あり**。[receipt](acceptance-evidence/task-final-r2381-native-authored-source-workspace-check.json)、[log](acceptance-evidence/task-final-r2381-native-authored-source-workspace-check.log)。Compiler の4箇所と CLI の4箇所の旧 private queue 読み取りも、公開 source_positions／active_flow_operations／pending_work に揃えた入力。
+- R2382 `cargo clippy --workspace --all-targets --all-features --locked`: **exit 0、警告あり、Cargo 3m49s**。[receipt](acceptance-evidence/task-final-r2382-native-authored-source-workspace-clippy.json)、[log](acceptance-evidence/task-final-r2382-native-authored-source-workspace-clippy.log)。R2381 と同じ source を検査した。警告ゼロや runtime の成功を主張しない。
+
+freeze は4,019入力／24 owned paths（23 Rust・維持仕様1）、保持14 tracked WIP、Core reverse53、99 manifest/lock、outside-owned／held drift 0。次の逆依存 runtime は source codec 6件と実際の loop／Array Apply span の budget、join／scope／Await／formatter／root owner を含む27件の必須ケースを catalog で確認する。前段の Core 1,955 PASS と Generic Match の受入は、それぞれの固定入力に対する実績として維持する。
+原本 task-final-r2382-native-authored-source-workspace-clippy.log の提示コードに trailing whitespace が 5 行あるため、原本 byte を維持し、その log だけを staged whitespace 検査から除外した。他の source／資料／receipt/log の検査は維持する。

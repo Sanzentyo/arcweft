@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "87f804617a524b507ffca207d57f25a8adba0d1f",
+  "name": "task-final-r2379-native-authored-scope-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2379-native-authored-scope-workspace-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T04:40:14.1588532Z",
+  "finishedAt": "2026-10-23T04:41:34.1750714Z"
+}

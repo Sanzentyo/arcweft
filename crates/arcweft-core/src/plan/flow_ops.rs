@@ -226,7 +226,6 @@ impl FlowOp {
             Self::For { .. } => 26,
             Self::Thread { .. } => 28,
             Self::Scope { .. } => 29,
-            Self::LetScope { .. } => 30,
             Self::Break(_) => 31,
             Self::Continue => 32,
             Self::Goto(_) => 33,
@@ -397,10 +396,6 @@ impl FlowOp {
                 expression(Role::Source, source, visitor)?;
             }
             FlowOp::Thread { .. } => {}
-            FlowOp::LetScope { pattern, value, .. } => {
-                visitor(Role::Pattern, Node::Pattern(pattern))?;
-                expression(Role::Value, value, visitor)?;
-            }
             FlowOp::RegisterDefer { captures, .. } => {
                 for (ordinal, capture) in captures.iter().enumerate() {
                     expression(Role::Capture { ordinal }, capture, visitor)?;
@@ -507,8 +502,7 @@ impl FlowOp {
             | Self::WhileLet { body, .. }
             | Self::For { body, .. }
             | Self::Thread { body, .. }
-            | Self::Scope { body, .. }
-            | Self::LetScope { ops: body, .. } => Schema::One(Role::Body, body),
+            | Self::Scope { body, .. } => Schema::One(Role::Body, body),
             FlowOp::Let { .. }
             | FlowOp::Assign { .. }
             | FlowOp::LineOperation { .. }

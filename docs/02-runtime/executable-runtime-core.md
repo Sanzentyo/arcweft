@@ -836,13 +836,12 @@ player. It uses four deterministic passes:
 | `IfLet` | temp + `TestPattern`; optional pure guard block; commit bindings only on successful path |
 | `Match` | scrutinee temp; pattern rows and optional guard functions; `Match` terminator; arm/join blocks |
 | `Loop` | loop-header block marked `LoopBackedge`; body; backward `Jump`; insert `BudgetYield` according to lowering budget policy |
-| `LetLoop` | value-producing loop with dedicated result slot and break join |
+| `Loop` with a result pattern | value-producing loop with dedicated result slot and break join |
 | `While` | header condition + `Branch`; body backedge; exit block |
 | `WhileLet` | expression + pattern/guard blocks at header; binding scope per iteration |
 | `For` | own the built-in or witness-backed iterator; header calls `next` and retains its returned iterator; borrow-test `Option::Some`, move its item into the pattern, then backedge; `None` exits |
 | `Thread` | synthetic flow function + `SpawnFiber`; optional name becomes public/debug ID, not semantics |
 | `Scope` | `EnterScope`; body; all normal/control exits route through cleanup block and `ExitScope` |
-| `LetScope` | scope plus result slot; expression/bind on successful cleanup exit |
 | `Break(value?)` | optional result write, cleanup chain, jump to current loop exit |
 | `Continue` | cleanup chain, jump to current loop header |
 | `Goto` | `GotoStatic` tail transfer |

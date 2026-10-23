@@ -68,14 +68,6 @@ struct ForLoweringInput<'a> {
     path: &'a str,
 }
 
-struct LetScopeLoweringInput<'a> {
-    identity: &'a arcweft_core::scope::RuntimeScopeIdentity,
-    pattern: &'a RuntimePattern,
-    ops: &'a [FlowOp],
-    value: &'a RuntimeExpr,
-    path: &'a str,
-}
-
 #[derive(Clone, Copy)]
 struct WhileLetLoweringInput<'a> {
     pattern: &'a RuntimePattern,
@@ -1728,22 +1720,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     frame.restore_scopes_after_branch(outer_scopes);
                 }
             }
-            FlowOp::LetScope {
-                identity,
-                pattern,
-                ops,
-                value,
-            } => self.lower_let_scope(
-                frame,
-                body,
-                LetScopeLoweringInput {
-                    identity,
-                    pattern,
-                    ops,
-                    value,
-                    path,
-                },
-            ),
             FlowOp::Break(value) => {
                 self.lower_break(frame, body, value.as_ref(), path);
             }
@@ -2700,49 +2676,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let fallthrough = (!body.terminated).then(|| frame.scope_checkpoint());
         frame.restore_scopes_after_branch(restored_scopes);
         fallthrough
-    }
-
-    fn lower_let_scope(
-        &mut self,
-        frame: &mut FrameBuilder,
-        body: &mut FlowBodyBuilder,
-        input: LetScopeLoweringInput<'_>,
-    ) {
-        let LetScopeLoweringInput {
-            identity,
-            pattern,
-            ops,
-            value,
-            path,
-        } = input;
-        let scope = frame.enter_scope_with_identity(identity.clone());
-        self.inventory
-            .push_instruction(AwbcInstruction::EnterScope { scope });
-        self.lower_ops(frame, body, ops, &format!("{path}.let_scope"));
-        if body.terminated {
-            frame.exit_scope();
-            return;
-        }
-
-        let scoped_value =
-            AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
-        let ty = admitted_plan_type(self.inventory, self.plan, value.ty());
-        let value = frame.parent_temp(ty);
-        self.inventory.push_instruction(AwbcInstruction::Move {
-            dst: value,
-            src: scoped_value,
-        });
-        self.inventory
-            .push_instruction(AwbcInstruction::ExitScope { scope });
-        frame.exit_scope();
-
-        let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
-        self.inventory
-            .push_instruction(AwbcInstruction::BindPattern {
-                pattern,
-                value,
-                mode: AwbcBindMode::Declare,
-            });
     }
 
     fn lower_loop(

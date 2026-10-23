@@ -188,7 +188,6 @@ fn admit_ops(ops: &[FlowOp], depth: usize) -> Result<(), CraneliftCodegenError> 
             | FlowOp::Break(_)
             | FlowOp::Continue => Some("loop control"),
             FlowOp::Thread { .. } => Some("thread"),
-            FlowOp::LetScope { .. } => Some("scope value binding"),
             FlowOp::ExitScopeBind { pattern, .. } => {
                 if matches!(
                     pattern.kind(),

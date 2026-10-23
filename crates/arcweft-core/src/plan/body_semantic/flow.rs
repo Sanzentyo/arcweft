@@ -297,7 +297,6 @@ impl RuntimeBodySemanticContext<'_> {
             | FlowOp::If { .. }
             | FlowOp::While { .. }
             | FlowOp::Scope { .. }
-            | FlowOp::LetScope { .. }
             | FlowOp::Continue
             | FlowOp::GotoExpr(_)
             | FlowOp::ReturnExpr(_)

@@ -360,7 +360,6 @@ fn operations_avoid_locals(plan: &RuntimePlan, ops: &[&FlowOp], elided: &[Local]
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
             | FlowOp::Scope { .. }
-            | FlowOp::LetScope { .. }
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::Return(_)
             | FlowOp::ReturnExpr(_)

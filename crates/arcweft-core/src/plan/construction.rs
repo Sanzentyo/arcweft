@@ -531,8 +531,6 @@ pub enum RuntimePlanBuildError {
     AffineLiteralInPlan { context: &'static str },
     #[error("runtime-plan {context} contains a detached expression carrier")]
     RawExpressionCarrier { context: &'static str },
-    #[error("runtime-plan contains non-canonical flow operation {operation}")]
-    NonCanonicalFlowOperation { operation: &'static str },
     #[error("runtime flow operation `{operation}` has no active lexical scope")]
     FlowScopeUnderflow { operation: &'static str },
     #[error("runtime-plan {context} value does not satisfy plan type {ty}")]

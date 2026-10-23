@@ -556,7 +556,6 @@ impl Writer {
                 self.text(key)?;
                 self.effect(effect, counts, resources, meter)?;
             }
-            FlowOp::LetScope { .. } => return Err(Error::Continuation),
         }
         Ok(())
     }

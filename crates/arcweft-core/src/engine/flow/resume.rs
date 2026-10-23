@@ -102,37 +102,6 @@ impl Engine {
                     self.fail_format_aware_eval(error, output, backend);
                 }
             }
-            Resume::EnterLetScope { source } => {
-                let Some(FlowOp::LetScope { identity, .. }) = source.operation(&plan) else {
-                    self.fail_eval("native scope entry lost its original declaration", output);
-                    return;
-                };
-                self.push_scope_frame_with_origin(
-                    identity.clone(),
-                    RuntimeScopeFrameOrigin::EmittedLexical,
-                );
-            }
-            Resume::CompleteLetScope { source } => {
-                let Some(FlowOp::LetScope { pattern, value, .. }) = source.operation(&plan) else {
-                    self.fail_eval(
-                        "native scope completion lost its original declaration",
-                        output,
-                    );
-                    return;
-                };
-                let value = match self.evaluate_expr_with_backend(value, backend) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        self.fail_format_aware_eval(error, output, backend);
-                        return;
-                    }
-                };
-                if let Err(error) = self.exit_emitted_scope(output, backend) {
-                    self.fail_eval(error, output);
-                    return;
-                }
-                self.bind_value(pattern, value, output);
-            }
             Resume::EnterScheduledScope { identity, token } => {
                 if !token.belongs_to(self.fiber.execution, self.fiber.persistent_id)
                     || token.ordinal().get() >= self.next_scheduled_scope_sequence

@@ -1057,7 +1057,6 @@ impl Reader<'_, '_, '_> {
                 };
                 Op::StandardMap(control)
             }
-            0 | 3 | 21 | 23 | 25 | 27 | 30 | 44 | 47 | 48 => return Err(Error::Continuation),
             tag => {
                 return Err(Error::Tag {
                     kind: "operation",

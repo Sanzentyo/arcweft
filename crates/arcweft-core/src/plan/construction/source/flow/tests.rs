@@ -358,7 +358,7 @@ fn flow_source_checks_aggregate_quotas_and_preserves_terminal_resource_failure()
 }
 
 #[test]
-fn flow_source_rejects_truncation_bad_prefixes_continuations_and_insufficient_output() {
+fn flow_source_rejects_truncation_bad_prefixes_unknown_operations_and_insufficient_output() {
     let plan = fixture(Some(true));
     let bounds = limits(&plan);
     let encoded = plan
@@ -398,7 +398,7 @@ fn flow_source_rejects_truncation_bad_prefixes_continuations_and_insufficient_ou
         PreparedRuntimeFlowSource::preflight(&trailing, bounds, &resources(), &mut meter()),
         Err(Error::Trailing { .. })
     ));
-    for tag in [0, 3, 21, 23, 25, 27, 30, 44, 47, 48] {
+    for tag in [0, 3, 21, 23, 25, 27, 30, 44, 47, 48, u8::MAX] {
         let mut bytes = DOMAIN.to_vec();
         bytes.push(1);
         bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -407,7 +407,7 @@ fn flow_source_rejects_truncation_bad_prefixes_continuations_and_insufficient_ou
         bytes.extend_from_slice(&[0; 12]);
         assert!(matches!(
             PreparedRuntimeFlowSource::preflight(&bytes, bounds, &resources(), &mut meter()),
-            Err(Error::Continuation)
+            Err(Error::Tag { kind: "operation", tag: actual }) if actual == tag
         ));
     }
     let mut output = Vec::new();

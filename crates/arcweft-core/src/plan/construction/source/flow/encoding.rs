@@ -75,8 +75,7 @@ impl RuntimePlan {
                 }
             }
             let mut operations = 0usize;
-            walk(ops, limits, |op| {
-                canonical(op)?;
+            walk(ops, limits, |_| {
                 operations = operations.checked_add(1).ok_or(Error::Arithmetic)?;
                 limit("operations", operations, limits.nodes as usize)
             })?;
@@ -122,12 +121,6 @@ impl RuntimePlan {
             })
         })();
         result.map_err(|error: Error| error.reject(meter))
-    }
-}
-fn canonical(op: &FlowOp) -> Result<(), Error> {
-    match op {
-        FlowOp::LetScope { .. } => Err(Error::Continuation),
-        _ => Ok(()),
     }
 }
 enum Work<'a> {
@@ -206,7 +199,6 @@ fn emit(
     sink.count(operations)?;
     counts.body(ops.len())?;
     walk(ops, counts.limits, |op| {
-        canonical(op)?;
         let packet = fields::encode(op, plan, counts, resources, meter)?;
         // All metadata/value frames in this one node are bounded temporary
         // Source bytes. Their complete aggregate resource check precedes the

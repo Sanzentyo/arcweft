@@ -1076,7 +1076,6 @@ impl super::RuntimePlanInventory {
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
             | FlowOp::For { .. }
-            | FlowOp::LetScope { .. }
             | FlowOp::Await { .. }
             | FlowOp::Let { .. }
             | FlowOp::Assign { .. }

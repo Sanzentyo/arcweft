@@ -138,7 +138,6 @@ impl AotLinearOp {
             | FlowOp::For { .. }
             | FlowOp::Thread { .. }
             | FlowOp::Scope { .. }
-            | FlowOp::LetScope { .. }
             | FlowOp::Break(_)
             | FlowOp::Continue
             | FlowOp::Goto(_)
@@ -296,7 +295,6 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::For { .. }
         | FlowOp::Thread { .. }
         | FlowOp::Scope { .. }
-        | FlowOp::LetScope { .. }
         | FlowOp::Break(_)
         | FlowOp::Continue
         | FlowOp::Goto(_)
@@ -322,7 +320,6 @@ impl AotOpClass {
         match op {
             FlowOp::Let { .. }
             | FlowOp::Assign { .. }
-            | FlowOp::LetScope { .. }
             | FlowOp::Return(_)
             | FlowOp::ReturnExpr(_)
             | FlowOp::RegisterCleanup { .. }
@@ -395,7 +392,6 @@ impl AotProgramStats {
                 | FlowOp::For { body, .. }
                 | FlowOp::Thread { body, .. } => self.record_ops(body),
                 FlowOp::Scope { body, .. } => self.record_ops(body),
-                FlowOp::LetScope { ops, .. } => self.record_ops(ops),
                 FlowOp::Await { observers, .. } => {
                     for observer in observers {
                         self.record_ops(&observer.ops);

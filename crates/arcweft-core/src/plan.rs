@@ -1165,12 +1165,6 @@ pub enum FlowOp {
         identity: crate::scope::RuntimeScopeIdentity,
         body: Vec<FlowOp>,
     },
-    LetScope {
-        identity: crate::scope::RuntimeScopeIdentity,
-        pattern: RuntimePattern,
-        ops: Vec<FlowOp>,
-        value: RuntimeExpr,
-    },
     Break(Option<RuntimeExpr>),
     Continue,
     Goto(FlowRuntimeId),

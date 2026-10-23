@@ -962,39 +962,6 @@ impl Engine {
                     self.fail_format_aware_eval(error, output, pure_backend);
                 }
             }
-            FlowOp::LetScope { .. } => {
-                let body = match self
-                    .original_body_range(&source_site, crate::plan::RuntimeFlowBodyRole::Body)
-                {
-                    Ok(body) => body,
-                    Err(error) => {
-                        self.fail_format_aware_eval(error, output, pure_backend);
-                        return;
-                    }
-                };
-                let work = [
-                    Some(NativePendingWork::resume(
-                        NativeRuntimeContinuation::EnterLetScope {
-                            source: source_site.clone(),
-                        },
-                    )),
-                    Some(NativePendingWork::source(
-                        body,
-                        NativeSourceRangeRole::NestedBody,
-                    )),
-                    Some(NativePendingWork::resume(
-                        NativeRuntimeContinuation::CompleteLetScope {
-                            source: source_site,
-                        },
-                    )),
-                ];
-                if let Err(error) = self.prepare_native_work(&work) {
-                    self.fail_format_aware_eval(error, output, pure_backend);
-                    return;
-                }
-                self.advance_if_needed(next_op_index);
-                self.prepend_admitted_native_work(work);
-            }
             FlowOp::Break(expr) => {
                 let value = match expr {
                     Some(expr) => match self.evaluate_expr_with_backend(expr, pure_backend) {
