@@ -406,6 +406,14 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
 }
 
 impl NativeFlowExecutionFrame {
+    /// Borrows queued original-code coordinates in dispatch order. Runtime
+    /// continuation values stay opaque and are never copied for inspection.
+    pub fn source_positions(&self) -> impl Iterator<Item = &NativeCodeCursor> {
+        self.pending_ops
+            .iter()
+            .filter_map(NativePendingWork::position)
+    }
+
     /// Counts logical queued operations independently from range compression.
     pub fn pending_operation_count(&self) -> usize {
         self.pending_ops

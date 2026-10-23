@@ -1543,7 +1543,12 @@ mod tests {
         };
         let failure = failure.clone();
         let bindings = engine.fiber().frame.env.bindings_snapshot();
-        let cursor = engine.fiber().frame.cursor.clone();
+        let positions = engine
+            .fiber()
+            .frame
+            .source_positions()
+            .cloned()
+            .collect::<Vec<_>>();
         let execution = engine.fiber().execution;
         engine.step_with_pure_backend(
             Default::default(),
@@ -1560,7 +1565,15 @@ mod tests {
             bindings,
             "failed Map ownership is retained by the same public execution"
         );
-        assert_eq!(engine.fiber().frame.cursor, cursor);
+        assert_eq!(
+            engine
+                .fiber()
+                .frame
+                .source_positions()
+                .cloned()
+                .collect::<Vec<_>>(),
+            positions
+        );
         assert_eq!(engine.fiber().execution, execution);
         assert!(engine.take_program_result().unwrap().is_none());
     }
@@ -1887,14 +1900,27 @@ mod tests {
                     );
                     assert!(engine.take_program_result().unwrap().is_none());
                     let execution = engine.fiber().execution;
-                    let cursor = engine.fiber().frame.cursor.clone();
+                    let positions = engine
+                        .fiber()
+                        .frame
+                        .source_positions()
+                        .cloned()
+                        .collect::<Vec<_>>();
                     let second = engine.step(Default::default(), options);
                     assert_eq!(second.stats.executed_ops, 0);
                     assert!(
                         matches!(&engine.fiber().frame.status,FlowFiberStatus::Failed(actual) if actual==&message)
                     );
                     assert_eq!(engine.fiber().execution, execution);
-                    assert_eq!(engine.fiber().frame.cursor, cursor);
+                    assert_eq!(
+                        engine
+                            .fiber()
+                            .frame
+                            .source_positions()
+                            .cloned()
+                            .collect::<Vec<_>>(),
+                        positions
+                    );
                     Err(message)
                 }
                 status => panic!(

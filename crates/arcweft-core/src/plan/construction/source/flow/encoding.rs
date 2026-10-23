@@ -126,16 +126,7 @@ impl RuntimePlan {
 }
 fn canonical(op: &FlowOp) -> Result<(), Error> {
     match op {
-        FlowOp::Bind(_)
-        | FlowOp::CompleteFormatOperand { .. }
-        | FlowOp::LoopNext { .. }
-        | FlowOp::WhileNext { .. }
-        | FlowOp::WhileLetNext { .. }
-        | FlowOp::ForNext { .. }
-        | FlowOp::LetScope { .. }
-        | FlowOp::CompleteAwaitObserver
-        | FlowOp::EnterScheduledScope { .. }
-        | FlowOp::ExitScheduledScope { .. } => Err(Error::Continuation),
+        FlowOp::LetScope { .. } => Err(Error::Continuation),
         _ => Ok(()),
     }
 }

@@ -1111,20 +1111,6 @@ impl Engine {
             FlowOp::Noop => {
                 self.advance_if_needed(next_op_index);
             }
-            FlowOp::Bind(_)
-            | FlowOp::LoopNext { .. }
-            | FlowOp::WhileNext { .. }
-            | FlowOp::WhileLetNext { .. }
-            | FlowOp::ForNext { .. }
-            | FlowOp::CompleteFormatOperand { .. }
-            | FlowOp::EnterScheduledScope { .. }
-            | FlowOp::ExitScheduledScope { .. }
-            | FlowOp::CompleteAwaitObserver => {
-                self.fail_eval(
-                    "runtime continuation escaped the original source grammar",
-                    output,
-                );
-            }
         }
     }
 

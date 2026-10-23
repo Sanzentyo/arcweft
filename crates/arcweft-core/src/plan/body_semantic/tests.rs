@@ -568,26 +568,6 @@ fn flow_body_operation_order_empty_branch_and_static_literal_are_committed() {
 }
 
 #[test]
-fn engine_only_flow_continuation_is_rejected_and_poisoned() {
-    let (plan, _) = plan(false);
-    let owner = RuntimePlanBuilder::new().task_coordinate_owner(0);
-    let mut meter = TaskSemanticMeter::new(1000, 10000);
-    let mut encoder = TaskSemanticEncoder::new(b"flow-body.v1\0", &mut meter);
-    assert!(matches!(
-        RuntimeBodySemanticContext::new(&plan).write_flow(
-            &mut encoder,
-            &[crate::plan::FlowOp::Bind(vec![])],
-            &owner
-        ),
-        Err(RuntimeBodySemanticError::RuntimeFlowContinuation)
-    ));
-    assert_eq!(
-        encoder.finish(),
-        Err(TaskSemanticEncodingError::OwnerRejected)
-    );
-}
-
-#[test]
 fn task_coordinates_share_the_aggregate_issuer_and_reject_foreign_same_ordinal() {
     let builder = RuntimePlanBuilder::new();
     let owner = builder.task_coordinate_owner(2);

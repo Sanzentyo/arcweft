@@ -366,8 +366,6 @@ fn operations_avoid_locals(plan: &RuntimePlan, ops: &[&FlowOp], elided: &[Local]
             | FlowOp::ReturnExpr(_)
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
-            | FlowOp::EnterScheduledScope { .. }
-            | FlowOp::ExitScheduledScope { .. }
             | FlowOp::Noop => {}
             _ => return false,
         }

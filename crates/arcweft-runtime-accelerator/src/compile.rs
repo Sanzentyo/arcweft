@@ -835,11 +835,7 @@ fn runtime_ops_work_units(ops: &[arcweft_core::plan::FlowOp]) -> usize {
             FlowOp::EnterScope { .. } | FlowOp::ExitScope | FlowOp::Noop => 1,
             // These operations are outside the scalar physical subset. Their
             // inventory weight cannot grant compilation or bypass control transfer.
-            FlowOp::EnterScheduledScope { .. }
-            | FlowOp::ExitScheduledScope { .. }
-            | FlowOp::Bind(_)
-            | FlowOp::FormatOperandAttempt { .. }
-            | FlowOp::CompleteFormatOperand { .. }
+            FlowOp::FormatOperandAttempt { .. }
             | FlowOp::LetElse { .. }
             | FlowOp::Assign { .. }
             | FlowOp::LineOperation { .. }
@@ -856,13 +852,9 @@ fn runtime_ops_work_units(ops: &[arcweft_core::plan::FlowOp]) -> usize {
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
             | FlowOp::Loop { .. }
-            | FlowOp::LoopNext { .. }
             | FlowOp::While { .. }
-            | FlowOp::WhileNext { .. }
             | FlowOp::WhileLet { .. }
-            | FlowOp::WhileLetNext { .. }
             | FlowOp::For { .. }
-            | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. }
             | FlowOp::LetScope { .. }
             | FlowOp::Break(_)
@@ -875,7 +867,6 @@ fn runtime_ops_work_units(ops: &[arcweft_core::plan::FlowOp]) -> usize {
             | FlowOp::RegisterDefer { .. }
             | FlowOp::RegisterCleanup { .. }
             | FlowOp::CancelCleanup { .. }
-            | FlowOp::CompleteAwaitObserver
             | FlowOp::ExitScopeBind { .. } => 8,
         })
         .sum()

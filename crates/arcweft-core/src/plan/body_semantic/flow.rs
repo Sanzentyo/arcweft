@@ -129,16 +129,6 @@ impl RuntimeBodySemanticContext<'_> {
                     }
                 }
             }
-            FlowOp::Bind(_)
-            | FlowOp::ForNext { .. }
-            | FlowOp::LoopNext { .. }
-            | FlowOp::WhileNext { .. }
-            | FlowOp::WhileLetNext { .. }
-            | FlowOp::CompleteFormatOperand { .. }
-            | FlowOp::CompleteAwaitObserver => {
-                encoder.reject_owner();
-                return Err(RuntimeBodySemanticError::RuntimeFlowContinuation);
-            }
             FlowOp::FormatOperandAttempt {
                 attempt, parameter, ..
             } => {
@@ -299,9 +289,6 @@ impl RuntimeBodySemanticContext<'_> {
                     plan::RuntimeDeferOwner::LineRoot => 1,
                 });
                 encoder.count(captures.len());
-            }
-            FlowOp::EnterScheduledScope { .. } | FlowOp::ExitScheduledScope { .. } => {
-                unreachable!("native control markers cannot inhabit an admitted body")
             }
             FlowOp::Let { .. }
             | FlowOp::LetElse { .. }

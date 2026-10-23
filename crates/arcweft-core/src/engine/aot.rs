@@ -191,10 +191,6 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
         match op {
-            AotLinearOp::Bind(bindings) => {
-                self.fiber.frame.env.bind_all_ref(bindings);
-                self.advance_aot_linear_cursor(next_op_index);
-            }
             AotLinearOp::Let { pattern, expr } => {
                 self.evaluate_let_with_backend(pattern, expr, output, pure_backend);
                 self.advance_aot_linear_cursor(next_op_index);

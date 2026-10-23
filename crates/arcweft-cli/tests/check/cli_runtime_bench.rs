@@ -7860,7 +7860,7 @@ mod source_map_batch_owner_tests {
             .unwrap();
             for _ in 0..64 {
                 if matches!(
-                    engine.fiber().frame.pending_ops.front(),
+                    engine.active_flow_operations().next(),
                     Some(FlowOp::WhileLet { .. })
                 ) {
                     return engine;
@@ -7885,8 +7885,7 @@ mod source_map_batch_owner_tests {
             arcweft_core::runtime_id::RuntimeLocalDeclarationId,
             arcweft_core::runtime_id::RuntimeLocalDeclarationId,
         ) {
-            let Some(FlowOp::WhileLet { expr, body, .. }) =
-                engine.fiber().frame.pending_ops.front()
+            let Some(FlowOp::WhileLet { expr, body, .. }) = engine.active_flow_operations().next()
             else {
                 panic!("actual Map loop")
             };
@@ -7921,12 +7920,14 @@ mod source_map_batch_owner_tests {
             actual_cost += step.stats.executed_ops;
             assert_eq!(step.stats.executed_ops, 1);
             let completed = reference.fiber().frame.env.get(iterator).is_none()
-                && !reference
-                    .fiber()
-                    .frame
-                    .pending_ops
-                    .iter()
-                    .any(|op| matches!(op, FlowOp::WhileLetNext { .. }))
+                && !reference.fiber().frame.pending_work().any(|work| {
+                    matches!(
+                        work,
+                        Ok(arcweft_core::engine::NativePendingWorkView::Resume(
+                            arcweft_core::engine::NativeRuntimeContinuationKind::WhileLetNext
+                        ))
+                    )
+                })
                 && matches!(reference.fiber().frame.env.get(accumulator), Some(RuntimeValue::Seq(seq)) if seq.len() == 3);
             if completed {
                 break;
@@ -8632,7 +8633,7 @@ mod source_map_batch_owner_tests {
             .unwrap();
             for _ in 0..64 {
                 if matches!(
-                    engine.fiber().frame.pending_ops.front(),
+                    engine.active_flow_operations().next(),
                     Some(FlowOp::ApplyGroup { .. })
                 ) {
                     return engine;
@@ -8652,7 +8653,7 @@ mod source_map_batch_owner_tests {
             panic!("Array Map must expose its accepted ApplyGroup owner");
         }
         let at_aggregate = |engine: &Engine| {
-            matches!(engine.fiber().frame.pending_ops.front(),
+            matches!(engine.active_flow_operations().next(),
             Some(FlowOp::Let { expr, .. }) if matches!(expr.kind(), RuntimeExprKind::BracketSeq(_)))
         };
         let mut ordinary = accelerator(RuntimePureBackendMode::Aot, selected.plan());

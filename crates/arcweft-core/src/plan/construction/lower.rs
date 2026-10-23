@@ -5091,11 +5091,6 @@ impl RuntimePlanBodyConstruction<'_> {
                     )?;
                     self.validate_expression_locals(value, &body_scope, used)?;
                 }
-                FlowOp::CompleteFormatOperand { .. } => {
-                    return Err(RuntimePlanBuildError::FlowLoweringInvariant {
-                        context: "engine-only format completion appears in a finished RuntimePlan",
-                    });
-                }
                 FlowOp::LetElse {
                     pattern,
                     expr,
@@ -5463,16 +5458,6 @@ impl RuntimePlanBodyConstruction<'_> {
                             .map(RuntimePatternBindingDeclaration::local),
                     )?;
                 }
-                FlowOp::Bind(_) => {
-                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
-                        operation: "Bind",
-                    });
-                }
-                FlowOp::EnterScheduledScope { .. } | FlowOp::ExitScheduledScope { .. } => {
-                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
-                        operation: "native control scope marker",
-                    });
-                }
                 FlowOp::Dialogue {
                     target,
                     content,
@@ -5490,34 +5475,9 @@ impl RuntimePlanBodyConstruction<'_> {
                             .map(RuntimePatternBindingDeclaration::local),
                     )?;
                 }
-                FlowOp::LoopNext { .. } => {
-                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
-                        operation: "LoopNext",
-                    });
-                }
-                FlowOp::WhileNext { .. } => {
-                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
-                        operation: "WhileNext",
-                    });
-                }
-                FlowOp::WhileLetNext { .. } => {
-                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
-                        operation: "WhileLetNext",
-                    });
-                }
-                FlowOp::ForNext { .. } => {
-                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
-                        operation: "ForNext",
-                    });
-                }
                 FlowOp::LetScope { .. } => {
                     return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
                         operation: "LetScope",
-                    });
-                }
-                FlowOp::CompleteAwaitObserver => {
-                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
-                        operation: "CompleteAwaitObserver",
                     });
                 }
             }

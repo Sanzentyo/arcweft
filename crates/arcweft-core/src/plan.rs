@@ -221,7 +221,7 @@ use crate::task::{
     AwaitManyTarget, NeedId, NeedProducerTaskPlan, RuntimeHostArgumentTemplate, TaskId,
 };
 
-use crate::value::{RuntimeExpr, RuntimeIterator, RuntimeLocalBinding, RuntimePayload};
+use crate::value::{RuntimeExpr, RuntimePayload};
 pub use entry_inventory::{
     EntryRuntimeId, RouteCaptureCoordinate, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeFlowInvocation, RuntimeFlowInvocationError, RuntimeHttpMethod, RuntimePlanError,
@@ -1046,7 +1046,6 @@ pub enum RuntimeDeferOwner {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlowOp {
-    Bind(Vec<RuntimeLocalBinding>),
     Let {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
@@ -1058,13 +1057,6 @@ pub enum FlowOp {
         attempt: crate::runtime_id::RuntimeFormatAttemptId,
         parameter: crate::value::RuntimeFmtParameterId,
         body: Vec<FlowOp>,
-        value: RuntimeExpr,
-    },
-    /// Engine-only completion marker appended after a formatter operand body.
-    /// It never appears in a finished `RuntimePlan`.
-    CompleteFormatOperand {
-        attempt: crate::runtime_id::RuntimeFormatAttemptId,
-        parameter: crate::value::RuntimeFmtParameterId,
         value: RuntimeExpr,
     },
     LetElse {
@@ -1147,16 +1139,9 @@ pub enum FlowOp {
         result: Option<RuntimePattern>,
         body: Vec<FlowOp>,
     },
-    LoopNext {
-        body: Arc<[FlowOp]>,
-    },
     While {
         condition: RuntimeExpr,
         body: Vec<FlowOp>,
-    },
-    WhileNext {
-        condition: RuntimeExpr,
-        body: Arc<[FlowOp]>,
     },
     WhileLet {
         pattern: RuntimePattern,
@@ -1164,23 +1149,11 @@ pub enum FlowOp {
         guard: Option<RuntimeExpr>,
         body: Vec<FlowOp>,
     },
-    WhileLetNext {
-        pattern: RuntimePattern,
-        expr: RuntimeExpr,
-        guard: Option<RuntimeExpr>,
-        body: Arc<[FlowOp]>,
-    },
     For {
         pattern: RuntimePattern,
         source: RuntimeExpr,
         evidence: RuntimeIteratorEvidence,
         body: Vec<FlowOp>,
-    },
-    ForNext {
-        pattern: RuntimePattern,
-        iterator: RuntimeIterator,
-        evidence: RuntimeIteratorEvidence,
-        body: Arc<[FlowOp]>,
     },
     Thread {
         name: Option<String>,
@@ -1225,16 +1198,6 @@ pub enum FlowOp {
         identity: crate::scope::RuntimeScopeIdentity,
     },
     ExitScope,
-    /// Runtime-only scaffold markers. Native queue and frame share this exact token.
-    EnterScheduledScope {
-        identity: crate::scope::RuntimeScopeIdentity,
-        token: crate::scope::RuntimeScheduledScopeToken,
-    },
-    ExitScheduledScope {
-        token: crate::scope::RuntimeScheduledScopeToken,
-    },
-    /// Engine-only fallthrough marker for one Pending observer body.
-    CompleteAwaitObserver,
     ExitScopeBind {
         pattern: RuntimePattern,
         expr: RuntimeExpr,

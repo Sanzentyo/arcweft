@@ -8956,3 +8956,21 @@ rollback は元 program の認証後、current／formatter caller／function cal
 - R2375 `cargo clippy -p arcweft-core --all-targets --all-features --locked`: **exit 0、警告あり**。lib test の警告は3,164（2,468重複）。[receipt](acceptance-evidence/task-final-r2375-native-root-queue-fixture-core-clippy.json)、[log](acceptance-evidence/task-final-r2375-native-root-queue-fixture-core-clippy.log)。R2374 と同じ source。
 
 R2372 の17 compile errors はこの fixture 移行で解消した。原本 R2375 Clippy log の提示コードに trailing whitespace が3行あるため、byte を保持し、その原本 log だけを staged whitespace 検査から除外する。他の source・資料・receipt/log は同検査を通す。全 reverse53／workspace／Tier 2／Native-Web parity を実行したとは主張せず、Generic Match の受入済みという判定は維持する。
+
+## Authored Flow grammar continuation removal — 2026-10-23
+
+基点 `45c42006353159546cf45f53028552264dd2adcd`、parent `2cfd5197813492653b004f0375116eb419cbd60e`、tree `1b88d9a2b60c5f63919011c0d929ee157ccd65d2`、patch SHA256 `c0441375d94171dc02b59fe4e75ebed90f7193fdf9efa876c7571609b5c39cee`。同公開は17 paths／4,013入力／保持14 tracked WIP、公開 blob／raw patch／source／保持差分の drift 0、index empty を確認した。R2374 の Core 1,955 PASS と R2375 の Clippy exit 0 はこの公開 source に対する実績であり、後続 grammar WIP の結果ではない。
+
+`FlowOp` から Bind、CompleteFormatOperand、LoopNext、WhileNext、WhileLetNext、ForNext、EnterScheduledScope、ExitScheduledScope、CompleteAwaitObserver の9 variant を削除し、AOT の旧 Bind と source visitor／semantic transcript／AWBC lowering／JIT／accelerator の旧分岐も除去した。実行時の値・iterator・token は既存の専用 native continuation が所有する。公開 inspection は元コード座標を借りる `source_positions`、連続した authored prefix を借りる `active_flow_operations`、動的な work kind を返す `pending_work` に分かれ、独立の保持 cursor や code catalog を作らない。
+
+旧 `engine_only_flow_continuation_is_rejected_and_poisoned` は削除した型 `FlowOp::Bind` を直接作る検査だったため削除。元 program の static／affine literal 拒否、scope／loop／停止復帰／rollback の検査は保持した。Core の次回件数は、この1件の削除を区別して確認する。CLI benchmark の同じファイルにあるユーザーの `--steps` 8→32 は保持し、公開差分からその hunk を除外する。
+
+- R2376 `cargo check --workspace --all-targets --all-features --locked`: **exit 101、5 errors**。Compiler fixture の旧 frame.cursor 4箇所と Driver Choice fixture の resume フィールド。[receipt](acceptance-evidence/task-final-r2376-native-source-grammar-workspace-check.json)、[log](acceptance-evidence/task-final-r2376-native-source-grammar-workspace-check.log)。
+- R2377 同 workspace check: **exit 101、4 E0624 errors**。Compiler の比較を private `inert_rollback_image` へ変更した試みは、crate 境界で拒否された。[receipt](acceptance-evidence/task-final-r2377-native-source-grammar-consumer-check.json)、[log](acceptance-evidence/task-final-r2377-native-source-grammar-consumer-check.log)。これは今回の修正に起因する失敗であり、既存不具合とは呼ばない。
+- R2378 同 workspace check: **exit 101、8 E0616 errors**。Compiler と CLI の fixture に private pending_ops の直接参照が残っていた。[receipt](acceptance-evidence/task-final-r2378-native-source-grammar-position-check.json)、[log](acceptance-evidence/task-final-r2378-native-source-grammar-position-check.log)。その後、前述の frame／engine の読み取り専用 API へ揃えた。修正後の compile／runtime は未実行であり、途中 commit の方針による WIP。
+
+Cargo graph の Core reverse53 と99 manifest/lock は不変。初回 freeze は4,013入力／変更22 source、その後は25／26 owned paths（維持仕様を含む）。CLI の混在 hunk は staging と公開時の元保持差分の hash 照合で保全する。全体 goal の未完了を理由に Generic Match や前段の完了 cut を未完了へ戻さない。
+
+維持仕様 `executable-runtime-core.md` の古い proposed 表示、基点 `23fc9206f08340df438aece556065d5235bb27eb` の現状説明、実装順序 Cut 1–8、当時の overlay 完了／未完了列挙を削除した。現在の Native queue 所有境界へ置き換え、旧 continuation から CFG を再構成する記述も除去した。規範的な product／AWBC の受入契約は残し、実装済みという主張へ読み替えない。
+
+混在する CLI ファイルは自身の公開変更によって base／working blob が変わるため、保持 raw patch の hash も変わった。比較差分は同ファイルの index header 1行だけで、14件すべての hunk 内容・位置・context は一致した。ユーザーの 8→32 と他13件の保持差分に変更はなく、その hunk を index に含めていない。

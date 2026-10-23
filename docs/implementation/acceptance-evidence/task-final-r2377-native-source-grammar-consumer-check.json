@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "45c42006353159546cf45f53028552264dd2adcd",
+  "name": "task-final-r2377-native-source-grammar-consumer-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2377-native-source-grammar-consumer-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T04:28:04.0780660Z",
+  "finishedAt": "2026-10-23T04:29:19.6357056Z"
+}

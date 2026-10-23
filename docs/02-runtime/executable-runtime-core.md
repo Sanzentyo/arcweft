@@ -1,12 +1,6 @@
 # Arcweft Executable Runtime Core
 
-Status: proposed architecture plus verified implementation cuts 1, 2, and the
-shared compiled-region ABI substrate for cut 7.
-
-Repository basis: `Sanzentyo/arcweft@23fc9206f08340df438aece556065d5235bb27eb`
-(`docs: split integrated execution design requests`, 2026-06-24).
-
-This design is intentionally one model. AWBC, the compact VM, fiber state, and
+This contract defines one executable model. AWBC, the compact VM, fiber state, and
 compiled regions do not own parallel representations of frames, control flow,
 suspension, source identity, or host calls.
 
@@ -44,22 +38,9 @@ suspension, source identity, or host calls.
    backend identity/revision, optimization, and artifact kind form the cache
    key. Generation belongs only to dispatch/hot-swap identity.
 
-## 2. Repository evidence and boundary placement
+## 2. Owner and dependency boundaries
 
-At the basis revision:
-
-- `arcweft-core::bytecode::BytecodeProgram` wraps `FlowOp` directly and is the
-  structured VM source of truth.
-- `arcweft-core::awbc` is a first-pass table/verifier contract but is not the
-  product execution payload.
-- `arcweft-core::compact_bytecode` is a second, older validation sidecar.
-- `arcweft-bundle::product::ProgramBytecode` carries both structured bytecode
-  and the old compact sidecar.
-- `arcweft-runtime-codegen` owns policy and placeholder region/frame contracts,
-  but not a full-script execution ABI.
-- `arcweft-lang-jit-cranelift` compiles pure helpers only.
-
-The target dependency direction is:
+The dependency direction is:
 
 ```text
 syntax / HIR / sema / verify
@@ -131,13 +112,13 @@ A standalone canonical AWBC payload is:
 
 `AwbcHeader` inside the table payload contains the executable ABI, minimum
 runtime ABI, feature bits, runtime-layout digest, and host-ABI digest. Codec
-version and executable ABI are separate: a future codec may encode the same
-execution contract, and a future execution ABI may reuse the envelope.
+and executable ABI are distinct contracts. Arcweft-owned version markers remain
+at `1`; their shapes evolve in place and unknown fields or tags are rejected.
 
 ### 3.2 Fixed table order
 
-The payload stores these fields in exactly this order. Reordering is a codec
-version change.
+The payload stores these fields in exactly this canonical order. Schema changes
+update the producer, verifier and consumers together with the version fixed at `1`.
 
 1. `header`
 2. `strings`
@@ -845,7 +826,6 @@ player. It uses four deterministic passes:
 
 | Structured operation | AWBC lowering |
 |---|---|
-| `Bind(bindings)` | constants/expressions into assigned local slots; one `BindPattern` per binding |
 | `Let { pattern, expr }` | lower expression to temp; `BindPattern(Declare)` |
 | `LetElse` | temp + `TestPattern`; branch to bind/body or explicit else CFG |
 | `Dialogue` | `EnsureContent`; `Dialogue` terminator and dialogue resume block |
@@ -855,11 +835,11 @@ player. It uses four deterministic passes:
 | `If` | condition temp + `Branch`, then/else blocks, join block |
 | `IfLet` | temp + `TestPattern`; optional pure guard block; commit bindings only on successful path |
 | `Match` | scrutinee temp; pattern rows and optional guard functions; `Match` terminator; arm/join blocks |
-| `Loop` / `LoopNext` | loop-header block marked `LoopBackedge`; body; backward `Jump`; insert `BudgetYield` according to lowering budget policy |
+| `Loop` | loop-header block marked `LoopBackedge`; body; backward `Jump`; insert `BudgetYield` according to lowering budget policy |
 | `LetLoop` | value-producing loop with dedicated result slot and break join |
-| `While` / `WhileNext` | header condition + `Branch`; body backedge; exit block |
-| `WhileLet` / `WhileLetNext` | expression + pattern/guard blocks at header; binding scope per iteration |
-| `For` / `ForNext` | own the built-in or witness-backed iterator; header calls `next` and retains its returned iterator; borrow-test `Option::Some`, move its item into the pattern, then backedge; `None` exits |
+| `While` | header condition + `Branch`; body backedge; exit block |
+| `WhileLet` | expression + pattern/guard blocks at header; binding scope per iteration |
+| `For` | own the built-in or witness-backed iterator; header calls `next` and retains its returned iterator; borrow-test `Option::Some`, move its item into the pattern, then backedge; `None` exits |
 | `Thread` | synthetic flow function + `SpawnFiber`; optional name becomes public/debug ID, not semantics |
 | `Scope` | `EnterScope`; body; all normal/control exits route through cleanup block and `ExitScope` |
 | `LetScope` | scope plus result slot; expression/bind on successful cleanup exit |
@@ -874,11 +854,11 @@ player. It uses four deterministic passes:
 | `ExitScopeBind` | evaluate value, exit/cleanup, bind in parent scope |
 | `Noop` | `Nop`, removed when no map anchor requires it |
 
-The runtime-only continuation variants (`LoopNext`, `WhileNext`,
-`WhileLetNext`, `ForNext`) are not serialized as distinct operations. The
-compiler lowers the originating structured loop before execution. If a parity
-adapter receives a continuation form, it reconstructs the same header/body CFG
-and then discards the continuation object.
+`FlowOp` contains authored executable operations. Native bindings, loop progress,
+formatter completion, scheduled scope tokens and Await-observer completion use
+`NativeRuntimeContinuation`; they cannot inhabit this grammar or reach AWBC
+lowering. The lowerer consumes the original structured loop. It does not accept
+or reconstruct a native continuation as another source body.
 
 ### 7.2 `RuntimeExpr` mapping
 
@@ -1124,7 +1104,7 @@ visible step and final fiber state after canonical normalization.
 
 The dev/test selector is explicit (`StructuredParity`, `CompactVm`, or
 `Differential`) and never silently chooses one model after an error. Product
-selection becomes compact-only at cut 6.
+selection consumes canonical AWBC through the product executor boundary.
 
 ## 12. Baseline full-script compiled-region ABI
 
@@ -1254,67 +1234,35 @@ Compiler-only `RuntimePlan` remains a useful lowering IR. Deleting it is not a
 migration goal. The deletion target is its use as product runtime payload and
 its execution as a second product VM.
 
-## 16. Implementation cuts
+## 16. Native original-source execution
 
-### Cut 1 — freeze schema and codec
+Native execution retains the admitted original program owner. Source work owns
+only a coordinate and its role: function root, task root or nested body. The
+coordinate carries no independent executable authority. Its program identity,
+owner, body, range and metadata limits are admitted before values are moved or
+runtime queues are allocated. Branches, loops, formatter bodies and observers
+refer to the same original executable; they do not clone an AST into a queue.
 
-- Replace `arcweft-core/src/awbc.rs` with `awbc/{schema,codec}.rs`.
-- Add typed IDs, all tables/opcodes, stable enum mappings, canonical envelope,
-  manual codec, and decode budgets.
-- Tests: deterministic bytes, round trip, unknown tag/noncanonical varint,
-  payload/trailing/UTF-8 and each allocation budget family.
+A function root is one source work item, including an expression or genuine
+end-of-body transition. It contributes zero to the logical pending-operation
+count. Empty task and nested-body ranges are structural transitions; function
+completion remains a budgeted dispatch. A runtime continuation interrupts the
+contiguous authored source prefix exposed to numeric or AOT execution.
 
-### Cut 2 — semantic verifier
+Runtime continuations own dynamic bindings, iterator progress and task/scope
+completion. A function call or active formatter owns its actual caller queue.
+There is no separate retained root or resume cursor. Returning from a function
+retires its environment and restores the caller queue before validating the
+result or fallthrough, including the failure path. Rollback authenticates the
+program and aligns current and saved caller roots with their function contexts;
+missing required roots, duplicate roots and foreign owners are rejected.
 
-- Add `awbc/verify/{structure,code}.rs`.
-- Verify ownership, CFG, definite initialization, scopes, types, calls,
-  effects/capabilities, entrypoints, maps, and budgets.
-- Fuzz target accepts bytes only through budgeted decode then verify; no I/O.
-
-### Cut 3 — compiler lowering with structured parity
-
-- Add `arcweft-runtime-plan/src/awbc_lower/{inventory,frame,expr,flow,line}.rs`.
-- Compiler emits and verifies AWBC in addition to the explicit structured parity
-  artifact. Product bundle format is not switched yet.
-- Golden tests assert canonical table shapes and source-map anchors.
-
-### Cut 4 — compact VM behind explicit dev/test selection
-
-- Add `arcweft-core/src/awbc/vm/{dispatch,expr,pattern,suspend}.rs`.
-- Use `FiberState`; emit existing `RuntimeStepOutput` observations.
-- No implicit fallback to structured execution.
-
-### Cut 5 — differential fixtures
-
-- Add a shared harness that drives identical `RuntimeStepInput`/task/stream
-  events into structured and compact executors and compares normalized outputs
-  at each external boundary.
-
-### Cut 6 — migrate driver/host construction
-
-- Runtime driver owns `VerifiedAwbcProgram` and `FiberState`.
-- Runtime host/player constructors take an explicit executor selection and
-  verified AWBC. Structured executor remains test-only and compiler-feature
-  gated.
-
-### Cut 7 — baseline full-script region lowering
-
-- Reshape `arcweft-runtime-codegen` around AWBC region metadata, cache identity,
-  and the implemented `CompiledRegion` ABI.
-- First backend may interpret the lowered region or emit unoptimized code; the
-  purpose is ABI parity, not speed.
-
-### Cut 8 — product payload switch and deletion
-
-- Change `arcweft-bundle::product::ProgramBytecode` to contain canonical AWBC
-  bytes/metadata only.
-- Update AWFB validation/decode and player fixtures.
-- Delete old compact sidecar and structured product payload/conversions after
-  section 15 gates pass.
-
-This order is retained. Moving codegen earlier would freeze a duplicate frame or
-resume ABI; moving product migration earlier would make parity failures harder
-to isolate.
+A joined task retains its unconsumed return position while descendants run.
+Skipping that joined parent neither advances its source nor charges a source
+operation. Public queue inspection exposes original operations, expressions,
+end-of-body positions and continuation kinds as distinct typed observations.
+It does not synthesize `FlowOp` values from runtime state. AWBC retains its own
+verified bytecode cursor and resume points under the product `FiberState`.
 
 ## 17. Test matrix
 
@@ -1368,14 +1316,14 @@ same-step Need timeout races, save/restore, and late source completion.
 
 | Crate/module | Change |
 |---|---|
-| `arcweft-core::awbc` | canonical schema, codec, verifier, fiber; later compact VM |
+| `arcweft-core::awbc` | canonical schema, codec, verifier, fiber and compact VM |
 | `arcweft-runtime-plan` | compiler-side deterministic AWBC lowering |
 | `arcweft-runtime-codegen` | AWBC region inventory, cache key, safe compiled-step ABI |
 | `arcweft-runtime-driver` | verified program/fiber ownership and executor dispatch |
 | `arcweft-runtime-host` | materialize typed requests/exits; no executable semantics duplication |
-| `arcweft-bundle::product` | cut 8 canonical AWBC-only ProgramBytecode section |
+| `arcweft-bundle::product` | canonical AWBC-only ProgramBytecode section |
 | players | consume verified AWBC through runtime boundary only |
-| `arcweft-lang-jit-cranelift` | retain pure-helper backend; later implement same region ABI where supported |
+| `arcweft-lang-jit-cranelift` | pure-helper backend and the shared region ABI where supported |
 | tests/fixtures | differential, negative codec/verifier, product migration corpus |
 
 ## 19. Explicit non-goals
@@ -1392,20 +1340,3 @@ same-step Need timeout races, save/restore, and late source completion.
 - making unknown v1 opcodes skippable;
 - using `unsafe`, unstable Rust, platform pointers, or native struct layout in
   the executable ABI.
-
-## 20. Implementation included with this design
-
-The accompanying overlay implements and tests:
-
-- the complete typed schema/opcode/table model above;
-- canonical manual AWBC v1 encode/decode and budgets;
-- structural and dataflow verifier;
-- executor-neutral fiber/checkpoint/suspension state;
-- AWBC-backed code artifact/cache model;
-- baseline safe compiled-region ABI, exit mapping, budget ownership, and
-  transactional zero-budget VM fallback.
-
-It deliberately does **not** claim to implement the compiler lowerer, compact VM,
-runtime-driver migration, or product AWFB switch. Those are specified as cuts
-3–8 and remain visible in the implementation record rather than hidden behind
-stubs or a second compatibility opcode model.

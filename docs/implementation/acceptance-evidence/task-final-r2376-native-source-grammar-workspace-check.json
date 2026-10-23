@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "45c42006353159546cf45f53028552264dd2adcd",
+  "name": "task-final-r2376-native-source-grammar-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2376-native-source-grammar-workspace-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T04:22:34.1347370Z",
+  "finishedAt": "2026-10-23T04:25:38.3338755Z"
+}

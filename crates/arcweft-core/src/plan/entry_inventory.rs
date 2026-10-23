@@ -1075,16 +1075,10 @@ impl super::RuntimePlanInventory {
             | FlowOp::If { .. }
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
-            | FlowOp::LoopNext { .. }
-            | FlowOp::WhileNext { .. }
-            | FlowOp::WhileLetNext { .. }
-            | FlowOp::ForNext { .. }
             | FlowOp::For { .. }
             | FlowOp::LetScope { .. }
             | FlowOp::Await { .. }
-            | FlowOp::Bind(_)
             | FlowOp::Let { .. }
-            | FlowOp::CompleteFormatOperand { .. }
             | FlowOp::Assign { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }
@@ -1107,9 +1101,6 @@ impl super::RuntimePlanInventory {
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
-            | FlowOp::EnterScheduledScope { .. }
-            | FlowOp::ExitScheduledScope { .. }
-            | FlowOp::CompleteAwaitObserver
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::Noop => {}
         }

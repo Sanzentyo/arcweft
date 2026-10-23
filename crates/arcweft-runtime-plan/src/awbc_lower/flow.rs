@@ -1156,17 +1156,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     .push_instruction(AwbcInstruction::RequireUnrestricted { value: mapping });
                 self.lower_ops(frame, body, control.body(), path);
             }
-            FlowOp::Bind(bindings) => {
-                for binding in bindings {
-                    let ty = self.local_type(binding.local);
-                    let local = frame.local(binding.local, ty);
-                    let constant = self.inventory.constant_runtime_value(&binding.value);
-                    self.inventory.push_instruction(AwbcInstruction::LoadConst {
-                        dst: local,
-                        constant,
-                    });
-                }
-            }
             FlowOp::Let { pattern, expr } => {
                 let value =
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
@@ -1215,20 +1204,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 }
                 self.active_format_attempts.pop();
                 frame.restore_scopes_after_branch(outer_scopes);
-            }
-            FlowOp::CompleteFormatOperand { .. } => {
-                let message = "CompleteFormatOperand is an AWBC-only lowering marker";
-                self.inventory
-                    .diagnostic(AwbcLowerDiagnostic::error(path, message));
-                let message = self.inventory.intern_string(message);
-                body.terminate(
-                    self.inventory,
-                    AwbcTerminator::Trap {
-                        code: AwbcTrapCode::InternalInvariant,
-                        message: Some(message),
-                    },
-                    AwbcSafePointKind::Trap,
-                );
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
                 let scoped_value =
@@ -1695,12 +1670,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 }
                 frame.exit_scope();
             }
-            FlowOp::LoopNext { body: ops }
-            | FlowOp::WhileNext { body: ops, .. }
-            | FlowOp::WhileLetNext { body: ops, .. }
-            | FlowOp::ForNext { body: ops, .. } => {
-                self.lower_ops(frame, body, ops.as_ref(), &format!("{path}.next"));
-            }
             FlowOp::While {
                 condition,
                 body: ops,
@@ -1983,20 +1952,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     frame.exit_scope()
                 }
             }
-            FlowOp::EnterScheduledScope { .. } | FlowOp::ExitScheduledScope { .. } => {
-                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                    path,
-                    "runtime-only native scope marker reached AWBC lowering",
-                ));
-            }
             FlowOp::Noop => {
                 self.inventory.push_instruction(AwbcInstruction::Nop);
-            }
-            FlowOp::CompleteAwaitObserver => {
-                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                    path,
-                    "runtime-only Await observer completion reached AWBC lowering",
-                ));
             }
         }
     }

@@ -49,8 +49,6 @@ pub enum RuntimeBodySemanticError {
     Encoding(TaskSemanticEncodingError),
     #[error("body contains a runtime value which is not a static literal")]
     InvalidStaticLiteral,
-    #[error("body contains an engine-only Flow continuation")]
-    RuntimeFlowContinuation,
     #[error("body task coordinate belongs to another candidate inventory")]
     ForeignTaskCoordinate,
     #[error("producer function has invalid input evidence at input {input}")]

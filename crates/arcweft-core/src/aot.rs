@@ -2,7 +2,7 @@ use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
 use crate::pattern::RuntimePattern;
 use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 use crate::runtime_id::RuntimeFunctionSiteId;
-use crate::value::{RuntimeExpr, RuntimeLocalBinding};
+use crate::value::RuntimeExpr;
 
 /// Typed AOT compilation artifact for a runtime plan.
 ///
@@ -52,7 +52,6 @@ pub enum AotOpClass {
 /// step.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum AotLinearOp {
-    Bind(Vec<RuntimeLocalBinding>),
     Let {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
@@ -89,7 +88,6 @@ impl AotLinearOp {
             return None;
         }
         match op {
-            FlowOp::Bind(bindings) => Some(Self::Bind(bindings.clone())),
             FlowOp::Let { pattern, expr } => Some(Self::Let {
                 pattern: pattern.clone(),
                 expr: expr.clone(),
@@ -116,12 +114,9 @@ impl AotLinearOp {
                 expr: expr.clone(),
             }),
             FlowOp::Noop => Some(Self::Noop),
-            FlowOp::EnterScheduledScope { .. }
-            | FlowOp::StandardMap(_)
-            | FlowOp::ExitScheduledScope { .. }
+            FlowOp::StandardMap(_)
             | FlowOp::LetElse { .. }
             | FlowOp::FormatOperandAttempt { .. }
-            | FlowOp::CompleteFormatOperand { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }
             | FlowOp::SelectDialogueResult { .. }
@@ -138,21 +133,16 @@ impl AotLinearOp {
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
             | FlowOp::Loop { .. }
-            | FlowOp::LoopNext { .. }
             | FlowOp::While { .. }
-            | FlowOp::WhileNext { .. }
             | FlowOp::WhileLet { .. }
-            | FlowOp::WhileLetNext { .. }
             | FlowOp::For { .. }
-            | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. }
             | FlowOp::Scope { .. }
             | FlowOp::LetScope { .. }
             | FlowOp::Break(_)
             | FlowOp::Continue
             | FlowOp::Goto(_)
-            | FlowOp::GotoExpr(_)
-            | FlowOp::CompleteAwaitObserver => None,
+            | FlowOp::GotoExpr(_) => None,
         }
     }
 }
@@ -258,8 +248,7 @@ impl AotFlowBlock {
 
 pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
     match op {
-        FlowOp::Bind(_)
-        | FlowOp::Let { .. }
+        FlowOp::Let { .. }
         | FlowOp::Assign { .. }
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
@@ -283,12 +272,9 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
             | RuntimeEffectExpr::RegistryWrite { .. }
             | RuntimeEffectExpr::Assert { .. } => false,
         },
-        FlowOp::EnterScheduledScope { .. }
-        | FlowOp::StandardMap(_)
-        | FlowOp::ExitScheduledScope { .. }
+        FlowOp::StandardMap(_)
         | FlowOp::LetElse { .. }
         | FlowOp::FormatOperandAttempt { .. }
-        | FlowOp::CompleteFormatOperand { .. }
         | FlowOp::LineOperation { .. }
         | FlowOp::CommitDialogueResult { .. }
         | FlowOp::SelectDialogueResult { .. }
@@ -305,21 +291,16 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::IfLet { .. }
         | FlowOp::Match { .. }
         | FlowOp::Loop { .. }
-        | FlowOp::LoopNext { .. }
         | FlowOp::While { .. }
-        | FlowOp::WhileNext { .. }
         | FlowOp::WhileLet { .. }
-        | FlowOp::WhileLetNext { .. }
         | FlowOp::For { .. }
-        | FlowOp::ForNext { .. }
         | FlowOp::Thread { .. }
         | FlowOp::Scope { .. }
         | FlowOp::LetScope { .. }
         | FlowOp::Break(_)
         | FlowOp::Continue
         | FlowOp::Goto(_)
-        | FlowOp::GotoExpr(_)
-        | FlowOp::CompleteAwaitObserver => false,
+        | FlowOp::GotoExpr(_) => false,
     }
 }
 
@@ -339,9 +320,7 @@ pub(crate) fn effect_changes_control(effect: &LineEffectRequest) -> bool {
 impl AotOpClass {
     fn from_flow_op(op: &FlowOp) -> Self {
         match op {
-            FlowOp::Bind(_)
-            | FlowOp::Let { .. }
-            | FlowOp::CompleteFormatOperand { .. }
+            FlowOp::Let { .. }
             | FlowOp::Assign { .. }
             | FlowOp::LetScope { .. }
             | FlowOp::Return(_)
@@ -350,11 +329,8 @@ impl AotOpClass {
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
-            | FlowOp::EnterScheduledScope { .. }
-            | FlowOp::ExitScheduledScope { .. }
             | FlowOp::ExitScopeBind { .. }
-            | FlowOp::Noop
-            | FlowOp::CompleteAwaitObserver => Self::Linear,
+            | FlowOp::Noop => Self::Linear,
             FlowOp::LetElse { .. }
             | FlowOp::StandardMap(_)
             | FlowOp::FormatOperandAttempt { .. }
@@ -362,13 +338,9 @@ impl AotOpClass {
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
             | FlowOp::Loop { .. }
-            | FlowOp::LoopNext { .. }
             | FlowOp::While { .. }
-            | FlowOp::WhileNext { .. }
             | FlowOp::WhileLet { .. }
-            | FlowOp::WhileLetNext { .. }
             | FlowOp::For { .. }
-            | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. }
             | FlowOp::Scope { .. } => Self::Branch,
             FlowOp::Effect(_)
@@ -422,10 +394,6 @@ impl AotProgramStats {
                 | FlowOp::WhileLet { body, .. }
                 | FlowOp::For { body, .. }
                 | FlowOp::Thread { body, .. } => self.record_ops(body),
-                FlowOp::LoopNext { body }
-                | FlowOp::WhileNext { body, .. }
-                | FlowOp::WhileLetNext { body, .. }
-                | FlowOp::ForNext { body, .. } => self.record_ops(body),
                 FlowOp::Scope { body, .. } => self.record_ops(body),
                 FlowOp::LetScope { ops, .. } => self.record_ops(ops),
                 FlowOp::Await { observers, .. } => {
@@ -433,9 +401,7 @@ impl AotProgramStats {
                         self.record_ops(&observer.ops);
                     }
                 }
-                FlowOp::Bind(_)
-                | FlowOp::Let { .. }
-                | FlowOp::CompleteFormatOperand { .. }
+                FlowOp::Let { .. }
                 | FlowOp::Assign { .. }
                 | FlowOp::LineOperation { .. }
                 | FlowOp::CommitDialogueResult { .. }
@@ -460,10 +426,7 @@ impl AotProgramStats {
                 | FlowOp::CancelCleanup { .. }
                 | FlowOp::EnterScope { .. }
                 | FlowOp::ExitScope
-                | FlowOp::EnterScheduledScope { .. }
-                | FlowOp::ExitScheduledScope { .. }
                 | FlowOp::ExitScopeBind { .. }
-                | FlowOp::CompleteAwaitObserver
                 | FlowOp::Noop => {}
             }
         }

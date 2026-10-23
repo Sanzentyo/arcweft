@@ -1,6 +1,6 @@
 use super::Engine;
 use crate::{
-    plan::{FlowOp, RuntimeFunctionSiteBodyKind},
+    plan::FlowOp,
     pure::{RuntimePureCallBackend, VmRuntimePureCallBackend},
     step::{RuntimeStepInput, RuntimeStepOutput},
     tests::function_application::returning_function_builder,

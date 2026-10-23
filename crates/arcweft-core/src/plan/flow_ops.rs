@@ -202,10 +202,8 @@ impl RuntimeFlowValueRole {
 impl FlowOp {
     pub(crate) const fn semantic_tag(&self) -> u8 {
         match self {
-            Self::Bind(_) => 0,
             Self::Let { .. } => 1,
             Self::FormatOperandAttempt { .. } => 2,
-            Self::CompleteFormatOperand { .. } => 3,
             Self::LetElse { .. } => 4,
             Self::Assign { .. } => 5,
             Self::LineOperation { .. } => 6,
@@ -223,13 +221,9 @@ impl FlowOp {
             Self::IfLet { .. } => 18,
             Self::Match { .. } => 19,
             Self::Loop { .. } => 20,
-            Self::LoopNext { .. } => 21,
             Self::While { .. } => 22,
-            Self::WhileNext { .. } => 23,
             Self::WhileLet { .. } => 24,
-            Self::WhileLetNext { .. } => 25,
             Self::For { .. } => 26,
-            Self::ForNext { .. } => 27,
             Self::Thread { .. } => 28,
             Self::Scope { .. } => 29,
             Self::LetScope { .. } => 30,
@@ -246,11 +240,8 @@ impl FlowOp {
             Self::CancelCleanup { .. } => 41,
             Self::EnterScope { .. } => 42,
             Self::ExitScope => 43,
-            Self::CompleteAwaitObserver => 44,
             Self::ExitScopeBind { .. } => 45,
             Self::Noop => 46,
-            Self::EnterScheduledScope { .. } => 47,
-            Self::ExitScheduledScope { .. } => 48,
             Self::StandardMap(_) => 49,
         }
     }
@@ -279,14 +270,10 @@ impl FlowOp {
             FlowOp::Let { pattern, expr }
             | FlowOp::LetElse { pattern, expr, .. }
             | FlowOp::WhileLet { pattern, expr, .. }
-            | FlowOp::WhileLetNext { pattern, expr, .. }
             | FlowOp::ExitScopeBind { pattern, expr } => {
                 visitor(Role::Pattern, Node::Pattern(pattern))?;
                 expression(Role::Value, expr, visitor)?;
                 if let FlowOp::WhileLet {
-                    guard: Some(guard), ..
-                }
-                | FlowOp::WhileLetNext {
                     guard: Some(guard), ..
                 } = self
                 {
@@ -294,7 +281,6 @@ impl FlowOp {
                 }
             }
             FlowOp::FormatOperandAttempt { value, .. }
-            | FlowOp::CompleteFormatOperand { value, .. }
             | FlowOp::Assign { value, .. }
             | FlowOp::CommitDialogueResult { value }
             | FlowOp::SelectDialogueResult { value }
@@ -368,9 +354,7 @@ impl FlowOp {
                 }
                 visitor(Role::Result, Node::Pattern(result))?;
             }
-            FlowOp::If { condition, .. }
-            | FlowOp::While { condition, .. }
-            | FlowOp::WhileNext { condition, .. } => {
+            FlowOp::If { condition, .. } | FlowOp::While { condition, .. } => {
                 expression(Role::Condition, condition, visitor)?;
             }
             FlowOp::IfLet {
@@ -412,7 +396,6 @@ impl FlowOp {
                 visitor(Role::Pattern, Node::Pattern(pattern))?;
                 expression(Role::Source, source, visitor)?;
             }
-            FlowOp::ForNext { pattern, .. } => visitor(Role::Pattern, Node::Pattern(pattern))?,
             FlowOp::Thread { .. } => {}
             FlowOp::LetScope { pattern, value, .. } => {
                 visitor(Role::Pattern, Node::Pattern(pattern))?;
@@ -464,10 +447,8 @@ impl FlowOp {
                     }
                 }
             }
-            FlowOp::Bind(_)
-            | FlowOp::StandardMap(_)
+            FlowOp::StandardMap(_)
             | FlowOp::ProjectCall { .. }
-            | FlowOp::LoopNext { .. }
             | FlowOp::Scope { .. }
             | FlowOp::Break(None)
             | FlowOp::Continue
@@ -476,9 +457,6 @@ impl FlowOp {
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
-            | FlowOp::EnterScheduledScope { .. }
-            | FlowOp::ExitScheduledScope { .. }
-            | FlowOp::CompleteAwaitObserver
             | FlowOp::Noop => {}
         }
         Ok(())
@@ -489,15 +467,6 @@ impl FlowOp {
     /// values use their dedicated snapshot owners instead.
     pub(crate) fn literals_permit_copy(&self) -> bool {
         try_visit_ops(std::slice::from_ref(self), &mut |op| {
-            if matches!(
-                op,
-                FlowOp::Bind(_)
-                    | FlowOp::ForNext { .. }
-                    | FlowOp::EnterScheduledScope { .. }
-                    | FlowOp::ExitScheduledScope { .. }
-            ) {
-                return Err(());
-            }
             op.try_visit_value_roots(&mut |_, node| {
                 node.literals_permit_copy().then_some(()).ok_or(())
             })
@@ -540,13 +509,7 @@ impl FlowOp {
             | Self::Thread { body, .. }
             | Self::Scope { body, .. }
             | Self::LetScope { ops: body, .. } => Schema::One(Role::Body, body),
-            Self::LoopNext { body }
-            | Self::WhileNext { body, .. }
-            | Self::WhileLetNext { body, .. }
-            | Self::ForNext { body, .. } => Schema::One(Role::Body, body),
-            FlowOp::Bind(_)
-            | FlowOp::Let { .. }
-            | FlowOp::CompleteFormatOperand { .. }
+            FlowOp::Let { .. }
             | FlowOp::Assign { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }
@@ -571,10 +534,7 @@ impl FlowOp {
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
-            | FlowOp::EnterScheduledScope { .. }
-            | FlowOp::ExitScheduledScope { .. }
             | FlowOp::ExitScopeBind { .. }
-            | FlowOp::CompleteAwaitObserver
             | FlowOp::Noop => Schema::Empty,
         }
     }

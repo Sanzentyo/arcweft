@@ -1687,14 +1687,8 @@ fn julia_i64_ops(
                 None
             }
             FlowOp::Noop => None,
-            FlowOp::EnterScheduledScope { .. } | FlowOp::ExitScheduledScope { .. } => {
-                Some("native scheduler scope marker")
-            }
-            FlowOp::Bind(_) => Some("prebound values"),
             FlowOp::StandardMap(_) => Some("callable Map control"),
-            FlowOp::FormatOperandAttempt { .. } | FlowOp::CompleteFormatOperand { .. } => {
-                Some("format attempt")
-            }
+            FlowOp::FormatOperandAttempt { .. } => Some("format attempt"),
             FlowOp::LetElse { .. } => Some("refutable binding"),
             FlowOp::Assign { .. } => Some("place assignment"),
             FlowOp::LineOperation { .. }
@@ -1702,23 +1696,18 @@ fn julia_i64_ops(
             | FlowOp::SelectDialogueResult { .. }
             | FlowOp::Dialogue { .. } => Some("line operation"),
             FlowOp::Choice { .. } => Some("choice"),
-            FlowOp::Await { .. }
-            | FlowOp::StartNeedProducer { .. }
-            | FlowOp::AwaitMany { .. }
-            | FlowOp::CompleteAwaitObserver => Some("suspension"),
+            FlowOp::Await { .. } | FlowOp::StartNeedProducer { .. } | FlowOp::AwaitMany { .. } => {
+                Some("suspension")
+            }
             FlowOp::HostCall { .. } => Some("host call"),
             FlowOp::ProjectCall { .. } | FlowOp::ApplyGroup { .. } => {
                 Some("nested function control transfer")
             }
             FlowOp::IfLet { .. } | FlowOp::Match { .. } => Some("pattern control flow"),
             FlowOp::Loop { .. }
-            | FlowOp::LoopNext { .. }
             | FlowOp::While { .. }
-            | FlowOp::WhileNext { .. }
             | FlowOp::WhileLet { .. }
-            | FlowOp::WhileLetNext { .. }
             | FlowOp::For { .. }
-            | FlowOp::ForNext { .. }
             | FlowOp::Break(_)
             | FlowOp::Continue => Some("loop control"),
             FlowOp::Thread { .. } => Some("thread"),

@@ -404,9 +404,11 @@ fn aggregate_emitted_scope_cancels_its_own_implicit_close_before_outer_continuat
                 if let LineEffectRequest::Log(log) = effect {
                     if log.message == "after" {
                         assert!(engine.fiber().frame.env.get(inside).is_none());
-                        assert!(!engine.fiber().frame.pending_ops.iter().any(|op| matches!(
-                            op,
-                            arcweft_core::plan::FlowOp::ExitScheduledScope { .. }
+                        assert!(!engine.fiber().frame.pending_work().any(|work| matches!(
+                            work,
+                            Ok(arcweft_core::engine::NativePendingWorkView::Resume(
+                                arcweft_core::engine::NativeRuntimeContinuationKind::ExitScheduledScope { .. }
+                            ))
                         )));
                     }
                     actual.push(log.message);

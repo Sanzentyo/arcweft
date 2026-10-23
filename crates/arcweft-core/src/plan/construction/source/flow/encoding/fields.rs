@@ -556,16 +556,7 @@ impl Writer {
                 self.text(key)?;
                 self.effect(effect, counts, resources, meter)?;
             }
-            FlowOp::Bind(_)
-            | FlowOp::CompleteFormatOperand { .. }
-            | FlowOp::LoopNext { .. }
-            | FlowOp::WhileNext { .. }
-            | FlowOp::WhileLetNext { .. }
-            | FlowOp::ForNext { .. }
-            | FlowOp::LetScope { .. }
-            | FlowOp::CompleteAwaitObserver
-            | FlowOp::EnterScheduledScope { .. }
-            | FlowOp::ExitScheduledScope { .. } => return Err(Error::Continuation),
+            FlowOp::LetScope { .. } => return Err(Error::Continuation),
         }
         Ok(())
     }

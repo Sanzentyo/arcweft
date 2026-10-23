@@ -928,11 +928,9 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             Op::StartNeedProducer { .. } => &[EndpointKind::MakeNeed],
             Op::AwaitMany { .. } => &[EndpointKind::AwaitManyBase, EndpointKind::AwaitManyChild],
             Op::Dialogue { .. } => &[EndpointKind::LineTask],
-            Op::Bind(_)
-            | Op::StandardMap(_)
+            Op::StandardMap(_)
             | Op::Let { .. }
             | Op::FormatOperandAttempt { .. }
-            | Op::CompleteFormatOperand { .. }
             | Op::LetElse { .. }
             | Op::Assign { .. }
             | Op::LineOperation { .. }
@@ -946,13 +944,9 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             | Op::IfLet { .. }
             | Op::Match { .. }
             | Op::Loop { .. }
-            | Op::LoopNext { .. }
             | Op::While { .. }
-            | Op::WhileNext { .. }
             | Op::WhileLet { .. }
-            | Op::WhileLetNext { .. }
             | Op::For { .. }
-            | Op::ForNext { .. }
             | Op::Scope { .. }
             | Op::LetScope { .. }
             | Op::Break(_)
@@ -967,10 +961,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             | Op::RegisterCleanup { .. }
             | Op::CancelCleanup { .. }
             | Op::EnterScope { .. }
-            | Op::EnterScheduledScope { .. }
-            | Op::ExitScheduledScope { .. }
             | Op::ExitScope
-            | Op::CompleteAwaitObserver
             | Op::ExitScopeBind { .. }
             | Op::Noop => &[],
         }

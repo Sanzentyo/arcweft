@@ -78,7 +78,6 @@ fn choices_preserve_a_missing_id_without_synthesizing_from_the_label() {
             out: None,
             effects: Vec::new(),
         }],
-        resume: None,
     });
 
     assert_eq!(
