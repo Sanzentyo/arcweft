@@ -424,14 +424,12 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             .iter()
             .rev()
             .find_map(ScopeControl::function_context)
-        {
-            if self.cursor.as_ref().map(NativeCodeCursor::owner)
+            && self.cursor.as_ref().map(NativeCodeCursor::owner)
                 != Some(crate::plan::code::RuntimeCodeOwner::Function(function.site))
-            {
-                return Err(invalid(
-                    "active function differs from its original code owner".into(),
-                ));
-            }
+        {
+            return Err(invalid(
+                "active function differs from its original code owner".into(),
+            ));
         }
         if let Some(cursor) = &self.cursor {
             cursor.admit_retained(admission)?;

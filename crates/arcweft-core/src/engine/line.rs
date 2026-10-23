@@ -117,6 +117,7 @@ impl Engine {
                     if frame.function_scope {
                         self.fiber.frame.env.pop_scope();
                     }
+                    self.fiber.frame.cursor = frame.resume;
                 }
                 FlowControlStackEntryKind::FormatAttempt(frame) => {
                     if frame.active.is_some() {

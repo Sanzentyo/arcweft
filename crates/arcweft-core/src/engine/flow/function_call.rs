@@ -328,6 +328,9 @@ impl Engine {
                     if frame.function_scope {
                         self.fiber.frame.env.pop_scope();
                     }
+                    // The callee's code position retires with its function
+                    // environment, including a rejected return or fallthrough.
+                    self.fiber.frame.cursor = frame.resume.clone();
                     return Some(frame);
                 }
                 FlowControlStackEntryKind::Loop { .. }

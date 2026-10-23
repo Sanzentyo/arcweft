@@ -25337,3 +25337,91 @@ constructor. No runtime was started from either failed catalog and neither is
 passing evidence. Corrected owner/consumer validation is pending at this entry.
 The earlier body-coordinate and R2342 full-suite evidence retain their original
 source identity and do not validate this changed executable state.
+
+The root-position checkpoint was normally pushed as
+`7b55dcc5f4f5a3f0dbe4f73ac1341eeebb380498`, parent
+`6dbfe275017964508c06470aebe6846901a12fae`, tree
+`ba53cb641409e89ff4028729dd02c7e476d8b315`, raw patch SHA256
+`a776a4ee57bc72933045584daf171f48afdae72785e979d8a61193552a2aa9a8`.
+All 25 published blobs, 3,977 working inputs, the exact held patch and empty
+index were verified with no drift. This was an explicitly permitted intermediate
+checkpoint while the same frozen inputs were compiling, not a passing claim.
+
+R2352 corrected eight-library catalog passed (Cargo 7m25s). R2353 executed all
+2,463 selected cases: 2,462 passed, one failed, zero skipped, 48.357s; actual
+nextest exit 100 and outer queue exit 1. All source, case and eight executable
+pins matched, and the queue is terminal. All three new regressions passed. The
+failure is `aot_exhausted_executable_frame_retains_native_fallthrough_rejection_and_cleanup`:
+its unchanged two-operation Native/AOT failure assertions passed, but rollback
+then rejected a callee code position left after its function environment was
+unwound. Retiring any function frame now restores its original caller position
+at the same owning boundary, including rejected return/fallthrough and full
+unwind. The existing regression additionally checks that a retired invocation
+root leaves no executable position; its budget and failure/cleanup/restore
+conditions are preserved. Validation of this repair is pending below.
+
+R2354 repair catalog passed (Cargo 1m55s). R2355 then executed all 2,463 cases
+across the same eight named library consumers: 2,463 passed, zero failed, zero
+skipped, 33.903s, actual and outer exit 0. The required original expression,
+scalar full-formal/one-operation/restore, joined-return, invalid-range,
+function-owner and AOT identity regressions were selected explicitly. The
+fallthrough regression retains its original Native/AOT executed_ops=2 and all
+failure/cleanup/repeated-rollback assertions. All 3,977 input hashes, case names
+and eight executable hashes matched. The runtime queue and pin window are now
+closed. Workspace check, Clippy and the structure gate are running as R2356–58;
+no completed result is claimed for those checks here.
+
+Ownership review: the typed code-position owner is Core's new private
+engine/code_cursor.rs (174 physical LOC, 6,493 bytes at the checkpoint); its public
+opaque type replaces the prior public raw numeric cursor, and its constructors
+and resolution stay inside the engine. engine.rs remains the existing shared
+execution-state/ingress/scheduler owner (5,691 physical LOC, 227,376 bytes, down
+from 5,720 LOC), with implementation behavior in its responsibility modules.
+No Cargo, feature, dependency-direction, I/O or contract-version change occurs.
+The function, rollback and numeric consumers use that same position authority;
+AOT's index is derived metadata for its existing blocks, preserving source order.
+The large engine's queued-code snapshot projection is explicitly slated for
+replacement in the next complete queue migration, not arbitrary file splitting.
+
+Next, migrate the pending queue as original source-body ranges plus a closed
+runtime-continuation algebra. A queued range resolves only through its original
+owner and structural operation/body roles; function/caller, Match guard, Await
+observer, formatter and line/Thread producers must use the same coordinates.
+Runtime Bind/loop-next/formatter/scheduled-scope/observer continuations retain
+runtime state separately. Preserve real scope/bind/next charges and original
+logical pending counts, budgets, numeric span barriers and source/capture order.
+Replace the raw pending consumers with an honest borrowed source/resume view,
+remove all nine engine-only FlowOp variants and the Static/unevaluated-expression
+rollback fallback, and validate the complete state switch across the actual
+consumer closure. Source EnterScope/ExitScope/ExitScopeBind remain canonical
+source grammar. The wider goal and previously recorded full-suite failures,
+returned Thread lowering, real Native/AWBC/save, View/Presentation/limits and final
+Tier 2/workspace/visual acceptance remain open; these root-position passes do not
+complete them.
+
+R2356 workspace all-target/all-feature locked check passed (Cargo 2m53s).
+R2357 workspace all-target/all-feature locked Clippy passed (Cargo 6m05s), with
+existing warnings retained. R2358 canonical structure gate passed with no blocking
+violation; existing size/test-layout review triggers remain visible. The owning
+code-position decomposition and unchanged dependency direction are reviewed
+above. The quality queue is terminal (outer exit 0), and no Cargo/nextest process
+or executable pin from these validation queues remains live. The only later
+edits are this evidence and the maintained root-restoration wording; tested Rust
+and test inputs remain unchanged. All required wide final-goal matrices remain
+open as already recorded; the root position cut does not replace them.
+
+R2357 also reported one new style-only collapsible_if diagnostic at rollback's
+active-function owner check. The equivalent let-chain now expresses the same
+predicate, branch order and rejection; no ownership, resource check or test
+condition is relaxed. R2359 repeats the final Core all-target/all-feature locked
+Clippy for this narrow spelling repair. R2355's functional evidence and R2356–58's
+wider integration/structure evidence are reused for the otherwise unchanged
+implementation; the earlier input-hash audit is not relabeled as a run of this
+later spelling. R2358 measured 3,197 files, 3,067 Rust files, 1,733,890 physical
+Rust LOC, 97 packages, 376 review triggers and zero blocking violations.
+
+R2359 final Core all-target/all-feature locked Clippy passed (Cargo 1m18s);
+the introduced collapsible_if diagnostic is removed. Existing Core warnings
+remain visible. Its process is terminal, and there are no retained validation
+jobs or runtime pins. This final repair cut includes the caller-position unwind,
+its strengthened Native/AOT regression, maintained wording and actual evidence.

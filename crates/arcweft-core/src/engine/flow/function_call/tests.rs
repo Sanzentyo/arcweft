@@ -1121,6 +1121,10 @@ fn aot_exhausted_executable_frame_retains_native_fallthrough_rejection_and_clean
             engine.fiber.frame.control_stack.is_empty(),
             "the original function frame is unwound"
         );
+        assert!(
+            engine.fiber.frame.cursor.is_none(),
+            "the retired root function leaves no executable code position"
+        );
         assert!(engine.fiber.frame.pending_ops.is_empty());
         assert!(engine.take_function_result(site).unwrap().is_none());
         let failed = engine.inert_rollback_image().unwrap();
