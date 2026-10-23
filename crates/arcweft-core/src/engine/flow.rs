@@ -635,7 +635,6 @@ impl Engine {
                     content,
                     target: Some(target_value),
                     task_group,
-                    resume: self.fiber.frame.cursor.clone(),
                     captures: capture_locals,
                     task_inputs: Box::new([]),
                     execution: super::NativeFlowExecutionFrame::running(
@@ -677,19 +676,11 @@ impl Engine {
                     id: id.clone(),
                     options: options.clone(),
                 });
-                self.fiber.frame.status = FlowFiberStatus::Choice(ChoiceState {
-                    id,
-                    options,
-                    resume: self.resume_cursor(next_op_index),
-                });
+                self.advance_if_needed(next_op_index);
+                self.fiber.frame.status = FlowFiberStatus::Choice(ChoiceState { id, options });
             }
             FlowOp::Await { .. } => {
-                self.start_need_await(
-                    source_site,
-                    self.resume_cursor(next_op_index),
-                    output,
-                    pure_backend,
-                );
+                self.start_need_await(source_site, next_op_index, output, pure_backend);
             }
             FlowOp::StartNeedProducer { .. } => {
                 let FlowOp::StartNeedProducer { binding, target } = op.into_owned() else {
@@ -707,13 +698,7 @@ impl Engine {
                     unreachable!("selected aggregate await");
                 };
                 self.emit_line_effects(pending, output, pure_backend);
-                self.start_await_many_state(
-                    binding,
-                    target,
-                    self.resume_cursor(next_op_index),
-                    output,
-                    pure_backend,
-                );
+                self.start_await_many_state(binding, target, next_op_index, output, pure_backend);
             }
             FlowOp::HostCall { binding, target } => {
                 let arguments = match self.evaluate_host_call_arguments(&target.args, pure_backend)
@@ -767,11 +752,11 @@ impl Engine {
                     }
                 };
                 output.requests.host_calls.push(request);
+                self.advance_if_needed(next_op_index);
                 self.fiber.frame.status = FlowFiberStatus::HostCall(HostCallState {
                     binding: binding.clone(),
                     id,
                     result_type: super::HostCallResultType::Plan(target.result),
-                    resume: self.resume_cursor(next_op_index),
                 });
             }
             FlowOp::ProjectCall { site } => {
@@ -782,7 +767,6 @@ impl Engine {
                 args,
                 result,
             } => {
-                let resume = self.resume_cursor(next_op_index);
                 let application = (|| {
                     let callee = self.evaluate_expr_with_backend(callee, pure_backend)?;
                     let args = self.evaluate_function_call_args(args, pure_backend)?;
@@ -790,7 +774,7 @@ impl Engine {
                         callee,
                         args,
                         result.clone(),
-                        resume,
+                        next_op_index,
                         output,
                         pure_backend,
                     )
@@ -1190,13 +1174,12 @@ impl Engine {
                 return;
             }
         };
-        let resume = self.resume_cursor(next_op_index);
         if let Err(error) = self.start_callable_group(
             callable,
             arguments,
             attached,
             row.result().clone(),
-            resume,
+            next_op_index,
             output,
             pure_backend,
         ) {
@@ -1429,21 +1412,6 @@ impl Engine {
 
     pub(super) fn advance_host_call_sequence(&mut self) {
         self.next_host_call_sequence = self.next_host_call_sequence.saturating_add(1);
-    }
-
-    fn resume_cursor(&self, next_op_index: Option<usize>) -> Option<NativeCodeCursor> {
-        let next = next_op_index?;
-        let mut cursor = self
-            .fiber
-            .frame
-            .function_root_position()
-            .expect("a root continuation is prepared from its queued original root")
-            .clone();
-        assert!(
-            cursor.set_operation(next),
-            "source continuation stays inside its admitted code range"
-        );
-        Some(cursor)
     }
 
     pub(super) fn push_scope_frame(&mut self, identity: RuntimeScopeIdentity) {

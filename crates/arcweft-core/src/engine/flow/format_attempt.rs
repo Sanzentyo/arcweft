@@ -35,7 +35,6 @@ impl Engine {
         if let Some(active) = frame.active.take() {
             self.fiber.frame.env.pop_scope();
             self.fiber.frame.pending_ops = active.caller_pending_ops;
-            self.fiber.frame.cursor = active.resume;
         }
         true
     }
@@ -121,30 +120,32 @@ impl Engine {
                 }),
             });
         }
-        let resume = self.resume_cursor(next_op_index);
-        let caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FormatAttempt(frame),
-        }) = self.fiber.frame.control_stack.last_mut()
+        }) = self.fiber.frame.control_stack.last()
         else {
-            self.fiber.frame.pending_ops = caller_pending_ops;
             return Err(RuntimeEvalError::DialogueContentConstruction(
                 "format operand has no current attempt frame".into(),
             ));
         };
         if frame.attempt != attempt || frame.next_operand != ordinal || frame.active.is_some() {
-            self.fiber.frame.pending_ops = caller_pending_ops;
             return Err(RuntimeEvalError::DialogueContentConstruction(
                 "format operands are out of source order".into(),
             ));
         }
+        self.advance_if_needed(next_op_index);
+        let caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
+        let Some(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::FormatAttempt(frame),
+        }) = self.fiber.frame.control_stack.last_mut()
+        else {
+            unreachable!("the prepared formatter frame remains current during commit")
+        };
         frame.active = Some(NativeFormatOperandFrame {
             ordinal,
-            resume: resume.clone(),
             caller_pending_ops,
         });
         self.fiber.frame.env.push_scope_with_capacity(0);
-        self.fiber.frame.cursor = resume;
         self.fiber.frame.pending_ops = work.into_iter().flatten().collect();
         Ok(())
     }
@@ -199,7 +200,6 @@ impl Engine {
         frame.next_operand = ordinal + 1;
         self.fiber.frame.env.pop_scope();
         self.fiber.frame.pending_ops = active.caller_pending_ops;
-        self.fiber.frame.cursor = active.resume;
         Ok(())
     }
 
@@ -257,7 +257,6 @@ impl Engine {
         }
         self.fiber.frame.env.pop_scope();
         self.fiber.frame.pending_ops = active.caller_pending_ops;
-        self.fiber.frame.cursor = active.resume;
         self.fiber.frame.status = FlowFiberStatus::Running;
         true
     }

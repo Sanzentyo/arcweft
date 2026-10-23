@@ -235,8 +235,7 @@ fn joined_original_function_return_expression_and_fallthrough_do_not_advance() {
             RuntimeCodeBodyRef::Operations(_) => continue,
         };
         for position in positions {
-            let frame =
-                FunctionCallFrame::new(site, None, FunctionReturnContinuation::Function { site });
+            let frame = FunctionCallFrame::new(site, FunctionReturnContinuation::Function { site });
             let mut cursor =
                 super::NativeCodeCursor::root(&engine.plan, RuntimeCodeOwner::Function(site))
                     .unwrap();

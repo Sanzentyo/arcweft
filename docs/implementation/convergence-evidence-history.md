@@ -8905,3 +8905,17 @@ R2369 原本 Clippy log の提示コードには trailing whitespace が 3 行�
 - R2370 `cargo check -p arcweft-core --lib --all-features --locked`: **exit 101、22 errors／25 warnings**。[receipt](acceptance-evidence/task-final-r2370-native-unified-function-root-check.json)、[log](acceptance-evidence/task-final-r2370-native-unified-function-root-check.log)。全 error は削除した `frame.cursor` に対する E0609。dialogue、function／formatter の復帰、Host／Await／Choice 等の再開、rollback の code-owner 検証が旧参照を持つ。
 - freeze は3,998入力／変更9 source／保持14 tracked WIP、Core reverse53 と99 manifest/lock は変更なし、outside-owned／held drift 0。
 - nextest／runtime は未実行。ユーザーの途中 commit 方針に従う WIP。現在の source が稼働すると主張せず、前段 cut の PASS と Generic Match の既存受入を保持する。後続は caller／suspension の後続位置をキューへ揃え、rollback の function owner を実在する current／caller queue と環境から検証する。
+
+## Native caller and suspension queues — 2026-10-23
+
+基点 `e2519939403a7fea0a9ffd8e058d8936d53049b9` の parent は `a5ad3b4ae1cf0cb3b5461490878e08c082213355`、tree は `d4102e25390d60ca880e1d3e036fefa10af72ae4`、patch SHA256 は `a349bb03d36c7d33fdcb7fbff03c287802b30e3f9da2144f61e5a40c0e875f4f`。同公開は13 paths／4,000入力／保持14 tracked WIP、公開 blob と raw patch の drift 0、index empty を確認した。
+
+関数・formatter・Await／AwaitMany・HostCall／Choice・dialogue frame／publication disposition の retained resume cursor を除去した。呼び出し開始では入力準備後に caller の root を進め、callee の環境を退役させる時点で caller queue も復帰させる。戻り値・fallthrough が拒否された場合も callee のコードを caller 環境へ残さない。default の完了で元の call を二度進めず、部分適用の result binding が失敗した場合は root を進めない。待機開始では受入後に root を進め、再開で別 cursor を上書きしない。終端の finish は消費済み work を除く。
+
+rollback は元 program の認証後、current／formatter caller／function caller の実在するキューを逆順の関数環境へ照合する。必須 root の欠落・重複・別 function owner を拒否し、既存 scope visitor で同じ所有キューを参照する。visitor のエラー型を generic にして resource error を文字列へ潰さずに保持する。独立の code catalog、代替 root、source reconstruction は導入していない。
+
+- `cargo fmt -p arcweft-core`: exit 0。source diff check は PASS。
+- R2371 `cargo check -p arcweft-core --lib --all-features --locked`: **exit 101、1 error／23 warnings**。scope visitor callback の E0283 であり、String を返す既存 token 検証の callback 型を明示して修復した。[receipt](acceptance-evidence/task-final-r2371-native-root-caller-queues-check.json)、[log](acceptance-evidence/task-final-r2371-native-root-caller-queues-check.log)。
+- 上記の型修正と finish 時の work 消費後、R2372 `cargo check -p arcweft-core --all-targets --all-features --locked`: **exit 101、lib test の17 errors／31 warnings（18重複）**。[receipt](acceptance-evidence/task-final-r2372-native-root-queue-all-target-check.json)、[log](acceptance-evidence/task-final-r2372-native-root-queue-all-target-check.log)。本番側の型移行は完了し、全17 errors は旧 cursor／resume の fixture 参照。全 check の合格とは呼ばない。
+- freeze は4,000入力／変更17 source／保持14 tracked WIP、元 graph の Core reverse53 と99 manifest/lock は変更なし、outside-owned／held drift 0。
+- root 切替後の nextest／runtime は未実行。前段 `a5ad3b4ae1cf0cb3b5461490878e08c082213355` の Core 1,955 PASS と Generic Match の既存受入を維持し、この WIP の runtime 成功に読み替えない。

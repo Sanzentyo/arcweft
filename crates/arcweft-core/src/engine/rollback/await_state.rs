@@ -67,9 +67,6 @@ where
                 "native Await item type differs from its original source",
             ));
         }
-        if let Some(cursor) = &self.resume {
-            cursor.admit_retained(admission)?;
-        }
         let handle = RuntimeNeedView::from(&self.handle);
         handle.admit_retained(admission)?;
         let item = source.item_type;
@@ -142,9 +139,6 @@ where
             return Err(invalid(
                 "native AwaitMany inventories disagree with its frontier",
             ));
-        }
-        if let Some(cursor) = &self.resume {
-            cursor.admit_retained(admission)?;
         }
         let base = RuntimeNeedView::from(&self.base);
         base.admit_retained(admission)?;

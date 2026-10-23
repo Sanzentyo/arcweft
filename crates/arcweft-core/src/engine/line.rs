@@ -118,7 +118,6 @@ impl Engine {
                     if frame.function_scope {
                         self.fiber.frame.env.pop_scope();
                     }
-                    self.fiber.frame.cursor = frame.resume;
                 }
                 FlowControlStackEntryKind::FormatAttempt(frame) => {
                     if frame.active.is_some() {
@@ -138,6 +137,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        self.fiber.frame.pending_ops.clear();
         self.drain_root_cleanups(output, pure_backend);
         output.flow_events.push(FlowEvent::Done);
         self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);

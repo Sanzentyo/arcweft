@@ -438,7 +438,6 @@ impl AwbcProductStepExecutor {
                     options: active
                         .map(|active| active.options.clone())
                         .unwrap_or_default(),
-                    resume: None,
                 })
             }
             FiberSuspensionReason::Await {
@@ -451,7 +450,6 @@ impl AwbcProductStepExecutor {
                 source_context: crate::value::RuntimeScopeTypeContext::Lexical,
                 source: crate::engine::AwaitSource::Awbc(*item_type),
                 handle: need.clone(),
-                resume: None,
                 observed_through: self
                     .need_publications
                     .get(&(self.facade_fiber.persistent_id, need.correlation()))
@@ -485,7 +483,6 @@ impl AwbcProductStepExecutor {
                     crate::engine::HostCallResultType::Unit,
                     crate::engine::HostCallResultType::Awbc,
                 ),
-            resume: None,
         })
     }
 

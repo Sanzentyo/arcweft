@@ -65,7 +65,6 @@ pub(crate) struct DialogueActivationFrame<
     pub(in crate::engine) content: crate::runtime_id::RuntimeDialogueContentPlanId,
     pub(in crate::engine) target: Option<O>,
     pub(in crate::engine) task_group: crate::runtime_id::RuntimeLineTaskGroupId,
-    pub(in crate::engine) resume: Option<super::super::NativeCodeCursor>,
     /// Source-order capture coordinates; the values themselves live only in
     /// `execution.env` and may be affine while activation executes.
     pub(in crate::engine) captures: Box<[RuntimeLocalDeclarationId]>,
@@ -189,7 +188,6 @@ impl Clone for NativeDialogueActivationFrameRollbackImage {
             content: self.content,
             target: self.target.clone(),
             task_group: self.task_group,
-            resume: self.resume.clone(),
             captures: self.captures.clone(),
             task_inputs: self.task_inputs.clone(),
             execution: self.execution.clone(),
@@ -473,7 +471,6 @@ impl DialogueActivationFrame {
                 })
                 .transpose()?,
             task_group: self.task_group,
-            resume: self.resume.clone(),
             captures: self.captures.clone(),
             task_inputs: self
                 .task_inputs
@@ -547,7 +544,6 @@ impl DialogueActivationFrame {
             content: image.content,
             target,
             task_group: image.task_group,
-            resume: image.resume,
             captures: image.captures,
             task_inputs: image
                 .task_inputs
@@ -974,7 +970,6 @@ pub(crate) struct DialogueActivationTransaction {
 #[derive(Debug, PartialEq)]
 pub(crate) enum DialogueCommitDisposition {
     Published {
-        resume: Option<super::super::NativeCodeCursor>,
         bindings: Vec<crate::value::RuntimeLocalBinding>,
     },
     Failed {

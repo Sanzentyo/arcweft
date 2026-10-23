@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "e2519939403a7fea0a9ffd8e058d8936d53049b9",
+  "name": "task-final-r2372-native-root-queue-all-target-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2372-native-root-queue-all-target-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T04:01:20.7981922Z",
+  "finishedAt": "2026-10-23T04:02:01.9884777Z"
+}

@@ -303,7 +303,6 @@ impl Engine {
             parameters,
             FunctionCallFrame::new(
                 site,
-                None,
                 match root {
                     NativeInvocationRoot::Program(program) => {
                         FunctionReturnContinuation::Program { program }
@@ -313,6 +312,7 @@ impl Engine {
                     }
                 },
             ),
+            None,
         )
         .expect("complete borrowed preflight admits the same owned program inputs");
     }

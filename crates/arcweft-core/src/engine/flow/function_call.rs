@@ -7,12 +7,11 @@ use std::sync::Arc;
 
 use crate::engine::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberStatus, FunctionCallFrame,
-    FunctionReturnContinuation, NativeCodeCursor, RuntimeCallBackend, RuntimeEvalError,
-    RuntimeStepOutput, runtime_value_label,
+    FunctionReturnContinuation, RuntimeCallBackend, RuntimeEvalError, RuntimeStepOutput,
+    runtime_value_label,
 };
 use crate::pattern::RuntimePattern;
 use crate::plan::RuntimeFunctionSiteBody;
-use crate::plan::code::RuntimeCodeOwner;
 use crate::value::{RuntimeFunctionApplyError, RuntimeValue};
 
 impl Engine {
@@ -21,6 +20,7 @@ impl Engine {
         captures: Vec<RuntimeValue>,
         args: Vec<RuntimeValue>,
         mut frame: FunctionCallFrame,
+        next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
@@ -42,7 +42,7 @@ impl Engine {
             // original budgeted frame remains active. Only an admitted AOT/JIT
             // capability can complete this physical fast path.
             frame.type_instantiation = declaration.type_instantiation;
-            frame.caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
+            self.advance_if_needed(next_op_index);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
         }
@@ -55,11 +55,11 @@ impl Engine {
         {
             let value = self.evaluate_function_site(site, captures, args, pure_backend)?;
             frame.type_instantiation = declaration.type_instantiation;
-            frame.caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
+            self.advance_if_needed(next_op_index);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
         }
-        self.stage_admitted_function_site_call(declaration, captures, args, frame)?;
+        self.stage_admitted_function_site_call(declaration, captures, args, frame, next_op_index)?;
         if executable
             && let Ok(function) = crate::pure::RuntimePureFunctionRef::resolve(&plan_owner, site)
             && function.scalar_eval_supported
@@ -81,11 +81,13 @@ impl Engine {
         captures: Vec<RuntimeValue>,
         args: Vec<RuntimeValue>,
         mut frame: FunctionCallFrame,
+        next_op_index: Option<usize>,
     ) -> Result<(), RuntimeEvalError> {
         let site = declaration.site();
         debug_assert_eq!(frame.site, site);
         let pending_ops = self.prepare_function_root_work(site)?;
         let staged = declaration.stage_owned_inputs(captures, args)?;
+        self.advance_if_needed(next_op_index);
         frame.type_instantiation = declaration.type_instantiation;
         self.fiber.frame.env.push_function_scope(
             site,
@@ -139,7 +141,6 @@ impl Engine {
                 return;
             }
         }
-        self.fiber.frame.pending_ops = frame.caller_pending_ops;
         match frame.continuation {
             FunctionReturnContinuation::RootInitializer { entry } => {
                 if let Err(error) = self.complete_root_initializer(&entry, value, output) {
@@ -160,7 +161,6 @@ impl Engine {
                 }
                 match self.finish_root_reduction(&entry, Ok(value), output) {
                     Ok(()) => {
-                        self.fiber.frame.cursor = None;
                         self.fiber.frame.status =
                             FlowFiberStatus::Done(crate::engine::FlowExit::Done);
                     }
@@ -182,7 +182,6 @@ impl Engine {
                     );
                     return;
                 }
-                self.fiber.frame.cursor = None;
                 self.invocation_result =
                     Some((crate::engine::NativeInvocationRoot::Program(program), value));
                 self.fiber.frame.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
@@ -201,7 +200,6 @@ impl Engine {
                     );
                     return;
                 }
-                self.fiber.frame.cursor = None;
                 self.invocation_result =
                     Some((crate::engine::NativeInvocationRoot::Function(site), value));
                 self.fiber.frame.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
@@ -211,7 +209,7 @@ impl Engine {
                     pending,
                     value,
                     result,
-                    frame.resume,
+                    None,
                     output,
                     pure_backend,
                 ) {
@@ -219,7 +217,7 @@ impl Engine {
                 }
             }
             FunctionReturnContinuation::Bind { result } => {
-                self.complete_function_call_result(&result, frame.resume, value, output);
+                self.complete_function_call_result(&result, None, value, output);
             }
         }
     }
@@ -227,13 +225,13 @@ impl Engine {
     pub(super) fn complete_function_call_result(
         &mut self,
         result: &RuntimePattern,
-        resume: Option<NativeCodeCursor>,
+        next_op_index: Option<usize>,
         value: RuntimeValue,
         output: &mut RuntimeStepOutput,
     ) {
         match self.try_bind_pattern_owned(result, value) {
             Ok(None) => {
-                self.fiber.frame.cursor = resume;
+                self.advance_if_needed(next_op_index);
                 self.fiber.frame.status = FlowFiberStatus::Running;
             }
             Ok(Some(value)) => self.fail_eval(
@@ -267,13 +265,13 @@ impl Engine {
                     self.fiber.frame.env.pop_scope();
                     self.emit_scope_cleanups(cleanups, output, pure_backend);
                 }
-                FlowControlStackEntryKind::FunctionCall(frame) => {
+                FlowControlStackEntryKind::FunctionCall(mut frame) => {
                     if frame.function_scope {
                         self.fiber.frame.env.pop_scope();
                     }
-                    // The callee's code position retires with its function
-                    // environment, including a rejected return or fallthrough.
-                    self.fiber.frame.cursor = frame.resume.clone();
+                    // Retire code and environment together before checking the
+                    // result, including a rejected return or fallthrough.
+                    self.fiber.frame.pending_ops = std::mem::take(&mut frame.caller_pending_ops);
                     return Some(frame);
                 }
                 FlowControlStackEntryKind::Loop { .. }

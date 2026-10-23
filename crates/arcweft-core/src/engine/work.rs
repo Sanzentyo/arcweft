@@ -16,6 +16,33 @@ pub(super) type NativePendingWorkRollbackImage = NativePendingWork<
 pub(super) trait NativeStoredWork {
     fn logical_count(&self) -> Option<usize>;
 
+    fn function_root_owner(&self) -> Option<crate::plan::code::RuntimeCodeOwner>;
+
+    fn queued_function_root_owner(
+        work: &std::collections::VecDeque<Self>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<
+        Option<crate::plan::code::RuntimeCodeOwner>,
+        crate::value::AwbcRuntimeValueSnapshotError,
+    >
+    where
+        Self: Sized,
+    {
+        admission.status()?;
+        if work.is_empty() {
+            return Ok(None);
+        }
+        admission.validate_metadata_collection(work.len())?;
+        let mut roots = work.iter().filter_map(Self::function_root_owner);
+        let root = roots.next();
+        if roots.next().is_some() {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "native code context retains multiple original function roots".into(),
+            });
+        }
+        Ok(root)
+    }
+
     fn admit_work(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -542,6 +569,16 @@ impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue> N
 {
     fn logical_count(&self) -> Option<usize> {
         self.logical_pending_count()
+    }
+
+    fn function_root_owner(&self) -> Option<crate::plan::code::RuntimeCodeOwner> {
+        match &self.kind {
+            NativePendingWorkKind::Source {
+                position,
+                role: NativeSourceRangeRole::FunctionRoot,
+            } => Some(position.owner()),
+            _ => None,
+        }
     }
 
     fn admit_work(

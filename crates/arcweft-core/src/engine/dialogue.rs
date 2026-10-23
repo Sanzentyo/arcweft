@@ -158,9 +158,8 @@ impl Engine {
 
     fn apply_dialogue_commit_disposition(&mut self, disposition: DialogueCommitDisposition) {
         match disposition {
-            DialogueCommitDisposition::Published { resume, bindings } => {
+            DialogueCommitDisposition::Published { bindings } => {
                 self.fiber.frame.env.bind_all(bindings);
-                self.fiber.frame.cursor = resume;
                 self.fiber.frame.status = super::FlowFiberStatus::Running;
             }
             DialogueCommitDisposition::Failed { error } => {
@@ -2618,9 +2617,8 @@ impl Engine {
         .expect("prepared publication pattern remains valid")
         .expect("publication pattern passed borrowed owning preflight");
         state.line_task = DialogueLineTaskState::Closed;
-        let resume = state.resume.take();
         transaction
-            .stage_disposition(DialogueCommitDisposition::Published { resume, bindings })
+            .stage_disposition(DialogueCommitDisposition::Published { bindings })
             .expect("prepared publication has a vacant disposition");
         Ok(DialoguePublicationOutcome::Published(proof))
     }

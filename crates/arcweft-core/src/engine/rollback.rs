@@ -4,7 +4,7 @@ use super::NativePendingWork;
 use super::work::{NativePendingWorkKind, NativeRuntimeContinuation, NativeStoredWork};
 use super::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberOwner, FlowFiberStatus,
-    FunctionCallFrame, FunctionReturnContinuation, NativeCodeCursor, NativeEngineRollbackImage,
+    FunctionCallFrame, FunctionReturnContinuation, NativeEngineRollbackImage,
     NativeFlowExecutionFrame, NativeFormatAttemptFrame, NativeInvocationRoot, eval,
 };
 use crate::runtime_id::DialogueActivationId;
@@ -231,9 +231,6 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
                     "native formatter active operand differs from its source-order frontier",
                 ));
             }
-            if let Some(cursor) = &active.resume {
-                cursor.admit_retained(admission)?;
-            }
             O::admit_queue(&active.caller_pending_ops, admission, binding)?;
         }
         for (index, (value, operand)) in self.values.iter().zip(manifest.operands()).enumerate() {
@@ -350,8 +347,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                     && matches!(
                         root.active().phase,
                         crate::root::RootPhase::Initializing { .. }
-                    )
-                    && self.cursor.is_some() =>
+                    ) =>
             {
                 Ok(())
             }
@@ -367,8 +363,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                         reducer: crate::root::RootReducerPhase::Evaluating,
                         ..
                     }
-                )
-                && self.cursor.is_some() =>
+                ) =>
             {
                 Ok(())
             }
@@ -422,21 +417,6 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         }
         admission.validate_metadata_collection(self.stream_states.len())?;
         admission.validate_metadata_collection(self.control_stack.len())?;
-        if let Some(function) = self
-            .control_stack
-            .iter()
-            .rev()
-            .find_map(ScopeControl::function_context)
-            && self.cursor.as_ref().map(NativeCodeCursor::owner)
-                != Some(crate::plan::code::RuntimeCodeOwner::Function(function.site))
-        {
-            return Err(invalid(
-                "active function differs from its original code owner".into(),
-            ));
-        }
-        if let Some(cursor) = &self.cursor {
-            cursor.admit_retained(admission)?;
-        }
         if let Some(state) = &self.await_observer {
             state.admit_suspended_values(admission, self.env.function_instantiation())?;
         }
@@ -482,20 +462,16 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             message: "native function frames disagree with their retained environment contexts"
                 .into(),
         };
-        if let Some(cursor) = &self.cursor
-            && let crate::plan::code::RuntimeCodeOwner::Function(site) = cursor.owner()
-            && self
-                .env
-                .function_contexts()
-                .next_back()
-                .map(|(site, _)| site)
-                != Some(site)
-        {
-            return Err(invalid());
-        }
+        let mut root = O::queued_function_root_owner(&self.pending_ops, admission)?;
         let mut contexts = self.env.function_contexts().rev().peekable();
         for entry in self.control_stack.iter().rev() {
             if let Some(frame) = entry.function_context() {
+                if root != Some(crate::plan::code::RuntimeCodeOwner::Function(frame.site)) {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "active function differs from its original code owner".into(),
+                    });
+                }
+                root = None;
                 admission.validate_metadata(&(frame.site.get(), frame.entered))?;
                 let Some((site, binding)) = contexts.next() else {
                     return Err(invalid());
@@ -507,6 +483,21 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                     return Err(invalid());
                 }
             }
+            entry.visit_scope_state(|state| {
+                if let ScopeState::Pending(work) = state {
+                    let pending_root = O::queued_function_root_owner(work, admission)?;
+                    if let Some(pending_root) = pending_root {
+                        if root.replace(pending_root).is_some() {
+                            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                                message:
+                                    "native code context retains multiple original function roots"
+                                        .into(),
+                            });
+                        }
+                    }
+                }
+                Ok(())
+            })?;
             let binding = contexts
                 .peek()
                 .and_then(|(_, binding)| binding.map(Arc::as_ref));
@@ -514,7 +505,13 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         }
         // Callback and deferred child roots retain one function environment
         // without a return frame. Nested calls above it still zip exactly.
-        if contexts.next().is_some() && contexts.next().is_some() {
+        let outer = contexts.next();
+        if contexts.next().is_some()
+            || root.is_some_and(|root| {
+                Some(root)
+                    != outer.map(|(site, _)| crate::plan::code::RuntimeCodeOwner::Function(site))
+            })
+        {
             return Err(invalid());
         }
         Ok(())
@@ -572,10 +569,10 @@ pub(super) trait ScopeControl<O> {
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>;
-    fn visit_scope_state(
+    fn visit_scope_state<E>(
         &self,
-        visit: impl FnMut(ScopeState<'_, O>) -> Result<(), String>,
-    ) -> Result<(), String>;
+        visit: impl FnMut(ScopeState<'_, O>) -> Result<(), E>,
+    ) -> Result<(), E>;
 }
 
 impl<O, P, V> ScopeControl<O>
@@ -621,15 +618,11 @@ where
             Self::FormatAttempt(frame) => frame.admit_owned_values(admission, binding),
             Self::FunctionCall(frame) => {
                 frame.admit_code_position(admission)?;
-                if let Some(cursor) = &frame.resume {
-                    cursor.admit_retained(admission)?;
-                }
                 O::admit_queue(&frame.caller_pending_ops, admission, binding)?;
                 frame
                     .continuation
                     .admit_header_and_packet(frame.site, admission)
             }
-            _ => Ok(()),
         }
     }
 
@@ -653,10 +646,10 @@ where
         }
     }
 
-    fn visit_scope_state(
+    fn visit_scope_state<E>(
         &self,
-        mut visit: impl FnMut(ScopeState<'_, O>) -> Result<(), String>,
-    ) -> Result<(), String> {
+        mut visit: impl FnMut(ScopeState<'_, O>) -> Result<(), E>,
+    ) -> Result<(), E> {
         match self {
             Self::Scope {
                 origin: crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
@@ -687,10 +680,10 @@ impl ScopeControl<NativePendingWork> for FlowControlStackEntry {
         self.kind.function_context()
     }
 
-    fn visit_scope_state(
+    fn visit_scope_state<E>(
         &self,
-        visit: impl FnMut(ScopeState<'_, NativePendingWork>) -> Result<(), String>,
-    ) -> Result<(), String> {
+        visit: impl FnMut(ScopeState<'_, NativePendingWork>) -> Result<(), E>,
+    ) -> Result<(), E> {
         self.kind.visit_scope_state(visit)
     }
 }
@@ -737,7 +730,7 @@ impl<V, N, P, R, FV, FP, O, C, A, S, D>
                     && token.ordinal().get() < self.next_scheduled_scope_sequence
             };
             for entry in &fiber.frame.control_stack {
-                entry.visit_scope_state(|state| {
+                entry.visit_scope_state::<String>(|state| {
                     if let ScopeState::Frame(token) = state
                         && (!valid(token) || !opened.insert(token))
                     {

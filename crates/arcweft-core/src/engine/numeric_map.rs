@@ -454,11 +454,6 @@ impl Engine {
         elided: &[Local],
     ) -> bool {
         use super::{FlowControlStackEntryKind as Control, FunctionReturnContinuation as Return};
-        let cursor_avoids = |cursor: &super::NativeCodeCursor| {
-            cursor.operations(plan).is_some_and(|ops| {
-                operations_avoid_locals(plan, &ops.iter().collect::<Vec<_>>(), elided)
-            })
-        };
         if !operations_avoid_locals(plan, ops, elided)
             || !pending_work_avoids_locals(
                 plan,
@@ -491,7 +486,6 @@ impl Engine {
                         Return::CallableDefault { .. } => false,
                     };
                     continuation_avoids
-                        && frame.resume.as_ref().is_none_or(cursor_avoids)
                         && pending_work_avoids_locals(plan, frame.caller_pending_ops.iter(), elided)
                 }
                 Control::Loop { .. }

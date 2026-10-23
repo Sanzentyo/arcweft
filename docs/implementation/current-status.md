@@ -7,7 +7,8 @@
 Native child queue 移行は `87bd6493162454d19f57c6341d9db3020b41847f` として公開した。
 queue reader／Await 移行は `d64d236091748a13b7b3f25f535f08a53e0dec23` として公開した。
 元コード fixture と空 range の処理は `a5ad3b4ae1cf0cb3b5461490878e08c082213355` で公開・検証した。
-その後の独立 root cursor 除去と R2370 の失敗を下記に反映した。
+独立 root cursor の除去は `e2519939403a7fea0a9ffd8e058d8936d53049b9` で公開した。
+その後の caller／待機キュー統合と R2371／R2372 の結果を下記に反映した。
 
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
 [仕様索引](../README.md)、過去の実行結果・公開 SHA は
@@ -40,7 +41,7 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | Need／TaskPlan の共通 seal・Source admission | **各 cut は公開済み・全14の最終受入は未確認** | sealed `RuntimeTaskPlanTable`／非Serde `RuntimeTaskPlanRef`、元 program の Source lease と expected-key lookup がある。`748c8da92b6d7c5a2f9bddbac068f4b5948d0aa1` の Program capture role は R2275、8 owner／2,451 PASS。全 producer/builder/decoder/consumer の F/Q/C/E14・private-codec・View capability をまとめた最終公開／受入 receipt は今回確認できていない。`HostTaskRequest` の14 variant と `NeedProducerFamily` の10 tag は異なる分類であり、「14 family」という略記から未実装数を推定しない。 |
 | 構造的 nominal | **複数の境界は公開済み・最終 C6 監査は未確認** | record construction `c4ec6d1109ca37b222f7238fd345b3a17caea612`、snapshot/program authority `faff95041f0d36bd492918cce57bc65c0ef428e2`、private Variant carrier `1c994218a25444e14b58e1111f65581f8bbdd73a`、bounded task-image source `4c8844d70baf81ae7bb031766360738050875b35` が公開されている。最後の cut は Core 1,497 PASS、逆依存実行は6,633 PASS／57保持された FAIL。C1–C6 を一括して未実装とはしない。ownership-success／旧経路削除までの最終 C6 受入を確認できていないことと、個別境界の具体的な不具合を区別する。 |
 | 元 executable lease・Native root/callee 座標 | **当該修復は公開・検証済み** | `6a86816246cd8e1bfae8f8250324cdbf0a2c559a` の必須 program lease と、`1be0eb4d09a958b099225a1c7fbbd506afe39d26` の callee 退役処理。キュー切替前の修復入力で R2355 は8 library／2,463 PASS。現在のキュー移行全体の runtime 合格を意味しない。 |
-| Native の original-source queue／runtime continuation 移行 | **前段 Core cut は検証済み・root 切替はコンパイル要修復** | `a5ad3b4ae1cf0cb3b5461490878e08c082213355` では R2368 Core library 1,955/1,955 PASS、R2369 Core all-target Clippy exit 0（警告あり）。[実行監査](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.terminal-audit.json)。後続の WIP で独立 `NativeFlowExecutionFrame.cursor` を削除し、Flow／Goto／関数入口を `FunctionRoot` work に統合した。R2370 は復帰・rollback 等の旧フィールド参照22 errors、exit 101。[失敗ログ](acceptance-evidence/task-final-r2370-native-unified-function-root-check.log)。同利用側と runtime 専用の旧 `FlowOp` variant の移行、および全 reverse53 の受入はこの前段 PASS に含めない。 |
+| Native の original-source queue／runtime continuation 移行 | **前段 Core cut は検証済み・root キューのテスト移行中** | `a5ad3b4ae1cf0cb3b5461490878e08c082213355` では R2368 Core library 1,955/1,955 PASS、R2369 Core all-target Clippy exit 0（警告あり）。[実行監査](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.terminal-audit.json)。後続 WIP は独立 frame cursor と関数・formatter・待機等の resume cursor を除去し、current／caller queue と環境で function owner を照合する。本番側の型移行後、R2372 all-target check は旧フィールドを使う lib test の17 errors、exit 101。[失敗ログ](acceptance-evidence/task-final-r2372-native-root-queue-all-target-check.log)。root 切替後の runtime、旧 runtime-only `FlowOp` variant の削除、全 reverse53 の受入は前段 PASS に含めない。 |
 | Thread の返り値／返却 handle | **具体的な未達あり** | `crates/arcweft-runtime-plan/src/final_expr.rs` は `HirExprKind::Thread` を pure runtime expression として拒否する。返却された ThreadHandle の compiler 受入を、statement Thread の既存実装で代替しない。これは Generic Match の未達ではない。 |
 | AWBC の独立 Thread scheduling | **具体的な未達あり** | `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` の `FlowOp::Thread` は body を同じ frame の scope 内へ inline lowering する。独立 task/kernel の起動を証明しておらず、Native の program task 経路の成功を AWBC scheduling の成功へ読み替えない。 |
 | 公開 executor save | **バックエンドごとに異なる** | `crates/arcweft-core/src/executor.rs` の `snapshot_for_save` は Product AWBC を扱う一方、RuntimePlanVm／StructuredAot は `UnsupportedTier` を返す。Product の既存 save/restore の成功は保持し、Native 公開 save の未対応を別項目として扱う。 |
@@ -75,6 +76,8 @@ Generic Match の151件は run `119cbafe-0a01-419e-841f-b919f03d9578` と
 | R2368 Core library nextest run | **1,955 PASS／0 FAIL／0 skipped、exit 0、33.712秒** | 全 feature、3,988入力／1 executable／case set の drift 0。保持14 tracked WIP を含む固定 working tree で実行。[terminal audit](acceptance-evidence/task-final-r2368-native-original-fixture-owner-runtime.terminal-audit.json)。 |
 | R2369 Core all-target／all-feature／locked Clippy | **exit 0、警告あり** | lib test の警告は3,163（2,466重複）。警告ゼロとはしない。R2368 と同じ source。[receipt](acceptance-evidence/task-final-r2369-native-original-fixture-core-clippy.json)。 |
 | R2370 Core library all-feature／locked check | **exit 101、22 errors／25 warnings** | 独立 root cursor を除去した後続 WIP。復帰・rollback 等の旧参照に E0609。R2368 の入力と異なり、runtime は未実行。[receipt](acceptance-evidence/task-final-r2370-native-unified-function-root-check.json)。 |
+| R2371 同 Core library check | **exit 101、1 error／23 warnings** | scope visitor のエラー型推論 E0283。callback の型を明示して修復。[receipt](acceptance-evidence/task-final-r2371-native-root-caller-queues-check.json)。 |
+| R2372 Core all-target／all-feature／locked check | **exit 101、lib test の17 errors／31 warnings（18重複）** | 本番側の旧 cursor 参照は除去。残る error は旧 `cursor`／`resume` を使う fixture。root 切替後の runtime は未実行。[receipt](acceptance-evidence/task-final-r2372-native-root-queue-all-target-check.json)。 |
 
 旧ロードマップ、着手前の実装ガイド、重複 feature matrix、完了した runtime-boundary
 移行手順、旧レビュー依頼・設計 mirror は、現行契約への整理と検証履歴の保全後に削除した。

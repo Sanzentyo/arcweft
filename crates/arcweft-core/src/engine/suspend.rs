@@ -505,7 +505,6 @@ impl Engine {
                         need: state.handle.need_id(),
                         value: observed,
                     });
-                    self.fiber.frame.cursor = state.resume;
                     self.fiber.frame.status = FlowFiberStatus::Running;
                 }
                 Need::Cancelled => {
@@ -596,7 +595,6 @@ impl Engine {
                             need: state.handle.need_id(),
                             value: observed,
                         });
-                        self.fiber.frame.cursor = state.resume;
                         self.fiber.frame.status = FlowFiberStatus::Running;
                     }
                     RuntimeNeedProducerState::ReadyTransferred => {
@@ -832,7 +830,6 @@ impl Engine {
                         }
                     }
                 }
-                self.fiber.frame.cursor = state.resume;
                 self.fiber.frame.status = FlowFiberStatus::Running;
             }
             Err(error) => {
@@ -903,7 +900,6 @@ impl Engine {
         if let Some(target) = option.target {
             self.goto(&target, output, pure_backend);
         } else {
-            self.fiber.frame.cursor = state.resume;
             self.fiber.frame.status = FlowFiberStatus::Running;
         }
     }
@@ -911,7 +907,7 @@ impl Engine {
     pub(super) fn start_need_await(
         &mut self,
         source: super::code_cursor::NativeSourceOperation,
-        resume: Option<crate::engine::NativeCodeCursor>,
+        next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
@@ -971,6 +967,7 @@ impl Engine {
             );
             return;
         }
+        self.advance_if_needed(next_op_index);
         let task = Some(correlation.task_id);
         output.flow_events.push(FlowEvent::AwaitStarted {
             need: correlation.need,
@@ -984,7 +981,6 @@ impl Engine {
                 item_type,
             }),
             handle: need,
-            resume,
             observed_through: None,
             queued,
         };
@@ -1129,7 +1125,7 @@ impl Engine {
         &mut self,
         binding: Option<crate::pattern::RuntimePattern>,
         target: AwaitManyTarget,
-        resume: Option<crate::engine::NativeCodeCursor>,
+        next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
@@ -1217,13 +1213,13 @@ impl Engine {
             target,
             base,
             captured,
-            resume,
             next_index: 0,
             in_flight: Vec::new(),
             results: vec![None; items.len()],
             items,
         };
         if self.fill_await_many_queue(&mut state, output, pure_backend) {
+            self.advance_if_needed(next_op_index);
             self.commit_await_many_state(state, output);
         }
     }
@@ -1420,7 +1416,6 @@ impl Engine {
             need: state.base.need_id(),
             value: observed,
         });
-        self.fiber.frame.cursor = state.resume;
         self.fiber.frame.status = FlowFiberStatus::Running;
     }
 

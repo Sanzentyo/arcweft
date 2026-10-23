@@ -800,7 +800,6 @@ impl Clone for NativeFormatOperandRollbackImage {
     fn clone(&self) -> Self {
         Self {
             ordinal: self.ordinal,
-            resume: self.resume.clone(),
             caller_pending_ops: self.caller_pending_ops.clone(),
         }
     }
@@ -838,7 +837,6 @@ impl NativeFormatAttemptFrame {
                     |active| -> Result<NativeFormatOperandRollbackImage, String> {
                         Ok(NativeFormatOperandRollbackImage {
                             ordinal: active.ordinal,
-                            resume: active.resume.clone(),
                             caller_pending_ops: active
                                 .caller_pending_ops
                                 .iter()
@@ -880,7 +878,6 @@ impl NativeFormatAttemptFrame {
                 .map(|active| -> Result<NativeFormatOperandFrame, String> {
                     Ok(NativeFormatOperandFrame {
                         ordinal: active.ordinal,
-                        resume: active.resume.clone(),
                         caller_pending_ops: active
                             .caller_pending_ops
                             .into_iter()
@@ -896,7 +893,6 @@ impl NativeFormatAttemptFrame {
 #[derive(Debug, PartialEq)]
 pub(crate) struct NativeFormatOperandFrame<O = NativePendingWork> {
     pub(crate) ordinal: usize,
-    pub(crate) resume: Option<NativeCodeCursor>,
     pub(crate) caller_pending_ops: VecDeque<O>,
 }
 
@@ -909,7 +905,6 @@ pub(crate) struct FunctionCallFrame<
     site: crate::runtime_id::RuntimeFunctionSiteId,
     type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     function_scope: bool,
-    resume: Option<NativeCodeCursor>,
     caller_pending_ops: VecDeque<O>,
     continuation: FunctionReturnContinuation<P>,
 }
@@ -923,7 +918,6 @@ impl Clone for FunctionCallFrameRollbackImage {
             site: self.site,
             type_instantiation: self.type_instantiation.clone(),
             function_scope: self.function_scope,
-            resume: self.resume.clone(),
             caller_pending_ops: self.caller_pending_ops.clone(),
             continuation: self.continuation.clone(),
         }
@@ -949,7 +943,6 @@ impl FlowControlStackEntry {
                     site: frame.site,
                     type_instantiation: frame.type_instantiation.clone(),
                     function_scope: frame.function_scope,
-                    resume: frame.resume.clone(),
                     caller_pending_ops: frame
                         .caller_pending_ops
                         .iter()
@@ -1017,14 +1010,12 @@ impl FlowControlStackEntry {
                 site,
                 type_instantiation,
                 function_scope,
-                resume,
                 caller_pending_ops,
                 continuation,
             }) => FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
                 site,
                 type_instantiation,
                 function_scope,
-                resume,
                 caller_pending_ops: caller_pending_ops
                     .into_iter()
                     .map(|op| op.into_admitted_live(owner))
@@ -1042,14 +1033,12 @@ impl FlowControlStackEntry {
 impl FunctionCallFrame {
     fn new(
         site: crate::runtime_id::RuntimeFunctionSiteId,
-        resume: Option<NativeCodeCursor>,
         continuation: FunctionReturnContinuation,
     ) -> Self {
         Self {
             site,
             type_instantiation: None,
             function_scope: false,
-            resume,
             caller_pending_ops: VecDeque::new(),
             continuation,
         }
@@ -1417,7 +1406,6 @@ pub struct AwaitState<H = crate::task::RuntimeNeedHandle, P = RuntimeNeedPublica
     pub(crate) source_context: crate::value::RuntimeScopeTypeContext,
     pub source: AwaitSource,
     pub handle: H,
-    pub resume: Option<NativeCodeCursor>,
     pub observed_through: Option<TaskPublicationCursor>,
     pub queued: VecDeque<P>,
 }
@@ -1433,7 +1421,6 @@ impl Clone for AwaitStateRollbackImage {
             source_context: self.source_context.clone(),
             source: self.source.clone(),
             handle: self.handle.clone(),
-            resume: self.resume.clone(),
             observed_through: self.observed_through,
             queued: self.queued.clone(),
         }
@@ -1470,7 +1457,6 @@ impl AwaitState {
                 Some(owner),
             )
             .map_err(|error| error.to_string())?,
-            resume: self.resume.clone(),
             observed_through: self.observed_through,
             queued: self
                 .queued
@@ -1491,7 +1477,6 @@ impl AwaitState {
                 .handle
                 .into_live_admitted(owner)
                 .map_err(|error| error.to_string())?,
-            resume: image.resume,
             observed_through: image.observed_through,
             queued: image
                 .queued
@@ -1544,7 +1529,6 @@ pub struct AwaitManyState<H = crate::task::RuntimeNeedHandle, V = RuntimeValue, 
     pub target: AwaitManyTarget,
     pub base: H,
     pub captured: Vec<V>,
-    pub resume: Option<NativeCodeCursor>,
     pub items: Vec<V>,
     pub next_index: usize,
     pub in_flight: Vec<AwaitManyInFlight<H>>,
@@ -1565,7 +1549,6 @@ impl Clone for AwaitManyStateRollbackImage {
             target: self.target.clone(),
             base: self.base.clone(),
             captured: self.captured.clone(),
-            resume: self.resume.clone(),
             items: self.items.clone(),
             next_index: self.next_index,
             in_flight: self.in_flight.clone(),
@@ -1593,7 +1576,6 @@ impl AwaitManyState {
             )
             .map_err(|error| error.to_string())?,
             captured: self.captured.iter().map(image).collect::<Result<_, _>>()?,
-            resume: self.resume.clone(),
             items: self
                 .items
                 .iter()
@@ -1649,7 +1631,6 @@ impl AwaitManyState {
                 .into_iter()
                 .map(value)
                 .collect::<Result<_, _>>()?,
-            resume: image.resume,
             items: image
                 .items
                 .into_iter()
@@ -1739,7 +1720,6 @@ pub struct HostCallState {
     pub binding: Option<RuntimePattern>,
     pub id: RuntimeHostCallId,
     pub result_type: HostCallResultType,
-    pub resume: Option<NativeCodeCursor>,
 }
 
 /// Suspended choice state.
@@ -1747,7 +1727,6 @@ pub struct HostCallState {
 pub struct ChoiceState {
     pub id: Option<String>,
     pub options: Vec<ChoiceRuntimeOption>,
-    pub resume: Option<NativeCodeCursor>,
 }
 
 /// Terminal flow result observed by the minimal runtime.
@@ -2436,11 +2415,11 @@ impl Engine {
                 Vec::new(),
                 FunctionCallFrame::new(
                     site,
-                    None,
                     FunctionReturnContinuation::RootInitializer {
                         entry: entry.clone(),
                     },
                 ),
+                None,
             )
             .map_err(|error| EngineStartError::InvalidRootStartup {
                 entry: entry.canonical_label(),
@@ -4561,7 +4540,6 @@ impl Engine {
                         source_context: state.source_context.clone(),
                         source: state.source.clone(),
                         handle: state.handle.clone(),
-                        resume: state.resume.clone(),
                         observed_through: state.observed_through,
                         queued: VecDeque::new(),
                     }))

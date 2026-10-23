@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "e2519939403a7fea0a9ffd8e058d8936d53049b9",
+  "name": "task-final-r2371-native-root-caller-queues-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2371-native-root-caller-queues-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T03:56:37.9090215Z",
+  "finishedAt": "2026-10-23T03:56:47.8002300Z"
+}

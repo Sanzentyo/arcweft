@@ -117,11 +117,8 @@ impl Engine {
             declaration,
             Vec::new(),
             arguments,
-            FunctionCallFrame::new(
-                site,
-                None,
-                FunctionReturnContinuation::RootReducer { entry },
-            ),
+            FunctionCallFrame::new(site, FunctionReturnContinuation::RootReducer { entry }),
+            None,
         );
         std::mem::swap(&mut self.fiber, &mut child);
         staged.map_err(|error| error.to_string())?;
