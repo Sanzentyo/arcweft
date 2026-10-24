@@ -1,0 +1,381 @@
+{
+  "version": 1,
+  "commit": "fb04fd878622fac57a22db7e2c005ee6daa829ea",
+  "parent": "4cea871faf8296250615bf0f76a4962133f1a711",
+  "tree": "d1035bcaa8fe219de3c6178ebdb753508b5ae3b1",
+  "remote": "fb04fd878622fac57a22db7e2c005ee6daa829ea",
+  "advertised": "fb04fd878622fac57a22db7e2c005ee6daa829ea",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "blob": "b9a5f0daa1d0a1b4b2b85e77af701bbb21c45d7d",
+      "workingBlob": "b9a5f0daa1d0a1b4b2b85e77af701bbb21c45d7d"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/project_cache_transaction/rust_defaults.rs",
+      "blob": "347aa7fbc39d862ab2d41711d5af4cd9176e2b9d",
+      "workingBlob": "347aa7fbc39d862ab2d41711d5af4cd9176e2b9d"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/view_product.rs",
+      "blob": "51f0fcc5ad83e133d13d042e7e792e62ee38c01e",
+      "workingBlob": "51f0fcc5ad83e133d13d042e7e792e62ee38c01e"
+    },
+    {
+      "path": "crates/arcweft-interaction-model/src/presentation.rs",
+      "blob": "6b7727d824e507f23746f77c41d86e457cab9e54",
+      "workingBlob": "6b7727d824e507f23746f77c41d86e457cab9e54"
+    },
+    {
+      "path": "crates/arcweft-interaction-model/src/presentation/tests.rs",
+      "blob": "9ab7be3477ba8636940cf6ad5712c22fef0487a2",
+      "workingBlob": "9ab7be3477ba8636940cf6ad5712c22fef0487a2"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/identity.rs",
+      "blob": "5580f86b6a09f1b61e9163e22b581eecd5d0244c",
+      "workingBlob": "5580f86b6a09f1b61e9163e22b581eecd5d0244c"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+      "blob": "245ac03a24ebd376c836ad3fc77d7ff278144947",
+      "workingBlob": "245ac03a24ebd376c836ad3fc77d7ff278144947"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/env/base.rs",
+      "blob": "4a6106b1a7b3b1d43d89ed111e4a54684a0dedc4",
+      "workingBlob": "4a6106b1a7b3b1d43d89ed111e4a54684a0dedc4"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/env/nominal_tests.rs",
+      "blob": "f8dde8a7714b70bd55427093fb0dd5965bca94c7",
+      "workingBlob": "f8dde8a7714b70bd55427093fb0dd5965bca94c7"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/env/nominal.rs",
+      "blob": "4d709ef039bdcafa2ae5b1f4b54030c7436ee943",
+      "workingBlob": "4d709ef039bdcafa2ae5b1f4b54030c7436ee943"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/match_coverage.rs",
+      "blob": "3a7caf9a7b047d5fd23b379f5ff295f35bcf6351",
+      "workingBlob": "3a7caf9a7b047d5fd23b379f5ff295f35bcf6351"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/nominal/model.rs",
+      "blob": "b076996d3435b2e89da59663cba9a9ae2a2f8ddc",
+      "workingBlob": "b076996d3435b2e89da59663cba9a9ae2a2f8ddc"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/nominal/resolver/engine/resolution.rs",
+      "blob": "e6fd34ec4ecadd2f3a11a61b29387c66af6458da",
+      "workingBlob": "e6fd34ec4ecadd2f3a11a61b29387c66af6458da"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/ownership.rs",
+      "blob": "25d92d9e113c24b6cb60a54f81cb63a6366da9c7",
+      "workingBlob": "25d92d9e113c24b6cb60a54f81cb63a6366da9c7"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/proof_return/tests.rs",
+      "blob": "2e7b9adf46dc217eac9b79400d7c07005bde31aa",
+      "workingBlob": "2e7b9adf46dc217eac9b79400d7c07005bde31aa"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/registration/model.rs",
+      "blob": "e2a3ff60fbdca93ecbe47cd2dbdf377e37560b98",
+      "workingBlob": "e2a3ff60fbdca93ecbe47cd2dbdf377e37560b98"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types.rs",
+      "blob": "0003291b12f23d88dfeca76bf647051c6acc657d",
+      "workingBlob": "0003291b12f23d88dfeca76bf647051c6acc657d"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/compatibility.rs",
+      "blob": "073dfc4ab26770566e0802569c40e65d86287a32",
+      "workingBlob": "073dfc4ab26770566e0802569c40e65d86287a32"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/constraints/shape.rs",
+      "blob": "d464da7a835bf52933ee5c5a55f19c6548dbb743",
+      "workingBlob": "d464da7a835bf52933ee5c5a55f19c6548dbb743"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/digest.rs",
+      "blob": "959b3a62220d24aa441f7b3c0ad6fcb6a76d28cf",
+      "workingBlob": "959b3a62220d24aa441f7b3c0ad6fcb6a76d28cf"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/generic_use.rs",
+      "blob": "95bc70492a3a568f0ec3b49cc62d9a1c8669dff4",
+      "workingBlob": "95bc70492a3a568f0ec3b49cc62d9a1c8669dff4"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/match_domain.rs",
+      "blob": "abbeeed2f45d6dc5f814705bfe5dd84f55c6a940",
+      "workingBlob": "abbeeed2f45d6dc5f814705bfe5dd84f55c6a940"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/mismatch.rs",
+      "blob": "a2487857d6029ebbe8c9f69f6f3947c036f15291",
+      "workingBlob": "a2487857d6029ebbe8c9f69f6f3947c036f15291"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/openness.rs",
+      "blob": "a536866f6f52a1513af1a8f30d8785be385882d1",
+      "workingBlob": "a536866f6f52a1513af1a8f30d8785be385882d1"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/order.rs",
+      "blob": "bed12be153f9b6798f62f55c753b42343a0c882d",
+      "workingBlob": "bed12be153f9b6798f62f55c753b42343a0c882d"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/project_nominal_visit.rs",
+      "blob": "5a5cd4b0b3a51401081a5ad6855a44b4be1460df",
+      "workingBlob": "5a5cd4b0b3a51401081a5ad6855a44b4be1460df"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/semantic_tests.rs",
+      "blob": "b6021eef74fd812c65bee78838ee95c0b11bb075",
+      "workingBlob": "b6021eef74fd812c65bee78838ee95c0b11bb075"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/substitution.rs",
+      "blob": "e5bb09a5568dacea59e61e4bbc127793a7fd45e3",
+      "workingBlob": "e5bb09a5568dacea59e61e4bbc127793a7fd45e3"
+    },
+    {
+      "path": "crates/arcweft-lsp/src/features/nominal_types.rs",
+      "blob": "4c2dbb19d5e6dd4e3bb524907e2819144b71975e",
+      "workingBlob": "4c2dbb19d5e6dd4e3bb524907e2819144b71975e"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+      "blob": "37393c7790e153e87d1ce5285f67623573c9512c",
+      "workingBlob": "37393c7790e153e87d1ce5285f67623573c9512c"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/view_runtime.rs",
+      "blob": "7852d1f5f9001372330a519343450518838fca08",
+      "workingBlob": "7852d1f5f9001372330a519343450518838fca08"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/view_runtime/axis_seed_tests.rs",
+      "blob": "e5681a6d4dbca4b35c77ac405193d979edbd98b0",
+      "workingBlob": "e5681a6d4dbca4b35c77ac405193d979edbd98b0"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/view_runtime/axis_seed.rs",
+      "blob": "b712be9bb821297dcc8370146fbe1a5cf066fe97",
+      "workingBlob": "b712be9bb821297dcc8370146fbe1a5cf066fe97"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+      "blob": "17d64bf343d11811b51db2370f10d9f2cb8767ad",
+      "workingBlob": "17d64bf343d11811b51db2370f10d9f2cb8767ad"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/tests/awbc_product_session.rs",
+      "blob": "62982453c073d0b608223557ad9679a8ad53b7d3",
+      "workingBlob": "62982453c073d0b608223557ad9679a8ad53b7d3"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/tests/view_runtime.rs",
+      "blob": "5caf3215b6676a8252032743c809b1b15b6ebf0c",
+      "workingBlob": "5caf3215b6676a8252032743c809b1b15b6ebf0c"
+    },
+    {
+      "path": "docs/00-overview/crate-map.md",
+      "blob": "3980e7da8facd7f959fd952f13c95c677916e286",
+      "workingBlob": "3980e7da8facd7f959fd952f13c95c677916e286"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-documentation-contract-prune.verified.json",
+      "blob": "4f96bddbbc493f789c12b5f1da00a4f937050f6a",
+      "workingBlob": "4f96bddbbc493f789c12b5f1da00a4f937050f6a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2854-presentation-handle-sema-check.input-audit.json",
+      "blob": "1792b2783fb19bde8bc68b4683c0794b99456c32",
+      "workingBlob": "1792b2783fb19bde8bc68b4683c0794b99456c32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2854-presentation-handle-sema-check.json",
+      "blob": "5eb8daa768df992d823abf1b0ab69b56ae9d6b9c",
+      "workingBlob": "5eb8daa768df992d823abf1b0ab69b56ae9d6b9c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2854-presentation-handle-sema-check.log",
+      "blob": "0eededa1333d565a2f94b453d8167a2812c98f10",
+      "workingBlob": "0eededa1333d565a2f94b453d8167a2812c98f10"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2855-presentation-handle-workspace-check.input-audit.json",
+      "blob": "f5f8b9dbc820ffc5f07664939926c4a581afd413",
+      "workingBlob": "f5f8b9dbc820ffc5f07664939926c4a581afd413"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2855-presentation-handle-workspace-check.json",
+      "blob": "9be8d6bf7fb02ceb688138ceada7e5b7417db1f5",
+      "workingBlob": "9be8d6bf7fb02ceb688138ceada7e5b7417db1f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2855-presentation-handle-workspace-check.log",
+      "blob": "99d728dddbafd7f4123a861186b227406e93adc0",
+      "workingBlob": "99d728dddbafd7f4123a861186b227406e93adc0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2856-presentation-handle-annotations-workspace-check.input-audit.json",
+      "blob": "32efc69437e0ad484f353ca50c6a0f4184aa8e9b",
+      "workingBlob": "32efc69437e0ad484f353ca50c6a0f4184aa8e9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2856-presentation-handle-annotations-workspace-check.json",
+      "blob": "9d15bc596e1f1eb7adc1796638c88536a3d07c9c",
+      "workingBlob": "9d15bc596e1f1eb7adc1796638c88536a3d07c9c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2856-presentation-handle-annotations-workspace-check.log",
+      "blob": "c7b3b4949321857d73df6bf98be885e1483f2c7e",
+      "workingBlob": "c7b3b4949321857d73df6bf98be885e1483f2c7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2857-presentation-handle-annotations-workspace-check.input-audit.json",
+      "blob": "7099e95201e7b16bc4cdcf427fc8789e81ad1e7b",
+      "workingBlob": "7099e95201e7b16bc4cdcf427fc8789e81ad1e7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2857-presentation-handle-annotations-workspace-check.json",
+      "blob": "dfff0f18f389124aac55ae9c303edfd5f226ccbe",
+      "workingBlob": "dfff0f18f389124aac55ae9c303edfd5f226ccbe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2857-presentation-handle-annotations-workspace-check.log",
+      "blob": "df0ba242528d1f17dc4adbeba41ed3f4721b86ff",
+      "workingBlob": "df0ba242528d1f17dc4adbeba41ed3f4721b86ff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2858-presentation-handle-workspace-check.input-audit.json",
+      "blob": "8243387e794ac1f515ac7952a8c61e5b87d7e79b",
+      "workingBlob": "8243387e794ac1f515ac7952a8c61e5b87d7e79b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2858-presentation-handle-workspace-check.json",
+      "blob": "d39307647576fd7c1917922537d5315a1b6f7949",
+      "workingBlob": "d39307647576fd7c1917922537d5315a1b6f7949"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2858-presentation-handle-workspace-check.log",
+      "blob": "73f108b82433e7b4f0fae5228ab5bb3b97c01199",
+      "workingBlob": "73f108b82433e7b4f0fae5228ab5bb3b97c01199"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2859-presentation-handle-owner-catalog.json",
+      "blob": "ce971e7c837e1d7264be743c58d9d415b7a09f6d",
+      "workingBlob": "ce971e7c837e1d7264be743c58d9d415b7a09f6d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2859-presentation-handle-owner-catalog.log",
+      "blob": "dca60bdf5ad88a5f8e78ff10fefe28bb3eb6df70",
+      "workingBlob": "dca60bdf5ad88a5f8e78ff10fefe28bb3eb6df70"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2860-presentation-handle-owner-runtime.json",
+      "blob": "48c9bedad48eb92a9d034a9bdc2f45a61212e102",
+      "workingBlob": "48c9bedad48eb92a9d034a9bdc2f45a61212e102"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2860-presentation-handle-owner-runtime.log",
+      "blob": "cb7511b71e08e4cfdfc90ead663ac59815515ce8",
+      "workingBlob": "cb7511b71e08e4cfdfc90ead663ac59815515ce8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2861-presentation-handle-workspace-clippy.input-audit.json",
+      "blob": "756970dd335d1021d363b008a42a811bf36e6da2",
+      "workingBlob": "756970dd335d1021d363b008a42a811bf36e6da2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2861-presentation-handle-workspace-clippy.json",
+      "blob": "868da5432b29fb874112493b7891e2d5e393b29f",
+      "workingBlob": "868da5432b29fb874112493b7891e2d5e393b29f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2861-presentation-handle-workspace-clippy.log",
+      "blob": "a546b8cec0dc453fb8750855c897bc8605b2f043",
+      "workingBlob": "a546b8cec0dc453fb8750855c897bc8605b2f043"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2862-presentation-handle-structure-gate.json",
+      "blob": "e1c4d59b81996a4f36ca6459627d4d00cb616dc8",
+      "workingBlob": "e1c4d59b81996a4f36ca6459627d4d00cb616dc8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2862-presentation-handle-structure-gate.log",
+      "blob": "f001b8ced769007cb71abc906e53ef6da75463e4",
+      "workingBlob": "f001b8ced769007cb71abc906e53ef6da75463e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-checkpoint-documentation-audit.json",
+      "blob": "6337f435b9b22792b3cff1eeb3a1b88a6bc4e136",
+      "workingBlob": "6337f435b9b22792b3cff1eeb3a1b88a6bc4e136"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-final-source.graph.json",
+      "blob": "3f5fe476fd103c31b9853adc54e0d49d8902b627",
+      "workingBlob": "3f5fe476fd103c31b9853adc54e0d49d8902b627"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-final-source.source-freeze.json",
+      "blob": "5734d604515f47c424fde18f2d1dfe27b0fdba30",
+      "workingBlob": "5734d604515f47c424fde18f2d1dfe27b0fdba30"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-owner-acceptance.json",
+      "blob": "ccab111c31611ad8eebc75f9425f074d51438a3c",
+      "workingBlob": "ccab111c31611ad8eebc75f9425f074d51438a3c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-owner-evidence-integrity.json",
+      "blob": "0187fd011834465256e2d812e376a90f85e36a19",
+      "workingBlob": "0187fd011834465256e2d812e376a90f85e36a19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-owner-runtime.audit.json",
+      "blob": "cd2c0857b04b8e0231111095a39d86707ebdc2b0",
+      "workingBlob": "cd2c0857b04b8e0231111095a39d86707ebdc2b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-ownership-review.json",
+      "blob": "f54f7c504ac39f666ec8a3b0e7d7756f640a2ca4",
+      "workingBlob": "f54f7c504ac39f666ec8a3b0e7d7756f640a2ca4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-runtime-checkpoint.verified.json",
+      "blob": "f3ed27ae5a0f44f83e1688cccf26e1e3ad8d3cc4",
+      "workingBlob": "f3ed27ae5a0f44f83e1688cccf26e1e3ad8d3cc4"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "8e2457bc3eedc5356da256e5d55f825ba67c4a2f",
+      "workingBlob": "8e2457bc3eedc5356da256e5d55f825ba67c4a2f"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "d338cd1ce600b99dcfd5486907b3eba3125d9c75",
+      "workingBlob": "d338cd1ce600b99dcfd5486907b3eba3125d9c75"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "c8ed8f212642b4281e247245ee8f40fa0ad7b14c",
+      "workingBlob": "c8ed8f212642b4281e247245ee8f40fa0ad7b14c"
+    }
+  ],
+  "sourceCount": 6314,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "e1588f7cd46d9612e843898a9a3fd92d7a978dcd663cb171e1f940a5c5e026be",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T21:34:46.3811826Z"
+}

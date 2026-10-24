@@ -10792,3 +10792,37 @@ Optionのexhaustive Matchを実行した。6,276固定入力に対し、check／
 Generic Matchの先行受入・公開を取り消す新しい不具合は確認していない。
 [対象・失敗・gateと残る境界](acceptance-evidence/task-presentation-handle-owner-acceptance.json)、
 [原本保全manifest](acceptance-evidence/task-presentation-handle-owner-evidence-integrity.json)。
+
+## Presentation resource型移行の全62逆依存検証 — 2026-10-25
+
+上記source 36 pathとowner原本・資料は、既存mainの
+`fb04fd878622fac57a22db7e2c005ee6daa829ea` で通常commit／non-forced pushした。
+parentは資料整理公開 `4cea871faf8296250615bf0f76a4962133f1a711`、
+treeは `d1035bcaa8fe219de3c6178ebdb753508b5ae3b1`。
+fresh fetch／公開ref／全73 pathのblob、6,314入力と元14 tracked WIPのpatchは差分0、index空。
+[実装の公開照合](acceptance-evidence/task-presentation-handle-source-checkpoint.verified.json)。
+
+R2863 catalogは9,226件、通常選択9,179件、47件はすべて既存ignoredだった。
+Graph上の全62 packageを選択し、Generic Match 151件、前回のCLI 50失敗、owner 13件を
+全件選択した。R2864は同じ公開sourceで一回の新規実行を行い、
+**9,179実行／9,129 PASS／50 FAIL／47 ignored**、終了100、976.019秒。
+全終端case集合はcatalogと一致する。失敗50件のbinary／test識別子はR2853と完全一致し、
+新規失敗0・失敗から外れた旧case 0。Generic Matchは151／151、Presentation対象13／13 PASS。
+Core全targetは2,044／2,044、Sema 1,334／1,334、Compiler 617／617、runtime-driver 177／177、
+interaction-model 18／18 PASS、CLIは641 PASS／50 FAILだった。先行のowner 13件や
+22／53逆依存の結果を今回の件数へ再利用・加算していない。
+
+library 62／integration 179／bin 5の246 test targetを含む。named caseなしのlibrary 8／bin 4／
+platform integration 1 targetはbuildだけ、integration 6 targetは全件ignored。
+6,314固定入力とtest 246／非test 6の実行ファイル252件を前後でhash照合し、差分0。
+実行中のsource変更、ビルド生成物の移動・コピーはない。
+保持した原本・照合13件／9,210,132 bytesは元ファイルとbyte／SHA256が一致した。
+[全件集計・旧失敗・Generic](acceptance-evidence/task-presentation-handle-reverse-acceptance.json)、
+[package／target範囲](acceptance-evidence/task-presentation-handle-reverse-coverage.json)、
+[終端・固定入力](acceptance-evidence/task-final-r2864-presentation-handle-reverse-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-presentation-handle-reverse.executable-audit.json)、
+[保全manifest](acceptance-evidence/task-presentation-handle-reverse-evidence-integrity.json)。
+
+これは共有resource型・再帰item移行の横断検証で、Presentation command ABIと一般Handleの
+runtime投影・保存、全14 family、Tier2／Native-Web capture parityの包括的な受入ではない。
+未接続境界を型モデルやGeneric Matchの完了取消しへ読み替えず、現状一覧の該当項目を更新した。

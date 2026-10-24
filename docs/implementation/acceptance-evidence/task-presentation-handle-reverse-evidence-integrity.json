@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "count": 13,
+  "bytes": 9210132,
+  "files": [
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r2863-presentation-handle-reverse-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2863-presentation-handle-reverse-catalog.json",
+      "bytes": 3099,
+      "sha256": "1869965d2730107497c004b5a2142e39c41ad00531bc15ce62b2145b415eb12a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r2863-presentation-handle-reverse-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2863-presentation-handle-reverse-catalog.log",
+      "bytes": 1675832,
+      "sha256": "c001ed8aed9a5a22be0ff5e5339029b0a2eebdd8e072d476ed59805085092e3b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r2864-presentation-handle-reverse-runtime.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2864-presentation-handle-reverse-runtime.json",
+      "bytes": 3193,
+      "sha256": "55a8a47cf2abc5310584602f4fe3ed7c2f34fc05551a85e0a2f31d280060b5f7"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r2864-presentation-handle-reverse-runtime.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2864-presentation-handle-reverse-runtime.log",
+      "bytes": 5904815,
+      "sha256": "8cbf5fbf16a819735f2d527b9a8e0a277c9ce5a45ace93fb16185cf0d6ea3550"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r2864-presentation-handle-reverse-runtime.terminal-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2864-presentation-handle-reverse-runtime.terminal-audit.json",
+      "bytes": 9001,
+      "sha256": "9e61cbc728a96d3aede7c70f918546abce2ba87d3151884e495f0981395a4bec"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-presentation-handle-reverse-acceptance.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-handle-reverse-acceptance.json",
+      "bytes": 50123,
+      "sha256": "7c1947d46848dccd132ed68a16be54e8a83181e7d73e3a938a640e03c71a1c72"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-presentation-handle-reverse-coverage.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-handle-reverse-coverage.json",
+      "bytes": 91033,
+      "sha256": "a7bb55de9d8f75fb42273d7e0d1ba1e87f9a6cfb952e52d22cdf4a0e419b740f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-presentation-handle-reverse.executable-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-handle-reverse.executable-audit.json",
+      "bytes": 69019,
+      "sha256": "ca735a530bcad09b9b838d9e36c17107880a26696f768b323101a4631928515d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-presentation-handle-reverse.before.pins.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-handle-reverse.before.pins.json",
+      "bytes": 62418,
+      "sha256": "09da6bf354915a45bfe62c0a1ca49eb4450b2bf0a56eaf0a34a9358c119f73ba"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-presentation-handle-reverse-catalog.audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-handle-reverse-catalog.audit.json",
+      "bytes": 241,
+      "sha256": "fc18be4f63df367f38d49757cd26d790608267aad143069abdb2f3a445ee9710"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-presentation-handle-reverse-source.source-freeze.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-handle-reverse-source.source-freeze.json",
+      "bytes": 1320814,
+      "sha256": "000c619336b3b068ab3cb2c81af65e6ac49afb086c859e66892586a92e67480f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-presentation-handle-reverse-source.graph.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-handle-reverse-source.graph.json",
+      "bytes": 3118,
+      "sha256": "f2a051c89e929779066734488124120fd267679291ae6e9d61c76e719b8dc6ac"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-presentation-handle-source-checkpoint.verified.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-handle-source-checkpoint.verified.json",
+      "bytes": 17426,
+      "sha256": "37b47b892d051ea216431cc31f6b1d48789e4c401f2180e4b31094ae28c56c48"
+    }
+  ],
+  "byteDrift": 0,
+  "at": "2026-10-24T21:57:40.7029504Z"
+}

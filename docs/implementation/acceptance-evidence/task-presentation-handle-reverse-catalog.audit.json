@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2863-presentation-handle-reverse-catalog",
+  "matched": 9179,
+  "excluded": 47,
+  "genericSelected": 151,
+  "priorFailuresSelected": 50,
+  "namedPackages": 58,
+  "requiredCaseDrift": 0
+}
