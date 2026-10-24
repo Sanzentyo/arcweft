@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "base": "2001a1d4cd262e0d077049a72e05da6aea657945",
+  "name": "task-final-r2504-program-restore-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-compiler",
+    "--lib",
+    "--test",
+    "flow_include",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(plan::task_source::) | binary(flow_include) | test(blocked_defer_front)",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2504-program-restore-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-24T00:52:14.1847807Z",
+  "finishedAt": "2026-10-24T00:52:17.6363802Z"
+}

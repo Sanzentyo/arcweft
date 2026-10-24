@@ -491,9 +491,9 @@ impl ProductDialogueStore {
         self.registry.snapshot_admitted(Some(owner), snapshot_frame)
     }
 
-    pub(super) fn from_admitted_save_snapshot<S>(
+    pub(super) fn from_admitted_save_snapshot<'a, S>(
         snapshot: crate::line_task::RuntimeDialogueRegistrySaveSnapshot<S, AwbcTypeId>,
-        owner: &crate::task::RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
         restore_frame: impl FnMut(
             &DialogueActivationId,
             S,
@@ -503,7 +503,8 @@ impl ProductDialogueStore {
             crate::line_task::RuntimeDialogueRegistrySnapshotError,
         >,
     ) -> Result<Self, crate::line_task::RuntimeDialogueRegistrySnapshotError> {
-        let RuntimeProgramOwner::Awbc(_) = owner else {
+        let owner = owner.into();
+        let RuntimeProgramOwner::Awbc(_) = owner.owner() else {
             return Err(
                 crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
                     message: "AWBC dialogue restore requires its AWBC program owner".to_owned(),

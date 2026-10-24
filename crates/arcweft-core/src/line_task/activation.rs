@@ -446,9 +446,9 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         Self::from_admitted_save_snapshot(snapshot, owner, restore_frame)
     }
 
-    pub(crate) fn from_admitted_save_snapshot<S>(
+    pub(crate) fn from_admitted_save_snapshot<'a, S>(
         snapshot: RuntimeDialogueRegistrySaveSnapshot<S, T>,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
         mut restore_frame: impl FnMut(
             &DialogueActivationId,
             S,
@@ -458,6 +458,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     where
         T: super::handle::RuntimeDialogueTypeCoordinate,
     {
+        let owner = owner.into();
         let mut entries = BTreeMap::new();
         for entry in snapshot.entries {
             let (activation, entry) = match entry {

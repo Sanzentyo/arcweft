@@ -122,10 +122,20 @@ impl RuntimeNeedHandleSaveSnapshot {
         self.into_live_admitted(owner)
     }
 
-    pub(crate) fn into_live_admitted(
+    pub(crate) fn into_live_admitted<'a>(
         self,
-        owner: &super::RuntimeProgramOwner,
+        context: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeNeedHandle, crate::value::AwbcRuntimeValueSnapshotError> {
+        let context = context.into();
+        let owner = context.owner();
+        if let Some(source) = context.source() {
+            let spec = self.spec.into_admitted_live(owner, Some(source))?;
+            return Ok(RuntimeNeedHandle(Box::new(RuntimeNeedHandleData {
+                correlation: self.correlation,
+                spec,
+                origin: self.origin,
+            })));
+        }
         // Native rollback retains the original plan lease. Resolve an inert
         // locator only within that actual namespace; never decode or rebuild
         // an executable from the handle's assertion. Product restoration must

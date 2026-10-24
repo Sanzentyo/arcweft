@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2495-program-flow-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "bytes": 124916224,
+      "nonTest": false,
+      "sha256": "099b787b2205fbe5116db24680e353dd36a8945e844ec10bbcf81c6d99b32749"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T00:17:16.6183877Z"
+}

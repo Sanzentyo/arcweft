@@ -1267,10 +1267,11 @@ impl RuntimeNeedProducerState<crate::value::AwbcRuntimeValueSnapshot> {
         })
     }
 
-    fn into_admitted_live(
+    fn into_admitted_live<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeNeedProducerState, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         Ok(match self {
             Self::NotStarted => RuntimeNeedProducerState::NotStarted,
             Self::Pending(progress) => RuntimeNeedProducerState::Pending(progress),
@@ -1797,10 +1798,11 @@ impl NeedProducerRegistrySaveSnapshot {
         Ok(())
     }
 
-    pub(crate) fn into_admitted_live(
+    pub(crate) fn into_admitted_live<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<NeedProducerRegistryRestore, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         let sources = self
             .launches
             .iter()
@@ -1816,55 +1818,61 @@ impl NeedProducerRegistrySaveSnapshot {
             .into_iter()
             .map(|row| {
                 let (spec, handle) = row.into_parts();
-                let original = match &spec.request {
-                    super::TaskRequest::Program(source) => Some(source.program_owner()),
-                    super::TaskRequest::Host(_) => sources
-                        .get(&handle.correlation.task_id)
-                        .map(|source| source.program_owner()),
+                let source = match &spec.request {
+                    super::TaskRequest::Program(source) => Some(source),
+                    super::TaskRequest::Host(_) => {
+                        sources.get(&handle.correlation.task_id).copied()
+                    }
+                };
+                let program = source.map(|source| source.program().clone());
+                let original = source.map(|source| source.program_owner());
+                let context = match (original.as_ref(), program.as_ref()) {
+                    (Some(original), Some(program)) => owner.rebind(original, program),
+                    _ => owner,
                 };
                 Ok(TaskSubmission {
-                    spec: spec.into_admitted_live(original.as_ref().unwrap_or(owner), None)?,
+                    spec: spec.into_admitted_live(context.owner(), context.source())?,
                     handle,
                 })
             })
             .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?;
-        let program_owners = task_admissions
+        let program_sources = task_admissions
             .iter()
             .filter_map(|row: &TaskSubmission| match &row.spec().request {
-                super::TaskRequest::Program(source) => {
-                    Some((row.task_id(), source.program_owner()))
-                }
+                super::TaskRequest::Program(source) => Some((row.task_id(), source)),
                 super::TaskRequest::Host(_) => None,
             })
             .collect::<BTreeMap<_, _>>();
-        Ok(NeedProducerRegistryRestore {
-            task_admissions,
-            launches: self
+        let launches = self
                 .launches
                 .into_iter()
                 .map(|launch| {
-                    let (origin, original) = match launch.origin {
+                    let (origin, original, source_program) = match launch.origin {
                         NeedProducerLaunchOriginRestore::Need { invocation, start } => {
                             let original = start.source().program_owner();
-                            (NeedProducerLaunchOriginRestore::Need { invocation, start: start.into_admitted_live()? }, original)
+                            let program = start.source().program().clone();
+                            (NeedProducerLaunchOriginRestore::Need { invocation, start: start.into_admitted_live()? }, original, program)
                         }
                         NeedProducerLaunchOriginRestore::Program { retirement } => {
-                            let original = program_owners.get(&launch.correlation.task_id).ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                            let source = program_sources.get(&launch.correlation.task_id).ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
                                 message: "program task state lost its admitted executable journal row".into(),
                             })?;
-                            (NeedProducerLaunchOriginRestore::Program { retirement }, original.clone())
+                            (NeedProducerLaunchOriginRestore::Program { retirement }, source.program_owner(), source.program().clone())
                         }
                     };
                     Ok(NeedProducerLaunchRestore {
                         origin,
                         correlation: launch.correlation,
-                        state: launch.state.into_admitted_live(&original)?,
+                        state: launch.state.into_admitted_live(owner.rebind(&original, &source_program))?,
                         publication: launch.publication,
                         task_submitted: launch.task_submitted,
                         task_terminal: launch.task_terminal,
                     })
                 })
-                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?;
+        Ok(NeedProducerRegistryRestore {
+            task_admissions,
+            launches,
             invocations: self.invocations,
             invocation_frontiers: self.invocation_frontiers,
             launch_frontiers: self.launch_frontiers,

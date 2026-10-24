@@ -3918,38 +3918,38 @@ fn await_target(
     register_id: AwbcRegisterId,
 ) -> Result<FiberAwaitTarget, VmError> {
     let frame = fiber.active_frame()?;
-    let runtime_type = program
+    let ty = program
         .frame_layouts
         .get(frame.layout.index())
         .and_then(|layout| layout.slots.get(register_id.index()))
-        .and_then(|slot| program.runtime_types.get(slot.ty.index()))
+        .map(|slot| slot.ty)
         .ok_or_else(|| VmError::Runtime("await handle register has no runtime type".to_owned()))?;
-    let value = fiber.active_frame_mut()?.take_register(register_id)?;
-    match runtime_type.shape() {
-        AwbcRuntimeTypeShape::Need(item_type) => match value {
-            RuntimeValue::NeedHandle(need)
-                if program
-                    .runtime_types
-                    .get(item_type.index())
-                    .is_some_and(|ty| {
-                        ty.semantic_identity() == need.outcome().payload_semantic_identity()
-                    }) =>
-            {
-                Ok(FiberAwaitTarget::Need {
-                    need,
-                    item_type: *item_type,
-                    handle: register_id,
-                })
-            }
-            value => Err(VmError::Runtime(format!(
-                "NeedHandle register contained {}",
-                runtime_value_label(&value)
-            ))),
-        },
-        _ => Err(VmError::Runtime(
-            "await register is not a Need handle".to_owned(),
-        )),
+    let item_type = match program
+        .runtime_types
+        .get(ty.index())
+        .map(AwbcRuntimeType::shape)
+    {
+        Some(AwbcRuntimeTypeShape::Need(item) | AwbcRuntimeTypeShape::Task(item)) => *item,
+        _ => {
+            return Err(VmError::Runtime(
+                "await register is not a task handle".to_owned(),
+            ));
+        }
+    };
+    if !frame.value_matches_type(program, frame.register(register_id)?, ty) {
+        return Err(VmError::Runtime(
+            "await handle does not satisfy its checked task type".to_owned(),
+        ));
     }
+    let RuntimeValue::NeedHandle(need) = fiber.active_frame_mut()?.take_register(register_id)?
+    else {
+        unreachable!("the checked task type admits only a NeedHandle carrier")
+    };
+    Ok(FiberAwaitTarget::Need {
+        need,
+        item_type,
+        handle: register_id,
+    })
 }
 
 fn validate_host_call_values(

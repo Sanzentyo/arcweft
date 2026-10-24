@@ -577,10 +577,11 @@ impl FiberScopeCleanup {
     }
 }
 impl FiberScopeCleanup<AwbcRuntimeValueSnapshot> {
-    pub(super) fn into_live_admitted(
+    pub(super) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberScopeCleanup> {
+        let owner = owner.into();
         Ok(FiberScopeCleanup {
             source: self.source,
             args: self
@@ -611,10 +612,11 @@ impl FiberDeferredRegistration {
     }
 }
 impl FiberDeferredRegistration<AwbcRuntimeValueSnapshot> {
-    pub(super) fn into_live_admitted(
+    pub(super) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberDeferredRegistration> {
+        let owner = owner.into();
         Ok(FiberDeferredRegistration {
             id: self.id,
             site: self.site,
@@ -655,10 +657,11 @@ impl FiberScope {
     }
 }
 impl FiberScope<AwbcRuntimeValueSnapshot> {
-    pub(super) fn into_live_admitted(
+    pub(super) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberScope> {
+        let owner = owner.into();
         Ok(FiberScope {
             id: self.id,
             depth: self.depth,

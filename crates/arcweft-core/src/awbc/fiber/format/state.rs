@@ -423,10 +423,11 @@ impl FiberFormatState {
 }
 
 impl FiberFormatState<AwbcRuntimeValueSnapshot> {
-    pub(in crate::awbc::fiber) fn into_live_admitted(
+    pub(in crate::awbc::fiber) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberFormatState> {
+        let owner = owner.into();
         Ok(FiberFormatState {
             storage: self
                 .storage
@@ -451,10 +452,11 @@ impl FiberFormatAttemptState {
 }
 
 impl FiberFormatAttemptState<AwbcRuntimeValueSnapshot> {
-    pub(in crate::awbc::fiber) fn into_live_admitted(
+    pub(in crate::awbc::fiber) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberFormatAttemptState> {
+        let owner = owner.into();
         Ok(FiberFormatAttemptState {
             storage: FormatAttempt {
                 attempt: self.storage.attempt,

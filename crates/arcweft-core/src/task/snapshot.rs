@@ -14,9 +14,10 @@ pub type TaskSubmissionSaveSnapshot = TaskSubmission<
     crate::plan::RuntimeTaskSourceAssertion,
 >;
 
+#[derive(Clone, Copy)]
 pub(crate) struct TaskSourceRestore<'a> {
     pub program: &'a crate::plan::task_source::RuntimeTaskSourceProgram,
-    pub admission: &'a mut crate::value::RuntimeRetainedValueAdmission,
+    pub admission: &'a crate::value::RuntimeRetainedValueAdmission,
 }
 
 pub(crate) trait TaskSnapshotSource: super::TaskExecutionSource + Sized {
@@ -129,7 +130,14 @@ impl<S: TaskSnapshotSource> TaskSpec<AwbcRuntimeValueSnapshot, super::TaskPlanSe
             outcome: self.outcome,
             debug_label: self.debug_label,
             request: self.request.into_mapped_admitted(
-                |value| value.into_admitted_runtime_value(owner).map(RuntimePayload),
+                |value| {
+                    value
+                        .into_admitted_runtime_value(crate::value::RuntimeValueRestoreContext::new(
+                            owner,
+                            source_context,
+                        ))
+                        .map(RuntimePayload)
+                },
                 |source| source.restore_source(owner, source_context),
             )?,
         })

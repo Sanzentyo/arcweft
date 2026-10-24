@@ -286,12 +286,13 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
         })
     }
 
-    pub(crate) fn into_live(
+    pub(crate) fn into_live<'a>(
         self,
-        owner: &crate::task::RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeLineDeferredRegistration, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
+            owner.owner().clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         admission.validate_metadata(&(self.id, self.site, self.outcome_filter))?;
@@ -301,15 +302,16 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
         }
         admission.admit_composite(
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-            |_, resources| self.admit_original_capture_types(owner, resources),
+            |_, resources| self.admit_original_capture_types(owner.owner(), resources),
         )?;
         self.into_admitted_live(owner)
     }
 
-    pub(crate) fn into_admitted_live(
+    pub(crate) fn into_admitted_live<'a>(
         self,
-        owner: &crate::task::RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeLineDeferredRegistration, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         Ok(RuntimeLineDeferredRegistration::new(
             self.id,
             self.site,

@@ -66,10 +66,11 @@ impl RuntimeArcErrorContextPending {
 }
 
 impl RuntimeArcErrorContextPending<AwbcRuntimeValueSnapshot> {
-    pub(crate) fn into_live_admitted(
+    pub(crate) fn into_live_admitted<'a>(
         self,
-        owner: &crate::task::RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeArcErrorContextPending, AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         Ok(match self {
             Self::ResultErr(value) => {
                 RuntimeArcErrorContextPending::ResultErr(value.into_admitted_runtime_value(owner)?)

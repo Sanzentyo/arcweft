@@ -753,29 +753,31 @@ impl RuntimeCallablePendingSnapshot {
         )
     }
 
-    pub(crate) fn into_live(
+    pub(crate) fn into_live<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeCallablePendingGroup, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         let mut resources = ValueResourceAdmission::snapshot(
             RuntimeSchemaLimits::engine_default(),
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
         );
-        self.validate_inputs(owner, &mut resources)?;
+        self.validate_inputs(owner.owner(), &mut resources)?;
         self.into_live_admitted(owner)
     }
 
     /// Constructs inputs only after the enclosing owner has checked every
     /// packet's presence mask, original expected row and cumulative resources.
-    pub(crate) fn into_live_admitted(
+    pub(crate) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeCallablePendingGroup, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         let value = |saved: crate::value::AwbcRuntimeValueSnapshot| {
             saved.into_admitted_runtime_value(owner)
         };
         Ok(RuntimeCallablePendingGroup {
-            owner: owner.clone(),
+            owner: owner.owner().clone(),
             state: self.state,
             retained: self
                 .retained

@@ -35,6 +35,7 @@ pub(crate) use arc_error::{RuntimeArcErrorContextKind, RuntimeArcErrorContextSta
 mod awbc_save;
 pub use awbc_save::RuntimeRetainedValueAdmission;
 pub(crate) use awbc_save::RuntimeRetainedValueAdmissionState;
+pub(crate) use awbc_save::RuntimeValueRestoreContext;
 mod callable;
 mod canonical_transform;
 pub use canonical_transform::{RuntimeValueMergeError, RuntimeValueNormalizationError};
@@ -2677,10 +2678,11 @@ impl<T> RuntimeLocalSlot<T> {
 }
 
 impl RuntimeLocalSlot<AwbcRuntimeValueSnapshot> {
-    pub(crate) fn into_admitted_live_for_program(
+    pub(crate) fn into_admitted_live_for_program<'a>(
         self,
-        owner: &crate::task::RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeLocalSlot, AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         Ok(RuntimeLocalSlot::new(
             self.local,
             self.value.into_admitted_live_for_program(owner)?,

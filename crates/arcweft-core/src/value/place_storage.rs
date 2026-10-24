@@ -668,10 +668,11 @@ impl RuntimePlaceStorage<super::AwbcRuntimeValueSnapshot> {
 
     /// Consumes inert place storage after the enclosing original-program
     /// admission has established its complete header and value obligations.
-    pub(crate) fn into_admitted_live_for_program(
+    pub(crate) fn into_admitted_live_for_program<'a>(
         self,
-        owner: &crate::task::RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimePlaceStorage<RuntimeValue>, super::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         self.try_map(&mut |value| value.into_admitted_runtime_value(owner))
     }
 }

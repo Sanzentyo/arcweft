@@ -9752,3 +9752,75 @@ RuntimePlan flow 3,928・expr 1,864・inventory 2,484は元body生成とそのin
 今回の20原本、4,689,118 bytesをbyte・SHA256・Git blob一致で保持する。
 相対リンク・fence・差分と公開blobの確認は資料の検証であり、runtime合格とは区別する。
 現状説明は `current-status.md` の一か所に集約し、現在もinline実装だとする古い説明を置換した。
+
+## AWBC Program handleの所有・元Source復元・await入口 — 2026-10-24
+
+前節の途中接続は `2001a1d4cd262e0d077049a72e05da6aea657945` で公開した。
+parentは `ad2fd687a87186ee8560861b60c49add5ad2f321`、treeは
+`4f021c92af17272d0d3121b22fd1e325ee0cc0ea`、raw patch SHA256は
+`e0cd1d90cc551f4fb235ecd6ed3655a7144853b0417a1be8cf42546efaf61b37`。
+[公開照合](acceptance-evidence/task-program-runtime-checkpoint.verified.json)は57公開blob、
+4,467入力、fresh origin／advertised ref、empty index、保持14 tracked WIPの差分0を記録する。
+CLIのowned opcode変更でblob headerは変わったが、保持hunkの本文は14件すべて不変だった。
+
+同基点から30 Rust pathsを変更した。Bundle View codecの型context投影を新しいowner APIへ
+移行し、CompilerにBool captureと返却handleのAWBCケースを追加した。false／trueと全体／
+entry選択loweringを対象とし、各step後に公開saveのJSON roundtripと復元を行う。
+既存Nativeケースの名前と実際のtask／completion／値のassertionを保持して共通helperへ移した。
+
+### 実行で見つかった失敗と修復
+
+| 実行 | 実際の結果と次の修復 |
+|---|---|
+| R2493 catalog | exit 101。Bundle View codecに残った旧`type_context.index()`を修復。 |
+| R2494 catalog | exit 101。WindowsのmmapがOS error 1455（ページングファイル不足）となり、E0786とrustc ICEを記録した。source errorの修復成功とは呼ばない。 |
+| R2495／R2496 | Compilerの`flow_include`専用targetはcompile成功。15実行／13 PASS／2 FAIL、exit 100。新しいaffine handleをUnrestrictedとして検証していた。実際の受渡しをOwned検証へ修復し、captureのCopy条件は保持した。 |
+| R2497／R2498 | Core／RuntimePlan libraryをcompileし、Sourceとqueueの96実行／95 PASS／1 FAIL、exit 100。効果拒否testの`wrong`が不正な効果IDで、目的のSource照合へ到達していなかった。 |
+| R2499／R2500 | 3 packageのlibraryと`flow_include`をcompile。111実行／108 PASS／3 FAIL、exit 100。handle起動を通過し、元Sourceを値復元へ渡していないため、候補と元rollbackのframe復元が失敗した。効果testは`control.spawn`への変更でstring tableが非canonicalとなったため、順序も有効な`wrong.permission`へ修復した。 |
+| R2501 check | Core library、exit 101。新しい復元contextと純粋な型ownerの引数10箇所を移行した。 |
+| R2502 check | Core all-target／all-feature／locked、exit 101。productionはcompileしたが、test helper 2箇所に移行漏れが残った。これらを修復後、同じall-target checkは未再実行。 |
+| R2503／R2504 | 4 test binaryをcompile。111実行／109 PASS／2 FAIL、exit 100。Source 95件とqueue 1件は全PASS。起動後の各step保存復元を通過し、VMのNeed-onlyなawait分岐で失敗した。 |
+| R2505／R2506 | 4 test binaryをcompile。111実行／109 PASS／2 FAIL、exit 100、1.472秒。await入口を通過し、各step後の保存復元も成功するが、2件とも128回の1-op実行で完了しない。失敗識別子が同じでも、以前のsnapshot／型エラーと原因を同一視しない。 |
+
+R2494の広い同時ビルド後は、Cargoのjobs／profile／feature指定を変更せず、名前付きtargetと
+libraryを順に選択した。package集合による依存feature unionとbinaryは各receiptの組合せに属し、
+別の実行のbinaryと同一とは呼ばない。R2506では3 packageを指定し、実際のnamed caseは
+Core 96件とCompiler 15件。RuntimePlanのnamed caseは0であり、そのruntime全体の合格ではない。
+2,174件は名前filterで対象外。既存ignored 39件へ混ぜない。
+
+### 復元と所有の境界
+
+`RuntimeValueRestoreContext`は元の型owner、Productが保持するadmitted Source、同じ
+`RuntimeRetainedValueAdmission`への借用を渡す。Copyするのはこの参照viewだけであり、
+quotaやSourceを発行し直さない。frame register、suspension、stream、callable packet、Root、
+Dialogue、observation、producer Ready値へ同じmapperを接続した。各taskの元executableへの
+rebindでも、enclosing groupの予算を使う。Source-freeな型ownerからProgram leaseを推測せず、
+Nativeの偽物やhandleごとのSource全体のdecodeを追加していない。
+
+候補restoreと元rollbackは、それぞれ全体を事前検証したbankをmaterializationへ引き継ぐ。
+通常のprogram continuationのrollbackも同じAPIへ揃えた。VM awaitはNeed／Taskの両shapeを
+受け、frameの型具体化を含む共通value-type authorityで、元registerを消費する前に検査する。
+payloadの裸のsemantic ID比較だけで受理せず、handle kindの区別を維持する。
+
+[R2506 terminal audit](acceptance-evidence/task-final-r2506-program-await-runtime.terminal-audit.json)と
+[実行整合性](acceptance-evidence/task-program-await-r2506.execution-integrity.json)は、4,467固定入力・
+case set・4 executableのdrift 0を記録する。新規の元context保持・効果の過剰許可拒否・capture
+ingress上限を含むSource 95件が全PASS。Compilerは13 PASS／2 FAILで、Nativeの既存返却handle
+ケースもPASS。Generic Match 151件と全53逆依存runtimeは今回未実行で、公開済み受入を維持する。
+
+R2507 canonical gateはexit 0、3,208 files・3,078 Rust files・1,739,600 physical LOC・97 package・
+376 review triggers、blocking 0。5 reportを原本で保持する。
+[owner計測](acceptance-evidence/task-program-restore-ownership-metrics.json)には30 Rust pathsを記録した。
+300 LOC以上の増加はない。新しいcontextは値materializationの責任moduleに置き、既存のcodec、
+frame、task registryと各domain ownerがその借用を転送する。Core fiber 7,138、snapshot 4,260、
+VM 5,369、line-task handle 6,156、task producer 4,558 LOCの責任境界を維持した。
+value.rsは4,645 LOCの既存value algebra／export ownerで、今回の増加はcrate内re-export等2行。
+Bundle View codec 2,459 LOCの変更はcontext投影1箇所。新しいI/O、Cargo edge、永続化grammar、
+結果table、互換readerは追加していない。
+
+ユーザーの途中commit方針に従い、残る2 FAILを明示してこの区切りを公開する。
+Threadの最終受入、generic capture、nested child／cancel、step内rollback／不正save拒否、
+全53逆依存、workspace check／Clippy、doctest／ignored／Tier2、Native-Web capture parityは
+この結果で完了とはしない。次は子fiberの進行とawaitの通知を実行状態から確認する。
+69原本、16,362,314 bytesをbyte・SHA256・Git blob一致で保持し、現状一覧は
+`current-status.md`の一か所に維持する。

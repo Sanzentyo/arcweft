@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "base": "2001a1d4cd262e0d077049a72e05da6aea657945",
+  "run": "task-final-r2506-program-await-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   1.472s] 111 tests run: 109 passed, 2 failed, 2174 skipped",
+  "executed": 111,
+  "passed": 109,
+  "failed": 2,
+  "skipped": 2174,
+  "selectedPackages": 3,
+  "matchedPackages": 2,
+  "noNamedTestsOnHost": [
+    "arcweft-runtime-plan"
+  ],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4467,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "awbc_returned_thread_handle_preserves_capture_and_result_through_each_step_save"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_in_a_function_owned_thread_joins_before_its_flow_caller_returns"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-24T00:58:19.5036003Z"
+}

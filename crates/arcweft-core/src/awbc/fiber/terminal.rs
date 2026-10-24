@@ -344,10 +344,11 @@ impl FiberTerminalValue {
 }
 
 impl FiberTerminalValue<AwbcRuntimeValueSnapshot> {
-    pub(super) fn into_live_admitted(
+    pub(super) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberTerminalValue> {
+        let owner = owner.into();
         Ok(match self {
             Self::Returned(value) => FiberTerminalValue::Returned(
                 value

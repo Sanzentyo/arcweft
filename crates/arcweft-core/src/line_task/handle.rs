@@ -2738,27 +2738,29 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
     }
 
     #[cfg(test)]
-    pub(crate) fn into_live(
+    pub(crate) fn into_live<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeDialogueActivationState<T>, crate::value::AwbcRuntimeValueSnapshotError>
     where
         T: RuntimeDialogueTypeCoordinate,
     {
+        let owner = owner.into();
         self.admit_retained_resources(
             &mut crate::value::RuntimeRetainedValueAdmission::for_program(
-                owner.clone(),
+                owner.owner().clone(),
                 crate::entry::RuntimeSchemaLimits::engine_default(),
             ),
         )?;
         self.into_admitted_live(owner)
     }
 
-    pub(crate) fn into_admitted_live(
+    pub(crate) fn into_admitted_live<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeDialogueActivationState<T>, crate::value::AwbcRuntimeValueSnapshotError>
     {
+        let owner = owner.into();
         Ok(RuntimeDialogueActivationState {
             ledger: self.ledger,
             command_sequence: self.command_sequence,
@@ -2802,10 +2804,11 @@ impl AwbcRuntimeScheduledLineTaskSnapshot {
         })
     }
 
-    fn into_live(
+    fn into_live<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeScheduledLineTask, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         let custody = self.custody.into_live(owner)?;
         RuntimeScheduledLineTask::try_from_parts(
             self.token,
@@ -2847,10 +2850,11 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
         })
     }
 
-    fn into_live(
+    fn into_live<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeScheduledCaptureCustody, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         Ok(match self {
             Self::Packet(bindings) => {
                 RuntimeScheduledCaptureCustody::Packet(live_local_bindings(bindings, owner)?)
@@ -2892,7 +2896,7 @@ fn snapshot_local_bindings(
 
 fn live_local_bindings(
     bindings: Box<[AwbcRuntimeLocalBindingSnapshot]>,
-    owner: &RuntimeProgramOwner,
+    owner: crate::value::RuntimeValueRestoreContext<'_>,
 ) -> Result<Box<[RuntimeLocalBinding]>, crate::value::AwbcRuntimeValueSnapshotError> {
     bindings
         .into_vec()
@@ -2950,10 +2954,11 @@ impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
         })
     }
 
-    fn into_live(
+    fn into_live<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeDialogueResultState<T>, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = owner.into();
         Ok(match self {
             Self::Uncommitted => RuntimeDialogueResultState::Uncommitted,
             Self::Committed { ty, value } => RuntimeDialogueResultState::Committed {

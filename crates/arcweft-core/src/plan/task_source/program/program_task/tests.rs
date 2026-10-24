@@ -403,6 +403,7 @@ fn program_kernel_retains_the_original_lexical_context_with_its_distinct_capture
 #[test]
 fn program_source_rejects_effect_permissions_not_owned_by_the_enclosing_invocation() {
     let mut code = executable();
+    code.strings[1] = "wrong.permission".into();
     code.effect_sets.push(AwbcEffectSet {
         effects: vec![AwbcStringId(1)],
     });

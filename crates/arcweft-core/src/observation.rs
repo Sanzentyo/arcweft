@@ -248,10 +248,11 @@ impl RuntimeObservationSaveSnapshot {
         self.into_admitted_live_for_program(owner)
     }
 
-    pub(crate) fn into_admitted_live_for_program(
+    pub(crate) fn into_admitted_live_for_program<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeObservationState, String> {
+        let owner = owner.into();
         let restore = |rows: BTreeMap<String, AwbcRuntimeValueSnapshot>| {
             rows.into_iter()
                 .map(|(name, saved)| {

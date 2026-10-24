@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "2001a1d4cd262e0d077049a72e05da6aea657945",
+  "name": "task-final-r2507-program-restore-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-program-restore-structure-r2507",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2507-program-restore-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T00:59:37.9959437Z",
+  "finishedAt": "2026-10-24T00:59:42.9683337Z"
+}

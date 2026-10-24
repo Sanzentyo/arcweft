@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "2001a1d4cd262e0d077049a72e05da6aea657945",
+  "name": "task-final-r2501-program-restore-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2501-program-restore-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T00:38:08.2410328Z",
+  "finishedAt": "2026-10-24T00:39:04.5815548Z"
+}

@@ -104,11 +104,13 @@ impl AwbcProductStepExecutor {
                     let value = RuntimeValue::NeedHandle(crate::task::RuntimeNeedHandle::try_from(
                         receipt.clone(),
                     )?);
-                    prepared.admission.validate_typed_borrowed_in_invocation(
-                        value.borrowed_value(),
-                        prepared.destination,
-                        prepared.binding.as_deref(),
-                    )?;
+                    prepared
+                        .admission
+                        .validate_owned_typed_borrowed_in_invocation(
+                            value.borrowed_value(),
+                            prepared.destination,
+                            prepared.binding.as_deref(),
+                        )?;
                     Ok::<_, ProgramTaskError>(value)
                 });
         let (receipt, launch, value) = match accepted {

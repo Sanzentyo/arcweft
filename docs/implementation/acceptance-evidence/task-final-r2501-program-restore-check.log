@@ -1,0 +1,332 @@
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:19:43
+   |
+19 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+22 |     SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
+   |                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:67:33
+   |
+67 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeAwbcProgramSourceField`
+  --> crates\arcweft-core\src\plan\task_source\program.rs:23:62
+   |
+23 | pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:13:5
+   |
+13 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+15 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:56:32
+   |
+56 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\awbc\fiber\await_many.rs:403:49
+    |
+403 |             base: self.base.map(|h| h.into_live(owner)).transpose()?,
+    |                                       --------- ^^^^^ expected `&RuntimeProgramOwner`, found `RuntimeValueRestoreContext<'_>`
+    |                                       |
+    |                                       arguments to this method are incorrect
+    |
+note: method defined here
+   --> crates\arcweft-core\src\task\need_handle.rs:112:19
+    |
+112 |     pub(crate) fn into_live(
+    |                   ^^^^^^^^^
+113 |         self,
+114 |         owner: &super::RuntimeProgramOwner,
+    |         ----------------------------------
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\awbc\fiber\await_many.rs:421:52
+    |
+421 |                         handle: c.handle.into_live(owner)?,
+    |                                          --------- ^^^^^ expected `&RuntimeProgramOwner`, found `RuntimeValueRestoreContext<'_>`
+    |                                          |
+    |                                          arguments to this method are incorrect
+    |
+note: method defined here
+   --> crates\arcweft-core\src\task\need_handle.rs:112:19
+    |
+112 |     pub(crate) fn into_live(
+    |                   ^^^^^^^^^
+113 |         self,
+114 |         owner: &super::RuntimeProgramOwner,
+    |         ----------------------------------
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\awbc\fiber\suspension.rs:788:42
+    |
+788 |                     need: need.into_live(owner)?,
+    |                                --------- ^^^^^ expected `&RuntimeProgramOwner`, found `RuntimeValueRestoreContext<'_>`
+    |                                |
+    |                                arguments to this method are incorrect
+    |
+note: method defined here
+   --> crates\arcweft-core\src\task\need_handle.rs:112:19
+    |
+112 |     pub(crate) fn into_live(
+    |                   ^^^^^^^^^
+113 |         self,
+114 |         owner: &super::RuntimeProgramOwner,
+    |         ----------------------------------
+
+error[E0061]: this function takes 6 arguments but 5 arguments were supplied
+    --> crates\arcweft-core\src\awbc\product_step\program.rs:173:28
+     |
+ 173 |               let executor = Self::from_admitted_snapshot(
+     |  ____________________________^^^^^^^^^^^^^^^^^^^^^^^^^^^^-
+ 174 | |                 admitted,
+ 175 | |                 fingerprint,
+ 176 | |                 format_context,
+ 177 | |                 image,
+ 178 | |                 crate::task::NeedProducerRestorePolicy::Rollback,
+ 179 | |             )
+     | |_____________- argument #6 of type `&retained_admission::RuntimeRetainedValueAdmission` is missing
+     |
+note: associated function defined here
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:3683:19
+     |
+3683 |     pub(super) fn from_admitted_snapshot(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^
+...
+3689 |         admission: &crate::value::RuntimeRetainedValueAdmission,
+     |         -------------------------------------------------------
+help: provide the argument
+     |
+ 173 |             let executor = Self::from_admitted_snapshot(
+ ...
+ 178 |                 crate::task::NeedProducerRestorePolicy::Rollback,
+ 179 ~                 /* &RuntimeRetainedValueAdmission */,
+ 180 ~             )
+     |
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\line_task\defer.rs:295:13
+    |
+294 |         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+    |                             -------------------------------------------------------- arguments to this function are incorrect
+295 |             owner.clone(),
+    |             ^^^^^^^^^^^^^ expected `RuntimeProgramOwner`, found `RuntimeValueRestoreContext<'_>`
+    |
+note: associated function defined here
+   --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:129:12
+    |
+129 |     pub fn for_program(owner: RuntimeProgramOwner, limits: RuntimeSchemaLimits) -> Self {
+    |            ^^^^^^^^^^^ --------------------------
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\line_task\defer.rs:305:62
+    |
+305 |             |_, resources| self.admit_original_capture_types(owner, resources),
+    |                                 ---------------------------- ^^^^^ expected `&RuntimeProgramOwner`, found `RuntimeValueRestoreContext<'_>`
+    |                                 |
+    |                                 arguments to this method are incorrect
+    |
+note: method defined here
+   --> crates\arcweft-core\src\line_task\defer.rs:59:19
+    |
+ 59 |     pub(crate) fn admit_original_capture_types(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 60 |         &self,
+ 61 |         owner: &crate::task::RuntimeProgramOwner,
+    |         ----------------------------------------
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\line_task\defer.rs:307:33
+    |
+307 |         self.into_admitted_live(owner)
+    |              ------------------ ^^^^^ expected `&RuntimeProgramOwner`, found `RuntimeValueRestoreContext<'_>`
+    |              |
+    |              arguments to this method are incorrect
+    |
+note: method defined here
+   --> crates\arcweft-core\src\line_task\defer.rs:310:19
+    |
+310 |     pub(crate) fn into_admitted_live(
+    |                   ^^^^^^^^^^^^^^^^^^
+311 |         self,
+312 |         owner: &crate::task::RuntimeProgramOwner,
+    |         ----------------------------------------
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\line_task\handle.rs:2859:86
+     |
+2859 |                 RuntimeScheduledCaptureCustody::Packet(live_local_bindings(bindings, owner)?)
+     |                                                        -------------------           ^^^^^ expected `&RuntimeProgramOwner`, found `RuntimeValueRestoreContext<'_>`
+     |                                                        |
+     |                                                        arguments to this function are incorrect
+     |
+note: function defined here
+    --> crates\arcweft-core\src\line_task\handle.rs:2896:4
+     |
+2896 | fn live_local_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^
+2897 |     bindings: Box<[AwbcRuntimeLocalBindingSnapshot]>,
+2898 |     owner: &RuntimeProgramOwner,
+     |     ---------------------------
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\value\callable\application.rs:765:30
+    |
+765 |         self.validate_inputs(owner, &mut resources)?;
+    |              --------------- ^^^^^ expected `&RuntimeProgramOwner`, found `RuntimeValueRestoreContext<'_>`
+    |              |
+    |              arguments to this method are incorrect
+    |
+note: method defined here
+   --> crates\arcweft-core\src\value\callable\application.rs:740:19
+    |
+740 |     pub(crate) fn validate_inputs(
+    |                   ^^^^^^^^^^^^^^^
+741 |         &self,
+742 |         owner: &RuntimeProgramOwner,
+    |         ---------------------------
+
+error[E0308]: mismatched types
+   --> crates\arcweft-core\src\value\callable\application.rs:780:20
+    |
+780 |             owner: owner.clone(),
+    |                    ^^^^^^^^^^^^^ expected `RuntimeProgramOwner`, found `RuntimeValueRestoreContext<'_>`
+
+Some errors have detailed explanations: E0061, E0308.
+For more information about an error, try `rustc --explain E0061`.
+warning: `arcweft-core` (lib) generated 24 warnings
+error: could not compile `arcweft-core` (lib) due to 10 previous errors; 24 warnings emitted

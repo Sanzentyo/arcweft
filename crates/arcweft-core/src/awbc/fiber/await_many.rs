@@ -391,15 +391,16 @@ impl FiberAwaitManyState {
 }
 
 impl FiberAwaitManyState<AwbcRuntimeValueSnapshot, RuntimeNeedHandleSaveSnapshot> {
-    pub(super) fn into_live_admitted(
+    pub(super) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> super::AwbcSaveResult<FiberAwaitManyState> {
+        let owner = owner.into();
         let value = |value: AwbcRuntimeValueSnapshot| value.into_admitted_runtime_value(owner);
         Ok(FiberAwaitManyState {
             plan: self.plan,
             binding: self.binding,
-            base: self.base.map(|h| h.into_live(owner)).transpose()?,
+            base: self.base.map(|h| h.into_live_admitted(owner)).transpose()?,
             captured: self
                 .captured
                 .into_iter()
@@ -417,7 +418,7 @@ impl FiberAwaitManyState<AwbcRuntimeValueSnapshot, RuntimeNeedHandleSaveSnapshot
                 .map(|c| {
                     Ok(FiberAwaitManyInFlight {
                         index: c.index,
-                        handle: c.handle.into_live(owner)?,
+                        handle: c.handle.into_live_admitted(owner)?,
                     })
                 })
                 .collect::<super::AwbcSaveResult<_>>()?,

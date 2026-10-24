@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "2001a1d4cd262e0d077049a72e05da6aea657945",
+  "name": "task-final-r2496-program-flow-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "flow_include",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2496-program-flow-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-24T00:17:16.7573344Z",
+  "finishedAt": "2026-10-24T00:17:26.8820125Z"
+}

@@ -21,6 +21,7 @@ use std::collections::VecDeque;
 use thiserror::Error;
 
 mod materialization;
+pub(crate) use materialization::RuntimeValueRestoreContext;
 use materialization::SnapshotMaterialization;
 pub(crate) mod source_codec;
 
@@ -721,11 +722,11 @@ impl AwbcRuntimeValueSnapshot {
 
     /// Constructs one previously admitted inert value under its original owner.
     /// The enclosing packet must finish admission before mapping any of its rows.
-    pub(crate) fn into_admitted_runtime_value(
+    pub(crate) fn into_admitted_runtime_value<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        context: impl Into<RuntimeValueRestoreContext<'a>>,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
-        self.into_live_with_owner(Some(owner))
+        self.into_live_with_context(SnapshotMaterialization::Program(context.into()))
     }
 
     /// Projects only after the enclosing owner admits the complete graph,
@@ -802,7 +803,7 @@ impl AwbcRuntimeValueSnapshot {
             Self::String(value) => RuntimeValue::String(value),
             Self::Color(value) => RuntimeValue::Color(value),
             Self::NeedHandle(value) => RuntimeValue::NeedHandle(value.into_live_admitted(
-                context.program().ok_or_else(|| {
+                context.restore_context().ok_or_else(|| {
                     AwbcRuntimeValueSnapshotError::new(
                         "Need values require a program-bound snapshot",
                     )
@@ -1016,8 +1017,7 @@ impl AwbcRuntimeValueSnapshot {
                         "iterator witness has no matching original next signature",
                     )
                 })?;
-                let state =
-                    state.into_live_with_context(SnapshotMaterialization::Program(owner))?;
+                let state = state.into_live_with_context(context)?;
                 RuntimeIterator::try_witness(owner.clone(), state, next)
                     .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?
             }

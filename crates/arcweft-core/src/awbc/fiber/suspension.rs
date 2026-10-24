@@ -686,10 +686,11 @@ impl
         RuntimeNeedHandleSaveSnapshot,
     >
 {
-    pub(super) fn into_live_admitted(
+    pub(super) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberSuspension> {
+        let owner = owner.into();
         Ok(FiberSuspension {
             resume: self.resume,
             reason: self.reason.into_live_admitted(owner)?,
@@ -704,10 +705,11 @@ impl
         RuntimeNeedHandleSaveSnapshot,
     >
 {
-    pub(super) fn into_live_admitted(
+    pub(super) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberSuspensionReason> {
+        let owner = owner.into();
         let value = |v: AwbcRuntimeValueSnapshot| v.into_admitted_runtime_value(owner);
         Ok(match self {
             Self::Dialogue {
@@ -783,7 +785,7 @@ impl
                 observer,
             } => FiberSuspensionReason::Await {
                 target: FiberAwaitTarget::Need {
-                    need: need.into_live(owner)?,
+                    need: need.into_live_admitted(owner)?,
                     item_type,
                     handle,
                 },

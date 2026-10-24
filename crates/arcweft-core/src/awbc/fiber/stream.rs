@@ -173,10 +173,11 @@ impl FiberStreamState {
 }
 
 impl FiberStreamState<AwbcRuntimeValueSnapshot> {
-    pub(super) fn into_live_admitted(
+    pub(super) fn into_live_admitted<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberStreamState> {
+        let owner = owner.into();
         Ok(FiberStreamState {
             plan: self.plan,
             queue: self

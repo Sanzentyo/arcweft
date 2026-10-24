@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "2001a1d4cd262e0d077049a72e05da6aea657945",
+  "name": "task-final-r2494-program-runtime-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-compiler",
+    "--lib",
+    "--tests",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(plan::task_source::) | binary(flow_include) | test(blocked_defer_front)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2494-program-runtime-catalog.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T00:12:23.2980625Z",
+  "finishedAt": "2026-10-24T00:16:13.4657303Z"
+}

@@ -1538,7 +1538,7 @@ fn snapshot_dialogue_phase_for_save(
 
 fn restore_pending_line_operation_from_save(
     pending: AwbcProductPendingLineOperationSaveSnapshot,
-    owner: &crate::task::RuntimeProgramOwner,
+    owner: crate::value::RuntimeValueRestoreContext<'_>,
 ) -> Result<super::ProductPendingLineOperation, crate::value::AwbcRuntimeValueSnapshotError> {
     Ok(match pending {
         AwbcProductPendingLineOperationSaveSnapshot::AcquireActor {
@@ -1583,7 +1583,7 @@ fn restore_pending_line_operation_from_save(
 
 fn restore_dialogue_phase_from_save(
     phase: AwbcProductDialoguePhaseSaveSnapshot,
-    owner: &crate::task::RuntimeProgramOwner,
+    owner: crate::value::RuntimeValueRestoreContext<'_>,
 ) -> Result<super::ProductDialoguePhase, String> {
     Ok(match phase {
         AwbcProductDialoguePhaseSaveSnapshot::Transitioning => {
@@ -3345,9 +3345,10 @@ impl AwbcProductStepExecutor {
         policy: crate::task::NeedProducerRestorePolicy,
         target: AwbcProductSnapshotRestoreTarget<'_>,
     ) -> Result<Self, (Self, AwbcProductStepBuildError)> {
-        if let Err(error) = self.validate_snapshot_target(&image, target) {
-            return Err((self, error));
-        }
+        let admission = match self.validate_snapshot_target(&image, target) {
+            Ok(admission) => admission,
+            Err(error) => return Err((self, error)),
+        };
         let rollback = match self.snapshot() {
             Ok(snapshot) => snapshot,
             Err(error) => {
@@ -3360,6 +3361,13 @@ impl AwbcProductStepExecutor {
             }
         };
         let admitted = self.program.clone();
+        let rollback_admission = match self.validate_snapshot_target(
+            &rollback,
+            AwbcProductSnapshotRestoreTarget::CurrentInvocation,
+        ) {
+            Ok(admission) => admission,
+            Err(error) => return Err((self, error)),
+        };
         let fingerprint = self.artifact_fingerprint;
         let format_context = self.format_context.clone();
         drop(self);
@@ -3369,6 +3377,7 @@ impl AwbcProductStepExecutor {
             format_context.clone(),
             image,
             policy,
+            &admission,
         ) {
             Ok(executor) => Ok(executor),
             Err(error) => {
@@ -3378,6 +3387,7 @@ impl AwbcProductStepExecutor {
                     format_context,
                     rollback,
                     crate::task::NeedProducerRestorePolicy::Rollback,
+                    &rollback_admission,
                 )
                 .expect("the original complete inert executor image remains restorable");
                 Err((original, error))
@@ -3676,24 +3686,32 @@ impl AwbcProductStepExecutor {
         format_context: crate::value::RuntimeFormatContext,
         snapshot: AwbcProductExecutorSnapshot,
         policy: crate::task::NeedProducerRestorePolicy,
+        admission: &crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let mut snapshot = snapshot;
         let program_owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
+        let source_program = program.task_source.clone();
+        let materialization = crate::value::RuntimeValueRestoreContext::new(
+            &program_owner,
+            source_program
+                .as_ref()
+                .map(|program| crate::task::TaskSourceRestore { program, admission }),
+        );
         let root = snapshot
             .root
             .take()
             .map(|image| {
-                crate::root::RootRuntime::from_admitted_rollback_image(image, &program_owner)
+                crate::root::RootRuntime::from_admitted_rollback_image(image, materialization)
             })
             .transpose()
             .map_err(|message| AwbcProductStepBuildError::RootSnapshot { message })?;
         let queued_task_events = snapshot
             .queued_task_events
             .into_iter()
-            .map(|event| event.into_admitted_live(&program_owner))
+            .map(|event| event.into_admitted_live(materialization))
             .collect::<Result<VecDeque<_>, _>>()
             .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
-        let need_producers = match snapshot.need_producers.into_admitted_live(&program_owner) {
+        let need_producers = match snapshot.need_producers.into_admitted_live(materialization) {
             Ok(value) => value,
             Err(error) => {
                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -3747,7 +3765,7 @@ impl AwbcProductStepExecutor {
         }
         let fiber = snapshot
             .fiber
-            .into_admitted_live_for_program(&program_owner)
+            .into_admitted_live_for_program(materialization)
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid root fiber snapshot: {error}"),
             })?;
@@ -3762,7 +3780,7 @@ impl AwbcProductStepExecutor {
                     owner: ProductChildFiberOwner::restore(&child.owner, &need_producers)?,
                     fiber: child
                         .fiber
-                        .into_admitted_live_for_program(&program_owner)
+                        .into_admitted_live_for_program(materialization)
                         .map_err(|error| error.to_string())?,
                     runtime_generation: child.runtime_generation,
                     pending_host_call: child.pending_host_call.map(|pending| PendingHostCall {
@@ -3777,7 +3795,8 @@ impl AwbcProductStepExecutor {
         executor.dialogue_effect_callback_activations =
             snapshot.dialogue_effect_callback_activations;
         executor.entry_bound = snapshot.entry_bound;
-        executor.dialogues = executor.restore_dialogue_store(snapshot.dialogues)?;
+        executor.dialogues =
+            executor.restore_dialogue_store(snapshot.dialogues, materialization)?;
         executor.active_choice = snapshot
             .active_choice
             .map(|active| executor.restore_active_choice(active))
@@ -3806,7 +3825,7 @@ impl AwbcProductStepExecutor {
         executor.root = root;
         executor.facade_fiber.frame.observations = snapshot
             .observations
-            .into_admitted_live_for_program(&program_owner)
+            .into_admitted_live_for_program(materialization)
             .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         executor.rebuild_facade_stream_states_from_compact();
         executor.sync_facade();
@@ -3816,11 +3835,11 @@ impl AwbcProductStepExecutor {
     fn restore_dialogue_store(
         &self,
         snapshot: AwbcProductDialogueSnapshotState,
+        materialization: crate::value::RuntimeValueRestoreContext<'_>,
     ) -> Result<super::ProductDialogueStore, AwbcProductStepBuildError> {
-        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         super::ProductDialogueStore::from_admitted_save_snapshot(
             snapshot,
-            &owner,
+            materialization,
             |_, active, _| {
                 let invalid = |error: crate::value::AwbcRuntimeValueSnapshotError| {
                     crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
@@ -3833,7 +3852,7 @@ impl AwbcProductStepExecutor {
                     .map(|binding| {
                         let value = binding
                             .callback
-                            .into_admitted_runtime_value(&owner)
+                            .into_admitted_runtime_value(materialization)
                             .map_err(invalid)?;
                         let RuntimeValue::Callable(callback) = value else {
                             return Err(
@@ -3848,7 +3867,7 @@ impl AwbcProductStepExecutor {
                     .collect::<Result<_, _>>()?;
                 let RuntimeValue::Opaque(target) = active
                     .target
-                    .into_admitted_runtime_value(&owner)
+                    .into_admitted_runtime_value(materialization)
                     .map_err(invalid)?
                 else {
                     return Err(
@@ -3868,14 +3887,14 @@ impl AwbcProductStepExecutor {
                         .captures
                         .into_vec()
                         .into_iter()
-                        .map(|value| value.into_admitted_runtime_value(&owner))
+                        .map(|value| value.into_admitted_runtime_value(materialization))
                         .collect::<Result<_, _>>()
                         .map_err(invalid)?,
                     task_inputs: active
                         .task_inputs
                         .into_vec()
                         .into_iter()
-                        .map(|value| value.into_admitted_runtime_value(&owner))
+                        .map(|value| value.into_admitted_runtime_value(materialization))
                         .collect::<Result<_, _>>()
                         .map_err(invalid)?,
                     values: active
@@ -3886,18 +3905,21 @@ impl AwbcProductStepExecutor {
                             Ok(crate::plan::RuntimeDialogueValueBinding {
                                 slot: binding.slot,
                                 role: binding.role,
-                                value: binding.value.into_admitted_runtime_value(&owner)?,
+                                value: binding
+                                    .value
+                                    .into_admitted_runtime_value(materialization)?,
                             })
                         })
                         .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()
                         .map_err(invalid)?,
                     effect_callbacks,
                     voice: active.voice,
-                    phase: restore_dialogue_phase_from_save(active.phase, &owner).map_err(
-                        |message| crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                            message,
-                        },
-                    )?,
+                    phase: restore_dialogue_phase_from_save(active.phase, materialization)
+                        .map_err(|message| {
+                            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                message,
+                            }
+                        })?,
                     elapsed_nanos: active.elapsed_nanos,
                     pending_content_events: active.pending_content_events,
                     pending_advance: active.pending_advance,
@@ -3923,13 +3945,14 @@ impl AwbcProductStepExecutor {
             snapshot,
             AwbcProductSnapshotRestoreTarget::CurrentInvocation,
         )
+        .map(|_| ())
     }
 
-    fn validate_snapshot_target(
+    pub(super) fn validate_snapshot_target(
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
         target: AwbcProductSnapshotRestoreTarget<'_>,
-    ) -> Result<(), AwbcProductStepBuildError> {
+    ) -> Result<crate::value::RuntimeRetainedValueAdmission, AwbcProductStepBuildError> {
         use crate::awbc::fiber::AwbcFiberRoot;
         match target {
             AwbcProductSnapshotRestoreTarget::CurrentInvocation => {
@@ -3971,7 +3994,8 @@ impl AwbcProductStepExecutor {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        snapshot.admit_retained(&owner, &mut admission)
+        snapshot.admit_retained(&owner, &mut admission)?;
+        Ok(admission)
     }
     fn restore_active_choice(
         &self,
@@ -4082,7 +4106,7 @@ mod tests {
             crate::awbc::schema::AwbcProgram::default(),
         ));
         assert_eq!(
-            super::restore_dialogue_phase_from_save(phase, &owner).unwrap_err(),
+            super::restore_dialogue_phase_from_save(phase, (&owner).into()).unwrap_err(),
             "dialogue transition cannot be restored"
         );
     }

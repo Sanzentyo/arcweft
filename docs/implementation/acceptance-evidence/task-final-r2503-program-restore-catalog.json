@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "2001a1d4cd262e0d077049a72e05da6aea657945",
+  "name": "task-final-r2503-program-restore-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-compiler",
+    "--lib",
+    "--test",
+    "flow_include",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(plan::task_source::) | binary(flow_include) | test(blocked_defer_front)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2503-program-restore-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T00:47:52.5227085Z",
+  "finishedAt": "2026-10-24T00:51:59.4732778Z"
+}

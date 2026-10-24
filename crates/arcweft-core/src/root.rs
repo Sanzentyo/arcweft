@@ -1006,10 +1006,11 @@ impl RootRuntime {
         Self::from_admitted_rollback_image(image, owner)
     }
 
-    pub(crate) fn from_admitted_rollback_image(
+    pub(crate) fn from_admitted_rollback_image<'a>(
         image: RootRuntimeRollbackImage,
-        owner: &crate::task::RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<Self, String> {
+        let owner = owner.into();
         let RootRuntime {
             active: image,
             roles,

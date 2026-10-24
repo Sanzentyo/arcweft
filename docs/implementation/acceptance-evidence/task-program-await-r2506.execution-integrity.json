@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "run": "task-final-r2506-program-await-runtime",
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+      "bytes": 267580928,
+      "sha256": "594a09cc38c304a15a30c8c4142b6ca2f378832ace88485f9aa78b3ecb236775"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-728949707a889d5a.exe",
+      "bytes": 79247872,
+      "sha256": "2416103705424bada3416478d76fc7f63db33b14afa0968d78ac86d8b55a8f18"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-f920f0f61da00655.exe",
+      "bytes": 103452160,
+      "sha256": "f891ca23e82ae82549a55197b850277a0dca69d87422120f1c6fbc11e82048ba"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "bytes": 125038592,
+      "sha256": "bcce3d685b17e840201724423e238bd826523c437a1d224c590a53199959a1c9"
+    }
+  ],
+  "executableDrift": 0,
+  "sourceInputs": 4467,
+  "sourceDrift": 0,
+  "caseDrift": 0,
+  "actualExitCode": 100,
+  "recordedAt": "2026-10-24T01:03:15.9298497Z"
+}

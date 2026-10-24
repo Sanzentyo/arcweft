@@ -31,10 +31,11 @@ impl AwbcProductTaskEventSaveSnapshot {
         })
     }
 
-    pub(super) fn into_admitted_live(
+    pub(super) fn into_admitted_live<'a>(
         self,
-        owner: &crate::task::RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<TaskEvent, String> {
+        let owner = owner.into();
         Ok(TaskEvent {
             correlation: self.correlation,
             cursor: self.cursor,

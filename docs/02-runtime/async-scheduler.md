@@ -75,6 +75,14 @@ producer registry. Saved child metadata records the handle and parent identity;
 restore must resolve the actual executing launch and validate the original
 Program row, generation, code owner and parent relation.
 
+Product value restoration carries the admitted original Source and the same
+retained-group allowance through registers, suspended waits, callbacks, Root
+state and producer results. Nested values borrow that context; they do not
+decode another executable or receive a new Source allowance per handle. A
+retained task uses its actual original executable with the enclosing group's
+remaining allowance. A newly accepted Thread handle enters its destination as
+an owned value; this transfer does not grant Copy custody.
+
 Native Thread operations also own a checked `ThreadHandle<T>` result pattern.
 Statement use has a typed discard pattern; value use binds the actual accepted
 task receipt. Child preparation checks the original Source and captures without

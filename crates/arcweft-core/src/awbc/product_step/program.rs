@@ -88,6 +88,10 @@ impl AwbcProductStepExecutor {
                 }
             })?;
             let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+            let image_admission = self.validate_snapshot_target(
+                &image,
+                super::AwbcProductSnapshotRestoreTarget::CurrentInvocation,
+            )?;
             let input_image = RuntimeProgramInputRollback::capture(&inputs, &owner)?;
             let mut next_frame_instance = self.fiber.next_frame_instance;
             let frame_instance = crate::runtime_id::RuntimeFrameInstanceId::from_allocated(
@@ -99,23 +103,32 @@ impl AwbcProductStepExecutor {
                 layout,
                 before,
                 image,
+                image_admission,
                 owner,
                 input_image,
                 frame_instance,
                 next_frame_instance,
             ))
         })();
-        let (layout, before, image, owner, input_image, frame_instance, next_frame_instance) =
-            match prepared {
-                Ok(prepared) => prepared,
-                Err(reason) => {
-                    return Err(RuntimeProgramContinuationError {
-                        reason,
-                        executor: Box::new(self),
-                        inputs,
-                    });
-                }
-            };
+        let (
+            layout,
+            before,
+            image,
+            image_admission,
+            owner,
+            input_image,
+            frame_instance,
+            next_frame_instance,
+        ) = match prepared {
+            Ok(prepared) => prepared,
+            Err(reason) => {
+                return Err(RuntimeProgramContinuationError {
+                    reason,
+                    executor: Box::new(self),
+                    inputs,
+                });
+            }
+        };
         let custody = match std::mem::take(&mut self.dialogues).into_published() {
             Ok(custody) => custody,
             Err((store, reason)) => {
@@ -176,6 +189,7 @@ impl AwbcProductStepExecutor {
                 format_context,
                 image,
                 crate::task::NeedProducerRestorePolicy::Rollback,
+                &image_admission,
             )
             .expect("the original executor restores after the candidate owner is dropped");
             return Err(RuntimeProgramContinuationError {

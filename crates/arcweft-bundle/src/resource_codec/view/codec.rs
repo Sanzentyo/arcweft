@@ -226,7 +226,7 @@ impl ViewProgramResource {
         self.validate_execution_inputs(definition, &expression.inputs, locals)?;
         if function
             .type_context
-            .and_then(|ty| program.runtime_types.get(ty.index()))
+            .and_then(|context| program.runtime_types.get(context.owner_type().index()))
             .map(|ty| ty.semantic_identity())
             != binding.function_type
             || binding.result_type != expression.result_type

@@ -1153,10 +1153,11 @@ impl AwbcFiberStateSnapshot {
     }
 
     /// Consumes the admitted inert grammar without refreshing value quotas.
-    pub(crate) fn into_admitted_live_for_program(
+    pub(crate) fn into_admitted_live_for_program<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> AwbcSaveResult<FiberState> {
+        let owner = owner.into();
         Ok(FiberState {
             instance: self.instance,
             next_frame_instance: self.next_frame_instance,
@@ -1264,7 +1265,11 @@ impl AwbcFiberFrameSnapshot {
         })
     }
 
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberFrame> {
+    fn into_live<'a>(
+        self,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
+    ) -> AwbcSaveResult<FiberFrame> {
+        let owner = owner.into();
         Ok(FiberFrame {
             instance: self.instance,
             function: self.function,
@@ -1314,7 +1319,11 @@ impl AwbcFiberReturnPointSnapshot {
         })
     }
 
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberReturnPoint> {
+    fn into_live<'a>(
+        self,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
+    ) -> AwbcSaveResult<FiberReturnPoint> {
+        let owner = owner.into();
         Ok(FiberReturnPoint {
             cursor: self.cursor,
             destination: self.destination,
@@ -1378,7 +1387,11 @@ impl AwbcFiberReturnContinuationSnapshot {
         })
     }
 
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberReturnContinuation> {
+    fn into_live<'a>(
+        self,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
+    ) -> AwbcSaveResult<FiberReturnContinuation> {
+        let owner = owner.into();
         Ok(match self {
             Self::Ordinary => FiberReturnContinuation::Ordinary,
             Self::ProjectCallDefault { site, pending } => {
