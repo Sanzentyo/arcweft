@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "base": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "sourcePaths": [
+    "crates/arcweft-core/src/presentation.rs",
+    "crates/arcweft-core/src/presentation/resources.rs",
+    "crates/arcweft-core/src/presentation/resources/tests.rs"
+  ],
+  "metrics": [
+    {
+      "path": "crates/arcweft-core/src/presentation.rs",
+      "bytes": 12226,
+      "physicalLines": 421,
+      "classification": "production",
+      "embeddedTestLines": 0,
+      "basePhysicalLines": 419,
+      "growth": 2
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "bytes": 9229,
+      "physicalLines": 277,
+      "classification": "production",
+      "embeddedTestLines": 0,
+      "basePhysicalLines": 0,
+      "growth": 277
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "bytes": 10223,
+      "physicalLines": 337,
+      "classification": "unit tests",
+      "embeddedTestLines": 0,
+      "basePhysicalLines": 0,
+      "growth": 337
+    }
+  ],
+  "owner": "arcweft-core::presentation::resources",
+  "cohesion": "One live resource owner: issuance, original executable lease, slot replacement, transfer and cleanup. Generic V owns captures; no resource clones, wire reader or duplicate slot index.",
+  "normalDevBuildDirectDependencyCount": 21,
+  "transitiveReverseWorkspace": 53,
+  "dependencyFeatureChanges": 0,
+  "publicPackageApiChanges": 0,
+  "sourceExecutionConsumersConnected": 0,
+  "newWarnings": "Private owner is not yet called by execution; dead-code diagnostics retained without suppression",
+  "validationSelection": "Core all-targets owner execution before Copy/assertion cleanup; final seven owner regressions and final Core all-target Clippy after that cleanup. Full reverse runtime/workspace gates remain required at actual execution/public ABI integration.",
+  "remaining": "Bind actual Source admission and real Native/AWBC dynamic scope owners; lower full command bodies and migrate driver once the producer is complete."
+}

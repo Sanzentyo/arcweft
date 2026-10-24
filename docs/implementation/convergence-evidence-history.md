@@ -10871,3 +10871,41 @@ parentは `36c3e0f109617a865841a59d311736db513d5872`、treeは
 `1af7bc630eac92a903abf22164bd60d8b9fe6b07`。fresh fetch、remote refと全48 pathのblob、
 6,363保持入力と元14 tracked WIPのpatchは一致し、indexは空だった。
 [公開後の照合](acceptance-evidence/task-presentation-resource-owner-checkpoint.verified.json)。
+
+## 一般Presentationのprivate ledger遷移 — 2026-10-25
+
+基点は既存main `59861dac939fc05e47f7aa6b9b6fee45d9664407`。
+Coreの3 source pathにprivate ledgerを実装した。元のimmutable executable lease、artifact、
+executionと正確な発行tokenを照合し、bodyはcaptureを含む所有値として一か所で保持する。
+slot置換／clearは以前のbodyをmoveして返し、古いhandleの終了は新しい占有者を消さない。
+slotを使わない登録は8 familyとも独立し、familyが同じというだけでは置換しない。
+scopeの移動・detach、正確なdynamic ownerの終了、二重解放、上限／番号枯渇を扱う。
+失敗した登録はbodyを返し、slotとcursorを変更しない。cleanup順は発行順で決定的にした。
+
+R2874 Core checkはテスト4箇所の `PublicId::new` 呼出しで終了101、`try_new`へ修正した。
+R2875のCore全target catalog 2,057件をR2876で全実行し、**2,057／2,057 PASS**、
+終了0、77.572秒、非選択0。6,367固定入力と実行ファイル13件のhash差分0。
+R2877 Core Clippyも終了0・警告あり。その後Copy型のcloneと空配列assertionを整理した際、
+期待する空配列の型が曖昧になり、R2878 catalogとR2880 Clippyは終了101だった。
+`Vec::<i32>::new()`と明記して修正した。途中の失敗を成功へ上書きしていない。
+
+最終sourceのR2881 catalogでは同じ2,057件のうち新規7件を選び、R2882は**7／7 PASS**、
+終了0、0.042秒。残り2,050件はfilter非選択で、ignoredや新しいPASSとして加算しない。
+6,367固定入力と実行ファイル13件のhash差分0。R2883 Core Clippyはall-targets／
+all-features／lockedで終了0・警告あり。同入力の差分0を確認した。
+新しいprivate ownerが実行系から未使用であるdead-code警告は隠さず保持する。
+[集計・範囲と途中失敗](acceptance-evidence/task-presentation-ledger-acceptance.json)、
+[全件終端照合](acceptance-evidence/task-final-r2876-presentation-ledger-owner-runtime.terminal-audit.json)、
+[最終7件の終端照合](acceptance-evidence/task-final-r2882-presentation-ledger-final-runtime.terminal-audit.json)。
+
+原本・照合29件／12,760,298 bytesをbyte／SHA256一致で保持した。生成物の移動・コピーはない。
+新ownerはproduction 277行、別の単体test 337行で、ledger遷移の一つの責務を扱う。
+Cargo graphのCore逆依存は53、manifest／lock 99入力の差分0。今回はpackage公開APIや
+既存実行consumerを変更しないprivate owner cutで、workspace gateと横断runtimeは
+新規実行していない。[所有境界・実測と検証選択](acceptance-evidence/task-presentation-ledger-ownership-review.json)、
+[原本保全](acceptance-evidence/task-presentation-ledger-evidence-integrity.json)。
+
+このledgerのowner検証を、実Source発行、実Native／AWBCのscope終了、typed command、
+driverやresource-aware restoreの受入へ広げない。次は実際のframeのdynamic ownerと
+Source admissionを同じledgerへ接続する。元14 tracked WIP／6 untracked実ファイルを保持し、
+Generic Match等の先行受入と全体goalが未完了であることを分けている。

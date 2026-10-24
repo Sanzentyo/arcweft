@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "name": "task-final-r2874-presentation-ledger-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2874-presentation-ledger-core-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T22:45:35.4237239Z",
+  "finishedAt": "2026-10-24T22:46:14.6494202Z"
+}

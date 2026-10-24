@@ -1,0 +1,183 @@
+{
+  "version": 1,
+  "count": 29,
+  "bytes": 12760298.0,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2874-presentation-ledger-core-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2874-presentation-ledger-core-check.json",
+      "bytes": 532,
+      "sha256": "2e8629d2fcc0983b94a39cd116730a98319a108ab0173edf3ffd81323c6e24a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2874-presentation-ledger-core-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2874-presentation-ledger-core-check.log",
+      "bytes": 76453,
+      "sha256": "1de4e8f8b198d990bc2713d8269104390e8294f7109ea300dbc92ba0d1e9c1c1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2875-presentation-ledger-owner-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2875-presentation-ledger-owner-catalog.json",
+      "bytes": 589,
+      "sha256": "3c9909645e01c374690331db5add94a753e745bf7bf1cacc964028da5029f02a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2875-presentation-ledger-owner-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2875-presentation-ledger-owner-catalog.log",
+      "bytes": 435357,
+      "sha256": "93f220542058b80d4c17304022c1c4e9c198cd480f9a67b00044c83bc45809d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2876-presentation-ledger-owner-runtime.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2876-presentation-ledger-owner-runtime.json",
+      "bytes": 646,
+      "sha256": "4fd17d4819ac76e9492f0c7e293dd68edeb2fcfa811a956743d54427d8d9ac4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2876-presentation-ledger-owner-runtime.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2876-presentation-ledger-owner-runtime.log",
+      "bytes": 703719,
+      "sha256": "68fde0ea71a5c7a1a6af8818c39f7028e7ed660b1f9780a852c378cc4be33776"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2877-presentation-ledger-core-clippy.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2877-presentation-ledger-core-clippy.json",
+      "bytes": 533,
+      "sha256": "1a61e68250eefad9f2a738d363e68b25bef2e80f5e1f71ca94c13e4061ceba33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2877-presentation-ledger-core-clippy.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2877-presentation-ledger-core-clippy.log",
+      "bytes": 2770365,
+      "sha256": "cd38eb69dad919b61a0f8078bb974602333d34e9e35ba1277d48e56810acf213"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2878-presentation-ledger-final-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2878-presentation-ledger-final-catalog.json",
+      "bytes": 649,
+      "sha256": "59fe7e0816629a84f09821e1c0eff6066418e5586e0b1e61f9a421d9048b8087"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2878-presentation-ledger-final-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2878-presentation-ledger-final-catalog.log",
+      "bytes": 74527,
+      "sha256": "32ca8fadb77619bed5c4297005b363b2acd7fd2ec28946da227a9cebb53a486c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2880-presentation-ledger-final-clippy.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2880-presentation-ledger-final-clippy.json",
+      "bytes": 537,
+      "sha256": "60c0108b2bc5da73486c8659e25c213daee44e4a36d30e12b230a8400708ab6d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2880-presentation-ledger-final-clippy.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2880-presentation-ledger-final-clippy.log",
+      "bytes": 2371681,
+      "sha256": "f0117fe856c7c6e6140e6ebd1467c8ac1730ef63132d3a7cb923be486acc3b31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2881-presentation-ledger-final-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2881-presentation-ledger-final-catalog.json",
+      "bytes": 647,
+      "sha256": "6a358ef50e8a4ccc57904d351a154516d7aec98ddc6194bdc5dca2f2678a76ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2881-presentation-ledger-final-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2881-presentation-ledger-final-catalog.log",
+      "bytes": 482507,
+      "sha256": "e2f5b4f8072f4df8dc6377b9a9cb681b9ce3c99f772c28acb297f775698e1bd7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2882-presentation-ledger-final-runtime.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2882-presentation-ledger-final-runtime.json",
+      "bytes": 704,
+      "sha256": "11e5c6e8519a70ce4c8214d42e84ea3ec2a53c024d182960f75af4054ec26745"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2882-presentation-ledger-final-runtime.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2882-presentation-ledger-final-runtime.log",
+      "bytes": 392330,
+      "sha256": "0f7369c1d5af4ed6e851c5bda84f747399eafb0a52b6b342dd0acd2fcf9b79ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2883-presentation-ledger-final-clippy.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2883-presentation-ledger-final-clippy.json",
+      "bytes": 535,
+      "sha256": "91197dea50f6d35491c2afc56941f1a0ce7b3481b051954a59076b4c88e4868b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2883-presentation-ledger-final-clippy.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2883-presentation-ledger-final-clippy.log",
+      "bytes": 2767411,
+      "sha256": "beb10a99bff384936b37d7c24b855f182a9f6c01c28f5b305fda6b11bb9766c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2876-presentation-ledger-owner-runtime.terminal-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2876-presentation-ledger-owner-runtime.terminal-audit.json",
+      "bytes": 590,
+      "sha256": "7d9bed1ba999f2f5f5300227e74db5c8c05416bb48a4b072af9c9f0a8e5d9276"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2882-presentation-ledger-final-runtime.terminal-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2882-presentation-ledger-final-runtime.terminal-audit.json",
+      "bytes": 575,
+      "sha256": "744f3ebca34d3e2afd0fe907748802546a052d521ed53cfb05140291e26c7575"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2883-presentation-ledger-final-clippy.input-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2883-presentation-ledger-final-clippy.input-audit.json",
+      "bytes": 205,
+      "sha256": "67378f3e4eb1f223e01b5ede185616162ab3a936af27e32aadd6a80e0aa18066"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-source.source-freeze.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-ledger-source.source-freeze.json",
+      "bytes": 1333540,
+      "sha256": "f6a032d61bd1189b30e594d9fdb57572e50ddae614bbac4a7b790d7aff434b04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-lint-source.source-freeze.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-ledger-lint-source.source-freeze.json",
+      "bytes": 1333540,
+      "sha256": "d6be59aecba55ea5c340d0e93c7e34cb270b6b85d677772312c4718bf651475d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-lint-source.graph.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-ledger-lint-source.graph.json",
+      "bytes": 2912,
+      "sha256": "af0ad1da1b33f3b44e46496465f9cf874e584daa13f654e052d3cf783ae2004b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger.before.pins.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-ledger.before.pins.json",
+      "bytes": 3448,
+      "sha256": "8e8f1f82ac9e067a46ef1fc62f239727dcc02eab864e4a2d0390193a20774630"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-final.before.pins.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-ledger-final.before.pins.json",
+      "bytes": 3448,
+      "sha256": "90b2f08a7068054b6c6b43c0e3e0d60e271d6eb9873ef60fed186009894a9d6c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-runtime.audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-ledger-runtime.audit.json",
+      "bytes": 302,
+      "sha256": "aa07d34cf6883aa917d6b8e36a623911f2f8bb0f9395380c82f0a8ef57d4b91f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-final-runtime.audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-ledger-final-runtime.audit.json",
+      "bytes": 296,
+      "sha256": "78f402ca5854df597b3d0f9f0b98f1664891d22bec63e59a7da5f0489ab4779d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-current-status-final-checkpoint.verified.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-current-status-final-checkpoint.verified.json",
+      "bytes": 1720,
+      "sha256": "1ddb8fa2b7d9d6c6f69365dc2af8c470881a037bf3e0a262c44aea41873623b3"
+    }
+  ],
+  "byteDrift": 0,
+  "at": "2026-10-24T22:54:22.3091565Z"
+}

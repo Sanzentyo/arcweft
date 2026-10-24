@@ -1,4 +1,6 @@
-//! Typed Sans-I/O commands for dialogue-owned stage and voice resources.
+//! Typed Sans-I/O presentation ownership and dialogue stage/voice commands.
+
+pub(crate) mod resources;
 
 use crate::effect::RuntimeDropPolicy;
 use crate::line_task::RuntimeLineHandleScope;

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "run": "task-final-r2882-presentation-ledger-final-runtime",
+  "executed": 7,
+  "passed": 7,
+  "failed": 0,
+  "sourceInputs": 6367,
+  "sourceDrift": 0,
+  "binaryCount": 13,
+  "binaryDrift": 0,
+  "artifactCopyMove": false,
+  "at": "2026-10-24T22:53:41.6861808Z"
+}

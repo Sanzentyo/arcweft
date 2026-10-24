@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "run": "task-final-r2876-presentation-ledger-owner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  77.572s] 2057 tests run: 2057 passed (1 slow), 0 skipped",
+  "executed": 2057,
+  "passed": 2057,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 6367,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T22:50:36.6661953Z"
+}

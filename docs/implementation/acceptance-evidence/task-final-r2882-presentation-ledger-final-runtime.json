@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "name": "task-final-r2882-presentation-ledger-final-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(presentation::resources::tests::)",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2882-presentation-ledger-final-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T22:53:26.5934324Z",
+  "finishedAt": "2026-10-24T22:53:29.1130089Z"
+}

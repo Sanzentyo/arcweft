@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "name": "task-final-r2878-presentation-ledger-final-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(presentation::resources::tests::)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2878-presentation-ledger-final-catalog.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T22:51:25.2046627Z",
+  "finishedAt": "2026-10-24T22:51:39.5475326Z"
+}

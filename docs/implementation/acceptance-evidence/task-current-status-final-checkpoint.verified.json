@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "commit": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "parent": "a08de43545edfe2a3d8848190035a69a447afb8d",
+  "tree": "e7051a422a117b98e29dbff8c545b78d4c523b46",
+  "remote": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "advertised": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-current-status-final-doc-audit.json",
+      "blob": "3c9a899c9ce79c0fd4c132800162aee67325e65f",
+      "workingBlob": "3c9a899c9ce79c0fd4c132800162aee67325e65f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-resource-owner-checkpoint.verified.json",
+      "blob": "1a0d2fa283f4f4a888ffead0dcdc9e16459679d0",
+      "workingBlob": "1a0d2fa283f4f4a888ffead0dcdc9e16459679d0"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "d019fc9fb8cf569d856417ef6f3c3af54051a0a7",
+      "workingBlob": "d019fc9fb8cf569d856417ef6f3c3af54051a0a7"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "d5652ecc3e6a727a18a748b057cd9492e20fb111",
+      "workingBlob": "d5652ecc3e6a727a18a748b057cd9492e20fb111"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "237d5730e4ae2910ff74992831d0714c7c760ac3",
+      "workingBlob": "237d5730e4ae2910ff74992831d0714c7c760ac3"
+    }
+  ],
+  "sourceCount": 6365,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "7d5d914964cbf8944364e2ca19c31758b8f9e5728a7e28988950f185dcd9ab9f",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T22:40:10.2718873Z"
+}

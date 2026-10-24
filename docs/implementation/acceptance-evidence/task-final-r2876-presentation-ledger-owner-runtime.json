@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "name": "task-final-r2876-presentation-ledger-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2876-presentation-ledger-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T22:48:56.8473950Z",
+  "finishedAt": "2026-10-24T22:50:15.8642403Z"
+}

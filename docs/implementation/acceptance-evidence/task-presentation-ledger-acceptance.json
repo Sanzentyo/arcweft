@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "base": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "intermediateCheckpoint": true,
+  "sourcePaths": [
+    "crates/arcweft-core/src/presentation.rs",
+    "crates/arcweft-core/src/presentation/resources.rs",
+    "crates/arcweft-core/src/presentation/resources/tests.rs"
+  ],
+  "privateLedgerImplemented": true,
+  "fullOwnerRun": {
+    "run": "R2876",
+    "executed": 2057,
+    "passed": 2057,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 77.572,
+    "sourceInputs": 6367,
+    "sourceDrift": 0,
+    "binaries": 13,
+    "binaryDrift": 0,
+    "scope": "Before Copy/assertion-only cleanup; not a full rerun of final bytes"
+  },
+  "finalOwnerRun": {
+    "run": "R2882",
+    "executed": 7,
+    "passed": 7,
+    "failed": 0,
+    "filterExcluded": 2050,
+    "ignored": 0,
+    "seconds": 0.042,
+    "sourceInputs": 6367,
+    "sourceDrift": 0,
+    "binaries": 13,
+    "binaryDrift": 0
+  },
+  "finalClippy": {
+    "run": "R2883",
+    "exitCode": 0,
+    "warnings": true,
+    "inputs": 6367,
+    "sourceDrift": 0
+  },
+  "failedChecks": [
+    {
+      "run": "R2874",
+      "exitCode": 101,
+      "cause": "Four test calls used PublicId::new instead of try_new"
+    },
+    {
+      "run": "R2878",
+      "exitCode": 101,
+      "cause": "Empty i32 expectations were ambiguous after assert_eq cleanup"
+    },
+    {
+      "run": "R2880",
+      "exitCode": 101,
+      "cause": "Same ambiguous empty expectations; fixed with Vec::<i32>::new()"
+    }
+  ],
+  "sourceProducerEnabled": false,
+  "nativeAwbcScopeCleanupConnected": false,
+  "resourceAwareRestoreAccepted": false,
+  "runtimeCommandAbiImplemented": false,
+  "goalComplete": false,
+  "preservedOriginalTrackedWip": 14,
+  "preservedOriginalUntrackedFiles": 6,
+  "graph": "task-presentation-ledger-lint-source.graph.json",
+  "ownershipReview": "task-presentation-ledger-ownership-review.json",
+  "evidenceManifest": "task-presentation-ledger-evidence-integrity.json"
+}
