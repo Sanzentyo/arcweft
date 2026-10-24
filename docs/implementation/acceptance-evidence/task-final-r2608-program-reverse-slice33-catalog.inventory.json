@@ -1,0 +1,310 @@
+{
+  "version": 1,
+  "name": "task-final-r2608-program-reverse-slice33-catalog",
+  "all": 43,
+  "matched": 43,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "adapter_requirements_compact_bytes_round_trip_without_json_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "entrypoints_compact_bytes_are_deterministic_and_round_trip",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "executable_record_fingerprints_preserve_empty_shapes_and_field_names",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "migrated_runtime_section_compatibility_decodes_compact_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "patch_artifact_from_views_uses_compact_runtime_compatibility",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "patch_compatibility_fingerprints_classify_runtime_resource_changes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "runtime_resource_budget_failures_are_reported_by_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "runtime_types_compact_bytes_are_deterministic_and_round_trip",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "runtime_types_must_match_the_awbc_header_exactly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "test": "unknown_optional_fields_are_skipped_and_unknown_required_fields_reject",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "an_inner_carrier_remains_inside_the_named_pure_scope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "anonymous_statement_scope_propagation_skips_the_outer_success_continuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "flow_scope_propagates_to_its_outer_carrier_after_leaving_the_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "long_contextual_await_tail_lowers_inside_nested_scopes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "nested_flow_scopes_unwind_only_the_frames_crossed_by_the_residual",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "nested_pure_scopes_join_their_own_success_type_before_callable_propagation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "pure_scope_statements_join_before_the_remaining_function_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "scope_carrier_slots_restore_at_each_active_frame_instruction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "committed_text_updates_player_owned_state_and_next_frame_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "hidden_runtime_text_control_clears_focus_and_rejects_stale_writeback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "pointer_click_places_caret_after_focused_geometry_is_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "pointer_drag_extends_focused_text_selection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "pointer_drag_selection_autoscrolls_containing_scroll_region",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "pointer_focus_uses_lower_for_frame_activation_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "repeated_pointer_clicks_select_word_then_line",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "runtime_text_control_lowers_into_render_scene_and_focused_target",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "runtime_text_control_lowers_selection_shortcut_and_tab_policies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "secure_runtime_text_control_redacts_snapshot_and_visual_secret",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "selected_text_drag_moves_text_and_emits_writeback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "selection_update_changes_next_prepared_caret_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "test": "shift_pointer_click_extends_focused_text_selection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "input_snapshot_preserves_signed_scroll_offsets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "input_snapshot_rejects_non_finite_scroll_offsets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "input_snapshot_rejects_pre_xy_scroll_offset_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "product_only_hidden_scroll_region_is_not_retained_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "product_only_horizontal_scroll_region_is_not_retained_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "product_only_scroll_region_is_not_treated_as_retained_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "product_only_surface_is_not_treated_as_retained_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "registered_player_planner_prepares_runtime_text_in_canonical_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "retained_text_ignores_unretained_product_scroll_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "test": "selectable_runtime_text_block_drag_adds_selection_rectangles",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "name": "task-final-r2564-program-reverse-slice11-catalog",
+  "all": 10,
+  "matched": 10,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp::descriptor_invariants",
+      "test": "required_schema_properties_are_declared",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp::descriptor_invariants",
+      "test": "tool_descriptors_have_unique_non_empty_names",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lsp",
+      "binary": "arcweft-lsp::dependency_direction",
+      "test": "associated_capacity_dependency_direction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::dependency_direction",
+      "test": "character_public_api_does_not_depend_on_sema",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::dependency_direction",
+      "test": "dependency_direction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::dependency_direction",
+      "test": "lang_entry_binding_layers_remain_sans_project_and_host_io",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::dependency_direction",
+      "test": "project_loader_has_required_direct_construction_dependencies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::dependency_direction",
+      "test": "adapter_context_normal_graph_excludes_compiler_layers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::dependency_direction",
+      "test": "core_dependency_graph_excludes_compiler_layers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::dependency_direction",
+      "test": "runtime_host_normal_graph_excludes_hir_and_runtime_plan",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

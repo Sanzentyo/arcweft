@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "name": "task-final-r2616-program-reverse-slice37-catalog",
+  "all": 15,
+  "matched": 15,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_action_button_resources",
+      "test": "runtime_action_button_resolves_action_invoke_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_action_button_resources",
+      "test": "runtime_action_button_resolves_label_and_noop_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::value_contract",
+      "test": "asset_and_resource_references_validate_exact_independent_identities",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::value_contract",
+      "test": "finite_float_constraints_use_numeric_total_order_for_negative_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::value_contract",
+      "test": "locale_values_are_validated_and_stored_in_canonical_bcp47_case",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::value_contract",
+      "test": "map_and_record_constructors_canonicalize_and_reject_duplicates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::value_contract",
+      "test": "negative_zero_has_one_float_identity_and_non_finite_values_are_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::value_contract",
+      "test": "nested_constant_validation_stops_at_the_shared_depth_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::value_contract",
+      "test": "shared_duration_audio_and_layout_types_keep_owner_invariants",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::typed_json_preflight",
+      "test": "complete_json_resource_limits_reject_before_any_typed_construction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::typed_json_preflight",
+      "test": "strict_json_rejects_nested_escaped_duplicate_map_keys",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::typed_json_preflight",
+      "test": "typed_preflight_preserves_wide_numbers_and_runtime_float_bits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-layout",
+      "binary": "arcweft-text-layout::vertical_break_quality",
+      "test": "closed_policy_id_round_trips_and_unknown_versions_are_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-layout",
+      "binary": "arcweft-text-layout::vertical_break_quality",
+      "test": "layout_request_requires_one_well_formed_closed_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-layout",
+      "binary": "arcweft-text-layout::vertical_break_quality",
+      "test": "reviewed_vertical_break_corpus_matches_balanced_v1_at_multiple_scales",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

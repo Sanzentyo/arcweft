@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "name": "task-final-r2618-program-reverse-slice38-catalog",
+  "all": 14,
+  "matched": 11,
+  "excluded": 3,
+  "rows": [
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_blend_hsl_modes",
+      "test": "hsl_family_blend_modes_are_planned_for_shader_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_blend_hsl_modes",
+      "test": "supported_blend_modes_matrix_includes_nonseparable_color_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_exact_png_golden",
+      "test": "seq06_13e1_inset_shadow_native_exact_png_packet_is_complete",
+      "ignored": true,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_exact_png_golden",
+      "test": "seq06_13e1_inset_shadow_web_exact_png_packet_is_complete",
+      "ignored": true,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_gpu_smoke",
+      "test": "per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path",
+      "ignored": true,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "test": "hsl_family_blends_remain_supported",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "test": "inset_box_shadow_plans_as_typed_inset_pass",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "test": "inset_shadow_plan_preserves_elliptical_radii",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "test": "mixed_outer_and_inset_shadows_preserve_stage_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "test": "negative_radius_is_typed_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "test": "non_finite_radius_is_typed_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "test": "outer_box_shadow_plans_before_children_and_expands_visual_extent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "test": "outer_shadow_plan_preserves_per_corner_radii",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "test": "oversized_mixed_corner_radii_are_normalized_to_bounds",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

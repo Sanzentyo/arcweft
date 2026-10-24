@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "name": "task-final-r2582-program-reverse-slice20-catalog",
+  "all": 14,
+  "matched": 14,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-adapter-desktop",
+      "binary": "arcweft-adapter-desktop::native_integration",
+      "test": "native_desktop_capabilities_complete_through_host_registry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "authored_externs_cannot_change_manifest_types_or_omit_manifest_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "cli_process_calls_require_matching_arguments_and_selected_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "host_calls_require_the_selected_target_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "implicit_native_policy_cannot_exit_the_embedding_process",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "pure_host_calls_require_membership_in_the_selected_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "selected_native_cli_preserves_cli_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "selected_native_cli_writes_streams_and_exits_without_a_never_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "typed_virtual_paths_read_and_write_through_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_style_parity_sample",
+      "test": "native_style_parity_sample_authors_observable_and_view_styles_in_dsl",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::named_scopes",
+      "test": "match_guard_calls_and_return_keep_the_enclosing_control_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::named_scopes",
+      "test": "mixed_scope_choice_ids_and_active_frames_survive_awbc_save_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::named_scopes",
+      "test": "named_scope_result_is_bound_in_the_parent_before_its_continuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::named_scopes",
+      "test": "pure_function_scope_keeps_its_lexical_identity_and_value_in_both_backends",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

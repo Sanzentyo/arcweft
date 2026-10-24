@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 30,
+  "run": "task-final-r2603-program-reverse-slice30-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\rich_text_schema-21754de61c1ecef8.exe",
+      "sha256": "1a3290acf2819a42127b2f71a92c47747d03f8ccfad0311c841533960bb3b9f0",
+      "bytes": 926720
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_diagnostic-87d9b3b77f833ab9.exe",
+      "sha256": "c7cd0e1d8d66a6469647f609348c8213dc75be7f5dd9c038b11ccde7a72abd99",
+      "bytes": 74892800
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_diagnostic-916cafe9ac6387e2.exe",
+      "sha256": "551afe4665d318f424751b868241e116afcd55220b5ed7c6d1c4dbecb9e49c3f",
+      "bytes": 73831424
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:18:26.2540996Z"
+}

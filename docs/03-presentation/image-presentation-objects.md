@@ -8,7 +8,7 @@ frame timing.
 
 ## Source Surface
 
-The current implemented source surface uses ordinary call syntax and authored
+The source surface uses ordinary call syntax and authored
 image-object declarations. Asset identities come from the selected asset
 catalog rather than source declarations:
 

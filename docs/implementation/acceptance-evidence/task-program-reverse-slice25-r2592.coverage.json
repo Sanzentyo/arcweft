@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 25,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-core",
+      "name": "record_admission",
+      "kind": "test",
+      "binary": "arcweft-core::record_admission",
+      "caseCount": 6
+    },
+    {
+      "package": "arcweft-core",
+      "name": "record_field_names",
+      "kind": "test",
+      "binary": "arcweft-core::record_field_names",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "name": "publication_contract",
+      "kind": "test",
+      "binary": "arcweft-resource-manifest::publication_contract",
+      "caseCount": 6
+    },
+    {
+      "package": "arcweft-resource-model",
+      "name": "registry_contract",
+      "kind": "test",
+      "binary": "arcweft-resource-model::registry_contract",
+      "caseCount": 15
+    }
+  ],
+  "matched": 29,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2592-program-reverse-slice25-catalog",
+  "run": "task-final-r2593-program-reverse-slice25-runtime",
+  "buildOnly": false
+}

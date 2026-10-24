@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "name": "task-final-r2580-program-reverse-slice19-catalog",
+  "all": 32,
+  "matched": 32,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch::maintained_manifests",
+      "test": "maintained_manifests_decode_through_the_canonical_public_surface",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch::maintained_manifests",
+      "test": "root_level_samples_use_canonical_source_roots_and_existing_profile_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "accepted_manifest_binds_typed_semantic_identities_to_the_same_source_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "authored_sequence_order_remains_semantic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "canonical_redecode_preserves_source_independent_typed_semantics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "dispatch_and_closed_shape_failures_keep_distinct_codes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "duplicate_key_is_rejected_with_both_revision_bound_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "duplicate_nested_map_and_record_entries_are_semantic_record_failures",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "duplicate_semantic_records_retain_first_and_duplicate_identity_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "full_manifest_covers_every_closed_wire_variant_and_frozen_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "minimal_manifest_decodes_and_regenerates_frozen_canonical_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "scalar_wire_failures_keep_typed_codes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "selected_package_coordinate_mismatch_points_at_the_document_package",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "structural_limits_are_inclusive_and_fail_with_their_exact_codes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "test": "unordered_wire_collections_canonicalize_independently_of_authored_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "ancestor_change_evicts_descendant_projection_entries_and_mount_cleanup_is_idempotent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "barriers_stop_ancestor_walk_but_their_own_provider_change_reaches_descendants",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "cloned_resolvers_replay_the_same_axis_revision_sequence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "invalidation_budget_failure_preserves_provider_and_cache_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "local_barrier_transitions_invalidate_only_their_own_descendants",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "longer_cycles_and_parent_revision_mismatches_are_atomic_typed_failures",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "marked_child_resolution_failure_preserves_the_chain_until_a_successful_retry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "projection_only_never_registers_a_parent_and_typed_seed_shapes_are_enforced",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "reparenting_replaces_the_old_edge_and_only_the_new_parent_invalidates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "targeted_node_eviction_preserves_survivor_fifo_order_at_capacity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_provider",
+      "test": "tracked_self_edge_is_rejected_as_a_cycle_without_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::motion_transitions",
+      "test": "background_color_transition_interpolates_rgba_channels",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::motion_transitions",
+      "test": "interruption_starts_next_transition_from_sampled_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::motion_transitions",
+      "test": "keyframe_track_samples_ordered_offsets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::motion_transitions",
+      "test": "opacity_scale_and_outline_width_are_transitionable_typed_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::motion_transitions",
+      "test": "reduced_motion_policy_can_shorten_or_disable_motion",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

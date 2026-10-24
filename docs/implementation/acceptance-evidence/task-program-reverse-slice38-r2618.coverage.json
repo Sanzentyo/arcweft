@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 38,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "view_blend_hsl_modes",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::view_blend_hsl_modes",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "view_box_shadow_exact_png_golden",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::view_box_shadow_exact_png_golden",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "view_box_shadow_gpu_smoke",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::view_box_shadow_gpu_smoke",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "view_box_shadow_plan",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+      "caseCount": 9
+    }
+  ],
+  "matched": 11,
+  "excluded": 3,
+  "ignored": 3,
+  "catalog": "task-final-r2618-program-reverse-slice38-catalog",
+  "run": "task-final-r2619-program-reverse-slice38-runtime",
+  "buildOnly": false
+}

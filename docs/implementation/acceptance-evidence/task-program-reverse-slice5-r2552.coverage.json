@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 5,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-core",
+      "name": "awbc_record_type",
+      "kind": "test",
+      "binary": "arcweft-core::awbc_record_type",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-core",
+      "name": "awbc_variant_types",
+      "kind": "test",
+      "binary": "arcweft-core::awbc_variant_types",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "name": "awbc_product_session",
+      "kind": "test",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "caseCount": 40
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "name": "awbc_product_runner",
+      "kind": "test",
+      "binary": "arcweft-runtime-host::awbc_product_runner",
+      "caseCount": 1
+    }
+  ],
+  "matched": 47,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2552-program-reverse-slice5-catalog",
+  "run": "task-final-r2553-program-reverse-slice5-runtime",
+  "buildOnly": false
+}

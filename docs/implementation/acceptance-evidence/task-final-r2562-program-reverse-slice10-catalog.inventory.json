@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "name": "task-final-r2562-program-reverse-slice10-catalog",
+  "all": 5,
+  "matched": 5,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::data_format_nominal",
+      "test": "data_format_uses_its_source_owned_nominal_variant_domain",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::data_format_nominal",
+      "test": "dynamic_decode_uses_complete_standard_data_nominal_domains",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::controller_navigation",
+      "test": "dpad_confirm_cancel_are_normalized",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::controller_navigation",
+      "test": "left_stick_dead_zone_and_repeat_are_deterministic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::controller_navigation",
+      "test": "right_stick_scroll_is_dead_zone_adjusted_and_time_integrated",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

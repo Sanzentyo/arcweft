@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "ordinal": 2,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 3,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-compiler",
+      "name": "agent_enum_execution",
+      "kind": "test",
+      "binary": "arcweft-compiler::agent_enum_execution",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-player-native",
+      "name": "windows-tsf-ime-sample",
+      "kind": "bin",
+      "binary": "arcweft-player-native::bin/windows-tsf-ime-sample",
+      "caseCount": 0
+    },
+    {
+      "package": "arcweft-player-scene",
+      "name": "action_button_submit",
+      "kind": "test",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "caseCount": 10
+    }
+  ],
+  "matched": 13,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2546-program-reverse-slice2-catalog",
+  "run": "task-final-r2547-program-reverse-slice2-runtime",
+  "buildOnly": false
+}

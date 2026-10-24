@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 11,
+  "run": "task-final-r2565-program-reverse-slice11-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcweft-lsp.exe",
+      "sha256": "095a586836078dcf456e2deb8e144dbe74e7d85888903021af2c44210339284a",
+      "bytes": 109112320
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-42b2c16d38037a62.exe",
+      "sha256": "d02f464c0d8be00a6a87f7362ebb42bd0e5eabee56527d9b135ed916a3c1cb20",
+      "bytes": 1190912
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-c6faacbc4b815ad2.exe",
+      "sha256": "13b294c851c73850bf6528ca72956da7b711d377be3828a02e4cffb4dc555edc",
+      "bytes": 1017344
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-d9bbc85eba6639f7.exe",
+      "sha256": "e9b33376992e611b27e2a0c92b4c16382470d3fc012c0a5bef6c552690ec8793",
+      "bytes": 1255936
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\descriptor_invariants-9acfbfc96c35e203.exe",
+      "sha256": "68ca517d574c81445a2bcea0524a1b3f211967207254610300eada204e3440b2",
+      "bytes": 2285056
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T03:48:56.7096704Z"
+}

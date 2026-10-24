@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "name": "task-final-r2554-program-reverse-slice6-catalog",
+  "all": 16,
+  "matched": 16,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "a_source_equivalent_foreign_plan_owner_does_not_authorize_a_numeric_packet",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "named_bracket_rows_keep_unused_whole_formals_in_the_original_abi",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "nary_bracket_calls_batch_four_complete_rows_with_the_original_eight_op_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "nary_bracket_calls_keep_one_op_results_and_ordinary_continuations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "nary_bracket_calls_keep_the_original_continuation_when_the_packet_cannot_fit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::builtin_payload_admission",
+      "test": "every_builtin_payload_case_requires_one_tuple_item_before_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::builtin_payload_admission",
+      "test": "option_and_result_payloads_must_reference_their_exact_declared_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project::bytecode_link_producer_inventory",
+      "test": "producer_family_wire_names_are_stable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project::bytecode_link_producer_inventory",
+      "test": "producer_inventory_contains_every_required_seq04_8_3_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_file_runner_executes_decoded_need_producer_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_file_runner_rejects_json_bytes_in_awfb_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_file_runner_requires_awfb_extension",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_runner_executes_custom_adapter_without_cli",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_runner_rejects_missing_exact_entry_selection_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_runner_reports_custom_adapter_missing_from_host",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "runtime_plan_vm_starts_and_awaits_a_typed_need_producer",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

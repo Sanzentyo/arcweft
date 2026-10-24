@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "name": "task-final-r2584-program-reverse-slice21-catalog",
+  "all": 15,
+  "matched": 15,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::patch_schema",
+      "test": "external_descriptor_change_is_metadata_only_and_preserved",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::patch_schema",
+      "test": "materialization_rejects_every_tampered_compatibility_fingerprint_field",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::patch_schema",
+      "test": "materialization_rewrites_manifest_and_reports_unsigned_target_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::patch_schema",
+      "test": "missing_target_manifest_rolls_back_before_target_encoding",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::patch_schema",
+      "test": "patch_bytes_are_deterministic_and_round_trip_schema_one",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::patch_schema",
+      "test": "patch_plan_rejects_duplicate_operation_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::patch_schema",
+      "test": "patch_schema_one_is_the_only_decoded_schema",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::patch_schema",
+      "test": "unknown_optional_section_kind_is_preserved_through_patch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::parser_diagnostic",
+      "test": "compiler_retains_the_exact_parse_diagnostic_in_a_readiness_failure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::nominal_schema_admission",
+      "test": "every_proof_definition_needs_a_type_and_correlation_work_is_bounded",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::nominal_schema_admission",
+      "test": "name_type_case_and_layout_mismatches_publish_nothing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::nominal_schema_admission",
+      "test": "new_nominal_types_cannot_enter_through_the_ordinary_type_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::nominal_schema_admission",
+      "test": "recursive_record_variant_graph_is_correlated_and_discarded_before_plan_seal",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::parity",
+      "test": "web_frame_report_drops_released_image_handle_resources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::parity",
+      "test": "web_frame_report_uses_visible_bounds_for_scroll_clipped_images",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

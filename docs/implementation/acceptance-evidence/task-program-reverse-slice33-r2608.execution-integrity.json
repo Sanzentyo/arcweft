@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 33,
+  "run": "task-final-r2609-program-reverse-slice33-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_resource_codecs-de62fc5e0175101a.exe",
+      "sha256": "ef3665a7e584cc5ca12c6f74395e3bcbc86cc2a9dcb9fdf33a89cc2350cf8a27",
+      "bytes": 26482688
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_text_controls-eec6b571f5d536e3.exe",
+      "sha256": "dffa4d82623d246a8f786a43627e10bd5f7045908d63b8991316eda10bf743f5",
+      "bytes": 20764160
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\scope_propagation-cc991fbd5bfc7b81.exe",
+      "sha256": "3c0e491626e67081781df86f415b46b88b3256e0359942e11e3d3e4e06049a33",
+      "bytes": 116635136
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\scroll_regions-e73641d84b820dce.exe",
+      "sha256": "544506e304d6a3442fc5c694f0229e7320a1af3ef67343bf5fbc701560a7aa52",
+      "bytes": 31308800
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:19:49.6714702Z"
+}

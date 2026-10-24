@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "ordinal": 44,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 1,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-player-native",
+      "name": "windowed_live_patch_smoke",
+      "kind": "test",
+      "binary": "arcweft-player-native::windowed_live_patch_smoke",
+      "caseCount": 8
+    }
+  ],
+  "matched": 8,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2630-program-reverse-slice44-catalog",
+  "run": "task-final-r2631-program-reverse-slice44-runtime",
+  "buildOnly": false
+}

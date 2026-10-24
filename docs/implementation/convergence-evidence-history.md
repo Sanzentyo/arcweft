@@ -10076,3 +10076,104 @@ productionのbudget／batch／fusion／copy／captureやassertionを弱める変
 32原本、8,469,452 bytesをbyte・SHA256・Git blob一致で保持した。差分0、
 raw logのwhitespace例外0。probeはソースだけを`.rs.txt`として保持し、生成metadataは含めない。
 変更2文書の相対リンク255件は解決可能、未閉鎖fenceは0、proseのwhitespace検査も通過した。
+
+## 全53逆依存のintegration／binと現状一覧の照合 — 2026-10-24
+
+前節は `f87b9616d627eccb598d0b80800edfa2a7f2d1e0` で公開した。
+parentは `a1b0797a538aa246931e1566dcd0fa8499da48bc`、treeは
+`a78b7b858b1fc5f0fb8466f09c2e060a0c5c6c30`、raw patch SHA256は
+`c5e2adab837ab015b5917299f7a6586c86e6814b111daf2f0d09186958a1765a`。
+[公開照合](acceptance-evidence/task-program-reverse-library-checkpoint.verified.json)は34公開blob、
+4,713入力、fresh origin／advertised ref、empty index、保持14 tracked WIPの差分0を確認した。
+6 untrackedも保持した。今回も同じ14 WIPを含む固定入力で実行し、pure commitの再実行とは呼ばない。
+
+### 実際のtargetと終端結果
+
+同じ解決済みCargo graphのCore逆依存53 packageをすべて明示し、
+`--all-features --locked -E rdeps(=arcweft-core)` で161 integration／5 bin targetを
+44組に分けて実行した。catalogはR2544からR2630の偶数、runtimeはR2545からR2631の奇数。
+全44 catalogがexit 0。runtimeはCLIを含むR2559だけexit 100、残る43実行はexit 0だった。
+Cargo jobs／profile、productionのbudget／batch／fusion／copy／capture、assertionを変更していない。
+ビルド生成物を移動・コピー・退避していない。
+
+[target別集計](acceptance-evidence/task-program-reverse-integration-summary.json)は
+**166 target／1,780実行／1,729 PASS／51 FAIL／39既存ignored**、pending 0、
+重複target／case 0を記録する。各組のcatalogと予定targetを照合し、case set、
+4,713固定入力、実行前後の各binary hashの差分0を確認した。
+`browser_bench_host`／`arcw`／`arcweft-lsp`／`windows-tsf-ime-sample`の4 binは
+named caseがなく、build実績をruntime PASSへ加算しない。
+
+library R2543の5,470 PASSと合わせた
+[重複のない全体集計](acceptance-evidence/task-program-reverse-combined-execution.json)は
+**7,250実行／7,199 PASS／51 FAIL／39既存ignored**。53 packageを選択し、
+50 packageに実際のnamed caseがある。libraryの4,681入力とintegrationの4,713入力の違いは、
+前節の公開で変更した2文書と追加した32証拠だけで、runtime関連入力の差分は0。
+別入力のR2535やHost 60件を重複加算しない。
+
+| package | 今回の実行 | PASS | FAIL | 既存ignored |
+|---|---:|---:|---:|---:|
+| Core | 2,025 | 2,025 | 0 | 0 |
+| Compiler | 617 | 617 | 0 | 0 |
+| Sema | 1,328 | 1,328 | 0 | 0 |
+| codegen | 12 | 12 | 0 | 0 |
+| CLI | 691 | 640 | 51 | 23 |
+
+Coreはlibrary 1,972／integration 53。以前のR2469のCore 2,013件は
+当時のlibrary 1,960／integration 53であり、その実行結果は保持する。
+R2469の選択7,234ケースをすべて保持し、追加16／削除0。
+旧Compiler失敗 `include_in_a_function_owned_thread_joins_before_its_flow_caller_returns` は
+今回同じ識別子でPASSした。旧失敗52件のうち残る51件はすべて同じCLI識別子で、
+新規失敗0。単に旧ケースが見えなくなったことを修復の証拠にしていない。
+
+### Generic MatchとCLIの判定
+
+[Generic Match照合](acceptance-evidence/task-program-reverse-generic-current-execution.json)は
+既存151識別子すべてについて、今回のlibrary／integrationの終端PASSを確認した。
+115 transcript／24 coverage／5 public query／7 Native・decoded-AWBC継続／保存の
+全群で未観測0、FAIL 0。受入 `850534b9e9bc8c8872f6528dd00050a5e6e7699e` と
+公開 `f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2` の判定を維持する。
+これは実行証拠の適用照合であり、受入済みの機能を再開したものではない。
+
+[R2559の全診断](acceptance-evidence/task-final-r2559-program-reverse-slice8-runtime.failure-recon.json)は
+51件すべてのpanic markerと原logへの対応を保持する。
+[診断分類](acceptance-evidence/task-program-reverse-cli-current-failure-classification.json)は
+typed Presentation ABI 9、JLREQ geometry／crop 8、View文法／観測6、意味解析の入口7、
+SourceのSemanticWork上限1、verify出力6、bench／profile／plan等14に分けた。
+分類は観測した診断・期待値の種類であり、各群の根本原因や修復方針を確定していない。
+fixtureが現行契約に合っているかも含めて調べる必要がある。
+
+Source上限の1件は `bench_json_measures_checked_in_large_map_pure_batch_fixture`。
+4,096要素のArray.mapが実行前の元SourceエンコードでSemanticWorkに達する。
+上限、要素数、batchの変更はしていない。typed Presentationの9件は、今回も
+Compilerが`Background`をpending typed command ABIとして拒否した。
+JLREQの8件も、後続本文のcolumnとhyphen後1169／1127の診断を保持する。
+これらをGeneric Matchや既存layout単体境界の受入取消しに広げない。
+
+### 現状説明の整理と未実行の範囲
+
+現状のauthorityは `current-status.md` 一か所に維持する。古いCLI／Compiler失敗件数、
+未実行だったCore integrationの説明、途中のfixture失敗の重複説明を現在の一覧から除き、
+本節と以前の原本へ分けた。Threadの起動・結果・capture・nested join・保存復元の
+検証済み条件に、全体goalの未達を重ねて「未完了」と付記しない。
+
+program continuationのdetached入力rollbackを一般的な残作業としていた列挙も削除した。
+既存の `program_continuation_rolls_back_awbc_context_and_inputs_after_custody_revision_failure` は
+今回のCore libraryでPASSし、detached Bool入力と元executorの一致を検査している。
+live accepted Needは元producer custodyを要求する。Sourceを含む未再現の懸念だけで、
+通過済みの境界を未完了へ戻さない。新しい不具合として再開するには、具体的な入力、
+失敗箇所、期待する所有・復元条件を示す必要がある。
+
+Image Presentation Objectsの「current implemented」という重複した実装状況の表現を除いた。
+source構文・規則は維持し、具体的なABI未接続は現状一覧へ集約する。
+今回のcutは文書・証拠のみで、Rust／Cargo／fixtureを変更していない。
+R2531 doctest 2件、R2532 workspace Clippy、R2536 workspace check、R2537 gateは
+以前の同じRust入力の結果として保持し、新規実行と呼ばない。Clippyには警告がある。
+39既存ignored、Tier2、Native-Web capture parityの包括的な最終受入は今回未実行。
+cancelや全資源境界について未確認の包括的な条件と、受入済みの個別条件を区別する。
+
+492原本、54,614,719 bytesをbyte・SHA256・Git blob一致で保持した。差分0。
+R2559原logのtrailing whitespace 8行は保持し、この1 logだけstaged whitespace検査から除外する。
+バイナリはhashとpathの記録だけで、生成物自体をarchiveしていない。
+変更3文書の相対リンク262件は解決可能、未閉鎖fenceは0、proseのwhitespace検査も通過した。
+495 pathsを引数で渡す最初のstagingは、Git起動前にWindowsの引数長上限で失敗した。
+同じ明示path一覧をNUL区切りmanifestにしてGitへ渡し、pathの省略や一括globへの変更はしない。

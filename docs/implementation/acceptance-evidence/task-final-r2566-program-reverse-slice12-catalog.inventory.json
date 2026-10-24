@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "name": "task-final-r2566-program-reverse-slice12-catalog",
+  "all": 21,
+  "matched": 21,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::diagnostic_ownership",
+      "test": "compiler_lint_facade_preserves_independent_lint_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::diagnostic_ownership",
+      "test": "syntax_parser_preserves_statement_error_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "authored_dialogue_profile_retains_typed_text_extents_and_typography_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "authored_dialogue_typography_rejects_properties_outside_the_current_registry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "authored_dialogue_typography_rejects_unconverted_units_and_wrong_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "authored_style_selector_targets_share_the_checked_text_and_control_schema",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "compiler_admits_profile_against_the_same_view_product_and_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "direct_project_compilation_admits_a_revision_bound_project_default",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "omitted_dialogue_fields_admit_the_engine_standard_view",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "profile_admission_rejects_missing_or_non_dialogue_catalog_entries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "profile_admission_requires_the_exact_resource_registry_arc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "unreachable_dialogue_view_function_does_not_enter_runtime_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::dialogue_view",
+      "test": "sampled_reveal_is_reversible_and_preserves_runtime_state_and_layout",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::dialogue_view",
+      "test": "standard_dialogue_view_pointer_activation_emits_its_exact_typed_handler_route",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::dialogue_view",
+      "test": "standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::dialogue_view",
+      "test": "unrelated_newer_dialogue_does_not_complete_a_rendered_active_entry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "authored_view_definitions_keep_independent_order_and_revisions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "same_view_history_mounts_only_its_active_occurrence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "snapshot_with_retained_entries_but_no_active_entry_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "store_round_trip_does_not_reuse_occurrence_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "unknown_waiting_activation_is_rejected_without_mutating_the_store",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

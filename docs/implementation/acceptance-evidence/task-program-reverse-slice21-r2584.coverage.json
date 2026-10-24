@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 21,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-bundle",
+      "name": "patch_schema",
+      "kind": "test",
+      "binary": "arcweft-bundle::patch_schema",
+      "caseCount": 8
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "parser_diagnostic",
+      "kind": "test",
+      "binary": "arcweft-compiler::parser_diagnostic",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-core",
+      "name": "nominal_schema_admission",
+      "kind": "test",
+      "binary": "arcweft-core::nominal_schema_admission",
+      "caseCount": 4
+    },
+    {
+      "package": "arcweft-player-web",
+      "name": "parity",
+      "kind": "test",
+      "binary": "arcweft-player-web::parity",
+      "caseCount": 2
+    }
+  ],
+  "matched": 15,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2584-program-reverse-slice21-catalog",
+  "run": "task-final-r2585-program-reverse-slice21-runtime",
+  "buildOnly": false
+}

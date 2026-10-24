@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2548-program-reverse-slice3-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-4c87fee3f6c3507e.exe",
+      "bytes": 3250176,
+      "nonTest": false,
+      "sha256": "8aedad9bbd92dc4d4ccd3aa4410b3253f76b90a0f998a4d7a979c5c7c54b54c7"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-632f7ddf6968682b.exe",
+      "bytes": 3249152,
+      "nonTest": false,
+      "sha256": "de48db25c38686c36b613344d190c988cbef63bd8ba9115aabc0d6f8a360af08"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-aa6aa2b43cd5c84f.exe",
+      "bytes": 3257856,
+      "nonTest": false,
+      "sha256": "193fc0e40989f9e1dfa14aa86cf20de2fc472ce452ef63b56cf2c8fc3234d3b4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-cea7c583688c474a.exe",
+      "bytes": 3248640,
+      "nonTest": false,
+      "sha256": "7a8dd342fa31702aaefe0772cf0ad63cd5c5d0bf755f450089e701f09b0ea573"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-ec5a28d61575d921.exe",
+      "bytes": 3250176,
+      "nonTest": false,
+      "sha256": "8a4ce14fe5b752ebe4fc5ca27eea8de1d45a8491920b0dd1c98c4ed01b926eb8"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T03:22:01.4056527Z"
+}

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 11,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-agent-mcp",
+      "name": "descriptor_invariants",
+      "kind": "test",
+      "binary": "arcweft-agent-mcp::descriptor_invariants",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-lsp",
+      "name": "dependency_direction",
+      "kind": "test",
+      "binary": "arcweft-lsp::dependency_direction",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-project-loader",
+      "name": "dependency_direction",
+      "kind": "test",
+      "binary": "arcweft-project-loader::dependency_direction",
+      "caseCount": 4
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "name": "dependency_direction",
+      "kind": "test",
+      "binary": "arcweft-runtime-host::dependency_direction",
+      "caseCount": 3
+    }
+  ],
+  "matched": 10,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2564-program-reverse-slice11-catalog",
+  "run": "task-final-r2565-program-reverse-slice11-runtime",
+  "buildOnly": false
+}

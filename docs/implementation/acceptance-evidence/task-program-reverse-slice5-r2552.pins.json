@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2552-program-reverse-slice5-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_runner-cd88e55b67ad496a.exe",
+      "bytes": 2523136,
+      "nonTest": false,
+      "sha256": "4c947b8f960a27b39d5f5739cd2d18b1a2e7e39fb20712b127fd9488f5a16f21"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_session-f3321ab63bdb2900.exe",
+      "bytes": 105865728,
+      "nonTest": false,
+      "sha256": "0b3955540fcd313638b6baf2eb36296119834105578e824ddd62ec6cccb8b2ff"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_record_type-06cc74777ff6d842.exe",
+      "bytes": 7329280,
+      "nonTest": false,
+      "sha256": "8598e44490ba4e3d20442a4aed366fd24d4cbdb007d8eac9021b0116d5d84ade"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_variant_types-96bc9f828c6ef621.exe",
+      "bytes": 9917440,
+      "nonTest": false,
+      "sha256": "9cb11270ef6e795622edf94403605336f531a35207bb0f177808d8fa323e91c6"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T03:31:59.5577252Z"
+}

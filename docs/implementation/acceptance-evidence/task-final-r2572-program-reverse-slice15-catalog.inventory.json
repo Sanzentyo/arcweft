@@ -1,0 +1,506 @@
+{
+  "version": 1,
+  "name": "task-final-r2572-program-reverse-slice15-catalog",
+  "all": 71,
+  "matched": 71,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "auto_scroll_indicator_fades_deterministically_and_reduce_motion_skips_fade",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "choice_geometry_ignores_scroll_offset",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "content_rect_contain_preserves_design_aspect_ratio_in_tall_output",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "content_rect_maps_design_rect_into_output_space",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "content_rect_modes_make_raw_cover_and_stretch_distinct",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "directional_keyboard_navigation_uses_focus_target_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "elastic_displacement_affects_visual_offset_but_not_committed_offset",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "focus_navigation_explicit_edge_overrides_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "focus_navigation_next_previous_respects_no_wrap_group",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "focused_text_input_target_browser_and_native_use_same_geometry_snapshot_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "focused_text_input_target_produces_real_focused_text_field",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "focused_text_input_target_secure_field_redacts_value_and_character_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "generated_visual_demo_supplies_background_character_and_animated_frames",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "hidden_scroll_region_reports_no_scroll_range",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "horizontal_scroll_region_offsets_and_clips_owned_text_controls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "interaction_visual_state_changes_the_prepared_choice_rectangles",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "keyboard_navigation_wraps_across_stable_targets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "planner_uses_the_same_choice_geometry_for_render_and_hit_test",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "prepared_frame_fit_mapping_scales_runtime_control_geometry_and_ime_snapshots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "scroll_indicator_policies_produce_observable_thumb_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "scroll_region_drops_images_outside_viewport",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "scroll_region_offsets_and_clips_owned_action_buttons",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "scroll_region_offsets_and_clips_owned_images",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "scroll_region_offsets_and_clips_owned_text_controls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "scroll_region_uses_visible_bounds_for_runtime_control_effect_plans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "scroll_regions_survive_frame_planning_and_viewport_mapping",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "signed_scroll_range_preserves_negative_offsets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "stateful_planner_reuses_the_shared_text_shape_cache_for_controls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry",
+      "test": "viewport_physical_scale_factor_preserves_the_host_validated_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "action_button_uses_current_authored_fill_and_text_color",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "authored_control_depth_orders_text_inputs_and_buttons_together",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "backdrop_filter_reaches_runtime_control_backdrop_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "empty_text_control_paints_current_placeholder_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "focused_text_control_uses_authored_focus_ring",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "focused_text_control_uses_authored_selection_and_caret_colors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "foreground_filter_reaches_runtime_control_filter_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "runtime_control_color_matrix_filters_reach_view_filter_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "runtime_control_paint_span_carries_inline_backdrop_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "supported_box_shadow_reaches_existing_shadow_pass_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "text_control_corner_frame_draws_independent_corner_segments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "text_control_fill_and_inner_marks_use_authored_corner_radii",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "text_control_uses_authored_font_metrics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "test": "text_controls_and_buttons_use_authored_font_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::identity_contract",
+      "test": "declaration_identity_preserves_internal_public_and_nominal_axes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::identity_contract",
+      "test": "stable_text_identities_reject_noncanonical_spellings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::identity_contract",
+      "test": "zero_is_reserved_for_stable_numeric_identities",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "axis_001_to_011_axis_metadata_does_not_change_physical_geometry_or_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "bx_001_to_017_border_box_measurement_is_checked",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "bx_012_conflicting_constraints_identify_the_axis",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "bx_016_explicit_zero_obeys_edge_fit_before_minimum_lifting",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "cache_002_to_016_revision_domains_include_path_order_and_exact_dependencies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "cap_007_raster_rounding_is_outward_for_negative_and_positive_edges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "clip_002_to_003_overflow_axes_are_independent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "clip_empty_bounded_unbounded_and_intersection_are_closed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "con_001_to_009_consumers_share_one_visible_border_box",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "con_pointer_ingress_floors_to_milli_and_rejects_non_finite_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "flow_003_to_006_margins_never_collapse_and_gap_is_additive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "flow_010_to_013_physical_gaps_apply_only_between_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "neg_001_to_006_non_negative_fields_reject_negative_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "neg_007_to_008_signed_margins_may_shrink_but_not_invert",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "num_003_coordinate_overflow_is_not_saturated",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "num_014_edge_touch_is_not_visible",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "paint_effect_bounds_do_not_block_layout_but_remain_fail_closed_for_paint",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "pos_002_static_insets_are_not_ignored",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "pos_004_to_010_relative_insets_move_without_changing_static_allocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "pos_015_absolute_auto_size_stretches_between_both_insets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "pos_017_definite_size_with_both_insets_is_typed_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "scr_002_to_018_scroll_range_preserves_leading_and_trailing_overflow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "unsupported_represented_geometry_is_never_silently_dropped",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "xfm_001_to_011_scale_rounds_outward_after_translation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::geometry_contract",
+      "test": "xfm_007_to_009_transform_chain_is_inner_to_outer",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

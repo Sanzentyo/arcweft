@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 20,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-adapter-desktop",
+      "name": "native_integration",
+      "kind": "test",
+      "binary": "arcweft-adapter-desktop::native_integration",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-cli",
+      "name": "native_host_contracts",
+      "kind": "test",
+      "binary": "arcweft-cli::native_host_contracts",
+      "caseCount": 8
+    },
+    {
+      "package": "arcweft-cli",
+      "name": "native_style_parity_sample",
+      "kind": "test",
+      "binary": "arcweft-cli::native_style_parity_sample",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "named_scopes",
+      "kind": "test",
+      "binary": "arcweft-compiler::named_scopes",
+      "caseCount": 4
+    }
+  ],
+  "matched": 14,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2582-program-reverse-slice20-catalog",
+  "run": "task-final-r2583-program-reverse-slice20-runtime",
+  "buildOnly": false
+}

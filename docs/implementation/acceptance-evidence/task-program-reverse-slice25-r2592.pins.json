@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2592-program-reverse-slice25-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\publication_contract-81d4c47e5eff48d3.exe",
+      "bytes": 4589056,
+      "nonTest": false,
+      "sha256": "5c86433e6653b0fc80aa516c44e4bb7774e935be32e9998d878d863e09b427f1"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\record_admission-c5a7b7a606bf3090.exe",
+      "bytes": 6188544,
+      "nonTest": false,
+      "sha256": "9da4987eef1815d3be4c724a334a1ce4ebb727c7bb25e8ea58ee83726526b92e"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\record_field_names-3201d4923f942298.exe",
+      "bytes": 5058560,
+      "nonTest": false,
+      "sha256": "aa142ccd941e5d244fe40347e07c730dece82eeb36c84503d7170938a4832e1b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\registry_contract-770bab663062000a.exe",
+      "bytes": 2081792,
+      "nonTest": false,
+      "sha256": "91735367d0ffc9a8eb2bbb5220375af477c337b6c2dc8032caf044be7a04587c"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T04:15:52.2653220Z"
+}

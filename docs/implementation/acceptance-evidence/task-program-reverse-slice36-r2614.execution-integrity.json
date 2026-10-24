@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 36,
+  "run": "task-final-r2615-program-reverse-slice36-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\style_sheet-2f3b14ccda6bb302.exe",
+      "sha256": "8d793baad8b9d231e5c92599436872a77a54540aebece5511f23099fedfe0547",
+      "bytes": 3441664
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_admission-880072812237b454.exe",
+      "sha256": "abfdd2285130ff5480ffb4d0f3009a21f50f021659efc0a768ba332d5844af8f",
+      "bytes": 2381312
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_plan_view_prefix-e52919b12cbd0056.exe",
+      "sha256": "fc89a82652cde276cbac741495e2f47e643413e0deb9b8d11ed56fab02f0f478",
+      "bytes": 739840
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\try_pipe-fe6d969fa8c0c87c.exe",
+      "sha256": "bb65b9da7c1625c903a8d7b307691f4f5e151b5c58ee85f0f450ae49ffac1a51",
+      "bytes": 115385344
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:21:10.8230331Z"
+}

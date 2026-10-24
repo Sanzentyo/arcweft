@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2568-program-reverse-slice13-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292100096,
+      "nonTest": true,
+      "sha256": "b925f2a12a386ad73f284cfcf42140f6692767a586c75d9f8edbfd49e4d99a43"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\direct_suspension-e010eef430ec8e08.exe",
+      "bytes": 14526976,
+      "nonTest": false,
+      "sha256": "33752f2d0b7014c8731df637bcc660c0d0f4a145bec69a085d0f579d0242122a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\document_layout-cb9968579eb59d94.exe",
+      "bytes": 4858880,
+      "nonTest": false,
+      "sha256": "5e2214e821b9884a7055bfb82c7ed7ab5f5a540f38f836b8d8431da7892a6e19"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\environment_callable_tensor-9b2165f1e5d9a14b.exe",
+      "bytes": 167556096,
+      "nonTest": false,
+      "sha256": "437dd2c710f3521313701fa58f68760db6b7eec14937f35359014f5777692a27"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\evaluated_effects-f918d9c18aa7a9af.exe",
+      "bytes": 137916928,
+      "nonTest": false,
+      "sha256": "a420f52a98907a9528efff284959d76e39ae4f39ac6a4f5704b6724fe45e1ec8"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T03:50:04.5619607Z"
+}

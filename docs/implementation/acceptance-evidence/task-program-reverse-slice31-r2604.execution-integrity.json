@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 31,
+  "run": "task-final-r2605-program-reverse-slice31-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_identity-3635d2f0ea8f1287.exe",
+      "sha256": "a93718ed7fe2fe634235fd1f9718359c191cae8c5190f6bb11b4ec5e38502028",
+      "bytes": 2317824
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_identity-dd8a822eca7cf726.exe",
+      "sha256": "f05dc5c86735eadcc0db7ea51390d75f2c555c696e1abf3aaab3778a7cab5d84",
+      "bytes": 1309184
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_color-5d4bbd6453b1763b.exe",
+      "sha256": "e429641a72860e23b521689a7463f580e124457b510af61b39e646d5dd484db9",
+      "bytes": 115377152
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_backdrop_gpu_smoke-48d4097946b64cbc.exe",
+      "sha256": "2d56f5ceab42973741663673e42d1e59807d167883d5eca7cf4ca28c8205a081",
+      "bytes": 30995968
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:18:52.6096828Z"
+}

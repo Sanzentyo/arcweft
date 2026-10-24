@@ -1,0 +1,296 @@
+{
+  "version": 1,
+  "name": "task-final-r2612-program-reverse-slice35-catalog",
+  "all": 41,
+  "matched": 41,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::style_cross_section_refs",
+      "test": "style_cross_section_references_round_trip_from_every_supported_location",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::style_cross_section_refs",
+      "test": "style_decode_rejects_missing_target_from_every_supported_location",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::style_cross_section_refs",
+      "test": "style_decode_rejects_public_id_on_target_without_public_id_table",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::style_cross_section_refs",
+      "test": "style_decode_rejects_target_identity_and_public_id_mismatches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::style_cross_section_refs",
+      "test": "style_encode_rejects_missing_target_from_every_supported_location",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::style_cross_section_refs",
+      "test": "style_encode_rejects_public_id_on_target_without_public_id_table",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::style_cross_section_refs",
+      "test": "style_encode_rejects_target_identity_and_public_id_mismatches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "migration_limits::codec_results_are_admitted_before_migration_and_shape_conversion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "migration_limits::migration_results_are_admitted_before_conversion_or_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_decode_rejects_schema_identity_and_future_versions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_decode_requires_matching_migration_for_old_versions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_decode_runs_multi_step_migration_chain",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_envelope_checks_lengths_before_copying_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_envelope_rejects_trailing_data_by_default",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_migration_chain_rejects_schema_mismatches_and_duplicate_steps",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "condition_direct_serde_rejects_duplicate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "condition_direct_serde_rejects_empty",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "condition_direct_serde_rejects_noncanonical_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "condition_direct_serde_rejects_out_of_range_text_scale",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "condition_direct_serde_rejects_over_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "condition_direct_serde_rejects_removed_source_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "condition_direct_serde_rejects_unknown_null_nested_and_wrong_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "condition_try_new_rejects_empty_duplicate_and_over_four",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "condition_try_new_sorts_canonical_field_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "container_comparison_direct_replacement_round_trips_all_six",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "environment_guard_adds_zero_specificity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "guard_short_circuit_usage_reads_only_required_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "matched_guard_usage_reads_all_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "projection_only_color_scheme_change_reuses_computed_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "selection_field_change_evicts_cascade_entry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_environment",
+      "test": "unrelated_environment_field_change_keeps_cache_entry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "canonical_property_names_are_unique_and_round_trip",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "canonical_selector_names_are_exact_and_round_trip",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "canonical_value_names_are_exact_and_round_trip",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "font_families_and_closed_specified_variants_are_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "gap_is_a_noncanonical_two_axis_shorthand",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "invalidation_and_specified_values_keep_distinct_units_and_kinds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "physical_geometry_metadata_is_exhaustive_and_distinguishes_representation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "property_metadata_encodes_value_and_element_constraints",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "selector_sequences_validate_relations_and_compute_specificity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_metadata",
+      "test": "typed_ids_and_applications_preserve_scope_order_and_boundaries",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

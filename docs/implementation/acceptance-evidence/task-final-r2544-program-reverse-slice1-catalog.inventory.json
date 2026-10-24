@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "name": "task-final-r2544-program-reverse-slice1-catalog",
+  "all": 4,
+  "matched": 4,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::bin/arcweft-player-native",
+      "test": "tests::capture_mode_requires_capture_out",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::bin/arcweft-player-native",
+      "test": "tests::default_bundle_mode_runs_awfb_without_source_flag",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::bin/arcweft-player-native",
+      "test": "tests::default_input_requires_awfb_bundle",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::bin/arcweft-player-native",
+      "test": "tests::product_awfb_input_does_not_fall_back_to_json_export",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 15,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "geometry",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::geometry",
+      "caseCount": 29
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "geometry_runtime_control_styles",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+      "caseCount": 14
+    },
+    {
+      "package": "arcweft-resource-model",
+      "name": "identity_contract",
+      "kind": "test",
+      "binary": "arcweft-resource-model::identity_contract",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-view",
+      "name": "geometry_contract",
+      "kind": "test",
+      "binary": "arcweft-view::geometry_contract",
+      "caseCount": 25
+    }
+  ],
+  "matched": 71,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2572-program-reverse-slice15-catalog",
+  "run": "task-final-r2573-program-reverse-slice15-runtime",
+  "buildOnly": false
+}

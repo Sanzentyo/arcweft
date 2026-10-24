@@ -1,0 +1,296 @@
+{
+  "version": 1,
+  "name": "task-final-r2570-program-reverse-slice14-catalog",
+  "all": 41,
+  "matched": 41,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "authored_and_inferred_flow_effects_authorize_ordinary_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "authored_flow_permissions_keep_unused_members_and_scopes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "curried_prefix_has_argument_effects_but_keeps_body_effects_latent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "curried_terminal_application_executes_the_body_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "static_and_dynamic_flow_transfers_change_the_active_effect_scope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "awbc_returned_thread_handle_preserves_capture_and_result_through_each_step_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "forged_program_child_save_rejects_without_losing_the_original_handle_or_result",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "forward_include_implicitly_completes_and_resumes_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "generic_thread_capture_is_copied_under_its_original_binding_and_survives_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "goto_inside_an_include_replaces_the_actual_flow_without_returning_to_its_caller",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_explicit_unit_and_value_returns_resume_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_in_a_function_owned_thread_joins_before_its_flow_caller_returns",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_rejects_a_parameterized_flow_before_executable_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "mutually_recursive_includes_execute_under_the_original_one_operation_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_nested_thread_finishes_its_own_descendants_before_the_outer_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_returned_thread_handle_delivers_its_actual_non_unit_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_sibling_thread_includes_return_to_their_callers_without_mutual_join",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_spawn_function_returns_before_its_child_finishes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_thread_capture_source_and_child_resume_under_one_operation_steps",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_thread_quota_rejection_publishes_no_child_or_task",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_thread_retires_its_actual_non_unit_source_result_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "repeated_and_nested_includes_share_original_functions_and_resume_their_callers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "returned_thread_result_waits_for_its_actual_nested_child_through_each_step_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "authored_formatter_transaction_restores_its_original_staging_and_completes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "authored_lazy_context_executes_in_native_and_restores_the_awbc_callback_cause",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awbc_callable_snapshot_rejects_a_forged_retained_type",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awbc_verifier_rejects_a_generic_bound_type_at_a_forged_depth",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awfb_session_save_preserves_a_live_local_before_nested_replacement",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awfb_session_save_restores_the_generic_prefix_into_its_pinned_program",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "empty_never_statement_match_preserves_let_else_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "inhabited_empty_statement_match_cannot_publish_a_native_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "native_generic_continuation_keeps_its_scheme_origin_position_and_prefix",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "standard_map::captured_map_restores_its_original_callback_and_continues_remaining_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "standard_map::retained_map_prefix_restores_its_mapping_and_original_captured_callback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "discarded_interpolation_retains_an_omitted_preorder_node",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "interpolation_failure_policy_can_discard_or_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "interpolation_failure_policy_can_fail_line",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "interpolation_fallback_can_render_expr_or_call_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "nested_ruby_owns_preorder_body_nodes_and_exact_run_slices",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "resolves_text_ruby_controls_and_interpolation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "structural_scope_preserves_style_across_control_nodes",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

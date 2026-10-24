@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 34,
+  "run": "task-final-r2611-program-reverse-slice34-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "sha256": "b925f2a12a386ad73f284cfcf42140f6692767a586c75d9f8edbfd49e4d99a43",
+      "bytes": 292100096
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\seq04_8_4_persistent_cache_build_cli_goldens-4c80dfc374ddcebb.exe",
+      "sha256": "7aed676a82db1251a8d257f584188c9318ab0f3135007391d00033f7bbb7361a",
+      "bytes": 2406912
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\shared_text_layout-076e71fdd886d2f6.exe",
+      "sha256": "3e7f7fae00f74f33b0290e26afc09fc7aa2bebdd95a25bb70d8dbb4d9ea753e8",
+      "bytes": 18938368
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\source_map-df71480a84ca1e20.exe",
+      "sha256": "f7f900e8d0047dfd274c6258f2501b758a0934d70d4cc187b3949ba5324ecbc4",
+      "bytes": 2522112
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\standard_dialogue_view-9ccf972555bde2fd.exe",
+      "sha256": "40d7a431c34381b62c65fd188c002a4ffdaac5a7fb234a22b3755cc0ce2c4f1b",
+      "bytes": 15851008
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:20:15.7385946Z"
+}

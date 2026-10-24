@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 43,
+  "run": "task-final-r2629-program-reverse-slice43-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcweft-player-native.exe",
+      "sha256": "03a3317f3a2b4bc52868b6e8b8cf4377d66410dcecc69c3ad81d75564d1894c0",
+      "bytes": 174467584
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web.dll",
+      "sha256": "45d407fc2250483cf08e6a1ad1e44518a1fef16f8fa82e49afe0db13fc720ccc",
+      "bytes": 908800
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_style_program-3543011b7f4f3eee.exe",
+      "sha256": "af583488c8b23d7833fcebf1817dfe26b5a242b0f9a891c170f34e0482395a91",
+      "bytes": 9217024
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\virtualization-0a92a9a055e2d706.exe",
+      "sha256": "84cec9b82db86a207ca2f6447f1e50c90148223c6a552b716c251070800e45c2",
+      "bytes": 1319936
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\web_text_input_glue-ac65dee3e8ec97c9.exe",
+      "sha256": "08e9e9b2ec950ce70faee518e48d90d84e8ab9935994eda5404d197b20f54814",
+      "bytes": 1649664
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_ingress_runtime-d31ab62d22811c54.exe",
+      "sha256": "8a3a7c67dd5ba1b87d180ee1ed8bf379308dd108ee5ebd1ffe1e14f01807e678",
+      "bytes": 97180672
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\windows-tsf-ime-sample.exe",
+      "sha256": "d330e4b1447252920ca6e3e9db326587ec9940efadc1e58534c7130a29daec1a",
+      "bytes": 2734592
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:25:22.1983957Z"
+}

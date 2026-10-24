@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2560-program-reverse-slice9-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_match_query-8f8917e2ef3f0ca7.exe",
+      "bytes": 54926336,
+      "nonTest": false,
+      "sha256": "a9dacece2cd124e356fa6b119d0b314b19ad83261cc086bf1b11fb42e1009aaa"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_statement_read_only_views-798ce6021130aa76.exe",
+      "bytes": 740352,
+      "nonTest": false,
+      "sha256": "8cef7f706b490e4f9ec9fc547a91775eab5b77918b98d2d38af1ce8bf0b93296"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\choice_static-9dddbc0b530798dd.exe",
+      "bytes": 97664512,
+      "nonTest": false,
+      "sha256": "c6a45ccae220ddb82d5143252ec9d1ae458f78cfd07e6dff2f844b4e987d9c86"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\computed_style-1e3260ccf0ad4fe7.exe",
+      "bytes": 2376704,
+      "nonTest": false,
+      "sha256": "4358e71e6ba783da2577e140691bd4f3610acde8d5f2bf9c29de5ce62804c379"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T03:47:04.5543428Z"
+}

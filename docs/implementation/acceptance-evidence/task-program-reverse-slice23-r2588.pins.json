@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2588-program-reverse-slice23-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\project_function_instances-6f4f6a2ed3561bc5.exe",
+      "bytes": 115492864,
+      "nonTest": false,
+      "sha256": "bf95bc11dbbf31539901266df61fea6e58aa1436430777b95c895fe568c64b51"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T04:08:27.1433447Z"
+}

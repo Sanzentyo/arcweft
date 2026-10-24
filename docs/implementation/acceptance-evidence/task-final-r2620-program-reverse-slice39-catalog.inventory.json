@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "name": "task-final-r2620-program-reverse-slice39-catalog",
+  "all": 11,
+  "matched": 8,
+  "excluded": 3,
+  "rows": [
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "test": "compositor_plan_counts_path_clip_and_gradient_mask_passes_deterministically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "test": "element_mask_is_structured_capture_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "test": "gradient_mask_alpha_and_luminance_modes_produce_different_coverage",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "test": "inset_circle_ellipse_and_polygon_clips_plan_as_shader_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "test": "mask_repeat_space_and_round_resolve_tile_distribution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "test": "mask_sampling_resolves_size_position_repeat_and_channel",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "test": "path_and_oversized_polygon_stay_structured_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "test": "path_clips_lines_curves_and_both_fill_rules",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke",
+      "test": "gpu_smoke_blur_shadow_mask_clip_backdrop_and_blend_fixture",
+      "ignored": true,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke_seq06_13c",
+      "test": "seq06_13c_path_clip_gradient_mask_visual_smoke_fixture",
+      "ignored": true,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke_timestamps",
+      "test": "gpu_smoke_clip_mask_and_motion_timestamps",
+      "ignored": true,
+      "status": "mismatch"
+    }
+  ]
+}

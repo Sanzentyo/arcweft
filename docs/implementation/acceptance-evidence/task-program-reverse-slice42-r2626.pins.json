@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2626-program-reverse-slice42-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_runtime_text_controls-d2c61d105cec0086.exe",
+      "bytes": 2104320,
+      "nonTest": false,
+      "sha256": "1dde6531ba5df49584ccdb07ac234d26000b1aabbb7d437a5ec27cd7dd97e06a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_runtime-5b0fc03a63e809ce.exe",
+      "bytes": 45691904,
+      "nonTest": false,
+      "sha256": "7a5936a0891e82c2872d9c921618fa5cc6c9aa0e24e0774f391aa3ec09c0ea11"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_scene_player_path-ba4ba6f3a4427162.exe",
+      "bytes": 8098816,
+      "nonTest": false,
+      "sha256": "3c83f535f0d324f7ee2ca46edc6dd49187069818ca053cdc311adc82a1f191b4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_style_environment_codec-6b5362f9f9f2ea18.exe",
+      "bytes": 13669376,
+      "nonTest": false,
+      "sha256": "effc48b1159ba2a0bd2a1bdc57a49d13de555fd391c31726dbbae539934b2c95"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T04:24:35.4780999Z"
+}

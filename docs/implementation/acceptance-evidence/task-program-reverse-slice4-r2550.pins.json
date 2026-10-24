@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2550-program-reverse-slice4-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292100096,
+      "nonTest": true,
+      "sha256": "b925f2a12a386ad73f284cfcf42140f6692767a586c75d9f8edbfd49e4d99a43"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcw_fixtures_check_run-1de0cc0ddf54db9a.exe",
+      "bytes": 868864,
+      "nonTest": false,
+      "sha256": "1f8f984630af0619d6c1032d86b1e128f50d37366707c9a752a0c77ecfb84d2c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertion_identity-09b23a06226358da.exe",
+      "bytes": 73896448,
+      "nonTest": false,
+      "sha256": "d3968c9f8d1d451df6e00c6a65e3e1f2c1c3437336d1c4088e1e9189a961ac88"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertions-cba81240f9033392.exe",
+      "bytes": 92136960,
+      "nonTest": false,
+      "sha256": "33f30598b0b5554c218c59f0c6bc72a66ccaaeb1c83d9260a6845362f874a7d5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_parity-7fa0989d45214c56.exe",
+      "bytes": 44098560,
+      "nonTest": false,
+      "sha256": "46cab2f39ddaa53910e25017fc0beed2c6c0399a96631564956df4a000f84c1d"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T03:31:12.5862144Z"
+}

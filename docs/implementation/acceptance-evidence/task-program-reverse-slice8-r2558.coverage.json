@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 8,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-bundle",
+      "name": "character_package",
+      "kind": "test",
+      "binary": "arcweft-bundle::character_package",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-cli",
+      "name": "check",
+      "kind": "test",
+      "binary": "arcweft-cli::check",
+      "caseCount": 480
+    },
+    {
+      "package": "arcweft-cli",
+      "name": "check_core_cli",
+      "kind": "test",
+      "binary": "arcweft-cli::check_core_cli",
+      "caseCount": 10
+    },
+    {
+      "package": "arcweft-player-scene",
+      "name": "character_stage",
+      "kind": "test",
+      "binary": "arcweft-player-scene::character_stage",
+      "caseCount": 3
+    }
+  ],
+  "matched": 473,
+  "excluded": 23,
+  "ignored": 23,
+  "catalog": "task-final-r2558-program-reverse-slice8-catalog",
+  "run": "task-final-r2559-program-reverse-slice8-runtime",
+  "buildOnly": false
+}

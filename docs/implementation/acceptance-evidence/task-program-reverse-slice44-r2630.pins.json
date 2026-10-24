@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2630-program-reverse-slice44-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcweft-player-native.exe",
+      "bytes": 174467584,
+      "nonTest": true,
+      "sha256": "03a3317f3a2b4bc52868b6e8b8cf4377d66410dcecc69c3ad81d75564d1894c0"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_live_patch_smoke-e32d663b8e6e11ad.exe",
+      "bytes": 97510912,
+      "nonTest": false,
+      "sha256": "4b3942a96af52f92e60f60789d7d7eb51075ffd43ce717231079b5bd7c7ca214"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\windows-tsf-ime-sample.exe",
+      "bytes": 2734592,
+      "nonTest": true,
+      "sha256": "d330e4b1447252920ca6e3e9db326587ec9940efadc1e58534c7130a29daec1a"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T04:25:42.6054509Z"
+}

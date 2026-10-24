@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 4,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-cli",
+      "name": "arcw_fixtures_check_run",
+      "kind": "test",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "caseCount": 8
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "assertions",
+      "kind": "test",
+      "binary": "arcweft-compiler::assertions",
+      "caseCount": 8
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "name": "assertion_identity",
+      "kind": "test",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "caseCount": 10
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "name": "awbc_product_parity",
+      "kind": "test",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "caseCount": 15
+    }
+  ],
+  "matched": 41,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2550-program-reverse-slice4-catalog",
+  "run": "task-final-r2551-program-reverse-slice4-runtime",
+  "buildOnly": false
+}

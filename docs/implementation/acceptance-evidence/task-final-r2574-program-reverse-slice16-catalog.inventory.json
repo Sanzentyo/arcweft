@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "name": "task-final-r2574-program-reverse-slice16-catalog",
+  "all": 15,
+  "matched": 15,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::ime_player_rendered",
+      "test": "ime_generator_publishes_deterministic_controls_and_executable_callbacks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::inline_failure_policy",
+      "test": "one_string_fallback_can_be_used_by_multiple_character_dialogues",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "drag_beyond_the_activation_threshold_does_not_select",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "keyboard_focus_navigation_activates_the_focused_choice",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "pointer_activation_emits_a_typed_semantic_choice_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "web_hidden_runtime_text_control_rejects_stale_writeback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "web_hidden_view_action_button_rejects_stale_hit_and_focus",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "web_hidden_view_text_control_rejects_stale_hit_and_focus",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "wheel_input_updates_horizontal_scroll_region_under_pointer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "wheel_input_updates_scroll_region_under_pointer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "wheel_input_without_scroll_region_is_noop_for_choice_scroll_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::interaction_routing",
+      "test": "disabled_rule_has_final_precedence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::interaction_routing",
+      "test": "fragment_resolution_propagates_named_scope_and_inherits_only_parent_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::interaction_routing",
+      "test": "interaction_cascade_resolves_hover_focus_and_pressed_without_backend_matching",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::interaction_routing",
+      "test": "routed_activate_selects_handler_by_stable_target",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

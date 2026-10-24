@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-browser-bench",
+      "name": "browser_bench_host",
+      "kind": "bin",
+      "binary": "arcweft-browser-bench::bin/browser_bench_host",
+      "caseCount": 0
+    },
+    {
+      "package": "arcweft-cli",
+      "name": "arcw",
+      "kind": "bin",
+      "binary": "arcweft-cli::bin/arcw",
+      "caseCount": 0
+    },
+    {
+      "package": "arcweft-lsp",
+      "name": "arcweft-lsp",
+      "kind": "bin",
+      "binary": "arcweft-lsp::bin/arcweft-lsp",
+      "caseCount": 0
+    },
+    {
+      "package": "arcweft-player-native",
+      "name": "arcweft-player-native",
+      "kind": "bin",
+      "binary": "arcweft-player-native::bin/arcweft-player-native",
+      "caseCount": 4
+    }
+  ],
+  "matched": 4,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2544-program-reverse-slice1-catalog",
+  "run": "task-final-r2545-program-reverse-slice1-runtime",
+  "buildOnly": false
+}

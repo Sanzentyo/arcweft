@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 29,
+  "run": "task-final-r2601-program-reverse-slice29-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\resource_codec_common-76dbbdaf05fb0f37.exe",
+      "sha256": "3ed067980380929ffdd34e6612bc7805a2f95acff27466d545df328c80b70b1b",
+      "bytes": 2610176
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\resource_type_manifest_section-2f775bfcd4852753.exe",
+      "sha256": "058480a26302cad04f1c6739a258348fd14dec948e741e6fd0d8e29085c05675",
+      "bytes": 5530624
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\responsive_stage_placement-00b0dc5ceb4e2679.exe",
+      "sha256": "13ed6c9880340b69946b54bdde9b5cf60da83c2a741f13a05a7e28b563b1ff77",
+      "bytes": 777216
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\retained_identity_contract-cace98fdcd50596f.exe",
+      "sha256": "c9e6e224e2a1dd59b91a4495ddd7ecf0dc8a85e2192c213e8444a1e2b9e3509f",
+      "bytes": 1064448
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:17:57.8818698Z"
+}

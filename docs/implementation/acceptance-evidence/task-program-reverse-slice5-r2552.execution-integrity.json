@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 5,
+  "run": "task-final-r2553-program-reverse-slice5-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_runner-cd88e55b67ad496a.exe",
+      "sha256": "4c947b8f960a27b39d5f5739cd2d18b1a2e7e39fb20712b127fd9488f5a16f21",
+      "bytes": 2523136
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_session-f3321ab63bdb2900.exe",
+      "sha256": "0b3955540fcd313638b6baf2eb36296119834105578e824ddd62ec6cccb8b2ff",
+      "bytes": 105865728
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_record_type-06cc74777ff6d842.exe",
+      "sha256": "8598e44490ba4e3d20442a4aed366fd24d4cbdb007d8eac9021b0116d5d84ade",
+      "bytes": 7329280
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_variant_types-96bc9f828c6ef621.exe",
+      "sha256": "9cb11270ef6e795622edf94403605336f531a35207bb0f177808d8fa323e91c6",
+      "bytes": 9917440
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T03:32:04.6416766Z"
+}

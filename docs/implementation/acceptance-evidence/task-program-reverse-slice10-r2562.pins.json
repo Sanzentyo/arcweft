@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2562-program-reverse-slice10-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\controller_navigation-a181c926a6a78bc3.exe",
+      "bytes": 1663488,
+      "nonTest": false,
+      "sha256": "6778a1d2475aba75904aa3dcec09c1b134cfdaafde42e525dfefc1ce7c988fb6"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\data_format_nominal-70a0f34a522d0de0.exe",
+      "bytes": 97701376,
+      "nonTest": false,
+      "sha256": "8575da084e2926587d2e3765a0bf34f770c84d599abf33475e7e6e7a83771954"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T03:47:40.4879141Z"
+}

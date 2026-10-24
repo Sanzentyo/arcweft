@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 41,
+  "run": "task-final-r2625-program-reverse-slice41-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_interaction_dispatch-714b6f87e36e9b6b.exe",
+      "sha256": "7971f6a7225eb5c9725dc38c7ebdc3fd553f36615b1dd47e3182d3b1023f1589",
+      "bytes": 2997248
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_product_validation-db9d311a4dd08a05.exe",
+      "sha256": "82606d9e250e3c3dd829ce43e3d7d5c982199eb745427a1fa5c898084cddfaac",
+      "bytes": 10138624
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_product-60b4ea5cc7424926.exe",
+      "sha256": "0f3004f4be9973bfe60414bbba2bdbc89fd73a7b5fb52d36dc70ee4b91b2a873",
+      "bytes": 261313536
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_resource_codecs-326e289bb0fb00a8.exe",
+      "sha256": "97dbf38b03b2503149268d440b1fdeb397e1641e3c6d88686f9d940f3ce04471",
+      "bytes": 23627776
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:24:13.9906477Z"
+}

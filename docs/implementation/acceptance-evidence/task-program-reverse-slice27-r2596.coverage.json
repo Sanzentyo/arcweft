@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 27,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-agent-mcp",
+      "name": "repl_command",
+      "kind": "test",
+      "binary": "arcweft-agent-mcp::repl_command",
+      "caseCount": 5
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "name": "repl_command",
+      "kind": "test",
+      "binary": "arcweft-agent-repl::repl_command",
+      "caseCount": 8
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "name": "repl_task_adapter",
+      "kind": "test",
+      "binary": "arcweft-agent-repl::repl_task_adapter",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "name": "repl_tiering",
+      "kind": "test",
+      "binary": "arcweft-agent-repl::repl_tiering",
+      "caseCount": 3
+    }
+  ],
+  "matched": 18,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2596-program-reverse-slice27-catalog",
+  "run": "task-final-r2597-program-reverse-slice27-runtime",
+  "buildOnly": false
+}

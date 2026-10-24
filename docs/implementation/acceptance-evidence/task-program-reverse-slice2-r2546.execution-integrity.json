@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 2,
+  "run": "task-final-r2547-program-reverse-slice2-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\action_button_submit-297596d059d71151.exe",
+      "sha256": "b0c75bc8793beefa98caee8980567949d8857fd692e6d9879d3e7151edf31547",
+      "bytes": 20677120
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\agent_enum_execution-66488eeb13e06c07.exe",
+      "sha256": "efbf9ac73c0b2696479394840e4bc719ebd82672902b9013e519415a50606218",
+      "bytes": 115384832
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windows_tsf_ime_sample-fad9f469e40b17eb.exe",
+      "sha256": "f0c9d9e55550ebf599438786db9a51106f861438e498e31a51a9004da06c6bf8",
+      "bytes": 734208
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T03:19:47.7844353Z"
+}

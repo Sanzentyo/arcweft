@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "ordinal": 23,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 1,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-compiler",
+      "name": "project_function_instances",
+      "kind": "test",
+      "binary": "arcweft-compiler::project_function_instances",
+      "caseCount": 12
+    }
+  ],
+  "matched": 12,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2588-program-reverse-slice23-catalog",
+  "run": "task-final-r2589-program-reverse-slice23-runtime",
+  "buildOnly": false
+}

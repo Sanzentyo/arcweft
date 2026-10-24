@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 40,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-bundle",
+      "name": "view_focus_navigation_resources",
+      "kind": "test",
+      "binary": "arcweft-bundle::view_focus_navigation_resources",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-player-scene",
+      "name": "view_geometry_transaction",
+      "kind": "test",
+      "binary": "arcweft-player-scene::view_geometry_transaction",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "view_compositor_plan",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::view_compositor_plan",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-tooling",
+      "name": "view_export_part",
+      "kind": "test",
+      "binary": "arcweft-tooling::view_export_part",
+      "caseCount": 2
+    }
+  ],
+  "matched": 10,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2622-program-reverse-slice40-catalog",
+  "run": "task-final-r2623-program-reverse-slice40-runtime",
+  "buildOnly": false
+}

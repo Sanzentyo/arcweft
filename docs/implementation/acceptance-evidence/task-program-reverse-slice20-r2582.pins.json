@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2582-program-reverse-slice20-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292100096,
+      "nonTest": true,
+      "sha256": "b925f2a12a386ad73f284cfcf42140f6692767a586c75d9f8edbfd49e4d99a43"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\named_scopes-645eeb427f7a99e4.exe",
+      "bytes": 116900352,
+      "nonTest": false,
+      "sha256": "b1a7d0c49c51617456187975d477f2ae21233fa0ce105155c52d94a3084f7994"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_host_contracts-80cc1db0010ffda3.exe",
+      "bytes": 1065472,
+      "nonTest": false,
+      "sha256": "28ef5da8d4b38a0ba9e4dfca0254992c05aad031e72798c6189496091a90264f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_integration-f50a716e94217bd5.exe",
+      "bytes": 6045696,
+      "nonTest": false,
+      "sha256": "dfd404f243e856c4ea6ddeb95d85695574c0f6ff7894409a937cf36644a53526"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_style_parity_sample-b01b65d4fa6e12b4.exe",
+      "bytes": 6529024,
+      "nonTest": false,
+      "sha256": "aa0d2b13ad1a596290ade91b504cfdb0c9b418c0df0fe5d902cb30609b0e03ec"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T04:06:45.9288732Z"
+}

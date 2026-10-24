@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 37,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-bundle",
+      "name": "view_action_button_resources",
+      "kind": "test",
+      "binary": "arcweft-bundle::view_action_button_resources",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-resource-model",
+      "name": "value_contract",
+      "kind": "test",
+      "binary": "arcweft-resource-model::value_contract",
+      "caseCount": 7
+    },
+    {
+      "package": "arcweft-save",
+      "name": "typed_json_preflight",
+      "kind": "test",
+      "binary": "arcweft-save::typed_json_preflight",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-text-layout",
+      "name": "vertical_break_quality",
+      "kind": "test",
+      "binary": "arcweft-text-layout::vertical_break_quality",
+      "caseCount": 3
+    }
+  ],
+  "matched": 15,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2616-program-reverse-slice37-catalog",
+  "run": "task-final-r2617-program-reverse-slice37-runtime",
+  "buildOnly": false
+}

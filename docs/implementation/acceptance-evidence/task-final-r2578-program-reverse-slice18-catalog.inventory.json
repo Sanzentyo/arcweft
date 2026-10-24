@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "name": "task-final-r2578-program-reverse-slice18-catalog",
+  "all": 23,
+  "matched": 23,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::locale_catalog_resource_codec",
+      "test": "bundle_logical_identity_binds_project_locale_without_reencoding_character_catalog",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::locale_catalog_resource_codec",
+      "test": "locale_catalog_codec_kind_owns_tag_magic_section_and_patch_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::locale_catalog_resource_codec",
+      "test": "locale_catalog_rejects_digest_key_reference_and_size_tampering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::locale_catalog_resource_codec",
+      "test": "locale_catalog_rejects_header_and_table_tampering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::locale_catalog_resource_codec",
+      "test": "locale_catalog_rejects_public_id_record_order_span_and_field_tampering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::locale_catalog_resource_codec",
+      "test": "locale_catalog_rejects_reordered_fields_and_wrong_requirement_flags",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::locale_catalog_resource_codec",
+      "test": "locale_catalog_rejects_truncation_trailing_bytes_and_invalid_character_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::locale_catalog_resource_codec",
+      "test": "locale_catalog_round_trips_the_only_canonical_compact_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axes",
+      "test": "axis_context_metadata_and_append_rejection_are_closed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axes",
+      "test": "closed_axis_inventory_round_trips_source_and_product_spelling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axes",
+      "test": "every_logical_alias_maps_to_the_normative_physical_slot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axes",
+      "test": "logical_translation_sign_is_checked_before_mapping",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axes",
+      "test": "resolved_axis_constructor_rejects_non_closed_progressions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_cascade",
+      "test": "child_uses_parent_axis_snapshot_without_reinterpreting_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_cascade",
+      "test": "non_reversible_logical_translation_is_a_typed_resolver_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_cascade",
+      "test": "physical_container_enforces_element_display_and_gap_ownership",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_cascade",
+      "test": "physical_container_rejects_invalid_gaps_and_features_before_suppression",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_cascade",
+      "test": "physical_geometry_projection_includes_box_and_container_inputs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_cascade",
+      "test": "vertical_rl_resolves_aliases_shorthands_signs_and_transitions_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_host_seed",
+      "test": "host_seed_distinguishes_default_from_explicit_horizontal_ltr",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_host_seed",
+      "test": "host_seed_revisions_match_the_canonical_transcript",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_host_seed",
+      "test": "host_seed_wire_is_strict_and_round_trips",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::logical_axis_host_seed",
+      "test": "seed_generation_never_wraps",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 26,
+  "run": "task-final-r2595-program-reverse-slice26-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "sha256": "b925f2a12a386ad73f284cfcf42140f6692767a586c75d9f8edbfd49e4d99a43",
+      "bytes": 292100096
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_e2e-7aec36a4510007d3.exe",
+      "sha256": "dba01a1cc1f1782c49b5f25e8971aed725572c4066979860d9f1a263b20bca89",
+      "bytes": 31749632
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_json-99c65274f985c77a.exe",
+      "sha256": "ac37a1862a7b2a1937eb8f28352122ea178f73b97a67a66a9d3c1afcb58fa5ee",
+      "bytes": 27239936
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_cell-a4eca3a010b0d7c2.exe",
+      "sha256": "f19c91f071c4a4958f7175ebf0433ed61756008cff49b8d86a0f6f14e8f33605",
+      "bytes": 125581824
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:16:32.3753714Z"
+}

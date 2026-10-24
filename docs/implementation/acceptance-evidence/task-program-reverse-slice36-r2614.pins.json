@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2614-program-reverse-slice36-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\style_sheet-2f3b14ccda6bb302.exe",
+      "bytes": 3441664,
+      "nonTest": false,
+      "sha256": "8d793baad8b9d231e5c92599436872a77a54540aebece5511f23099fedfe0547"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_admission-880072812237b454.exe",
+      "bytes": 2381312,
+      "nonTest": false,
+      "sha256": "abfdd2285130ff5480ffb4d0f3009a21f50f021659efc0a768ba332d5844af8f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_plan_view_prefix-e52919b12cbd0056.exe",
+      "bytes": 739840,
+      "nonTest": false,
+      "sha256": "fc89a82652cde276cbac741495e2f47e643413e0deb9b8d11ed56fab02f0f478"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\try_pipe-fe6d969fa8c0c87c.exe",
+      "bytes": 115385344,
+      "nonTest": false,
+      "sha256": "bb65b9da7c1625c903a8d7b307691f4f5e151b5c58ee85f0f450ae49ffac1a51"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T04:21:05.3674469Z"
+}

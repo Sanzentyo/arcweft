@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2546-program-reverse-slice2-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\action_button_submit-297596d059d71151.exe",
+      "bytes": 20677120,
+      "nonTest": false,
+      "sha256": "b0c75bc8793beefa98caee8980567949d8857fd692e6d9879d3e7151edf31547"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\agent_enum_execution-66488eeb13e06c07.exe",
+      "bytes": 115384832,
+      "nonTest": false,
+      "sha256": "efbf9ac73c0b2696479394840e4bc719ebd82672902b9013e519415a50606218"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windows_tsf_ime_sample-fad9f469e40b17eb.exe",
+      "bytes": 734208,
+      "nonTest": false,
+      "sha256": "f0c9d9e55550ebf599438786db9a51106f861438e498e31a51a9004da06c6bf8"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T03:19:41.5815059Z"
+}

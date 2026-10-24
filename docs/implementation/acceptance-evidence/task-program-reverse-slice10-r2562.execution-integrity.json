@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 10,
+  "run": "task-final-r2563-program-reverse-slice10-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\controller_navigation-a181c926a6a78bc3.exe",
+      "sha256": "6778a1d2475aba75904aa3dcec09c1b134cfdaafde42e525dfefc1ce7c988fb6",
+      "bytes": 1663488
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\data_format_nominal-70a0f34a522d0de0.exe",
+      "sha256": "8575da084e2926587d2e3765a0bf34f770c84d599abf33475e7e6e7a83771954",
+      "bytes": 97701376
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T03:47:45.0496668Z"
+}

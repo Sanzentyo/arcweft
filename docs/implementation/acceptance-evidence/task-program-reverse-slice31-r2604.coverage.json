@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 31,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-compiler",
+      "name": "runtime_color",
+      "kind": "test",
+      "binary": "arcweft-compiler::runtime_color",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-core",
+      "name": "runtime_assertion_identity",
+      "kind": "test",
+      "binary": "arcweft-core::runtime_assertion_identity",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "runtime_control_backdrop_gpu_smoke",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-save",
+      "name": "runtime_assertion_identity",
+      "kind": "test",
+      "binary": "arcweft-save::runtime_assertion_identity",
+      "caseCount": 1
+    }
+  ],
+  "matched": 5,
+  "excluded": 3,
+  "ignored": 3,
+  "catalog": "task-final-r2604-program-reverse-slice31-catalog",
+  "run": "task-final-r2605-program-reverse-slice31-runtime",
+  "buildOnly": false
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "ordinal": 20,
+  "run": "task-final-r2583-program-reverse-slice20-runtime",
+  "buildOnly": false,
+  "sourceInputs": 4713,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "sha256": "b925f2a12a386ad73f284cfcf42140f6692767a586c75d9f8edbfd49e4d99a43",
+      "bytes": 292100096
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\named_scopes-645eeb427f7a99e4.exe",
+      "sha256": "b1a7d0c49c51617456187975d477f2ae21233fa0ce105155c52d94a3084f7994",
+      "bytes": 116900352
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_host_contracts-80cc1db0010ffda3.exe",
+      "sha256": "28ef5da8d4b38a0ba9e4dfca0254992c05aad031e72798c6189496091a90264f",
+      "bytes": 1065472
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_integration-f50a716e94217bd5.exe",
+      "sha256": "dfd404f243e856c4ea6ddeb95d85695574c0f6ff7894409a937cf36644a53526",
+      "bytes": 6045696
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_style_parity_sample-b01b65d4fa6e12b4.exe",
+      "sha256": "aa0d2b13ad1a596290ade91b504cfdb0c9b418c0df0fe5d902cb30609b0e03ec",
+      "bytes": 6529024
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T04:06:54.6271476Z"
+}

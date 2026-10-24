@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 22,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-bundle",
+      "name": "product_awbc_only",
+      "kind": "test",
+      "binary": "arcweft-bundle::product_awbc_only",
+      "caseCount": 4
+    },
+    {
+      "package": "arcweft-bundle",
+      "name": "product_catalog_resource_codecs",
+      "kind": "test",
+      "binary": "arcweft-bundle::product_catalog_resource_codecs",
+      "caseCount": 6
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "project_cache_transaction",
+      "kind": "test",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "caseCount": 42
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "prepared_text",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::prepared_text",
+      "caseCount": 11
+    }
+  ],
+  "matched": 56,
+  "excluded": 7,
+  "ignored": 7,
+  "catalog": "task-final-r2586-program-reverse-slice22-catalog",
+  "run": "task-final-r2587-program-reverse-slice22-runtime",
+  "buildOnly": false
+}

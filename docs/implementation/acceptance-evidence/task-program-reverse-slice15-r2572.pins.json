@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2572-program-reverse-slice15-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry_contract-4a130fdfbd01a1e4.exe",
+      "bytes": 1018880,
+      "nonTest": false,
+      "sha256": "77afc96d23719dc0812bd48e1be388f037a2a47855809800dba276c90e406a7d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry_runtime_control_styles-f01245879415218b.exe",
+      "bytes": 17816064,
+      "nonTest": false,
+      "sha256": "ce14d4567e460d30378eb0f3f6dba23bcea31fb632b15cd778df26cc6d13919c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry-939fcbe5f777faa0.exe",
+      "bytes": 17969664,
+      "nonTest": false,
+      "sha256": "03654fa39214c793891cc08b69cc54d123b29a28f10e6eff89f73b72cb499b16"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\identity_contract-0aa68f81d31739bf.exe",
+      "bytes": 871424,
+      "nonTest": false,
+      "sha256": "322353767fefd827af5b3197f48c2fc41e96f8c78f8d1ffbf4138a4186de9d3a"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T03:52:55.4434613Z"
+}

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 12,
+  "base": "f87b9616d627eccb598d0b80800edfa2a7f2d1e0",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-compiler",
+      "name": "diagnostic_ownership",
+      "kind": "test",
+      "binary": "arcweft-compiler::diagnostic_ownership",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "dialogue_profile_admission",
+      "kind": "test",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "caseCount": 10
+    },
+    {
+      "package": "arcweft-player-scene",
+      "name": "dialogue_view",
+      "kind": "test",
+      "binary": "arcweft-player-scene::dialogue_view",
+      "caseCount": 4
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "name": "dialogue_view_store",
+      "kind": "test",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "caseCount": 5
+    }
+  ],
+  "matched": 21,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2566-program-reverse-slice12-catalog",
+  "run": "task-final-r2567-program-reverse-slice12-runtime",
+  "buildOnly": false
+}

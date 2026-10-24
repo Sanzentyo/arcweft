@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2556-program-reverse-slice7-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-15316bf67aa99cd0.exe",
+      "bytes": 120297984,
+      "nonTest": false,
+      "sha256": "c5b94d3919d19d049c81a9cc48b080019221a52a27f7d2843d885742e6a529b9"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\capability_policy-774d900ff73068e6.exe",
+      "bytes": 7174144,
+      "nonTest": false,
+      "sha256": "6088c0df25cd65b00778b88d429580f395b89c8fac0f2bf764117eb7a466b709"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\catalog_asset_execution-03d4dd11b9731312.exe",
+      "bytes": 115379712,
+      "nonTest": false,
+      "sha256": "e1370a00e7e4d85962099cac9082a3d3a20e4fa8f3b76d6eafbc6d8f7d38592a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\character_nominal_mismatch-6151a943a229f33a.exe",
+      "bytes": 1112064,
+      "nonTest": false,
+      "sha256": "86074612885bc34f6e10adedc4a6486a013235cc3ac4c52f2b72b26a2249d2c1"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T03:33:03.5489043Z"
+}
