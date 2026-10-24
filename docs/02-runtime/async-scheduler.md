@@ -124,6 +124,14 @@ identity before projecting or restoring frame values. Equal program contents do
 not authorize rebinding a frame to another executable. Frames have no ownerless
 default, and public persistence does not serialize this executable lease.
 
+Private fiber checkpoints retain that exact executable lease with inert value
+DTOs and cannot be serialized. Restoring one requires the matching admitted
+Product program; another allocation with equal code rejects before replacing
+the current fiber. The admitted program supplies its actual original Source
+and one retained-value admission for both preflight and materialization,
+including Program handles. The public fiber-save DTO remains the version-one
+wire grammar and carries no executable authority.
+
 Native root execution keeps one code position within that original executable.
 The position records its function owner and an original expression or operation
 range; it carries no independent executable authority. Function calls install

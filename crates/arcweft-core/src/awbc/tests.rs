@@ -39,6 +39,23 @@ use crate::value::{
     runtime_sequence_values,
 };
 
+fn checkpoint_program(owner: &RuntimeProgramOwner) -> super::product_step::AwbcProductProgram {
+    let RuntimeProgramOwner::Awbc(program) = owner else {
+        panic!("AWBC fixture retains its actual code owner")
+    };
+    super::product_step::AwbcProductProgram::admit(
+        std::sync::Arc::clone(program),
+        AwbcVerifyBudget::default(),
+        AwbcVerifyContext {
+            require_entrypoint: false,
+            ..Default::default()
+        },
+        crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .expect("checkpoint fixture uses its verified executable")
+}
+
 fn runtime_type(marker: u8, shape: AwbcRuntimeTypeShape) -> AwbcRuntimeType {
     AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
 }
@@ -1750,17 +1767,17 @@ fn named_scope_layout_roundtrip_and_snapshot_admission_preserve_static_identity(
         snapshot
     );
 
-    let checkpoint = restored
-        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(decoded.clone()),
-        ))
-        .unwrap();
+    let checkpoint = restored.checkpoint(&owner).unwrap();
     restored.frames[0].scopes[1].id = AwbcScopeId(2);
     assert!(restored.validate_for_program(&decoded).is_err());
-    restored.restore(checkpoint.clone(), &owner).unwrap();
+    restored
+        .restore(checkpoint.clone(), &checkpoint_program(&owner))
+        .unwrap();
     restored.frames[0].scopes[1].depth = 0;
     assert!(restored.validate_for_program(&decoded).is_err());
-    restored.restore(checkpoint, &owner).unwrap();
+    restored
+        .restore(checkpoint, &checkpoint_program(&owner))
+        .unwrap();
     restored.frames[0].scopes[1].id = AwbcScopeId(99);
     assert!(restored.validate_for_program(&decoded).is_err());
 
@@ -7187,9 +7204,7 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
         .validate_for_program(&program)
         .expect("restored opaque register validates");
     let checkpoint = restored
-        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
+        .checkpoint(&owner)
         .expect("checkpoint valid opaque fiber");
 
     let foreign = RuntimeOpaqueTypeOwner::exact(
@@ -7211,7 +7226,7 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
     ));
 
     restored
-        .restore(checkpoint, &owner)
+        .restore(checkpoint, &checkpoint_program(&owner))
         .expect("restore original opaque owner after rejected tampering");
     let affine = RuntimeOpaqueTypeOwner::exact_with(
         RuntimeOpaqueTypeProducerId::try_new("producer.dialogue").expect("valid producer"),
@@ -7421,15 +7436,15 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         .validate_for_program(&program)
         .expect("cleanup state belongs to its admitted program");
 
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+    let encoded = serde_json::to_string(&snapshot).expect("inert fiber image serializes");
+    let decoded: AwbcFiberStateSnapshot = serde_json::from_str(&encoded)
+        .expect("inert fiber image deserializes without execution authority");
+    fiber = decoded.into_live_for_program(&owner).unwrap();
     let checkpoint = fiber
-        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
-        .expect("checkpoint captures a typed image");
-    let encoded_checkpoint =
-        serde_json::to_string(&checkpoint).expect("fiber checkpoint serializes");
-    let decoded_checkpoint = serde_json::from_str(&encoded_checkpoint)
-        .expect("fiber checkpoint deserializes without session identity");
+        .checkpoint(&owner)
+        .expect("checkpoint retains the original executable");
 
     fiber
         .active_frame_mut()
@@ -7441,9 +7456,8 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         .expect("active frame")
         .scopes
         .clear();
-    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
     fiber
-        .restore(decoded_checkpoint, &owner)
+        .restore(checkpoint, &checkpoint_program(&owner))
         .expect("checkpoint restores by replacing the current fiber");
 
     let frame = fiber.active_frame().expect("active frame restored");
@@ -7936,7 +7950,7 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
     fiber
         .restore(
             checkpoint,
-            &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            &checkpoint_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program))),
         )
         .expect("restore dynamic call fiber after dropping its live state");
     fiber
@@ -8363,7 +8377,7 @@ fn budget_preemption_inside_dynamic_callee_resumes_at_the_exact_cursor() {
     fiber
         .restore(
             checkpoint,
-            &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            &checkpoint_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program))),
         )
         .expect("restore budgeted dynamic call fiber after dropping its live state");
     fiber

@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "commit": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "parent": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "tree": "871e8f2b732b2dd634ca80e11d30dfb913c443a6",
+  "remote": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "advertised": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/tests/flow_include.rs",
+      "blob": "d2abf0f92b3a7a3294947bfb877d0ce10c39caf6",
+      "workingBlob": "d2abf0f92b3a7a3294947bfb877d0ce10c39caf6",
+      "workingSha256": "cdf926f83a6b155b4cbbeb98ef4552acc0a66ddb184cf38354720070a9e93d06"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2517-program-lifecycle-catalog.inventory.json",
+      "blob": "1b9f2ffcc671dff1071f2d17c159b3f8e447d14d",
+      "workingBlob": "1b9f2ffcc671dff1071f2d17c159b3f8e447d14d",
+      "workingSha256": "81e36d3a02a9cc83b966d99e262164f773183137ab8777f1f5d0b30180c00f6b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2517-program-lifecycle-catalog.json",
+      "blob": "d314b6cfab16bde9e4901899dfe1e46d582a3584",
+      "workingBlob": "d314b6cfab16bde9e4901899dfe1e46d582a3584",
+      "workingSha256": "c75412fbab45dd4b84d4388dcd4641c6c0a3d4cb2d4e58eb9d5b73ef6edd05cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2517-program-lifecycle-catalog.log",
+      "blob": "f7b59d8c554c2012ea2fa6545422235ff491a624",
+      "workingBlob": "f7b59d8c554c2012ea2fa6545422235ff491a624",
+      "workingSha256": "cc1cdb7e9a3726b6437094e02271c995c8119d2a0f99e564020542731a950d42"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2518-program-lifecycle-runtime.json",
+      "blob": "dfc845cb93b50847b542a0399f25144719686c7d",
+      "workingBlob": "dfc845cb93b50847b542a0399f25144719686c7d",
+      "workingSha256": "d54ff1b41ba049f2cba250e75f17c026880482996f5bd97f787e690c68fbf302"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2518-program-lifecycle-runtime.log",
+      "blob": "3bfb112a16669655f2bbacb66544de612f958b63",
+      "workingBlob": "3bfb112a16669655f2bbacb66544de612f958b63",
+      "workingSha256": "ed723f64a98e60079144ec777d6917eb99d6a454fedec08b5a73a9e4e441430f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2518-program-lifecycle-runtime.terminal-audit.json",
+      "blob": "24ee0c2bef3d2f9fa9c235173c0ea3dd79ed018c",
+      "workingBlob": "24ee0c2bef3d2f9fa9c235173c0ea3dd79ed018c",
+      "workingSha256": "06d442433f335762e4965e862901eaa09fae0794f8400d7058bd9cd56a158422"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2519-program-lifecycle-clippy.json",
+      "blob": "029e32872a2557ca52f0af3fc4584c6f594898ff",
+      "workingBlob": "029e32872a2557ca52f0af3fc4584c6f594898ff",
+      "workingSha256": "f383837101278fbf495c2028625bd379458f59240d7493c1a9995bde389263c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2519-program-lifecycle-clippy.log",
+      "blob": "69b947f9dd614e380322fab6f950683268da7dfb",
+      "workingBlob": "69b947f9dd614e380322fab6f950683268da7dfb",
+      "workingSha256": "51609217489c63dfde479573cc19a26f34a7d556f99a2a2f1777f794b758db36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2520-program-lifecycle-structure.json",
+      "blob": "14059f6cfb98f65cb60f1dde47f7ab904dbdf084",
+      "workingBlob": "14059f6cfb98f65cb60f1dde47f7ab904dbdf084",
+      "workingSha256": "ba860a6d95390fb228bb3465fc33e1d588b89bb6de07f677658672ba194734f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2520-program-lifecycle-structure.log",
+      "blob": "0e2379ad068f74b13afdb0eac59c226b2005a9a0",
+      "workingBlob": "0e2379ad068f74b13afdb0eac59c226b2005a9a0",
+      "workingSha256": "61e02aebae73793cc8b5644e3caa81f9ff72ea2974ccc95582fff921fe0a643e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-checkpoint.graph.json",
+      "blob": "87c08bba8eadb7e063119dd23960f05a99d23fae",
+      "workingBlob": "87c08bba8eadb7e063119dd23960f05a99d23fae",
+      "workingSha256": "e4be8755481e2d438732557489abfad6bad102e67baee7d83f3bef08f6939a7c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-checkpoint.source-freeze.json",
+      "blob": "25c6bf75df84602e34abf6ca8ec726a0daa717cb",
+      "workingBlob": "25c6bf75df84602e34abf6ca8ec726a0daa717cb",
+      "workingSha256": "9cfe99de993bbb9bfedba7b750d0eb3fc910f9e5594dd928f5b709c1dcd0f503"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-ownership-metrics.json",
+      "blob": "b90100a9938c6c63589702222fd11ea6c8c5f766",
+      "workingBlob": "b90100a9938c6c63589702222fd11ea6c8c5f766",
+      "workingSha256": "865b5000b21df01d41821859acec46d709ac18ba702a6375b4ef578e12f5c668"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-r2517.graph.json",
+      "blob": "d5a6af1453542e819307653805d35b9c09f201a7",
+      "workingBlob": "d5a6af1453542e819307653805d35b9c09f201a7",
+      "workingSha256": "b4b41516271cc03baafcd89ac814ca3053457267ad52dd06bc2a25f473a2bf5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-r2517.pins.json",
+      "blob": "befef9628dffe9dbd89cfdecce798d575d62bb5c",
+      "workingBlob": "befef9628dffe9dbd89cfdecce798d575d62bb5c",
+      "workingSha256": "adcbe284152211432794db203de604d288c8ee59a1389790ece48d53b14af85e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-r2517.source-freeze.json",
+      "blob": "07fd970df32b41cd9675135afe0e75ee792471c8",
+      "workingBlob": "07fd970df32b41cd9675135afe0e75ee792471c8",
+      "workingSha256": "a081e9169cbca47e09303afdfde35f612ed5b750eedb425a914adf270717e45a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-r2517.source-integrity.json",
+      "blob": "c7499b989a1c492b84b06e1995dc62ed3dc9d31f",
+      "workingBlob": "c7499b989a1c492b84b06e1995dc62ed3dc9d31f",
+      "workingSha256": "5d8014fa5025a91d713895fe627a00c30f223152de301ad0595675700c1cfefa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-r2518.execution-integrity.json",
+      "blob": "645203eab0d9c2bf9b69955b9f30af5862b4a81a",
+      "workingBlob": "645203eab0d9c2bf9b69955b9f30af5862b4a81a",
+      "workingSha256": "7db0a364dba5c97bc0ec5292085169996cb998399ce478985fd5c5f30b8ddd0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-structure-r2520/dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingBlob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingSha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-structure-r2520/file_metrics.csv",
+      "blob": "af885be3bd660e94cb40110c770f1cd37893816d",
+      "workingBlob": "af885be3bd660e94cb40110c770f1cd37893816d",
+      "workingSha256": "b4b84f678a818c440b0980ec7b97d5342c87451bde11696afb3d87e44d95fa1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-structure-r2520/findings.md",
+      "blob": "6d63833d9eec189b8d0ef62bdbcd8f12806317ca",
+      "workingBlob": "6d63833d9eec189b8d0ef62bdbcd8f12806317ca",
+      "workingSha256": "9dee440fda4f80d34c0791e0c7702bff99a8335ca0826af192a06dea0eab2ba7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-structure-r2520/package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingBlob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingSha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-structure-r2520/public_type_duplicates.csv",
+      "blob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingBlob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingSha256": "c3012de2b7c825ba8d8d272c923eefe7c9d68c3e69921d3396e2cebbd577e52f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-checkpoint.verified.json",
+      "blob": "0f65c07fdd0fdbceb80acdf010a2831426ed8ab9",
+      "workingBlob": "0f65c07fdd0fdbceb80acdf010a2831426ed8ab9",
+      "workingSha256": "174ab298ab2a1150845d86e08a41f04090825701b9306ae73ec300b4a47e1f14"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "a116637f0dda646ba300a2ee14c71833ba1bcf65",
+      "workingBlob": "a116637f0dda646ba300a2ee14c71833ba1bcf65",
+      "workingSha256": "ca944fc8ffa8a567693b42e34e8aef71601b2179a2cac8b544981e5f3e13df1f"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "a2694fa643ca6dbee15c400b5298840b46c7345f",
+      "workingBlob": "a2694fa643ca6dbee15c400b5298840b46c7345f",
+      "workingSha256": "c99297a8a25e7de3972b3e58b808d833ea5a4f024028a030bbfad095dc1ca3b3"
+    }
+  ],
+  "sourceCount": 4601,
+  "sourceDrift": 0,
+  "heldPatchSha256": "e0eb55633fd17a5af5c72130ac3adc6ca58f69fd52c140d3b2940ca776d77150",
+  "patchSha256": "bafdab539c37ba41925bf2e7ca14e4577dd3df603ffb81d95f2ceb5648a1b737",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T01:46:24.5030188Z"
+}

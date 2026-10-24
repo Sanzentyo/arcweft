@@ -16,7 +16,7 @@ use crate::task::TaskPolicy;
 use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RuntimeAwbcProgramSourceField {

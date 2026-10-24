@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "name": "task-final-r2521-program-rejection-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "flow_include",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2521-program-rejection-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T01:51:22.5289483Z",
+  "finishedAt": "2026-10-24T01:51:44.0533628Z"
+}

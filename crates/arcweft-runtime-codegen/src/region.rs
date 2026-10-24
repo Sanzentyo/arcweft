@@ -200,14 +200,14 @@ pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
         instruction_budget: available,
     });
     if result.consumed > available {
-        fiber.restore(checkpoint, &owner)?;
+        fiber.restore(checkpoint, program)?;
         return Err(CompiledApplyError::BudgetContract {
             consumed: result.consumed,
             available,
         });
     }
     if matches!(result.exit, CompiledStepExit::FallbackToVm(_)) {
-        fiber.restore(checkpoint, &owner)?;
+        fiber.restore(checkpoint, program)?;
         if result.consumed != 0 {
             return Err(CompiledApplyError::FallbackConsumedBudget {
                 consumed: result.consumed,
@@ -216,13 +216,13 @@ pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
         return apply_exit(program, fiber, result.exit);
     }
     if matches!(result.exit, CompiledStepExit::Failed(_)) {
-        fiber.restore(checkpoint.clone(), &owner)?;
+        fiber.restore(checkpoint.clone(), program)?;
     } else {
         // Budget accounting belongs to the dispatcher, not generated code.
         fiber.budget = entry_budget;
     }
     if !fiber.consume_budget(result.consumed) {
-        fiber.restore(checkpoint, &owner)?;
+        fiber.restore(checkpoint, program)?;
         return Err(CompiledApplyError::BudgetContract {
             consumed: result.consumed,
             available,

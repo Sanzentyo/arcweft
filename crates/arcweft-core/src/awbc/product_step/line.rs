@@ -1245,7 +1245,7 @@ impl super::AwbcProductStepExecutor {
                             effect_checkpoint
                                 .take()
                                 .expect("activation step retained its checkpoint"),
-                            &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                            &self.program,
                         )
                         .expect("accepted activation checkpoint restores in its original program");
                     return Err(ProductStepError::Internal(error.to_string()));
@@ -1317,7 +1317,7 @@ impl super::AwbcProductStepExecutor {
                         effect_checkpoint
                             .take()
                             .expect("activation step retained its checkpoint"),
-                        &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                        &self.program,
                     )
                     .expect("accepted activation checkpoint restores in its original program");
                 return Err(error);
@@ -1337,7 +1337,7 @@ impl super::AwbcProductStepExecutor {
                         effect_checkpoint
                             .take()
                             .expect("effect-producing step retained its checkpoint"),
-                        &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                        &self.program,
                     )
                     .expect("accepted activation checkpoint restores in its original program");
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
@@ -1471,7 +1471,7 @@ impl super::AwbcProductStepExecutor {
                                 effect_checkpoint
                                     .take()
                                     .expect("effect-producing step retained its checkpoint"),
-                                &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                                &self.program,
                             )
                             .expect(
                                 "accepted activation checkpoint restores in its original program",

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "name": "task-final-r2529-program-checkpoint-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-codegen",
+    "-p",
+    "arcweft-compiler",
+    "--lib",
+    "--test",
+    "flow_include",
+    "--test",
+    "view_product",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-core) | package(=arcweft-runtime-codegen) | binary(flow_include) | binary(view_product)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2529-program-checkpoint-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T02:07:57.6204178Z",
+  "finishedAt": "2026-10-24T02:13:14.4120630Z"
+}

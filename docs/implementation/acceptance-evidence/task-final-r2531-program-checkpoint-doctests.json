@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "name": "task-final-r2531-program-checkpoint-doctests",
+  "command": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked",
+    "awbc::fiber::FiberCheckpoint"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2531-program-checkpoint-doctests.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T02:15:57.6614308Z",
+  "finishedAt": "2026-10-24T02:17:49.6709489Z"
+}

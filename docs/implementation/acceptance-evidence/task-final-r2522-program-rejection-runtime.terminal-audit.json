@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "run": "task-final-r2522-program-rejection-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   2.201s] 18 tests run: 18 passed, 0 skipped",
+  "executed": 18,
+  "passed": 18,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4601,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T01:53:01.5472974Z"
+}

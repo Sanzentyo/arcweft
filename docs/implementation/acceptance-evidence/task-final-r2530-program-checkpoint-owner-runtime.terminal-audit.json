@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "run": "task-final-r2530-program-checkpoint-owner-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 106.884s] 2071 tests run: 2065 passed (2 slow), 6 failed, 0 skipped",
+  "executed": 2071,
+  "passed": 2065,
+  "failed": 6,
+  "skipped": 0,
+  "selectedPackages": 3,
+  "matchedPackages": 3,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4602,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::fiber::tests::await_progress_resume_returns_the_owned_need_to_its_rewait_register"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::fiber::tests::bind_function_argument_values_rejects_arity_and_type_without_mutation"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::fiber::tests::commit_yielded_instruction_rejects_offset_overflow_without_mutation"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::fiber::tests::commit_yielded_instruction_rejects_stale_cursor_without_mutation"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::fiber::tests::format_operand_recovery_preserves_pending_cleanup_for_normal_unwind"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::local_assignment::corrupt_partial_header_or_child_is_rejected_without_replacing_the_live_fiber"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-24T02:18:00.7664503Z"
+}

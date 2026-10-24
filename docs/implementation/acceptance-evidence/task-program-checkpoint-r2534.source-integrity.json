@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "freeze": "task-program-checkpoint-r2534.source-freeze.json",
+  "ownedRust": 16,
+  "fullFileFormat": 15,
+  "rangeFormat": "crates/arcweft-compiler/tests/view_product.rs:1028",
+  "rustInputs": 3091,
+  "rustDrift": 0,
+  "formatExit": 0,
+  "recordedAt": "2026-10-24T02:25:41.5246460Z"
+}

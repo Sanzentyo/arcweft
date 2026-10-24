@@ -815,12 +815,26 @@ pub struct FiberSafePoint {
 
 /// Inert rollback snapshot used to guarantee effect-free VM fallback.
 ///
-/// Unlike `FiberState`, this value contains only typed persistence DTOs and
-/// never owns live runtime values. Restoring it replaces the current fiber;
-/// callers must not activate a second runnable copy from the same checkpoint.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+/// Retains the original immutable executable lease alongside inert typed
+/// values. It never owns live runtime values and has no wire representation.
+/// Restore uses that executable's admitted Product Source and replaces the
+/// current fiber; callers must not activate a second runnable copy.
+///
+/// ```compile_fail
+/// use arcweft_core::awbc::fiber::FiberCheckpoint;
+/// fn require_wire<T: serde::Serialize>() {}
+/// require_wire::<FiberCheckpoint>();
+/// ```
+///
+/// ```compile_fail
+/// use arcweft_core::awbc::fiber::FiberCheckpoint;
+/// fn require_wire<T: for<'de> serde::Deserialize<'de>>() {}
+/// require_wire::<FiberCheckpoint>();
+/// ```
+#[derive(Clone, Debug, PartialEq)]
 pub struct FiberCheckpoint {
     state: Box<AwbcFiberStateSnapshot>,
+    owner: RuntimeProgramOwner,
 }
 
 /// AWBC session-save projection of [`FiberState`].
@@ -1605,6 +1619,8 @@ pub enum FiberStateError {
     RegisterAlreadyInitialized { register: u32, layout: u32 },
     #[error("fiber frame function/layout pair is invalid")]
     InvalidFrame,
+    #[error("fiber checkpoint belongs to another original executable")]
+    CheckpointProgramOwner,
     #[error("fiber call return value does not match its destination")]
     ReturnValueMismatch,
     #[error("invalid AWBC runtime callable: {reason}")]
@@ -2499,15 +2515,22 @@ impl FiberState {
     ) -> Result<FiberCheckpoint, FiberStateError> {
         Ok(FiberCheckpoint {
             state: Box::new(AwbcFiberStateSnapshot::from_live(self, owner)?),
+            owner: owner.clone(),
         })
     }
 
     pub fn restore(
         &mut self,
         checkpoint: FiberCheckpoint,
-        owner: &RuntimeProgramOwner,
+        program: &crate::awbc::product_step::AwbcProductProgram,
     ) -> Result<(), FiberStateError> {
-        self.replace_from_snapshot(*checkpoint.state, owner)
+        let owner = RuntimeProgramOwner::Awbc(program.program_arc());
+        if !checkpoint.owner.same_program(&owner) {
+            return Err(FiberStateError::CheckpointProgramOwner);
+        }
+        let candidate = program.restore_fiber_snapshot(*checkpoint.state)?;
+        *self = candidate;
+        Ok(())
     }
 
     pub(crate) fn replace_from_snapshot(
@@ -6433,11 +6456,9 @@ mod tests {
     fn bind_function_argument_values_rejects_arity_and_type_without_mutation() {
         let program = one_unit_parameter_entry_program();
         let mut fiber = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
-        let before = fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                std::sync::Arc::new(program.clone()),
-            ))
-            .unwrap();
+        let checkpoint_owner =
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let before = fiber.checkpoint(&checkpoint_owner).unwrap();
 
         assert_eq!(
             fiber.bind_function_argument_values(&program, &[]),
@@ -6446,27 +6467,13 @@ mod tests {
                 actual: 0,
             })
         );
-        assert_eq!(
-            fiber
-                .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                    std::sync::Arc::new(program.clone())
-                ))
-                .unwrap(),
-            before
-        );
+        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
 
         assert!(matches!(
             fiber.bind_function_argument_values(&program, &[RuntimeValue::Bool(true)]),
             Err(FiberStateError::ArgumentType { .. })
         ));
-        assert_eq!(
-            fiber
-                .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                    std::sync::Arc::new(program.clone())
-                ))
-                .unwrap(),
-            before
-        );
+        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
     }
 
     #[test]
@@ -6576,11 +6583,9 @@ mod tests {
                 .register(AwbcRegisterId(0))
                 .is_err()
         );
-        let missing_progress = fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                std::sync::Arc::new(program.clone()),
-            ))
-            .unwrap();
+        let checkpoint_owner =
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let missing_progress = fiber.checkpoint(&checkpoint_owner).unwrap();
         let mut live_request_count = 0;
         fiber
             .visit_runtime_values(|value| {
@@ -6609,11 +6614,7 @@ mod tests {
             Err(FiberStateError::InvalidRuntimeValue { .. })
         ));
         assert_eq!(
-            fiber
-                .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                    std::sync::Arc::new(program.clone())
-                ))
-                .unwrap(),
+            fiber.checkpoint(&checkpoint_owner).unwrap(),
             missing_progress
         );
 
@@ -6638,13 +6639,7 @@ mod tests {
                 RuntimeValue::Progress(crate::value::Progress::new(0.5).unwrap()),
             )
             .unwrap();
-        assert!(
-            fiber
-                .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                    std::sync::Arc::new(program.clone()),
-                ))
-                .is_err()
-        );
+        assert!(fiber.checkpoint(&checkpoint_owner).is_err());
         let occupied_cursor = fiber.cursor;
         let occupied_status = fiber.status;
         let occupied_budget = fiber.budget;
@@ -6742,24 +6737,15 @@ mod tests {
             instruction_offset: 1,
             ..fiber.cursor
         };
-        let before = fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                std::sync::Arc::new(program.clone()),
-            ))
-            .unwrap();
+        let checkpoint_owner =
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let before = fiber.checkpoint(&checkpoint_owner).unwrap();
 
         assert!(matches!(
             fiber.commit_yielded_instruction(stale),
             Err(FiberStateError::StaleCursor { .. })
         ));
-        assert_eq!(
-            fiber
-                .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                    std::sync::Arc::new(program.clone())
-                ))
-                .unwrap(),
-            before
-        );
+        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
     }
 
     #[test]
@@ -6767,20 +6753,12 @@ mod tests {
         let program = zero_parameter_entry_program();
         let mut fiber = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
         let valid_cursor = fiber.cursor;
-        let before = fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                std::sync::Arc::new(program.clone()),
-            ))
-            .unwrap();
+        let checkpoint_owner =
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let before = fiber.checkpoint(&checkpoint_owner).unwrap();
         fiber.cursor.instruction_offset = u32::MAX;
         let observed = fiber.cursor;
-        assert!(
-            fiber
-                .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                    std::sync::Arc::new(program.clone())
-                ))
-                .is_err()
-        );
+        assert!(fiber.checkpoint(&checkpoint_owner).is_err());
 
         assert!(matches!(
             fiber.commit_yielded_instruction(observed),
@@ -6788,14 +6766,7 @@ mod tests {
         ));
         assert_eq!(fiber.cursor, observed);
         fiber.cursor = valid_cursor;
-        assert_eq!(
-            fiber
-                .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                    std::sync::Arc::new(program.clone())
-                ))
-                .unwrap(),
-            before
-        );
+        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
     }
 
     #[test]
@@ -6989,24 +6960,15 @@ mod tests {
                 },
                 args: vec![RuntimeValue::Unit],
             });
-        let before = fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                std::sync::Arc::new(program.clone()),
-            ))
-            .unwrap();
+        let checkpoint_owner =
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let before = fiber.checkpoint(&checkpoint_owner).unwrap();
         assert!(
             !fiber
                 .recover_format_operand(&program, "failure".to_owned())
                 .unwrap()
         );
-        assert_eq!(
-            fiber
-                .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                    std::sync::Arc::new(program.clone())
-                ))
-                .unwrap(),
-            before
-        );
+        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
         let output = crate::awbc::vm::cancel_fiber(&program, &mut fiber).unwrap();
         assert!(output.observations.iter().any(|observation| matches!(
             observation,

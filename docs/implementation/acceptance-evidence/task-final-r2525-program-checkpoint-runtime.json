@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "name": "task-final-r2525-program-checkpoint-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(program_handle_private_fiber_checkpoint)",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2525-program-checkpoint-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-24T01:57:50.5441927Z",
+  "finishedAt": "2026-10-24T01:57:52.5087446Z"
+}

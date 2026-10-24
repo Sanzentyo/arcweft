@@ -1025,7 +1025,7 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
             restored.validate_for_program(&awbc).unwrap();
             let checkpoint = restored.checkpoint(&arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc))).unwrap();
             restored.active_frame_mut().unwrap().clear_register(arcweft_core::awbc::schema::AwbcRegisterId(0)).unwrap();
-            restored.restore(checkpoint, &owner).unwrap();
+            restored.restore(checkpoint, executor.admitted_program()).unwrap();
             let mut missing = image.clone();
             missing.frames[0].type_instantiation = None;
             assert!(missing.into_live_for_program(&owner).is_err(), "an absent generic binding is rejected before live frame construction");

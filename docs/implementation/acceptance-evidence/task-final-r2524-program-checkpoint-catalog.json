@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "name": "task-final-r2524-program-checkpoint-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(program_handle_private_fiber_checkpoint)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2524-program-checkpoint-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T01:55:20.3955398Z",
+  "finishedAt": "2026-10-24T01:57:17.5062870Z"
+}

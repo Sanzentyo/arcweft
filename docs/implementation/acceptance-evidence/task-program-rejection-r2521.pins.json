@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2521-program-rejection-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "bytes": 125121024,
+      "nonTest": false,
+      "sha256": "911f41e7f7e583c588a8b99d95efcf28869749f5a8c28324ed68041d3e040b66"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T01:52:23.0104606Z"
+}

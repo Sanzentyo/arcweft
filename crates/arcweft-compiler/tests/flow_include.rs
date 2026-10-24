@@ -366,8 +366,15 @@ fn returned_thread_result_waits_for_its_actual_nested_child_through_each_step_sa
 }
 
 fn thread_bool_result(source: &str, backend: Backend, returned: bool) {
-    let mut runtime = executor(source, backend);
-    let mut tasks = Vec::new();
+    thread_bool_result_from(executor(source, backend), backend, returned, Vec::new());
+}
+
+fn thread_bool_result_from(
+    mut runtime: ArcweftRuntimeExecutor,
+    backend: Backend,
+    returned: bool,
+    mut tasks: Vec<arcweft_core::task::TaskCorrelation>,
+) {
     let mut completions = Vec::new();
     let mut done = false;
     for step in 0..128 {
@@ -410,6 +417,81 @@ fn thread_bool_result(source: &str, backend: Backend, returned: bool) {
         done,
         "the returned handle must yield its actual child value"
     );
+}
+
+#[test]
+fn forged_program_child_save_rejects_without_losing_the_original_handle_or_result() {
+    use arcweft_core::awbc::product_step::AwbcProductChildFiberOwnerSnapshot;
+    use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
+
+    for backend in [Backend::Awbc, Backend::SelectedAwbc] {
+        for returned in [false, true] {
+            let source = format!(
+                "fn launch(flag: bool) -> ThreadHandle<bool> effects {{ control.spawn }} {{ thread {{ return flag }} }}\n\
+                 flow main() -> bool {{ let child = launch({returned}); return await child }}\n\
+                 entry cli @entry.main {{ goto @flow.main }}\n"
+            );
+            let mut runtime = executor(&source, backend);
+            let mut started = None;
+            for step in 0..128 {
+                let result =
+                    runtime.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+                assert!(result.stats.executed_ops <= 1);
+                assert!(
+                    result.output.diagnostics.is_empty(),
+                    "step={step}: {result:?}"
+                );
+                if let [task] = result.output.requests.tasks.as_slice() {
+                    assert!(result.output.requests.program_task_completions.is_empty());
+                    started = Some(task.handle().correlation);
+                    break;
+                }
+                assert!(result.output.requests.tasks.is_empty());
+            }
+            let started = started.expect("the actual accepted Program handle was published");
+            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(before) = runtime.snapshot().unwrap();
+            assert_eq!(before.child_fibers.len(), 1);
+            for case in 0..3 {
+                let mut saved =
+                    AwbcProductExecutorSaveSnapshot::from_live(&before, &runtime.program_owner())
+                        .unwrap();
+                match case {
+                    0 => {
+                        let child = &mut saved.child_fibers[0];
+                        let AwbcProductChildFiberOwnerSnapshot::Program { parent, .. } =
+                            &mut child.owner
+                        else {
+                            panic!("the actual queued child retains its Program launch")
+                        };
+                        *parent = child.fiber.instance;
+                    }
+                    1 => {
+                        saved.child_fibers[0].owner =
+                            AwbcProductChildFiberOwnerSnapshot::Independent
+                    }
+                    _ => saved.child_fibers.push(saved.child_fibers[0].clone()),
+                }
+                let saved = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+                let bound = runtime.bind_product_save_snapshot(saved).unwrap();
+                let (original, reason) = runtime
+                    .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+                    .expect_err("forged child custody must not acquire a runnable owner")
+                    .into_parts();
+                assert!(
+                    matches!(
+                        reason,
+                        ArcweftRuntimeExecutorSnapshotError::ProductAwbc { .. }
+                    ),
+                    "case={case}: {reason}"
+                );
+                runtime = original;
+                let ArcweftRuntimeExecutorSnapshot::AwbcProduct(after) =
+                    runtime.snapshot().unwrap();
+                assert_eq!(after, before, "case={case}, backend={backend:?}");
+            }
+            thread_bool_result_from(runtime, backend, returned, vec![started]);
+        }
+    }
 }
 
 #[test]

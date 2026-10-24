@@ -84,6 +84,30 @@ impl AwbcProductProgram {
     pub fn program_arc(&self) -> Arc<AwbcProgram> {
         Arc::clone(&self.program)
     }
+
+    /// One private fiber rollback group uses the actual enclosing Source and
+    /// the same admission for preflight and value materialization.
+    pub(crate) fn restore_fiber_snapshot(
+        &self,
+        snapshot: crate::awbc::fiber::AwbcFiberStateSnapshot,
+    ) -> Result<crate::awbc::fiber::FiberState, crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        snapshot.admit_retained(&mut admission)?;
+        let context = crate::value::RuntimeValueRestoreContext::new(
+            &owner,
+            self.task_source
+                .as_ref()
+                .map(|program| crate::task::TaskSourceRestore {
+                    program,
+                    admission: &admission,
+                }),
+        );
+        snapshot.into_admitted_live_for_program(context)
+    }
 }
 
 impl std::ops::Deref for AwbcProductProgram {

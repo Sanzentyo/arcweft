@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "name": "task-final-r2537-program-checkpoint-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-checkpoint-structure-r2537",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2537-program-checkpoint-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T02:25:41.5412880Z",
+  "finishedAt": "2026-10-24T02:25:47.6892572Z"
+}

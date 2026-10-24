@@ -176,11 +176,7 @@ fn partial_record_move_survives_codec_snapshot_and_restore_then_reinitializes() 
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
     let mut restored = snapshot.into_live_for_program(&owner).unwrap();
     restored.validate_for_program(&program).unwrap();
-    let checkpoint = restored
-        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
-        .unwrap();
+    let checkpoint = restored.checkpoint(&owner).unwrap();
     for _ in 0..2 {
         let result = super::super::vm::step(
             &program,
@@ -203,7 +199,9 @@ fn partial_record_move_survives_codec_snapshot_and_restore_then_reinitializes() 
             restored.frames[0].registers[4].as_ref(),
             Some(&RuntimeValue::Bool(false))
         );
-        restored.restore(checkpoint.clone(), &owner).unwrap();
+        restored
+            .restore(checkpoint.clone(), &checkpoint_program(&owner))
+            .unwrap();
         assert!(restored.frames[0].registers[0].as_ref().is_none());
         restored.validate_for_program(&program).unwrap();
     }
@@ -395,11 +393,7 @@ fn corrupt_partial_header_or_child_is_rejected_without_replacing_the_live_fiber(
         },
     )
     .unwrap();
-    let before = fiber
-        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
-        .unwrap();
+    let before = fiber.checkpoint(&owner).unwrap();
     let encoded = serde_json::to_value(
         AwbcFiberStateSnapshot::from_live(
             &fiber,
@@ -417,14 +411,7 @@ fn corrupt_partial_header_or_child_is_rejected_without_replacing_the_live_fiber(
     for malformed in [wrong_header, wrong_child] {
         let snapshot: AwbcFiberStateSnapshot = serde_json::from_value(malformed).unwrap();
         assert!(fiber.replace_from_snapshot(snapshot, &owner).is_err());
-        assert_eq!(
-            fiber
-                .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                    std::sync::Arc::new(program.clone())
-                ))
-                .unwrap(),
-            before
-        );
+        assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
         fiber.validate_for_program(&program).unwrap();
     }
 }
@@ -465,11 +452,7 @@ fn live_outer_local_survives_codec_snapshot_and_checkpoint_then_replaces() {
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
     let mut restored = snapshot.into_live_for_program(&owner).unwrap();
     restored.validate_for_program(&program).unwrap();
-    let checkpoint = restored
-        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
-        .unwrap();
+    let checkpoint = restored.checkpoint(&owner).unwrap();
     for _ in 0..2 {
         let result = super::super::vm::step(
             &program,
@@ -484,7 +467,9 @@ fn live_outer_local_survives_codec_snapshot_and_checkpoint_then_replaces() {
             super::super::vm::VmExit::Returned(Some(RuntimeValue::Bool(false)))
         );
         assert_eq!(restored.frames[0].registers[2].as_ref().cloned(), None);
-        restored.restore(checkpoint.clone(), &owner).unwrap();
+        restored
+            .restore(checkpoint.clone(), &checkpoint_program(&owner))
+            .unwrap();
         assert_eq!(
             restored.frames[0].registers[0].as_ref().cloned(),
             Some(RuntimeValue::Bool(true))
@@ -576,11 +561,7 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
     let mut restored = snapshot.into_live_for_program(&owner).unwrap();
     restored.validate_for_program(&program).unwrap();
-    let checkpoint = restored
-        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
-        .unwrap();
+    let checkpoint = restored.checkpoint(&owner).unwrap();
     for _ in 0..2 {
         let result = super::super::vm::step(
             &program,
@@ -600,7 +581,9 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
             restored.frames[0].registers[1].as_ref().cloned(),
             Some(RuntimeValue::Bool(true))
         );
-        restored.restore(checkpoint.clone(), &owner).unwrap();
+        restored
+            .restore(checkpoint.clone(), &checkpoint_program(&owner))
+            .unwrap();
         restored.validate_for_program(&program).unwrap();
     }
 }

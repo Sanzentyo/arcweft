@@ -5,6 +5,8 @@
 mod artifact;
 mod owned;
 mod program;
+#[cfg(test)]
+pub(crate) use program::program_task_executable_fixture;
 mod program_body;
 pub use artifact::{
     RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits,

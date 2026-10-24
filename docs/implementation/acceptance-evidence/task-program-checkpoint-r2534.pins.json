@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2534-program-checkpoint-owner-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+      "bytes": 267574784,
+      "nonTest": false,
+      "sha256": "e6f081e25da70e78a3918808dfb528d0c29334d3255def7031a5cc9aef32c917"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-728949707a889d5a.exe",
+      "bytes": 79315456,
+      "nonTest": false,
+      "sha256": "34031f969456b9e7f1dc91b9433754427d1846427d7358eae778618fdbb3ad21"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_codegen-406b38c9ce2beae1.exe",
+      "bytes": 17875456,
+      "nonTest": false,
+      "sha256": "7940df0913c74d12a19e317a180ddf5355a05bf099a52b957885d7a204dcb507"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "bytes": 125107200,
+      "nonTest": false,
+      "sha256": "5632cf64a6111af04ae2d1da79473ba235e423231d6ead00a04df7fa8634cfa4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_product-21a6213c00600645.exe",
+      "bytes": 260808192,
+      "nonTest": false,
+      "sha256": "7d6e5c5417c6c5b5aa803590d0c807933c3aec52ede973e34202445af51f0d09"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T02:21:32.9461640Z"
+}

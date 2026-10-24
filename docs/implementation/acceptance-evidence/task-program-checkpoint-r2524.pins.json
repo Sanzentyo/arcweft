@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2524-program-checkpoint-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79273472,
+      "nonTest": false,
+      "sha256": "c74cf3a8167ca8be4c6217864eea327dd964bf5a0d400fe0af69ad471d554327"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T01:57:50.5200263Z"
+}

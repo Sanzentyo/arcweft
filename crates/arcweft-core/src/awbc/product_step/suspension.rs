@@ -2568,8 +2568,7 @@ impl AwbcProductStepExecutor {
         let admission = match committed {
             Ok((admission, ())) => admission,
             Err(error) => {
-                let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-                if let Err(restore_error) = self.fiber.restore(checkpoint, &owner) {
+                if let Err(restore_error) = self.fiber.restore(checkpoint, &self.program) {
                     self.fail_with_error(ProductStepError::Fiber(restore_error), output);
                 } else {
                     self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
@@ -2659,9 +2658,9 @@ impl AwbcProductStepExecutor {
         let admission = match committed {
             Ok((admission, ())) => admission,
             Err(error) => {
-                let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-                if let Err(restore_error) =
-                    self.child_fibers[index].fiber.restore(checkpoint, &owner)
+                if let Err(restore_error) = self.child_fibers[index]
+                    .fiber
+                    .restore(checkpoint, &self.program)
                 {
                     self.fail_with_error(ProductStepError::Fiber(restore_error), output);
                 } else {

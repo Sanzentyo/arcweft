@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "name": "task-final-r2530-program-checkpoint-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-codegen",
+    "-p",
+    "arcweft-compiler",
+    "--lib",
+    "--test",
+    "flow_include",
+    "--test",
+    "view_product",
+    "--all-features",
+    "--locked",
+    "-E",
+    "package(=arcweft-core) | package(=arcweft-runtime-codegen) | binary(flow_include) | binary(view_product)",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2530-program-checkpoint-owner-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-24T02:13:54.6759778Z",
+  "finishedAt": "2026-10-24T02:15:44.3891337Z"
+}

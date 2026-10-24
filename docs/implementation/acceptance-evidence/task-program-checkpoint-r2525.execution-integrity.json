@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r2525-program-checkpoint-runtime",
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "sha256": "c74cf3a8167ca8be4c6217864eea327dd964bf5a0d400fe0af69ad471d554327",
+      "bytes": 79273472
+    }
+  ],
+  "executableDrift": 0,
+  "sourceInputsAtRun": 4601,
+  "sourceDriftAtRun": 0,
+  "caseDrift": 0,
+  "actualExitCode": 100,
+  "recordedAt": "2026-10-24T01:59:42.5383228Z"
+}

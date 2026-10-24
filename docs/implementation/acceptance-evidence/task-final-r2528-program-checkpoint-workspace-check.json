@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "name": "task-final-r2528-program-checkpoint-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2528-program-checkpoint-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T02:06:52.5620729Z",
+  "finishedAt": "2026-10-24T02:07:44.4622825Z"
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "run": "task-final-r2535-program-checkpoint-owner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 121.858s] 2071 tests run: 2071 passed (2 slow), 0 skipped",
+  "executed": 2071,
+  "passed": 2071,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 3,
+  "matchedPackages": 3,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4602,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T02:25:34.5568948Z"
+}

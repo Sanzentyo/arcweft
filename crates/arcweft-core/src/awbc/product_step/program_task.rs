@@ -2,6 +2,8 @@
 //! the parent until Source, child inputs and the actual receipt all admit.
 
 mod retirement;
+#[cfg(test)]
+mod tests;
 
 use super::{AwbcProductStepExecutor, ProductChildFiber, ProductChildFiberOwner, ProductStepError};
 use crate::awbc::fiber::{

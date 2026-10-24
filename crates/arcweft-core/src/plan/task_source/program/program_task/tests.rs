@@ -16,7 +16,7 @@ fn context() -> AwbcVerifyContext<'static> {
     }
 }
 
-fn executable() -> AwbcProgram {
+pub(crate) fn executable() -> AwbcProgram {
     let original = crate::plan::task_source::template_tests::thread();
     executable_from(original)
 }

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "name": "task-final-r2526-program-checkpoint-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-codegen",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2526-program-checkpoint-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T02:00:41.1483199Z",
+  "finishedAt": "2026-10-24T02:01:34.2248379Z"
+}

@@ -2854,8 +2854,7 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         executed: u64,
     ) -> usize {
-        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        if let Err(restore_error) = self.fiber.restore(checkpoint, &owner) {
+        if let Err(restore_error) = self.fiber.restore(checkpoint, &self.program) {
             self.fail_with_error(ProductStepError::Fiber(restore_error), output);
         } else {
             self.fail_with_error(error, output);
@@ -2997,8 +2996,7 @@ impl AwbcProductStepExecutor {
         }
         journal.rollback(self);
         child.pending_host_call = pending_host_call_before;
-        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        let restore = child.fiber.restore(checkpoint, &owner);
+        let restore = child.fiber.restore(checkpoint, &self.program);
         self.child_fibers.push_front(child);
         if let Err(error) = restore {
             self.fail_with_error(error.into(), output);

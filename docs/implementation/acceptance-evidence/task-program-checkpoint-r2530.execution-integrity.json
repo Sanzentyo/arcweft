@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": "task-final-r2530-program-checkpoint-owner-runtime",
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+      "sha256": "27b6e101c6668ceed0d392022b5a9d250e8bacfdf083b8a1da4e722b16e9f2f4",
+      "bytes": 267574784
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-728949707a889d5a.exe",
+      "sha256": "7eb48a8be10b3d020ce1a1339086390a954752bfb29506ba2c043ac6bfa9a966",
+      "bytes": 79316992
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_codegen-406b38c9ce2beae1.exe",
+      "sha256": "4384e69a3c5d5c8502296cc058440bcf3763c834f09a38a11a324fdc3b763de7",
+      "bytes": 17875456
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "sha256": "ab0b88ec53dae17b71f89126aa79b673718c5387d53e74191f44cbaee6cce067",
+      "bytes": 125107200
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_product-21a6213c00600645.exe",
+      "sha256": "a9afb8aea5bcadb03bf4cb671843fac067daefaa13a9d2bd72860dae569873ae",
+      "bytes": 260808192
+    }
+  ],
+  "executableDrift": 0,
+  "sourceInputsAtRun": 4602,
+  "sourceDriftAtRun": 0,
+  "caseDrift": 0,
+  "actualExitCode": 100,
+  "recordedAt": "2026-10-24T02:18:01.9012597Z"
+}

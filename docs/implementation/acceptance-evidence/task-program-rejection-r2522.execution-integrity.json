@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r2522-program-rejection-runtime",
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "sha256": "911f41e7f7e583c588a8b99d95efcf28869749f5a8c28324ed68041d3e040b66",
+      "bytes": 125121024
+    }
+  ],
+  "executableDrift": 0,
+  "sourceInputsAtRun": 4601,
+  "sourceDriftAtRun": 0,
+  "caseDrift": 0,
+  "actualExitCode": 0,
+  "recordedAt": "2026-10-24T01:53:49.4458946Z"
+}

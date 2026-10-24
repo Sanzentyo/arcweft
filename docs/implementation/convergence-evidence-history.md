@@ -9931,3 +9931,90 @@ Compiler統合test 695 LOC（+104）のみ。workspace fan-in／outは5／34、�
 24原本、7,980,059 bytesをbyte・SHA256・Git blob一致で保持する。R2519 Clippy原本のtrailing
 whitespace 4行は保持し、そのlogのみstaged whitespace検査から除外する。
 変更2文書の相対リンク243件は解決可能、未閉鎖fenceは0。
+
+## Private fiber checkpointの元Source復元 — 2026-10-24
+
+前節は `aa2fc1a9427a09b2be48013c1bb405d6a2e00a14` で公開した。
+parentは `e609b644a2ecaf9875f6a19f040caa246e10b7f9`、treeは
+`871e8f2b732b2dd634ca80e11d30dfb913c443a6`、raw patch SHA256は
+`bafdab539c37ba41925bf2e7ca14e4577dd3df603ffb81d95f2ceb5648a1b737`。
+[公開照合](acceptance-evidence/task-program-lifecycle-checkpoint.verified.json)は27公開blob、
+4,601入力、fresh origin／advertised ref、empty index、保持14 tracked WIPの差分0を記録する。
+
+### 公開saveの拒否とprivate checkpointの再現
+
+Compilerの新規caseは、実際のaccepted Program handleが親frameにある時点の公開saveを
+JSON roundtripする。子のparentを自分自身へ変更、Program ownerをIndependentへ変更、
+子rowを重複という3種類を、両AWBC×Bool false／trueで拒否する。各拒否後の全snapshotが
+元と一致し、同じhandleをawaitして正しいBoolとtask／completion各1件へ進めた。
+R2521 catalogは18件／除外0、exit 0。R2522は18 PASS／0 FAIL、2.201秒、actual exit 0。
+[terminal audit](acceptance-evidence/task-final-r2522-program-rejection-runtime.terminal-audit.json)と
+[実行整合性](acceptance-evidence/task-program-rejection-r2522.execution-integrity.json)で、
+4,601入力・case set・1 executableのdrift 0を記録した。資源上限の全拒否条件とは区別する。
+
+別にCoreのprivate APIで、元Sourceからchecked producerを得て、共通registryが実際に受理した
+`ThreadHandle<Unit>`をfiberへ保持する再現caseを追加した。候補からhandleを取り出して破棄した後、
+R2525のcheckpoint restoreは `program task restore requires its enclosing admitted Source` で
+失敗した。公開saveの受入を取り消す根拠にはせず、private経路の新しい具体的な不具合とした。
+
+### 実装と途中の結果
+
+`FiberCheckpoint`はinert DTOに加え、元executableの実際のleaseを保持する。非Serdeとし、
+restoreは同じleaseの`AwbcProductProgram`を要求する。別allocationの同内容programを、
+`CheckpointProgramOwner`として値構築・置換の前に拒否する。admitted programの元Sourceと
+同じ`RuntimeRetainedValueAdmission`を、完全fiberのpreflightと既存の値mapperへ渡す。
+Product main／child、Need binding失敗、line activation、codegenのfallback／failure／budgetを
+この契約へ移行した。wire用fiber DTOはversion oneのままで、元leaseをencodeしない。
+旧checkpoint JSON testはこの正当な公開DTOのroundtripとprivate復元へ移し、cleanupのassertionを維持した。
+
+| 実行 | 実際の結果と修復 |
+|---|---|
+| R2523 catalog | exit 101。新規fixtureのbinding closureに必要な`From<TaskEnsureError>`を満たすtest error型へ修正した。 |
+| R2524／R2525 | catalog exit 0、Core 1実行／0 PASS／1 FAIL／1,971 filter skip、actual exit 100。上記の元Source欠落を再現。4,601入力・case set・1 executableのdrift 0。 |
+| R2526 check | Core／codegen all-target／all-feature／locked、exit 101。14件のtest import／fixture export／旧restore API／checkpoint Serde参照を移行した。 |
+| R2527 workspace check | 同feature／target、exit 101。Compiler `view_product`に残る旧restore引数1件を、実際のexecutorのadmitted programへ移行。 |
+| R2528 workspace check | 修正後exit 0。 |
+| R2529／R2530 | catalog exit 0。2,071実行／2,065 PASS／6 FAIL、106.884秒、actual exit 100。新規private Source復元はPASS。残る6件は、比較のたびに別Arcを作る古いfixtureでcheckpointのlease比較が失敗した。 |
+| R2534／R2535 | 同じ全2,071 caseを選択、catalog exit 0。6 fixtureに同じleaseを保持し、元の非破壊・cleanup・部分moveのassertionを維持した。**2,071 PASS／0 FAIL／0 skip、121.858秒、actual exit 0**。 |
+
+再現caseは最終的にProduct Program ownerのtest moduleへ置き、既存のtyped Source fixtureを
+test専用exportで再利用した。旧pathで得たR2525の失敗は原本と識別子を保持し、消去しない。
+新規private caseは、別leaseへの拒否後に元fiberが不変であることと、候補のhandleを破棄した後に
+同じSource・handle metadataを復元できることを確認する。
+
+### 最終入力の範囲
+
+R2535はCore **library** 1,972件、codegen library 12件、Compilerの`flow_include` 18件と
+`view_product` 69件。Compiler libraryはbuild対象だがnamed runtime caseは0であり、
+Coreのintegration targetもこの選択に含めない。
+[terminal audit](acceptance-evidence/task-final-r2535-program-checkpoint-owner-runtime.terminal-audit.json)と
+[実行整合性](acceptance-evidence/task-program-checkpoint-r2535.execution-integrity.json)は、
+4,602固定入力・case set・5 executableのdrift 0、保持14 WIPの差分0を記録する。
+R2530の6 FAILは履歴に保持し、R2535の未解決失敗として列挙しない。
+
+R2531はprivate checkpointの非Serde境界を確認するcompile-fail doctest 2件がPASS、
+73件はfilter対象外、actual exit 0。R2532 all-target／all-feature／locked workspace Clippyと
+R2536の同workspace checkはexit 0。Clippyには警告が残る。
+R2533 canonicalは3,209 files・3,079 Rust files・1,740,131 physical LOC・97 package・
+376 review triggers、blocking 0。fixture修正後のR2537もexit 0、同file／package／trigger数・
+1,740,059 physical LOC・blocking 0。両方の5 reportを原本で保持する。
+
+全53逆依存runtime、Core integration、cancel、program continuationのdetached入力rollback、
+不正saveの資源上限全条件、Tier2、Native-Web capture parityを、このowner結果から合格へ数えない。
+Generic Matchの受入・公開済み判定と、既存のgeneric capture／nested joinの受入を維持する。
+
+[owner計測](acceptance-evidence/task-program-fiber-ownership-metrics.json)は16 Rust pathsを記録する。
+Sourceとadmissionの接続は既存Product program owner 118 LOC（+24）、checkpoint leaseと
+復元はfiber owner 7,100（-38）が所有する。新規test owner 146 LOCは、同じSource・accepted receipt・
+frameによる別lease拒否と値所有の復元を一つの条件として検査する。Source fixtureの3 exportは
+test専用で、productionのSource権限を公開しない。300 LOC以上の増加、新しいI/O・Cargo edge・
+結果table・互換readerはない。既存の大きいProduct 5,913、line 4,207、suspension 2,815、
+Core test 8,930は同じ所有境界のAPI移行とfixture identity修正に限る。View test 6,074への変更は
+復元contextの1行のみで、周囲の既存formatは保持した。Coreのworkspace fan-in／outは35／12、
+Compilerは5／34、codegenは1／1、算出した逆依存は53。
+
+79原本、21,646,713 bytesをbyte・SHA256・Git blob一致で保持した。R2532 Clippy原本のtrailing
+whitespace 5行とR2531 doctest原本のEOF空行1行は保持し、この2 logだけstaged whitespace検査から除外する。
+3,091 Rust入力のhash差分0と15 owned Rustの全file format、Viewの変更1行のrange formatを
+確認した。現状一覧は `current-status.md` の一か所に維持する。
+変更3文書の相対リンク250件は解決可能、未閉鎖fenceは0。
