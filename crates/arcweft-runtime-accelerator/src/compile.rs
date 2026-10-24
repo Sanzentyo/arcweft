@@ -935,6 +935,7 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
             1 + items.iter().map(runtime_expr_work_units).sum::<usize>()
         }
         RuntimeExprKind::RepeatSeq { value, .. } => 2 + runtime_expr_work_units(value),
+        RuntimeExprKind::ArrayFromVec { value } => 2 + runtime_expr_work_units(value),
         RuntimeExprKind::Range { start, end, .. } => {
             1 + start.as_deref().map_or(0, runtime_expr_work_units)
                 + end.as_deref().map_or(0, runtime_expr_work_units)

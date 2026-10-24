@@ -10177,3 +10177,49 @@ R2559原logのtrailing whitespace 8行は保持し、この1 logだけstaged whi
 変更3文書の相対リンク262件は解決可能、未閉鎖fenceは0、proseのwhitespace検査も通過した。
 495 pathsを引数で渡す最初のstagingは、Git起動前にWindowsの引数長上限で失敗した。
 同じ明示path一覧をNUL区切りmanifestにしてGitへ渡し、pathの省略や一括globへの変更はしない。
+
+## Array Map Source資源診断と型付き配列構築 — 2026-10-24
+
+基点は `5913440a59d6376ed2670a5ae4e97d9645e2c247`、mainの既存checkout。
+既存14 tracked／6 untracked WIPを保持し、所有するRust変更24 pathsだけを分離した。
+この節は診断・検証履歴であり、現在の項目別判定は [現状一覧](current-status.md) に置く。
+
+変更していない `008_large_map_pure_batch.arcw` は4,096要素、fixture SHA256は
+`c98500dcc7e78a55ec4f4a9c17c5d03df80e251b3310caa2eba231d4e9ebea08`。
+R2635の診断用probeでは45 types／8,206 locals／3 functionsとなり、製品既定の
+SemanticWork 4,194,304でSource admissionが失敗した。診断だけ上限を外しても
+expression elements 8,193が残量7,706を超えた。上限変更は製品にもテストにも適用していない。
+R2633の単独probeはWindows既定1 MiB stackでstack overflowとなったため、
+CLI既存設定と同じ2 MiBで再ビルドしたR2634／R2635を診断に用いた。
+これは受入テストではない。[実測原本](acceptance-evidence/task-final-r2635-source-budget-probe-cli-stack-run.log)。
+
+反復時の所有するVec蓄積値を、正確なArray結果型へ消費する`ArrayFromVec`を追加した。
+構築時にVecとArrayの要素type identityを一致させ、実行時には現在の型instantiationで
+Array全体を検査する。同じsequence storageを移し、要素を複製しない。
+Native／Pure、AWBCの型・所有権verifier、VM、canonical Source codec、runtime-plan lowering、
+codegen、acceleratorのcost集計を移行した。契約versionは1のまま。
+Array Mapの元の展開はこのcutでは切り替えていないため、benchmark修復完了とはしない。
+
+R2636はCoreの式consumer 4か所、R2638はopcode decoder、R2639はcodegen、
+R2640はacceleratorのexhaustive match漏れを検出し、それぞれ修正した。
+R2637 Core checkとR2641 workspace all-target／all-feature／locked checkは終了0、警告あり。
+R2643の初回16件は14 PASS／1 FAIL／1 ABORTだった。追加した子iteratorが同じ子を
+繰り返す不具合により該当ケースだけを明示停止し、ordinal 0だけを返すよう修正した。
+別のFAILはVMのruntime rejectionが`Result::Err`ではなく`VmExit::Trapped`となる契約を
+テスト側で誤っていたもの。両方の結果と停止理由を
+[初回監査](acceptance-evidence/task-final-r2643-array-constructor-runtime.failed-audit.json)に残す。
+
+修正後R2645は新規4件と既存codegen 12件の **16／16 PASS**、1,972件はfilter除外。
+空配列、exact length、誤った要素／Vec以外の構築拒否、Source／AWBC canonical round trip、
+AWBCの拒否前に入力storageを消費しないことを検査した。5,205固定入力・catalog case set・
+実行バイナリ2本はいずれも差分0。[終端監査](acceptance-evidence/task-final-r2645-array-constructor-runtime.terminal-audit.json)。
+最終のRust入力に対するR2646 workspace Clippyは終了0、警告あり。
+R2647構造gateは97 workspace packages／3,209 files、blocking 0。
+型・codec・実行ownerを分けたまま既存の共通走査を使い、Cargo依存辺は変更していない。
+物理LOC・所有境界の検討を [owner記録](acceptance-evidence/task-array-constructor.owner-review.json) に保持する。
+
+共有Coreの全53逆依存、Array Map反復化後の4096 callback／batch／fusion／copy／capture、
+低予算Native-AWBC parityはこのcutの追加構築処理だけでは受入にしていない。
+全体goalの未達をGeneric Matchその他の既存受入へ戻さない。
+42原本をbyte・SHA256一致で保存し、バイナリ生成物はarchiveせずpath／hashだけを記録した。
+[原本整合](acceptance-evidence/task-array-constructor.evidence-integrity.json)。

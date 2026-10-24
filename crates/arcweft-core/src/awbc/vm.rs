@@ -987,6 +987,29 @@ fn execute_instruction(
                 .active_frame_mut()?
                 .set_register(*dst, runtime_sequence_repeat_value(&value, len))?;
         }
+        AwbcInstruction::ArrayFromVec { dst, value } => {
+            let frame = fiber.active_frame()?;
+            let ty = program
+                .frame_layouts
+                .get(frame.layout.index())
+                .and_then(|layout| layout.slots.get(dst.index()))
+                .map(|slot| slot.ty)
+                .ok_or_else(|| VmError::Runtime("Array destination type is absent".to_owned()))?;
+            if !matches!(
+                program
+                    .runtime_types
+                    .get(ty.index())
+                    .map(AwbcRuntimeType::shape),
+                Some(AwbcRuntimeTypeShape::Array { .. })
+            ) || !frame.value_matches_type(program, frame.register(*value)?, ty)
+            {
+                return Err(VmError::Runtime(
+                    "Array construction value does not match its destination type".to_owned(),
+                ));
+            }
+            let value = fiber.active_frame_mut()?.take_register(*value)?;
+            fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
         AwbcInstruction::SequenceLen { dst, sequence } => {
             let len = {
                 let RuntimeValue::Seq(sequence) = register(fiber, *sequence)? else {

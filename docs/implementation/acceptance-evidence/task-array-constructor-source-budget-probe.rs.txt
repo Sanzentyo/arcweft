@@ -1,0 +1,25 @@
+use arcweft_compiler::source::compile_source;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::env::args().nth(1).expect("one original source path");
+    let source = std::fs::read_to_string(path)?;
+    let compiled = compile_source(&source)?;
+    let plan = &compiled.plan;
+    println!("types={}", plan.type_table().len());
+    println!("locals={}", plan.local_declarations().len());
+    println!("functions={}", plan.function_sites().len());
+    let mut limits = Default::default();
+    let original = plan.task_source_artifact(limits);
+    println!("production_semantic_work={}", limits.seal.max_semantic_work);
+    match original {
+        Ok(artifact) => println!("production=ok bytes={}", artifact.bytes().len()),
+        Err(error) => println!("production=error {error}"),
+    }
+    // Measurement only. This is not the production acceptance condition.
+    limits.seal.max_semantic_work = u64::MAX;
+    match plan.task_source_artifact(limits) {
+        Ok(artifact) => println!("diagnostic_only=ok bytes={}", artifact.bytes().len()),
+        Err(error) => println!("diagnostic_only=error {error}"),
+    }
+    Ok(())
+}

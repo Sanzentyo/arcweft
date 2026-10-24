@@ -884,6 +884,22 @@ impl RuntimePlanBodyConstruction<'_> {
                     len,
                 }
             }
+            RuntimeExprSeedKind::ArrayFromVec { value } => {
+                let item = match self.projection(ty)? {
+                    RuntimePlanTypeProjection::Array { item, .. } => *item,
+                    _ => return invalid_projection("Array construction result", ty),
+                };
+                let value = self.lower_expression(*value)?;
+                self.require_projection("Array construction source", value.ty(), |projection| {
+                    matches!(projection, RuntimePlanTypeProjection::Sequence {
+                        kind: super::super::RuntimePlanSequenceKind::Vec,
+                        item: source_item,
+                    } if *source_item == item)
+                })?;
+                RuntimeExprKind::ArrayFromVec {
+                    value: Box::new(value),
+                }
+            }
             RuntimeExprSeedKind::Range {
                 start,
                 end,
@@ -2847,6 +2863,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 self.validate_expression_slice_locals(items, scope, used)
             }
             RuntimeExprKind::RepeatSeq { value, .. }
+            | RuntimeExprKind::ArrayFromVec { value }
             | RuntimeExprKind::SpecializeCallable { value, .. }
             | RuntimeExprKind::ProjectTuple { target: value, .. }
             | RuntimeExprKind::ProjectRecord { target: value, .. }

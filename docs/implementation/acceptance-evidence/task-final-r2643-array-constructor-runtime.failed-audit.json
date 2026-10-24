@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "5913440a59d6376ed2670a5ae4e97d9645e2c247",
+  "actualExitCode": 100,
+  "executed": 16,
+  "passed": 14,
+  "failed": 1,
+  "aborted": 1,
+  "sourceInputs": 5205,
+  "sourceDrift": 0,
+  "manualStop": {
+    "reason": "New ArrayFromVec child iterator returned the same child at every ordinal; exact owned test process verified before Stop-Process",
+    "test": "plan::construction::source::expression::tests::array_from_vec_source_round_trip_preserves_exact_type_and_runtime_length_check",
+    "pid": 4432
+  },
+  "assertionFailure": "AWBC returns VmExit::Trapped for a runtime length rejection, rather than a Result::Err",
+  "recordedAt": "2026-10-24T05:31:02.9839999Z"
+}

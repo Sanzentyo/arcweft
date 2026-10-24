@@ -1771,6 +1771,7 @@ pub enum AwbcOpcode {
     SequenceAppend = 0x17,
     VecPop = 0x18,
     ReadPlace = 0x19,
+    ArrayFromVec = 0x1a,
     CallPureHelper = 0x20,
     CallIntrinsic = 0x21,
     CallTraitMethod = 0x22,
@@ -1849,6 +1850,7 @@ impl AwbcOpcode {
         Self::SequenceAppend,
         Self::VecPop,
         Self::ReadPlace,
+        Self::ArrayFromVec,
         Self::CallPureHelper,
         Self::CallIntrinsic,
         Self::CallTraitMethod,
@@ -1935,6 +1937,7 @@ impl AwbcOpcode {
             | Self::MakeTuple
             | Self::MakeSequence
             | Self::RepeatSequence
+            | Self::ArrayFromVec
             | Self::MakeRecord
             | Self::MakeVariant
             | Self::MakeCallable
@@ -2086,6 +2089,11 @@ pub enum AwbcInstruction {
         dst: AwbcRegisterId,
         value: AwbcRegisterId,
         len: AwbcRegisterId,
+    },
+    /// Checks the destination Array type before transferring owned Vec storage.
+    ArrayFromVec {
+        dst: AwbcRegisterId,
+        value: AwbcRegisterId,
     },
     SequenceLen {
         dst: AwbcRegisterId,
@@ -2362,6 +2370,7 @@ impl AwbcInstruction {
             Self::MakeTuple { .. } => AwbcOpcode::MakeTuple,
             Self::MakeSequence { .. } => AwbcOpcode::MakeSequence,
             Self::RepeatSequence { .. } => AwbcOpcode::RepeatSequence,
+            Self::ArrayFromVec { .. } => AwbcOpcode::ArrayFromVec,
             Self::SequenceLen { .. } => AwbcOpcode::SequenceLen,
             Self::SequenceGet { .. } => AwbcOpcode::SequenceGet,
             Self::SequenceSlice { .. } => AwbcOpcode::SequenceSlice,

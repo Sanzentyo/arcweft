@@ -267,6 +267,7 @@ impl Sink<'_, '_> {
         }
         match expr.kind() {
             K::Value(value) => self.literal(value)?,
+            K::ArrayFromVec { .. } => {}
             K::EntityRef(value) => self.entity(value)?,
             K::Agent(agent) => {
                 self.byte(agent.constructor().semantic_tag())?;

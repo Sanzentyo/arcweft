@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "5913440a59d6376ed2670a5ae4e97d9645e2c247",
+  "name": "task-final-r2646-array-constructor-workspace-clippy",
+  "command": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2646-array-constructor-workspace-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T05:31:57.5373138Z",
+  "finishedAt": "2026-10-24T05:33:49.9055292Z"
+}

@@ -396,7 +396,7 @@ impl<'a> Cursor<'a> {
                 self.id("helper", self.limits.helper_count)?;
                 self.arguments(counts)?
             }
-            29 | 35 => 1,
+            29 | 35 | 36 => 1,
             30 => {
                 if self.byte()? > 1 {
                     return Err(self.invalid("unary operator"));

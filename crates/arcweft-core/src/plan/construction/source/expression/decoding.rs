@@ -626,6 +626,9 @@ impl Decoder<'_, '_> {
             29 => K::Sum {
                 source: self.boxed(),
             },
+            36 => K::ArrayFromVec {
+                value: self.boxed(),
+            },
             30 => K::Unary {
                 op: if r.byte()? == 0 {
                     RuntimeUnaryOp::Not

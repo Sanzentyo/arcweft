@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "5913440a59d6376ed2670a5ae4e97d9645e2c247",
+  "name": "task-final-r2643-array-constructor-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-codegen",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(array_from_vec) | package(=arcweft-runtime-codegen)",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all",
+    "--no-fail-fast"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2643-array-constructor-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-24T05:29:27.2628259Z",
+  "finishedAt": "2026-10-24T05:30:40.8737612Z"
+}

@@ -1,0 +1,208 @@
+{
+  "version": 1,
+  "base": "5913440a59d6376ed2670a5ae4e97d9645e2c247",
+  "workingTree": "24 owned Rust modifications plus preserved 14 tracked and 6 untracked WIP",
+  "rows": [
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/code.rs",
+      "owner": "arcweft-core",
+      "bytes": 111218,
+      "physicalLoc": 2962,
+      "basePhysicalLoc": 2953,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "owner": "arcweft-core",
+      "bytes": 124406,
+      "physicalLoc": 3847,
+      "basePhysicalLoc": 3838,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests/array.rs",
+      "owner": "arcweft-core",
+      "bytes": 8418,
+      "physicalLoc": 246,
+      "basePhysicalLoc": 107,
+      "classification": "test"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+      "owner": "arcweft-core",
+      "bytes": 253978,
+      "physicalLoc": 6528,
+      "basePhysicalLoc": 6506,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "owner": "arcweft-core",
+      "bytes": 216753,
+      "physicalLoc": 5392,
+      "basePhysicalLoc": 5369,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/eval.rs",
+      "owner": "arcweft-core",
+      "bytes": 66330,
+      "physicalLoc": 1658,
+      "basePhysicalLoc": 1651,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/callable/preflight.rs",
+      "owner": "arcweft-core",
+      "bytes": 5602,
+      "physicalLoc": 139,
+      "basePhysicalLoc": 138,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/request.rs",
+      "owner": "arcweft-core",
+      "bytes": 25399,
+      "physicalLoc": 697,
+      "basePhysicalLoc": 694,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "owner": "arcweft-core",
+      "bytes": 254872,
+      "physicalLoc": 5984,
+      "basePhysicalLoc": 5967,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+      "owner": "arcweft-core",
+      "bytes": 100544,
+      "physicalLoc": 3061,
+      "basePhysicalLoc": 3056,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/expression/cursor.rs",
+      "owner": "arcweft-core",
+      "bytes": 16635,
+      "physicalLoc": 486,
+      "basePhysicalLoc": 486,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/expression/decoding.rs",
+      "owner": "arcweft-core",
+      "bytes": 32561,
+      "physicalLoc": 823,
+      "basePhysicalLoc": 820,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/expression/encoding.rs",
+      "owner": "arcweft-core",
+      "bytes": 21563,
+      "physicalLoc": 555,
+      "basePhysicalLoc": 554,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/expression/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 41273,
+      "physicalLoc": 1179,
+      "basePhysicalLoc": 1054,
+      "classification": "test"
+    },
+    {
+      "path": "crates/arcweft-core/src/pure.rs",
+      "owner": "arcweft-core",
+      "bytes": 128907,
+      "physicalLoc": 3409,
+      "basePhysicalLoc": 3404,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/pure/function.rs",
+      "owner": "arcweft-core",
+      "bytes": 35867,
+      "physicalLoc": 863,
+      "basePhysicalLoc": 862,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "owner": "arcweft-core",
+      "bytes": 168187,
+      "physicalLoc": 4659,
+      "basePhysicalLoc": 4645,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/env.rs",
+      "owner": "arcweft-core",
+      "bytes": 75515,
+      "physicalLoc": 1963,
+      "basePhysicalLoc": 1940,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/expression_locals.rs",
+      "owner": "arcweft-core",
+      "bytes": 12793,
+      "physicalLoc": 306,
+      "basePhysicalLoc": 305,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/expression_semantic.rs",
+      "owner": "arcweft-core",
+      "bytes": 10850,
+      "physicalLoc": 238,
+      "basePhysicalLoc": 237,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/expression_tree.rs",
+      "owner": "arcweft-core",
+      "bytes": 21498,
+      "physicalLoc": 565,
+      "basePhysicalLoc": 562,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-runtime-accelerator/src/compile.rs",
+      "owner": "arcweft-runtime-accelerator",
+      "bytes": 59821,
+      "physicalLoc": 1732,
+      "basePhysicalLoc": 1731,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-runtime-codegen/src/awbc_region.rs",
+      "owner": "arcweft-runtime-codegen",
+      "bytes": 14790,
+      "physicalLoc": 413,
+      "basePhysicalLoc": 412,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/expr.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 76527,
+      "physicalLoc": 1872,
+      "basePhysicalLoc": 1864,
+      "classification": "production"
+    }
+  ],
+  "cargoEdgesChanged": false,
+  "reverseWorkspacePackages": 53,
+  "disposition": [
+    "Core owns the exact Array construction rule, active type admission, shared child traversal and canonical Source grammar. Native and Pure share the Env validation; AWBC uses its existing active frame type authority before consuming storage.",
+    "The AWBC schema and both verifier passes extend the same closed instruction algebra. CopyProof is transferred from the Vec without making affine elements copyable. No parallel type catalog or legacy reader was added.",
+    "runtime-plan emits that Core instruction, runtime-codegen delegates it to the actual VM, and accelerator cost accounting includes the child. These consumers add no I/O or Cargo edges.",
+    "Existing large owner modules retain their cohesive schema/interpreter/codec responsibilities. The cut adds one unary expression rather than a new mixed state cluster. Source codec and AWBC behavior tests remain under their owners; no source-spelling acceptance gate was added."
+  ],
+  "recordedAt": "2026-10-24T05:35:15.3698889Z"
+}

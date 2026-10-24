@@ -842,6 +842,7 @@ fn scalar_completion_expr_is_total(plan: &RuntimePlan, value: &RuntimeExpr, dept
         | RuntimeExprKind::CharacterDialogue { .. }
         | RuntimeExprKind::BracketSeq(_)
         | RuntimeExprKind::RepeatSeq { .. }
+        | RuntimeExprKind::ArrayFromVec { .. }
         | RuntimeExprKind::Range { .. }
         | RuntimeExprKind::NominalRecord(_)
         | RuntimeExprKind::Variant { .. }

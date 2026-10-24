@@ -900,7 +900,11 @@ impl Wire for AwbcInstruction {
                 value.write_wire(writer)?;
                 len.write_wire(writer)?;
             }
-            Self::SequenceLen { dst, sequence } => {
+            Self::ArrayFromVec {
+                dst,
+                value: sequence,
+            }
+            | Self::SequenceLen { dst, sequence } => {
                 dst.write_wire(writer)?;
                 sequence.write_wire(writer)?;
             }
@@ -1241,6 +1245,10 @@ impl Wire for AwbcInstruction {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 value: AwbcRegisterId::read_wire(reader)?,
                 len: AwbcRegisterId::read_wire(reader)?,
+            },
+            AwbcOpcode::ArrayFromVec => Self::ArrayFromVec {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                value: AwbcRegisterId::read_wire(reader)?,
             },
             AwbcOpcode::SequenceLen => Self::SequenceLen {
                 dst: AwbcRegisterId::read_wire(reader)?,
@@ -1917,6 +1925,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::MakeTuple
             | AwbcOpcode::MakeSequence
             | AwbcOpcode::RepeatSequence
+            | AwbcOpcode::ArrayFromVec
             | AwbcOpcode::SequenceLen
             | AwbcOpcode::SequenceGet
             | AwbcOpcode::SequenceSlice

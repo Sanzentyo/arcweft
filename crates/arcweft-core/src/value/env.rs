@@ -444,6 +444,29 @@ impl RuntimeEnv {
         }
     }
 
+    pub(crate) fn construct_array_from_vec(
+        &self,
+        plan: &crate::plan::RuntimePlan,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        value: RuntimeValue,
+    ) -> Result<RuntimeValue, crate::value::RuntimeEvalError> {
+        if !matches!(
+            plan.type_table().get(ty).map(|row| row.projection()),
+            Some(crate::plan::RuntimePlanTypeProjection::Array { .. })
+        ) {
+            return Err(crate::value::RuntimeEvalError::InvalidExpressionType(ty));
+        }
+        if !self.value_matches_type(plan, ty, &value)? {
+            return Err(crate::value::RuntimeEvalError::ArrayConstruction {
+                ty,
+                actual: crate::value::runtime_value_label(&value),
+            });
+        }
+        // Vec and Array use the same owned sequence storage. The admitted
+        // result type establishes exact length without cloning its elements.
+        Ok(value)
+    }
+
     pub(crate) fn push_scope_with_identity(&mut self, identity: RuntimeScopeIdentity) {
         self.push_scope_with_identity_and_capacity(identity, 0);
     }

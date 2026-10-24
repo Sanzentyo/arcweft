@@ -2362,6 +2362,10 @@ pub enum RuntimeExprSeedKind {
         value: Box<RuntimeExprSeed>,
         len: usize,
     },
+    /// Checks and consumes one Vec into this expression's exact Array type.
+    ArrayFromVec {
+        value: Box<RuntimeExprSeed>,
+    },
     Range {
         start: Option<Box<RuntimeExprSeed>>,
         end: Option<Box<RuntimeExprSeed>>,
@@ -2769,6 +2773,7 @@ impl RuntimeExprSeed {
                 }
             }
             RuntimeExprSeedKind::RepeatSeq { value, .. }
+            | RuntimeExprSeedKind::ArrayFromVec { value }
             | RuntimeExprSeedKind::SpecializeCallable { value, .. }
             | RuntimeExprSeedKind::Sum { source: value }
             | RuntimeExprSeedKind::Unary { expr: value, .. }

@@ -141,6 +141,7 @@ impl RuntimeExpr {
                 collect_slice_free_locals(plan, items, bound, locals)?;
             }
             RuntimeExprKind::RepeatSeq { value, .. }
+            | RuntimeExprKind::ArrayFromVec { value }
             | RuntimeExprKind::ProjectTuple { target: value, .. }
             | RuntimeExprKind::ProjectRecord { target: value, .. }
             | RuntimeExprKind::Sum { source: value }

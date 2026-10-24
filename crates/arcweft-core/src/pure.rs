@@ -1921,6 +1921,11 @@ impl<'a> PureEvaluator<'a> {
                 .ok_or(RuntimeEvalError::AffineLiteralCopy),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent),
             RuntimeExprKind::Local(read) => self.evaluate_local(read),
+            RuntimeExprKind::ArrayFromVec { value } => {
+                let value = self.evaluate_expr(value)?;
+                self.env
+                    .construct_array_from_vec(self.plan, expr.ty(), value)
+            }
             RuntimeExprKind::SequencePopFront { place } => {
                 self.env.pop_sequence_front(place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)

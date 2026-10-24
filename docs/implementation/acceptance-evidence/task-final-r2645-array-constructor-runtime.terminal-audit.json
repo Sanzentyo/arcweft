@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "5913440a59d6376ed2670a5ae4e97d9645e2c247",
+  "run": "task-final-r2645-array-constructor-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.130s] 16 tests run: 16 passed, 1972 skipped",
+  "executed": 16,
+  "passed": 16,
+  "failed": 0,
+  "skipped": 1972,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 5205,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T05:31:57.3402412Z"
+}

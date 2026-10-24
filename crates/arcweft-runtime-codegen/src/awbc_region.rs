@@ -167,6 +167,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::MakeTuple
         | AwbcOpcode::MakeSequence
         | AwbcOpcode::RepeatSequence
+        | AwbcOpcode::ArrayFromVec
         | AwbcOpcode::SequenceLen
         | AwbcOpcode::SequenceGet
         | AwbcOpcode::SequenceSlice

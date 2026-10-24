@@ -1,0 +1,6 @@
+types=45
+locals=8206
+functions=3
+production_semantic_work=4194304
+production=error task source resource admission failed: SemanticWork
+diagnostic_only=error task source program is invalid: program Source bodies failed: function body Source Flow is invalid: Flow Source expression is invalid: expression source elements 8193 exceeds 7706

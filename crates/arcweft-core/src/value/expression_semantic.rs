@@ -186,6 +186,7 @@ impl RuntimeExpr {
                 }
             }
             RuntimeExprKind::Scope { .. }
+            | RuntimeExprKind::ArrayFromVec { .. }
             | RuntimeExprKind::Sum { .. }
             | RuntimeExprKind::If { .. }
             | RuntimeExprKind::ReductionUnchanged { .. } => {}

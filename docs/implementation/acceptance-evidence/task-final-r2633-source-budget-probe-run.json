@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "base": "5913440a59d6376ed2670a5ae4e97d9645e2c247",
+  "name": "task-final-r2633-source-budget-probe-run",
+  "diagnosticOnly": true,
+  "notAcceptance": true,
+  "fixture": "D:/git/arcweft/tests/fixtures/arcw/spec_should_pass/bench/008_large_map_pure_batch.arcw",
+  "fixtureSha256": "c98500dcc7e78a55ec4f4a9c17c5d03df80e251b3310caa2eba231d4e9ebea08",
+  "probeSha256": "60b099e3373429fcd78c1596de01e943a361f39955959c554171f022e6b5681f",
+  "probeDrift": false,
+  "compilerDrift": false,
+  "exitCode": -1073741571,
+  "startedAt": "2026-10-24T04:43:22.9160847Z",
+  "finishedAt": "2026-10-24T04:43:29.4330178Z"
+}

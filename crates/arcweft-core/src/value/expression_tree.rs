@@ -383,6 +383,9 @@ impl<'a> Iterator for RuntimeExpressionChildren<'a> {
                 RuntimeExprKind::RepeatSeq { value, .. } => {
                     (index == 0).then_some((R::RepeatedValue, N::Expression(value)))
                 }
+                RuntimeExprKind::ArrayFromVec { value } => {
+                    (index == 0).then_some((R::Source, N::Expression(value)))
+                }
                 RuntimeExprKind::Range { start, end, .. } => {
                     while self.ordinal < 2 {
                         let next = match self.ordinal {

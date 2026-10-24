@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "5913440a59d6376ed2670a5ae4e97d9645e2c247",
+  "name": "task-final-r2642-array-constructor-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-codegen",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(array_from_vec) | package(=arcweft-runtime-codegen)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2642-array-constructor-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T05:27:16.7571704Z",
+  "finishedAt": "2026-10-24T05:29:13.6270778Z"
+}

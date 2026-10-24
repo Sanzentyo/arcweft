@@ -1156,6 +1156,23 @@ fn apply_instruction(
             }
             write_register(verifier, function, block, *dst, state)?;
         }
+        AwbcInstruction::ArrayFromVec { dst, value } => {
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            let Some(AwbcRuntimeTypeShape::Array { item, .. }) = runtime_shape(program, dst_ty)
+            else {
+                return invalid_type(&at, "Array construction destination");
+            };
+            let value_ty = read_register(verifier, function, block, *value, state)?;
+            if !matches!(runtime_shape(program, value_ty),
+                Some(AwbcRuntimeTypeShape::Sequence {
+                    kind: crate::plan::RuntimePlanSequenceKind::Vec,
+                    item: source_item,
+                }) if source_item == item)
+            {
+                return invalid_type(&at, "Array construction Vec with the same item identity");
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::SequenceLen { dst, sequence } => {
             let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
             if !is_sequence_or_dynamic(runtime_shape(program, sequence_ty)) {
@@ -2464,6 +2481,11 @@ fn apply_instruction_copy_and_move_effects(
             } else {
                 CopyProof::Sequence(vec![source_proof; repeat_count.unwrap_or(1)]).compact()
             });
+        }
+        AwbcInstruction::ArrayFromVec { dst, value } => {
+            consumed.push(*value);
+            outputs.push(*dst);
+            output_proof = Some(state.copy_proofs[value.index()].clone());
         }
         AwbcInstruction::SequenceGet {
             dst,

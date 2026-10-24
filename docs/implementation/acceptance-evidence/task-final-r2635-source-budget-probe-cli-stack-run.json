@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "5913440a59d6376ed2670a5ae4e97d9645e2c247",
+  "name": "task-final-r2635-source-budget-probe-cli-stack-run",
+  "diagnosticOnly": true,
+  "notAcceptance": true,
+  "stackBytes": 2097152,
+  "fixture": "D:/git/arcweft/tests/fixtures/arcw/spec_should_pass/bench/008_large_map_pure_batch.arcw",
+  "fixtureSha256": "c98500dcc7e78a55ec4f4a9c17c5d03df80e251b3310caa2eba231d4e9ebea08",
+  "probeSha256": "28a6cc63e24105149c51d93d009258544edb5c7ffe19bf65b1d63ffc1947b629",
+  "probeDrift": false,
+  "compilerDrift": false,
+  "exitCode": 0,
+  "startedAt": "2026-10-24T04:46:15.5963951Z",
+  "finishedAt": "2026-10-24T04:46:18.9876949Z"
+}

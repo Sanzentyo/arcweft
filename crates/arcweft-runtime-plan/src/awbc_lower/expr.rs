@@ -442,6 +442,14 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     });
                 dst
             }
+            RuntimeExprKind::ArrayFromVec { value } => {
+                let value = self.lower(value);
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let dst = self.frame.temp(ty);
+                self.inventory
+                    .push_instruction(AwbcInstruction::ArrayFromVec { dst, value });
+                dst
+            }
             RuntimeExprKind::Range {
                 start,
                 end,

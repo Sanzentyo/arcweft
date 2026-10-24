@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "5913440a59d6376ed2670a5ae4e97d9645e2c247",
+  "name": "task-final-r2640-array-constructor-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2640-array-constructor-workspace-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T05:25:04.7019053Z",
+  "finishedAt": "2026-10-24T05:25:27.0973355Z"
+}

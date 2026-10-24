@@ -69,7 +69,7 @@ fixtureの現行契約との整合も含めて調べる。全識別子と診断�
 | JLREQ geometry／raw crop | 8 | 後続本文が左へ進まない、hyphen後のcolumnが1169／1127に分かれるという診断を再現する。 |
 | View文法／観測 | 6 | typed View grammar／action名の拒否、rich-text object／run／depthの期待値不一致。 |
 | 意味解析の入口 | 7 | HIR recovery 2件、未知の `traverse` 2件、final semantic analysis 3件。 |
-| SourceのSemanticWork上限 | 1 | 4,096要素のArray.map benchmarkが、実行前の元Sourceエンコードで拒否される。 |
+| SourceのSemanticWork上限 | 1 | 4,096要素のArray.map benchmarkが、実行前の元Sourceエンコードで拒否される。8,206 localsを作る要素数比例の展開を確認した。反復化に必要なVec→Array構築は追加・対象16件PASSだが、Mapの反復化と当該benchmarkの再検証はまだ行っていない。[診断と検証履歴](convergence-evidence-history.md#array-map-source資源診断と型付き配列構築--2026-10-24)。 |
 | verify出力の期待値 | 6 | solver／proof／promotion／thread-join／dependency／deferのreport期待値と一致しない。 |
 | bench／profile／plan／scenario等の期待値 | 14 | 計測counter、task graph、scenario/assertion、unsafe一覧等が期待値と一致しない。 |
 

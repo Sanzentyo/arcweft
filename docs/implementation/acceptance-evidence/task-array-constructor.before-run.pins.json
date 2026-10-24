@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2644-array-constructor-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79329792,
+      "nonTest": false,
+      "sha256": "ef896af3548a7bfc4dc050b183dfc5590e57d1f18a9cd7e7563ba088671f6a4a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_codegen-8503ac508f54f869.exe",
+      "bytes": 17861120,
+      "nonTest": false,
+      "sha256": "7b1e3115dc40b0c27da1cb6e97697a3b87e3e05aaafbb1b07cb01cf6699a8bef"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T05:31:47.0744838Z"
+}

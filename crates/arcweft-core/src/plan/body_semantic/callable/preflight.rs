@@ -111,6 +111,7 @@ impl<'a> RuntimeCallableChildPreflight<'a> {
             | RuntimeExprKind::CharacterDialogue { .. }
             | RuntimeExprKind::BracketSeq(_)
             | RuntimeExprKind::RepeatSeq { .. }
+            | RuntimeExprKind::ArrayFromVec { .. }
             | RuntimeExprKind::Range { .. }
             | RuntimeExprKind::NominalRecord(_)
             | RuntimeExprKind::Variant { .. }

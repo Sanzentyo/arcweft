@@ -2162,6 +2162,12 @@ pub enum RuntimeExprKind {
         value: Box<RuntimeExpr>,
         len: usize,
     },
+    /// Consumes a homogeneous Vec as the exact Array result type. The active
+    /// type context checks its complete value before publication; no element
+    /// is copied or replaced during this ownership transfer.
+    ArrayFromVec {
+        value: Box<RuntimeExpr>,
+    },
     Range {
         start: Option<Box<RuntimeExpr>>,
         end: Option<Box<RuntimeExpr>>,
@@ -2358,6 +2364,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::CharacterDialogue { .. }
             | RuntimeExprKind::BracketSeq(_)
             | RuntimeExprKind::RepeatSeq { .. }
+            | RuntimeExprKind::ArrayFromVec { .. }
             | RuntimeExprKind::Range { .. }
             | RuntimeExprKind::NominalRecord(_)
             | RuntimeExprKind::Variant { .. }
@@ -2461,6 +2468,7 @@ impl fmt::Display for RuntimeExpr {
             } => write!(f, "character_dialogue/{operation:?}/{}", fields.len()),
             RuntimeExprKind::BracketSeq(items) => write!(f, "bracket_seq/{}", items.len()),
             RuntimeExprKind::RepeatSeq { len, .. } => write!(f, "repeat_seq/{len}"),
+            RuntimeExprKind::ArrayFromVec { .. } => f.write_str("array_from_vec"),
             RuntimeExprKind::Range { inclusive, .. } => f.write_str(if *inclusive {
                 "range/inclusive"
             } else {
@@ -2780,6 +2788,11 @@ pub enum RuntimeEvalError {
     InvalidExpressionType(RuntimePlanTypeId),
     #[error(transparent)]
     PlanValueType(#[from] RuntimePlanValueTypeError),
+    #[error("cannot construct Array type {ty} from {actual}")]
+    ArrayConstruction {
+        ty: RuntimePlanTypeId,
+        actual: String,
+    },
     #[error("nominal record type {ty} has no initializer for field {field}")]
     MissingRecordInitializer {
         ty: RuntimePlanTypeId,
@@ -4327,6 +4340,7 @@ impl RuntimeExprKind {
             Self::IfLet { .. } => 33,
             Self::Match { .. } => 34,
             Self::ReductionUnchanged { .. } => 35,
+            Self::ArrayFromVec { .. } => 36,
         }
     }
 }

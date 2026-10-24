@@ -521,7 +521,10 @@ impl OriginalRequestEndpoint<'_> {
                 | Expr::Range { .. }
                 | Expr::NominalRecord(_)
                 | Expr::Variant { .. } => RuntimeRequestValueSource::AggregateItem,
-                Expr::Let { body, .. } | Expr::Scope { body, .. } | Expr::Assign { body, .. } => {
+                Expr::Let { body, .. }
+                | Expr::Scope { body, .. }
+                | Expr::Assign { body, .. }
+                | Expr::ArrayFromVec { value: body } => {
                     expression = body;
                     continue;
                 }

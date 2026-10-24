@@ -27,6 +27,131 @@ fn empty_handles() -> RuntimeExpressionSourceHandles<'static> {
         attempts: &[],
     }
 }
+
+#[test]
+fn array_from_vec_source_round_trip_preserves_exact_type_and_runtime_length_check() {
+    for length in [0, 2] {
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(ty(1), RuntimePlanTypeProjection::Bool),
+                    RuntimePlanTypeSeed::new(
+                        ty(2),
+                        RuntimePlanTypeProjection::Sequence {
+                            kind: RuntimePlanSequenceKind::Vec,
+                            item: ty(1),
+                        },
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        ty(3),
+                        RuntimePlanTypeProjection::Array {
+                            item: ty(1),
+                            length: length.into(),
+                        },
+                    ),
+                ],
+                [],
+            )
+            .unwrap();
+        let expression = seed(
+            3,
+            RuntimeExprSeedKind::ArrayFromVec {
+                value: Box::new(seed(
+                    2,
+                    RuntimeExprSeedKind::BracketSeq(vec![boolean(true); length as usize].into()),
+                )),
+            },
+        );
+        add_function(&mut builder, 1, expression);
+        let plan = builder.finish().unwrap();
+        let (mut source, functions) = source(&plan);
+        replay_functions(&plan, &mut source, &functions, &empty_handles());
+        let restored = finish(source);
+        assert_eq!(restored.function_sites(), plan.function_sites());
+        assert_eq!(
+            restored.executable_semantic_digest(),
+            plan.executable_semantic_digest()
+        );
+
+        let array = restored.type_table().id_for_semantic(ty(3)).unwrap();
+        for actual in 0..=3 {
+            let value =
+                RuntimeValue::Seq(RuntimeSeq::values(vec![RuntimeValue::Bool(true); actual]));
+            let result = RuntimeEnv::default().construct_array_from_vec(&restored, array, value);
+            assert_eq!(result.is_ok(), actual as u64 == length);
+        }
+        if length > 0 {
+            assert!(
+                RuntimeEnv::default()
+                    .construct_array_from_vec(
+                        &restored,
+                        array,
+                        RuntimeValue::Seq(RuntimeSeq::values(vec![
+                            RuntimeValue::Unit;
+                            length as usize
+                        ])),
+                    )
+                    .is_err()
+            );
+        }
+        assert!(
+            RuntimeEnv::default()
+                .construct_array_from_vec(
+                    &restored,
+                    array,
+                    RuntimeValue::Seq(RuntimeSeq::values(vec![
+                        RuntimeValue::Unit;
+                        length as usize + 1
+                    ])),
+                )
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn array_from_vec_builder_rejects_non_vec_or_different_item_identity() {
+    for source in [
+        RuntimePlanTypeProjection::Sequence {
+            kind: RuntimePlanSequenceKind::Seq,
+            item: ty(1),
+        },
+        RuntimePlanTypeProjection::Sequence {
+            kind: RuntimePlanSequenceKind::Vec,
+            item: ty(4),
+        },
+    ] {
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(ty(1), RuntimePlanTypeProjection::Bool),
+                    RuntimePlanTypeSeed::new(ty(2), source),
+                    RuntimePlanTypeSeed::new(
+                        ty(3),
+                        RuntimePlanTypeProjection::Array {
+                            item: ty(1),
+                            length: 0.into(),
+                        },
+                    ),
+                    RuntimePlanTypeSeed::new(ty(4), RuntimePlanTypeProjection::Unit),
+                ],
+                [],
+            )
+            .unwrap();
+        assert!(
+            builder
+                .lower_expression(seed(
+                    3,
+                    RuntimeExprSeedKind::ArrayFromVec {
+                        value: Box::new(seed(2, RuntimeExprSeedKind::BracketSeq(Box::new([])))),
+                    }
+                ))
+                .is_err()
+        );
+    }
+}
 pub(in crate::plan::construction::source) fn limits(
     plan: &RuntimePlan,
 ) -> RuntimeExpressionSourceLimits {

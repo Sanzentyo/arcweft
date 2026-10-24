@@ -420,7 +420,8 @@ not copy numeric values into feature-local tables.
 |  | `17` | `VecPush { place, value }` | append to an initialized Vec place |
 |  | `18` | `VecPop { dst, place }` | remove from an initialized Vec place |
 |  | `19` | `ReadPlace { dst, root, fields, mode }` | Copy or Move one initialized schema-selected record child while retaining siblings |
-|  | `1a..1f` | unassigned | reject |
+|  | `1a` | `ArrayFromVec { dst, value }` | validate the instantiated exact Array type, then consume the same owned Vec storage without copying elements |
+|  | `1b..1f` | unassigned | reject |
 | Call/task | `20` | `CallPureHelper { dst, helper, args }` | deterministic helper call |
 |  | `21` | `CallIntrinsic { dst?, intrinsic, args }` | typed registry intrinsic |
 |  | `22` | `CallTraitMethod { dst?, method, args }` | exact trait dispatch |
