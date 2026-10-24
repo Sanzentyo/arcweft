@@ -10281,3 +10281,43 @@ R2661 workspace check／R2662 workspace Clippyはall-target／all-feature／lock
 CLIの所有する試験修正により同ファイルのindex blob識別子だけが変わるため、
 raw patch hashの変化とhunk不変を [分離監査](acceptance-evidence/task-array-map-first-held-user-hunks.json) で区別した。
 既存6 untracked WIPも保持し、CLIの既存 `--steps` 8→32の変更は公開差分へ含めない。
+
+反復化cutは `ac04a9cd05891478cc7777e342f0da94db4517c9` として公開した。
+parentは `39333e656863928105707c9dea89e11b9a40efc5`、treeは
+`074677fad39ba242426217057c551d121f7eb9dd`、raw patch SHA256は
+`859b978ada445a821143caa6b97cb41c89bbeaefa40ce95b93408367077ac3a6`。
+85 paths／5,316 working inputs、fresh origin／advertised ref、公開blobと空indexを照合し、
+差分0。保持した14 tracked WIPのraw patch SHA256は、上記のCLI index metadata変更後
+`a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc`。
+
+## Array Map修復後の全Core逆依存library — 2026-10-24
+
+基点は `ac04a9cd05891478cc7777e342f0da94db4517c9`。
+Cargo graphの全53 package／library targetを、all-feature／locked、
+`rdeps(=arcweft-core)`で選択した。R2664は5,474件を列挙し、前回5,470件の削除0、
+追加4件は配列構築のテストだった。4つのnamed caseなしtargetはbuildだけとして扱う。
+
+R2665は **5,473 PASS／1 FAIL／0除外**、124.141秒で終了した。
+唯一の失敗は `awbc::tests::opcode_owner_exhaustively_seals_every_v1_byte_and_family`。
+製品enum／codec／VMには既にある`ArrayFromVec`を、テストの期待一覧へ加え忘れていた。
+`(AwbcOpcode::ArrayFromVec, 0x1a, Value)`の1行だけを追加し、
+全byte／family／class／numeric Serdeと未割当byte拒否の検査を維持した。
+製品実装、Cargo／feature、資源上限、他のテストは変更していない。
+
+R2667でCoreの全 **1,976／1,976 PASS／0除外**、37.449秒を確認した。
+他52 libraryバイナリはbyte hash差分0で、R2665の3,498件の成功を再利用する。
+最終の重複なし集計は **5,474／5,474 PASS**、49 named packages／53 build targets。
+[集計と再利用範囲](acceptance-evidence/task-array-map-reverse-library.final-summary.json)、
+[初回全体結果](acceptance-evidence/task-final-r2665-array-map-reverse-library-runtime.terminal-audit.json)、
+[Core再実行](acceptance-evidence/task-final-r2667-array-map-core-final-runtime.terminal-audit.json)。
+各実行時の5,316固定入力と実行バイナリは差分0。全53を再度実行したという意味にはしない。
+
+Coreだけを選んだ監査helperの`noNamedTestsOnHost`が、単に選択に一致しない52 packageを
+誤って含めていたため、完全library catalogに基づく実際の空target 4件へ訂正した。
+元の生成監査も保持し、48 named packageがfilter対象外だったことと区別した。
+実際の1,976件、終端log、終了値とcase setは変えていない。
+integration／bin、39既存ignored／Tier2とNative-Web parityは、このlibrary集計に含めない。
+
+27原本／9,099,793 bytesをbyte・SHA256一致で保持した。
+[原本整合](acceptance-evidence/task-array-map-library-evidence-integrity.json)。
+バイナリはpath／hashだけを記録し、生成物を移動・コピーしていない。

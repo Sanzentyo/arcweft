@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "base": "ac04a9cd05891478cc7777e342f0da94db4517c9",
+  "run": "task-final-r2665-array-map-reverse-library-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 124.141s] 5474 tests run: 5473 passed, 1 failed, 0 skipped",
+  "executed": 5474,
+  "passed": 5473,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 53,
+  "matchedPackages": 49,
+  "noNamedTestsOnHost": [
+    "arcweft",
+    "arcweft-bundle-assets",
+    "arcweft-render-text",
+    "arcweft-render-web"
+  ],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 5316,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::opcode_owner_exhaustively_seals_every_v1_byte_and_family"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-24T06:46:49.0790242Z"
+}

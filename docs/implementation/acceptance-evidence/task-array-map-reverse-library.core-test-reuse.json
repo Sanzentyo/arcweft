@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "base": "ac04a9cd05891478cc7777e342f0da94db4517c9",
+  "testOnlyChange": "crates/arcweft-core/src/awbc/tests.rs: ArrayFromVec 0x1a Value expected tuple",
+  "productionSourceChanged": false,
+  "otherLibraryBinaries": 52,
+  "otherLibraryBinaryDrift": 0,
+  "reusedPassingCases": 3498,
+  "coreCasesToRerun": 1976,
+  "preRunGuardCorrection": "Pin inventory includes all 53 built binaries although only Core cases match; identify the exact Core binary instead of requiring one inventory row"
+}

@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "rawFiles": 27,
+  "rawBytes": 9099793,
+  "rows": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-checkpoint.verified.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-checkpoint.verified.json",
+      "bytes": 20835,
+      "sha256": "bb00f5afbe32d39e70dc570bcd41b32a11750b8723a27a4f962e6e213fc3390a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-core-final.before-run.pins.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-core-final.before-run.pins.json",
+      "bytes": 13324,
+      "sha256": "87895a00f7e3221e07cfc95419b75966197f99111c9c59743d6223c024b03505"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-core-final.executable-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-core-final.executable-audit.json",
+      "bytes": 138,
+      "sha256": "172aa083a91d91d41e2c37298daea35099a9c1fe15488d2085b12a748fe98b5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-core-final.graph.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-core-final.graph.json",
+      "bytes": 2788,
+      "sha256": "504c4ee22203af8c4048f9fe23b5bcfd75f7ec411fd5a0c88426ef6db695483b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-core-final.source-freeze.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-core-final.source-freeze.json",
+      "bytes": 1087413,
+      "sha256": "2b31e74f59d8a72927e6b448861334bf238de9479957afdca8d19242f443ab8e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-library-checkpoint.graph.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-library-checkpoint.graph.json",
+      "bytes": 2894,
+      "sha256": "35e352cb31f6e5c4344ed7a9d602840f52ee35239ab86b18efadfae3eb6aff41"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-library-checkpoint.source-freeze.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-library-checkpoint.source-freeze.json",
+      "bytes": 1087519,
+      "sha256": "4e3d767d7e68bd01422412a44c60310fb0af0cf01e4b958131fb835928d61870"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-library.before-run.pins.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-reverse-library.before-run.pins.json",
+      "bytes": 13329,
+      "sha256": "bd138317812daefc31403c973302647dc9a952a472357cbbef2abb2e4949a059"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-library.case-delta.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-reverse-library.case-delta.json",
+      "bytes": 691,
+      "sha256": "0ccd12835cd50323dce86810384ac3985d0770992dd42190ea7724a5ecf1e253"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-library.core-test-reuse.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-reverse-library.core-test-reuse.json",
+      "bytes": 518,
+      "sha256": "025c3079a82c469ab322929c8df6798fdb3c965ae174b465a31135ea7f96e397"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-library.executable-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-reverse-library.executable-audit.json",
+      "bytes": 206,
+      "sha256": "2749af9889b8624879ebb0d942041469f4ffd9b7d6911c9487eab15e6f7acf6f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-library.final-summary.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-reverse-library.final-summary.json",
+      "bytes": 967,
+      "sha256": "f7c5b953347dbd42619d366722548ae5856ffd41567e579301e7b30c00c31849"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-library.graph.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-reverse-library.graph.json",
+      "bytes": 2839,
+      "sha256": "24d33e1ab69df7c318ed57ca52bdd3e14030d5e5676e71d33a00376507b43422"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-library.source-freeze.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-array-map-reverse-library.source-freeze.json",
+      "bytes": 1087364,
+      "sha256": "c69c9ddbbab9696cd22b06c62a60fc9ffe2ae495b1ca87e6a2e9f4b9ce3b5802"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2664-array-map-reverse-library-catalog.inventory.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2664-array-map-reverse-library-catalog.inventory.json",
+      "bytes": 1380081,
+      "sha256": "e9a90c631ba92ed4c580198b4eb03b8fb32cc32cddb9bbd1c21c45172f59c186"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2664-array-map-reverse-library-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2664-array-map-reverse-library-catalog.json",
+      "bytes": 2623,
+      "sha256": "e9d080b6c3654418544aa5c2f40a55acaaaef6bc15ccd06780f204c165616b50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2664-array-map-reverse-library-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2664-array-map-reverse-library-catalog.log",
+      "bytes": 1016006,
+      "sha256": "04eb753b35dec87f1102027109fbb24932ec580a0412aeec2c972fb4df0311fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2665-array-map-reverse-library-runtime.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2665-array-map-reverse-library-runtime.json",
+      "bytes": 2685,
+      "sha256": "77f3b563de57c0a8abfb1505fe91642fd7902ad0b61a6e306193964641df36eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2665-array-map-reverse-library-runtime.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2665-array-map-reverse-library-runtime.log",
+      "bytes": 1714286,
+      "sha256": "d16b1f55212c12cef50f3a4b259f07b26e05df021fbc895caae2c8f3d8500023"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2665-array-map-reverse-library-runtime.terminal-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2665-array-map-reverse-library-runtime.terminal-audit.json",
+      "bytes": 858,
+      "sha256": "e4739f7d91756d5a4fdc376f88a1640d13d46bbe4d608c76107f08a87dace581"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2666-array-map-core-final-catalog.inventory.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2666-array-map-core-final-catalog.inventory.json",
+      "bytes": 500497,
+      "sha256": "80f015b2db170d7151d5e5a4fc626154296368b0b49cb2fc723b6dce88e957af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2666-array-map-core-final-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2666-array-map-core-final-catalog.json",
+      "bytes": 2615,
+      "sha256": "db3f7fc3afb537be643bb8d2818c4499fc101cd34cee8f8d06292800e05225d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2666-array-map-core-final-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2666-array-map-core-final-catalog.log",
+      "bytes": 456106,
+      "sha256": "9a597982578fafba83e9be92d1096c43e90b44c034de048c4d3eb0bde284775b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2667-array-map-core-final-runtime.generated-audit-before-scope-label-correction.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2667-array-map-core-final-runtime.generated-audit-before-scope-label-correction.json",
+      "bytes": 2005,
+      "sha256": "e4887c56ccca05e7cd1102fc747e3df92a85fbfdaac2883e701060f37f9250db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2667-array-map-core-final-runtime.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2667-array-map-core-final-runtime.json",
+      "bytes": 2675,
+      "sha256": "13fb4aecbaf89947fa1491e434c171e2fec4ba3a0a8a82d37e26f1b9bd6f6a94"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2667-array-map-core-final-runtime.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2667-array-map-core-final-runtime.log",
+      "bytes": 696065,
+      "sha256": "cdc79454514ccc896dd4dc696c4d5881d677c97ca51a28348c670495bcebc634"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2667-array-map-core-final-runtime.terminal-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2667-array-map-core-final-runtime.terminal-audit.json",
+      "bytes": 2466,
+      "sha256": "34c0d6d970351cc5523db990f7ef19431ae5e8a84877f23deb849626f2eb1680"
+    }
+  ],
+  "rawDrift": 0,
+  "artifactCopyMove": false,
+  "binaryArchived": false
+}

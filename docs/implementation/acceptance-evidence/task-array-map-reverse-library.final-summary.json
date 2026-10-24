@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "ac04a9cd05891478cc7777e342f0da94db4517c9",
+  "scope": "all 53 Core reverse workspace library targets",
+  "packages": 53,
+  "namedPackages": 49,
+  "buildOnlyPackages": [
+    "arcweft",
+    "arcweft-bundle-assets",
+    "arcweft-render-text",
+    "arcweft-render-web"
+  ],
+  "finalDistinctCases": 5474,
+  "passed": 5474,
+  "failed": 0,
+  "freshCoreCases": 1976,
+  "reusedOtherLibraryCases": 3498,
+  "firstRun": "task-final-r2665-array-map-reverse-library-runtime",
+  "coreRerun": "task-final-r2667-array-map-core-final-runtime",
+  "testOnlyDelta": "One missing ArrayFromVec 0x1a Value wire-contract expectation added",
+  "productionSourceDrift": 0,
+  "otherLibraryBinaryDrift": 0,
+  "caseSetRemoved": 0,
+  "caseSetAdded": 4,
+  "notClaimed": "A second fresh execution of the unchanged other 52 library binaries, integration/bin, ignored/Tier2 or Native-Web parity",
+  "recordedAt": "2026-10-24T06:56:05.7839658Z"
+}

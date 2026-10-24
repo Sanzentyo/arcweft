@@ -1,0 +1,441 @@
+{
+  "version": 1,
+  "commit": "ac04a9cd05891478cc7777e342f0da94db4517c9",
+  "parent": "39333e656863928105707c9dea89e11b9a40efc5",
+  "tree": "074677fad39ba242426217057c551d121f7eb9dd",
+  "remote": "ac04a9cd05891478cc7777e342f0da94db4517c9",
+  "advertised": "ac04a9cd05891478cc7777e342f0da94db4517c9",
+  "paths": [
+    {
+      "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+      "blob": "7e76d2d4f72294874f74b5b23b9be4d1fb7f84e0",
+      "workingBlob": "2b7576206a4a6b1f41b6840581f20b8df5c6927f"
+    },
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "blob": "be59b46fe799332d9b77a1aeaa2d5bce88012b09",
+      "workingBlob": "be59b46fe799332d9b77a1aeaa2d5bce88012b09"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/callable_cases/standard_map_program.rs",
+      "blob": "e06dff3954f733aa8e4d19da1c40002de0dbb4dc",
+      "workingBlob": "e06dff3954f733aa8e4d19da1c40002de0dbb4dc"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/numeric_map.rs",
+      "blob": "83da1f94dac40cdf5e46524ed6d97a3f07ef2cdf",
+      "workingBlob": "83da1f94dac40cdf5e46524ed6d97a3f07ef2cdf"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/numeric_map/control.rs",
+      "blob": "ef5dc2645f98d37be47d7520791d5e8e327d7887",
+      "workingBlob": "ef5dc2645f98d37be47d7520791d5e8e327d7887"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/sequence_sum.rs",
+      "blob": "d4538c96f48e43ebe427aa96431c4396583fb650",
+      "workingBlob": "d4538c96f48e43ebe427aa96431c4396583fb650"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/semantic_coordinate.rs",
+      "blob": "14e51eb5a2d409b0d9dc74a432176e9ef25e52fb",
+      "workingBlob": "14e51eb5a2d409b0d9dc74a432176e9ef25e52fb"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow/control_locals.rs",
+      "blob": "4e6669243f7e5737e311637c28093f3f3502987a",
+      "workingBlob": "4e6669243f7e5737e311637c28093f3f3502987a"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow/standard_map.rs",
+      "blob": "e000819d94835c03800d5193f9cbc45544a2b899",
+      "workingBlob": "e000819d94835c03800d5193f9cbc45544a2b899"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow/standard_map/function.rs",
+      "blob": "017d4ad471d65e5d84fb20387b7d7984b0c040bc",
+      "workingBlob": "017d4ad471d65e5d84fb20387b7d7984b0c040bc"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow/statistics.rs",
+      "blob": "ffadcc7eba613901421c6fdc17d073219551c489",
+      "workingBlob": "ffadcc7eba613901421c6fdc17d073219551c489"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "blob": "1d980eafd534a510e9448000a99ecf87247027a5",
+      "workingBlob": "1d980eafd534a510e9448000a99ecf87247027a5"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+      "blob": "71be34c0035a17b1b28c9acb1db447e6e98565be",
+      "workingBlob": "71be34c0035a17b1b28c9acb1db447e6e98565be"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "blob": "c5f0fa9c56be21d694533d4234fc1a3ec6498947",
+      "workingBlob": "c5f0fa9c56be21d694533d4234fc1a3ec6498947"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "blob": "ee0cc7b628c555c698c7fa270ed5b24e2b10dff8",
+      "workingBlob": "ee0cc7b628c555c698c7fa270ed5b24e2b10dff8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-constructor-checkpoint.verified.json",
+      "blob": "be12349f571550cdca7944afea9149752c0255a2",
+      "workingBlob": "be12349f571550cdca7944afea9149752c0255a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-cli-final.before-run.pins.json",
+      "blob": "f7180ff87eb4f366d7286858d61ab7879cfc7440",
+      "workingBlob": "f7180ff87eb4f366d7286858d61ab7879cfc7440"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-cli-final.executable-audit.json",
+      "blob": "331b0c5a45dcc94c04eeb02468ab6b05c8731457",
+      "workingBlob": "331b0c5a45dcc94c04eeb02468ab6b05c8731457"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-cli-first.before-run.pins.json",
+      "blob": "740f169920da4663e9c23404e7476866af650bbd",
+      "workingBlob": "740f169920da4663e9c23404e7476866af650bbd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-cli-first.source-freeze.json",
+      "blob": "aa7a623f88ed6503b04762b90a0d5aeb83d6139c",
+      "workingBlob": "aa7a623f88ed6503b04762b90a0d5aeb83d6139c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-cli.before-run.pins.json",
+      "blob": "740f169920da4663e9c23404e7476866af650bbd",
+      "workingBlob": "740f169920da4663e9c23404e7476866af650bbd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-compiler-final.before-run.pins.json",
+      "blob": "47f2854d4b46125c0849ed95758cc524a4d493f0",
+      "workingBlob": "47f2854d4b46125c0849ed95758cc524a4d493f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-compiler-final.executable-audit.json",
+      "blob": "331b0c5a45dcc94c04eeb02468ab6b05c8731457",
+      "workingBlob": "331b0c5a45dcc94c04eeb02468ab6b05c8731457"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-compiler.before-run.pins.json",
+      "blob": "26b4821a43a5310d40a33c16bcf4b26bed410c95",
+      "workingBlob": "26b4821a43a5310d40a33c16bcf4b26bed410c95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-compiler.executable-audit.json",
+      "blob": "331b0c5a45dcc94c04eeb02468ab6b05c8731457",
+      "workingBlob": "331b0c5a45dcc94c04eeb02468ab6b05c8731457"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-compiler.source-freeze.json",
+      "blob": "eaf5dc8502f35df011bd352f19408a693dcfa2fc",
+      "workingBlob": "eaf5dc8502f35df011bd352f19408a693dcfa2fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-evidence-integrity.json",
+      "blob": "550f89f3b54af9718aec2ce6ca327c8874df6fb1",
+      "workingBlob": "550f89f3b54af9718aec2ce6ca327c8874df6fb1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-first-held-user-hunks.json",
+      "blob": "77edf160a59132795de0cea34480be548d758af2",
+      "workingBlob": "77edf160a59132795de0cea34480be548d758af2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration-final.graph.json",
+      "blob": "ad132bca8cdaa9dca86c16b14a2f936d0851e559",
+      "workingBlob": "ad132bca8cdaa9dca86c16b14a2f936d0851e559"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration-final.source-freeze.json",
+      "blob": "aa7a623f88ed6503b04762b90a0d5aeb83d6139c",
+      "workingBlob": "aa7a623f88ed6503b04762b90a0d5aeb83d6139c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration-final2.graph.json",
+      "blob": "ad132bca8cdaa9dca86c16b14a2f936d0851e559",
+      "workingBlob": "ad132bca8cdaa9dca86c16b14a2f936d0851e559"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration-final2.source-freeze.json",
+      "blob": "07a3d4e6a385e84a565be80d0f440105f86df539",
+      "workingBlob": "07a3d4e6a385e84a565be80d0f440105f86df539"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration-final3.graph.json",
+      "blob": "ad132bca8cdaa9dca86c16b14a2f936d0851e559",
+      "workingBlob": "ad132bca8cdaa9dca86c16b14a2f936d0851e559"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration-final3.source-freeze.json",
+      "blob": "7ff097287a54667b6395783897213bbd99d671b3",
+      "workingBlob": "7ff097287a54667b6395783897213bbd99d671b3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration-publish.graph.json",
+      "blob": "4b7953950f33947d7decf3a4f8261db4ca8b25c7",
+      "workingBlob": "4b7953950f33947d7decf3a4f8261db4ca8b25c7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration-publish.source-freeze.json",
+      "blob": "29beda47ae32167411037f9fcc1e91139a93a877",
+      "workingBlob": "29beda47ae32167411037f9fcc1e91139a93a877"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration.graph.json",
+      "blob": "b4992e747bb7ec84522b951d4ae8a68714363e4f",
+      "workingBlob": "b4992e747bb7ec84522b951d4ae8a68714363e4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-iteration.source-freeze.json",
+      "blob": "eaf5dc8502f35df011bd352f19408a693dcfa2fc",
+      "workingBlob": "eaf5dc8502f35df011bd352f19408a693dcfa2fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-numeric.before-run.pins.json",
+      "blob": "f248653a19c0c635e1260564887a86f9040571ce",
+      "workingBlob": "f248653a19c0c635e1260564887a86f9040571ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-numeric.executable-audit.json",
+      "blob": "331b0c5a45dcc94c04eeb02468ab6b05c8731457",
+      "workingBlob": "331b0c5a45dcc94c04eeb02468ab6b05c8731457"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-owner-review.json",
+      "blob": "94139381d61561f5c4afe3097ce97125d0a48cb4",
+      "workingBlob": "94139381d61561f5c4afe3097ce97125d0a48cb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2648-array-map-iteration-check.json",
+      "blob": "90a095a54988279e1a8766944e4623f0c723c0b7",
+      "workingBlob": "90a095a54988279e1a8766944e4623f0c723c0b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2648-array-map-iteration-check.log",
+      "blob": "cf369ae3f71179314f211a905ce25ad4bc23b793",
+      "workingBlob": "cf369ae3f71179314f211a905ce25ad4bc23b793"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2649-array-map-iteration-check.json",
+      "blob": "46e9395365dc11d39a3aebaf07c367d4d027b597",
+      "workingBlob": "46e9395365dc11d39a3aebaf07c367d4d027b597"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2649-array-map-iteration-check.log",
+      "blob": "918487ac6c1c6cb9a1511a622bc1c26b255aa2b6",
+      "workingBlob": "918487ac6c1c6cb9a1511a622bc1c26b255aa2b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2650-array-map-compiler-catalog.inventory.json",
+      "blob": "c22d0f74ee6d440ac77501869239112514d7ae01",
+      "workingBlob": "c22d0f74ee6d440ac77501869239112514d7ae01"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2650-array-map-compiler-catalog.json",
+      "blob": "6dc7dc061b8db28f69967234ae5f76068236d065",
+      "workingBlob": "6dc7dc061b8db28f69967234ae5f76068236d065"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2650-array-map-compiler-catalog.log",
+      "blob": "3a2bfb4f332f6cb7eb52ebaf274a6e3194cfc615",
+      "workingBlob": "3a2bfb4f332f6cb7eb52ebaf274a6e3194cfc615"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2651-array-map-compiler-runtime.json",
+      "blob": "d668614bac1d4f0b2e5be46573dafd7a3a43f88d",
+      "workingBlob": "d668614bac1d4f0b2e5be46573dafd7a3a43f88d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2651-array-map-compiler-runtime.log",
+      "blob": "ae8e744853d93186d5544806e22b9a3cd5609e6a",
+      "workingBlob": "ae8e744853d93186d5544806e22b9a3cd5609e6a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2651-array-map-compiler-runtime.terminal-audit.json",
+      "blob": "071c90e8883c740f44216a8a7ac6d125141b32b8",
+      "workingBlob": "071c90e8883c740f44216a8a7ac6d125141b32b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2652-array-map-cli-catalog.inventory.json",
+      "blob": "d86d742d8dcb02ea9b8fa5c68522d9121dd56e54",
+      "workingBlob": "d86d742d8dcb02ea9b8fa5c68522d9121dd56e54"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2652-array-map-cli-catalog.json",
+      "blob": "bdb0effadee08bc0ec40560ddd94a0b4c31dec75",
+      "workingBlob": "bdb0effadee08bc0ec40560ddd94a0b4c31dec75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2652-array-map-cli-catalog.log",
+      "blob": "14e69a2d4ae1c19feaebbdfa12ab8a5a51c60991",
+      "workingBlob": "14e69a2d4ae1c19feaebbdfa12ab8a5a51c60991"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2653-array-map-cli-runtime.json",
+      "blob": "48b1c5f5ac46f051244e67b04ac46d09b5905868",
+      "workingBlob": "48b1c5f5ac46f051244e67b04ac46d09b5905868"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2653-array-map-cli-runtime.log",
+      "blob": "8a5f93e3757b5b103645ec2f683d5c992478a26d",
+      "workingBlob": "8a5f93e3757b5b103645ec2f683d5c992478a26d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2653-array-map-cli-runtime.terminal-audit.json",
+      "blob": "d9ad43be1e923359e5b3c5612ee24644832e05c8",
+      "workingBlob": "d9ad43be1e923359e5b3c5612ee24644832e05c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2654-array-map-cli-catalog.json",
+      "blob": "f98d13bc5a5446f42cfe1d456687d30082fdf49f",
+      "workingBlob": "f98d13bc5a5446f42cfe1d456687d30082fdf49f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2654-array-map-cli-catalog.log",
+      "blob": "a385413f40198abd848a9b14bfd6943f73235a92",
+      "workingBlob": "a385413f40198abd848a9b14bfd6943f73235a92"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2655-array-map-cli-catalog.inventory.json",
+      "blob": "dc0c826b58f17112120609848d7945a80d7c78d8",
+      "workingBlob": "dc0c826b58f17112120609848d7945a80d7c78d8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2655-array-map-cli-catalog.json",
+      "blob": "4eb2f47c7a454215eea3d291b1502fdac1111a8f",
+      "workingBlob": "4eb2f47c7a454215eea3d291b1502fdac1111a8f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2655-array-map-cli-catalog.log",
+      "blob": "f0800643a2593a4d4849265900f96111f3ea0bba",
+      "workingBlob": "f0800643a2593a4d4849265900f96111f3ea0bba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2656-array-map-cli-runtime.json",
+      "blob": "9360bde036865bf1fbe41d7533c073ed253ce0ef",
+      "workingBlob": "9360bde036865bf1fbe41d7533c073ed253ce0ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2656-array-map-cli-runtime.log",
+      "blob": "7689c637552b233e78983ba3adf65a7c0582bf13",
+      "workingBlob": "7689c637552b233e78983ba3adf65a7c0582bf13"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2656-array-map-cli-runtime.terminal-audit.json",
+      "blob": "a33a617bd7e33e71e9855a16479c40c71806e59d",
+      "workingBlob": "a33a617bd7e33e71e9855a16479c40c71806e59d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2657-array-map-compiler-final-catalog.inventory.json",
+      "blob": "822c5dd1341077561501d56646af8e8f4cdc140d",
+      "workingBlob": "822c5dd1341077561501d56646af8e8f4cdc140d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2657-array-map-compiler-final-catalog.json",
+      "blob": "d5527e3448b386f320cfe93b11caece227536d09",
+      "workingBlob": "d5527e3448b386f320cfe93b11caece227536d09"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2657-array-map-compiler-final-catalog.log",
+      "blob": "c20999e85bc01f334f729e246f537f314521539a",
+      "workingBlob": "c20999e85bc01f334f729e246f537f314521539a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2658-array-map-numeric-catalog.inventory.json",
+      "blob": "7923c4d7089f19f4d0eaa545671b2bd0591118ac",
+      "workingBlob": "7923c4d7089f19f4d0eaa545671b2bd0591118ac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2658-array-map-numeric-catalog.json",
+      "blob": "a2679938cda5f247ef6c9b037a9a5e7905bb0256",
+      "workingBlob": "a2679938cda5f247ef6c9b037a9a5e7905bb0256"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2658-array-map-numeric-catalog.log",
+      "blob": "93f8165992fe6125c0d39edcd68b6f38c2ae07e8",
+      "workingBlob": "93f8165992fe6125c0d39edcd68b6f38c2ae07e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2659-array-map-compiler-final-runtime.json",
+      "blob": "9e16b8321d82a0cadf2a477a5247176e9297c449",
+      "workingBlob": "9e16b8321d82a0cadf2a477a5247176e9297c449"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2659-array-map-compiler-final-runtime.log",
+      "blob": "1c33a063f881e4474b260549c90e31a5831de591",
+      "workingBlob": "1c33a063f881e4474b260549c90e31a5831de591"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2659-array-map-compiler-final-runtime.terminal-audit.json",
+      "blob": "79f52db2e882704f33596c438d6a74f533f076c0",
+      "workingBlob": "79f52db2e882704f33596c438d6a74f533f076c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2660-array-map-numeric-runtime.json",
+      "blob": "4fd5a6b02c51b650b3db3e3758d90fa6d935ec88",
+      "workingBlob": "4fd5a6b02c51b650b3db3e3758d90fa6d935ec88"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2660-array-map-numeric-runtime.log",
+      "blob": "894667486158e25b868e2ba7f2c33319e7a66966",
+      "workingBlob": "894667486158e25b868e2ba7f2c33319e7a66966"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2660-array-map-numeric-runtime.terminal-audit.json",
+      "blob": "201aa819fbce6955ee900012b74fa76ba17e05fa",
+      "workingBlob": "201aa819fbce6955ee900012b74fa76ba17e05fa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2661-array-map-workspace-check.json",
+      "blob": "64abc6e265459b9f93781f5f288fc1c78935c346",
+      "workingBlob": "64abc6e265459b9f93781f5f288fc1c78935c346"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2661-array-map-workspace-check.log",
+      "blob": "df716769cc282750a8594f637b34f2ffce781f0e",
+      "workingBlob": "df716769cc282750a8594f637b34f2ffce781f0e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2662-array-map-workspace-clippy.json",
+      "blob": "f5bab441b1ba069731efdfef2f3bf156f3f0f09e",
+      "workingBlob": "f5bab441b1ba069731efdfef2f3bf156f3f0f09e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2662-array-map-workspace-clippy.log",
+      "blob": "2930010eb521fc22974f5145da1ef958c7e81a6a",
+      "workingBlob": "2930010eb521fc22974f5145da1ef958c7e81a6a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2663-array-map-structure.json",
+      "blob": "ec6bdef665c544ba436a01de66c4582d979349dd",
+      "workingBlob": "ec6bdef665c544ba436a01de66c4582d979349dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2663-array-map-structure.log",
+      "blob": "91ebf3e03d9dcd4d77112dc433ecf95e881e9ea4",
+      "workingBlob": "91ebf3e03d9dcd4d77112dc433ecf95e881e9ea4"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "3ebe24846ff9f321d93ce72c9e0c8f3a126a89f5",
+      "workingBlob": "3ebe24846ff9f321d93ce72c9e0c8f3a126a89f5"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "6b4e90fe308e538408aea35b8bee32131e4d7490",
+      "workingBlob": "6b4e90fe308e538408aea35b8bee32131e4d7490"
+    }
+  ],
+  "sourceCount": 5316,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "859b978ada445a821143caa6b97cb41c89bbeaefa40ce95b93408367077ac3a6",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T06:25:38.5402242Z"
+}

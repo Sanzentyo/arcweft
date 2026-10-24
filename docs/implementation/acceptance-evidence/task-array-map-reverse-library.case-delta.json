@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "base": "ac04a9cd05891478cc7777e342f0da94db4517c9",
+  "baselineCases": 5470,
+  "currentCases": 5474,
+  "removed": 0,
+  "added": [
+    "arcweft-core\tawbc::tests::array::array_from_vec_awbc_codec_and_execution_check_length_before_consuming_storage",
+    "arcweft-core\tawbc::tests::array::array_from_vec_awbc_verifier_rejects_non_vec_source",
+    "arcweft-core\tplan::construction::source::expression::tests::array_from_vec_builder_rejects_non_vec_or_different_item_identity",
+    "arcweft-core\tplan::construction::source::expression::tests::array_from_vec_source_round_trip_preserves_exact_type_and_runtime_length_check"
+  ],
+  "coverageWeakened": false
+}

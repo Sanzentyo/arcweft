@@ -13,7 +13,10 @@ case set・固定入力・各実行バイナリの差分0を確認した。詳�
 
 その後、`39333e656863928105707c9dea89e11b9a40efc5` を基点にArray Mapを反復化し、
 対象46件がすべてPASSした。旧51失敗中の4,096要素benchmarkは、製品既定上限のまま通過した。
-残る旧50件を今回再現したとは扱わず、修復後の全53逆依存matrixはまだ再実行していない。
+その後の全53逆依存libraryは **5,474件すべてPASS**。
+最初の5,473 PASS／1 FAILでopcode期待一覧の更新漏れを検出し、testだけを訂正した。
+Core 1,976件を再実行し、変更のない他52バイナリの3,498件の成功と重複なく集約した。
+残る旧50件を今回再現したとは扱わず、integration／binの修復後matrixはまだ再実行していない。
 workspace check／ClippyはR2661／R2662で終了0、R2663構造gateはblocking 0。
 本表の全体実行件数と、後続の対象条件の検証を混同しない。
 
@@ -59,7 +62,7 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **直近全体実行の旧51 FAIL中、Source1件は修復検証済み** | 全体実行のCLIは640 PASS／51 FAIL。51識別子はR2469と完全一致し、新規失敗0だった。旧Compilerの `include_in_a_function_owned_thread_joins_before_its_flow_caller_returns` も同実行でPASSし、Compiler全617件はPASS。[全体実行・旧失敗との照合](acceptance-evidence/task-program-reverse-combined-execution.json)。後続のArray Map修復ではCLI対象20件／Compiler対象26件がPASS。残る旧50件と修復済み1件の観測は下表に一度だけ記載する。全体再集計と未実行のTier2等は別に扱う。 |
-| Coreの全53逆依存runtime | **直近全体実行は7,199 PASS／CLI既存51 FAIL・修復後matrixは未実行** | library 53 targetとintegration 161／bin 5 targetを確認した。library 5,470件は全PASS、integration／binは1,780実行／1,729 PASS／51 FAIL。4つのlibraryと4つのbinにnamed caseがなく、build実績をruntime PASSへ加算しない。44組のtarget／case setと各実行時のbinary・4,713入力の差分0。[target別照合](acceptance-evidence/task-program-reverse-integration-summary.json)。libraryの4,681入力との違いは文書2件と証拠32件だけで、runtime入力差分0。後続のArray Map修復46件の成功を、この全体実行の再実行結果に加算しない。 |
+| Coreの全53逆依存runtime | **最新libraryは5,474 PASS・integration／binの修復後matrixは未実行** | 全53 library target／49 named packageを確認し、Core 1,976件の再実行と他52バイナリの3,498件の成功を重複なく集約した。後者のbinary・production sourceは差分0。既存5,470件の削除0、追加は配列構築4件だけ。[最新library集計](acceptance-evidence/task-array-map-reverse-library.final-summary.json)。直近の全体実行は旧library 5,470 PASS、integration 161／bin 5 targetで1,780実行／1,729 PASS／51 FAILだった。4 libraryと4 binのnamed caseなしをruntime PASSへ加算しない。[旧target別照合](acceptance-evidence/task-program-reverse-integration-summary.json)。新旧scopeの件数を混ぜた全体成功数は作らない。 |
 | 最終 workspace／Tier 2／Native-Web capture parity | **workspace check／ClippyはPASS・修復後の全体runtime／Tier2は未実行** | Array Map反復化後のR2661／R2662 all-target／all-feature／locked workspace check／Clippyは終了0、警告あり。R2663構造gateはblocking 0。以前のR2531非Serde doctest 2件等の実績も履歴に保持する。直近の全53逆依存通常runtime結果は上記のとおりで、反復化後の全体matrix、39既存ignored、Tier2とNative-Web capture parityの包括的な受入は未実行。これらを受入済みのGeneric Matchや個別のruntime境界の未実装へ読み替えない。 |
 
 ## CLIの具体的な観測
