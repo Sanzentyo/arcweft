@@ -4,7 +4,6 @@ USB manifests describe raw USB and HID devices that Arcweft may access. They are
 
 Related chapters:
 
-- [USB / HID Devices](../03-presentation/usb-devices.md)
 - [Device Streams](../02-runtime/device-streams.md)
 - [Security](../05-build-and-security/security.md)
 

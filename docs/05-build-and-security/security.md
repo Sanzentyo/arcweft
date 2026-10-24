@@ -84,6 +84,7 @@ See [Microphone / Camera Capture Devices](../03-presentation/capture-devices.md)
 ## Virtual controller policy
 
 - Virtual touch controls are visible View and must expose accessible labels.
+- Control layout respects the display safe area, and player-facing labels are localized.
 - Touch controls consume their layer input before lower scene layers unless explicitly configured otherwise.
 - Product builds may allow user layout customization, but generated controller mappings remain contract-checked.
 
@@ -103,7 +104,7 @@ Rules:
 - Virtual controller synthetic input in product builds requires `ControlPublic` capability.
 - Touch controller geometry can be observed in product observe mode, but generated input is still gated.
 
-See [Device I/O / USB / HID](../03-presentation/device-io-usb.md) and [Touch Virtual Controller](../03-presentation/touch-virtual-controller.md).
+See the [Device I/O Manifest](../schemas/device-io-manifest.md), [USB Device Manifest](../schemas/usb-device-manifest.md), and [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md).
 
 
 ## Device I/O and Virtual Controller Security
@@ -139,13 +140,13 @@ Rules:
 - Activities receive granted device ports; they cannot enumerate or open devices directly.
 - CI/headless uses virtual devices and fixture streams.
 
-See [USB / HID / Serial device support](../03-presentation/usb-devices.md) and [Device Generator / Profile System](device-generator.md).
+See the [USB Device Manifest](../schemas/usb-device-manifest.md) and [Device Generator / Profile System](device-generator.md).
 
 ## Virtual touch controller
 
 Virtual touch controllers are product-safe View components, but debug-only controls must be marked and hidden from product builds. They emit typed input events through the LayerTree and must not directly mutate `GameState`.
 
-See [Virtual Touch Controller](../03-presentation/virtual-controller.md).
+See the [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md) and [Layer System / Input Routing](../03-presentation/layers.md).
 
 ## USB / HID / capture / virtual controller security
 

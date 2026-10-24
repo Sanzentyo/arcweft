@@ -6,13 +6,13 @@ Related chapters:
 
 - [Audio / Spatial / TTS / BGM](audio.md)
 - [Device Streams / Generator Policy](../02-runtime/device-streams.md)
-- [USB / HID Devices](usb-devices.md)
-- [Virtual Touch Controller](virtual-controller.md)
+- [USB Device Manifest](../schemas/usb-device-manifest.md)
+- [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md)
 - [Layer System / Input Routing](layers.md)
 - [Agent Debug MCP / CLI](../04-tooling/agent-debug-mcp-cli.md)
 - [Security](../05-build-and-security/security.md)
-- [Virtual Touch Controller](virtual-controller.md)
-- [Device Profiles, Generators, and USB](device-generator-and-usb.md)
+- [Device Profile Manifest](../schemas/device-profile-manifest.md)
+- [Device Generator / Profile System](../05-build-and-security/device-generator.md)
 - [Capture Device Manifest](../schemas/capture-device-manifest.md)
 - [Capture Devices Example](../examples/capture-devices.md)
 
@@ -370,7 +370,7 @@ arcweft-capture-agent
 
 ## Specialized USB capture hardware
 
-Some capture hardware appears as USB or HID devices rather than ordinary camera/microphone devices. Arcweft treats these through [Device Profiles, Generators, and USB](device-generator-and-usb.md). The device profile may expose typed signals or typed capture frames, while player-visible flows retain separate admission Result, unary Need pending state, and domain Result payload.
+Some capture hardware appears as USB or HID devices rather than ordinary camera/microphone devices. Those devices use the [USB Device Manifest](../schemas/usb-device-manifest.md); capture-specific permission and stream behavior remains defined by this chapter and the [device stream contract](../02-runtime/device-streams.md).
 
 ```arcw
 pub device @device.depth_camera: UsbRaw {
@@ -414,16 +414,8 @@ A generator cannot open microphone or camera devices. It must consume a granted 
 
 ## USB-adjacent cameras and microphones
 
-If a camera or microphone appears as a standard OS media device, Arcweft treats it as capture and uses the capture backends in this chapter. If it is a vendor-specific USB/HID device, Arcweft treats it as [Device I/O / USB / HID](device-io-usb.md) and requires a typed protocol parser.
+If a camera or microphone appears as a standard OS media device, Arcweft treats it as capture and uses the capture backends in this chapter. If it is a vendor-specific USB/HID device, Arcweft treats it as [device I/O](../schemas/device-io-manifest.md) and requires a typed protocol parser.
 
-
-## Related device systems
-
-- [USB / HID / Serial device support](usb-devices.md)
-- [Device Generator / Profile System](../05-build-and-security/device-generator.md)
-- [Virtual Touch Controller](virtual-controller.md)
-
-Capture devices, USB/HID/Serial devices, and virtual controllers all use the same `DeviceProfile` / `Port` / `Need<Result<...>>` permission model. Microphone and camera remain capture-specific because they need privacy indicators and media pipeline integration.
 
 ## Device stream policy
 

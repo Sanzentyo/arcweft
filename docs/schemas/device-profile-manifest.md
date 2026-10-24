@@ -4,7 +4,7 @@ This schema describes generated and hand-authored device profiles for USB, HID, 
 
 Related:
 
-- [Device Profiles, Generators, and USB](../03-presentation/device-generator-and-usb.md)
+- [Device Generator / Profile System](../05-build-and-security/device-generator.md)
 - [Capture Device Manifest](capture-device-manifest.md)
 - [Virtual Controller Manifest](virtual-controller-manifest.md)
 - [Agent Protocol](agent-protocol.md)

@@ -9,8 +9,8 @@ Related chapters:
 - [Async scheduler](async-scheduler.md)
 - [Layered input](layered-input.md)
 - [Microphone / Camera Capture Devices](../03-presentation/capture-devices.md)
-- [Device I/O / USB / HID](../03-presentation/device-io-usb.md)
-- [Touch Virtual Controller](../03-presentation/touch-virtual-controller.md)
+- [Device I/O Manifest](../schemas/device-io-manifest.md)
+- [Layer System / Input Routing](../03-presentation/layers.md)
 - [Signals / logging / tests](../04-tooling/logging-signal-test-bench.md)
 
 ## Decision

@@ -4,8 +4,8 @@ This example combines a USB/HID-like motion sensor, a serial knob, and a touch-s
 
 Related docs:
 
-- [USB / HID / Serial device support](../03-presentation/usb-devices.md)
-- [Virtual Touch Controller](../03-presentation/virtual-controller.md)
+- [USB Device Manifest](../schemas/usb-device-manifest.md)
+- [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md)
 - [Device Generator / Profile System](../05-build-and-security/device-generator.md)
 
 ---

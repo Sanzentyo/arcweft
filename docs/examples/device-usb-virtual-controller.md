@@ -2,8 +2,8 @@
 
 Related:
 
-- [Device Profiles, Generators, and USB](../03-presentation/device-generator-and-usb.md)
-- [Virtual Touch Controller](../03-presentation/virtual-controller.md)
+- [Device Profile Manifest](../schemas/device-profile-manifest.md)
+- [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md)
 - [Layer System / Input Routing](../03-presentation/layers.md)
 
 ## USB HID profile

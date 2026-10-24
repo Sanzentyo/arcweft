@@ -7,10 +7,9 @@ Related chapters:
 - [Async Scheduler](async-scheduler.md)
 - [Layered Input](layered-input.md)
 - [Microphone / Camera Capture Devices](../03-presentation/capture-devices.md)
-- [USB / HID Devices](../03-presentation/usb-devices.md)
-- [Virtual Touch Controller](../03-presentation/virtual-controller.md)
-- [Agent Debug MCP / CLI](../04-tooling/agent-debug-mcp-cli.md)
 - [USB Device Manifest](../schemas/usb-device-manifest.md)
+- [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md)
+- [Agent Debug MCP / CLI](../04-tooling/agent-debug-mcp-cli.md)
 
 ## Decision: not a general-purpose runtime generator
 

@@ -351,6 +351,8 @@ pub struct InputCapture {
 
 capture 中は pointer move/up が同じ layer に届く。capture は `ReleasePointer` または pointer up で終了する。
 
+Touch control は開始した contact を `Ended` または `Cancelled` まで capture し、終了時に capture を解放する。control の hit region 外の touch は通常の layer routing に pass through する。Gesture recognition は layer priority に従い、control が capture 中の contact を奪わない。
+
 ## Transform
 
 InputRouter は hit test 前に座標を layer local coordinate へ変換する。
@@ -541,7 +543,7 @@ Author source does not provide a frame-cache key.
 
 ## Device and virtual controller sources
 
-Layered input accepts physical and virtual controller sources. See [Device Profiles, Generators, and USB](../03-presentation/device-generator-and-usb.md) and [Virtual Touch Controller](../03-presentation/virtual-controller.md).
+Layered input accepts physical and virtual controller sources. Device profiles follow the [Device Profile Manifest](../schemas/device-profile-manifest.md), and virtual controls follow the [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md).
 
 ```text
 USB/HID/Gamepad/Keyboard/Touch
@@ -567,5 +569,5 @@ Touch event
 
 This makes touch, keyboard, gamepad, USB macro pad, and Agent semantic actions converge on the same input model.
 
-See [Touch Virtual Controller](../03-presentation/touch-virtual-controller.md).
+See the [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md).
 

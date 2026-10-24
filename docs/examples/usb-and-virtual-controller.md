@@ -4,8 +4,8 @@ This example combines a custom USB light gun, a virtual touch controller, and th
 
 Related chapters:
 
-- [USB / HID Devices](../03-presentation/usb-devices.md)
-- [Virtual Touch Controller](../03-presentation/virtual-controller.md)
+- [USB Device Manifest](../schemas/usb-device-manifest.md)
+- [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md)
 - [Device Streams](../02-runtime/device-streams.md)
 - [Layered Input](../02-runtime/layered-input.md)
 

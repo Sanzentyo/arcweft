@@ -190,3 +190,33 @@ Sans-I/O、型付き拒否／fallback、budget、所有権、save tier、batch s
 移動・改変していない。削除章への現行リンク、変更箇所のMarkdownリンク・fence・
 whitespaceと40桁識別子の保全を確認する範囲の整理で、Cargo／runtimeの新規実行はない。
 [資料差分の照合](acceptance-evidence/task-documentation-final-audit.json)。
+
+## 実行範囲の明確化と旧デバイス案の整理 — 2026-10-24
+
+照合基点は既存mainの `18e95147d3b83e19e0e93313a12a5e75c1bb98dc`。
+開始時のtracked変更18件とuntracked 6件を保持し、GPT-6 Luna／maxの2担当が
+現状一覧の根拠と、デバイス関係の旧設計・重複資料を分担した。
+
+横断JSONの `arcweft-core` package行2,029／2,029はlibrary＋integration/binの集計で、
+同cutのCore library単独1,976件、後続Native Source cutの1,977／1,977とは範囲が異なる。
+数値は変更せず、集計範囲を明示し、冒頭と項目表の重複した説明をまとめた。
+[横断原本](acceptance-evidence/task-array-map-reverse-combined-execution.json) と
+[後続owner検証](acceptance-evidence/task-await-many-native-source-acceptance.json) は保持する。
+Generic Matchの受入・公開、151件のPASSと過去の失敗・full SHAは維持し、
+完了項目を未完了へ戻す判断はしていない。
+
+`device-generator-and-usb.md`、`device-io-usb.md`、`touch-virtual-controller.md` と、
+旧資料への互換入口だった `usb-devices.md`、`virtual-controller.md` を削除した。
+提案段階のcrate分割・backend選定・未公開CLI／MCP・実装順序を、現行の所有契約へ
+重複させていたためであり、実装が見つからないことだけを削除根拠にはしない。
+権限付きport、型付きparser、device filter、raw byteの扱いは既存のsecurity／manifestへ、
+touch captureの終了・cancel、controls外のrouting、gestureによるcapture横取り禁止は
+runtime入力章へ統合した。safe area・localization・accessibilityと、観測／synthetic inputの
+capability境界も保持する。索引・schema・例からの参照を所有章へ更新した。
+
+削除対象に実行済みの検証結果やfull SHAはなく、検証原本・履歴は変更していない。
+このcutは資料の根拠、リンク、書式、Git差分と既存変更の保全を確認する整理であり、
+Cargo／runtimeの新規実行は行っていない。
+変更24 pathの相対リンク201件はすべて解決し、未閉鎖fence・whitespace違反・
+40桁識別子の欠落は0。保持したtracked変更18件とuntracked 6件は、path集合と
+全24ファイルのSHA256が開始時と一致した。

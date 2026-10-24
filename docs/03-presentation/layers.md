@@ -417,7 +417,7 @@ phase ごとの effect firewall を越えて state を直接変更しない。
 
 ## Device and virtual controller sources
 
-Layered input accepts physical and virtual controller sources. See [Device Profiles, Generators, and USB](../03-presentation/device-generator-and-usb.md) and [Virtual Touch Controller](../03-presentation/virtual-controller.md).
+Layered input accepts physical and virtual controller sources. Device profile fields are defined by the [Device Profile Manifest](../schemas/device-profile-manifest.md); touch control routing is owned by [Layered Input](../02-runtime/layered-input.md), and the [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md) defines the authored controls.
 
 ```text
 USB/HID/Gamepad/Keyboard/Touch
@@ -426,11 +426,7 @@ USB/HID/Gamepad/Keyboard/Touch
   -> GameEvent / Activity input
 ```
 
-Virtual controller layers usually sit above scene/View layers and consume touch input inside their hit regions before lower layers receive it.
-
-## Virtual controller layer
-
-A touch virtual controller is a renderable and input-capable layer.
+Virtual controllers are rendered Views attached to input layers. Controls consume touches in their hit regions, while touches outside those regions pass through to lower layers.
 
 ```arcw
 layer @layer.input.touch_controller {
@@ -441,9 +437,4 @@ layer @layer.input.touch_controller {
     pass_through = true
 }
 ```
-
-Controls inside this layer consume only their own hit regions and emit normalized actions. Touches outside controls pass through to lower layers. This allows visual novel View, minigame input, and mobile controls to coexist.
-
-See [Touch Virtual Controller](touch-virtual-controller.md).
-
 

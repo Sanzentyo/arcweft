@@ -110,6 +110,6 @@ privacy = "public_input"
 
 ## Related
 
-- [Device I/O and USB](../03-presentation/device-io-usb.md)
+- [Device Streams](../02-runtime/device-streams.md)
 - [Streams and generators](../02-runtime/streams-generators.md)
 - [Virtual controller manifest](virtual-controller-manifest.md)

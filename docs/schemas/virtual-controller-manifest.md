@@ -4,7 +4,6 @@ Virtual controller manifests describe touch View controls that emit Arcweft `Inp
 
 Related chapters:
 
-- [Virtual Touch Controller](../03-presentation/virtual-controller.md)
 - [Layer System / Input Routing](../03-presentation/layers.md)
 - [Layered Input](../02-runtime/layered-input.md)
 

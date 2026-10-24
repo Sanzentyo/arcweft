@@ -14,8 +14,3 @@
 - [Audio / Spatial / TTS / BGM](audio.md)
 - [Character Stage / Sprite / Voice Timeline](character-stage.md)
 - [Microphone / Camera Capture Devices](capture-devices.md)
-- [USB / HID Devices](usb-devices.md)
-- [Device I/O / USB / HID / Serial / Gamepad](device-io-usb.md)
-- [Device Profiles, Generators, and USB](device-generator-and-usb.md)
-- [Virtual Touch Controller](virtual-controller.md)
-- [Touch Virtual Controller](touch-virtual-controller.md)

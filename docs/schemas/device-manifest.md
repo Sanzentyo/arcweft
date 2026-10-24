@@ -4,7 +4,7 @@ The Device Manifest is the generated and optionally versioned representation of 
 
 Source docs:
 
-- [USB / HID / Serial device support](../03-presentation/usb-devices.md)
+- [USB Device Manifest](usb-device-manifest.md)
 - [Device Generator / Profile System](../05-build-and-security/device-generator.md)
 - [Virtual Controller Manifest](virtual-controller-manifest.md)
 

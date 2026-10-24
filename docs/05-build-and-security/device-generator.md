@@ -18,8 +18,7 @@ Manual implementation remains possible through `DeviceDriver` traits, but the ge
 
 Related docs:
 
-- [USB / HID / Serial device support](../03-presentation/usb-devices.md)
-- [Virtual Touch Controller](../03-presentation/virtual-controller.md)
+- [USB Device Manifest](../schemas/usb-device-manifest.md)
 - [Capture Devices](../03-presentation/capture-devices.md)
 - [Device Manifest schema](../schemas/device-profile-manifest.md)
 - [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md)
