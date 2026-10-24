@@ -1,0 +1,314 @@
+{
+  "version": 1,
+  "base": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "at": "2026-10-24T21:27:15.5021839Z",
+  "scope": "Documentation reconciliation only; no new Cargo/runtime execution",
+  "owned": [
+    "docs/00-overview/naming.md",
+    "docs/05-build-and-security/authored-resource-storage.md",
+    "docs/05-build-and-security/device-generator.md",
+    "docs/05-build-and-security/native-web-build.md",
+    "docs/05-build-and-security/packaging.md",
+    "docs/05-build-and-security/security.md",
+    "docs/implementation/acceptance-evidence/task-documentation-contract-prune-audit.json",
+    "docs/implementation/current-status.md",
+    "docs/implementation/documentation-cleanup.md"
+  ],
+  "deleted": [],
+  "markdown": [
+    {
+      "path": "docs/00-overview/naming.md",
+      "sha256": "45f821270444bf3c6a7022ba4ab1bb636b17b688f2790026deb0ab085ccf1377",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/05-build-and-security/authored-resource-storage.md",
+      "sha256": "d5292c366e92aa7f3e35a1480482d1e1a02481f9961e47b997fcb0dd0f4b31a9",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/05-build-and-security/device-generator.md",
+      "sha256": "a5b9279cac8ee8f4149b575746e0542fcf18b7ded5a49ef2712c01dad66dfeb9",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/05-build-and-security/native-web-build.md",
+      "sha256": "ac9ee572d1c85aba027bcfd925d749aaf9e1dc302be2304a7894a0f6d6535fea",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/05-build-and-security/packaging.md",
+      "sha256": "a6e2a100a4379f06ab04ea87e11ca14eb07d12266c71cf9949d772ae6bba8ebd",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "sha256": "49c91c04f8001b11556f1f53a04e042a344f1b17a43490a59fa43aa9a0bbffa4",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "sha256": "16cdc88fe3352cc301d93ad8c2d692c233215dcd958ab2e36800c298003e2a9c",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "sha256": "e355ed6e21b38411d1928e1b2dcb639f02979e55b93413008ddbdb4bc6100f40",
+      "checkedSurface": "added hunks",
+      "fencesBalanced": true
+    }
+  ],
+  "checkedRelativeLinks": 59,
+  "relativeLinks": [
+    {
+      "path": "docs/00-overview/naming.md",
+      "target": "../05-build-and-security/authored-resource-storage.md"
+    },
+    {
+      "path": "docs/00-overview/naming.md",
+      "target": "crate-map.md"
+    },
+    {
+      "path": "docs/00-overview/naming.md",
+      "target": "../04-tooling/agent-debug-mcp-cli.md"
+    },
+    {
+      "path": "docs/00-overview/naming.md",
+      "target": "../04-tooling/lsp.md"
+    },
+    {
+      "path": "docs/00-overview/naming.md",
+      "target": "../01-language/ids-and-references.md"
+    },
+    {
+      "path": "docs/05-build-and-security/device-generator.md",
+      "target": "../schemas/device-profile-manifest.md"
+    },
+    {
+      "path": "docs/05-build-and-security/device-generator.md",
+      "target": "../schemas/device-io-manifest.md"
+    },
+    {
+      "path": "docs/05-build-and-security/device-generator.md",
+      "target": "../schemas/capture-device-manifest.md"
+    },
+    {
+      "path": "docs/05-build-and-security/device-generator.md",
+      "target": "../02-runtime/device-streams.md"
+    },
+    {
+      "path": "docs/05-build-and-security/device-generator.md",
+      "target": "../02-runtime/streams-generators.md"
+    },
+    {
+      "path": "docs/05-build-and-security/device-generator.md",
+      "target": "security.md"
+    },
+    {
+      "path": "docs/05-build-and-security/native-web-build.md",
+      "target": "packaging.md"
+    },
+    {
+      "path": "docs/05-build-and-security/native-web-build.md",
+      "target": "product-awfb-bytecode.md"
+    },
+    {
+      "path": "docs/05-build-and-security/native-web-build.md",
+      "target": "../02-runtime/runtime-step-and-executors.md"
+    },
+    {
+      "path": "docs/05-build-and-security/native-web-build.md",
+      "target": "device-generator.md"
+    },
+    {
+      "path": "docs/05-build-and-security/native-web-build.md",
+      "target": "security.md"
+    },
+    {
+      "path": "docs/05-build-and-security/packaging.md",
+      "target": "authored-resource-storage.md"
+    },
+    {
+      "path": "docs/05-build-and-security/packaging.md",
+      "target": "../02-runtime/executable-runtime-core.md"
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "target": "../schemas/device-profile-manifest.md"
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "target": "../schemas/device-io-manifest.md"
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "target": "../schemas/usb-device-manifest.md"
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "target": "../schemas/capture-device-manifest.md"
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "target": "../03-presentation/capture-devices.md"
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "target": "../schemas/virtual-controller-manifest.md"
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "target": "../03-presentation/layers.md"
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "target": "../02-runtime/device-streams.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-source-checkpoint.verified.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-coverage.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../README.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-c3-c5-closure-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-phase-note-publication.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/vertical-break-validation-2026-07-14.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../03-presentation/text-typesetting.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.acceptance-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-fanout-child-reverse-coverage.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-native-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-fanout-child-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md#traversable"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#awaitmanyのresult集約と消費前検査--2026-10-25"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-coverage.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-fanout-child-reverse-coverage.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2850-presentation-role-workspace-check.input-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2851-presentation-role-workspace-clippy.input-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.failure-recon.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "documentation-cleanup.md"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "target": "acceptance-evidence/task-documentation-contract-prune-audit.json"
+    }
+  ],
+  "unclosedFences": 0,
+  "priorFullShaIdentifiers": 33,
+  "lostFullShaIdentifiers": [],
+  "untrackedHeld": 6,
+  "untrackedHeldDrift": 0,
+  "genericAcceptance": "Preserved; existing151/151PASS and published acceptance unchanged",
+  "validationReuse": "Existing runtime results remain historical evidence, not rerun by this cut"
+}

@@ -274,3 +274,38 @@ crate ownershipなど現在の契約を残した。sequence pattern／arrayのPh
 runtimeは実行していない。親による最終照合では変更Markdown 13件の相対リンク47件が
 解決し、未閉鎖fence・whitespace違反・40桁識別子の欠落は0。
 既存tracked WIP 14件とuntracked実ファイル6件の内容を保持し、公開receiptのbyte一致も確認した。
+
+## Overview と build/security 章の重複・旧案整理 — 2026-10-25
+
+照合基点は既存main `7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5`。
+GPT-6 Luna／maxが6章を担当し、親が現状一覧・全差分・根拠の保全を確認した。
+開始時に既存のtracked Rust／sample変更42件、untracked表示3項目（実ファイル6件）を確認した。
+Cargo manifest、CLI option定義、AWFB/AWBC ownerを現行契約の照合に使った。
+
+`00-overview/naming.md` から、authored root／local stateの重複配置例、
+Cargo memberの重複一覧、MCP/LSPの候補名一覧、将来のrename手順を除いた。
+公開名、拡張子、crate prefix、protocol prefixと所有章への参照は残した。
+`authored-resource-storage.md` はすでに明記された現在のroot／fallback規則に
+重なる過去の移行手順を削除した。
+
+`device-generator.md` はCLI案、非所有のcrate/cache配置、phase表、未定義traitの
+実装sketchを除いて、deterministic generation、入力・出力、source trace、
+検証・permission・fixture・Agent/LSP要件を保持する短い契約へ整理した。
+`native-web-build.md` は古いfeature名、CLI build mode、artifact tree、
+将来のAOT案と重複したAWBC説明を除いた。native-only JIT境界、Web capability、
+thread fallback、async WebGPU、限界検証、typed request/response、GPU ownershipを残した。
+
+`security.md` の重複したcapture／USB／HID／controller節を一つに統合した。
+manifest・host grant、allowlist、secure context/user gesture、signed debug exposure、
+監査・indicator、typed parser/port、virtual fixtures、gamepadとcontrollerのrouting・
+accessibility・observe/control境界を保持した。`packaging.md` から現行manifestと
+CLIに一致しないumbrella feature/runtime flag案、structured_json bytecode表、
+旧AWFB構成tree、schema/producerを持たないbug-report directory sketchを除き、
+version-one AWFB/AWBC契約とresource・patch・signature要件は残した。
+
+削除範囲に実行結果、validation receipt、full commit SHAはなかった。
+変更した6章の相対link 26件が解決し、未閉鎖fenceは0、`git diff --check` は合格した。
+文書だけの変更のためCargo／Rust検証は実行していない。
+親の最終確認では、現状一覧と理由記録を含む8 Markdownの相対link 58件が解決し、
+未閉鎖fence、40桁識別子の欠落、保持untracked 6実ファイルのhash差分は0だった。
+[資料差分の照合](acceptance-evidence/task-documentation-contract-prune-audit.json)。

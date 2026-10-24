@@ -1,4 +1,4 @@
-# Packaging and product flags
+# Packaging and product bundles
 
 Packaging is split into two layers:
 
@@ -10,100 +10,7 @@ Product readers use the AWFB-only decode path. Legacy JSON and other structured
 formats are inspection/export surfaces selected by explicit extensions such as
 `.awfb.json`; they are not probed as fallback shipping codecs.
 
-## Feature flags
-
-```toml
-[features]
-default = ["vm", "wgpu-render", "audio-basic"]
-
-native = ["native-st", "wgpu-render", "audio-native"]
-native-mt = ["tokio", "rayon"]
-native-jit = ["arcweft-lang-jit-cranelift"]
-web = ["web-st", "dom-view", "audio-web"]
-web-mt = ["web-workers", "wasm-bindgen-rayon"]
-
-agent-observe = []
-agent-control = ["agent-observe"]
-agent-debug-mutate = ["agent-control"]
-agent-mcp = ["agent-observe"]
-
-servo-view = []
-dom-view = []
-```
-
-## Runtime flags
-
-```text
---agent=off|observe|control|debug
---observe=off|metrics|logs|agent|debug
---debug-assertions=on|off
---audio-backend=native|web|dummy
---headless
-```
-
-## Bundle contents
-
-Current CLI bundle slice:
-
-```text
-game.awfb
-  schema_version
-  manifest
-    source_label
-    profile_id
-    profile_kind
-    entry
-    adapter
-    adapter_manifest_ids
-    required_host_calls
-    runtime
-      entry_flow
-      flows
-      bytecode_instructions
-      line_task_groups
-      stream_plans
-  source
-    label
-    text
-  bytecode
-    encoding = structured_json
-    program
-      entry_flow
-      entries
-      flows
-      pure_helpers
-      line_task_groups
-      stream_plans
-  adapter_manifests[]
-    id
-    display_name
-    effects
-    host_calls[]
-      id
-      effects
-  virtual_files[]
-    space
-    path
-    bytes
-  image_assets[]
-    id
-    file
-      space
-      path
-    format = png|jpeg|gif|webp
-    animation = static|animated
-    dimensions?
-      width
-      height
-  character_dialogue_generation?
-    generation?
-    character_packages[]
-      character
-      manifest = asset virtual-file reference
-      layers[]
-        part, variant, asset_path, file reference
-        rect, z, opacity, blend, clipping, source_layer?
-```
+## Product bundle
 
 The product `.awfb` codec is the AWFB v1 fixed-header container owned by
 `arcweft-bundle`. It has a fixed magic/version/header, a canonical manifest byte
@@ -251,23 +158,7 @@ do not introduce a separate container format.
 The executable table, typed constants/functions/types and admission rules are
 defined by the maintained [executable runtime contract](../02-runtime/executable-runtime-core.md).
 Bundle resource sections retain their declared version-one schema and validated
-section identities. Old design-request schedules do not define the current
-codec or imply that an already implemented executable table is still pending.
-
-```text
-game.awfb
-  manifest
-  bytecode.vm
-  graph.index
-  entities
-  assets
-  shaders
-  view
-  audio
-  text
-  source_maps
-  contracts
-```
+section identities.
 
 Patch bundles are AWFB bundles with `BundleKind::Patch` and must carry a
 `PatchPlan` section. The Sans I/O patch model compares old and new section
@@ -289,21 +180,3 @@ the plan. `Patch` bundles do not carry executable sections directly.
 External section operations carry descriptor metadata only: size and digest are
 preserved in the target section index, but fetching bytes from mirrors or a
 local content-addressed cache remains a host/release-manifest responsibility.
-
-## Debug bundle
-
-```text
-bug-report/
-  engine.json
-  bundle-manifest.toml
-  state-before.bin
-  trace.arcwx
-  agent-actions.ndjson
-  logs.jsonl
-  signals.json
-  metrics.json
-  screenshot.png
-  overlay.png
-  audio-state.json
-  diagnostics.json
-```

@@ -115,12 +115,3 @@ without reliable object hydration do not satisfy the clean-checkout contract.
   instead of reconstructing directory names independently.
 - Git tracking and bundle inclusion are independent: `.gitignore` never acts as
   a packaging exclusion list.
-
-## Migration from the hidden authored layout
-
-Move `.arcweft/asset/**` to `assets/**` and `.arcweft/content/**` to
-`content/**`, preserving paths below each root. Update generators, fixtures,
-notices, and tests at the same time. Add `[resources]` only when a project needs
-non-default names. Remove the old directories rather than retaining a fallback
-or duplicate copy, then validate from a clean checkout or through the project's
-documented preparation route.

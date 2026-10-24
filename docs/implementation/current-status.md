@@ -1,10 +1,14 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-25。mainの最新実装公開は `0b5ac5491d245a5386ca1b44547091e50bcb1955`。
+確認日: 2026-10-25。照合したmain HEADは `7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5`、
+最新実装公開は `0b5ac5491d245a5386ca1b44547091e50bcb1955`。
 Sema 7 pathでPresentation引数のtyped roleとversion 1 consumer transcriptを接続した。
 [公開ref・全blob・保持入力の照合](acceptance-evidence/task-presentation-role-source-checkpoint.verified.json)。
 検証入力は基点 `d389887e3a27ff01855006b8247bd9a05e57283a` にSema 7 pathと既存WIP 14件を
 含み、この7 pathは公開bytesと一致する。元のtracked WIP 14件／untracked実ファイル6件は保持した。
+
+確認時には、別途Presentation resource／`Handle<T>`／`SlotRef<T>`移行の未コミット36 pathがある。
+この差分は下表の公開済み受入へ加えず、実行command ABIや保存の対応済みとも扱わない。
 
 最新のSema全22逆依存通常選択は、R2853の新規実行で
 **3,864実行／3,814 PASS／50 FAIL／23既存ignored**、終了100、568.646秒。

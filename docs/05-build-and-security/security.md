@@ -1,164 +1,104 @@
 # Security and sandbox
 
-## Capability tiers
+## Agent capability tiers
 
-```text
-Tier 0 ObservePublic:
-  screenshot, public View tree, visible bbox
+| Tier | Capability | Examples |
+|---|---|---|
+| 0 | ObservePublic | Screenshot, public View tree, visible bounds |
+| 1 | ControlPublic | Click, choose, key input |
+| 2 | InspectDebug | State inspection, graph query, logs and signals |
+| 3 | MutateDebug | State changes, hot reload, forced task results |
+| 4 | UnsafeDev | Filesystem access, plugin loading, raw shader, evaluation |
 
-Tier 1 ControlPublic:
-  click, choose, key input
-
-Tier 2 InspectDebug:
-  state inspection, graph query, logs/signals
-
-Tier 3 MutateDebug:
-  set state, hot reload, force task result
-
-Tier 4 UnsafeDev:
-  filesystem, plugin load, raw shader, eval
-```
+Higher tiers require an explicit host grant. Product mode must not expose
+debug-only mutation or unsafe development capabilities by default.
 
 ## WASM
 
-- WASI off by default。
-- preopened dir なし。
-- host import whitelist。
-- memory/fuel/time limit。
+- WASI is disabled by default and no directory is preopened.
+- Host imports use an explicit allowlist.
+- Memory, fuel, and execution time are bounded.
 
 ## HTML View
 
-- `app://` bundle resource only。
-- remote network off by default。
-- JS bridge is typed message only。
-- product mode devtools off。
+- Product resources use the `app://` bundle scheme only.
+- Remote network access is disabled by default.
+- The JavaScript bridge carries typed messages only.
+- Product mode disables developer tools.
 
 ## Agent / MCP
 
-- local token / auth for product and HTTP.
-- audit log every tool call.
-- no shell command tool.
-- filesystem roots explicit.
-- external URL fetch off by default.
-- state mutation requires debug token.
+- Product and HTTP access require a local token or equivalent authentication.
+- Tool calls are audited.
+- No shell command tool is exposed.
+- Filesystem roots are explicit and external URL fetch is disabled by default.
+- State mutation requires a debug capability token.
 
 ## Shader
 
-- WGSL only for user/mod/LLM.
-- Naga + wgpu validation + capability check.
-- unsafe passthrough disabled outside trusted dev.
+- User, mod, and Agent shader input is WGSL.
+- Naga and wgpu validate shaders against host capability limits.
+- Unsafe passthrough is disabled outside trusted development.
 
 ## Audio / TTS
 
-- external TTS providers require explicit capability.
-- generated speech/audio cache is scoped and redacted in product logs.
-- microphone input is out of scope unless explicit capability is added.
+- External TTS providers require an explicit capability.
+- Generated speech/audio caches are scoped and redacted in product logs.
+- Microphone access requires the capture capability described below.
 
+## Device and capture capabilities
 
+USB, HID, serial, gamepad, virtual input, microphone, camera, and screen capture
+are host capabilities. Access requires an explicit declaration and host grant.
+Scripts and Activities do not enumerate devices or open platform handles.
+Activities receive granted typed ports or normalized input streams.
 
-## Capture privacy
-
-Microphone, camera, and screen capture are high-risk capabilities. Product builds must default them to disabled unless the game explicitly declares a capture feature and the host grants the capability.
-
-Rules:
-
-- Capture requests must be explicit ModuleItems.
-- User-facing permission View is mandatory.
-- Product mode must show an active microphone/camera indicator.
-- Raw capture frames/samples are not exposed to Agent tools, logs, telemetry, or plugins without a specific capability.
-- Activities consume granted capture ports; they do not enumerate or open devices themselves.
-- Headless and CI use virtual capture sources by default.
-
-See [Microphone / Camera Capture Devices](../03-presentation/capture-devices.md).
-
-
-## USB / HID device policy
-
-- Product builds must not expose a generic all-device USB picker.
-- USB/WebUSB access requires explicit `device` profiles with vendor/product or HID usage filters.
-- Raw USB bytes, HID report bytes, camera frames, and microphone buffers are private by default.
+- Raw USB/HID access requires a narrowly filtered device profile and product
+  allowlist entry for vendor/product IDs or HID usage; serial access requires
+  an allowlisted serial profile. Product builds do not expose a generic
+  all-device USB picker. Wildcard USB filters are unavailable unless a signed
+  QA capability authorizes them. Native access uses a granted device handle.
+- WebUSB, WebHID, Web Serial, camera, and microphone access require a secure
+  context and the browser's user permission flow, including a user gesture
+  where the browser API requires it. If an API is unavailable, the capability
+  is disabled or uses a virtual fixture.
+- Camera, microphone, and screen capture are disabled in product builds unless
+  the game declares the capture feature and the host grants the capability.
+  Capture requests are explicit manifest items. A user-facing permission view
+  is required, and active microphone/camera capture has a visible indicator.
+  Headless and CI runs use virtual devices, capture sources, and fixture
+  streams by default.
 - Device output commands require capability grants and profile contracts.
-- Agent tools may observe typed signals, but raw bytes require `UnsafeDev` capability.
-- WebUSB requires user permission and browser support; unavailable browsers must fall back to virtual fixtures or disable the feature.
+  Device protocol parsers return a typed result with a source span or byte
+  offset on failure.
+- Device use emits audit events. Active camera/microphone capture and raw
+  USB/HID use require a visible indicator or equivalent product View.
+- Raw USB/HID packets, serial identifiers, camera and screen frames, and
+  microphone buffers are private in logs, telemetry, plugins, and Agent
+  resources. Product exposure requires an explicit signed debug grant scoped to
+  the relevant surface; Agent raw-byte access also requires UnsafeDev.
+- Native gamepad input uses the platform gamepad API, and Web input uses the
+  browser Gamepad API; raw USB/HID is not the standard gamepad path. Logical
+  gamepad and virtual-controller input are available in product mode by
+  default.
+- Virtual controllers are visible, accessible View components. Their layout
+  respects safe areas, labels are localized, and events enter through the
+  LayerTree as the same typed input actions as physical controllers. Touch
+  controls consume their layer input before lower scene layers unless routing
+  is explicitly configured otherwise. Their geometry may be observed in
+  product observe mode and exposed as ordinary View action targets, but
+  generated input remains gated. Product synthetic input requires
+  ControlPublic; debug-only state mutation requires an Agent capability token.
+  Debug-only controls are marked and excluded from product builds. Controller
+  input does not directly mutate game state. User layout customization remains
+  subject to contract-checked mappings.
 
-## Virtual controller policy
-
-- Virtual touch controls are visible View and must expose accessible labels.
-- Control layout respects the display safe area, and player-facing labels are localized.
-- Touch controls consume their layer input before lower scene layers unless explicitly configured otherwise.
-- Product builds may allow user layout customization, but generated controller mappings remain contract-checked.
-
-## USB / HID / gamepad / virtual controller
-
-USB and HID access is high-risk and may expose hardware outside the game sandbox.
-
-Rules:
-
-- Raw USB/HID is disabled in product builds unless a device declaration and product capability explicitly enable it.
-- Native raw USB uses a granted `UsbDeviceHandle`; scripts never call platform enumeration directly.
-- WebUSB/WebHID require secure contexts and user device selection.
-- Device filters must be as narrow as possible.
-- Raw packets/reports are redacted from logs and Agent resources by default.
-- Device protocol parsers must return `Result<T, ParseError>` with spans or byte offsets.
-- Out-of-process Activities receive typed streams or granted ports; they do not open devices directly.
-- Virtual controller synthetic input in product builds requires `ControlPublic` capability.
-- Touch controller geometry can be observed in product observe mode, but generated input is still gated.
-
-See the [Device I/O Manifest](../schemas/device-io-manifest.md), [USB Device Manifest](../schemas/usb-device-manifest.md), and [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md).
-
-
-## Device I/O and Virtual Controller Security
-
-USB, HID, Serial, microphone, and camera APIs are treated as permissioned device capabilities. Activities and scripts receive granted `DevicePort<T>` values, not raw backend access.
-
-Product-mode defaults:
-
-```text
-raw_usb = false
-hid = false unless allowlisted
-serial = false unless allowlisted
-gamepad = true
-virtual_controller = true
-web_usb = false unless allowlisted and user-granted
-web_hid = false unless allowlisted and user-granted
-```
-
-Raw packets are not logged by default. Device use requires audit events and, for camera/microphone/raw USB/HID, visible indicators or equivalent product View. Virtual controller events are safe logical inputs and may be enabled in product mode, but debug-only state mutation through controller injection requires an Agent capability token.
-
-
-## USB / HID / Serial devices
-
-USB/HID/Serial access is high risk and must be capability gated.
-
-Rules:
-
-- Devices must be declared as `device` ModuleItems or generated device profiles.
-- Product builds require explicit allow-list entries for VID/PID, HID usage, or serial profile.
-- Game logic consumes typed ports and parsed events, not raw packets.
-- Raw packets are never exposed to Agent tools, logs, telemetry, or plugins unless a signed debug capability enables it.
-- WebUSB/WebHID/Web Serial must use browser permission flows and secure contexts.
-- Activities receive granted device ports; they cannot enumerate or open devices directly.
-- CI/headless uses virtual devices and fixture streams.
-
-See the [USB Device Manifest](../schemas/usb-device-manifest.md) and [Device Generator / Profile System](device-generator.md).
-
-## Virtual touch controller
-
-Virtual touch controllers are product-safe View components, but debug-only controls must be marked and hidden from product builds. They emit typed input events through the LayerTree and must not directly mutate `GameState`.
-
-See the [Virtual Controller Manifest](../schemas/virtual-controller-manifest.md) and [Layer System / Input Routing](../03-presentation/layers.md).
-
-## USB / HID / capture / virtual controller security
-
-Arcweft treats live devices as capability-gated resources.
-
-Rules:
-
-- Camera, microphone, USB, HID, and WebUSB/WebHID all require explicit manifest declarations.
-- Product builds must not allow wildcard USB filters without signed QA capability.
-- Raw audio/video/USB packet payloads are not exposed to LLM/MCP tools by default.
-- Device serial numbers are redacted unless debug capability is enabled.
-- Activities receive granted ports and normalized `InputAction` streams, not backend handles.
-- Standard gamepads should use `gilrs` or browser Gamepad API instead of raw USB/HID.
-- Virtual controllers emit the same `InputAction` values as physical devices and are visible to Agent Debug Bus as normal View action targets.
-- WebUSB/WebHID access must be user-gesture/permission gated and may be unavailable on some browsers.
+The detailed contracts are owned by the
+[Device Profile Manifest](../schemas/device-profile-manifest.md),
+[Device I/O Manifest](../schemas/device-io-manifest.md),
+[USB Device Manifest](../schemas/usb-device-manifest.md),
+[Capture Device Manifest](../schemas/capture-device-manifest.md),
+[Microphone / Camera Capture Devices](../03-presentation/capture-devices.md),
+[Virtual Controller Manifest](../schemas/virtual-controller-manifest.md),
+[Layer System](../03-presentation/layers.md), and
+[Device Streams](../02-runtime/device-streams.md).
