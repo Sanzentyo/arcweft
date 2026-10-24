@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "base": "29c864bb3f42da7f5948b03682eaa875a0833089",
+  "agentModel": "gpt-6-luna",
+  "agentReasoning": "max",
+  "scope": "Maintained language, runtime, layer and Agent contracts; no retrospective design archive or Rust execution claims",
+  "review": "Parent reviewed full diffs; retained normative behavior, concrete resource and product regression conditions; removed old phase/progress and hypothetical public API descriptions",
+  "files": 5,
+  "relativeLinks": 37.0,
+  "removedHistoricalIdentities": 0,
+  "sourceEdited": false,
+  "rows": [
+    {
+      "path": "docs/01-language/traits-seq-ranges.md",
+      "sourceSha256": "4051a1cac2d9ef1b553b98eda21b5cf6f47d30bc36f66a121df119367cbcfcc4",
+      "candidateSha256": "850beaff79e7ef1b82ba4461669ca7b133f026970d0417fa889e3fbe94cb9c2f",
+      "historicalIdentities": [],
+      "removedHistoricalIdentities": [],
+      "relativeLinks": 9,
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "sourceSha256": "f119d3f52324f34fa399ba221eaa756eb341307fe6480c2615123e298232dcc2",
+      "candidateSha256": "6cdd13a4de2ceab0845772c421d6145d114567e0e9991a11cc0b2aeab4a25f30",
+      "historicalIdentities": [],
+      "removedHistoricalIdentities": [],
+      "relativeLinks": 10,
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "sourceSha256": "1a3ac3983916cb5917ee7096eaa77f0e1dcca9a61d9783dfea814e3c5e0734ba",
+      "candidateSha256": "9fed3d4c68fa6812a17bb745780f52fae64a0e489851176a15c0857bd5efbfc9",
+      "historicalIdentities": [],
+      "removedHistoricalIdentities": [],
+      "relativeLinks": 4,
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "sourceSha256": "b939c02137eca21a8f4f00bf3857eef7fbadcbad6639cb81fddd94eb277692c2",
+      "candidateSha256": "9e594be5558408a1a4770c6fd74063d5a39c91f2b4091a01d7a956278ec44f8e",
+      "historicalIdentities": [],
+      "removedHistoricalIdentities": [],
+      "relativeLinks": 12,
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/04-tooling/agent-debug-mcp-cli.md",
+      "sourceSha256": "c581701333f17740bb776542b67906cbeb088fb2d615f3c6bd3be509d028d936",
+      "candidateSha256": "73dc6bda4368596932aba564abb097ee37663e0e2153bf775fdd539cf9c2dea1",
+      "historicalIdentities": [],
+      "removedHistoricalIdentities": [],
+      "relativeLinks": 2,
+      "unclosedFences": 0,
+      "lineEndings": "Original line endings retained on unchanged text"
+    }
+  ],
+  "recordedAt": "2026-10-24T09:09:18.5343936Z"
+}

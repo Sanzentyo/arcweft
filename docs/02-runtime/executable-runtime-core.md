@@ -9,8 +9,11 @@ suspension, source identity, or host calls.
 1. **AWBC v1 is the sole product executable representation.** It is a typed,
    register-based control-flow graph stored as canonical index tables. The old
    `compact_bytecode` table is removed rather than adapted. Structured
-   `BytecodeProgram` remains only as an explicitly temporary compiler/parity
-   input until the migration gates in section 15 pass.
+   `BytecodeProgram` is an inspection/export surface within the product boundary; `.awfb`
+   files contain canonical AWBC and have no structured-bytecode execution
+   fallback. Source/development execution may use structured bytecode under its
+   own boundary. Product payload rules are in [Product AWFB bytecode](../05-build-and-security/product-awfb-bytecode.md);
+   product stepping is in [Product AWBC RuntimeStepResult parity](product-awbc-runtime-step-parity.md).
 2. **All table identities are implicit zero-based indices.** Rust newtypes make
    cross-table mistakes visible. Product bytes do not repeat string IDs or
    carry stringly opcode records.
@@ -1207,37 +1210,16 @@ Wasm features and use a canonical Wasm target triple. Generation is excluded so
 an unchanged region can be reused across hot swaps; `RuntimeDispatchKey` adds
 `{ generation, region, artifact_digest }` for the live dispatch table.
 
-## 15. Migration and deletion gates
+## 15. Product AWBC payload and regression coverage
 
-The structured `BytecodeProgram` may be removed from product AWBC/AWFB only when
-all gates are green on supported profiles:
-
-1. canonical encode/decode determinism and decode-budget tests pass;
-2. verifier negative corpus covers unknown tags, indices/ranges, ownership,
-   registers, CFG, types, host ABI, effects/capabilities, entries, and maps;
-3. compiler emits AWBC for every product fixture without carrying a serialized
-   `FlowOp` fallback;
-4. differential structured/compact tests pass for flow, dialogue, choice,
-   await, await-many, static/dynamic goto, match, every loop form, scoped
-   cleanup/binding, line tasks, and streams;
-5. suspend/save-in-memory/resume tests pass at every safe-point kind;
-6. runtime driver and runtime host construct executors from verified AWBC and no
-   product player imports structured bytecode execution;
-7. source/display maps and failure diagnostics are byte-for-byte or
-   semantically normalized equivalents across executors;
-8. baseline compiled regions pass VM fallback and differential tests;
-9. product AWFB decoder accepts a fixture whose ProgramBytecode section contains
-   canonical AWBC only;
-10. dependency audit proves players have no syntax/HIR/sema/compiler/verifier
-    front-end/CLI/LSP dependency;
-11. repository search finds no product serialization/deserialization of
-    `BytecodeProgram`, `FlowOp`, or `compact_bytecode`;
-12. old sidecar and conversion APIs are deleted in the same cleanup cut, not
-    retained behind an undocumented compatibility path.
-
-Compiler-only `RuntimePlan` remains a useful lowering IR. Deleting it is not a
-migration goal. The deletion target is its use as product runtime payload and
-its execution as a second product VM.
+Product `.awfb` files contain canonical AWBC v1 only. Structured `BytecodeProgram`
+is an inspection/export surface, not a product execution fallback. The current
+payload contract is defined in [Product AWFB bytecode](../05-build-and-security/product-awfb-bytecode.md);
+runtime behavior is defined in [Product AWBC RuntimeStepResult parity](product-awbc-runtime-step-parity.md).
+The continuing product codec, verifier, parity, dependency, and payload regression
+conditions are listed in [Product payload regression](#product-payload-regression)
+below. `RuntimePlan` remains compiler-side lowering IR; removing it is not a
+product migration requirement.
 
 ## 16. Native original-source execution
 
@@ -1310,12 +1292,17 @@ same-step Need timeout races, save/restore, and late source completion.
 - stale generation/digest/layout/host ABI and invalid safe point reject;
 - JIT/native/Wasm cache-key sensitivity and generation-independent reuse.
 
-### Product migration
+### Product payload regression
 
 - AWFB decodes and runs with no structured bytecode payload;
 - malformed AWBC is rejected under product budgets;
 - source/display/resource maps survive bundle round trip;
-- dependency and repository-search guards prevent structured payload regression.
+- source/display maps and diagnostics remain semantically equivalent across
+  executors;
+- product decoders reject structured bytecode and compact sidecars without an
+  executable fallback;
+- the dependency graph keeps product players independent of syntax, HIR, sema,
+  compiler, verifier front ends, CLI, and LSP.
 
 ## 18. Affected crates and modules
 

@@ -2,29 +2,13 @@
 
 ## Agent Debug Bus
 
-Verifier, CLI, and LSP diagnostics use the same stable JSON shape that future
-Agent tools will embed into `Observation.diagnostics`. This means an Agent can
-see an obligation id, source span, related proof/audit ids, and available
-actions before the renderer/MCP runtime exists.
+Verifier diagnostics and actions use a stable JSON schema consumed by CLI and
+LSP. `arcweft-agent-protocol` owns the typed observation JSON exposed by the
+CLI and MCP adapters. The normative observation/capture shape, scope, URI, raw
+RGBA, and coordinate-space contract is in [Agent Observe and Capture Contract](agent-observe-capture-contract.md).
+Command syntax and current CLI behavior are documented in [CLI](cli.md).
+`arcweft-agent-mcp` maps the shared protocol to MCP resource and tool-result JSON.
 
-Runtime observation now has two Phase 2.0 headless slices:
-
-- `arcw run --json` reports deterministic runtime step output, observations, and
-  diagnostics.
-- `arcw agent observe ... --json` reports the first Agent-shaped frame
-  observation for dialogue/rich-text debugging. It resolves runtime dialogue
-  events against the rich-text display catalog and returns dialogue View objects,
-  viewport-space bounds, semantic advance actions, logs/signals/metrics/events,
-  diagnostics, and optional image resources.
-
-The shared diagnostic/action schema produced by `arcweft-verify` and consumed by
-CLI/LSP remains the connection point for future Agent tools.
-The normative image, scope, URI, raw RGBA, and coordinate-space contract is
-defined in [Agent Observe and Capture Contract](agent-observe-capture-contract.md).
-`arcweft-agent-protocol` owns the current observation JSON data types used by
-the CLI slice and intended for future MCP resources/tools.
-`arcweft-agent-mcp` maps those resources to MCP `resources/read` and tool-result
-JSON shapes without owning stdio, HTTP, auth, or renderer sessions.
 `arcw agent mcp` is the current minimal stdio transport. It accepts line-delimited
 JSON-RPC requests for `initialize`, `tools/list`, `tools/call`, `resources/list`,
 `resources/templates/list`, and `resources/read`. `resources/templates/list`
@@ -352,35 +336,6 @@ is omitted instead of emitting an approximate bbox.
 The same `display_map` is also consumed by the native rich-text window path, so
 Agents can compare an object or layer capture against the exact resolved text
 ranges and style/ruby metadata that the player adapter uses.
-
-Planned session-control commands remain:
-
-```bash
-arcw agent audio state --json
-arcw agent tts preview voice.alice.tts "おはよう" --out voice.wav
-arcweft://session/{sid}/observation/latest.json
-arcweft://session/{sid}/frame/{tick}/color.png
-arcweft://session/{sid}/frame/{tick}/color.rgba
-arcweft://session/{sid}/frame/{tick}/layer.{layer}.png
-arcweft://session/{sid}/frame/{tick}/object.{object_id}.png
-arcweft://session/{sid}/frame/{tick}/overlay.png
-arcweft://session/{sid}/frame/{tick}/objects.json
-arcweft://session/{sid}/state/current.json
-arcweft://session/{sid}/logs.ndjson
-arcweft://session/{sid}/signals.json
-arcweft://session/{sid}/audio.json
-arcweft://session/{sid}/observation/latest.json
-arcweft://session/{sid}/frame/{tick}/color.png
-arcweft://session/{sid}/frame/{tick}/color.rgba
-arcweft://session/{sid}/frame/{tick}/layer.{layer}.png
-arcweft://session/{sid}/frame/{tick}/object.{object_id}.png
-arcweft://session/{sid}/frame/{tick}/overlay.png
-arcweft://session/{sid}/frame/{tick}/objects.json
-arcweft://session/{sid}/state/current.json
-arcweft://session/{sid}/logs.ndjson
-arcweft://session/{sid}/signals.json
-arcweft://session/{sid}/audio.json
-```
 
 Tools:
 

@@ -128,3 +128,32 @@ inline Threadを独立kernelと実際のlaunch経路へ置換した。「kernel�
 R2491／R2492はconsumer移行漏れで失敗し、修正後の再検証は未実行である。
 実装が存在することを受入完了とはせず、過去のpanic・検証結果・公開SHAは履歴に残す。
 この修正によってGeneric MatchやNativeの受入済み境界を未完了へ戻していない。
+
+## 現行章に残った旧実装案の整理 — 2026-10-24
+
+GPT-6 Luna／maxの2担当が、範囲を限定して現行章を照合し、親が全文差分と
+所有型・現在の契約を確認した。旧資料を削除したことを、機能の受入取消しにはしない。
+
+- `executable-runtime-core.md` のAWBC移行前の削除手順を撤去した。
+  現在のAWBC-only製品payload契約へ統合し、codec／negative verifier／保存復元／
+  parity／map／診断とfront-end依存分離の回帰条件は維持した。
+- `layers.md` の旧crate分割案に基づく実装順序を削除した。layer identity、
+  描画順・入力優先順位・modal・headless/windowed共通性の規則は残した。
+- `agent-debug-mcp-cli.md` の「renderer／MCPが存在する前」という旧状態説明、
+  Phase 2.0の進捗説明、重複URIと未公開command案を削除した。
+  現在のtransport・Toolsと観測／captureの契約は維持した。
+- `async-scheduler.md` の旧TaskEvent DTO、未定義CooperativeJob trait、古いAwait構造を
+  現在のSource式／observer、correlation／cursor、ProgramTerminalと
+  InfrastructureFailureへ訂正した。Host requestの不完全なDTOコピーは所有APIへの
+  リンクへ統合した。bounded fanout、順序付き結果とSans-I/O境界は維持した。
+- `traits-seq-ranges.md` のseq08進捗表と後続のMappable／Bindable／TryLike案を整理した。
+  公開Mapの6 familyを現在のcatalogへ揃え、Need／Parser／Streamのschema候補を
+  公開済みとは記さない。通常関数のfree／pipe／dot、exact Array長、typed built-in
+  iterationとユーザーtrait witness、Result／Option残余、await／traverseの契約は保持した。
+  `traverse`の仕様を削ることと、「現在runtime-supported」という未検証の主張を
+  削ることを区別した。
+
+削除対象に検証結果やfull SHAはなく、40桁識別子の欠落0を確認した。
+5章の相対リンク37件は解決し、未閉鎖fenceは0。
+このcutの変更はproseと所有APIへの参照で、Rust／Cargoの新規実行はしていない。
+[差分監査](acceptance-evidence/task-array-map-current-contract-cleanup-audit.json)。

@@ -101,7 +101,7 @@ plan lease and source namespace.
 
 ```rust
 pub trait TaskHost {
-    fn ensure_task(&mut self, spec: TaskSpec) -> TaskHandle;
+    fn ensure_task(&mut self, spec: TaskSpec) -> Result<TaskHandle, TaskEnsureError>;
     fn cancel_scope(&mut self, scope: CancelScopeId);
     fn poll_frame(&mut self, budget: SchedulerBudget) -> Vec<TaskEvent>;
 }
@@ -331,28 +331,9 @@ for polling the join. Return expressions are evaluated after the join. Ordinary
 function returns resume their caller in the same task without joining its
 children. Cancellation still enters the owning fiber to unwind its scopes.
 
-```rust
-pub enum HostTaskRequest {
-    FileReadText(FileReadTextRequest),
-    FileReadBytes(FileReadBytesRequest),
-    FileWriteText(FileWriteTextRequest),
-    FileWriteBytes(FileWriteBytesRequest),
-    HttpFetch(HttpFetchRequest),
-    HttpRespond(HttpRespondRequest),
-    ProcessRun(ProcessRunRequest),
-    AssetLoad(AssetRequest),
-    ShaderCompile(ShaderRequest),
-    AudioDecode(AudioDecodeRequest),
-    TtsSynthesis(TtsRequest),
-    WasmCall(WasmCallRequest),
-    SystemInfo(SystemInfoRequest),
-    Custom {
-        capability: HostCapabilityId,
-        operation: String,
-        args: Vec<RuntimePayload>,
-    },
-}
-```
+The closed Host request families and their complete argument fields are owned by
+[`HostTaskRequest`](../../crates/arcweft-core/src/task.rs#L1443). Host requests retain
+typed payloads, named arguments, and the accepted adapter manifest contract.
 
 `system.core_count()`, `system.thread_count()`, and
 `system.available_parallelism()` lower to `HostTaskRequest::SystemInfo`. The
@@ -384,50 +365,21 @@ pub enum TaskClass {
 
 ## 完了順の正規化
 
-```rust
-pub fn normalize_task_events(mut events: Vec<TaskEvent>) -> Vec<TaskEvent> {
-    events.sort_by_key(|event| (
-        event.logical_epoch,
-        event.task_id.clone(),
-        event.sequence,
-    ));
-    events
-}
-```
+`TaskEvent` stores `TaskCorrelation`, `TaskPublicationCursor`, and the event kind. `TaskEvent::publication_order()` orders by cursor logical epoch, task correlation, and cursor sequence. `normalize_task_events` preserves an already ordered packet and sorts an unordered one by that key. See [TaskEvent and publication order](../../crates/arcweft-core/src/task.rs#L1587) and [event normalization](../../crates/arcweft-core/src/task.rs#L2116).
 
-The normalized event envelope is:
+The event kinds are:
 
-```rust
-pub struct TaskEvent {
-    pub logical_epoch: LogicalEpoch,
-    pub task_id: TaskId,
-    pub sequence: TaskSequence,
-    pub kind: TaskEventKind,
-}
+- `Ready(payload)` carries a host task's admitted result.
+- `ProgramTerminal(ProgramTaskTerminal)` acknowledges retirement of an accepted Program launch. Its result stays in Core's producer state.
+- `InfrastructureFailure(RuntimeTaskFailure)` reports an infrastructure fault.
+- `Cancelled` reports cancellation.
+- `Progress(progress)` reports nonterminal progress.
 
-pub enum TaskEventKind {
-    Ready(RuntimePayload),
-    Failed(String),
-    Cancelled,
-    Progress(Progress),
-}
-```
+See the [TaskEventKind definition](../../crates/arcweft-core/src/task.rs#L1796). A Program terminal acknowledgement carries no Ready payload and grants no execution authority.
 
-## single-thread と multi-thread
+## Host execution strategies
 
-- native multi-thread: Tokio/Rayon 等の worker。
-- native single-thread: cooperative job。
-- web single-thread: requestAnimationFrame + cooperative job。
-- web multi-thread: optional SharedArrayBuffer/worker pool。
-
-## CooperativeJob
-
-```rust
-pub trait CooperativeJob {
-    type Output;
-    fn resume(&mut self, budget: JobBudget) -> JobPoll<Self::Output>;
-}
-```
+Core remains Sans I/O: it issues deterministic task requests and consumes deterministic task events. A host may use native workers or cooperative scheduling. Worker pools, browser frame callbacks, clocks, and I/O remain in host adapters. The core request/event boundary stays deterministic across these strategies.
 
 Scheduler JSON counters are adapter-visible and path-free:
 
@@ -475,12 +427,7 @@ match load_avatar(user) {
 }
 ```
 
-In the Phase 2.0 Sans I/O runtime slice, `await ... with` lowers to a
-`FlowOp::Await` containing an `AwaitTarget` and pending effects. `AwaitTarget`
-stores the `NeedId`, `TaskId`, and typed `HostTaskRequest` that the host adapter
-must execute. Entering the op emits a `TaskSpec` using that request and switches
-`FlowFiberStatus` to `Waiting`. The runtime resumes only when a matching
-`TaskEvent` arrives in a later `RuntimeStepInput`.
+`await ... with` lowers to `FlowOp::Await` with an optional binding, a `RuntimeNeedAwaitTarget`, and pending observers. The target retains the source expression; runtime execution evaluates it and suspends on the checked `Need<T>` or `ThreadHandle<T>` source. The admitted source supplies the task request and execution authority. See [FlowOp::Await](../../crates/arcweft-core/src/plan.rs#L1094) and [RuntimeNeedAwaitTarget](../../crates/arcweft-core/src/plan.rs#L1209).
 
 Bounded effectful traversal lowers to `FlowOp::AwaitMany`:
 
@@ -490,19 +437,14 @@ let texts = try await paths.traverse(fs.read_text).parallel(limit = 4) with {
 }
 ```
 
-`AwaitMany` evaluates the source `Vec<T>` once, creates at most `limit`
-in-flight `TaskSpec`s, and resumes with a `Vec` of ready values in source order.
-Each child task uses a deterministic indexed task id and a same-request task key,
-so duplicate requests can join through `TaskPolicy::JoinSameKey` while still
-delivering completion events to each waiting index. The VM owns only the
-bounded fanout state; actual thread pools, async runtimes, and filesystem or
-network I/O remain adapter responsibilities.
+`AwaitMany` evaluates its source once, creates no more than `limit` in-flight child requests, and assembles ready values in source order. The runtime-plan source accepts a sequence, an array, or a homogeneous tuple. The source-facing `traverse` contract in [Traits and Seq](../01-language/traits-seq-ranges.md#traversable) uses `Vec<T>`. Child results retain their source indices, so same-key joining can share host work without merging waiting positions. See [AwaitManyTarget](../../crates/arcweft-core/src/task.rs#L789) and [source type validation](../../crates/arcweft-core/src/plan/construction/lower.rs#L4548). The VM owns bounded fanout; thread pools, async runtimes, and I/O remain adapter responsibilities.
 
 ```text
-TaskEventKind::Ready(value)    -> validate and resume with the exact admitted Need payload
-TaskEventKind::Progress(value) -> keep waiting and publish canonical Progress
-TaskEventKind::Failed(error)   -> runtime fault; never fabricate a domain Result error
-TaskEventKind::Cancelled       -> non-returning cancellation transfer
+TaskEventKind::Ready(value)                  -> validate and resume with the exact admitted Host Need payload
+TaskEventKind::ProgramTerminal(report)       -> acknowledge the accepted Program launch; consume its local producer result
+TaskEventKind::InfrastructureFailure(error)  -> runtime fault; never fabricate a domain Result error
+TaskEventKind::Progress(value)               -> keep waiting and publish canonical Progress
+TaskEventKind::Cancelled                     -> non-returning cancellation transfer
 ```
 
 Actual asset loading, worker execution, clocks, renderer progress View, and audio

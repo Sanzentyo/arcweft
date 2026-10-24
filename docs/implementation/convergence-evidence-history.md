@@ -10392,3 +10392,7 @@ Cargo定義と219 test executablesのPE importを確認し、このDLLへのimpo
 
 529原本／74,233,957 bytesをbyte・SHA256・Git blob一致で保存した。
 [原本整合](acceptance-evidence/task-array-map-reverse-integration-checkpoint.evidence-integrity.json)。生成物はpath／hashのみで、移動・コピーしていない。
+
+前節の全体集計は公開 `29c864bb3f42da7f5948b03682eaa875a0833089`、parent `5f275a6f91defcddcb50dc52f1559e570089d914`、
+tree `af65e6c0908a7b45c8dc1d2f0da3344a7b96e67e`。公開ref／全blob／working入力／空indexと
+保持WIPを照合した。[公開照合](acceptance-evidence/task-array-map-reverse-integration-checkpoint.verified.json)。

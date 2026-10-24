@@ -1,43 +1,16 @@
-# Traits, Seq, Ranges, and Monad-like Abstractions
+# Traits, Sequences, Ranges, and Wrapper Operations
 
 Arcweft は Rust 風の generics を採用するため、`trait` / `impl` / `where` を中核機能として持つ。
 
-同時に、`Option` / `Result` / `Need` / `Parser` / `Seq` / `Source` を自然に扱うため、Monad 的な抽象を標準 prelude に入れる。ただし、通常のユーザーには `Monad` という名前を前面に出さず、`map`、`and_then`、`try`、`await`、`traverse`、`seq`、`collect` として見せる。
+This chapter defines trait declarations, typed iteration, and wrapper operations.
+The public callable catalog owns the available operations; a generic `Monad`
+trait is not required.
 
-## Implementation status: seq08.1 trait substrate
+## Trait declarations and boundaries
 
-Seq08.1 implements the DSL trait substrate. The canonical abstraction keyword is
-`trait`; `protocol` remains reserved for host, wire, and Agent protocol
-concepts.
+`trait` is the canonical keyword for language traits; `protocol` remains reserved for host, wire, and Agent protocol concepts. Trait declarations support supertraits, required associated types and method signatures, trait and inherent impls, associated type assignments and projections, generic bounds, `where` predicates, associated type equality constraints, coherence checks, and typed semantic evidence.
 
-Implemented in seq08.1:
-
-- trait declarations;
-- supertrait references;
-- required associated types;
-- required method signatures;
-- trait impl declarations;
-- inherent impl declarations;
-- associated type assignments;
-- `self.Assoc` and `T.Assoc` projection syntax;
-- generic bounds and `where` predicates;
-- `Trait<Assoc = Type>` associated type equality constraints;
-- conservative impl coherence;
-- typed sema witness evidence.
-
-Parsed but rejected until later slices:
-
-- associated type defaults;
-- associated type constructors / GAT-like members such as `type Mapped<B>`;
-- default method bodies;
-- fully qualified method calls;
-- dynamic trait objects.
-
-Seq08.2 defines standard `Iterator` / `IntoIterator`-style traits on top of the
-seq08.1 trait catalog and witness model. `Seq<T>` remains a concrete lazy
-sequence type, not the iteration protocol. `IntoSeq` is not part of the stable
-surface model, and `for` must not be hard-coded as concrete range/sequence
-compiler magic.
+Associated type defaults, associated type constructors such as `type Mapped<B>`, and default method bodies are parsed but rejected by semantic analysis. These are current language boundaries; see the [trait diagnostics](../../crates/arcweft-lang-sema/src/diagnostics/trait_diagnostic.rs#L303).
 
 ## trait / impl / where
 
@@ -79,122 +52,19 @@ where
 
 ## Associated type and GAT-like constructors
 
-Arcweft は Rust の associated type 風の設計を使う。seq08.1 は通常の
-associated type requirement / assignment を実装する。`map` の戻り wrapper
-を表す GAT 風の associated type constructor は将来 slice の対象であり、
-seq08.1 の sema では構文を保持したうえで拒否する。
+Trait associated types support required declarations and impl assignments. Generic associated type constructors such as `type Mapped<B>` are parsed but rejected by semantic analysis. The current public `map` surface uses callable overloads and does not depend on GAT support.
 
-The active public `map` surface does not depend on that future GAT slice. It is
-an overload family of ordinary functions with an explicit extension receiver:
+The public `map` surface is a family of ordinary functions with an explicit extension receiver. The published receiver families are `Vec<A> -> Vec<B>`, `Seq<A> -> Seq<B>`, `Array<A, N> -> Array<B, N>`, `Slice<A> -> Vec<B>`, `Option<A> -> Option<B>`, and `Result<A, E> -> Result<B, E>`. The catalog does not publish `map` overloads for `Need`, `Parser`, or `Stream`. See the [published map families](../../crates/arcweft-lang-sema/src/types.rs#L872).
 
-```arcw
-pub fn map<A, B>(mapping: A -> B)(self: Vec<A>) -> Vec<B>
-pub fn map<A, B>(mapping: A -> B)(self: Seq<A>) -> Seq<B>
-pub fn map<A, B>(mapping: A -> B)(self: Slice<A>) -> Vec<B>
-pub fn map<A, B>(mapping: A -> B)(self: Option<A>) -> Option<B>
-pub fn map<A, B, E>(mapping: A -> B)(self: Result<A, E>) -> Result<B, E>
-pub fn map<A, B>(mapping: A -> B)(self: Need<A>) -> Need<B>
-pub fn map<A, B, E>(mapping: A -> B)(self: Parser<A, E>) -> Parser<B, E>
-pub fn map<A, B, E>(mapping: A -> B)(self: Stream<A, E>) -> Stream<B, E>
-```
+The name remains `map`: names such as `map_with`, `map_last`, or `map_values` would expose calling convention rather than operation meaning. Each overload supports `map(f)(value)`, `value |> map(f)`, and `value.map(f)` through the same callable declaration. `Slice<A>` materializes a `Vec<B>` because a borrowed slice cannot own a new mapped backing store. Mapping `Array<A, N>` preserves its checked length without introducing user-written const-generic parameter syntax. `String` is not a collection-map receiver; text transformation uses text-specific operations. The mapping function remains pure and synchronous; effectful concurrent transformation is `traverse`.
 
-The name remains `map`: names such as `map_with`, `map_last`, or `map_values`
-would expose calling convention rather than operation meaning. Each overload
-supports `map(f)(value)`, `value |> map(f)`, and `value.map(f)` through the same
-callable declaration. `Slice<A>` materializes a `Vec<B>` because a borrowed
-slice cannot own a new mapped backing store. The standard callable catalog also
-preserves the checked length when mapping `Array<A, N>` to `Array<B, N>`; this
-does not introduce user-written const-generic parameter syntax. `String` is not
-a collection-map receiver; text transformation uses text-specific operations.
-`Need` and `Stream` mapping is lazy and does not await, poll, or start the
-producer. The mapping function remains pure and synchronous; effectful
-concurrent transformation is `traverse`.
+## Wrapper combinators
 
-The following `Mappable` declaration describes the intended later trait
-abstraction, not a second simultaneously active `map` owner. When associated
-type constructors become executable, the closed overload implementation may be
-replaced atomically by a trait-backed callable catalog. It must preserve the
-same free, pipe, and dot surfaces and must remove the superseded overload rows
-rather than leave competing method and extension identities.
+`Option` and `Result` composition, including `and_then`, `map_err`, and `or_else`, is specified in [Result / Option, `try`, and Context](result-option-context.md). `Need` and `await` behavior is specified in [Await, unary Need, carrier blocks, and `try`](await-need-result.md).
 
-```arcw
-pub trait Mappable {
-    type Item
-    type Mapped<B>
+## `try` and residuals
 
-    fn map<B>(self, f: self.Item -> B) -> self.Mapped<B>
-}
-```
-
-`Option<T>`:
-
-```arcw
-pub impl<T> Mappable for Option<T> {
-    type Item = T
-    type Mapped<B> = Option<B>
-
-    fn map<B>(self, f: T -> B) -> Option<B> {
-        match self {
-            Some(x) => Some(f(x)),
-            None => None,
-        }
-    }
-}
-```
-
-`Result<T, E>`:
-
-```arcw
-pub impl<T, E> Mappable for Result<T, E> {
-    type Item = T
-    type Mapped<B> = Result<B, E>
-
-    fn map<B>(self, f: T -> B) -> Result<B, E> {
-        match self {
-            Ok(x) => Ok(f(x)),
-            Err(e) => Err(e),
-        }
-    }
-}
-```
-
-## Bindable
-
-`and_then` / `flat_map` 用の抽象。
-
-```arcw
-pub trait Bindable: Mappable {
-    type Bound<B>
-
-    fn and_then<B>(self, f: self.Item -> self.Bound<B>) -> self.Bound<B>
-}
-```
-
-Arcweft の標準 wrapper は `map` と `and_then` を持つ。
-
-```text
-Option<T>       map / and_then
-Result<T, E>    map / map_err / and_then / or_else
-Need<T>         map / and_then, but force requires await/poll/select
-Parser<T, E>    map / and_then / alt / many / optional
-Seq<T>          map / filter / flat_map / take / collect
-Stream<T, E>    map / filter / throttle / record, with lifecycle owned by its external capability
-```
-
-## TryLike and `try`
-
-`try` は `TryLike` により支えられる。
-
-```arcw
-pub trait TryLike {
-    type Output
-    type Residual
-
-    fn branch(self) -> ControlFlow<self.Residual, self.Output>
-}
-```
-
-`Result<T, E>` と `Option<T>` が実装する。
+`try expr` handles the `Result` and `Option` residuals described in [Result / Option, `try`, and Context](result-option-context.md). This is an expression-level contract.
 
 ```arcw
 fn selected_route(state: GameState) -> Result<Ref<Flow>, GameError> {
@@ -225,9 +95,7 @@ let bg =
 
 ## Iterator, IntoIterator, and Seq
 
-Arcweft の反復 API は Rust 風の `Iterator` / `IntoIterator` を使う。
-`Seq<T>` は pure lazy sequence を表す concrete type であり、標準 trait を
-実装する通常のコレクション/ビューとして扱う。
+Arcweft の `for` は typed iteration facts を使う。`Seq<T>` は pure lazy sequence を表す concrete type であり、built-in iterator families の1つである。
 
 ```arcw
 pub trait Iterator {
@@ -244,13 +112,9 @@ pub trait IntoIterator {
 }
 ```
 
-標準 prelude は整数 `Range<T>`、`Seq<T>`、`Vec<T>`、`Array<T, N>`、`Slice<T>`
-に `IntoIterator` を提供する。`Range` は要素を materialize せず、runtime
-iterator state として進む。
+Built-in iteration facts cover `Range<T>`, `Seq<T>`, `Stream<T, E>`, `Vec<T>`, `Array<T, N>`, and `Slice<T>`. `Range` advances through runtime iterator state without materializing its elements. See [built-in iteration selection](../../crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_types.rs#L91).
 
-`Iterator` を実装する型は Rust と同じく identity `IntoIterator` として扱う。
-つまり `Hoge: Iterator<Item = T>` なら、明示 `impl IntoIterator for Hoge` を
-書かなくても `IntoIter = Hoge` として `for` の source にできる。
+For other source types, the checker resolves an `IntoIterator` conformance and then an `Iterator` conformance for its associated `IntoIter` type. If no `IntoIterator` conformance exists, an `Iterator` conformance on the source itself serves as identity `IntoIterator`, with `IntoIter = Self`. Typed witness evidence is carried into lowering and runtime execution. See [trait-witness selection](../../crates/arcweft-lang-sema/src/final_analysis/analyzer/statements.rs#L82).
 
 ```arcw
 let labels =
@@ -260,11 +124,6 @@ let labels =
         .map(_.label)
         .collect<Vec<String>>()
 ```
-
-`for` は `IntoIterator` を要求する。型検査は trait catalog の conformance
-evidence を使い、range や sequence の hard-coded fallback は持たない。
-明示 `IntoIterator` conformance がない場合だけ、`Iterator` conformance から
-identity `IntoIterator` evidence を作る。
 
 ```arcw
 for c in choices {
@@ -358,8 +217,7 @@ Range 記法を標準で持つ。
 ..          // full range
 ```
 
-整数 range は `IntoIterator` を実装し、非 materialized な iterator state として
-反復できる。
+Integer ranges are built-in iteration sources and advance through non-materialized runtime iterator state.
 
 ```arcw
 for i in 0..10 {
@@ -412,9 +270,7 @@ let images =
     }
 ```
 
-The current runtime-supported form is `Vec<T>.traverse(capability.fn)
-.parallel(limit = N)`, where the function returns `Need<Result<U, E>>`. It is lowered
-to bounded fanout and returns `Vec<U>` in source order after `try await`.
+The bounded traversal contract is `Vec<T>.traverse(capability.fn).parallel(limit = N)`, where the capability function returns `Need<Result<U, E>>`. The limit bounds in-flight child requests, and the aggregate preserves source order. Awaiting produces `Result<Vec<U>, E>`; `try await` applies the `Need` and `Result` rules described in [Result / Option, `try`, and Context](result-option-context.md). Runtime fanout details are in [Async scheduler and Need](../02-runtime/async-scheduler.md#need-handling).
 
 ## Stream is not Seq
 
@@ -488,5 +344,4 @@ Arcweft は曖昧な method resolution を避けるため、初期仕様では i
 4. blanket impl は core/prelude crate 中心
 5. user blanket impl は将来拡張
 ```
-
 

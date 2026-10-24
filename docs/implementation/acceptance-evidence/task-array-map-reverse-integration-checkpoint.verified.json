@@ -1,0 +1,2676 @@
+{
+  "version": 1,
+  "commit": "29c864bb3f42da7f5948b03682eaa875a0833089",
+  "parent": "5f275a6f91defcddcb50dc52f1559e570089d914",
+  "tree": "af65e6c0908a7b45c8dc1d2f0da3344a7b96e67e",
+  "remote": "29c864bb3f42da7f5948b03682eaa875a0833089",
+  "advertised": "29c864bb3f42da7f5948b03682eaa875a0833089",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-admission-checkpoint.verified.json",
+      "blob": "2dd8708ac0352f65aa63f92884bbf148b158fdd9",
+      "workingBlob": "2dd8708ac0352f65aa63f92884bbf148b158fdd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-admission-current-reuse.json",
+      "blob": "97d2739d9d934a97caad40644e1f25d329eecb80",
+      "workingBlob": "97d2739d9d934a97caad40644e1f25d329eecb80"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-admission-final.graph.json",
+      "blob": "877d0465732bd901788647f51898a3ea537805e1",
+      "workingBlob": "877d0465732bd901788647f51898a3ea537805e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-admission-final.source-freeze.json",
+      "blob": "9a17f4414fe0a536ae51a3f94c47a3fee7070444",
+      "workingBlob": "9a17f4414fe0a536ae51a3f94c47a3fee7070444"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-admission-test-correction.json",
+      "blob": "beb0309b82e7a9aa961b7cb65efb4b0da4439871",
+      "workingBlob": "beb0309b82e7a9aa961b7cb65efb4b0da4439871"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-cli-companion-final.graph.json",
+      "blob": "2d1aefe3199e80a79f347917b479c84c05f6d471",
+      "workingBlob": "2d1aefe3199e80a79f347917b479c84c05f6d471"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-cli-companion-final.pins.json",
+      "blob": "5f413e8d2abe3626b8dc4258a6661d7e5cd532a6",
+      "workingBlob": "5f413e8d2abe3626b8dc4258a6661d7e5cd532a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-cli-companion-final.source-freeze.json",
+      "blob": "dfe7006da26fc7e450c11fb3de61ff1bdcd2a3a6",
+      "workingBlob": "dfe7006da26fc7e450c11fb3de61ff1bdcd2a3a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-library-checkpoint.verified.json",
+      "blob": "915ee985648f36f6bdaa9296dbc6524ce9627770",
+      "workingBlob": "915ee985648f36f6bdaa9296dbc6524ce9627770"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.initial.json",
+      "blob": "0e6088a06df94a68139916ad6a2ce411c9c3db94",
+      "workingBlob": "0e6088a06df94a68139916ad6a2ce411c9c3db94"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json",
+      "blob": "f7ffa7bb6e17bada3e4a2c7cb5685c9398872bd5",
+      "workingBlob": "f7ffa7bb6e17bada3e4a2c7cb5685c9398872bd5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-combined-execution.initial.json",
+      "blob": "e48043cbcea9d019dacf56fb922ec8a1b9923004",
+      "workingBlob": "e48043cbcea9d019dacf56fb922ec8a1b9923004"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-combined-execution.json",
+      "blob": "404d418120e808252ea7d2f1bb8cd5ec3922dec7",
+      "workingBlob": "404d418120e808252ea7d2f1bb8cd5ec3922dec7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-generic-current-execution.initial.json",
+      "blob": "df2866d15c727d9bb6a9424f18048a32d7d2f01d",
+      "workingBlob": "df2866d15c727d9bb6a9424f18048a32d7d2f01d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-generic-current-execution.json",
+      "blob": "b5024a60069b919ae0a529149af45b49acc0a49d",
+      "workingBlob": "b5024a60069b919ae0a529149af45b49acc0a49d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-integration-checkpoint.evidence-integrity.json",
+      "blob": "cd98f76d5faa29ebde560cf1837aa3e62c6aa603",
+      "workingBlob": "cd98f76d5faa29ebde560cf1837aa3e62c6aa603"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-integration-checkpoint.graph.json",
+      "blob": "8d1b80bcf97db35f29d3bdeb82f53c179d004d00",
+      "workingBlob": "8d1b80bcf97db35f29d3bdeb82f53c179d004d00"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-integration-checkpoint.source-freeze.json",
+      "blob": "bba1a39059bc6ba717401ef1ce0e9d2299928bb8",
+      "workingBlob": "bba1a39059bc6ba717401ef1ce0e9d2299928bb8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-integration-plan.json",
+      "blob": "9895cc4d1eec33a644b0892a7414d43926d06960",
+      "workingBlob": "9895cc4d1eec33a644b0892a7414d43926d06960"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-integration-summary.initial.json",
+      "blob": "8c468f201a49be939d95d1eaaf3c83d30ff8a3b5",
+      "workingBlob": "8c468f201a49be939d95d1eaaf3c83d30ff8a3b5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-integration-summary.json",
+      "blob": "ba98269d36b68da290b21752e832b5e79536a0f4",
+      "workingBlob": "ba98269d36b68da290b21752e832b5e79536a0f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice1-r2668.coverage.json",
+      "blob": "dc542e7bb9c484c4a801f4803b5250fdd1cc7a0b",
+      "workingBlob": "dc542e7bb9c484c4a801f4803b5250fdd1cc7a0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice1-r2668.execution-integrity.json",
+      "blob": "bdb303423f2f1597cbffe86bfb72d97af302df35",
+      "workingBlob": "bdb303423f2f1597cbffe86bfb72d97af302df35"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice1-r2668.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice1-r2668.pins.json",
+      "blob": "3b52611b5b211ac162cc2dd43aaf52736255e0f3",
+      "workingBlob": "3b52611b5b211ac162cc2dd43aaf52736255e0f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice1-r2668.source-freeze.json",
+      "blob": "3552a64e1d4c50761f351a2bdd7605e23ad444b7",
+      "workingBlob": "3552a64e1d4c50761f351a2bdd7605e23ad444b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice10-r2686.coverage.json",
+      "blob": "1e31232abaf311e6c74f4c51445ae15a39f29ccf",
+      "workingBlob": "1e31232abaf311e6c74f4c51445ae15a39f29ccf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice10-r2686.execution-integrity.json",
+      "blob": "68fd9761f6207c791444f06d608ec6776fa45a7e",
+      "workingBlob": "68fd9761f6207c791444f06d608ec6776fa45a7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice10-r2686.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice10-r2686.pins.json",
+      "blob": "a26b04995cdb04bcbcdbada3802bc1d4f8d6b2ee",
+      "workingBlob": "a26b04995cdb04bcbcdbada3802bc1d4f8d6b2ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice10-r2686.source-freeze.json",
+      "blob": "9c37f377075d180bdd19b415ceea268d0ecab438",
+      "workingBlob": "9c37f377075d180bdd19b415ceea268d0ecab438"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice11-r2688.coverage.json",
+      "blob": "5f964778fdc085e37184919005e1b2cfbc5e2bc0",
+      "workingBlob": "5f964778fdc085e37184919005e1b2cfbc5e2bc0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice11-r2688.execution-integrity.json",
+      "blob": "0facfc38639931cfc81593551f4f248bdc9d61bd",
+      "workingBlob": "0facfc38639931cfc81593551f4f248bdc9d61bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice11-r2688.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice11-r2688.pins.json",
+      "blob": "422e6a8b825abbcf8de602301d951f51cd5e584e",
+      "workingBlob": "422e6a8b825abbcf8de602301d951f51cd5e584e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice11-r2688.source-freeze.json",
+      "blob": "e33d827e40560ad66a32433572de2b59ae07c0e5",
+      "workingBlob": "e33d827e40560ad66a32433572de2b59ae07c0e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice12-r2690.coverage.json",
+      "blob": "a32da35db649e0733199499341dc234e3da6ef88",
+      "workingBlob": "a32da35db649e0733199499341dc234e3da6ef88"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice12-r2690.execution-integrity.json",
+      "blob": "6eb0f1d479a5b2bdf9ba9461d7b1ea584c0062d0",
+      "workingBlob": "6eb0f1d479a5b2bdf9ba9461d7b1ea584c0062d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice12-r2690.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice12-r2690.pins.json",
+      "blob": "7625b586fe6a638d87ee44cad2db969b66d817d7",
+      "workingBlob": "7625b586fe6a638d87ee44cad2db969b66d817d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice12-r2690.source-freeze.json",
+      "blob": "a51a81abf66a8b309068c4b04fa7d2b4c5cd758d",
+      "workingBlob": "a51a81abf66a8b309068c4b04fa7d2b4c5cd758d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice13-r2692.coverage.json",
+      "blob": "d86594fc28ba89b1747ee682650486fe881a5d04",
+      "workingBlob": "d86594fc28ba89b1747ee682650486fe881a5d04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice13-r2692.execution-integrity.json",
+      "blob": "430abb94a35d1f746c067f0f4e0d04eeb979595b",
+      "workingBlob": "430abb94a35d1f746c067f0f4e0d04eeb979595b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice13-r2692.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice13-r2692.pins.json",
+      "blob": "dbad919287e075469400b3c50aad8566e0f10760",
+      "workingBlob": "dbad919287e075469400b3c50aad8566e0f10760"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice13-r2692.source-freeze.json",
+      "blob": "f73e6b2c1632c39fff304a76d73f4deed18240ff",
+      "workingBlob": "f73e6b2c1632c39fff304a76d73f4deed18240ff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice14-r2694.coverage.json",
+      "blob": "2fb7eb6a5d633e6e7550d82398e5e1b9af05bf89",
+      "workingBlob": "2fb7eb6a5d633e6e7550d82398e5e1b9af05bf89"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice14-r2694.execution-integrity.json",
+      "blob": "53e02f83dd231bd83e9a85187e337feac7f1997c",
+      "workingBlob": "53e02f83dd231bd83e9a85187e337feac7f1997c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice14-r2694.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice14-r2694.pins.json",
+      "blob": "29334b04db906e611564701d3d23163384be2a18",
+      "workingBlob": "29334b04db906e611564701d3d23163384be2a18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice14-r2694.source-freeze.json",
+      "blob": "dba3d08c1f8ab8611a508f045bc091c50483cc08",
+      "workingBlob": "dba3d08c1f8ab8611a508f045bc091c50483cc08"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice15-r2696.coverage.json",
+      "blob": "8ff01fb03a8f9e8812fef41d37fe4e461abf0b76",
+      "workingBlob": "8ff01fb03a8f9e8812fef41d37fe4e461abf0b76"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice15-r2696.execution-integrity.json",
+      "blob": "9065e550312e090ffb59e2b1a03646036dc308db",
+      "workingBlob": "9065e550312e090ffb59e2b1a03646036dc308db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice15-r2696.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice15-r2696.pins.json",
+      "blob": "a1f6afb8f8c65897671fc0d4296f8821e06d986e",
+      "workingBlob": "a1f6afb8f8c65897671fc0d4296f8821e06d986e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice15-r2696.source-freeze.json",
+      "blob": "2a6a8891c8125ca74eab27d842b0dce6c5e5be71",
+      "workingBlob": "2a6a8891c8125ca74eab27d842b0dce6c5e5be71"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice16-r2698.coverage.json",
+      "blob": "df9f0b847603a09d5124f223b43972c51b92c206",
+      "workingBlob": "df9f0b847603a09d5124f223b43972c51b92c206"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice16-r2698.execution-integrity.json",
+      "blob": "0992e898348d40a0448b055f6f5e5de84b3e948b",
+      "workingBlob": "0992e898348d40a0448b055f6f5e5de84b3e948b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice16-r2698.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice16-r2698.pins.json",
+      "blob": "095e86f42e25647c1e8ae842638ef2d825d2df23",
+      "workingBlob": "095e86f42e25647c1e8ae842638ef2d825d2df23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice16-r2698.source-freeze.json",
+      "blob": "5d249f64687bede12094e9663f7f48958740f5fb",
+      "workingBlob": "5d249f64687bede12094e9663f7f48958740f5fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice17-r2700.coverage.json",
+      "blob": "a9a1c74f98aae26e3297fc640599f11fbc44e19e",
+      "workingBlob": "a9a1c74f98aae26e3297fc640599f11fbc44e19e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice17-r2700.execution-integrity.json",
+      "blob": "531120df007dda4aeb8e521baaa1c2f1451e8e60",
+      "workingBlob": "531120df007dda4aeb8e521baaa1c2f1451e8e60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice17-r2700.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice17-r2700.pins.json",
+      "blob": "285723e2dea8fd6d65433fe751dc8d3c4f034ab5",
+      "workingBlob": "285723e2dea8fd6d65433fe751dc8d3c4f034ab5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice17-r2700.source-freeze.json",
+      "blob": "d7c191d38fb039b473646d59ec6f7d97078a8bcc",
+      "workingBlob": "d7c191d38fb039b473646d59ec6f7d97078a8bcc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice18-r2702.coverage.json",
+      "blob": "e26ac55a386e523b4fadd334c788cb6ce02dfe47",
+      "workingBlob": "e26ac55a386e523b4fadd334c788cb6ce02dfe47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice18-r2702.execution-integrity.json",
+      "blob": "62e90287c5ee0888bb78f246ca9cc8465dabdd36",
+      "workingBlob": "62e90287c5ee0888bb78f246ca9cc8465dabdd36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice18-r2702.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice18-r2702.pins.json",
+      "blob": "d58ec4c95b808e0d3be34325160e01028c264446",
+      "workingBlob": "d58ec4c95b808e0d3be34325160e01028c264446"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice18-r2702.source-freeze.json",
+      "blob": "e7c03e5b2a135a67f215bbb237893a1e46c5b3a9",
+      "workingBlob": "e7c03e5b2a135a67f215bbb237893a1e46c5b3a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice19-r2704.coverage.json",
+      "blob": "3ebea48b7d14476da05e5e2cd1a634d5c63f848f",
+      "workingBlob": "3ebea48b7d14476da05e5e2cd1a634d5c63f848f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice19-r2704.execution-integrity.json",
+      "blob": "5fc3278b38c7fdbe11f8e5cf10bfd4f088765a7d",
+      "workingBlob": "5fc3278b38c7fdbe11f8e5cf10bfd4f088765a7d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice19-r2704.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice19-r2704.pins.json",
+      "blob": "2846332155364f34e6f26d2681c6488c4b9907fa",
+      "workingBlob": "2846332155364f34e6f26d2681c6488c4b9907fa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice19-r2704.source-freeze.json",
+      "blob": "38119498d670f5e579619e98b0f37575099f2c56",
+      "workingBlob": "38119498d670f5e579619e98b0f37575099f2c56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice2-r2670.coverage.json",
+      "blob": "6f54565340850d305b87b6da64a4ba8b5c13d9ad",
+      "workingBlob": "6f54565340850d305b87b6da64a4ba8b5c13d9ad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice2-r2670.execution-integrity.json",
+      "blob": "a141b90f828abcc879d9a6f1c557af4b4255b2ce",
+      "workingBlob": "a141b90f828abcc879d9a6f1c557af4b4255b2ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice2-r2670.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice2-r2670.pins.json",
+      "blob": "d9c54338e8a346751528b9b0307f4fa173201dc4",
+      "workingBlob": "d9c54338e8a346751528b9b0307f4fa173201dc4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice2-r2670.source-freeze.json",
+      "blob": "23e8bdb4a5e9f6f7d002978abc94c16effae503d",
+      "workingBlob": "23e8bdb4a5e9f6f7d002978abc94c16effae503d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice20-r2706.coverage.json",
+      "blob": "cdb2b199d70a02f38ac1ca2081187a9edbce57f2",
+      "workingBlob": "cdb2b199d70a02f38ac1ca2081187a9edbce57f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice20-r2706.execution-integrity.json",
+      "blob": "8ae7e42f7e151b2aa26652dae11a03b2da2e0e2e",
+      "workingBlob": "8ae7e42f7e151b2aa26652dae11a03b2da2e0e2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice20-r2706.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice20-r2706.pins.json",
+      "blob": "e22c67d32a27b53d7a8ce0fe3b5b14d55126f968",
+      "workingBlob": "e22c67d32a27b53d7a8ce0fe3b5b14d55126f968"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice20-r2706.source-freeze.json",
+      "blob": "2759f9b6cf2bd8fb25855d73b3c65129f8fce994",
+      "workingBlob": "2759f9b6cf2bd8fb25855d73b3c65129f8fce994"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice21-r2708.coverage.json",
+      "blob": "46ea33151ed9e4462736574efdffbe29d698b733",
+      "workingBlob": "46ea33151ed9e4462736574efdffbe29d698b733"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice21-r2708.execution-integrity.json",
+      "blob": "128511bb4ab9a14f06d4d3610517ff553a51017e",
+      "workingBlob": "128511bb4ab9a14f06d4d3610517ff553a51017e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice21-r2708.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice21-r2708.pins.json",
+      "blob": "e57ff2eb5c53769df4afdc84ae7c608672048938",
+      "workingBlob": "e57ff2eb5c53769df4afdc84ae7c608672048938"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice21-r2708.source-freeze.json",
+      "blob": "6aaec1ebe6097008cb442c9b552936d72be8c5a9",
+      "workingBlob": "6aaec1ebe6097008cb442c9b552936d72be8c5a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice22-r2710.coverage.json",
+      "blob": "b8de30aa39654ed79bab23e46f23d0983d1224b6",
+      "workingBlob": "b8de30aa39654ed79bab23e46f23d0983d1224b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice22-r2710.execution-integrity.json",
+      "blob": "28764815ed60abeb07be5be5f2086f0e021b8efc",
+      "workingBlob": "28764815ed60abeb07be5be5f2086f0e021b8efc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice22-r2710.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice22-r2710.pins.json",
+      "blob": "28bc8811fc37cf1018ae9f793b18e91bbaa93149",
+      "workingBlob": "28bc8811fc37cf1018ae9f793b18e91bbaa93149"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice22-r2710.source-freeze.json",
+      "blob": "a4a3f070b660e55b928633077de3ebdf5bcaff48",
+      "workingBlob": "a4a3f070b660e55b928633077de3ebdf5bcaff48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice23-r2712.coverage.json",
+      "blob": "af91f338b8787966584e1fcafd2f2c52337151fa",
+      "workingBlob": "af91f338b8787966584e1fcafd2f2c52337151fa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice23-r2712.execution-integrity.json",
+      "blob": "1dcc128ed873c0793ef25e9cf2052aeee8afabcf",
+      "workingBlob": "1dcc128ed873c0793ef25e9cf2052aeee8afabcf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice23-r2712.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice23-r2712.pins.json",
+      "blob": "0ccaa1ec7264e94d7a4564c3662ae24231821390",
+      "workingBlob": "0ccaa1ec7264e94d7a4564c3662ae24231821390"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice23-r2712.source-freeze.json",
+      "blob": "cc56d6a5ae1665b63e6a0c6e08529d8927c1b988",
+      "workingBlob": "cc56d6a5ae1665b63e6a0c6e08529d8927c1b988"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice24-r2714.coverage.json",
+      "blob": "c067cb3ee28beb24dba6742f72d724cb9d9dc1b4",
+      "workingBlob": "c067cb3ee28beb24dba6742f72d724cb9d9dc1b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice24-r2714.execution-integrity.json",
+      "blob": "d3caff5d6aed32a2a8edcb62d5ea714efa808a20",
+      "workingBlob": "d3caff5d6aed32a2a8edcb62d5ea714efa808a20"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice24-r2714.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice24-r2714.pins.json",
+      "blob": "295966b948c36fc8c8aeee47e56eb0331eb52b81",
+      "workingBlob": "295966b948c36fc8c8aeee47e56eb0331eb52b81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice24-r2714.source-freeze.json",
+      "blob": "eb13889b32f1ec308907f86ef783c4ee36f51be0",
+      "workingBlob": "eb13889b32f1ec308907f86ef783c4ee36f51be0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice25-r2716.coverage.json",
+      "blob": "b6c1520e9b53f3b8c1f40dce5d56b412fe2d6f43",
+      "workingBlob": "b6c1520e9b53f3b8c1f40dce5d56b412fe2d6f43"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice25-r2716.execution-integrity.json",
+      "blob": "4410a6c82bc156b96f03a748ea8853e81f35b4de",
+      "workingBlob": "4410a6c82bc156b96f03a748ea8853e81f35b4de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice25-r2716.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice25-r2716.pins.json",
+      "blob": "673a08fad2e1d4541e5a1ad9f01ac409d47efb16",
+      "workingBlob": "673a08fad2e1d4541e5a1ad9f01ac409d47efb16"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice25-r2716.source-freeze.json",
+      "blob": "11abf72a50306b2c012db4a816627c2764a7cf03",
+      "workingBlob": "11abf72a50306b2c012db4a816627c2764a7cf03"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice26-r2718.coverage.json",
+      "blob": "a2ad7e503e003e012fe08437ca21c5a0407d390d",
+      "workingBlob": "a2ad7e503e003e012fe08437ca21c5a0407d390d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice26-r2718.execution-integrity.json",
+      "blob": "49cad8fa31d2c6291e129f5cc339e1b9580af88d",
+      "workingBlob": "49cad8fa31d2c6291e129f5cc339e1b9580af88d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice26-r2718.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice26-r2718.pins.json",
+      "blob": "f8ff59547c006166f207d97ea62a40ade0c41eac",
+      "workingBlob": "f8ff59547c006166f207d97ea62a40ade0c41eac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice26-r2718.source-freeze.json",
+      "blob": "0affd618fc00267c5f122c78f022a9a0320fe871",
+      "workingBlob": "0affd618fc00267c5f122c78f022a9a0320fe871"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice27-r2720.coverage.json",
+      "blob": "c88e10c8c3e61999bd9f9677c77dee9708774dc3",
+      "workingBlob": "c88e10c8c3e61999bd9f9677c77dee9708774dc3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice27-r2720.execution-integrity.json",
+      "blob": "89ba24814c8f019cab6008738a561ca2f192f2f4",
+      "workingBlob": "89ba24814c8f019cab6008738a561ca2f192f2f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice27-r2720.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice27-r2720.pins.json",
+      "blob": "5ac3063312e8b15ed168a1749e0d9c562ab85559",
+      "workingBlob": "5ac3063312e8b15ed168a1749e0d9c562ab85559"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice27-r2720.source-freeze.json",
+      "blob": "3a34132163242a4834c535a67a46a3095af87ab0",
+      "workingBlob": "3a34132163242a4834c535a67a46a3095af87ab0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice28-r2722.coverage.json",
+      "blob": "072f2bb8d5b8fa05a1896a7cf76937ffb36ed91b",
+      "workingBlob": "072f2bb8d5b8fa05a1896a7cf76937ffb36ed91b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice28-r2722.execution-integrity.json",
+      "blob": "0d2ec8a35604604e72d7e64e2068a52da35c3615",
+      "workingBlob": "0d2ec8a35604604e72d7e64e2068a52da35c3615"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice28-r2722.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice28-r2722.pins.json",
+      "blob": "2531c0bc38ac0dda55fb65bed2b2cb3c8effeb7b",
+      "workingBlob": "2531c0bc38ac0dda55fb65bed2b2cb3c8effeb7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice28-r2722.source-freeze.json",
+      "blob": "57999afd56f060ac6b4c027060503d152bba3275",
+      "workingBlob": "57999afd56f060ac6b4c027060503d152bba3275"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice29-r2724.coverage.json",
+      "blob": "eca88cd12ef5e7d3a8b191f9758c95183e50829b",
+      "workingBlob": "eca88cd12ef5e7d3a8b191f9758c95183e50829b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice29-r2724.execution-integrity.json",
+      "blob": "40a49e5232e7a73f59610e4497b439f9c2d26556",
+      "workingBlob": "40a49e5232e7a73f59610e4497b439f9c2d26556"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice29-r2724.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice29-r2724.pins.json",
+      "blob": "60513a3eafb46913a10a8272c0c68121018f07aa",
+      "workingBlob": "60513a3eafb46913a10a8272c0c68121018f07aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice29-r2724.source-freeze.json",
+      "blob": "ab705d3f12891e33f2230bd3ebecb54dd3d6e99e",
+      "workingBlob": "ab705d3f12891e33f2230bd3ebecb54dd3d6e99e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice3-r2672.coverage.json",
+      "blob": "77dc22e7dd2ad695e1e7bc34e5cb27a5661e36fd",
+      "workingBlob": "77dc22e7dd2ad695e1e7bc34e5cb27a5661e36fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice3-r2672.execution-integrity.json",
+      "blob": "4364e72bcb426c9db8f77292cd51cce08ab10e43",
+      "workingBlob": "4364e72bcb426c9db8f77292cd51cce08ab10e43"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice3-r2672.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice3-r2672.pins.json",
+      "blob": "24c7ac5f1a764ab4384f8e35960f6a531e6bd5de",
+      "workingBlob": "24c7ac5f1a764ab4384f8e35960f6a531e6bd5de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice3-r2672.source-freeze.json",
+      "blob": "c711337fd4f45b2235df88aebe24240407ccd7c3",
+      "workingBlob": "c711337fd4f45b2235df88aebe24240407ccd7c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice30-r2726.coverage.json",
+      "blob": "19e93455b22f1c9ff09f47ac119a7d8912c5844b",
+      "workingBlob": "19e93455b22f1c9ff09f47ac119a7d8912c5844b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice30-r2726.execution-integrity.json",
+      "blob": "f4b34ece95651c591992e2290edc35a696097e81",
+      "workingBlob": "f4b34ece95651c591992e2290edc35a696097e81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice30-r2726.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice30-r2726.pins.json",
+      "blob": "8f1a20059ec1f9906d1dc4ccd4efe266556737ce",
+      "workingBlob": "8f1a20059ec1f9906d1dc4ccd4efe266556737ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice30-r2726.source-freeze.json",
+      "blob": "f77f3904c068b5232ed22465e9e7f5750ad65f80",
+      "workingBlob": "f77f3904c068b5232ed22465e9e7f5750ad65f80"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice31-r2728.coverage.json",
+      "blob": "41c1dbf0d9c3db22db8d35ecfc5d03fe50a012fd",
+      "workingBlob": "41c1dbf0d9c3db22db8d35ecfc5d03fe50a012fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice31-r2728.execution-integrity.json",
+      "blob": "a045b7d9e3891f2f3e7108d841c4d5259602bcb9",
+      "workingBlob": "a045b7d9e3891f2f3e7108d841c4d5259602bcb9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice31-r2728.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice31-r2728.pins.json",
+      "blob": "f5fe0fed279190f694095b76c727ad341744d544",
+      "workingBlob": "f5fe0fed279190f694095b76c727ad341744d544"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice31-r2728.source-freeze.json",
+      "blob": "2eed5066475c4f0cc6c57afa92f264f9b4b6263e",
+      "workingBlob": "2eed5066475c4f0cc6c57afa92f264f9b4b6263e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice32-r2730.coverage.json",
+      "blob": "e9cf86d7d67aa363b79d6308d6a1ba92c2dcc251",
+      "workingBlob": "e9cf86d7d67aa363b79d6308d6a1ba92c2dcc251"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice32-r2730.execution-integrity.json",
+      "blob": "3459f59095f0133967a63d3b294d911aeefd8469",
+      "workingBlob": "3459f59095f0133967a63d3b294d911aeefd8469"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice32-r2730.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice32-r2730.pins.json",
+      "blob": "c9b5df4a02cb30eb5c7c9f8b2bb6396379e196d7",
+      "workingBlob": "c9b5df4a02cb30eb5c7c9f8b2bb6396379e196d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice32-r2730.source-freeze.json",
+      "blob": "8c368deedca23dc1c2ab96260411437f3ad7bfda",
+      "workingBlob": "8c368deedca23dc1c2ab96260411437f3ad7bfda"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice33-r2732.coverage.json",
+      "blob": "c98006aa2aa6a2e47ee7d837c187ef1b31cf8294",
+      "workingBlob": "c98006aa2aa6a2e47ee7d837c187ef1b31cf8294"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice33-r2732.execution-integrity.json",
+      "blob": "2640427dcb85ecc19c1b903d414ca0f4cb011c33",
+      "workingBlob": "2640427dcb85ecc19c1b903d414ca0f4cb011c33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice33-r2732.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice33-r2732.pins.json",
+      "blob": "f7740f7d3103a85a3ec9023e7f153c1b779e91e1",
+      "workingBlob": "f7740f7d3103a85a3ec9023e7f153c1b779e91e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice33-r2732.source-freeze.json",
+      "blob": "bad70f3ca672d9fa01e1b50c7d6392f3865a3e7b",
+      "workingBlob": "bad70f3ca672d9fa01e1b50c7d6392f3865a3e7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice34-r2734.coverage.json",
+      "blob": "2a331c02b475e2e9722be40cf63a7f4daa707fcf",
+      "workingBlob": "2a331c02b475e2e9722be40cf63a7f4daa707fcf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice34-r2734.execution-integrity.json",
+      "blob": "aa3de73ad7e8b3e4ea280893dd98450ef5647f47",
+      "workingBlob": "aa3de73ad7e8b3e4ea280893dd98450ef5647f47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice34-r2734.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice34-r2734.pins.json",
+      "blob": "86e5d0b67fb565e1f6720fd5fd5c7376bbcb740d",
+      "workingBlob": "86e5d0b67fb565e1f6720fd5fd5c7376bbcb740d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice34-r2734.source-freeze.json",
+      "blob": "984ab0afa04ae1c43c72aeba7f959c2045cfd0d2",
+      "workingBlob": "984ab0afa04ae1c43c72aeba7f959c2045cfd0d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice35-r2736.coverage.json",
+      "blob": "fa70db30e87be51792f93a266f917f77ddc4cbc6",
+      "workingBlob": "fa70db30e87be51792f93a266f917f77ddc4cbc6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice35-r2736.execution-integrity.json",
+      "blob": "a8b7536811fe29e97e10e1ee8d9791e9b06dcb12",
+      "workingBlob": "a8b7536811fe29e97e10e1ee8d9791e9b06dcb12"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice35-r2736.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice35-r2736.pins.json",
+      "blob": "96948da43207795e30dda805a5b626838e96fd62",
+      "workingBlob": "96948da43207795e30dda805a5b626838e96fd62"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice35-r2736.source-freeze.json",
+      "blob": "a0e49b7c8c602ab81baa0f212581ec065ad18419",
+      "workingBlob": "a0e49b7c8c602ab81baa0f212581ec065ad18419"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice36-r2738.coverage.json",
+      "blob": "b6aa4bf2c49f8a0d959b435fd7d6d4470f12e70b",
+      "workingBlob": "b6aa4bf2c49f8a0d959b435fd7d6d4470f12e70b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice36-r2738.execution-integrity.json",
+      "blob": "2d10f321419082979b3aaa0e8fcf3ed9402e28a6",
+      "workingBlob": "2d10f321419082979b3aaa0e8fcf3ed9402e28a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice36-r2738.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice36-r2738.pins.json",
+      "blob": "32f6b3e5edbc7cea7cbc93c8e8cbb43735887a08",
+      "workingBlob": "32f6b3e5edbc7cea7cbc93c8e8cbb43735887a08"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice36-r2738.source-freeze.json",
+      "blob": "c3c2511cb6bd6b7f2b2c4e3b1aa10d96b26b595c",
+      "workingBlob": "c3c2511cb6bd6b7f2b2c4e3b1aa10d96b26b595c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice37-r2740.coverage.json",
+      "blob": "ff6a40fc4dd6f968cb6c0e3c6d9db29967f0ba4f",
+      "workingBlob": "ff6a40fc4dd6f968cb6c0e3c6d9db29967f0ba4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice37-r2740.execution-integrity.json",
+      "blob": "8c28db19096bd4dd23c71340436a780cddde81cd",
+      "workingBlob": "8c28db19096bd4dd23c71340436a780cddde81cd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice37-r2740.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice37-r2740.pins.json",
+      "blob": "2cb4d7d6eb1cd8efce6d6b6cbef234428bc0137a",
+      "workingBlob": "2cb4d7d6eb1cd8efce6d6b6cbef234428bc0137a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice37-r2740.source-freeze.json",
+      "blob": "fc133718917b5f5acabf0b031374e03a8c51753d",
+      "workingBlob": "fc133718917b5f5acabf0b031374e03a8c51753d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice38-r2742.coverage.json",
+      "blob": "58444826b7d3b3898d09923abcc7ef5214c5fe45",
+      "workingBlob": "58444826b7d3b3898d09923abcc7ef5214c5fe45"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice38-r2742.execution-integrity.json",
+      "blob": "e041f41a321c0df63f5b515e56ea57b06fda9e07",
+      "workingBlob": "e041f41a321c0df63f5b515e56ea57b06fda9e07"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice38-r2742.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice38-r2742.pins.json",
+      "blob": "32e29aa9c4c250edc5fd5d2b69147b0ea167bca7",
+      "workingBlob": "32e29aa9c4c250edc5fd5d2b69147b0ea167bca7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice38-r2742.source-freeze.json",
+      "blob": "a19e8e78d49f4f29cbbf82cdec7c760bdbfa070f",
+      "workingBlob": "a19e8e78d49f4f29cbbf82cdec7c760bdbfa070f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice39-r2744.coverage.json",
+      "blob": "6bd17f760f31faf4023310a7d1df3cc87946de0d",
+      "workingBlob": "6bd17f760f31faf4023310a7d1df3cc87946de0d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice39-r2744.execution-integrity.json",
+      "blob": "b4de818eae0282bf25d25141f3201ea800640e8e",
+      "workingBlob": "b4de818eae0282bf25d25141f3201ea800640e8e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice39-r2744.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice39-r2744.pins.json",
+      "blob": "c03043244c416e9e39313c58fc20c268bafd86a4",
+      "workingBlob": "c03043244c416e9e39313c58fc20c268bafd86a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice39-r2744.source-freeze.json",
+      "blob": "004e4ad5196a243bb7647fa0370a54ac78f6623f",
+      "workingBlob": "004e4ad5196a243bb7647fa0370a54ac78f6623f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice4-r2674.coverage.json",
+      "blob": "f31e6c42babd49656e5518950ab53e7eb3a28f2e",
+      "workingBlob": "f31e6c42babd49656e5518950ab53e7eb3a28f2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice4-r2674.execution-integrity.json",
+      "blob": "0b4c2a20bca8dc067786dbe4925c5de7a79246b1",
+      "workingBlob": "0b4c2a20bca8dc067786dbe4925c5de7a79246b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice4-r2674.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice4-r2674.pins.json",
+      "blob": "c41715648c56406469509aa294dcbaa89fcc42a2",
+      "workingBlob": "c41715648c56406469509aa294dcbaa89fcc42a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice4-r2674.source-freeze.json",
+      "blob": "1129f4bde9e306b45ba888f49aad42bcebdc7486",
+      "workingBlob": "1129f4bde9e306b45ba888f49aad42bcebdc7486"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice40-r2746.coverage.json",
+      "blob": "686bd213c0e71c856cbd76151b969672fe0b2796",
+      "workingBlob": "686bd213c0e71c856cbd76151b969672fe0b2796"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice40-r2746.execution-integrity.json",
+      "blob": "2ba449ac0c4f18cf35a3a8aaadf55fa1cc5ac602",
+      "workingBlob": "2ba449ac0c4f18cf35a3a8aaadf55fa1cc5ac602"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice40-r2746.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice40-r2746.pins.json",
+      "blob": "f4d881a5957f98fd7fc44734483e899c0ebb5799",
+      "workingBlob": "f4d881a5957f98fd7fc44734483e899c0ebb5799"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice40-r2746.source-freeze.json",
+      "blob": "4618916816f5a290a9bfa4815485b430ee1e7f96",
+      "workingBlob": "4618916816f5a290a9bfa4815485b430ee1e7f96"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice41-r2748.coverage.json",
+      "blob": "d6ab029df662af1480ae7983b1faba5495ca770e",
+      "workingBlob": "d6ab029df662af1480ae7983b1faba5495ca770e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice41-r2748.execution-integrity.json",
+      "blob": "918fc24ea5876a11a4b9b836a47202d4df83db02",
+      "workingBlob": "918fc24ea5876a11a4b9b836a47202d4df83db02"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice41-r2748.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice41-r2748.pins.json",
+      "blob": "a7f2a7fbfbe09b0c603fb4d1075066326fc66bd1",
+      "workingBlob": "a7f2a7fbfbe09b0c603fb4d1075066326fc66bd1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice41-r2748.source-freeze.json",
+      "blob": "7bb358cd9d0c3ccee6d9f0e6d40356c3a5264166",
+      "workingBlob": "7bb358cd9d0c3ccee6d9f0e6d40356c3a5264166"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice42-r2750.coverage.json",
+      "blob": "9bc8f73c502fbc77ebdb906443740b88ca43c9df",
+      "workingBlob": "9bc8f73c502fbc77ebdb906443740b88ca43c9df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice42-r2750.execution-integrity.json",
+      "blob": "a9772c3d445d3da39251dd080874ebd7138cd3f3",
+      "workingBlob": "a9772c3d445d3da39251dd080874ebd7138cd3f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice42-r2750.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice42-r2750.pins.json",
+      "blob": "7a0181d3f1d374c6f93e3b501f3fe0b521d79bf4",
+      "workingBlob": "7a0181d3f1d374c6f93e3b501f3fe0b521d79bf4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice42-r2750.source-freeze.json",
+      "blob": "8231b12ce7d9812d42d1a2a75996776ecd1ab6c5",
+      "workingBlob": "8231b12ce7d9812d42d1a2a75996776ecd1ab6c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice43-r2752.coverage.json",
+      "blob": "a94939dd7bf5cde47c6f6f9e998c4921311446f5",
+      "workingBlob": "a94939dd7bf5cde47c6f6f9e998c4921311446f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice43-r2752.execution-integrity.json",
+      "blob": "cbad5029baad4b77d1db8be6657f81f7b967c581",
+      "workingBlob": "cbad5029baad4b77d1db8be6657f81f7b967c581"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice43-r2752.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice43-r2752.pins.json",
+      "blob": "347e8336d2ac4dcea44a65322c8a8e324a9fef57",
+      "workingBlob": "347e8336d2ac4dcea44a65322c8a8e324a9fef57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice43-r2752.source-freeze.json",
+      "blob": "5ab8665f1c4d23f1f38e373274e7509cea9dae33",
+      "workingBlob": "5ab8665f1c4d23f1f38e373274e7509cea9dae33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice44-r2754.coverage.json",
+      "blob": "164572cdfae156f4e9b205d8862d71b68c7483f0",
+      "workingBlob": "164572cdfae156f4e9b205d8862d71b68c7483f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice44-r2754.execution-integrity.json",
+      "blob": "88987026af7be95b546db2fee727eb2318669a29",
+      "workingBlob": "88987026af7be95b546db2fee727eb2318669a29"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice44-r2754.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice44-r2754.pins.json",
+      "blob": "63128556cb3eb81b87769a88f820a2e81795c2db",
+      "workingBlob": "63128556cb3eb81b87769a88f820a2e81795c2db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice44-r2754.source-freeze.json",
+      "blob": "1dffa8ce4c12d3e2975b4f0bfca1395649f23e2e",
+      "workingBlob": "1dffa8ce4c12d3e2975b4f0bfca1395649f23e2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice5-r2676.coverage.json",
+      "blob": "0580bfb639a2aa4ae2bb2e2a1a3179a14f5baa97",
+      "workingBlob": "0580bfb639a2aa4ae2bb2e2a1a3179a14f5baa97"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice5-r2676.execution-integrity.json",
+      "blob": "5f03d383c7e2e426d59f0bb65a05b1ad4da9cd6c",
+      "workingBlob": "5f03d383c7e2e426d59f0bb65a05b1ad4da9cd6c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice5-r2676.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice5-r2676.pins.json",
+      "blob": "deeae6a6558323a5baff655c44f821c560ada3a8",
+      "workingBlob": "deeae6a6558323a5baff655c44f821c560ada3a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice5-r2676.source-freeze.json",
+      "blob": "15289fe872f586e2c375cc6328c8a685bbd851c3",
+      "workingBlob": "15289fe872f586e2c375cc6328c8a685bbd851c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice6-r2678.coverage.json",
+      "blob": "59b36e83e231d7b807a5df66c546da9afee10a48",
+      "workingBlob": "59b36e83e231d7b807a5df66c546da9afee10a48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice6-r2678.execution-integrity.json",
+      "blob": "aa6d6c9a40368b95c78a07a91cb5d0f3be1e8fd1",
+      "workingBlob": "aa6d6c9a40368b95c78a07a91cb5d0f3be1e8fd1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice6-r2678.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice6-r2678.pins.json",
+      "blob": "59a4f1b4677ec263ef0ed15811def0e19577f3f1",
+      "workingBlob": "59a4f1b4677ec263ef0ed15811def0e19577f3f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice6-r2678.source-freeze.json",
+      "blob": "55554a017059204b20fbf61f1e6b495d1d82483c",
+      "workingBlob": "55554a017059204b20fbf61f1e6b495d1d82483c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice7-r2680.coverage.json",
+      "blob": "b5cd716e888971e3d244ca1349eabcb1bf204828",
+      "workingBlob": "b5cd716e888971e3d244ca1349eabcb1bf204828"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice7-r2680.execution-integrity.json",
+      "blob": "ff9b1dbd7a445efea3615dfd1f4e3715ed3f79b6",
+      "workingBlob": "ff9b1dbd7a445efea3615dfd1f4e3715ed3f79b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice7-r2680.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice7-r2680.pins.json",
+      "blob": "2702ef03ec0c6d181407cfebbf60bd627bb5df32",
+      "workingBlob": "2702ef03ec0c6d181407cfebbf60bd627bb5df32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice7-r2680.source-freeze.json",
+      "blob": "dbaacf4a4546cc7b2a72d13c045c40cfed120802",
+      "workingBlob": "dbaacf4a4546cc7b2a72d13c045c40cfed120802"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice8-r2682.coverage.json",
+      "blob": "673823f077d1406e5a0eb23ff9210c5b9e234474",
+      "workingBlob": "673823f077d1406e5a0eb23ff9210c5b9e234474"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice8-r2682.execution-integrity.json",
+      "blob": "8bb623d86ee39dcef49c3e228aa65fbd58dbd6d5",
+      "workingBlob": "8bb623d86ee39dcef49c3e228aa65fbd58dbd6d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice8-r2682.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice8-r2682.pins.json",
+      "blob": "d83487165a9b92e6230232744d4d518f1d2215a6",
+      "workingBlob": "d83487165a9b92e6230232744d4d518f1d2215a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice8-r2682.source-freeze.json",
+      "blob": "0a79ed8a0bcb55ab3d1e93533d1c7c608a3ee846",
+      "workingBlob": "0a79ed8a0bcb55ab3d1e93533d1c7c608a3ee846"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice9-r2684.coverage.json",
+      "blob": "d2cd7def90656558d6d446fa10deb0fd3a421783",
+      "workingBlob": "d2cd7def90656558d6d446fa10deb0fd3a421783"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice9-r2684.execution-integrity.json",
+      "blob": "57edb3d86c83272358d617e6660abbba6bb9dc9c",
+      "workingBlob": "57edb3d86c83272358d617e6660abbba6bb9dc9c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice9-r2684.graph.json",
+      "blob": "a455443a8a02b698da429d1612b1091047bd2d3b",
+      "workingBlob": "a455443a8a02b698da429d1612b1091047bd2d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice9-r2684.pins.json",
+      "blob": "0fe2f6c1d52a89b6758a6e82198de955a341aab9",
+      "workingBlob": "0fe2f6c1d52a89b6758a6e82198de955a341aab9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-slice9-r2684.source-freeze.json",
+      "blob": "5740a34e147dc50909e0939b0e339db8b3bdf2c9",
+      "workingBlob": "5740a34e147dc50909e0939b0e339db8b3bdf2c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-web-dll-artifact-observation.json",
+      "blob": "81f0ff38f2c61b50058ade84b464dc3772cf6bda",
+      "workingBlob": "81f0ff38f2c61b50058ade84b464dc3772cf6bda"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2668-array-map-reverse-slice1-catalog.inventory.json",
+      "blob": "44d2ef93abe1c89e5fd61887f5d4a8e520af7e66",
+      "workingBlob": "44d2ef93abe1c89e5fd61887f5d4a8e520af7e66"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2668-array-map-reverse-slice1-catalog.json",
+      "blob": "ea4fdbb88a9198a86cf6740312ad925283897519",
+      "workingBlob": "ea4fdbb88a9198a86cf6740312ad925283897519"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2668-array-map-reverse-slice1-catalog.log",
+      "blob": "dd4be5c97ab6fa67b140d790b1d66c908306e147",
+      "workingBlob": "dd4be5c97ab6fa67b140d790b1d66c908306e147"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2669-array-map-reverse-slice1-runtime.json",
+      "blob": "4566b86de33117fbd41e4610c1a8d1d8a861738f",
+      "workingBlob": "4566b86de33117fbd41e4610c1a8d1d8a861738f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2669-array-map-reverse-slice1-runtime.log",
+      "blob": "c645ca4c80231a1aabc9ae6aab2c0111a07f90f6",
+      "workingBlob": "c645ca4c80231a1aabc9ae6aab2c0111a07f90f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2669-array-map-reverse-slice1-runtime.terminal-audit.json",
+      "blob": "4fea30f2d9a18014f5231f80a24818ddd8cad046",
+      "workingBlob": "4fea30f2d9a18014f5231f80a24818ddd8cad046"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2670-array-map-reverse-slice2-catalog.inventory.json",
+      "blob": "845c33eb2659436f5b7642293f28a54f98cd1f18",
+      "workingBlob": "845c33eb2659436f5b7642293f28a54f98cd1f18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2670-array-map-reverse-slice2-catalog.json",
+      "blob": "7e889edaa5a10374bc9be5298c2fd571b686311b",
+      "workingBlob": "7e889edaa5a10374bc9be5298c2fd571b686311b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2670-array-map-reverse-slice2-catalog.log",
+      "blob": "dc36c0172f99686d7a27a568ae0b66bb3a76017b",
+      "workingBlob": "dc36c0172f99686d7a27a568ae0b66bb3a76017b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2671-array-map-reverse-slice2-runtime.json",
+      "blob": "c7918d9f158f8808f24b5dec7e14e07d44fe89ee",
+      "workingBlob": "c7918d9f158f8808f24b5dec7e14e07d44fe89ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2671-array-map-reverse-slice2-runtime.log",
+      "blob": "be479b7a362ada53fa4a91df0bf1fc9272c99571",
+      "workingBlob": "be479b7a362ada53fa4a91df0bf1fc9272c99571"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2671-array-map-reverse-slice2-runtime.terminal-audit.json",
+      "blob": "21dd644ed88d50d9f279a6a8a90c925f4bda6393",
+      "workingBlob": "21dd644ed88d50d9f279a6a8a90c925f4bda6393"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2672-array-map-reverse-slice3-catalog.inventory.json",
+      "blob": "01df7ead4917cc6af1d699efebcc416b7698e716",
+      "workingBlob": "01df7ead4917cc6af1d699efebcc416b7698e716"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2672-array-map-reverse-slice3-catalog.json",
+      "blob": "ec293ca8ec4a3d835b3a4da47f1ace5b5f8f7cd7",
+      "workingBlob": "ec293ca8ec4a3d835b3a4da47f1ace5b5f8f7cd7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2672-array-map-reverse-slice3-catalog.log",
+      "blob": "636d895d7146449213126127e551f755dff0364b",
+      "workingBlob": "636d895d7146449213126127e551f755dff0364b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2673-array-map-reverse-slice3-runtime.json",
+      "blob": "147ef576326c7fae7e074630650e99f836c5cca3",
+      "workingBlob": "147ef576326c7fae7e074630650e99f836c5cca3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2673-array-map-reverse-slice3-runtime.log",
+      "blob": "f7ac62f6255ebe9fe6657dd1ebef94a32a0afaae",
+      "workingBlob": "f7ac62f6255ebe9fe6657dd1ebef94a32a0afaae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2673-array-map-reverse-slice3-runtime.terminal-audit.json",
+      "blob": "23394768371163263ac111478cb1619ac00ee670",
+      "workingBlob": "23394768371163263ac111478cb1619ac00ee670"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2674-array-map-reverse-slice4-catalog.inventory.json",
+      "blob": "d66ba35da7515b32cc63e3d4314338e5742c109d",
+      "workingBlob": "d66ba35da7515b32cc63e3d4314338e5742c109d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2674-array-map-reverse-slice4-catalog.json",
+      "blob": "2205a7cec98d2c09e70e478e93b4230e23386791",
+      "workingBlob": "2205a7cec98d2c09e70e478e93b4230e23386791"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2674-array-map-reverse-slice4-catalog.log",
+      "blob": "6f9dcf1bc63723cd2e7224b97078df595c0b18b4",
+      "workingBlob": "6f9dcf1bc63723cd2e7224b97078df595c0b18b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2675-array-map-reverse-slice4-runtime.json",
+      "blob": "0979e05ef6df471f75e32dd6cab029a67c479705",
+      "workingBlob": "0979e05ef6df471f75e32dd6cab029a67c479705"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2675-array-map-reverse-slice4-runtime.log",
+      "blob": "48526f1ae9aa998b9392e4b3d7fbef060b45a72b",
+      "workingBlob": "48526f1ae9aa998b9392e4b3d7fbef060b45a72b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2675-array-map-reverse-slice4-runtime.terminal-audit.json",
+      "blob": "9afae490288b8c199f0f85779c9602d9f50ff516",
+      "workingBlob": "9afae490288b8c199f0f85779c9602d9f50ff516"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2676-array-map-reverse-slice5-catalog.inventory.json",
+      "blob": "ae3932ae8050130b0bdcc10fc2b7b8988ab356fb",
+      "workingBlob": "ae3932ae8050130b0bdcc10fc2b7b8988ab356fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2676-array-map-reverse-slice5-catalog.json",
+      "blob": "4724f5ef3d7321c3dd3ac6bfa6d56bf9b5a572ac",
+      "workingBlob": "4724f5ef3d7321c3dd3ac6bfa6d56bf9b5a572ac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2676-array-map-reverse-slice5-catalog.log",
+      "blob": "b789b349e460db05b22b847f9375839db292f6d0",
+      "workingBlob": "b789b349e460db05b22b847f9375839db292f6d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2677-array-map-reverse-slice5-runtime.json",
+      "blob": "f4624a3384be0cb9f0ba3bf676fe2c42b74e4f35",
+      "workingBlob": "f4624a3384be0cb9f0ba3bf676fe2c42b74e4f35"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2677-array-map-reverse-slice5-runtime.log",
+      "blob": "15b2ca29a3b717eb3547410a016749cf570e4383",
+      "workingBlob": "15b2ca29a3b717eb3547410a016749cf570e4383"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2677-array-map-reverse-slice5-runtime.terminal-audit.json",
+      "blob": "8784d04d711507431ba7628699952e645a32d6ee",
+      "workingBlob": "8784d04d711507431ba7628699952e645a32d6ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2678-array-map-reverse-slice6-catalog.inventory.json",
+      "blob": "a85fa62848771be9225f92cce9a992b130aa964c",
+      "workingBlob": "a85fa62848771be9225f92cce9a992b130aa964c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2678-array-map-reverse-slice6-catalog.json",
+      "blob": "6ffa341a940820a17f256aaedd28571f8d24c0d5",
+      "workingBlob": "6ffa341a940820a17f256aaedd28571f8d24c0d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2678-array-map-reverse-slice6-catalog.log",
+      "blob": "244295c8ca778a13aa1451a4ad83ea7bf51d7523",
+      "workingBlob": "244295c8ca778a13aa1451a4ad83ea7bf51d7523"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2679-array-map-reverse-slice6-runtime.json",
+      "blob": "06c7f0a0dfabf111aa7966c6eb9b2745e6f20ad6",
+      "workingBlob": "06c7f0a0dfabf111aa7966c6eb9b2745e6f20ad6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2679-array-map-reverse-slice6-runtime.log",
+      "blob": "a35a981d8b5d1f23013128e8b3250a67c93fcb9d",
+      "workingBlob": "a35a981d8b5d1f23013128e8b3250a67c93fcb9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2679-array-map-reverse-slice6-runtime.terminal-audit.json",
+      "blob": "457bb5dd64c430900c46e9f7313c809854e21712",
+      "workingBlob": "457bb5dd64c430900c46e9f7313c809854e21712"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2680-array-map-reverse-slice7-catalog.inventory.json",
+      "blob": "11a3e534a06780e52698649406e4e754cf560379",
+      "workingBlob": "11a3e534a06780e52698649406e4e754cf560379"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2680-array-map-reverse-slice7-catalog.json",
+      "blob": "586f78a609a638b4cecf115a6221f112e14bc6e9",
+      "workingBlob": "586f78a609a638b4cecf115a6221f112e14bc6e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2680-array-map-reverse-slice7-catalog.log",
+      "blob": "c5a5db9f4e4c079f4dca4e781e14d3affdf6fb46",
+      "workingBlob": "c5a5db9f4e4c079f4dca4e781e14d3affdf6fb46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2681-array-map-reverse-slice7-runtime.json",
+      "blob": "522a840c65cfd57a47a87d3efeaafc26c2d82c49",
+      "workingBlob": "522a840c65cfd57a47a87d3efeaafc26c2d82c49"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2681-array-map-reverse-slice7-runtime.log",
+      "blob": "76c765eadcc66fb17e94b3182f463a2e0969e7d0",
+      "workingBlob": "76c765eadcc66fb17e94b3182f463a2e0969e7d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2681-array-map-reverse-slice7-runtime.terminal-audit.json",
+      "blob": "556788016bdedf7f6c8483ab8ea679bca9c5d729",
+      "workingBlob": "556788016bdedf7f6c8483ab8ea679bca9c5d729"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2682-array-map-reverse-slice8-catalog.inventory.json",
+      "blob": "8000c5bbfae7b19b90394a47f5f0167d87ddf84e",
+      "workingBlob": "8000c5bbfae7b19b90394a47f5f0167d87ddf84e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2682-array-map-reverse-slice8-catalog.json",
+      "blob": "2d525a569bb177f57eb6d9fc7562a8cbeae670d9",
+      "workingBlob": "2d525a569bb177f57eb6d9fc7562a8cbeae670d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2682-array-map-reverse-slice8-catalog.log",
+      "blob": "d247b4d0ccb4184d009a46932733a4bdb209669b",
+      "workingBlob": "d247b4d0ccb4184d009a46932733a4bdb209669b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2683-array-map-reverse-slice8-runtime.failure-recon.json",
+      "blob": "bf0b39342d2dfacbb84b0fedfed6cc3c03d03c87",
+      "workingBlob": "bf0b39342d2dfacbb84b0fedfed6cc3c03d03c87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2683-array-map-reverse-slice8-runtime.json",
+      "blob": "8bc61d20832c5d1c98ab72bba2ce766e2b00e1f8",
+      "workingBlob": "8bc61d20832c5d1c98ab72bba2ce766e2b00e1f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2683-array-map-reverse-slice8-runtime.log",
+      "blob": "fa9775d77071418d8d89a5ccb2fdfeeb5426d71a",
+      "workingBlob": "fa9775d77071418d8d89a5ccb2fdfeeb5426d71a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2683-array-map-reverse-slice8-runtime.terminal-audit.json",
+      "blob": "d7e327970c29aad4a2bb2a86e3ffbb576aaa4754",
+      "workingBlob": "d7e327970c29aad4a2bb2a86e3ffbb576aaa4754"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2684-array-map-reverse-slice9-catalog.inventory.json",
+      "blob": "1bd9846eb610988991d4f15e1429c1b26d16d5d5",
+      "workingBlob": "1bd9846eb610988991d4f15e1429c1b26d16d5d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2684-array-map-reverse-slice9-catalog.json",
+      "blob": "4bf63aa7fe7047d9ee36eebfc4de2659217364b9",
+      "workingBlob": "4bf63aa7fe7047d9ee36eebfc4de2659217364b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2684-array-map-reverse-slice9-catalog.log",
+      "blob": "cdae0ad2183eff3a47d32eadd3123bf939acce84",
+      "workingBlob": "cdae0ad2183eff3a47d32eadd3123bf939acce84"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2685-array-map-reverse-slice9-runtime.json",
+      "blob": "b96fc6d2f1e8e5e61127698ab393416af94251fb",
+      "workingBlob": "b96fc6d2f1e8e5e61127698ab393416af94251fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2685-array-map-reverse-slice9-runtime.log",
+      "blob": "7e2d1886617571b61f7dcafccb43bdf93ed7bd91",
+      "workingBlob": "7e2d1886617571b61f7dcafccb43bdf93ed7bd91"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2685-array-map-reverse-slice9-runtime.terminal-audit.json",
+      "blob": "20fa9e253c6eed4d6dac58e38369712c2f40b243",
+      "workingBlob": "20fa9e253c6eed4d6dac58e38369712c2f40b243"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2686-array-map-reverse-slice10-catalog.inventory.json",
+      "blob": "96fd8452579a3262f93bbb345578c9e94c56b56c",
+      "workingBlob": "96fd8452579a3262f93bbb345578c9e94c56b56c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2686-array-map-reverse-slice10-catalog.json",
+      "blob": "f797a468c1bc1303d76b291dc741000c02f1abf6",
+      "workingBlob": "f797a468c1bc1303d76b291dc741000c02f1abf6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2686-array-map-reverse-slice10-catalog.log",
+      "blob": "b550502c2198a1b3b175129074b56f5a555ce8b5",
+      "workingBlob": "b550502c2198a1b3b175129074b56f5a555ce8b5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2687-array-map-reverse-slice10-runtime.json",
+      "blob": "94e2a868491e31e8bf1fdb194c165314dbfe946b",
+      "workingBlob": "94e2a868491e31e8bf1fdb194c165314dbfe946b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2687-array-map-reverse-slice10-runtime.log",
+      "blob": "76975db69d1f265a395d9977d92b58c7907a3962",
+      "workingBlob": "76975db69d1f265a395d9977d92b58c7907a3962"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2687-array-map-reverse-slice10-runtime.terminal-audit.json",
+      "blob": "0c7f1bb11dd7def6d20b40b1bd3353f98bcd0b51",
+      "workingBlob": "0c7f1bb11dd7def6d20b40b1bd3353f98bcd0b51"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2688-array-map-reverse-slice11-catalog.inventory.json",
+      "blob": "aa26281172dc2a1cf6120a9867c297c2d2ce3a39",
+      "workingBlob": "aa26281172dc2a1cf6120a9867c297c2d2ce3a39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2688-array-map-reverse-slice11-catalog.json",
+      "blob": "1805dca40d133e8d4f0e4f93f7d730e7371b4e81",
+      "workingBlob": "1805dca40d133e8d4f0e4f93f7d730e7371b4e81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2688-array-map-reverse-slice11-catalog.log",
+      "blob": "be3856fc84b9225badae396b6c9f1b2a307e0cee",
+      "workingBlob": "be3856fc84b9225badae396b6c9f1b2a307e0cee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2689-array-map-reverse-slice11-runtime.json",
+      "blob": "e5a3725bcbd1c5c54148c87308ad70dfbb0c2e9a",
+      "workingBlob": "e5a3725bcbd1c5c54148c87308ad70dfbb0c2e9a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2689-array-map-reverse-slice11-runtime.log",
+      "blob": "4e5843a5b7012c9fbd32f87f6f9e7dfb54c9ba7d",
+      "workingBlob": "4e5843a5b7012c9fbd32f87f6f9e7dfb54c9ba7d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2689-array-map-reverse-slice11-runtime.terminal-audit.json",
+      "blob": "6f1f48942c849d428962a0fcff10fc72c3c00d90",
+      "workingBlob": "6f1f48942c849d428962a0fcff10fc72c3c00d90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2690-array-map-reverse-slice12-catalog.inventory.json",
+      "blob": "cda0f04b6b0388ba2bf3d0fa5c17b25e3fdbbb1c",
+      "workingBlob": "cda0f04b6b0388ba2bf3d0fa5c17b25e3fdbbb1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2690-array-map-reverse-slice12-catalog.json",
+      "blob": "5c209210d9e9b8abb84f109ee2a1f3196b23d2b8",
+      "workingBlob": "5c209210d9e9b8abb84f109ee2a1f3196b23d2b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2690-array-map-reverse-slice12-catalog.log",
+      "blob": "7340e5d1378ddcc866af3b544f4122d674fc6a6f",
+      "workingBlob": "7340e5d1378ddcc866af3b544f4122d674fc6a6f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2691-array-map-reverse-slice12-runtime.json",
+      "blob": "bee5d26753015cac7b7064162166bbe5dd7683dd",
+      "workingBlob": "bee5d26753015cac7b7064162166bbe5dd7683dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2691-array-map-reverse-slice12-runtime.log",
+      "blob": "2d4ddfa5c4eef0124bacfc7fade1cd08b1f4973d",
+      "workingBlob": "2d4ddfa5c4eef0124bacfc7fade1cd08b1f4973d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2691-array-map-reverse-slice12-runtime.terminal-audit.json",
+      "blob": "3230f809a629be2672e9e9bcd95f904d354ef70c",
+      "workingBlob": "3230f809a629be2672e9e9bcd95f904d354ef70c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2692-array-map-reverse-slice13-catalog.inventory.json",
+      "blob": "6c1302d861beea21f7c66cd83d4df7d5610b098c",
+      "workingBlob": "6c1302d861beea21f7c66cd83d4df7d5610b098c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2692-array-map-reverse-slice13-catalog.json",
+      "blob": "3f1a0d1b7f8cc2e7b5a46499f584de416da9dc91",
+      "workingBlob": "3f1a0d1b7f8cc2e7b5a46499f584de416da9dc91"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2692-array-map-reverse-slice13-catalog.log",
+      "blob": "d36acf98ed6eeeb87990a67369d49e8f05aab996",
+      "workingBlob": "d36acf98ed6eeeb87990a67369d49e8f05aab996"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2693-array-map-reverse-slice13-runtime.json",
+      "blob": "d1dddeb4cd856f74bb83f7fc67588e15a9035281",
+      "workingBlob": "d1dddeb4cd856f74bb83f7fc67588e15a9035281"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2693-array-map-reverse-slice13-runtime.log",
+      "blob": "140210fc2540819d54625174499ab89927f116b0",
+      "workingBlob": "140210fc2540819d54625174499ab89927f116b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2693-array-map-reverse-slice13-runtime.terminal-audit.json",
+      "blob": "1d653530e8ac3acdd0ad59bef9c6c8f9d9ead142",
+      "workingBlob": "1d653530e8ac3acdd0ad59bef9c6c8f9d9ead142"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2694-array-map-reverse-slice14-catalog.inventory.json",
+      "blob": "f71f658027b2588c27f92684cfd0e5bd12ee99dd",
+      "workingBlob": "f71f658027b2588c27f92684cfd0e5bd12ee99dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2694-array-map-reverse-slice14-catalog.json",
+      "blob": "b10e856e2accb7e01b2b6abed69974077b8cbc6d",
+      "workingBlob": "b10e856e2accb7e01b2b6abed69974077b8cbc6d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2694-array-map-reverse-slice14-catalog.log",
+      "blob": "9c7de8da056d77bdd8798866221224895aef666c",
+      "workingBlob": "9c7de8da056d77bdd8798866221224895aef666c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2695-array-map-reverse-slice14-runtime.json",
+      "blob": "9bca24b5b6ceef642f42ecae11284d21eef3d1e3",
+      "workingBlob": "9bca24b5b6ceef642f42ecae11284d21eef3d1e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2695-array-map-reverse-slice14-runtime.log",
+      "blob": "944d06af0e40a7f5b4e7dc681a6243972673a410",
+      "workingBlob": "944d06af0e40a7f5b4e7dc681a6243972673a410"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2695-array-map-reverse-slice14-runtime.terminal-audit.json",
+      "blob": "8e73dbc3c8833b6147cd8cc36e97299b43dbf838",
+      "workingBlob": "8e73dbc3c8833b6147cd8cc36e97299b43dbf838"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2696-array-map-reverse-slice15-catalog.inventory.json",
+      "blob": "f451baac47410ab95d52927ae97481bc36676700",
+      "workingBlob": "f451baac47410ab95d52927ae97481bc36676700"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2696-array-map-reverse-slice15-catalog.json",
+      "blob": "57f82a2d1da2a536cab011c7471e7bb0201f5a03",
+      "workingBlob": "57f82a2d1da2a536cab011c7471e7bb0201f5a03"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2696-array-map-reverse-slice15-catalog.log",
+      "blob": "2408982d09ae2880879b499eebe741f8306e8426",
+      "workingBlob": "2408982d09ae2880879b499eebe741f8306e8426"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2697-array-map-reverse-slice15-runtime.json",
+      "blob": "c9db5b69ad6cd69df82342569b0b8b2dd8c47826",
+      "workingBlob": "c9db5b69ad6cd69df82342569b0b8b2dd8c47826"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2697-array-map-reverse-slice15-runtime.log",
+      "blob": "9262af78059f0229d781085dede334241e03bd28",
+      "workingBlob": "9262af78059f0229d781085dede334241e03bd28"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2697-array-map-reverse-slice15-runtime.terminal-audit.json",
+      "blob": "83bed1efe2c5b405e5dcadd7a2c1dc299bb48c83",
+      "workingBlob": "83bed1efe2c5b405e5dcadd7a2c1dc299bb48c83"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2698-array-map-reverse-slice16-catalog.inventory.json",
+      "blob": "9281ea13c821bf146bed0bd6a2e459384df95379",
+      "workingBlob": "9281ea13c821bf146bed0bd6a2e459384df95379"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2698-array-map-reverse-slice16-catalog.json",
+      "blob": "70b0ebed93861594a305e2e885358f426bb5383e",
+      "workingBlob": "70b0ebed93861594a305e2e885358f426bb5383e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2698-array-map-reverse-slice16-catalog.log",
+      "blob": "3182b874d08acc0e08be97daa575130bd07a05ce",
+      "workingBlob": "3182b874d08acc0e08be97daa575130bd07a05ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2699-array-map-reverse-slice16-runtime.json",
+      "blob": "2dd0ed6e2646c92e3da2456ecdf84d3420c3e648",
+      "workingBlob": "2dd0ed6e2646c92e3da2456ecdf84d3420c3e648"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2699-array-map-reverse-slice16-runtime.log",
+      "blob": "25c56740e8688977bee9e479b2e093119f56dc8f",
+      "workingBlob": "25c56740e8688977bee9e479b2e093119f56dc8f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2699-array-map-reverse-slice16-runtime.terminal-audit.json",
+      "blob": "76ca3f5dad41b8863c87eff21f9af81c9c199365",
+      "workingBlob": "76ca3f5dad41b8863c87eff21f9af81c9c199365"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2700-array-map-reverse-slice17-catalog.inventory.json",
+      "blob": "01bdb498ef188ea2f5e96c1132c0b65135747c6f",
+      "workingBlob": "01bdb498ef188ea2f5e96c1132c0b65135747c6f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2700-array-map-reverse-slice17-catalog.json",
+      "blob": "ced387ffb32aae444f5842568befac15a8f42ced",
+      "workingBlob": "ced387ffb32aae444f5842568befac15a8f42ced"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2700-array-map-reverse-slice17-catalog.log",
+      "blob": "3b2fd89da8d16f0be2d66bdd1d166d0aae299242",
+      "workingBlob": "3b2fd89da8d16f0be2d66bdd1d166d0aae299242"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2701-array-map-reverse-slice17-runtime.json",
+      "blob": "fe6e4180f9aa22958245d5ce4f19fa81b24b79cb",
+      "workingBlob": "fe6e4180f9aa22958245d5ce4f19fa81b24b79cb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2701-array-map-reverse-slice17-runtime.log",
+      "blob": "da920fc208d2c40b65fb2c49530764fc6f5ab55f",
+      "workingBlob": "da920fc208d2c40b65fb2c49530764fc6f5ab55f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2701-array-map-reverse-slice17-runtime.terminal-audit.json",
+      "blob": "2e62ba9c9e59e96f7357e9eda87e2709148299d7",
+      "workingBlob": "2e62ba9c9e59e96f7357e9eda87e2709148299d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2702-array-map-reverse-slice18-catalog.inventory.json",
+      "blob": "0a32c433a36fb9482fc0ec84e3cb4abdcfb69d3b",
+      "workingBlob": "0a32c433a36fb9482fc0ec84e3cb4abdcfb69d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2702-array-map-reverse-slice18-catalog.json",
+      "blob": "4bec3bc2ddf013b6c4ba490ecdc55415a0de0379",
+      "workingBlob": "4bec3bc2ddf013b6c4ba490ecdc55415a0de0379"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2702-array-map-reverse-slice18-catalog.log",
+      "blob": "4d6eb70859e1b0d88fe9e26fe32d9149964652b3",
+      "workingBlob": "4d6eb70859e1b0d88fe9e26fe32d9149964652b3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2703-array-map-reverse-slice18-runtime.json",
+      "blob": "5202446f0ca2beb4c1aac2da00a9c44085dec2e3",
+      "workingBlob": "5202446f0ca2beb4c1aac2da00a9c44085dec2e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2703-array-map-reverse-slice18-runtime.log",
+      "blob": "bad423f7d5ca3295bed06972d281e1269eef5edb",
+      "workingBlob": "bad423f7d5ca3295bed06972d281e1269eef5edb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2703-array-map-reverse-slice18-runtime.terminal-audit.json",
+      "blob": "d080ab939c63ee870d7e2191f1c1ea577b929115",
+      "workingBlob": "d080ab939c63ee870d7e2191f1c1ea577b929115"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2704-array-map-reverse-slice19-catalog.inventory.json",
+      "blob": "69f5b3f0856b946f7b0ff4ee88fa712592ea530e",
+      "workingBlob": "69f5b3f0856b946f7b0ff4ee88fa712592ea530e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2704-array-map-reverse-slice19-catalog.json",
+      "blob": "e673c9d2ba8cffde9348f0c2e3638fe7e642d13b",
+      "workingBlob": "e673c9d2ba8cffde9348f0c2e3638fe7e642d13b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2704-array-map-reverse-slice19-catalog.log",
+      "blob": "0680134b8dca72de9ebf47c4bf2d6e53b32e5174",
+      "workingBlob": "0680134b8dca72de9ebf47c4bf2d6e53b32e5174"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2705-array-map-reverse-slice19-runtime.json",
+      "blob": "7522780af271c1edbd1bc65208b96f76c4e9ff7b",
+      "workingBlob": "7522780af271c1edbd1bc65208b96f76c4e9ff7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2705-array-map-reverse-slice19-runtime.log",
+      "blob": "e08c67578865e71681525e547f76747705af08ae",
+      "workingBlob": "e08c67578865e71681525e547f76747705af08ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2705-array-map-reverse-slice19-runtime.terminal-audit.json",
+      "blob": "3c7f7d02bddded35fb1d0763eb067079f8f82064",
+      "workingBlob": "3c7f7d02bddded35fb1d0763eb067079f8f82064"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2706-array-map-reverse-slice20-catalog.inventory.json",
+      "blob": "d7a11d9f9e92274364d896fa32a8e332aa77ad14",
+      "workingBlob": "d7a11d9f9e92274364d896fa32a8e332aa77ad14"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2706-array-map-reverse-slice20-catalog.json",
+      "blob": "02a1389e93dbc9a07b0c4ee2a181269bc39a79d0",
+      "workingBlob": "02a1389e93dbc9a07b0c4ee2a181269bc39a79d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2706-array-map-reverse-slice20-catalog.log",
+      "blob": "b1edf957b92810971fa4a6e58dbde9d86aa104c3",
+      "workingBlob": "b1edf957b92810971fa4a6e58dbde9d86aa104c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2707-array-map-reverse-slice20-runtime.json",
+      "blob": "b8f004b36cfaa90124054f8bbee5aa135d41d8a7",
+      "workingBlob": "b8f004b36cfaa90124054f8bbee5aa135d41d8a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2707-array-map-reverse-slice20-runtime.log",
+      "blob": "6615d51283b8c59322021d58837ef6a75dd734bb",
+      "workingBlob": "6615d51283b8c59322021d58837ef6a75dd734bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2707-array-map-reverse-slice20-runtime.terminal-audit.json",
+      "blob": "f256c4282ec4567e86a55b38796fbba49ab6b140",
+      "workingBlob": "f256c4282ec4567e86a55b38796fbba49ab6b140"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2708-array-map-reverse-slice21-catalog.inventory.json",
+      "blob": "d75d0b59e22ea3040fca1818a9efaa36cbc2316f",
+      "workingBlob": "d75d0b59e22ea3040fca1818a9efaa36cbc2316f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2708-array-map-reverse-slice21-catalog.json",
+      "blob": "893a884f5482e245ff35bb5de0f33266a224fae8",
+      "workingBlob": "893a884f5482e245ff35bb5de0f33266a224fae8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2708-array-map-reverse-slice21-catalog.log",
+      "blob": "0eb146805aef5921b5fe7f5a06cc3351286057bc",
+      "workingBlob": "0eb146805aef5921b5fe7f5a06cc3351286057bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2709-array-map-reverse-slice21-runtime.json",
+      "blob": "59e82e4c976105a6ba1a883eca3347d7e4334d82",
+      "workingBlob": "59e82e4c976105a6ba1a883eca3347d7e4334d82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2709-array-map-reverse-slice21-runtime.log",
+      "blob": "e7db268fb0f0ca6eb5684a53e7b5a84ac8ca21fb",
+      "workingBlob": "e7db268fb0f0ca6eb5684a53e7b5a84ac8ca21fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2709-array-map-reverse-slice21-runtime.terminal-audit.json",
+      "blob": "6b4f91b1e4a2dee33d694601f05d7cee7b4d9533",
+      "workingBlob": "6b4f91b1e4a2dee33d694601f05d7cee7b4d9533"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2710-array-map-reverse-slice22-catalog.inventory.json",
+      "blob": "d09aac6482107cd7cc4bb17d30e4bfe02d2f5882",
+      "workingBlob": "d09aac6482107cd7cc4bb17d30e4bfe02d2f5882"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2710-array-map-reverse-slice22-catalog.json",
+      "blob": "60bfb0e7eae0d3707f623adb78a0a8ff7b3a45e6",
+      "workingBlob": "60bfb0e7eae0d3707f623adb78a0a8ff7b3a45e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2710-array-map-reverse-slice22-catalog.log",
+      "blob": "ba18069c2295a8d535a09892b02e8de97026ff24",
+      "workingBlob": "ba18069c2295a8d535a09892b02e8de97026ff24"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2711-array-map-reverse-slice22-runtime.json",
+      "blob": "861eaa6dac637999d6c65ade234358212d21054b",
+      "workingBlob": "861eaa6dac637999d6c65ade234358212d21054b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2711-array-map-reverse-slice22-runtime.log",
+      "blob": "4a9df91044c63e5669ee4289bfd6cace7a53ddcd",
+      "workingBlob": "4a9df91044c63e5669ee4289bfd6cace7a53ddcd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2711-array-map-reverse-slice22-runtime.terminal-audit.json",
+      "blob": "d3737d0af4912da29e019dad1051163a20bb03b8",
+      "workingBlob": "d3737d0af4912da29e019dad1051163a20bb03b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2712-array-map-reverse-slice23-catalog.inventory.json",
+      "blob": "5198d2b2db9c5d0000757e322eebd46c9718f382",
+      "workingBlob": "5198d2b2db9c5d0000757e322eebd46c9718f382"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2712-array-map-reverse-slice23-catalog.json",
+      "blob": "e7cf3427a38138c8b3248a3c5e281aee4cdbb7ec",
+      "workingBlob": "e7cf3427a38138c8b3248a3c5e281aee4cdbb7ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2712-array-map-reverse-slice23-catalog.log",
+      "blob": "5267182d47b531eb76fac0de092d55c4e5a1ad16",
+      "workingBlob": "5267182d47b531eb76fac0de092d55c4e5a1ad16"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2713-array-map-reverse-slice23-runtime.json",
+      "blob": "f31549c262a1525d3901399245f0e681a3eb2a81",
+      "workingBlob": "f31549c262a1525d3901399245f0e681a3eb2a81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2713-array-map-reverse-slice23-runtime.log",
+      "blob": "188034735a40ef698b951dfb22a36ccc89f3f8ca",
+      "workingBlob": "188034735a40ef698b951dfb22a36ccc89f3f8ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2713-array-map-reverse-slice23-runtime.terminal-audit.json",
+      "blob": "a9fc7984238fa95e57da2e0e1d1ef4cbbb114ed7",
+      "workingBlob": "a9fc7984238fa95e57da2e0e1d1ef4cbbb114ed7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2714-array-map-reverse-slice24-catalog.inventory.json",
+      "blob": "85498782772c2eb5286047a28f4814a0a21313f6",
+      "workingBlob": "85498782772c2eb5286047a28f4814a0a21313f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2714-array-map-reverse-slice24-catalog.json",
+      "blob": "ba06b4ca26d62dcdaedd378b01fef2726f06bfb3",
+      "workingBlob": "ba06b4ca26d62dcdaedd378b01fef2726f06bfb3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2714-array-map-reverse-slice24-catalog.log",
+      "blob": "17e82c6b99ba4b07ac357bdce1c6c1f135b60289",
+      "workingBlob": "17e82c6b99ba4b07ac357bdce1c6c1f135b60289"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2715-array-map-reverse-slice24-runtime.json",
+      "blob": "6b96eda57141111ac65255eb87ca79e4e7c68843",
+      "workingBlob": "6b96eda57141111ac65255eb87ca79e4e7c68843"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2715-array-map-reverse-slice24-runtime.log",
+      "blob": "1823ab4e8d6fc567fccbe3ef9da31440bda7a5db",
+      "workingBlob": "1823ab4e8d6fc567fccbe3ef9da31440bda7a5db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2715-array-map-reverse-slice24-runtime.terminal-audit.json",
+      "blob": "e6a9bd2f5e1c41748345d9cfddf682f83a16c848",
+      "workingBlob": "e6a9bd2f5e1c41748345d9cfddf682f83a16c848"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2716-array-map-reverse-slice25-catalog.inventory.json",
+      "blob": "0527050bc431d0d87157f23dcbb714358fb88500",
+      "workingBlob": "0527050bc431d0d87157f23dcbb714358fb88500"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2716-array-map-reverse-slice25-catalog.json",
+      "blob": "ffaa551ef4c626757d43868061805dc9cbf85851",
+      "workingBlob": "ffaa551ef4c626757d43868061805dc9cbf85851"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2716-array-map-reverse-slice25-catalog.log",
+      "blob": "9b0c27ca0c263ba75216d69d9ddda548488a4703",
+      "workingBlob": "9b0c27ca0c263ba75216d69d9ddda548488a4703"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2717-array-map-reverse-slice25-runtime.json",
+      "blob": "e53d3b55696368210730658921394b485955d14f",
+      "workingBlob": "e53d3b55696368210730658921394b485955d14f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2717-array-map-reverse-slice25-runtime.log",
+      "blob": "3636874dc50451acbf054022316687a51a887dbf",
+      "workingBlob": "3636874dc50451acbf054022316687a51a887dbf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2717-array-map-reverse-slice25-runtime.terminal-audit.json",
+      "blob": "7b802026a32d4799eec9dece57571ae8a63a4402",
+      "workingBlob": "7b802026a32d4799eec9dece57571ae8a63a4402"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2718-array-map-reverse-slice26-catalog.inventory.json",
+      "blob": "3a5bb53b801a8d3330edef5b3c871a7117561925",
+      "workingBlob": "3a5bb53b801a8d3330edef5b3c871a7117561925"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2718-array-map-reverse-slice26-catalog.json",
+      "blob": "5edeaaad07e42cea14afdcef7397c5c04152513b",
+      "workingBlob": "5edeaaad07e42cea14afdcef7397c5c04152513b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2718-array-map-reverse-slice26-catalog.log",
+      "blob": "2f658563181ac3419ef4046b2d21d3edc59a66ec",
+      "workingBlob": "2f658563181ac3419ef4046b2d21d3edc59a66ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2719-array-map-reverse-slice26-runtime.json",
+      "blob": "f3a2144fc1cac655f376da2f864d746f26e25e3b",
+      "workingBlob": "f3a2144fc1cac655f376da2f864d746f26e25e3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2719-array-map-reverse-slice26-runtime.log",
+      "blob": "5ce4ce1adc935ec604138f798f9b35cc4109cd99",
+      "workingBlob": "5ce4ce1adc935ec604138f798f9b35cc4109cd99"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2719-array-map-reverse-slice26-runtime.terminal-audit.json",
+      "blob": "38675cadc2bfdcfba7b623c8d2d35181a3d845e1",
+      "workingBlob": "38675cadc2bfdcfba7b623c8d2d35181a3d845e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2720-array-map-reverse-slice27-catalog.inventory.json",
+      "blob": "04493473fa2c0f34d647ca80c4ac0623af1e1dc6",
+      "workingBlob": "04493473fa2c0f34d647ca80c4ac0623af1e1dc6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2720-array-map-reverse-slice27-catalog.json",
+      "blob": "2db4118635dd1aa80f5f85b70f701fd429563c0f",
+      "workingBlob": "2db4118635dd1aa80f5f85b70f701fd429563c0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2720-array-map-reverse-slice27-catalog.log",
+      "blob": "faba0e088df746826193afa1738848c6abe91a2c",
+      "workingBlob": "faba0e088df746826193afa1738848c6abe91a2c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2721-array-map-reverse-slice27-runtime.json",
+      "blob": "c5f964b436c8c50921804ba01fe9946dcb3aaf40",
+      "workingBlob": "c5f964b436c8c50921804ba01fe9946dcb3aaf40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2721-array-map-reverse-slice27-runtime.log",
+      "blob": "31b6e3d832190479e2813650f695560d78b4e184",
+      "workingBlob": "31b6e3d832190479e2813650f695560d78b4e184"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2721-array-map-reverse-slice27-runtime.terminal-audit.json",
+      "blob": "83d2a157c24004f94f360d1a059f1f00afd8224e",
+      "workingBlob": "83d2a157c24004f94f360d1a059f1f00afd8224e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2722-array-map-reverse-slice28-catalog.inventory.json",
+      "blob": "6aa05033d6914aca6b4ec03a0f315fb2313f403d",
+      "workingBlob": "6aa05033d6914aca6b4ec03a0f315fb2313f403d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2722-array-map-reverse-slice28-catalog.json",
+      "blob": "ee40fbd50f4024301396f5133fd0c156d485e2fe",
+      "workingBlob": "ee40fbd50f4024301396f5133fd0c156d485e2fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2722-array-map-reverse-slice28-catalog.log",
+      "blob": "187516d2f49995ab2460290fab1d4157ac903b38",
+      "workingBlob": "187516d2f49995ab2460290fab1d4157ac903b38"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2723-array-map-reverse-slice28-runtime.json",
+      "blob": "17226b473604fae683620d30f846c863d4b534e9",
+      "workingBlob": "17226b473604fae683620d30f846c863d4b534e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2723-array-map-reverse-slice28-runtime.log",
+      "blob": "d2b2acdc43fcb8d2d4b320e1f7e94c6c6a66c073",
+      "workingBlob": "d2b2acdc43fcb8d2d4b320e1f7e94c6c6a66c073"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2723-array-map-reverse-slice28-runtime.terminal-audit.json",
+      "blob": "b4c42499a2ed7b554fca56628b4e5c7f8b862b7e",
+      "workingBlob": "b4c42499a2ed7b554fca56628b4e5c7f8b862b7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2724-array-map-reverse-slice29-catalog.inventory.json",
+      "blob": "9848c31bac929ba380c420842d565a726b7e8ad9",
+      "workingBlob": "9848c31bac929ba380c420842d565a726b7e8ad9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2724-array-map-reverse-slice29-catalog.json",
+      "blob": "38de0e60a056690c32ef55307a7392306f24347a",
+      "workingBlob": "38de0e60a056690c32ef55307a7392306f24347a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2724-array-map-reverse-slice29-catalog.log",
+      "blob": "d0449209d58d1f0fc765f0d32dbce38e42f0c46a",
+      "workingBlob": "d0449209d58d1f0fc765f0d32dbce38e42f0c46a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2725-array-map-reverse-slice29-runtime.json",
+      "blob": "a28c80b345aa30802a331b364f97830d5d4999b8",
+      "workingBlob": "a28c80b345aa30802a331b364f97830d5d4999b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2725-array-map-reverse-slice29-runtime.log",
+      "blob": "a421ad26ad2bfa6f07130cf0548ca1fe6ccfda94",
+      "workingBlob": "a421ad26ad2bfa6f07130cf0548ca1fe6ccfda94"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2725-array-map-reverse-slice29-runtime.terminal-audit.json",
+      "blob": "a3b9a1e81d570b0a2ef4ee10b0c87e248655971b",
+      "workingBlob": "a3b9a1e81d570b0a2ef4ee10b0c87e248655971b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2726-array-map-reverse-slice30-catalog.inventory.json",
+      "blob": "a993bb306171fc57ced91c0b61953f623628fd54",
+      "workingBlob": "a993bb306171fc57ced91c0b61953f623628fd54"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2726-array-map-reverse-slice30-catalog.json",
+      "blob": "c4afc7604fde4dcf222a698fed042a5a1efa116d",
+      "workingBlob": "c4afc7604fde4dcf222a698fed042a5a1efa116d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2726-array-map-reverse-slice30-catalog.log",
+      "blob": "c504d565ac2e2912f082994e434444cc69e1eb98",
+      "workingBlob": "c504d565ac2e2912f082994e434444cc69e1eb98"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2727-array-map-reverse-slice30-runtime.json",
+      "blob": "18c5d805e1d2f4c6b564810083230513bc3ddc0f",
+      "workingBlob": "18c5d805e1d2f4c6b564810083230513bc3ddc0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2727-array-map-reverse-slice30-runtime.log",
+      "blob": "2d62ebdcb2d0e49f086b4259b93b600cb025d968",
+      "workingBlob": "2d62ebdcb2d0e49f086b4259b93b600cb025d968"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2727-array-map-reverse-slice30-runtime.terminal-audit.json",
+      "blob": "eaaca21304bbdc32027fae1ba01de25f270f5d4c",
+      "workingBlob": "eaaca21304bbdc32027fae1ba01de25f270f5d4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2728-array-map-reverse-slice31-catalog.inventory.json",
+      "blob": "dcbc82c433b84c340f5b37d27de9b83fb304c673",
+      "workingBlob": "dcbc82c433b84c340f5b37d27de9b83fb304c673"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2728-array-map-reverse-slice31-catalog.json",
+      "blob": "43a863e920b3b1133ff6f829b0e8e51af27232c1",
+      "workingBlob": "43a863e920b3b1133ff6f829b0e8e51af27232c1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2728-array-map-reverse-slice31-catalog.log",
+      "blob": "0ff744466d413602cbe81ba9dd2c6c76af4884a2",
+      "workingBlob": "0ff744466d413602cbe81ba9dd2c6c76af4884a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2729-array-map-reverse-slice31-runtime.json",
+      "blob": "040a1d03ca8201364595201ff6064aad0b6f2635",
+      "workingBlob": "040a1d03ca8201364595201ff6064aad0b6f2635"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2729-array-map-reverse-slice31-runtime.log",
+      "blob": "488c422819337a5e08bece235c2f6ecf0da221e6",
+      "workingBlob": "488c422819337a5e08bece235c2f6ecf0da221e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2729-array-map-reverse-slice31-runtime.terminal-audit.json",
+      "blob": "c3cd6263d05bf376bca4c7cca26cc5736a804044",
+      "workingBlob": "c3cd6263d05bf376bca4c7cca26cc5736a804044"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2730-array-map-reverse-slice32-catalog.inventory.json",
+      "blob": "e4332fe6aff4aee0a5274eb21e3f1269d84be966",
+      "workingBlob": "e4332fe6aff4aee0a5274eb21e3f1269d84be966"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2730-array-map-reverse-slice32-catalog.json",
+      "blob": "abfccb125b9d5e7f1c33c2858e4d8854553e86c6",
+      "workingBlob": "abfccb125b9d5e7f1c33c2858e4d8854553e86c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2730-array-map-reverse-slice32-catalog.log",
+      "blob": "e857e805d3ded997f573017812f557af4277eb59",
+      "workingBlob": "e857e805d3ded997f573017812f557af4277eb59"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2731-array-map-reverse-slice32-runtime.json",
+      "blob": "91a87f1bf1f295dd29dc3c5631d476618ff86726",
+      "workingBlob": "91a87f1bf1f295dd29dc3c5631d476618ff86726"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2731-array-map-reverse-slice32-runtime.log",
+      "blob": "914db1d12d2fdd597b21a8a66aa53351f9633fa9",
+      "workingBlob": "914db1d12d2fdd597b21a8a66aa53351f9633fa9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2731-array-map-reverse-slice32-runtime.terminal-audit.json",
+      "blob": "018798a598ef525d43002576a128fcdb691290f1",
+      "workingBlob": "018798a598ef525d43002576a128fcdb691290f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2732-array-map-reverse-slice33-catalog.inventory.json",
+      "blob": "734bbbcf5b7448c4dab13bee6ebd621397349ed6",
+      "workingBlob": "734bbbcf5b7448c4dab13bee6ebd621397349ed6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2732-array-map-reverse-slice33-catalog.json",
+      "blob": "142d5161113dd6dcde0d893c05eb29af53fac76e",
+      "workingBlob": "142d5161113dd6dcde0d893c05eb29af53fac76e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2732-array-map-reverse-slice33-catalog.log",
+      "blob": "0d9f065749e6b90cc481059309a693ec81a7ece4",
+      "workingBlob": "0d9f065749e6b90cc481059309a693ec81a7ece4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2733-array-map-reverse-slice33-runtime.json",
+      "blob": "a67a03256eec691cb2896d8789b7e0ce5ace447b",
+      "workingBlob": "a67a03256eec691cb2896d8789b7e0ce5ace447b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2733-array-map-reverse-slice33-runtime.log",
+      "blob": "9d25302b81f8d2b84ab426b1eba19d5d77fa57fb",
+      "workingBlob": "9d25302b81f8d2b84ab426b1eba19d5d77fa57fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2733-array-map-reverse-slice33-runtime.terminal-audit.json",
+      "blob": "adbcccb345671a0fe9d873dbde57181f0de77dc3",
+      "workingBlob": "adbcccb345671a0fe9d873dbde57181f0de77dc3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2734-array-map-reverse-slice34-catalog.inventory.json",
+      "blob": "dbf63df700b1981891ddd46070d61f46bc006321",
+      "workingBlob": "dbf63df700b1981891ddd46070d61f46bc006321"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2734-array-map-reverse-slice34-catalog.json",
+      "blob": "f159441038c1d310932e8646b491ad20811ea6f1",
+      "workingBlob": "f159441038c1d310932e8646b491ad20811ea6f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2734-array-map-reverse-slice34-catalog.log",
+      "blob": "ead863b218db7cab159904ac086f99f20443db0c",
+      "workingBlob": "ead863b218db7cab159904ac086f99f20443db0c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2735-array-map-reverse-slice34-runtime.json",
+      "blob": "795c7b3a83c5946a97ff4d7baf340413cf0329e9",
+      "workingBlob": "795c7b3a83c5946a97ff4d7baf340413cf0329e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2735-array-map-reverse-slice34-runtime.log",
+      "blob": "a44abdc646a6aa8bb7570972e54b59ea408d0c8f",
+      "workingBlob": "a44abdc646a6aa8bb7570972e54b59ea408d0c8f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2735-array-map-reverse-slice34-runtime.terminal-audit.json",
+      "blob": "cc6fad604afa118478fe97c557c09c4b2d9544e9",
+      "workingBlob": "cc6fad604afa118478fe97c557c09c4b2d9544e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2736-array-map-reverse-slice35-catalog.inventory.json",
+      "blob": "36f8f2b1182121688dd361a7c54d82ed46f3532f",
+      "workingBlob": "36f8f2b1182121688dd361a7c54d82ed46f3532f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2736-array-map-reverse-slice35-catalog.json",
+      "blob": "9ab33586a0a3604400bae218104329323c68f6c2",
+      "workingBlob": "9ab33586a0a3604400bae218104329323c68f6c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2736-array-map-reverse-slice35-catalog.log",
+      "blob": "49b14d6b512260384fa30c97ca653548747a17e4",
+      "workingBlob": "49b14d6b512260384fa30c97ca653548747a17e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2737-array-map-reverse-slice35-runtime.json",
+      "blob": "fabf0d91680445e19eeb3f3f4d13609278b3a45b",
+      "workingBlob": "fabf0d91680445e19eeb3f3f4d13609278b3a45b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2737-array-map-reverse-slice35-runtime.log",
+      "blob": "1fb2a16534b7769be4e5b0d5b2236097acaf03a0",
+      "workingBlob": "1fb2a16534b7769be4e5b0d5b2236097acaf03a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2737-array-map-reverse-slice35-runtime.terminal-audit.json",
+      "blob": "d4b6e61fdbc11eb4fbc7f2ee13ff0561bbfbb317",
+      "workingBlob": "d4b6e61fdbc11eb4fbc7f2ee13ff0561bbfbb317"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2738-array-map-reverse-slice36-catalog.inventory.json",
+      "blob": "b8af98af483f2d4654b85cf93e8cad0d7a8ce7d5",
+      "workingBlob": "b8af98af483f2d4654b85cf93e8cad0d7a8ce7d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2738-array-map-reverse-slice36-catalog.json",
+      "blob": "a63668b1fc70db5f35cc3ac496b7441a57337705",
+      "workingBlob": "a63668b1fc70db5f35cc3ac496b7441a57337705"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2738-array-map-reverse-slice36-catalog.log",
+      "blob": "840c867a673b90e7d59656e2dd3fb9d3f941b157",
+      "workingBlob": "840c867a673b90e7d59656e2dd3fb9d3f941b157"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2739-array-map-reverse-slice36-runtime.json",
+      "blob": "92b3a5e6743d2e1f02e71ee9a7f757045ea1b666",
+      "workingBlob": "92b3a5e6743d2e1f02e71ee9a7f757045ea1b666"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2739-array-map-reverse-slice36-runtime.log",
+      "blob": "25fa0d7845b11eddd5887bf5303be3b9ce670f08",
+      "workingBlob": "25fa0d7845b11eddd5887bf5303be3b9ce670f08"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2739-array-map-reverse-slice36-runtime.terminal-audit.json",
+      "blob": "ab1ba38c88b3f2815c8d7cfb7554f1e8161a766d",
+      "workingBlob": "ab1ba38c88b3f2815c8d7cfb7554f1e8161a766d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2740-array-map-reverse-slice37-catalog.inventory.json",
+      "blob": "76160af8165b8b918f48f55040789759c6916abc",
+      "workingBlob": "76160af8165b8b918f48f55040789759c6916abc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2740-array-map-reverse-slice37-catalog.json",
+      "blob": "ad038962fabd100d7fcd6fd678fffe40daee30d9",
+      "workingBlob": "ad038962fabd100d7fcd6fd678fffe40daee30d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2740-array-map-reverse-slice37-catalog.log",
+      "blob": "8fbd500aa03b5b400331c6273da60cf2763e562c",
+      "workingBlob": "8fbd500aa03b5b400331c6273da60cf2763e562c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2741-array-map-reverse-slice37-runtime.json",
+      "blob": "fe8bd00e4d41b8d737502f956606de4e6c8f0ab6",
+      "workingBlob": "fe8bd00e4d41b8d737502f956606de4e6c8f0ab6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2741-array-map-reverse-slice37-runtime.log",
+      "blob": "efaaac387bec63c4875ffe7daaaa9f267901ae5f",
+      "workingBlob": "efaaac387bec63c4875ffe7daaaa9f267901ae5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2741-array-map-reverse-slice37-runtime.terminal-audit.json",
+      "blob": "0592b7256888e8e09e1c5317998c86fb3ab635ac",
+      "workingBlob": "0592b7256888e8e09e1c5317998c86fb3ab635ac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2742-array-map-reverse-slice38-catalog.inventory.json",
+      "blob": "3afdf7577579062708dad204d3d822e46778cc32",
+      "workingBlob": "3afdf7577579062708dad204d3d822e46778cc32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2742-array-map-reverse-slice38-catalog.json",
+      "blob": "dcb4475c31be4c331c0499326bb26d7de30dd9fb",
+      "workingBlob": "dcb4475c31be4c331c0499326bb26d7de30dd9fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2742-array-map-reverse-slice38-catalog.log",
+      "blob": "154d39d90163f90e42d78f8dd37aa23e7310f4c0",
+      "workingBlob": "154d39d90163f90e42d78f8dd37aa23e7310f4c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2743-array-map-reverse-slice38-runtime.json",
+      "blob": "78102c02f33649993724d6804195d60d98ee30c1",
+      "workingBlob": "78102c02f33649993724d6804195d60d98ee30c1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2743-array-map-reverse-slice38-runtime.log",
+      "blob": "e2629124cd23dd83b251baa580d11b6f0d84594f",
+      "workingBlob": "e2629124cd23dd83b251baa580d11b6f0d84594f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2743-array-map-reverse-slice38-runtime.terminal-audit.json",
+      "blob": "37eee2907ee519c7738c799b0312a04ce3abb033",
+      "workingBlob": "37eee2907ee519c7738c799b0312a04ce3abb033"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2744-array-map-reverse-slice39-catalog.inventory.json",
+      "blob": "f75e80b05f0ccced623bdc37b17599cf646df5cc",
+      "workingBlob": "f75e80b05f0ccced623bdc37b17599cf646df5cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2744-array-map-reverse-slice39-catalog.json",
+      "blob": "251ab6c04c4ffb8c9cf2c33ae40caa79d81d8b96",
+      "workingBlob": "251ab6c04c4ffb8c9cf2c33ae40caa79d81d8b96"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2744-array-map-reverse-slice39-catalog.log",
+      "blob": "1377312165dc32a71380c257098b814a63735c33",
+      "workingBlob": "1377312165dc32a71380c257098b814a63735c33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2745-array-map-reverse-slice39-runtime.json",
+      "blob": "f51fb2a45f0a794da96bf7b5cdb60aa92cc81e0b",
+      "workingBlob": "f51fb2a45f0a794da96bf7b5cdb60aa92cc81e0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2745-array-map-reverse-slice39-runtime.log",
+      "blob": "1ee96af1c9adcbc18844acdaeafdfe876e0ea534",
+      "workingBlob": "1ee96af1c9adcbc18844acdaeafdfe876e0ea534"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2745-array-map-reverse-slice39-runtime.terminal-audit.json",
+      "blob": "77e21f2659825f74758e60fad8ba46d7c468e726",
+      "workingBlob": "77e21f2659825f74758e60fad8ba46d7c468e726"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2746-array-map-reverse-slice40-catalog.inventory.json",
+      "blob": "9637a1359dff8f195225c1377df71926f3156c31",
+      "workingBlob": "9637a1359dff8f195225c1377df71926f3156c31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2746-array-map-reverse-slice40-catalog.json",
+      "blob": "734d19eb9d23f3bfdcb664e7492cfe0420dc8b0c",
+      "workingBlob": "734d19eb9d23f3bfdcb664e7492cfe0420dc8b0c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2746-array-map-reverse-slice40-catalog.log",
+      "blob": "3931ad92cbf8430752f343a0dc1500f76a3a2c52",
+      "workingBlob": "3931ad92cbf8430752f343a0dc1500f76a3a2c52"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2747-array-map-reverse-slice40-runtime.json",
+      "blob": "6dcf54603317ff8157e7d4d0e1389adc26331ee4",
+      "workingBlob": "6dcf54603317ff8157e7d4d0e1389adc26331ee4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2747-array-map-reverse-slice40-runtime.log",
+      "blob": "b3a403c0fa0264bd24feed385ac28b9935720a90",
+      "workingBlob": "b3a403c0fa0264bd24feed385ac28b9935720a90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2747-array-map-reverse-slice40-runtime.terminal-audit.json",
+      "blob": "ab2e890625bc2df39813a63fcdb57751d1ef42bc",
+      "workingBlob": "ab2e890625bc2df39813a63fcdb57751d1ef42bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2748-array-map-reverse-slice41-catalog.inventory.json",
+      "blob": "d87fe659089c81b9de4a67933d2a3fa9fc4ad0b2",
+      "workingBlob": "d87fe659089c81b9de4a67933d2a3fa9fc4ad0b2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2748-array-map-reverse-slice41-catalog.json",
+      "blob": "343f4ad9d402073ca9ed34623c682e651d727ad5",
+      "workingBlob": "343f4ad9d402073ca9ed34623c682e651d727ad5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2748-array-map-reverse-slice41-catalog.log",
+      "blob": "35a181bd77fd7abbacef8c4ffc4f42d44b8eb0c3",
+      "workingBlob": "35a181bd77fd7abbacef8c4ffc4f42d44b8eb0c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2749-array-map-reverse-slice41-runtime.json",
+      "blob": "d5ca118bf0d6c38217719ba6142355d22c24f4fd",
+      "workingBlob": "d5ca118bf0d6c38217719ba6142355d22c24f4fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2749-array-map-reverse-slice41-runtime.log",
+      "blob": "125077eddfd6898d08f151b46d135df67616f6cd",
+      "workingBlob": "125077eddfd6898d08f151b46d135df67616f6cd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2749-array-map-reverse-slice41-runtime.terminal-audit.json",
+      "blob": "d8fca48d47cc03d761de237bf7fbb5523db9a1c0",
+      "workingBlob": "d8fca48d47cc03d761de237bf7fbb5523db9a1c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2750-array-map-reverse-slice42-catalog.inventory.json",
+      "blob": "b349a1cda4b2f7ec9fcadd9a53dce28320f2d6e7",
+      "workingBlob": "b349a1cda4b2f7ec9fcadd9a53dce28320f2d6e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2750-array-map-reverse-slice42-catalog.json",
+      "blob": "6a2bd26133e328eb741da33406f3edc65ed00465",
+      "workingBlob": "6a2bd26133e328eb741da33406f3edc65ed00465"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2750-array-map-reverse-slice42-catalog.log",
+      "blob": "4e85095f9b157dfaba0bca9c246cfb846a17831b",
+      "workingBlob": "4e85095f9b157dfaba0bca9c246cfb846a17831b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2751-array-map-reverse-slice42-runtime.json",
+      "blob": "366afd48556f557c4db9e5000ff7b5415ac05914",
+      "workingBlob": "366afd48556f557c4db9e5000ff7b5415ac05914"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2751-array-map-reverse-slice42-runtime.log",
+      "blob": "1ab22b6da52c63acd28f8d56e4c303f8dcdfa50f",
+      "workingBlob": "1ab22b6da52c63acd28f8d56e4c303f8dcdfa50f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2751-array-map-reverse-slice42-runtime.terminal-audit.json",
+      "blob": "f3632655f8caeae15521e4c552d15854e93c6bdd",
+      "workingBlob": "f3632655f8caeae15521e4c552d15854e93c6bdd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2752-array-map-reverse-slice43-catalog.inventory.json",
+      "blob": "97cd1edcafb7cf63fbfd7c0b65ffbb2a252666ef",
+      "workingBlob": "97cd1edcafb7cf63fbfd7c0b65ffbb2a252666ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2752-array-map-reverse-slice43-catalog.json",
+      "blob": "d8a043ffff4cf79d81afd54a08eb206c541e218f",
+      "workingBlob": "d8a043ffff4cf79d81afd54a08eb206c541e218f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2752-array-map-reverse-slice43-catalog.log",
+      "blob": "fd1a53798a7f7beb3ae703c35b57994d8efa9b51",
+      "workingBlob": "fd1a53798a7f7beb3ae703c35b57994d8efa9b51"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2753-array-map-reverse-slice43-runtime.json",
+      "blob": "919ac08bc068099c09bf9fa64c7975d2361532b2",
+      "workingBlob": "919ac08bc068099c09bf9fa64c7975d2361532b2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2753-array-map-reverse-slice43-runtime.log",
+      "blob": "322262ebc8d4581dcdd7c7015a72d545de51843b",
+      "workingBlob": "322262ebc8d4581dcdd7c7015a72d545de51843b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2753-array-map-reverse-slice43-runtime.terminal-audit.json",
+      "blob": "86bb9fb3441149f9c2bc8944d9085a5b3ce2cab5",
+      "workingBlob": "86bb9fb3441149f9c2bc8944d9085a5b3ce2cab5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2754-array-map-reverse-slice44-catalog.inventory.json",
+      "blob": "d49334621fca7efddd0e796f5370ad12179835f9",
+      "workingBlob": "d49334621fca7efddd0e796f5370ad12179835f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2754-array-map-reverse-slice44-catalog.json",
+      "blob": "af99b2b80e2ec83defb3be2832638702c82f8ef6",
+      "workingBlob": "af99b2b80e2ec83defb3be2832638702c82f8ef6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2754-array-map-reverse-slice44-catalog.log",
+      "blob": "3c649fa4ab5493c82585e87e52e54bf0583c7e7a",
+      "workingBlob": "3c649fa4ab5493c82585e87e52e54bf0583c7e7a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2755-array-map-reverse-slice44-runtime.json",
+      "blob": "65b0b19a9a43db2b6a42db05e666e32167ad9a8c",
+      "workingBlob": "65b0b19a9a43db2b6a42db05e666e32167ad9a8c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2755-array-map-reverse-slice44-runtime.log",
+      "blob": "144021ffd5425f281e57fe28142ac6550061d7d5",
+      "workingBlob": "144021ffd5425f281e57fe28142ac6550061d7d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2755-array-map-reverse-slice44-runtime.terminal-audit.json",
+      "blob": "f2c0abb8841c1eaef8f12e69347c4c6c14007f18",
+      "workingBlob": "f2c0abb8841c1eaef8f12e69347c4c6c14007f18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2756-array-map-admission-catalog.inventory.json",
+      "blob": "0ab3ddb5a3b9bd3bab310cf01c1e607620a6ec8e",
+      "workingBlob": "0ab3ddb5a3b9bd3bab310cf01c1e607620a6ec8e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2756-array-map-admission-catalog.json",
+      "blob": "53ed2c23d4d05ca0aca5598d254d61cbd64db8f3",
+      "workingBlob": "53ed2c23d4d05ca0aca5598d254d61cbd64db8f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2756-array-map-admission-catalog.log",
+      "blob": "0a64801a72cd9714885cc8a3d3b09ecb44a44fa3",
+      "workingBlob": "0a64801a72cd9714885cc8a3d3b09ecb44a44fa3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2756-array-map-admission-catalog.pins.json",
+      "blob": "527e821672550dbcb6538c27ba0ee9fede55f08f",
+      "workingBlob": "527e821672550dbcb6538c27ba0ee9fede55f08f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2757-array-map-admission-runtime.json",
+      "blob": "fe1068f8306d65bdb69eaf9bcd1ef000ca164d0b",
+      "workingBlob": "fe1068f8306d65bdb69eaf9bcd1ef000ca164d0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2757-array-map-admission-runtime.log",
+      "blob": "253b6fb111d88aa4eed12c36d28400344e9576b4",
+      "workingBlob": "253b6fb111d88aa4eed12c36d28400344e9576b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2757-array-map-admission-runtime.terminal-audit.json",
+      "blob": "fa08deef5c7c98193a8f054428ab6b4fee1ef818",
+      "workingBlob": "fa08deef5c7c98193a8f054428ab6b4fee1ef818"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2758-array-map-cli-final-catalog.inventory.json",
+      "blob": "990a96074e51e8a1a123040aa1334a85f3540515",
+      "workingBlob": "990a96074e51e8a1a123040aa1334a85f3540515"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2758-array-map-cli-final-catalog.json",
+      "blob": "7fc9503a348fd8238a434062ef7f672187821c8f",
+      "workingBlob": "7fc9503a348fd8238a434062ef7f672187821c8f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2758-array-map-cli-final-catalog.log",
+      "blob": "770211de8981329c844ee830da6b64e5d52fc2af",
+      "workingBlob": "770211de8981329c844ee830da6b64e5d52fc2af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2758-array-map-cli-final-catalog.pins.json",
+      "blob": "4c2b30f767be626c38f9724d2e2fb1849ca85ea5",
+      "workingBlob": "4c2b30f767be626c38f9724d2e2fb1849ca85ea5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.failure-recon.json",
+      "blob": "bef6e2b9be21fdaa021e6179d17131692e4c4393",
+      "workingBlob": "bef6e2b9be21fdaa021e6179d17131692e4c4393"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.json",
+      "blob": "ed9b06fefed518c7607fad5cafdd628c505998ae",
+      "workingBlob": "ed9b06fefed518c7607fad5cafdd628c505998ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.log",
+      "blob": "62b817e6ace26732907fe30033b3dc27d5f0f93d",
+      "workingBlob": "62b817e6ace26732907fe30033b3dc27d5f0f93d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.terminal-audit.json",
+      "blob": "92be6c2bc244f85ec23435c410592f88028f82ea",
+      "workingBlob": "92be6c2bc244f85ec23435c410592f88028f82ea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2760-array-map-admission-clippy.json",
+      "blob": "a2e08b299448b58ff4b4853db112171b0ad91d73",
+      "workingBlob": "a2e08b299448b58ff4b4853db112171b0ad91d73"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2760-array-map-admission-clippy.log",
+      "blob": "c8ac606d693219bf23982bc37ec893bb3850e2b8",
+      "workingBlob": "c8ac606d693219bf23982bc37ec893bb3850e2b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2761-array-map-cli-companion-catalog.inventory.json",
+      "blob": "eba45781e13c36758ac135b33e99a3ff35d00d55",
+      "workingBlob": "eba45781e13c36758ac135b33e99a3ff35d00d55"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2761-array-map-cli-companion-catalog.json",
+      "blob": "501b96d2f98e1dd30beaadddf591fb4eff9c8fd4",
+      "workingBlob": "501b96d2f98e1dd30beaadddf591fb4eff9c8fd4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2761-array-map-cli-companion-catalog.log",
+      "blob": "b1a8e2d3b28316ba07386a426238a211a124bb05",
+      "workingBlob": "b1a8e2d3b28316ba07386a426238a211a124bb05"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2762-array-map-cli-companion-runtime.json",
+      "blob": "57663b4804fdf323eeaa01116a018e83a442405c",
+      "workingBlob": "57663b4804fdf323eeaa01116a018e83a442405c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2762-array-map-cli-companion-runtime.log",
+      "blob": "2711654ac4eb0b5204d4a4e17e39ee59d8f821a7",
+      "workingBlob": "2711654ac4eb0b5204d4a4e17e39ee59d8f821a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2762-array-map-cli-companion-runtime.terminal-audit.json",
+      "blob": "e6541648532be6563fe3a6d6f92c70ab5b152f43",
+      "workingBlob": "e6541648532be6563fe3a6d6f92c70ab5b152f43"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "514eac728c59ea539e89386fde55953a3283b4cc",
+      "workingBlob": "514eac728c59ea539e89386fde55953a3283b4cc"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "a42033d60f1fbc0da189fb0eb9a33ca63413a8e8",
+      "workingBlob": "a42033d60f1fbc0da189fb0eb9a33ca63413a8e8"
+    }
+  ],
+  "sourceCount": 5874,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "d6e915bc09cdca0904f184d555dc5424c94fa1a1267ec26ffc0cc31043471933",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T09:08:25.8115400Z"
+}
