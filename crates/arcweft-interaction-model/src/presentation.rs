@@ -48,6 +48,21 @@ impl PresentationResourceKind {
     }
 
     #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::Image,
+            1 => Self::View,
+            2 => Self::Menu,
+            3 => Self::Overlay,
+            4 => Self::RuntimeControl,
+            5 => Self::Background,
+            6 => Self::Character,
+            7 => Self::Viewport,
+            _ => return None,
+        })
+    }
+
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Image => "image",

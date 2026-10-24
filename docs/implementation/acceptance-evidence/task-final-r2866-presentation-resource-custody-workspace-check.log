@@ -1,0 +1,2212 @@
+    Checking arcweft-interaction-model v0.1.0 (D:\git\arcweft\crates\arcweft-interaction-model)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-syntax\src\attachment\snapshot.rs:47:14
+   |
+47 |             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |              ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+47 -             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+47 +             .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: `arcweft-lang-syntax` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-syntax` to apply 1 suggestion)
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+    Checking arcweft-presentation v0.1.0 (D:\git\arcweft\crates\arcweft-presentation)
+    Checking arcweft-audio-core v0.1.0 (D:\git\arcweft\crates\arcweft-audio-core)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-hir\src\identity.rs:26:10
+   |
+26 |         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |          ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+26 -         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+26 +         .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: `arcweft-lang-hir` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-hir` to apply 1 suggestion)
+    Checking arcweft-audio-codec v0.1.0 (D:\git\arcweft\crates\arcweft-audio-codec)
+    Checking arcweft-audio-mixer v0.1.0 (D:\git\arcweft\crates\arcweft-audio-mixer)
+    Checking arcweft-player-text-input v0.1.0 (D:\git\arcweft\crates\arcweft-player-text-input)
+    Checking arcweft-audio-device-cpal v0.1.0 (D:\git\arcweft\crates\arcweft-audio-device-cpal)
+    Checking arcweft-desktop-native v0.1.0 (D:\git\arcweft\crates\arcweft-desktop-native)
+    Checking arcweft-lang-syntax v0.1.0 (D:\git\arcweft\crates\arcweft-lang-syntax)
+warning: `arcweft-lang-hir` (lib test) generated 1 warning (1 duplicate)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `runtime_sequence_values`
+  --> crates\arcweft-core\src\awbc\product_step.rs:86:5
+   |
+86 |     runtime_sequence_values, runtime_value_label,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `arcweft-lang-syntax` (lib test) generated 1 warning (1 duplicate)
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:21:43
+   |
+21 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+24 |     SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
+   |                                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:67:33
+   |
+67 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeAwbcProgramSourceField`
+  --> crates\arcweft-core\src\plan\task_source\program.rs:25:62
+   |
+25 | pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:15:5
+   |
+15 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+16 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+17 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:56:32
+   |
+56 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+warning: unused imports: `TaskId` and `TaskPublicationRevision`
+  --> crates\arcweft-core\src\awbc\product_step\tests.rs:31:85
+   |
+31 |     GenerationId, LogicalEpoch, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId,
+   |                                                                                     ^^^^^^
+32 |     TaskPublicationRevision, TaskSequence,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+  --> crates\arcweft-core\src\engine\flow\iterator_tests.rs:10:5
+   |
+10 | use crate::task::NeedId;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+    --> crates\arcweft-core\src\engine\flow.rs:1923:9
+     |
+1923 |     use crate::task::NeedId;
+     |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::num::NonZeroU32`
+    --> crates\arcweft-core\src\engine.rs:4804:9
+     |
+4804 |     use std::num::NonZeroU32;
+     |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AwbcRuntimeValueSnapshotError`
+  --> crates\arcweft-core\src\plan\task_source\program\tests.rs:12:5
+   |
+12 |     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue, RuntimeValue,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:16:5
+   |
+16 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+17 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+   --> crates\arcweft-core\src\pure\program\tests.rs:161:9
+    |
+161 |     use crate::task::NeedId;
+    |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskClass`, `TaskId`, `TaskKey`, `TaskPolicy`, `TaskPriority`, and `TaskSpec`
+  --> crates\arcweft-core\src\task\outcome\tests.rs:16:9
+   |
+16 |         CancelScopeId, FileReadTextRequest, HostTaskRequest, TaskClass, TaskId, TaskKey,
+   |         ^^^^^^^^^^^^^                                        ^^^^^^^^^  ^^^^^^  ^^^^^^^
+17 |         TaskOutcomeContract, TaskPolicy, TaskPriority, TaskSpec,
+   |                              ^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `task::NeedId`
+ --> crates\arcweft-core\src\tests\affine_intrinsics.rs:4:5
+  |
+4 |     task::NeedId,
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `RuntimeNeedState`
+  --> crates\arcweft-core\src\tests\flow.rs:31:26
+   |
+31 |     task::{LogicalEpoch, NeedId, RuntimeNeedState, TaskSequence},
+   |                          ^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::Loop::source`
+   --> crates\arcweft-core\src\engine.rs:805:9
+    |
+805 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::Loop::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::While::source`
+   --> crates\arcweft-core\src\engine.rs:808:9
+    |
+808 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::While::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::WhileLet::source`
+   --> crates\arcweft-core\src\engine.rs:811:9
+    |
+811 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::WhileLet::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `RuntimeStoredValue` is more private than the item `NativePendingWork<V, I>`
+   --> crates\arcweft-core\src\engine\work.rs:491:1
+    |
+491 | / impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue>
+492 | |     NativePendingWork<V, I>
+    | |___________________________^ implementation `NativePendingWork<V, I>` is reachable at visibility `pub`
+    |
+note: but trait `RuntimeStoredValue` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\value\storage.rs:15:1
+    |
+ 15 | pub(crate) trait RuntimeStoredValue {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_bounds)]` on by default
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `NeedProducerRegistryRestore<V, P, S>`
+    --> crates\arcweft-core\src\task\producer.rs:1666:1
+     |
+1666 | impl<V, P, S: super::TaskExecutionSource + PartialEq> NeedProducerRegistryRestore<V, P, S> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `NeedProducerRegistryRestore<V, P, S>` is reachable at visibility `pub`
+     |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+    --> crates\arcweft-core\src\task\execution.rs:407:1
+     |
+ 407 | pub(crate) trait TaskExecutionSource {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `producer::NeedProducerLaunchRestore<V, P, S>`
+    --> crates\arcweft-core\src\task\producer.rs:1750:1
+     |
+1750 | impl<V, P, S: super::TaskExecutionSource> NeedProducerLaunchRestore<V, P, S> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `producer::NeedProducerLaunchRestore<V, P, S>` is reachable at visibility `pub`
+     |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+    --> crates\arcweft-core\src\task\execution.rs:407:1
+     |
+ 407 | pub(crate) trait TaskExecutionSource {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `RuntimeStoredValue` is more private than the item `RuntimeNeedProducerStart<V, P, S>`
+   --> crates\arcweft-core\src\task\producer\start.rs:147:1
+    |
+147 | / impl<V: RuntimeStoredValue, P: RuntimeStoredValue, S: crate::task::TaskExecutionSource>
+148 | |     RuntimeNeedProducerStart<V, P, S>
+    | |_____________________________________^ implementation `RuntimeNeedProducerStart<V, P, S>` is reachable at visibility `pub`
+    |
+note: but trait `RuntimeStoredValue` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\value\storage.rs:15:1
+    |
+ 15 | pub(crate) trait RuntimeStoredValue {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `RuntimeNeedProducerStart<V, P, S>`
+   --> crates\arcweft-core\src\task\producer\start.rs:147:1
+    |
+147 | / impl<V: RuntimeStoredValue, P: RuntimeStoredValue, S: crate::task::TaskExecutionSource>
+148 | |     RuntimeNeedProducerStart<V, P, S>
+    | |_____________________________________^ implementation `RuntimeNeedProducerStart<V, P, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:407:1
+    |
+407 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>`
+   --> crates\arcweft-core\src\task\specification.rs:202:1
+    |
+202 | impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:407:1
+    |
+407 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::journal::TaskSubmission<P, producer::TaskPlanSemanticDigest, S>`
+   --> crates\arcweft-core\src\task\journal.rs:40:1
+    |
+ 40 | impl<P, S: super::TaskExecutionSource> TaskSubmission<P, super::TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::journal::TaskSubmission<P, producer::TaskPlanSemanticDigest, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:407:1
+    |
+407 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `TaskSnapshotSource` is more private than the item `task::snapshot::<impl specification::TaskSpec<awbc_save::AwbcRuntimeValueSnapshot, producer::TaskPlanSemanticDigest, S>>`
+  --> crates\arcweft-core\src\task\snapshot.rs:90:1
+   |
+90 | impl<S: TaskSnapshotSource> TaskSpec<AwbcRuntimeValueSnapshot, super::TaskPlanSemanticDigest, S> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::snapshot::<impl specification::TaskSpec<awbc_save::AwbcRuntimeValueSnapshot, producer::TaskPlanSemanticDigest, S>>` is reachable at visibility `pub`
+   |
+note: but trait `TaskSnapshotSource` is only usable at visibility `pub(crate)`
+  --> crates\arcweft-core\src\task\snapshot.rs:23:1
+   |
+23 | pub(crate) trait TaskSnapshotSource: super::TaskExecutionSource + Sized {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>`
+   --> crates\arcweft-core\src\task\descriptor.rs:17:1
+    |
+ 17 | impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:407:1
+    |
+407 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>`
+   --> crates\arcweft-core\src\task\descriptor.rs:107:1
+    |
+107 | impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:407:1
+    |
+407 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `TaskRequest<P, S>`
+   --> crates\arcweft-core\src\task\execution.rs:509:1
+    |
+509 | impl<P, S: TaskExecutionSource> TaskRequest<P, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `TaskRequest<P, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:407:1
+    |
+407 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `type_instantiation`
+   --> crates\arcweft-core\src\awbc\value_admission\tests.rs:849:13
+    |
+849 |             type_instantiation,
+    |             ^^^^^^^^^^^^^^^^^^ help: try ignoring the field: `type_instantiation: _`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `replace_from_snapshot` and `push_call_frame_with_continuation` are never used
+    --> crates\arcweft-core\src\awbc\fiber.rs:2550:19
+     |
+1713 | impl FiberState {
+     | --------------- methods in this implementation
+...
+2550 |     pub(crate) fn replace_from_snapshot(
+     |                   ^^^^^^^^^^^^^^^^^^^^^
+...
+3396 |     pub(crate) fn push_call_frame_with_continuation(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `is_task_handle` is never used
+    --> crates\arcweft-core\src\awbc\verify\code.rs:6460:4
+     |
+6460 | fn is_task_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
+     |    ^^^^^^^^^^^^^^
+
+warning: function `bind_pattern_copyable` is never used
+    --> crates\arcweft-core\src\awbc\vm.rs:4715:15
+     |
+4715 | pub(crate) fn bind_pattern_copyable(
+     |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `pattern_binding_registers` is never used
+    --> crates\arcweft-core\src\awbc\vm.rs:4959:15
+     |
+4959 | pub(crate) fn pattern_binding_registers(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `RuntimeRegistryUpdateJournalError` is never used
+  --> crates\arcweft-core\src\effect\registry\journal.rs:17:17
+   |
+17 | pub(crate) enum RuntimeRegistryUpdateJournalError {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `Bank` is never used
+  --> crates\arcweft-core\src\effect\registry\journal.rs:24:6
+   |
+24 | enum Bank {
+   |      ^^^^
+
+warning: struct `RuntimeRegistryUpdateJournal` is never constructed
+  --> crates\arcweft-core\src\effect\registry\journal.rs:31:19
+   |
+31 | pub(crate) struct RuntimeRegistryUpdateJournal {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `try_push`, and `finish` are never used
+  --> crates\arcweft-core\src\effect\registry\journal.rs:37:19
+   |
+36 | impl RuntimeRegistryUpdateJournal {
+   | --------------------------------- associated items in this implementation
+37 |     pub(crate) fn new(
+   |                   ^^^
+...
+51 |     pub(crate) fn try_push(
+   |                   ^^^^^^^^
+...
+89 |     pub(crate) fn finish(
+   |                   ^^^^^^
+
+warning: method `owner` is never used
+   --> crates\arcweft-core\src\engine\code_cursor.rs:201:25
+    |
+200 | impl NativeSourceOperation {
+    | -------------------------- method in this implementation
+201 |     pub(super) const fn owner(&self) -> RuntimeCodeOwner {
+    |                         ^^^^^
+
+warning: methods `allocate_scheduled_scope` and `push_control_scope_frame` are never used
+    --> crates\arcweft-core\src\engine\flow.rs:1405:8
+     |
+  32 | impl Engine {
+     | ----------- methods in this implementation
+...
+1405 |     fn allocate_scheduled_scope(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1424 |     pub(super) fn push_control_scope_frame(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `code_owner` is never used
+   --> crates\arcweft-core\src\engine\work.rs:227:19
+    |
+200 | impl<V, I> NativePendingWork<V, I> {
+    | ---------------------------------- method in this implementation
+...
+227 |     pub(super) fn code_owner(&self) -> Option<crate::plan::code::RuntimeCodeOwner> {
+    |                   ^^^^^^^^^^
+
+warning: function `canonical_runtime_tuple_digest` is never used
+   --> crates\arcweft-core\src\entry\schema.rs:619:15
+    |
+619 | pub(crate) fn canonical_runtime_tuple_digest(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `try_into_state` and `from_state` are never used
+  --> crates\arcweft-core\src\entry\schema\value_budget.rs:71:19
+   |
+68 | impl ValidationWork {
+   | ------------------- associated items in this implementation
+...
+71 |     pub(crate) fn try_into_state(self) -> Result<ValidationWorkState, Self> {
+   |                   ^^^^^^^^^^^^^^
+...
+77 |     pub(crate) fn from_state(state: ValidationWorkState) -> Self {
+   |                   ^^^^^^^^^^
+
+warning: function `validate_live` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:185:15
+    |
+185 | pub(crate) fn validate_live<V: ValueValidation>(
+    |               ^^^^^^^^^^^^^
+
+warning: function `validate_without_digest` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:213:4
+    |
+213 | fn validate_without_digest<V: ValueValidation>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type alias `ValueResourceAdmissionState` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:487:17
+    |
+487 | pub(crate) type ValueResourceAdmissionState = ValueResourceAdmission<ValidationWorkState>;
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `map_work` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:490:8
+    |
+489 | impl<Work> ValueResourceAdmission<Work> {
+    | --------------------------------------- method in this implementation
+490 |     fn map_work<Next>(self, map: impl FnOnce(Work) -> Next) -> ValueResourceAdmission<Next> {
+    |        ^^^^^^^^
+
+warning: method `resume` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:502:19
+    |
+501 | impl ValueResourceAdmissionState {
+    | -------------------------------- method in this implementation
+502 |     pub(crate) fn resume(self) -> ValueResourceAdmission {
+    |                   ^^^^^^
+
+warning: method `try_into_state` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:515:19
+    |
+507 | impl ValueResourceAdmission {
+    | --------------------------- method in this implementation
+...
+515 |     pub(crate) fn try_into_state(self) -> Result<ValueResourceAdmissionState, Self> {
+    |                   ^^^^^^^^^^^^^^
+
+warning: associated functions `new` and `from_flow_invocation` are never used
+   --> crates\arcweft-core\src\executor.rs:163:19
+    |
+162 | impl VmExecutor {
+    | --------------- associated functions in this implementation
+163 |     pub(crate) fn new(plan: RuntimePlan) -> Self {
+    |                   ^^^
+...
+176 |     pub(crate) fn from_flow_invocation(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `new` and `from_flow_invocation` are never used
+   --> crates\arcweft-core\src\executor.rs:214:19
+    |
+213 | impl AotExecutor {
+    | ---------------- associated functions in this implementation
+214 |     pub(crate) fn new(plan: RuntimePlan) -> Self {
+    |                   ^^^
+...
+232 |     pub(crate) fn from_flow_invocation(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `commit_published`, `commit_abandoned`, and `accept_published_outcome` are never used
+    --> crates\arcweft-core\src\line_task\activation.rs:946:19
+     |
+ 568 | impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+     | --------------------------------------------------------- methods in this implementation
+...
+ 946 |     pub(crate) fn commit_published(
+     |                   ^^^^^^^^^^^^^^^^
+...
+1004 |     pub(crate) fn commit_abandoned(
+     |                   ^^^^^^^^^^^^^^^^
+...
+1027 |     pub(crate) fn accept_published_outcome(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `issued_command` is never used
+   --> crates\arcweft-core\src\line_task\handle.rs:522:19
+    |
+513 | impl RuntimeDialogueOutcomeStage {
+    | -------------------------------- method in this implementation
+...
+522 |     pub(crate) fn issued_command(
+    |                   ^^^^^^^^^^^^^^
+
+warning: methods `ledger` and `ledger_mut` are never used
+   --> crates\arcweft-core\src\line_task\handle.rs:601:25
+    |
+600 | impl RuntimeScheduledCompletionStage {
+    | ------------------------------------ methods in this implementation
+601 |     pub(crate) const fn ledger(&self) -> &RuntimeLineHandleLedger {
+    |                         ^^^^^^
+...
+605 |     pub(crate) fn ledger_mut(&mut self) -> &mut RuntimeLineHandleLedger {
+    |                   ^^^^^^^^^^
+
+warning: methods `allocate_deferred_registration`, `terminalize_unstarted_scheduled_packet`, `complete_unstarted_scheduled`, `stage_scheduled_child_work_completion`, `replace_transaction_parts`, and `accept_runtime_outcome` are never used
+    --> crates\arcweft-core\src\line_task\handle.rs:914:19
+     |
+ 789 | impl<T: Clone> RuntimeDialogueActivationState<T> {
+     | ------------------------------------------------ methods in this implementation
+...
+ 914 |     pub(crate) fn allocate_deferred_registration(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1385 |     pub(crate) fn terminalize_unstarted_scheduled_packet(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1394 |     pub(crate) fn complete_unstarted_scheduled(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1488 |     pub(crate) fn stage_scheduled_child_work_completion(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1603 |     pub(crate) fn replace_transaction_parts(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1979 |     pub(crate) fn accept_runtime_outcome(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `transition` is never used
+    --> crates\arcweft-core\src\line_task\handle.rs:4262:19
+     |
+4053 | impl RuntimeScheduledLineTask {
+     | ----------------------------- method in this implementation
+...
+4262 |     pub(crate) fn transition(
+     |                   ^^^^^^^^^^
+
+warning: function `match_runtime_pattern` is never used
+    --> crates\arcweft-core\src\pattern.rs:1546:15
+     |
+1546 | pub(crate) fn match_runtime_pattern(
+     |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `value_field_count` and `value_field` are never used
+    --> crates\arcweft-core\src\pattern.rs:2518:8
+     |
+2506 | impl RuntimeRecordPatternDomain<'_> {
+     | ----------------------------------- methods in this implementation
+...
+2518 |     fn value_field_count(&self, value: &RuntimeValue) -> Option<usize> {
+     |        ^^^^^^^^^^^^^^^^^
+...
+2528 |     fn value_field<'value>(
+     |        ^^^^^^^^^^^
+
+warning: function `collect_pattern_bindings` is never used
+    --> crates\arcweft-core\src\pattern.rs:2745:4
+     |
+2745 | fn collect_pattern_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_record_pattern_bindings` is never used
+    --> crates\arcweft-core\src\pattern.rs:2818:4
+     |
+2818 | fn collect_record_pattern_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_sequence_pattern_bindings` is never used
+    --> crates\arcweft-core\src\pattern.rs:2850:4
+     |
+2850 | fn collect_sequence_pattern_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_pattern_list` is never used
+    --> crates\arcweft-core\src\pattern.rs:2877:4
+     |
+2877 | fn collect_pattern_list(
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_runtime_contract` is never used
+   --> crates\arcweft-core\src\plan.rs:641:19
+    |
+603 | impl FlowRuntimeId {
+    | ------------------ associated function in this implementation
+...
+641 |     pub(crate) fn from_runtime_contract(
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `function_row_digest` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\executable_metadata.rs:316:19
+    |
+  7 | impl RuntimeBodySemanticContext<'_> {
+    | ----------------------------------- method in this implementation
+...
+316 |     pub(crate) fn function_row_digest(
+    |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: method `static_request_template_digest` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\request.rs:342:19
+    |
+339 | impl RuntimeBodySemanticContext<'_> {
+    | ----------------------------------- method in this implementation
+...
+342 |     pub(crate) fn static_request_template_digest(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `storage_bytes` is never used
+  --> crates\arcweft-core\src\plan\body_semantic\request\codec.rs:46:25
+   |
+41 | impl PreparedRuntimeTaskRequestEncoding<'_> {
+   | ------------------------------------------- method in this implementation
+...
+46 |     pub(crate) const fn storage_bytes(&self) -> usize {
+   |                         ^^^^^^^^^^^^^
+
+warning: method `storage_bytes` is never used
+  --> crates\arcweft-core\src\plan\body_semantic\request\codec.rs:88:25
+   |
+87 | impl ValidatedRuntimeTaskRequestSource<'_> {
+   | ------------------------------------------ method in this implementation
+88 |     pub(crate) const fn storage_bytes(&self) -> usize {
+   |                         ^^^^^^^^^^^^^
+
+warning: associated items `encode` and `decode` are never used
+   --> crates\arcweft-core\src\plan\body_semantic\request\codec.rs:149:19
+    |
+148 | impl RuntimeTaskRequestTemplate {
+    | ------------------------------- associated items in this implementation
+149 |     pub(crate) fn encode(
+    |                   ^^^^^^
+...
+244 |     pub(crate) fn decode(
+    |                   ^^^^^^
+
+warning: associated function `decode_task_sources` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\task_image\codec.rs:227:28
+    |
+224 | impl UnsealedRuntimePlanImage {
+    | ----------------------------- associated function in this implementation
+...
+227 |     pub(in crate::plan) fn decode_task_sources(
+    |                            ^^^^^^^^^^^^^^^^^^^
+
+warning: method `bytes` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\task_image\codec.rs:345:34
+    |
+255 | impl<'bytes, 'resources> PreparedRuntimeTaskSource<'bytes, 'resources> {
+    | ---------------------------------------------------------------------- method in this implementation
+...
+345 |     pub(in crate::plan) const fn bytes(&self) -> &'bytes [u8] {
+    |                                  ^^^^^
+
+warning: method `lower_pattern_seed` is never used
+   --> crates\arcweft-core\src\plan\construction\lower.rs:189:19
+    |
+145 | impl RuntimePlanBuilder {
+    | ----------------------- method in this implementation
+...
+189 |     pub(super) fn lower_pattern_seed(
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_expr_refs_free_locals` is never used
+    --> crates\arcweft-core\src\plan\construction\seed.rs:1384:4
+     |
+1384 | fn collect_expr_refs_free_locals(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\audio_commands.rs:52:5
+   |
+30 | pub(in crate::plan) enum RuntimeAudioCommandSourceError {
+   |                          ------------------------------ variant in this enum
+...
+52 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeAudioCommandSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\audio_commands\encoding.rs:12:5
+   |
+10 | pub(in crate::plan) struct EncodedRuntimeAudioCommandSource {
+   |                            -------------------------------- field in this struct
+11 |     bytes: Vec<u8>,
+12 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\audio_commands\encoding.rs:18:28
+   |
+14 | impl EncodedRuntimeAudioCommandSource {
+   | ------------------------------------- methods in this implementation
+...
+18 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+21 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+24 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+27 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+30 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: method `into_bytes` is never used
+  --> crates\arcweft-core\src\plan\construction\source\content_plans\encoding.rs:21:28
+   |
+17 | impl EncodedRuntimeContentPlanSources {
+   | ------------------------------------- method in this implementation
+...
+21 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\evaluated_effects.rs:55:5
+   |
+29 | pub(in crate::plan) enum RuntimeEvaluatedEffectSourceError {
+   |                          --------------------------------- variant in this enum
+...
+55 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeEvaluatedEffectSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\evaluated_effects\encoding.rs:14:5
+   |
+12 | pub(in crate::plan) struct EncodedRuntimeEvaluatedEffectSource {
+   |                            ----------------------------------- field in this struct
+13 |     bytes: Vec<u8>,
+14 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\evaluated_effects\encoding.rs:20:28
+   |
+16 | impl EncodedRuntimeEvaluatedEffectSource {
+   | ---------------------------------------- methods in this implementation
+...
+20 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+23 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+26 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+29 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+32 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+   --> crates\arcweft-core\src\plan\construction\source\expression.rs:109:5
+    |
+ 59 | pub(in crate::plan) enum RuntimeExpressionSourceError {
+    |                          ---------------------------- variant in this enum
+...
+109 |     OutputCapacity { required: usize, remaining: usize },
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `RuntimeExpressionSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: methods `into_bytes` and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\expression\encoding.rs:19:28
+   |
+18 | impl EncodedRuntimeExpressionSource {
+   | ----------------------------------- methods in this implementation
+19 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+34 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+   --> crates\arcweft-core\src\plan\construction\source\flow.rs:130:5
+    |
+ 62 | pub(in crate::plan) enum RuntimeFlowSourceError {
+    |                          ---------------------- variant in this enum
+...
+130 |     OutputCapacity { required: usize, remaining: usize },
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `RuntimeFlowSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\flow\encoding.rs:13:5
+   |
+11 | pub(in crate::plan) struct EncodedRuntimeFlowSource {
+   |                            ------------------------ field in this struct
+12 |     bytes: Vec<u8>,
+13 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `node_count`, `elements`, `storage_bytes`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\flow\encoding.rs:19:34
+   |
+15 | impl EncodedRuntimeFlowSource {
+   | ----------------------------- methods in this implementation
+...
+19 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+22 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+25 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+28 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\host_calls.rs:75:5
+   |
+39 | pub(in crate::plan) enum RuntimeHostCallSourceError {
+   |                          -------------------------- variant in this enum
+...
+75 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeHostCallSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\host_calls\encoding.rs:12:5
+   |
+10 | pub(in crate::plan) struct EncodedRuntimeHostCallSource {
+   |                            ---------------------------- field in this struct
+11 |     bytes: Vec<u8>,
+12 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\host_calls\encoding.rs:18:34
+   |
+14 | impl EncodedRuntimeHostCallSource {
+   | --------------------------------- methods in this implementation
+...
+18 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+21 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+24 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+27 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: field `footprint` is never read
+   --> crates\arcweft-core\src\plan\construction\source\program.rs:275:9
+    |
+270 | pub(in crate::plan) struct OriginalRuntimeProgramSource {
+    |                            ---------------------------- field in this struct
+...
+275 |     pub footprint: Footprint,
+    |         ^^^^^^^^^
+
+warning: methods `node_count` and `elements` are never used
+  --> crates\arcweft-core\src\plan\construction\source\program\encoding.rs:16:34
+   |
+12 | impl EncodedRuntimeProgramSource {
+   | -------------------------------- methods in this implementation
+...
+16 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+19 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\project_calls.rs:68:5
+   |
+36 | pub(in crate::plan) enum RuntimeProjectCallSourceError {
+   |                          ----------------------------- variant in this enum
+...
+68 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeProjectCallSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\project_calls\encoding.rs:17:5
+   |
+15 | pub(in crate::plan) struct EncodedRuntimeProjectCallSource {
+   |                            ------------------------------- field in this struct
+16 |     bytes: Vec<u8>,
+17 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\project_calls\encoding.rs:23:28
+   |
+19 | impl EncodedRuntimeProjectCallSource {
+   | ------------------------------------ methods in this implementation
+...
+23 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+26 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+29 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+32 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+35 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\selected_producers.rs:72:5
+   |
+32 | pub(in crate::plan) enum RuntimeSelectedProducerSourceError {
+   |                          ---------------------------------- variant in this enum
+...
+72 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeSelectedProducerSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\selected_producers\encoding.rs:13:5
+   |
+11 | pub(in crate::plan) struct EncodedRuntimeSelectedProducerSource {
+   |                            ------------------------------------ field in this struct
+12 |     bytes: Vec<u8>,
+13 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\selected_producers\encoding.rs:19:34
+   |
+15 | impl EncodedRuntimeSelectedProducerSource {
+   | ----------------------------------------- methods in this implementation
+...
+19 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+22 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+25 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+28 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\static_effects.rs:58:5
+   |
+30 | pub(in crate::plan) enum RuntimeStaticEffectSourceError {
+   |                          ------------------------------ variant in this enum
+...
+58 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeStaticEffectSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\static_effects\encoding.rs:13:5
+   |
+11 | pub(in crate::plan) struct EncodedRuntimeStaticEffectSource {
+   |                            -------------------------------- field in this struct
+12 |     bytes: Vec<u8>,
+13 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\static_effects\encoding.rs:19:28
+   |
+15 | impl EncodedRuntimeStaticEffectSource {
+   | ------------------------------------- methods in this implementation
+...
+19 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+22 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+25 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+28 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+31 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: method `into_bytes` is never used
+  --> crates\arcweft-core\src\plan\construction\source\streams\encoding.rs:23:28
+   |
+19 | impl EncodedRuntimeStreamSources {
+   | -------------------------------- method in this implementation
+...
+23 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+
+warning: method `materialize` is never used
+   --> crates\arcweft-core\src\plan\control_effect\source_codec.rs:130:28
+    |
+119 | impl PreparedRuntimeControlSources<'_> {
+    | -------------------------------------- method in this implementation
+...
+130 |     pub(in crate::plan) fn materialize(
+    |                            ^^^^^^^^^^^
+
+warning: method `encode_sources` is never used
+   --> crates\arcweft-core\src\plan\control_effect\source_codec.rs:196:28
+    |
+172 | impl RuntimeControlEffectContractTable {
+    | -------------------------------------- method in this implementation
+...
+196 |     pub(in crate::plan) fn encode_sources(
+    |                            ^^^^^^^^^^^^^^
+
+warning: method `storage_bytes` is never used
+   --> crates\arcweft-core\src\plan\declaration_sources.rs:169:25
+    |
+158 | impl PreparedRuntimePlanDeclarationSources<'_> {
+    | ---------------------------------------------- method in this implementation
+...
+169 |     pub(super) const fn storage_bytes(&self) -> usize {
+    |                         ^^^^^^^^^^^^^
+
+warning: method `literals_permit_copy` is never used
+   --> crates\arcweft-core\src\plan\flow_ops.rs:465:19
+    |
+249 | impl FlowOp {
+    | ----------- method in this implementation
+...
+465 |     pub(crate) fn literals_permit_copy(&self) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `operation` is never used
+  --> crates\arcweft-core\src\plan\flow_ops\location.rs:72:19
+   |
+31 | impl RuntimeFlowBodyLocation {
+   | ---------------------------- method in this implementation
+...
+72 |     pub(crate) fn operation(self, operation: usize) -> RuntimeFlowOperationLocation {
+   |                   ^^^^^^^^^
+
+warning: methods `body` and `operation_index` are never used
+  --> crates\arcweft-core\src\plan\flow_ops\location.rs:85:19
+   |
+80 | impl RuntimeFlowOperationLocation {
+   | --------------------------------- methods in this implementation
+...
+85 |     pub(crate) fn body(&self) -> &RuntimeFlowBodyLocation {
+   |                   ^^^^
+...
+89 |     pub(crate) fn operation_index(&self) -> usize {
+   |                   ^^^^^^^^^^^^^^^
+
+warning: method `encode_sources` is never used
+   --> crates\arcweft-core\src\plan\local_declarations\source_codec.rs:174:28
+    |
+151 | impl RuntimeLocalDeclarationTable {
+    | --------------------------------- method in this implementation
+...
+174 |     pub(in crate::plan) fn encode_sources(
+    |                            ^^^^^^^^^^^^^^
+
+warning: variant `MissingOriginalSource` is never constructed
+  --> crates\arcweft-core\src\plan\task_source\program.rs:56:5
+   |
+54 | pub(crate) enum RuntimeTaskSourceProgramError {
+   |                 ----------------------------- variant in this enum
+55 |     #[error("AWBC has no original Task Source")]
+56 |     MissingOriginalSource,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeTaskSourceProgramError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: associated function `admit_awbc` is never used
+  --> crates\arcweft-core\src\plan\task_source\program.rs:73:19
+   |
+63 | impl RuntimeTaskSourceProgram {
+   | ----------------------------- associated function in this implementation
+...
+73 |     pub(crate) fn admit_awbc(
+   |                   ^^^^^^^^^^
+
+warning: associated function `preflight_source` is never used
+   --> crates\arcweft-core\src\plan\type_scope\function_codec.rs:335:28
+    |
+275 | impl RuntimeFunctionTypeContract {
+    | -------------------------------- associated function in this implementation
+...
+335 |     pub(in crate::plan) fn preflight_source<'a>(
+    |                            ^^^^^^^^^^^^^^^^
+
+warning: associated items `prepare_source_encoding`, `preflight_source`, and `preflight_source_in_frame` are never used
+   --> crates\arcweft-core\src\plan\type_scope\function_codec\formula.rs:87:28
+    |
+ 86 | impl Formula {
+    | ------------ associated items in this implementation
+ 87 |     pub(in crate::plan) fn prepare_source_encoding<'a>(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+136 |     pub(in crate::plan) fn preflight_source<'a>(
+    |                            ^^^^^^^^^^^^^^^^
+...
+153 |     pub(in crate::plan) fn preflight_source_in_frame<'a>(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `preflight_source` is never used
+   --> crates\arcweft-core\src\plan\type_scope\source_codec.rs:235:28
+    |
+197 | impl RuntimeTypeScope {
+    | --------------------- associated function in this implementation
+...
+235 |     pub(in crate::plan) fn preflight_source<'a>(
+    |                            ^^^^^^^^^^^^^^^^
+
+warning: associated items `encode_sources` and `decode_sources` are never used
+   --> crates\arcweft-core\src\plan\type_table\source_codec.rs:326:28
+    |
+302 | impl RuntimePlanTypeTable {
+    | ------------------------- associated items in this implementation
+...
+326 |     pub(in crate::plan) fn encode_sources(
+    |                            ^^^^^^^^^^^^^^
+...
+362 |     pub(in crate::plan) fn decode_sources(
+    |                            ^^^^^^^^^^^^^^
+
+warning: method `validate_live_value_with_work` is never used
+  --> crates\arcweft-core\src\plan\value_admission.rs:60:19
+   |
+48 | impl RuntimePlan {
+   | ---------------- method in this implementation
+...
+60 |     pub(crate) fn validate_live_value_with_work(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `decode_literal_source_value`, `materialize_literal_source_value`, and `admit_literal_source_value` are never used
+  --> crates\arcweft-core\src\plan\value_admission\literal_source.rs:18:19
+   |
+17 | impl crate::plan::RuntimePlanInventory {
+   | -------------------------------------- methods in this implementation
+18 |     pub(crate) fn decode_literal_source_value(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+30 |     pub(crate) fn materialize_literal_source_value(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+38 |     pub(crate) fn admit_literal_source_value(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `decode_static_literal_source_value` and `decode_literal_source_value` are never used
+   --> crates\arcweft-core\src\plan\value_admission\literal_source.rs:61:28
+    |
+ 48 | impl PlanValueAuthority<'_> {
+    | --------------------------- methods in this implementation
+...
+ 61 |     pub(in crate::plan) fn decode_static_literal_source_value(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+118 |     pub(in crate::plan) fn decode_literal_source_value(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variant `RuntimeContract` is never constructed
+   --> crates\arcweft-core\src\runtime_id.rs:969:5
+    |
+967 | enum RuntimeIdPathSourceMode {
+    |      ----------------------- variant in this enum
+968 |     Canonical,
+969 |     RuntimeContract,
+    |     ^^^^^^^^^^^^^^^
+    |
+    = note: `RuntimeIdPathSourceMode` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: associated functions `from_runtime_contract_str` and `preflight_runtime_contract_source` are never used
+    --> crates\arcweft-core\src\runtime_id.rs:1153:19
+     |
+1140 | impl RuntimeIdPath {
+     | ------------------ associated functions in this implementation
+...
+1153 |     pub(crate) fn from_runtime_contract_str(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1160 |     pub(crate) fn preflight_runtime_contract_source(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `selected_producer_spec` and `host_producer_spec` are never used
+   --> crates\arcweft-core\src\task\producer\source.rs:243:19
+    |
+138 | impl RuntimeTaskSourceRef<'_> {
+    | ----------------------------- methods in this implementation
+...
+243 |     pub(crate) fn selected_producer_spec<V: RuntimeStoredValue>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+...
+256 |     pub(crate) fn host_producer_spec<V: RuntimeStoredValue>(
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: method `selected_start` is never used
+  --> crates\arcweft-core\src\task\producer\start.rs:57:19
+   |
+56 | impl RuntimeTaskSourceRef<'_> {
+   | ----------------------------- method in this implementation
+57 |     pub(crate) fn selected_start(
+   |                   ^^^^^^^^^^^^^^
+
+warning: method `into_live` is never used
+   --> crates\arcweft-core\src\task\need_handle.rs:112:19
+    |
+ 37 | impl RuntimeNeedHandleSaveSnapshot {
+    | ---------------------------------- method in this implementation
+...
+112 |     pub(crate) fn into_live(
+    |                   ^^^^^^^^^
+
+warning: enum `NeedProducerAssertionField` is never used
+  --> crates\arcweft-core\src\task\specification.rs:14:17
+   |
+14 | pub(crate) enum NeedProducerAssertionField {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `NeedProducerAssertionError` is never used
+  --> crates\arcweft-core\src\task\specification.rs:24:17
+   |
+24 | pub(crate) enum NeedProducerAssertionError {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `plan_assertion` is never used
+  --> crates\arcweft-core\src\task\specification.rs:88:19
+   |
+85 | impl NeedProducerInstance {
+   | ------------------------- method in this implementation
+...
+88 |     pub(crate) fn plan_assertion(&self) -> NeedProducerInstance<super::ExpectedTaskPlanKey> {
+   |                   ^^^^^^^^^^^^^^
+
+warning: method `admit_original_spec` is never used
+   --> crates\arcweft-core\src\task\specification.rs:123:19
+    |
+120 | impl NeedProducerInstance<super::ExpectedTaskPlanKey> {
+    | ----------------------------------------------------- method in this implementation
+...
+123 |     pub(crate) fn admit_original_spec(
+    |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `validate_submissions` is never used
+   --> crates\arcweft-core\src\task\journal.rs:154:19
+    |
+137 | impl TaskAdmissionJournal {
+    | ------------------------- associated function in this implementation
+...
+154 |     pub(super) fn validate_submissions<
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_admitted_parts` is never used
+    --> crates\arcweft-core\src\value.rs:1648:19
+     |
+1647 | impl RuntimeLocalRead {
+     | --------------------- associated function in this implementation
+1648 |     pub(crate) fn from_admitted_parts(
+     |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: methods `predicate_collection_lengths` and `additional_structural_node_count` are never used
+    --> crates\arcweft-core\src\value\agent.rs:1701:19
+     |
+1489 | impl RuntimeAgentValue {
+     | ---------------------- methods in this implementation
+...
+1701 |     pub(crate) fn predicate_collection_lengths(&self) -> Vec<usize> {
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1709 |     pub(crate) fn additional_structural_node_count(&self) -> usize {
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_predicate_collection_lengths` is never used
+    --> crates\arcweft-core\src\value\agent.rs:1805:4
+     |
+1805 | fn collect_predicate_collection_lengths(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `predicate_node_count` is never used
+    --> crates\arcweft-core\src\value\agent.rs:1826:4
+     |
+1826 | fn predicate_node_count(predicate: &RuntimeAgentPredicate) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_standalone_value` is never used
+   --> crates\arcweft-core\src\value\awbc_save.rs:622:19
+    |
+437 | impl AwbcRuntimeValueSnapshot {
+    | ----------------------------- associated function in this implementation
+...
+622 |     pub(crate) fn from_standalone_value(
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `prepare_literal_source_encoding` is never used
+   --> crates\arcweft-core\src\value\awbc_save\source_codec.rs:347:19
+    |
+346 | impl AwbcRuntimeValueSnapshot {
+    | ----------------------------- method in this implementation
+347 |     pub(crate) fn prepare_literal_source_encoding<'a>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `RuntimeRetainedValueAdmissionState` is never constructed
+  --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:59:19
+   |
+59 | pub(crate) struct RuntimeRetainedValueAdmissionState {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `resume` is never used
+  --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:67:19
+   |
+66 | impl RuntimeRetainedValueAdmissionState {
+   | --------------------------------------- method in this implementation
+67 |     pub(crate) fn resume(self) -> RuntimeRetainedValueAdmission {
+   |                   ^^^^^^
+
+warning: methods `try_into_state` and `validate_scalar` are never used
+   --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:115:19
+    |
+ 77 | impl RuntimeRetainedValueAdmission {
+    | ---------------------------------- methods in this implementation
+...
+115 |     pub(crate) fn try_into_state(self) -> Result<RuntimeRetainedValueAdmissionState, Self> {
+    |                   ^^^^^^^^^^^^^^
+...
+193 |     pub(crate) fn validate_scalar(
+    |                   ^^^^^^^^^^^^^^^
+
+warning: method `reason` is never used
+  --> crates\arcweft-core\src\value\callable.rs:42:25
+   |
+37 | impl<T> RuntimeCallableOwnedInputError<T> {
+   | ----------------------------------------- method in this implementation
+...
+42 |     pub(crate) const fn reason(&self) -> &RuntimeCallableValueError {
+   |                         ^^^^^^
+
+warning: method `try_duplicate_unrestricted` is never used
+   --> crates\arcweft-core\src\value\callable.rs:171:19
+    |
+138 | impl RuntimeCallableValue {
+    | ------------------------- method in this implementation
+...
+171 |     pub(crate) fn try_duplicate_unrestricted(&self) -> Result<Self, RuntimeCallableValueError> {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `0` is never read
+   --> crates\arcweft-core\src\value\callable\application.rs:129:21
+    |
+129 |     AttachedDefault(RuntimeCallableBodyReference),
+    |     --------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `RuntimeCallableGroupInspection` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+129 -     AttachedDefault(RuntimeCallableBodyReference),
+129 +     AttachedDefault(()),
+    |
+
+warning: method `try_reclaim_inputs` is never used
+   --> crates\arcweft-core\src\value\callable\application.rs:239:19
+    |
+176 | impl RuntimeCallablePendingGroup {
+    | -------------------------------- method in this implementation
+...
+239 |     pub(crate) fn try_reclaim_inputs(
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: associated items `from_live` and `into_live` are never used
+   --> crates\arcweft-core\src\value\callable\application.rs:703:19
+    |
+702 | impl RuntimeCallablePendingSnapshot {
+    | ----------------------------------- associated items in this implementation
+703 |     pub(crate) fn from_live(
+    |                   ^^^^^^^^^
+...
+756 |     pub(crate) fn into_live<'a>(
+    |                   ^^^^^^^^^
+
+warning: method `inspect_group` is never used
+   --> crates\arcweft-core\src\value\callable\application.rs:992:19
+    |
+797 | impl RuntimeCallableValue {
+    | ------------------------- method in this implementation
+...
+992 |     pub(crate) fn inspect_group(
+    |                   ^^^^^^^^^^^^^
+
+warning: method `assign_runtime_place` is never used
+   --> crates\arcweft-core\src\value\env.rs:747:19
+    |
+339 | impl RuntimeEnv {
+    | --------------- method in this implementation
+...
+747 |     pub(crate) fn assign_runtime_place(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `literals_permit_copy` is never used
+  --> crates\arcweft-core\src\value\expression_literals.rs:10:19
+   |
+ 6 | impl RuntimeExpr {
+   | ---------------- method in this implementation
+...
+10 |     pub(crate) fn literals_permit_copy(&self) -> bool {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `literals_permit_copy` is never used
+  --> crates\arcweft-core\src\value\expression_literals.rs:16:19
+   |
+15 | impl RuntimeExpressionNode<'_> {
+   | ------------------------------ method in this implementation
+16 |     pub(crate) fn literals_permit_copy(self) -> bool {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `try_from_evaluated_bindings_parts_with_effect_bindings` is never used
+    --> crates\arcweft-core\src\value\opaque.rs:1540:19
+     |
+1143 | impl RuntimeDialogueContentValue {
+     | -------------------------------- associated function in this implementation
+...
+1540 |     pub(crate) fn try_from_evaluated_bindings_parts_with_effect_bindings(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `affine_handles` is never used
+   --> crates\arcweft-core\src\value\ownership.rs:301:19
+    |
+212 | impl RuntimeValue {
+    | ----------------- method in this implementation
+...
+301 |     pub(crate) fn affine_handles(
+    |                   ^^^^^^^^^^^^^^
+
+warning: method `affine_handles` is never used
+  --> crates\arcweft-core\src\value\ownership\resources.rs:24:19
+   |
+13 | impl RuntimeValueView<'_> {
+   | ------------------------- method in this implementation
+...
+24 |     pub(crate) fn affine_handles(
+   |                   ^^^^^^^^^^^^^^
+
+warning: unused variable: `group`
+    --> crates\arcweft-core\src\engine\dialogue.rs:2964:13
+     |
+2964 |         let group = LineTaskGroup::new(
+     |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_group`
+
+warning: `arcweft-core` (lib) generated 155 warnings (run `cargo fix --lib -p arcweft-core` to apply 25 suggestions)
+    Checking arcweft-view v0.1.0 (D:\git\arcweft\crates\arcweft-view)
+    Checking arcweft-resource-model v0.1.0 (D:\git\arcweft\crates\arcweft-resource-model)
+    Checking arcweft-lang-jit-cranelift v0.1.0 (D:\git\arcweft\crates\arcweft-lang-jit-cranelift)
+    Checking arcweft-host-adapter v0.1.0 (D:\git\arcweft\crates\arcweft-host-adapter)
+    Checking arcweft-runtime-scheduler v0.1.0 (D:\git\arcweft\crates\arcweft-runtime-scheduler)
+    Checking arcweft-runtime-codegen v0.1.0 (D:\git\arcweft\crates\arcweft-runtime-codegen)
+    Checking arcweft-save v0.1.0 (D:\git\arcweft\crates\arcweft-save)
+warning: unused imports: `GenerationId`, `LogicalEpoch`, `TaskKey`, `TaskPublicationRevision`, and `TaskSequence`
+  --> crates\arcweft-runtime-scheduler\src\lib.rs:10:35
+   |
+10 |     BoundTaskSpec, CancelScopeId, GenerationId, LogicalEpoch, RuntimeTaskPublication,
+   |                                   ^^^^^^^^^^^^  ^^^^^^^^^^^^
+11 |     SchedulerBudget, TaskClass, TaskCompletionError, TaskEnsureError, TaskEvent, TaskEventKind,
+12 |     TaskId, TaskKey, TaskPolicy, TaskPublicationRevision, TaskSequence, compare_task_events,
+   |             ^^^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `TaskKey` and `TaskPublicationRevision`
+  --> crates\arcweft-runtime-scheduler\src\lib.rs:12:13
+   |
+12 |     TaskId, TaskKey, TaskPolicy, TaskPublicationRevision, TaskSequence, compare_task_events,
+   |             ^^^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `arcweft-runtime-scheduler` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-runtime-scheduler` to apply 1 suggestion)
+    Checking arcweft-adapter-desktop v0.1.0 (D:\git\arcweft\crates\arcweft-adapter-desktop)
+warning: `arcweft-runtime-scheduler` (lib test) generated 1 warning (run `cargo fix --lib -p arcweft-runtime-scheduler --tests` to apply 1 suggestion)
+    Checking arcweft-resource-manifest v0.1.0 (D:\git\arcweft\crates\arcweft-resource-manifest)
+    Checking arcweft-project v0.1.0 (D:\git\arcweft\crates\arcweft-project)
+warning: unused import: `DeclarationName`
+   --> crates\arcweft-view\src\view\identity.rs:345:22
+    |
+345 |     use arcweft_id::{DeclarationName, PublicId};
+    |                      ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+    Checking arcweft-runtime-accelerator v0.1.0 (D:\git\arcweft\crates\arcweft-runtime-accelerator)
+    Checking arcweft-dialogue v0.1.0 (D:\git\arcweft\crates\arcweft-dialogue)
+    Checking arcweft-character-view v0.1.0 (D:\git\arcweft\crates\arcweft-character-view)
+warning: `arcweft-view` (lib test) generated 1 warning (run `cargo fix --lib -p arcweft-view --tests` to apply 1 suggestion)
+    Checking arcweft-browser-bench v0.1.0 (D:\git\arcweft\crates\arcweft-browser-bench)
+    Checking arcweft-text-model v0.1.0 (D:\git\arcweft\crates\arcweft-text-model)
+    Checking arcweft-lang-sema v0.1.0 (D:\git\arcweft\crates\arcweft-lang-sema)
+    Checking arcweft-launch v0.1.0 (D:\git\arcweft\crates\arcweft-launch)
+    Checking arcweft v0.1.0 (D:\git\arcweft\crates\arcweft)
+warning: unused import: `CallableDeclarationKey`
+  --> crates\arcweft-lang-sema\src\final_analysis\analyzer\expressions.rs:13:50
+   |
+13 |     Analyzer, ArrayLength, BTreeSet, BorrowKind, CallableDeclarationKey,
+   |                                                  ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+    Checking arcweft-render-text v0.1.0 (D:\git\arcweft\crates\arcweft-render-text)
+    Checking arcweft-text-layout v0.1.0 (D:\git\arcweft\crates\arcweft-text-layout)
+warning: unused variable: `document`
+   --> crates\arcweft-text-layout\src\document_layout.rs:419:9
+    |
+419 |         document: &ResolvedTextDocument<'_>,
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_document`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `arcweft-text-layout` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-text-layout` to apply 1 suggestion)
+    Checking arcweft-agent-protocol v0.1.0 (D:\git\arcweft\crates\arcweft-agent-protocol)
+    Checking arcweft-glyphon v0.1.0 (D:\git\arcweft\crates\arcweft-glyphon)
+warning: `arcweft-text-layout` (lib test) generated 1 warning (1 duplicate)
+warning: type `NativeSourceOperation` is more private than the item `engine::FlowControlStackEntryKind::Loop::source`
+   --> crates\arcweft-core\src\engine.rs:805:9
+    |
+805 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `engine::FlowControlStackEntryKind::Loop::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `NativeSourceOperation` is more private than the item `engine::FlowControlStackEntryKind::While::source`
+   --> crates\arcweft-core\src\engine.rs:808:9
+    |
+808 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `engine::FlowControlStackEntryKind::While::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `NativeSourceOperation` is more private than the item `engine::FlowControlStackEntryKind::WhileLet::source`
+   --> crates\arcweft-core\src\engine.rs:811:9
+    |
+811 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `engine::FlowControlStackEntryKind::WhileLet::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `producer::NeedProducerRegistryRestore<V, P, S>`
+    --> crates\arcweft-core\src\task\producer.rs:1666:1
+     |
+1666 | impl<V, P, S: super::TaskExecutionSource + PartialEq> NeedProducerRegistryRestore<V, P, S> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `producer::NeedProducerRegistryRestore<V, P, S>` is reachable at visibility `pub`
+     |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+    --> crates\arcweft-core\src\task\execution.rs:407:1
+     |
+ 407 | pub(crate) trait TaskExecutionSource {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `RuntimeStoredValue` is more private than the item `start::RuntimeNeedProducerStart<V, P, S>`
+   --> crates\arcweft-core\src\task\producer\start.rs:147:1
+    |
+147 | / impl<V: RuntimeStoredValue, P: RuntimeStoredValue, S: crate::task::TaskExecutionSource>
+148 | |     RuntimeNeedProducerStart<V, P, S>
+    | |_____________________________________^ implementation `start::RuntimeNeedProducerStart<V, P, S>` is reachable at visibility `pub`
+    |
+note: but trait `RuntimeStoredValue` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\value\storage.rs:15:1
+    |
+ 15 | pub(crate) trait RuntimeStoredValue {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `start::RuntimeNeedProducerStart<V, P, S>`
+   --> crates\arcweft-core\src\task\producer\start.rs:147:1
+    |
+147 | / impl<V: RuntimeStoredValue, P: RuntimeStoredValue, S: crate::task::TaskExecutionSource>
+148 | |     RuntimeNeedProducerStart<V, P, S>
+    | |_____________________________________^ implementation `start::RuntimeNeedProducerStart<V, P, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:407:1
+    |
+407 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::execution::TaskRequest<P, S>`
+   --> crates\arcweft-core\src\task\execution.rs:509:1
+    |
+509 | impl<P, S: TaskExecutionSource> TaskRequest<P, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::execution::TaskRequest<P, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:407:1
+    |
+407 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    Checking arcweft-render-wgpu v0.1.0 (D:\git\arcweft\crates\arcweft-render-wgpu)
+warning: function `is_task_handle` is never used
+    --> crates\arcweft-core\src\awbc\verify\code.rs:6460:4
+     |
+6460 | fn is_task_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
+     |    ^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `terminalize_unstarted_scheduled_packet`, `complete_unstarted_scheduled`, `stage_scheduled_child_work_completion`, and `replace_transaction_parts` are never used
+    --> crates\arcweft-core\src\line_task\handle.rs:1385:19
+     |
+ 789 | impl<T: Clone> RuntimeDialogueActivationState<T> {
+     | ------------------------------------------------ methods in this implementation
+...
+1385 |     pub(crate) fn terminalize_unstarted_scheduled_packet(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1394 |     pub(crate) fn complete_unstarted_scheduled(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1488 |     pub(crate) fn stage_scheduled_child_work_completion(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1603 |     pub(crate) fn replace_transaction_parts(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `validate_scalar` is never used
+   --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:193:19
+    |
+ 77 | impl RuntimeRetainedValueAdmission {
+    | ---------------------------------- method in this implementation
+...
+193 |     pub(crate) fn validate_scalar(
+    |                   ^^^^^^^^^^^^^^^
+
+    Checking arcweft-bundle v0.1.0 (D:\git\arcweft\crates\arcweft-bundle)
+    Checking arcweft-debug-model v0.1.0 (D:\git\arcweft\crates\arcweft-debug-model)
+    Checking arcweft-agent-policy v0.1.0 (D:\git\arcweft\crates\arcweft-agent-policy)
+    Checking arcweft-rag v0.1.0 (D:\git\arcweft\crates\arcweft-rag)
+    Checking arcweft-debug-sqlite v0.1.0 (D:\git\arcweft\crates\arcweft-debug-sqlite)
+warning: `arcweft-core` (lib test) generated 70 warnings (48 duplicates) (run `cargo fix --lib -p arcweft-core --tests` to apply 12 suggestions)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+   --> crates\arcweft-lang-sema\src\types\generics.rs:263:14
+    |
+263 |             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+    |              ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+    |
+263 -             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+263 +             .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+    |
+
+    Checking arcweft-runtime-driver v0.1.0 (D:\git\arcweft\crates\arcweft-runtime-driver)
+    Checking arcweft-agent-runner v0.1.0 (D:\git\arcweft\crates\arcweft-agent-runner)
+    Checking arcweft-bundle-assets v0.1.0 (D:\git\arcweft\crates\arcweft-bundle-assets)
+    Checking arcweft-runtime-host v0.1.0 (D:\git\arcweft\crates\arcweft-runtime-host)
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+  --> crates\arcweft-runtime-host\src\native_task.rs:12:38
+   |
+12 |     BoundTaskOutcome, BoundTaskSpec, CancelScopeId, GenerationId, HostTaskRequest, LogicalEpoch,
+   |                                      ^^^^^^^^^^^^^
+13 |     RuntimeProgramOwner, SchedulerBudget, TaskCompletionError, TaskDispatchIdentity,
+14 |     TaskDispatchStart, TaskEnsureError, TaskEvent, TaskEventKind, TaskId, TaskKey,
+   |                                                                           ^^^^^^^
+15 |     TaskOutcomeBindingError, TaskOutcomeContract, TaskPolicy, TaskPriority,
+   |                                                   ^^^^^^^^^^  ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `TaskId`
+  --> crates\arcweft-runtime-driver\src\session_save.rs:20:62
+   |
+20 |     GenerationId, LogicalEpoch, NeedId, RuntimeProgramOwner, TaskId, TaskPublicationRevision,
+   |                                                              ^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+    Checking arcweft-test v0.1.0 (D:\git\arcweft\crates\arcweft-test)
+warning: `arcweft-runtime-host` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-runtime-host` to apply 1 suggestion)
+warning: methods `receipt` and `with_alternative` are never used
+   --> crates\arcweft-lang-sema\src\callable\constraints.rs:134:19
+    |
+101 | impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'probe, 'control, D> {
+    | ------------------------------------------------------------------------------------------------- methods in this implementation
+...
+134 |     pub(crate) fn receipt(&self) -> crate::types::constraints::ConstraintSourceReceipt<D> {
+    |                   ^^^^^^^
+...
+238 |     pub(crate) fn with_alternative<R>(
+    |                   ^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `constrain_effect_equality` and `finish` are never used
+    --> crates\arcweft-lang-sema\src\callable\constraints.rs:861:19
+     |
+ 409 | / impl<'driver, 'control, D, C> CandidateConstraintDriver<'driver, 'control, D, C>
+ 410 | | where
+ 411 | |     D: ConstraintDomain,
+ 412 | |     C: TypeConstraintClient<D>,
+     | |_______________________________- methods in this implementation
+...
+ 861 |       pub(crate) fn constrain_effect_equality(
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1001 |       pub(crate) fn finish(self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>> {
+     |                     ^^^^^^
+
+warning: variant `ReplayProjectionMismatch` is never constructed
+   --> crates\arcweft-lang-sema\src\callable\continuation.rs:205:5
+    |
+ 96 | pub(crate) enum CallConstraintInvariant {
+    |                 ----------------------- variant in this enum
+...
+205 |     ReplayProjectionMismatch,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `CallConstraintInvariant` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `sealed` is never used
+   --> crates\arcweft-lang-sema\src\callable\continuation.rs:267:19
+    |
+266 | impl EnclosingGenericParameterScope {
+    | ----------------------------------- associated function in this implementation
+267 |     pub(crate) fn sealed<T, C, E>(
+    |                   ^^^^^^
+
+warning: fields `candidate`, `result`, and `evidence` are never read
+   --> crates\arcweft-lang-sema\src\final_analysis\analyzer\calls.rs:242:9
+    |
+241 |     Rejected {
+    |     -------- fields in this variant
+242 |         candidate: Arc<PreparedResolvedCallable>,
+    |         ^^^^^^^^^
+243 |         result: CallableResultSchema,
+    |         ^^^^^^
+244 |         evidence: PreparedCandidateRejection,
+    |         ^^^^^^^^
+
+warning: function `fx_runtime_type` is never used
+    --> crates\arcweft-lang-sema\src\final_analysis\analyzer\fx_definition.rs:2484:4
+     |
+2484 | fn fx_runtime_type(ty: &TypeKind) -> Option<FxRuntimeType> {
+     |    ^^^^^^^^^^^^^^^
+
+warning: function `execution_plan_for_expression` is never used
+   --> crates\arcweft-lang-sema\src\final_analysis\execution_plan.rs:394:4
+    |
+394 | fn execution_plan_for_expression(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `is_variant_expression` is never used
+    --> crates\arcweft-lang-sema\src\final_analysis\prepared.rs:1322:25
+     |
+ 997 | impl PreparedExpressionFact {
+     | --------------------------- method in this implementation
+...
+1322 |     pub(crate) const fn is_variant_expression(&self) -> bool {
+     |                         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `root_id` and `root_scope` are never used
+   --> crates\arcweft-lang-sema\src\types\constraints\application.rs:219:25
+    |
+205 | impl<D: ConstraintDomain> ConstraintApplicationScopes<D> {
+    | -------------------------------------------------------- methods in this implementation
+...
+219 |     pub(super) const fn root_id(&self) -> ConstraintApplicationId {
+    |                         ^^^^^^^
+...
+272 |     pub(super) fn root_scope(&self) -> &ConstraintApplicationScope<D> {
+    |                   ^^^^^^^^^^
+
+warning: method `start_path` is never used
+    --> crates\arcweft-lang-sema\src\types\constraints\context.rs:1445:19
+     |
+1178 | / impl<'c, A, D> TypeConstraintContext<'c, A, D>
+1179 | | where
+1180 | |     A: TypeConstraintAccounting,
+1181 | |     D: ConstraintDomain,
+     | |________________________- method in this implementation
+...
+1445 |       pub(super) fn start_path(
+     |                     ^^^^^^^^^^
+
+warning: methods `component` and `application` are never used
+   --> crates\arcweft-lang-sema\src\types\constraints\hints.rs:716:25
+    |
+705 | impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
+    | -------------------------------------------------------------- methods in this implementation
+...
+716 |     pub(crate) const fn component(&self) -> &'h super::CompletedConstraintComponent<D> {
+    |                         ^^^^^^^^^
+...
+728 |     pub(crate) fn application(
+    |                   ^^^^^^^^^^^
+
+warning: function `occurs_in_type` is never used
+   --> crates\arcweft-lang-sema\src\types\constraints\normalization.rs:615:15
+    |
+615 | pub(crate) fn occurs_in_type<A, D>(
+    |               ^^^^^^^^^^^^^^
+
+warning: method `contains_effect` is never used
+   --> crates\arcweft-lang-sema\src\types\constraints\solution\residual.rs:181:19
+    |
+ 31 | impl ResidualGenericBinder {
+    | -------------------------- method in this implementation
+...
+181 |     pub(super) fn contains_effect(&self, parameter: &GenericEffectReference) -> bool {
+    |                   ^^^^^^^^^^^^^^^
+
+warning: associated function `empty` is never used
+   --> crates\arcweft-lang-sema\src\types\constraints\transaction.rs:126:19
+    |
+125 | impl<D: ConstraintDomain> ConstraintPath<D> {
+    | ------------------------------------------- associated function in this implementation
+126 |     pub(super) fn empty(
+    |                   ^^^^^
+
+warning: method `source` is never used
+   --> crates\arcweft-lang-sema\src\types\constraints\transaction.rs:191:19
+    |
+190 | impl<D: ConstraintDomain> ConstraintSourceReceipt<D> {
+    | ---------------------------------------------------- method in this implementation
+191 |     pub(crate) fn source(&self) -> ConstraintSourceId<D::Source> {
+    |                   ^^^^^^
+
+warning: method `append` is never used
+   --> crates\arcweft-lang-sema\src\types\constraints\transaction.rs:289:19
+    |
+288 | impl<D: ConstraintDomain> SourceProbeContribution<D> {
+    | ---------------------------------------------------- method in this implementation
+289 |     pub(crate) fn append(&mut self, other: Self) -> Result<(), TypeConstraintError> {
+    |                   ^^^^^^
+
+warning: method `fork` is never used
+   --> crates\arcweft-lang-sema\src\types\constraints\transaction.rs:351:19
+    |
+317 | impl<D: ConstraintDomain> ProbeTicket<D> {
+    | ---------------------------------------- method in this implementation
+...
+351 |     pub(crate) fn fork<A: TypeConstraintAccounting>(
+    |                   ^^^^
+
+warning: method `constrain_effect_equality` is never used
+   --> crates\arcweft-lang-sema\src\types\constraints\transaction.rs:911:19
+    |
+702 | impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
+    | ------------------------------------------------------ method in this implementation
+...
+911 |     pub(crate) fn constrain_effect_equality<A: TypeConstraintAccounting>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `semantic_identity_digest_with_control` is never used
+   --> crates\arcweft-lang-sema\src\types\digest.rs:421:19
+    |
+407 | impl EffectRow {
+    | -------------- method in this implementation
+...
+421 |     pub(crate) fn semantic_identity_digest_with_control<C: super::TypeProjectionControl>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `new` and `collect_many_in_scope` are never used
+   --> crates\arcweft-lang-sema\src\types\generic_use.rs:305:19
+    |
+304 | impl<M: GenericUseDomain> GenericUseCollector<M> {
+    | ------------------------------------------------ associated functions in this implementation
+305 |     pub(crate) fn new() -> Self {
+    |                   ^^^
+...
+529 |     pub(crate) fn collect_many_in_scope<'a>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `arcweft-lang-sema` (lib) generated 22 warnings (run `cargo fix --lib -p arcweft-lang-sema` to apply 2 suggestions)
+    Checking arcweft-runtime-plan v0.1.0 (D:\git\arcweft\crates\arcweft-runtime-plan)
+    Checking arcweft-verify v0.1.0 (D:\git\arcweft\crates\arcweft-verify)
+    Checking arcweft-adapter-sema v0.1.0 (D:\git\arcweft\crates\arcweft-adapter-sema)
+    Checking arcweft-project-loader v0.1.0 (D:\git\arcweft\crates\arcweft-project-loader)
+warning: `arcweft-runtime-driver` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-runtime-driver` to apply 1 suggestion)
+    Checking arcweft-player-scene v0.1.0 (D:\git\arcweft\crates\arcweft-player-scene)
+    Checking arcweft-verify-lsp v0.1.0 (D:\git\arcweft\crates\arcweft-verify-lsp)
+    Checking arcweft-verify-oxiz v0.1.0 (D:\git\arcweft\crates\arcweft-verify-oxiz)
+    Checking arcweft-verify-z3 v0.1.0 (D:\git\arcweft\crates\arcweft-verify-z3)
+    Checking arcweft-player-native v0.1.0 (D:\git\arcweft\crates\arcweft-player-native)
+    Checking arcweft-player-web v0.1.0 (D:\git\arcweft\crates\arcweft-player-web)
+warning: function `intern_runtime_type` is never used
+   --> crates\arcweft-runtime-plan\src\awbc_lower\pattern.rs:709:15
+    |
+709 | pub(crate) fn intern_runtime_type(
+    |               ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `intern_variant_type` is never used
+   --> crates\arcweft-runtime-plan\src\awbc_lower\pattern.rs:878:4
+    |
+878 | fn intern_variant_type(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: method `receipt` is never used
+   --> crates\arcweft-lang-sema\src\callable\constraints.rs:134:19
+    |
+101 | impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'probe, 'control, D> {
+    | ------------------------------------------------------------------------------------------------- method in this implementation
+...
+134 |     pub(crate) fn receipt(&self) -> crate::types::constraints::ConstraintSourceReceipt<D> {
+    |                   ^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `constrain_effect_equality` is never used
+   --> crates\arcweft-lang-sema\src\callable\constraints.rs:861:19
+    |
+409 | / impl<'driver, 'control, D, C> CandidateConstraintDriver<'driver, 'control, D, C>
+410 | | where
+411 | |     D: ConstraintDomain,
+412 | |     C: TypeConstraintClient<D>,
+    | |_______________________________- method in this implementation
+...
+861 |       pub(crate) fn constrain_effect_equality(
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `arcweft-runtime-plan` (lib) generated 2 warnings
+    Checking arcweft-compiler v0.1.0 (D:\git\arcweft\crates\arcweft-compiler)
+    Checking arcweft-tooling v0.1.0 (D:\git\arcweft\crates\arcweft-tooling)
+warning: unused import: `PureFunctionBackend`
+    --> crates\arcweft-compiler\src\lower\programs.rs:1095:37
+     |
+1095 |             AotPureFunctionBackend, PureFunctionBackend, PureFunctionRequest,
+     |                                     ^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `arcweft-lang-sema` (lib test) generated 10 warnings (8 duplicates)
+    Checking arcweft-agent-repl v0.1.0 (D:\git\arcweft\crates\arcweft-agent-repl)
+warning: function `execute_native_character_dialogue_calls` is never used
+  --> crates\arcweft-compiler\tests\support\execution.rs:64:15
+   |
+64 | pub(super) fn execute_native_character_dialogue_calls(
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `RecordingCharacterDialogueExternalCallBackend` is never constructed
+   --> crates\arcweft-compiler\tests\support\execution.rs:104:8
+    |
+104 | struct RecordingCharacterDialogueExternalCallBackend<'a> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `execute_decoded_awbc_character_dialogue_calls` is never used
+   --> crates\arcweft-compiler\tests\support\execution.rs:247:15
+    |
+247 | pub(super) fn execute_decoded_awbc_character_dialogue_calls(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `arcweft-compiler` (test "named_scopes") generated 3 warnings
+warning: `arcweft-compiler` (test "catalog_asset_execution") generated 3 warnings (3 duplicates)
+warning: `arcweft-compiler` (test "scope_propagation") generated 3 warnings (3 duplicates)
+warning: `arcweft-compiler` (test "runtime_color") generated 3 warnings (3 duplicates)
+warning: `arcweft-compiler` (test "project_function_instances") generated 3 warnings (3 duplicates)
+warning: `arcweft-compiler` (lib test) generated 1 warning (run `cargo fix --lib -p arcweft-compiler --tests` to apply 1 suggestion)
+    Checking arcweft-agent-mcp v0.1.0 (D:\git\arcweft\crates\arcweft-agent-mcp)
+    Checking arcweft-lsp v0.1.0 (D:\git\arcweft\crates\arcweft-lsp)
+warning: `arcweft-compiler` (test "try_pipe") generated 3 warnings (3 duplicates)
+warning: function `assert_native_return` is never used
+  --> crates\arcweft-compiler\tests\support\execution.rs:40:15
+   |
+40 | pub(super) fn assert_native_return(source: &str, expected: &str) {
+   |               ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `assert_native_engine_return` is never used
+   --> crates\arcweft-compiler\tests\support\execution.rs:142:4
+    |
+142 | fn assert_native_engine_return(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `assert_awbc_return` is never used
+   --> crates\arcweft-compiler\tests\support\execution.rs:171:15
+    |
+171 | pub(super) fn assert_awbc_return(source: &str, expected: RuntimeValue) {
+    |               ^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `task`
+    --> crates\arcweft-runtime-host\src\bundle_runner.rs:1159:9
+     |
+1159 |         task: &TaskSpec,
+     |         ^^^^ help: if this is intentional, prefix it with an underscore: `_task`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `arcweft-compiler` (test "inline_failure_policy") generated 3 warnings
+warning: `arcweft-runtime-driver` (lib test) generated 1 warning (1 duplicate)
+warning: unused variable: `task`
+    --> crates\arcweft-runtime-host\src\native_task.rs:2211:13
+     |
+2211 |             task: &BoundTaskSpec,
+     |             ^^^^ help: if this is intentional, prefix it with an underscore: `_task`
+
+warning: unused variable: `task`
+    --> crates\arcweft-runtime-host\src\native_task.rs:2261:13
+     |
+2261 |             task: &BoundTaskSpec,
+     |             ^^^^ help: if this is intentional, prefix it with an underscore: `_task`
+
+warning: unused variable: `task`
+    --> crates\arcweft-runtime-host\src\native_task.rs:2296:13
+     |
+2296 |             task: &BoundTaskSpec,
+     |             ^^^^ help: if this is intentional, prefix it with an underscore: `_task`
+
+warning: `arcweft-compiler` (test "agent_enum_execution") generated 3 warnings (3 duplicates)
+warning: `arcweft-runtime-host` (lib test) generated 5 warnings (1 duplicate) (run `cargo fix --lib -p arcweft-runtime-host --tests` to apply 4 suggestions)
+    Checking arcweft-agent-mcp-client v0.1.0 (D:\git\arcweft\crates\arcweft-agent-mcp-client)
+    Checking arcweft-cli v0.1.0 (D:\git\arcweft\crates\arcweft-cli)
+warning: unused imports: `EntityType` and `SemanticHash`
+  --> crates\arcweft-cli\src\app\agent.rs:51:80
+   |
+51 |     project_index::{EntitySymbol, ProjectCallableSymbol, ProjectSemanticIndex, SemanticHash},
+   |                                                                                ^^^^^^^^^^^^
+52 |     types::{EntityKind, EntityType, TypeKind},
+   |                         ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `arcweft_presentation::hit::HitRect`
+  --> crates\arcweft-cli\src\app\agent\native\prepared_text_observation.rs:17:5
+   |
+17 | use arcweft_presentation::hit::HitRect;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `arcweft-cli` (lib) generated 2 warnings (run `cargo fix --lib -p arcweft-cli` to apply 2 suggestions)
+warning: `arcweft-cli` (lib test) generated 1 warning (1 duplicate)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 53s

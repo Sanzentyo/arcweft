@@ -9,6 +9,10 @@ fn resource_kind_roundtrip_is_closed_and_keeps_distinct_semantic_identities() {
     let mut names = BTreeSet::new();
     for kind in PresentationResourceKind::ALL {
         assert!(tags.insert(kind.semantic_tag()));
+        assert_eq!(
+            PresentationResourceKind::from_semantic_tag(kind.semantic_tag()),
+            Some(kind)
+        );
         assert!(names.insert(kind.type_name()));
         assert_eq!(
             PresentationResourceKind::from_label(kind.as_str()),
@@ -21,6 +25,8 @@ fn resource_kind_roundtrip_is_closed_and_keeps_distinct_semantic_identities() {
             kind
         );
     }
+    assert_eq!(PresentationResourceKind::from_semantic_tag(8), None);
+    assert_eq!(PresentationResourceKind::from_semantic_tag(u8::MAX), None);
     for unknown in [
         "",
         "Image",

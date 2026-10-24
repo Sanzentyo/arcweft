@@ -1692,14 +1692,23 @@ impl TaskEvent {
 pub(crate) fn inspect_host_payload_ownership(
     value: &RuntimePayload,
 ) -> Result<(), RuntimeHostPayloadOwnershipError> {
-    let handles = value.value().affine_line_handles().map_err(|error| {
+    let handles = value.value().affine_handles().map_err(|error| {
         RuntimeHostPayloadOwnershipError::InvalidValueGraph {
             message: error.to_string(),
         }
     })?;
     if let Some(handle) = handles.first() {
-        return Err(RuntimeHostPayloadOwnershipError::ForeignLineHandle {
-            token: handle.token().clone(),
+        return Err(match handle {
+            crate::value::ownership::RuntimeAffineHandle::Line(handle) => {
+                RuntimeHostPayloadOwnershipError::ForeignLineHandle {
+                    token: handle.token().clone(),
+                }
+            }
+            crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. } => {
+                RuntimeHostPayloadOwnershipError::ForeignPresentationHandle {
+                    token: token.clone(),
+                }
+            }
         });
     }
     Ok(())
@@ -1707,6 +1716,10 @@ pub(crate) fn inspect_host_payload_ownership(
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum RuntimeHostPayloadOwnershipError {
+    #[error("host result contains a presentation handle not issued to the host: {token:?}")]
+    ForeignPresentationHandle {
+        token: crate::runtime_id::RuntimePresentationHandleToken,
+    },
     #[error("host result contains a dialogue line handle not issued to the host: {token:?}")]
     ForeignLineHandle {
         token: crate::runtime_id::RuntimeLineHandleToken,
@@ -1735,6 +1748,36 @@ mod host_ready_ownership_tests {
                 sequence: TaskSequence(1),
             },
             kind: TaskEventKind::Ready(RuntimePayload(value)),
+        }
+    }
+
+    #[test]
+    fn host_ready_rejects_valid_nested_presentation_leases_as_foreign_custody() {
+        use crate::runtime_id::{ExecutionInstanceId, RuntimePresentationHandleToken};
+        use arcweft_interaction_model::presentation::PresentationResourceKind;
+        use std::num::NonZeroU64;
+
+        for resource in PresentationResourceKind::ALL {
+            let token = RuntimePresentationHandleToken::from_issued(
+                crate::effect::RuntimeArtifactFingerprint::try_from_bytes([13; 32]).unwrap(),
+                resource,
+                ExecutionInstanceId::from_allocated(NonZeroU64::new(3).unwrap()),
+                RuntimePersistentFiberId::from_allocated(0),
+                NonZeroU64::new(1).unwrap(),
+            );
+            let owner = RuntimeOpaqueTypeOwner::exact_with(
+                RuntimeOpaqueTypeProducerId::try_new("test.presentation.host-ready").unwrap(),
+                RuntimeSemanticTypeId::from_bytes([19; 32]),
+                RuntimeOpaqueValueClass::PresentationHandle,
+                RuntimeOpaquePersistence::SnapshotOnly,
+            );
+            let event = ready(RuntimeValue::Tuple(vec![
+                owner.try_wrap(token.encode_payload()).unwrap(),
+            ]));
+            assert_eq!(
+                event.inspect_host_ready_ownership(),
+                Err(RuntimeHostPayloadOwnershipError::ForeignPresentationHandle { token })
+            );
         }
     }
 

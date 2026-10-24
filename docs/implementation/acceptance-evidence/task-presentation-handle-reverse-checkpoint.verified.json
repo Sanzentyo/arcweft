@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "commit": "36c3e0f109617a865841a59d311736db513d5872",
+  "parent": "fb04fd878622fac57a22db7e2c005ee6daa829ea",
+  "tree": "83aa4706a8a31a530e4906235c4b849eb8748e4f",
+  "remote": "36c3e0f109617a865841a59d311736db513d5872",
+  "advertised": "36c3e0f109617a865841a59d311736db513d5872",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2863-presentation-handle-reverse-catalog.json",
+      "blob": "541238ba2961b7a646c5bb96611be981f3d441cb",
+      "workingBlob": "541238ba2961b7a646c5bb96611be981f3d441cb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2863-presentation-handle-reverse-catalog.log",
+      "blob": "fee1bc9e40ce2558d41f12a5253d005c9ecfe344",
+      "workingBlob": "fee1bc9e40ce2558d41f12a5253d005c9ecfe344"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2864-presentation-handle-reverse-runtime.json",
+      "blob": "b18483e5a00f4a8e1a909320ccd2dfe08142f55d",
+      "workingBlob": "b18483e5a00f4a8e1a909320ccd2dfe08142f55d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2864-presentation-handle-reverse-runtime.log",
+      "blob": "b77c63a9f70b2b288ed6cfc1cbe2b3ad9fec0baa",
+      "workingBlob": "b77c63a9f70b2b288ed6cfc1cbe2b3ad9fec0baa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2864-presentation-handle-reverse-runtime.terminal-audit.json",
+      "blob": "f974429796e02409b93bd32624bffd1ffe1a2549",
+      "workingBlob": "f974429796e02409b93bd32624bffd1ffe1a2549"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-reverse-acceptance.json",
+      "blob": "6872bbf4b14f6ef20cb91f66e61e63fd0682d110",
+      "workingBlob": "6872bbf4b14f6ef20cb91f66e61e63fd0682d110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-reverse-catalog.audit.json",
+      "blob": "211397583fd43570ff16a728743c1152d741bc07",
+      "workingBlob": "211397583fd43570ff16a728743c1152d741bc07"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-reverse-coverage.json",
+      "blob": "edd4f1a10dd66b5ebdcc9aee363a154ece847d97",
+      "workingBlob": "edd4f1a10dd66b5ebdcc9aee363a154ece847d97"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-reverse-doc-audit.json",
+      "blob": "0082ed561eb9843f38096b708a8daeb6168a8c54",
+      "workingBlob": "0082ed561eb9843f38096b708a8daeb6168a8c54"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-reverse-evidence-integrity.json",
+      "blob": "ede38a561e20def30c89e16e7de7758e7e349d11",
+      "workingBlob": "ede38a561e20def30c89e16e7de7758e7e349d11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-reverse-source.graph.json",
+      "blob": "575cb08c68c0c1b69f54cf74fbf1aae0dcc47f0d",
+      "workingBlob": "575cb08c68c0c1b69f54cf74fbf1aae0dcc47f0d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-reverse-source.source-freeze.json",
+      "blob": "9a1cd8389e45708f70e47c361dbe37a4814e6cea",
+      "workingBlob": "9a1cd8389e45708f70e47c361dbe37a4814e6cea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-reverse.before.pins.json",
+      "blob": "86f0436dfc721013a5b1930f85a8b89eee796fb7",
+      "workingBlob": "86f0436dfc721013a5b1930f85a8b89eee796fb7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-reverse.executable-audit.json",
+      "blob": "e6b63309fd9639fb70a7175465f2746c9090b73d",
+      "workingBlob": "e6b63309fd9639fb70a7175465f2746c9090b73d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-handle-source-checkpoint.verified.json",
+      "blob": "236bd70510118630da177e989eeba9f69631726a",
+      "workingBlob": "236bd70510118630da177e989eeba9f69631726a"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "1607a48a3048a9af152ae6b93d29c596c2a147b6",
+      "workingBlob": "1607a48a3048a9af152ae6b93d29c596c2a147b6"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "7018541ca750c13064ae2b52756e7b91e4125702",
+      "workingBlob": "7018541ca750c13064ae2b52756e7b91e4125702"
+    }
+  ],
+  "sourceCount": 6329,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "6ec6ca3690a483892d4706d9fcaf1356076fb17935110b18c23715483a9f2092",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T22:00:04.0767950Z"
+}

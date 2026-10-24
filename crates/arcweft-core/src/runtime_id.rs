@@ -14,6 +14,10 @@ use thiserror::Error;
 
 #[allow(dead_code, reason = "the canonical snapshot consumer lands in G1.2-D")]
 pub(crate) mod binary;
+mod presentation_handle;
+pub use presentation_handle::{
+    RuntimePresentationHandleToken, RuntimePresentationHandleTokenDecodeError,
+};
 
 macro_rules! runtime_u64_identity {
     ($name:ident) => {

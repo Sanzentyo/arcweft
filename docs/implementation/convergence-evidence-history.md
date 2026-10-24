@@ -10826,3 +10826,42 @@ platform integration 1 targetはbuildだけ、integration 6 targetは全件ignor
 これは共有resource型・再帰item移行の横断検証で、Presentation command ABIと一般Handleの
 runtime投影・保存、全14 family、Tier2／Native-Web capture parityの包括的な受入ではない。
 未接続境界を型モデルやGeneric Matchの完了取消しへ読み替えず、現状一覧の該当項目を更新した。
+
+## Core一般Presentation tokenと資源走査の接続 — 2026-10-25
+
+基点は既存main `36c3e0f109617a865841a59d311736db513d5872`。
+Core／interaction-modelの13 source pathを中間保存する。一般Presentation用のinert tokenは
+artifact・resource family・execution・fiber・発行番号を保持し、dialogue activationを代用しない。
+所有権classは共通のaffine Presentationとし、resource familyをtoken headerへ置く。
+`Handle<T>`のgeneric定義時に具体familyを固定しないための分離である。
+Coreのlive／inert値は一つの資源走査を共有する。line専用のprojectionはPresentationを拒否し、
+Host Readyも有効なPresentation tokenをforeign custodyとして拒否する。
+
+AWBCのWireとCopy判定を新classへ接続し、旧classのtagを維持した。markerはversion 1のまま。
+tokenは5 fieldのcanonical payloadで、unknown family、異なる整数幅、zero execution／issuance、
+欠落／余分fieldを拒否する。Opaque ownerも構築・decoded valueの受入前にpayloadを検査する。
+tokenやvalue DTOのdecodeは資源へのアクセスやledgerの発行権限ではない。
+
+R2865 Core checkは終了101で、新classに必要なWireとCopy verifierのexhaustive caseが不足した。
+原本と終了後の差分を保持した。修正後R2866 workspace checkは終了0だが、この時点の
+kind付きclassはgenericなHandleを表せないため公開前に置換し、旧readerは残していない。
+header移行後R2867も終了0。Hostと破損payloadの検査追加後の最終sourceで、R2871 workspace
+check／R2872 workspace Clippyはall-targets／all-features／lockedで終了0・警告あり。
+R2873構造gateは3,213 files／97 packages／378 review triggers、blocking 0。
+[所有境界と実測](acceptance-evidence/task-presentation-resource-owner-ownership-review.json)。
+
+R2868はcatalog buildのみ。その後追加した破損payloadケースを含むR2869 catalogの全2,068件を
+R2870で実行し、**2,068／2,068 PASS**、終了0、77.958秒。Core全target 2,050件、共有model 18件で、
+filter／ignoredによる非選択0。新規6件と既存のtag／codec／affine／compile-failを含む。
+6,330固定入力と実行ファイル15件の前後hash差分0。生成物の移動・コピーは行っていない。
+原本・照合29件／10,679,500 bytesをbyte／SHA256一致で保持した。
+[ownerの結果・範囲](acceptance-evidence/task-presentation-resource-owner-acceptance.json)、
+[終端・入力照合](acceptance-evidence/task-final-r2870-presentation-resource-owner-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-presentation-resource-owner-runtime.audit.json)、
+[保全manifest](acceptance-evidence/task-presentation-resource-owner-evidence-integrity.json)。
+
+ユーザーの中間commit指示に従い、この区切りはowner実行とworkspace gateで保存する。
+新しい全62逆依存runtimeは実行系の接続後に必要であり、R2864をこのsourceの新規検証としない。
+実際の発行ledger、scope cleanup、Source admission、compiler/runtime-plan、Native／AWBC／driver
+commandとresource-aware restoreは未接続。一般Handleの実行や公開saveの受入とはしない。
+Generic Match等の先行受入を、この未接続や全体goalの未達から取り消していない。

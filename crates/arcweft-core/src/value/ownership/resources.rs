@@ -1,7 +1,7 @@
 //! One borrowed custody graph, preserving physical storage paths.
 
 use super::{
-    RuntimeAffineLineHandle, RuntimeAffineLineHandleError, RuntimeValuePath,
+    RuntimeAffineHandle, RuntimeAffineHandleError, RuntimeAffineLineHandle, RuntimeValuePath,
     RuntimeValuePathSegment, RuntimeValueResourceGraph,
 };
 use crate::value::{
@@ -15,17 +15,25 @@ impl RuntimeValueView<'_> {
     /// This traversal constructs no live value or executable capability.
     pub(crate) fn affine_line_handles(
         self,
-    ) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineLineHandleError> {
+    ) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineHandleError> {
         let mut graph = RuntimeValueResourceGraph::default();
         self.collect_resources(&RuntimeValuePath::root(), &mut graph)?;
-        Ok(graph.line_handles)
+        graph.into_line_handles()
+    }
+
+    pub(crate) fn affine_handles(
+        self,
+    ) -> Result<Vec<RuntimeAffineHandle>, RuntimeAffineHandleError> {
+        let mut graph = RuntimeValueResourceGraph::default();
+        self.collect_resources(&RuntimeValuePath::root(), &mut graph)?;
+        Ok(graph.handles)
     }
 
     pub(super) fn collect_resources(
         self,
         path: &RuntimeValuePath,
         graph: &mut RuntimeValueResourceGraph,
-    ) -> Result<(), RuntimeAffineLineHandleError> {
+    ) -> Result<(), RuntimeAffineHandleError> {
         match self {
             Self::Scalar(_) | Self::DenseNumeric(_) | Self::Range(_) => Ok(()),
             Self::Tuple(values) => {
@@ -55,9 +63,20 @@ impl RuntimeValueView<'_> {
             }
             Self::Opaque(opaque) => match opaque.value_class() {
                 RuntimeOpaqueValueClass::AffineHandle(kind) => {
-                    graph.line_handles.push(RuntimeAffineLineHandle {
-                        kind,
-                        token: crate::runtime_id::RuntimeLineHandleToken::try_decode_view(
+                    graph
+                        .handles
+                        .push(RuntimeAffineHandle::Line(RuntimeAffineLineHandle {
+                            kind,
+                            token: crate::runtime_id::RuntimeLineHandleToken::try_decode_view(
+                                opaque.payload(),
+                            )?,
+                            path: path.clone(),
+                        }));
+                    Ok(())
+                }
+                RuntimeOpaqueValueClass::PresentationHandle => {
+                    graph.handles.push(RuntimeAffineHandle::Presentation {
+                        token: crate::runtime_id::RuntimePresentationHandleToken::try_decode_view(
                             opaque.payload(),
                         )?,
                         path: path.clone(),
@@ -97,7 +116,7 @@ impl RuntimeValueView<'_> {
                 }
                 for (index, value) in need.request_values().enumerate() {
                     let index = u32::try_from(index)
-                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
+                        .map_err(|_| RuntimeAffineHandleError::StructuralOrdinalOverflow)?;
                     value.collect_resources(
                         &path.child(RuntimeValuePathSegment::NeedRequestArgument(index))?,
                         graph,
@@ -120,12 +139,12 @@ impl crate::value::RuntimeIteratorView<'_> {
         self,
         path: &RuntimeValuePath,
         graph: &mut RuntimeValueResourceGraph,
-    ) -> Result<(), RuntimeAffineLineHandleError> {
+    ) -> Result<(), RuntimeAffineHandleError> {
         match self.kind() {
             RuntimeIteratorKind::Values(values) => {
                 for (offset, value) in values.iter().enumerate() {
                     let offset = u64::try_from(offset)
-                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
+                        .map_err(|_| RuntimeAffineHandleError::StructuralOrdinalOverflow)?;
                     value.collect_resources(
                         &path.child(RuntimeValuePathSegment::IteratorRemainder(offset))?,
                         graph,
@@ -147,7 +166,7 @@ impl crate::value::RuntimeReductionView<'_> {
         self,
         path: &RuntimeValuePath,
         graph: &mut RuntimeValueResourceGraph,
-    ) -> Result<(), RuntimeAffineLineHandleError> {
+    ) -> Result<(), RuntimeAffineHandleError> {
         self.state()
             .collect_resources(&path.child(RuntimeValuePathSegment::ReductionState)?, graph)?;
         for index in 0..self.commands().len() {
@@ -156,7 +175,7 @@ impl crate::value::RuntimeReductionView<'_> {
                 .get(index)
                 .expect("reduction owns each command");
             let index = u32::try_from(index)
-                .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
+                .map_err(|_| RuntimeAffineHandleError::StructuralOrdinalOverflow)?;
             command.payload().collect_resources(
                 &path.child(RuntimeValuePathSegment::ReductionCommandPayload(index))?,
                 graph,
@@ -171,7 +190,7 @@ impl RuntimeSequenceView<'_> {
         self,
         path: &RuntimeValuePath,
         graph: &mut RuntimeValueResourceGraph,
-    ) -> Result<(), RuntimeAffineLineHandleError> {
+    ) -> Result<(), RuntimeAffineHandleError> {
         match self {
             Self::Bytes(_)
             | Self::Live(RuntimeSeq::Dense(_))
@@ -216,7 +235,7 @@ impl RuntimeSequenceView<'_> {
                         .value_view(index)
                         .expect("admitted storage owns each logical row");
                     let index = u64::try_from(index)
-                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
+                        .map_err(|_| RuntimeAffineHandleError::StructuralOrdinalOverflow)?;
                     value.collect_resources(
                         &path.child(RuntimeValuePathSegment::SequenceElement(index))?,
                         graph,
@@ -233,9 +252,9 @@ fn collect_column(
     index: usize,
     path: &RuntimeValuePath,
     graph: &mut RuntimeValueResourceGraph,
-) -> Result<(), RuntimeAffineLineHandleError> {
-    let index = u32::try_from(index)
-        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
+) -> Result<(), RuntimeAffineHandleError> {
+    let index =
+        u32::try_from(index).map_err(|_| RuntimeAffineHandleError::StructuralOrdinalOverflow)?;
     column.collect_resources(
         &path.child(RuntimeValuePathSegment::TupleColumn(index))?,
         graph,
@@ -247,10 +266,10 @@ fn collect_tuple(
     path: &RuntimeValuePath,
     segment: impl Fn(u32) -> RuntimeValuePathSegment,
     graph: &mut RuntimeValueResourceGraph,
-) -> Result<(), RuntimeAffineLineHandleError> {
+) -> Result<(), RuntimeAffineHandleError> {
     for (index, value) in values.iter().enumerate() {
         let index = u32::try_from(index)
-            .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
+            .map_err(|_| RuntimeAffineHandleError::StructuralOrdinalOverflow)?;
         value.collect_resources(&path.child(segment(index))?, graph)?;
     }
     Ok(())
@@ -261,13 +280,13 @@ fn collect_predicate(
     path: &RuntimeValuePath,
     ordinal: &mut u32,
     graph: &mut RuntimeValueResourceGraph,
-) -> Result<(), RuntimeAffineLineHandleError> {
+) -> Result<(), RuntimeAffineHandleError> {
     match predicate.kind() {
         RuntimePredicateKind::Compare { value, .. } => {
             let index = *ordinal;
             *ordinal = ordinal
                 .checked_add(1)
-                .ok_or(RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
+                .ok_or(RuntimeAffineHandleError::StructuralOrdinalOverflow)?;
             value.view().collect_resources(
                 &path.child(RuntimeValuePathSegment::AgentEmbeddedValue(index))?,
                 graph,

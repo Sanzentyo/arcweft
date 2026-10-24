@@ -422,6 +422,11 @@ impl RuntimeOpaqueTypeOwner {
             && (self.admission == RuntimeOpaqueTypeAdmission::ProducerWide
                 || self.semantic_identity == actual.semantic_identity())
             && crate::value::standard_asset_opaque_payload_is_valid(self, actual.payload())
+            && (self.value_class != RuntimeOpaqueValueClass::PresentationHandle
+                || crate::runtime_id::RuntimePresentationHandleToken::try_decode_view(
+                    actual.payload(),
+                )
+                .is_ok())
     }
 
     pub fn try_wrap(&self, payload: RuntimeValue) -> Result<RuntimeValue, RuntimeOpaqueValueError> {
@@ -435,6 +440,9 @@ impl RuntimeOpaqueTypeOwner {
             return Err(RuntimeOpaqueValueError::InvalidStandardPayload {
                 producer: self.producer.clone(),
             });
+        }
+        if self.value_class == RuntimeOpaqueValueClass::PresentationHandle {
+            crate::runtime_id::RuntimePresentationHandleToken::try_decode_view(payload.view())?;
         }
         Ok(RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
             self, payload,
@@ -1838,7 +1846,7 @@ pub(crate) fn runtime_pattern_handle_destinations(
     pattern: &RuntimePattern,
     value: &RuntimeValue,
     token: &crate::runtime_id::RuntimeLineHandleToken,
-) -> Result<Vec<RuntimeLocalDeclarationId>, crate::value::ownership::RuntimeAffineLineHandleError> {
+) -> Result<Vec<RuntimeLocalDeclarationId>, crate::value::ownership::RuntimeAffineHandleError> {
     let mut destinations = Vec::new();
     collect_pattern_handle_destinations(pattern, value.live_view(), token, &mut destinations)?;
     Ok(destinations)
@@ -1849,7 +1857,7 @@ fn collect_pattern_handle_destinations(
     value: LiveRuntimeValueView<'_>,
     token: &crate::runtime_id::RuntimeLineHandleToken,
     destinations: &mut Vec<RuntimeLocalDeclarationId>,
-) -> Result<(), crate::value::ownership::RuntimeAffineLineHandleError> {
+) -> Result<(), crate::value::ownership::RuntimeAffineHandleError> {
     match pattern.kind() {
         RuntimePatternKind::Or(alternatives) => {
             if let Some(selected) = alternatives

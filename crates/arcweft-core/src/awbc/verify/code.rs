@@ -6313,7 +6313,9 @@ pub(super) fn runtime_type_permits_copy(
             Some(
                 AwbcRuntimeTypeShape::Nominal { .. }
                 | AwbcRuntimeTypeShape::Opaque {
-                    value_class: crate::value::RuntimeOpaqueValueClass::AffineHandle(_),
+                    value_class:
+                        crate::value::RuntimeOpaqueValueClass::AffineHandle(_)
+                        | crate::value::RuntimeOpaqueValueClass::PresentationHandle,
                     ..
                 }
                 | AwbcRuntimeTypeShape::AgentValue

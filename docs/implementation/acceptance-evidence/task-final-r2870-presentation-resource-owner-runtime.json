@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "36c3e0f109617a865841a59d311736db513d5872",
+  "name": "task-final-r2870-presentation-resource-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-interaction-model",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2870-presentation-resource-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T22:22:36.8433370Z",
+  "finishedAt": "2026-10-24T22:23:56.2489041Z"
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "36c3e0f109617a865841a59d311736db513d5872",
+  "run": "task-final-r2870-presentation-resource-owner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  77.958s] 2068 tests run: 2068 passed (1 slow), 0 skipped",
+  "executed": 2068,
+  "passed": 2068,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 6330,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T22:26:15.8651245Z"
+}

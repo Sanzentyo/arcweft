@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "base": "36c3e0f109617a865841a59d311736db513d5872",
+  "dirty": true,
+  "owned": [
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/types.rs",
+      "owner": "arcweft-core",
+      "bytes": 67974,
+      "physicalLines": 1849,
+      "basePhysicalLines": 1809,
+      "growth": 40,
+      "embeddedTestLines": 1817,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+      "owner": "arcweft-core",
+      "bytes": 254086,
+      "physicalLines": 6530,
+      "basePhysicalLines": 6528,
+      "growth": 2,
+      "embeddedTestLines": 6486,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/pattern.rs",
+      "owner": "arcweft-core",
+      "bytes": 151995,
+      "physicalLines": 3924,
+      "basePhysicalLines": 3916,
+      "growth": 8,
+      "embeddedTestLines": 965,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/runtime_id.rs",
+      "owner": "arcweft-core",
+      "bytes": 48940,
+      "physicalLines": 1535,
+      "basePhysicalLines": 1531,
+      "growth": 4,
+      "embeddedTestLines": 144,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/runtime_id/presentation_handle.rs",
+      "owner": "arcweft-core",
+      "bytes": 8645,
+      "physicalLines": 231,
+      "basePhysicalLines": 0,
+      "growth": 231,
+      "embeddedTestLines": 99,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "owner": "arcweft-core",
+      "bytes": 73600,
+      "physicalLines": 2224,
+      "basePhysicalLines": 2181,
+      "growth": 43,
+      "embeddedTestLines": 2140,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save.rs",
+      "owner": "arcweft-core",
+      "bytes": 63960,
+      "physicalLines": 1537,
+      "basePhysicalLines": 1537,
+      "growth": 0,
+      "embeddedTestLines": 1510,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/opaque.rs",
+      "owner": "arcweft-core",
+      "bytes": 162103,
+      "physicalLines": 4099,
+      "basePhysicalLines": 4069,
+      "growth": 30,
+      "embeddedTestLines": 1083,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/ownership.rs",
+      "owner": "arcweft-core",
+      "bytes": 22726,
+      "physicalLines": 599,
+      "basePhysicalLines": 441,
+      "growth": 158,
+      "embeddedTestLines": 233,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/ownership/resources.rs",
+      "owner": "arcweft-core",
+      "bytes": 12586,
+      "physicalLines": 311,
+      "basePhysicalLines": 292,
+      "growth": 19,
+      "embeddedTestLines": 0,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/view.rs",
+      "owner": "arcweft-core",
+      "bytes": 42040,
+      "physicalLines": 979,
+      "basePhysicalLines": 973,
+      "growth": 6,
+      "embeddedTestLines": 0,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-interaction-model/src/presentation.rs",
+      "owner": "arcweft-interaction-model",
+      "bytes": 9632,
+      "physicalLines": 341,
+      "basePhysicalLines": 326,
+      "growth": 15,
+      "embeddedTestLines": 2,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-interaction-model/src/presentation/tests.rs",
+      "owner": "arcweft-interaction-model",
+      "bytes": 7613,
+      "physicalLines": 213,
+      "basePhysicalLines": 207,
+      "growth": 6,
+      "embeddedTestLines": 0,
+      "classification": "test"
+    }
+  ],
+  "scanner": {
+    "blocking": 0,
+    "files": 3213,
+    "rustFiles": 3083,
+    "exitCode": 0,
+    "reviewTriggers": 378,
+    "packages": 97
+  },
+  "reversePackages": 62,
+  "manifestLockInputs": 99,
+  "manifestLockDrift": 0,
+  "disposition": [
+    "Core runtime_id owns inert presentation identity. Kind belongs to the token header; one common affine class preserves generic Handle<T> rather than pinning a resource kind into the ownership class. The token grants no access without an issuing ledger.",
+    "Core value ownership has one live/inert resource traversal. Line and Presentation are distinct typed families in that single graph; line-only projection rejects Presentation instead of fabricating a dialogue activation. Host ownership inspection consumes the generic graph. No side table, fallback reader or alias was added.",
+    "Opaque type owner validates the canonical payload before boxing or accepting decoded values. AWBC Wire and Copy verification use the same ownership classification. Existing Pattern, task and codec modules retain these cohesive boundaries; no public widening or physical split for LOC.",
+    "Shared resource-kind tag decoding stays on interaction-model. No dependency edge, feature or I/O ownership changed. New module is within ID ownership and contains matching identity codec tests."
+  ],
+  "issuanceLedgerImplemented": false,
+  "sourceRuntimeProjectionEnabled": false,
+  "at": "2026-10-24T22:33:27.7320326Z"
+}

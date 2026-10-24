@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "run": "task-final-r2867-presentation-resource-header-workspace-check",
+  "actualExitCode": 0,
+  "frozenInputs": 6330,
+  "sourceDrift": 0,
+  "warningsPresent": true,
+  "at": "2026-10-24T22:17:40.3205536Z"
+}

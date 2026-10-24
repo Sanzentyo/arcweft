@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "run": "task-final-r2866-presentation-resource-custody-workspace-check",
+  "actualExitCode": 0,
+  "frozenInputs": 6330,
+  "sourceDrift": 0,
+  "scope": "Earlier kind-parameterized ownership class. Token header and common class are adjusted after this terminal result; this pass is not validation of that later shape.",
+  "at": "2026-10-24T22:13:27.1866297Z"
+}

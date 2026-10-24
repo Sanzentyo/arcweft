@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "36c3e0f109617a865841a59d311736db513d5872",
+  "name": "task-final-r2868-presentation-resource-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-interaction-model",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2868-presentation-resource-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T22:18:14.4900122Z",
+  "finishedAt": "2026-10-24T22:20:02.8306403Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "36c3e0f109617a865841a59d311736db513d5872",
+  "name": "task-final-r2866-presentation-resource-custody-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2866-presentation-resource-custody-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T22:11:20.9270462Z",
+  "finishedAt": "2026-10-24T22:13:15.9342554Z"
+}

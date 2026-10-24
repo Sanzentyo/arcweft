@@ -573,6 +573,9 @@ impl Wire for RuntimeOpaqueValueClass {
                 writer.write_u8(1);
                 kind.write_wire(writer)?;
             }
+            Self::PresentationHandle => {
+                writer.write_u8(2);
+            }
         }
         Ok(())
     }
@@ -582,6 +585,7 @@ impl Wire for RuntimeOpaqueValueClass {
         match reader.read_u8()? {
             0 => Ok(Self::Plain),
             1 => RuntimeHandleKind::read_wire(reader).map(Self::AffineHandle),
+            2 => Ok(Self::PresentationHandle),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "opaque value class",
                 tag,
@@ -1805,5 +1809,41 @@ mod imported_entity_wire_tests {
                 ..
             })
         ));
+    }
+}
+
+#[cfg(test)]
+mod presentation_handle_class_wire_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+
+    #[test]
+    fn presentation_handle_class_wire_roundtrips_and_rejects_unknown_or_trailing_bytes() {
+        {
+            let class = RuntimeOpaqueValueClass::PresentationHandle;
+            let mut writer = Writer::default();
+            class.write_wire(&mut writer).unwrap();
+            let bytes = writer.into_bytes();
+            assert_eq!(bytes, [2]);
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                RuntimeOpaqueValueClass::read_wire(&mut reader).unwrap(),
+                class
+            );
+            reader.finish().unwrap();
+        }
+        for bytes in [&[3][..], &[u8::MAX]] {
+            let mut reader = Reader::new(bytes, &AwbcDecodeBudget::default());
+            assert!(matches!(
+                RuntimeOpaqueValueClass::read_wire(&mut reader),
+                Err(AwbcCodecError::UnknownTag { .. })
+            ));
+        }
+        let mut reader = Reader::new(&[2, 0], &AwbcDecodeBudget::default());
+        assert_eq!(
+            RuntimeOpaqueValueClass::read_wire(&mut reader).unwrap(),
+            RuntimeOpaqueValueClass::PresentationHandle
+        );
+        assert!(reader.finish().is_err());
     }
 }

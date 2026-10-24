@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "run": "task-final-r2865-presentation-resource-custody-core-check",
+  "actualExitCode": 101,
+  "sourceInputs": 6330,
+  "postTerminalEdits": [
+    "crates/arcweft-core/src/awbc/codec/types.rs",
+    "crates/arcweft-core/src/awbc/verify/code.rs",
+    "crates/arcweft-core/src/value/ownership.rs"
+  ],
+  "inputDrift": 3,
+  "failure": "Two missing exhaustive cases: AWBC class Wire and verifier Copy admission. These are repaired after terminal failure."
+}

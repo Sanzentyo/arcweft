@@ -2881,12 +2881,16 @@ impl RuntimeHandleKind {
 pub enum RuntimeOpaqueValueClass {
     Plain,
     AffineHandle(RuntimeHandleKind),
+    PresentationHandle,
 }
 
 impl RuntimeOpaqueValueClass {
     pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
         if tag == 0 {
             return Some(Self::Plain);
+        }
+        if tag == 4 {
+            return Some(Self::PresentationHandle);
         }
         match RuntimeHandleKind::from_encoded(tag - 1) {
             Some(kind) => Some(Self::AffineHandle(kind)),
@@ -2896,7 +2900,9 @@ impl RuntimeOpaqueValueClass {
     pub(crate) const fn intrinsic_ownership(self) -> super::ownership::RuntimeValueOwnership {
         match self {
             Self::Plain => super::ownership::RuntimeValueOwnership::Unrestricted,
-            Self::AffineHandle(_) => super::ownership::RuntimeValueOwnership::Affine,
+            Self::AffineHandle(_) | Self::PresentationHandle => {
+                super::ownership::RuntimeValueOwnership::Affine
+            }
         }
     }
 
@@ -2906,6 +2912,7 @@ impl RuntimeOpaqueValueClass {
         match self {
             Self::Plain => 0,
             Self::AffineHandle(kind) => kind.encoded() + 1,
+            Self::PresentationHandle => 4,
         }
     }
 }
@@ -2994,6 +3001,8 @@ impl RuntimeOpaqueValue {
 /// Failure to construct a concrete opaque runtime value.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeOpaqueValueError {
+    #[error(transparent)]
+    PresentationToken(#[from] crate::runtime_id::RuntimePresentationHandleTokenDecodeError),
     #[error("producer-wide opaque type is not a concrete runtime value owner")]
     NonConcreteOwner {
         producer: RuntimeOpaqueTypeProducerId,
@@ -3365,6 +3374,27 @@ mod tests {
             RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Voice).semantic_tag(),
             3
         );
+        {
+            let class = RuntimeOpaqueValueClass::PresentationHandle;
+            assert_eq!(class.semantic_tag(), 4);
+            assert_eq!(
+                RuntimeOpaqueValueClass::from_semantic_tag(class.semantic_tag()),
+                Some(class)
+            );
+            assert_eq!(
+                serde_json::from_value::<RuntimeOpaqueValueClass>(
+                    serde_json::to_value(class).unwrap()
+                )
+                .unwrap(),
+                class
+            );
+            assert_eq!(
+                class.intrinsic_ownership(),
+                crate::value::ownership::RuntimeValueOwnership::Affine
+            );
+        }
+        assert_eq!(RuntimeOpaqueValueClass::from_semantic_tag(5), None);
+        assert_eq!(RuntimeOpaqueValueClass::from_semantic_tag(u8::MAX), None);
 
         let persistence = [
             (RuntimeOpaquePersistence::ConstantAndSnapshot, 0),

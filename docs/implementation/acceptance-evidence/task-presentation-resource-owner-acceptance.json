@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "base": "36c3e0f109617a865841a59d311736db513d5872",
+  "intermediateCheckpoint": true,
+  "sourcePaths": [
+    "crates/arcweft-core/src/awbc/codec/types.rs",
+    "crates/arcweft-core/src/awbc/verify/code.rs",
+    "crates/arcweft-core/src/pattern.rs",
+    "crates/arcweft-core/src/runtime_id.rs",
+    "crates/arcweft-core/src/runtime_id/presentation_handle.rs",
+    "crates/arcweft-core/src/task.rs",
+    "crates/arcweft-core/src/value/awbc_save.rs",
+    "crates/arcweft-core/src/value/opaque.rs",
+    "crates/arcweft-core/src/value/ownership.rs",
+    "crates/arcweft-core/src/value/ownership/resources.rs",
+    "crates/arcweft-core/src/value/view.rs",
+    "crates/arcweft-interaction-model/src/presentation.rs",
+    "crates/arcweft-interaction-model/src/presentation/tests.rs"
+  ],
+  "scope": "Core general Presentation token metadata, single live/inert custody traversal, opaque payload validation, Wire/Copy classification and Host foreign-custody rejection",
+  "ownerExecution": {
+    "version": 1,
+    "run": "task-final-r2870-presentation-resource-owner-runtime",
+    "executed": 2068,
+    "passed": 2068,
+    "failed": 0,
+    "sourceInputs": 6330,
+    "sourceDrift": 0,
+    "binaryCount": 15,
+    "binaryDrift": 0,
+    "at": "2026-10-24T22:26:16.0790069Z"
+  },
+  "requiredNewCases": 6,
+  "finalWorkspaceCheck": {
+    "exitCode": 0,
+    "warnings": true,
+    "run": "R2871"
+  },
+  "finalWorkspaceClippy": {
+    "exitCode": 0,
+    "warnings": true,
+    "run": "R2872"
+  },
+  "structure": {
+    "exitCode": 0,
+    "blocking": 0,
+    "run": "R2873"
+  },
+  "earlierChecks": [
+    {
+      "reason": "Missing new class in Wire and Copy verifier; post-terminal edits recorded, not zero drift",
+      "exitCode": 101,
+      "run": "R2865"
+    },
+    {
+      "exitCode": 0,
+      "scope": "Earlier kind-parameterized class, superseded before publication to support generic Handle<T>",
+      "run": "R2866"
+    },
+    {
+      "exitCode": 0,
+      "scope": "Final header shape before added Host and malformed-payload checks",
+      "run": "R2867"
+    },
+    {
+      "exitCode": 0,
+      "scope": "Catalog build only; replaced before execution by R2869 after malformed-payload regression was added",
+      "run": "R2868"
+    }
+  ],
+  "remaining": [
+    "actual issuing ledger and Original Source admission",
+    "scope cleanup and lease transfer",
+    "full typed command body and compiler/runtime-plan lowering",
+    "Native/AWBC/driver execution and resource-aware restore",
+    "new full 62-package reverse runtime after execution connection; previous R2864 belongs to earlier bytes"
+  ],
+  "sourceProducerEnabled": false,
+  "publicSaveAccepted": false,
+  "runtimeCommandAbiImplemented": false,
+  "goalComplete": false,
+  "preservedOriginalTrackedWip": 14,
+  "preservedOriginalUntrackedFiles": 6,
+  "ownershipReview": "task-presentation-resource-owner-ownership-review.json",
+  "evidenceManifest": "task-presentation-resource-owner-evidence-integrity.json",
+  "at": "2026-10-24T22:33:27.7358595Z"
+}

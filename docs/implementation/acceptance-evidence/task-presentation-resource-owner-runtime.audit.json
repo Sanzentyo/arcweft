@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "run": "task-final-r2870-presentation-resource-owner-runtime",
+  "executed": 2068,
+  "passed": 2068,
+  "failed": 0,
+  "sourceInputs": 6330,
+  "sourceDrift": 0,
+  "binaryCount": 15,
+  "binaryDrift": 0,
+  "at": "2026-10-24T22:26:16.0790069Z"
+}

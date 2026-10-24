@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "run": "task-final-r2871-presentation-resource-owner-workspace-check",
+  "actualExitCode": 0,
+  "sourceInputs": 6330,
+  "sourceDrift": 0,
+  "warningsPresent": true,
+  "at": "2026-10-24T22:28:13.1083827Z"
+}

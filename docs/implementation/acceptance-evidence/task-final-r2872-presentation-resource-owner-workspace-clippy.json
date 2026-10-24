@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "36c3e0f109617a865841a59d311736db513d5872",
+  "name": "task-final-r2872-presentation-resource-owner-workspace-clippy",
+  "command": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2872-presentation-resource-owner-workspace-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T22:27:59.8944593Z",
+  "finishedAt": "2026-10-24T22:30:03.4781692Z"
+}

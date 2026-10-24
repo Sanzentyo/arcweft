@@ -222,7 +222,7 @@ impl<'a> LiveRuntimeValueView<'a> {
     pub(crate) fn contains_line_handle(
         self,
         token: &crate::runtime_id::RuntimeLineHandleToken,
-    ) -> Result<bool, super::ownership::RuntimeAffineLineHandleError> {
+    ) -> Result<bool, super::ownership::RuntimeAffineHandleError> {
         match self.0 {
             RuntimeValueView::Scalar(_) | RuntimeValueView::DenseNumeric(_) => Ok(false),
             RuntimeValueView::Tuple(values) => {
@@ -269,6 +269,12 @@ impl<'a> LiveRuntimeValueView<'a> {
                             .payload(),
                     )? == token,
                 ),
+                super::RuntimeOpaqueValueClass::PresentationHandle => {
+                    crate::runtime_id::RuntimePresentationHandleToken::try_decode_view(
+                        value.payload(),
+                    )?;
+                    Ok(false)
+                }
                 super::RuntimeOpaqueValueClass::Plain => {
                     self.child(value.payload()).contains_line_handle(token)
                 }

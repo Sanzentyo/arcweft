@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "36c3e0f109617a865841a59d311736db513d5872",
+  "name": "task-final-r2865-presentation-resource-custody-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2865-presentation-resource-custody-core-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T22:08:41.5225689Z",
+  "finishedAt": "2026-10-24T22:09:35.5128910Z"
+}

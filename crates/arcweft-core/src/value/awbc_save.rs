@@ -484,7 +484,7 @@ impl AwbcRuntimeValueSnapshot {
                     .collect()
             })
             .map_err(|error| match error {
-                super::ownership::RuntimeAffineLineHandleError::Schema(error) => (*error).into(),
+                super::ownership::RuntimeAffineHandleError::Schema(error) => (*error).into(),
                 error => crate::entry::RuntimeSchemaError::Encoding {
                     message: error.to_string(),
                 }

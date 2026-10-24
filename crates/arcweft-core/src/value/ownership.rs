@@ -111,8 +111,18 @@ impl RuntimeAffineLineHandle {
     }
 }
 
+/// Closed resource families observed by the single live/inert custody walk.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeAffineHandle {
+    Line(RuntimeAffineLineHandle),
+    Presentation {
+        token: crate::runtime_id::RuntimePresentationHandleToken,
+        path: RuntimeValuePath,
+    },
+}
+
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum RuntimeAffineLineHandleError {
+pub enum RuntimeAffineHandleError {
     #[error(transparent)]
     Schema(Box<crate::entry::RuntimeSchemaError>),
     #[error(transparent)]
@@ -120,25 +130,38 @@ pub enum RuntimeAffineLineHandleError {
     #[error(transparent)]
     Token(#[from] crate::runtime_id::RuntimeLineHandleTokenDecodeError),
     #[error(transparent)]
+    PresentationToken(#[from] crate::runtime_id::RuntimePresentationHandleTokenDecodeError),
+    #[error(
+        "presentation resource {kind:?} requires its presentation ledger, not a dialogue ledger"
+    )]
+    PresentationLedgerRequired {
+        kind: arcweft_interaction_model::presentation::PresentationResourceKind,
+    },
+    #[error(transparent)]
     RecordField(#[from] super::RuntimeRecordFieldIdError),
     #[error("runtime value structural ordinal exceeds the canonical u32 path coordinate")]
     StructuralOrdinalOverflow,
 }
 
-impl From<crate::entry::RuntimeSchemaError> for RuntimeAffineLineHandleError {
+impl From<crate::entry::RuntimeSchemaError> for RuntimeAffineHandleError {
     fn from(error: crate::entry::RuntimeSchemaError) -> Self {
         Self::Schema(Box::new(error))
     }
 }
 
-/// A bare value cannot transfer the ledger obligations of a live line handle.
+/// A bare value cannot transfer the ledger obligations of a live resource handle.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeDetachedValueError {
     #[error(transparent)]
-    HandleGraph(#[from] RuntimeAffineLineHandleError),
+    HandleGraph(#[from] RuntimeAffineHandleError),
     #[error("line handle {token:?} at {path:?} requires its owning ledger")]
     LineHandleCustodyRequired {
         token: crate::runtime_id::RuntimeLineHandleToken,
+        path: RuntimeValuePath,
+    },
+    #[error("presentation handle {token:?} at {path:?} requires its owning ledger")]
+    PresentationHandleCustodyRequired {
+        token: crate::runtime_id::RuntimePresentationHandleToken,
         path: RuntimeValuePath,
     },
     #[error("Need {correlation:?} at {path:?} requires its retained producer context")]
@@ -150,8 +173,24 @@ pub enum RuntimeDetachedValueError {
 
 #[derive(Default)]
 struct RuntimeValueResourceGraph {
-    line_handles: Vec<RuntimeAffineLineHandle>,
+    handles: Vec<RuntimeAffineHandle>,
     owned_need: Option<(crate::task::TaskCorrelation, RuntimeValuePath)>,
+}
+
+impl RuntimeValueResourceGraph {
+    fn into_line_handles(self) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineHandleError> {
+        self.handles
+            .into_iter()
+            .map(|handle| match handle {
+                RuntimeAffineHandle::Line(handle) => Ok(handle),
+                RuntimeAffineHandle::Presentation { token, .. } => {
+                    Err(RuntimeAffineHandleError::PresentationLedgerRequired {
+                        kind: token.resource(),
+                    })
+                }
+            })
+            .collect()
+    }
 }
 
 impl RuntimeValueOwnership {
@@ -173,15 +212,22 @@ impl RuntimeValueOwnership {
 
 impl RuntimeValue {
     /// Checks a transfer that carries a value without an execution-resource
-    /// owner. External Need identities remain valid; issued line handles must
+    /// owner. External Need identities remain valid; issued resource handles must
     /// travel with their ledger instead of becoming detached values.
     pub fn validate_detached_custody(&self) -> Result<(), RuntimeDetachedValueError> {
         let mut graph = RuntimeValueResourceGraph::default();
         self.collect_resources(&RuntimeValuePath::root(), &mut graph)?;
-        if let Some(handle) = graph.line_handles.into_iter().next() {
-            return Err(RuntimeDetachedValueError::LineHandleCustodyRequired {
-                token: handle.token,
-                path: handle.path,
+        if let Some(handle) = graph.handles.into_iter().next() {
+            return Err(match handle {
+                RuntimeAffineHandle::Line(handle) => {
+                    RuntimeDetachedValueError::LineHandleCustodyRequired {
+                        token: handle.token,
+                        path: handle.path,
+                    }
+                }
+                RuntimeAffineHandle::Presentation { token, path, .. } => {
+                    RuntimeDetachedValueError::PresentationHandleCustodyRequired { token, path }
+                }
             });
         }
         if let Some((correlation, path)) = graph.owned_need {
@@ -247,17 +293,23 @@ impl RuntimeValue {
 
     pub(crate) fn affine_line_handles(
         &self,
-    ) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineLineHandleError> {
+    ) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineHandleError> {
         let mut handles = RuntimeValueResourceGraph::default();
         self.collect_resources(&RuntimeValuePath::root(), &mut handles)?;
-        Ok(handles.line_handles)
+        handles.into_line_handles()
+    }
+
+    pub(crate) fn affine_handles(
+        &self,
+    ) -> Result<Vec<RuntimeAffineHandle>, RuntimeAffineHandleError> {
+        self.view().affine_handles()
     }
 
     fn collect_resources(
         &self,
         path: &RuntimeValuePath,
         graph: &mut RuntimeValueResourceGraph,
-    ) -> Result<(), RuntimeAffineLineHandleError> {
+    ) -> Result<(), RuntimeAffineHandleError> {
         self.view().collect_resources(path, graph)
     }
 }
@@ -310,6 +362,112 @@ fn values_ownership<'a>(
         .fold(RuntimeValueOwnership::Unrestricted, |ownership, value| {
             ownership.join(value.ownership())
         })
+}
+
+#[cfg(test)]
+mod presentation_custody_tests {
+    use super::*;
+    use crate::pattern::{
+        RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+    };
+    use crate::runtime_id::{
+        ExecutionInstanceId, RuntimePersistentFiberId, RuntimePresentationHandleToken,
+    };
+    use crate::value::{
+        AwbcRuntimeValueSnapshot, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
+    };
+    use arcweft_interaction_model::presentation::PresentationResourceKind;
+    use std::num::NonZeroU64;
+
+    #[test]
+    fn presentation_custody_preserves_family_token_and_path_in_live_and_inert_storage() {
+        for kind in PresentationResourceKind::ALL {
+            let token = RuntimePresentationHandleToken::from_issued(
+                crate::effect::RuntimeArtifactFingerprint::try_from_bytes([31; 32]).unwrap(),
+                kind,
+                ExecutionInstanceId::from_allocated(NonZeroU64::new(7).unwrap()),
+                RuntimePersistentFiberId::from_allocated(4),
+                NonZeroU64::new(9).unwrap(),
+            );
+            let owner = RuntimeOpaqueTypeOwner::exact_with(
+                RuntimeOpaqueTypeProducerId::try_new("test.presentation.custody").unwrap(),
+                RuntimeSemanticTypeId::from_bytes([kind.semantic_tag() + 1; 32]),
+                RuntimeOpaqueValueClass::PresentationHandle,
+                RuntimeOpaquePersistence::SnapshotOnly,
+            );
+            let value = RuntimeValue::Tuple(vec![owner.try_wrap(token.encode_payload()).unwrap()]);
+            assert_eq!(value.ownership(), RuntimeValueOwnership::Affine);
+            assert_eq!(
+                value.try_canonical_bytes(1024),
+                Err(crate::entry::RuntimeSchemaError::Encoding {
+                    message: "opaque value class/persistence is not constant-admissible".to_owned(),
+                })
+            );
+            let image = AwbcRuntimeValueSnapshot::from_standalone_value(&value).unwrap();
+            let live = value.affine_handles().unwrap();
+            assert_eq!(live, image.view().affine_handles().unwrap());
+            let expected_path = RuntimeValuePath::root()
+                .child(RuntimeValuePathSegment::TupleElement(0))
+                .unwrap();
+            assert_eq!(
+                live,
+                [RuntimeAffineHandle::Presentation {
+                    token: token.clone(),
+                    path: expected_path.clone()
+                }]
+            );
+            assert_eq!(
+                value.validate_detached_custody(),
+                Err(
+                    RuntimeDetachedValueError::PresentationHandleCustodyRequired {
+                        token: token.clone(),
+                        path: expected_path
+                    }
+                )
+            );
+            assert_eq!(
+                value.affine_line_handles(),
+                Err(RuntimeAffineHandleError::PresentationLedgerRequired { kind })
+            );
+            assert_eq!(
+                image.view().affine_line_handles(),
+                Err(RuntimeAffineHandleError::PresentationLedgerRequired { kind })
+            );
+            let program = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+                crate::awbc::schema::AwbcProgram::default(),
+            ));
+            assert_eq!(
+                image.into_unrestricted_runtime_value_for_program(&program),
+                Err(crate::value::AwbcRuntimeValueSnapshotError::AffineValue)
+            );
+        }
+    }
+
+    #[test]
+    fn presentation_owner_rejects_malformed_live_and_decoded_payloads_before_publication() {
+        let owner = RuntimeOpaqueTypeOwner::exact_with(
+            RuntimeOpaqueTypeProducerId::try_new("test.presentation.custody").unwrap(),
+            RuntimeSemanticTypeId::from_bytes([11; 32]),
+            RuntimeOpaqueValueClass::PresentationHandle,
+            RuntimeOpaquePersistence::SnapshotOnly,
+        );
+        assert_eq!(
+            owner.try_wrap(RuntimeValue::Unit),
+            Err(crate::value::RuntimeOpaqueValueError::PresentationToken(
+                crate::runtime_id::RuntimePresentationHandleTokenDecodeError::Shape,
+            ))
+        );
+        let forged = crate::value::RuntimeOpaqueValue::new_exact(&owner, RuntimeValue::Unit);
+        let decoded = serde_json::from_value::<crate::value::RuntimeOpaqueValue>(
+            serde_json::to_value(&forged).unwrap(),
+        )
+        .unwrap();
+        assert!(!owner.accepts_opaque_value(&decoded));
+        assert!(
+            !crate::pattern::RuntimeCheckedType::Opaque { owner }
+                .accepts_value(&RuntimeValue::Opaque(decoded))
+        );
+    }
 }
 
 #[cfg(test)]
