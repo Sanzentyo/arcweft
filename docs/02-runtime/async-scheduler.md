@@ -145,9 +145,18 @@ Re-ensuring the same live Web dispatch preserves its pending work and frontier.
 The common producer registry owns a Program task's returned value in its
 `Ready` state. Its Program origin retains the accepted launch, with no synthetic
 Host invocation token, restart policy, argument packet or initial publication
-cursor. A native Await reads this local terminal state without requiring a Host
-round trip. `AlwaysStart` transfers the value once into its waiter and retains
+cursor. Native and Product AWBC Await read this local terminal state without
+requiring a Host round trip. `AlwaysStart` transfers the value once into its waiter and retains
 `ReadyTransferred`; an acknowledgement cannot restore a consumed value.
+
+Await observations distinguish an adapter's `TaskPublicationCursor` from a
+Program task's value phase: Pending, Terminal, or Transferred. The accepted
+producer's existing state supplies that phase; it has no independent counter or
+synthetic Host publication. Product persistence retains the observation with
+its waiter and complete task correlation in the version-one save grammar.
+Restore rejects a future phase, a different publication source, or a Program
+observation without its accepted local producer. The public Native facade's
+adapter cursor remains an adapter observation; Product owns its Program phase.
 
 `ProgramTaskCompletion` retains retirement status and the authenticated original
 launch. The private bound publication retains this Source proof until the

@@ -363,6 +363,10 @@ fn map_vm_exit(
             CompiledStepExit::Suspended,
         ),
         VmExit::Returned(value) => CompiledStepExit::Returned(value),
+        VmExit::TaskReturned => failed(
+            AwbcTrapCode::InternalInvariant,
+            "Program task return escaped the product AWBC executor".to_owned(),
+        ),
         VmExit::DialogueResultSelected(_) => failed(
             AwbcTrapCode::InternalInvariant,
             "dialogue result selection escaped the product AWBC executor".to_owned(),

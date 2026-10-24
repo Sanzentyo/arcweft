@@ -461,7 +461,10 @@ impl AwbcProductStepExecutor {
                 observed_through: self
                     .need_publications
                     .get(&(self.facade_fiber.persistent_id, need.correlation()))
-                    .copied(),
+                    .and_then(|cursor| match cursor {
+                        crate::task::RuntimeNeedPublicationCursor::Task(cursor) => Some(*cursor),
+                        crate::task::RuntimeNeedPublicationCursor::Program(_) => None,
+                    }),
                 queued: std::collections::VecDeque::new(),
             })),
             FiberSuspensionReason::HostCall { call, .. } => self.host_call_status(*call),

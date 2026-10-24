@@ -259,7 +259,7 @@ impl AwbcProductStepExecutor {
                 );
                 return true;
             }
-            let Some(cursor) = launch.publication() else {
+            let Some(cursor) = launch.need_publication_cursor() else {
                 return false;
             };
             let state = match launch.state() {
@@ -301,7 +301,10 @@ impl AwbcProductStepExecutor {
                 }
                 Need::Cancelled => AwaitNeedPublicationKind::Cancelled,
             };
-            (cursor, kind)
+            (
+                crate::task::RuntimeNeedPublicationCursor::Task(cursor),
+                kind,
+            )
         };
         let waiter = crate::runtime_id::RuntimePersistentFiberId::from_allocated(
             self.fiber.instance.get().get(),
@@ -1687,7 +1690,7 @@ impl AwbcProductStepExecutor {
                 );
                 return true;
             }
-            let Some(cursor) = launch.publication() else {
+            let Some(cursor) = launch.need_publication_cursor() else {
                 return false;
             };
             let state = match launch.state() {
@@ -1729,7 +1732,10 @@ impl AwbcProductStepExecutor {
                 }
                 Need::Cancelled => AwaitNeedPublicationKind::Cancelled,
             };
-            (cursor, kind)
+            (
+                crate::task::RuntimeNeedPublicationCursor::Task(cursor),
+                kind,
+            )
         };
         let waiter =
             crate::runtime_id::RuntimePersistentFiberId::from_allocated(fiber.instance.get().get());

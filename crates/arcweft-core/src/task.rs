@@ -77,6 +77,7 @@ pub use failure::{
     BoundedRuntimeDiagnostic, RuntimeNeedOutcome, RuntimeTaskFailure, RuntimeTaskFailureKind,
 };
 pub use publication::RuntimeTaskPublication;
+pub use publication::{ProgramTaskValuePhase, RuntimeNeedPublicationCursor};
 mod template;
 pub use semantic::TaskSemanticEncodingError;
 pub use template::{HostCallProducerDefinition, NeedProducerDefinition, NeedProducerTemplate};

@@ -247,6 +247,16 @@ fn program_non_unit_result_survives_each_rollback_and_ack_cannot_republish_it() 
     assert_eq!(
         engine
             .need_producers
+            .launch_for_correlation(&correlation)
+            .unwrap()
+            .need_publication_cursor(),
+        Some(crate::task::RuntimeNeedPublicationCursor::Program(
+            crate::task::ProgramTaskValuePhase::Terminal
+        )),
+    );
+    assert_eq!(
+        engine
+            .need_producers
             .ready_for_correlation(&correlation)
             .unwrap()
             .value(),
@@ -311,6 +321,17 @@ fn program_non_unit_result_survives_each_rollback_and_ack_cannot_republish_it() 
             .take_ready_for_correlation(&correlation)
             .is_err()
     );
+    let transferred = Some(crate::task::RuntimeNeedPublicationCursor::Program(
+        crate::task::ProgramTaskValuePhase::Transferred,
+    ));
+    assert_eq!(
+        engine
+            .need_producers
+            .launch_for_correlation(&correlation)
+            .unwrap()
+            .need_publication_cursor(),
+        transferred
+    );
     let event = report
         .bind_publication(&task, dispatch, TaskPublicationRevision::FIRST)
         .unwrap()
@@ -336,6 +357,14 @@ fn program_non_unit_result_survives_each_rollback_and_ack_cannot_republish_it() 
             .state(),
         RuntimeNeedProducerState::ReadyTransferred
     ));
+    assert_eq!(
+        engine
+            .need_producers
+            .launch_for_correlation(&correlation)
+            .unwrap()
+            .need_publication_cursor(),
+        transferred
+    );
 }
 
 #[test]

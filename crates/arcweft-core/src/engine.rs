@@ -1459,6 +1459,8 @@ pub struct AwaitState<H = crate::task::RuntimeNeedHandle, P = RuntimeNeedPublica
     pub(crate) source_context: crate::value::RuntimeScopeTypeContext,
     pub source: AwaitSource,
     pub handle: H,
+    /// Last observed adapter publication. Local Program value custody is
+    /// tracked by its registry rather than this Host publication queue.
     pub observed_through: Option<TaskPublicationCursor>,
     pub queued: VecDeque<P>,
 }

@@ -4823,6 +4823,26 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
         &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
     )
     .expect("Restartable Need snapshot serializes");
+    let mut wrong_source = live.clone();
+    let source_key = wrong_source
+        .need_publications
+        .keys()
+        .find(|(_, observed)| observed.need == need)
+        .cloned()
+        .expect("local Await retains its observed Host cursor");
+    wrong_source.need_publications.insert(
+        source_key,
+        crate::task::RuntimeNeedPublicationCursor::Program(
+            crate::task::ProgramTaskValuePhase::Terminal,
+        ),
+    );
+    let (executor, error) = executor
+        .restore_snapshot_owned(wrong_source)
+        .expect_err("an inert Host observation cannot claim Program custody");
+    assert!(
+        matches!(error, AwbcProductStepBuildError::RestoreSnapshot { ref message }
+        if message.contains("exceeds its accepted producer publication"))
+    );
     let mut future_observation = live;
     let observation_key = future_observation
         .need_publications
@@ -4830,13 +4850,17 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
         .find(|(_, observed)| observed.need == need)
         .cloned()
         .expect("local Await retains its observed Need cursor");
-    let accepted = future_observation.need_publications[&observation_key];
+    let crate::task::RuntimeNeedPublicationCursor::Task(accepted) =
+        future_observation.need_publications[&observation_key]
+    else {
+        panic!("this Host Need retains its external publication frontier")
+    };
     future_observation.need_publications.insert(
         observation_key,
-        crate::task::TaskPublicationCursor {
+        crate::task::RuntimeNeedPublicationCursor::Task(crate::task::TaskPublicationCursor {
             logical_epoch: accepted.logical_epoch,
             sequence: TaskSequence(3),
-        },
+        }),
     );
     let (executor, error) = executor
         .restore_snapshot_owned(future_observation)

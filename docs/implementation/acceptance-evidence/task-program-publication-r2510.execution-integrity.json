@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "run": "task-final-r2510-program-publication-runtime",
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+      "bytes": 267588096,
+      "sha256": "6ce8bf7b182f86f2b0c007dca6b15b7989f784a4e29d498b71bd40e2e6066c4f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-728949707a889d5a.exe",
+      "bytes": 79299072,
+      "sha256": "53f5a571996e61323b478433b3c4cd4db6328ae91508a7f74e71e72e0bf942b9"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-f920f0f61da00655.exe",
+      "bytes": 103454208,
+      "sha256": "96d0639270398e10724527e3571d9fa466b8743b8a5dcf2960ed5c8bdd036c53"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "bytes": 125059584,
+      "sha256": "f11d8e4a6e477719bb3cac2ac5ec20e40ac750e3e6efa0340853ebf650c9ae99"
+    }
+  ],
+  "executableDrift": 0,
+  "sourceInputsAtRun": 4536,
+  "sourceDriftAtRun": 0,
+  "caseDrift": 0,
+  "actualExitCode": 0,
+  "terminalAudit": "task-final-r2510-program-publication-runtime.terminal-audit.json",
+  "subsequentConsumerRepair": "crates/arcweft-runtime-codegen/src/awbc_region.rs",
+  "recordedAt": "2026-10-24T01:32:42.7924318Z"
+}

@@ -385,8 +385,10 @@ pub struct AwbcProductExecutorSnapshot {
     pub pending_host_call: Option<AwbcProductPendingHostCallSnapshot>,
     pub started_tasks: BTreeSet<TaskId>,
     pub task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
-    pub need_publications:
-        BTreeMap<(RuntimePersistentFiberId, crate::task::TaskCorrelation), TaskPublicationCursor>,
+    pub need_publications: BTreeMap<
+        (RuntimePersistentFiberId, crate::task::TaskCorrelation),
+        crate::task::RuntimeNeedPublicationCursor,
+    >,
     pub need_producers: NeedProducerRegistrySaveSnapshot,
     pub queued_task_events: VecDeque<AwbcProductTaskEventSaveSnapshot>,
     pub emitted_content: BTreeSet<AwbcContentUnitId>,
@@ -445,7 +447,7 @@ pub struct AwbcProductExecutorSaveSnapshot {
 pub struct AwbcNeedPublicationSaveSnapshot {
     pub waiter: RuntimePersistentFiberId,
     pub correlation: crate::task::TaskCorrelation,
-    pub cursor: TaskPublicationCursor,
+    pub cursor: crate::task::RuntimeNeedPublicationCursor,
 }
 
 /// A save request cannot complete synchronously while an accepted producer
@@ -3265,15 +3267,32 @@ fn validate_need_publication_cursors(
             .iter()
             .find(|launch| launch.correlation == *correlation)
         {
-            if !launch
-                .publication
-                .is_some_and(|accepted| *observed <= accepted)
-            {
+            let accepted = match &launch.origin {
+                NeedProducerLaunchOriginRestore::Program { .. } => {
+                    crate::task::RuntimeNeedPublicationCursor::program(&launch.state)
+                }
+                NeedProducerLaunchOriginRestore::Need { .. } => launch
+                    .publication
+                    .map(crate::task::RuntimeNeedPublicationCursor::Task),
+            };
+            if !accepted.is_some_and(|accepted| {
+                matches!(
+                    observed.compare_same_source(accepted),
+                    Some(Ordering::Equal | Ordering::Less)
+                )
+            }) {
                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
                     message: "saved Need observation exceeds its accepted producer publication"
                         .to_owned(),
                 });
             }
+        } else if matches!(
+            observed,
+            crate::task::RuntimeNeedPublicationCursor::Program(_)
+        ) {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "saved Program observation has no accepted local producer".to_owned(),
+            });
         }
     }
     Ok(())

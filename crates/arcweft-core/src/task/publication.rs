@@ -2,6 +2,46 @@
 
 use super::{BoundTaskOutcome, BoundTaskSpec, ProgramTaskPublication, TaskEvent, TaskEventKind};
 
+/// Consumer position within one accepted Need correlation. Program value
+/// custody advances independently of the adapter's retirement acknowledgement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub enum RuntimeNeedPublicationCursor {
+    Task(super::TaskPublicationCursor),
+    Program(ProgramTaskValuePhase),
+}
+
+/// The original registry state supplies this phase; no second counter is kept.
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
+pub enum ProgramTaskValuePhase {
+    Pending,
+    Terminal,
+    Transferred,
+}
+
+impl RuntimeNeedPublicationCursor {
+    pub fn compare_same_source(self, observed: Self) -> Option<std::cmp::Ordering> {
+        match (self, observed) {
+            (Self::Task(current), Self::Task(observed)) => current.compare_same_source(observed),
+            (Self::Program(current), Self::Program(observed)) => Some(current.cmp(&observed)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn program<P>(state: &super::RuntimeNeedProducerState<P>) -> Option<Self> {
+        use super::RuntimeNeedProducerState as State;
+        Some(Self::Program(match state {
+            State::NotStarted => return None,
+            State::Pending(_) => ProgramTaskValuePhase::Pending,
+            State::Ready(_) | State::InfrastructureFailure(_) | State::Cancelled => {
+                ProgramTaskValuePhase::Terminal
+            }
+            State::ReadyTransferred => ProgramTaskValuePhase::Transferred,
+        }))
+    }
+}
+
 mod sealed {
     pub trait Sealed {}
     impl Sealed for super::TaskEvent {}

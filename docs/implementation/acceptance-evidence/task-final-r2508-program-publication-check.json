@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "be826a846f2557d8db77464f3c09093b3a6e6611",
+  "name": "task-final-r2508-program-publication-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2508-program-publication-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T01:15:06.6934800Z",
+  "finishedAt": "2026-10-24T01:15:57.3150459Z"
+}

@@ -9824,3 +9824,69 @@ Threadの最終受入、generic capture、nested child／cancel、step内rollbac
 この結果で完了とはしない。次は子fiberの進行とawaitの通知を実行状態から確認する。
 69原本、16,362,314 bytesをbyte・SHA256・Git blob一致で保持し、現状一覧は
 `current-status.md`の一か所に維持する。
+
+## Program返却値の観測とHost退役ACKの分離 — 2026-10-24
+
+前節は `be826a846f2557d8db77464f3c09093b3a6e6611` で公開した。
+parentは `2001a1d4cd262e0d077049a72e05da6aea657945`、treeは
+`3c0ff3b4e998517c4bfe9fe064cea452222e1ea9`、raw patch SHA256は
+`cf306e21ac89136b8be07b57ef736034047938518586ba0adc76ac229e491c27`。
+[公開照合](acceptance-evidence/task-program-restore-checkpoint.verified.json)は102公開blob、
+4,536入力、fresh origin／advertised ref、empty index、保持14 tracked WIPの差分0を記録する。
+
+### 修復した条件と所有境界
+
+R2506の2件は、子の返却値が共通registryのReadyへ到達しても、Product Awaitが
+Host ACKで設定されるpublication cursorを要求していたため停止していた。Nativeは既に
+このローカル値を直接取得していた。Host用cursorを捏造せず、既存producer状態から得る
+ProgramのPending／Terminal／Transferredと、HostのTask cursorを閉じたenumで区別した。
+別の状態tableやcounterは追加せず、ACKで消費済み値が復活しないことを維持する。
+
+Productの主fiber／deferred子のAwait、journal、公開saveの観測cursorを同じ型へ移行した。
+restoreは元correlationのaccepted producerと観測sourceを照合し、未来のphaseを拒否する。
+Native facadeのadapter用cursorにはHost観測のみを投影し、Program観測はProductが所有する。
+version-oneのsave grammarを直接更新し、互換readerは追加していない。
+
+### 実際の検証
+
+| 実行 | 入力と結果 |
+|---|---|
+| R2508 check | Core all-target／all-feature／locked、exit 101。Native facadeのadapter専用cursorへ閉じた観測enumをそのまま渡した型不一致を修復した。 |
+| R2509 catalog | 3 packageのlibraryと`flow_include`をcompile、exit 0。2,285件中116件を名前filterで選択し、4 executableを固定した。 |
+| R2510 runtime | **116 PASS／0 FAIL／2,169 filter skip、1.490秒、actual exit 0**。Core 101件とCompiler 15件。RuntimePlanはcompile対象だがnamed runtime caseは0であり、全RuntimePlanの合格ではない。 |
+| R2511 canonical | exit 0。3,208 files・3,078 Rust files・1,739,737 physical LOC・97 package・376 review triggers、blocking 0。後続のcodegen 4行修復前の結果として保持する。 |
+| R2512 workspace check | all-target／all-feature／locked、exit 101。runtime-codegenの`VmExit::TaskReturned`網羅漏れを修復した。Program専用退役がcompiled regionへ漏れた場合は、既存のDialogue専用exitと同様にowner境界違反として拒否する。 |
+| R2514 workspace check | 同じall-target／all-feature／locked、修復後exit 0。 |
+| R2515 workspace Clippy | all-target／all-feature／locked、exit 0、警告あり。receipt経過206.556秒。 |
+| R2516 canonical | codegen修復後exit 0。3,208 files・3,078 Rust files・1,739,741 physical LOC・97 package・376 review triggers、blocking 0。 |
+
+R2513は前提のR2512失敗により起動しておらず、合格へ数えない。
+
+[R2510 terminal audit](acceptance-evidence/task-final-r2510-program-publication-runtime.terminal-audit.json)は
+4,536固定入力とcase setのdrift 0を記録する。
+[実行整合性](acceptance-evidence/task-program-publication-r2510.execution-integrity.json)は4 executableの
+hash差分0を確認し、その後のcodegen consumer修復を区別する。99 manifest／lock、保持14 WIPと
+owned外の差分も0。R2506の失敗履歴は保持するが、それを現在の未解決失敗として列挙しない。
+
+実際の全体／entry選択AWBC×Bool false／trueは、capture、関数が返したaccepted handle、
+1-opずつのawait、各stepの公開save JSON roundtrip／restore、最終Bool、task／completion各1件を
+すべて確認した。既存のinclude複合ケースも両AWBCとNativeでPASS。CoreではSource 95件、
+queue 1件、Native Thread 4件、restartable Host Need 1件がPASS。Program値がACK前にTerminal、
+取得後にTransferredとなりACK後も維持されること、Host観測をProgramへ偽装したsaveと
+未来のHost cursorを拒否してexecutorを保持することを含む。Generic Match 151件を今回の
+filter実行へ数えず、受入・公開済み判定を維持する。
+
+[owner計測](acceptance-evidence/task-program-publication-ownership-metrics.json)は11 Rust pathsを記録する。
+観測algebraは既存publication owner 118 LOC（+40）、元状態の投影はproducer 4,571（+13）、
+Productの保存照合はsnapshot 4,279（+19）、Await dispatchはsuspension 2,816（+6）が所有する。
+Product facade 5,915はmapの型置換のみ、engine 5,626はadapter cursorの説明2行、
+task facade 2,181はre-export 1行。codegen 412はowner外exitの拒否4行である。
+300 LOC以上の増加、新しいI/O・crate edge・結果table・互換readerはない。
+Coreのworkspace fan-in／outは35／12、codegenは1／1で、逆依存53を算出した。
+今回は全53のruntimeを実行した結果へ置き換えず、既存の個別受入と検証範囲を維持する。
+
+41原本、14,400,917 bytesをbyte・SHA256・Git blob一致で保全した。R2515 Clippyのtrailing
+whitespace 5行は原本のまま保持し、そのlogのみstaged whitespace検査の対象から除く。
+11 owned Rustのformatと3,090 Rust入力のhash差分0を文書更新時にも確認した。
+変更3文書の相対リンク240件は解決可能、未閉鎖fenceは0。
+現状・未確認の一覧は `current-status.md` のみとし、過去のR2506停止条件を重複した残作業へ戻さない。

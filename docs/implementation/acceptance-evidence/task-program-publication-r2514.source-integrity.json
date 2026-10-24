@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "base": "be826a846f2557d8db77464f3c09093b3a6e6611",
+  "freeze": "task-program-publication-r2514.source-freeze.json",
+  "ownedRust": 11,
+  "rustInputs": 3090,
+  "rustDrift": 0,
+  "formatExit": 0,
+  "documentationChanges": [
+    "docs/02-runtime/async-scheduler.md",
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md"
+  ],
+  "recordedAt": "2026-10-24T01:37:37.2668115Z"
+}

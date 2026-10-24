@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "be826a846f2557d8db77464f3c09093b3a6e6611",
+  "name": "task-final-r2511-program-publication-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-program-publication-structure-r2511",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2511-program-publication-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T01:26:24.3492206Z",
+  "finishedAt": "2026-10-24T01:26:28.1302681Z"
+}

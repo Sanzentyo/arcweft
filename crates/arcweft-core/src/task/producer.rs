@@ -1130,6 +1130,19 @@ impl RuntimeNeedProducerLaunch {
         self.publication
     }
 
+    /// Observes locally owned Program results without waiting for host ACK.
+    /// Task metadata publication remains a separate adapter-owned frontier.
+    pub fn need_publication_cursor(&self) -> Option<super::RuntimeNeedPublicationCursor> {
+        match &self.origin {
+            RuntimeTaskLaunchOrigin::Program { .. } => {
+                super::RuntimeNeedPublicationCursor::program(&self.state)
+            }
+            RuntimeTaskLaunchOrigin::Need { .. } => self
+                .publication
+                .map(super::RuntimeNeedPublicationCursor::Task),
+        }
+    }
+
     #[must_use]
     pub const fn task_submitted(&self) -> bool {
         self.task_submitted

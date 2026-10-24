@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "base": "be826a846f2557d8db77464f3c09093b3a6e6611",
+  "dirty": true,
+  "retainedTracked": 14,
+  "changedRust": 11,
+  "manifestLockInputs": 99,
+  "manifestLockDrift": 0,
+  "graphSource": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+  "graphSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "metrics": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "bytes": 238288,
+      "physicalLoc": 5915,
+      "baseLoc": 5915,
+      "growth": 0,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "bytes": 22812,
+      "physicalLoc": 560,
+      "baseLoc": 557,
+      "growth": 3,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "bytes": 181427,
+      "physicalLoc": 4279,
+      "baseLoc": 4260,
+      "growth": 19,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "bytes": 115781,
+      "physicalLoc": 2816,
+      "baseLoc": 2810,
+      "growth": 6,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "bytes": 279620,
+      "physicalLoc": 7091,
+      "baseLoc": 7067,
+      "growth": 24,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "bytes": 226412,
+      "physicalLoc": 5626,
+      "baseLoc": 5624,
+      "growth": 2,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "bytes": 17069,
+      "physicalLoc": 467,
+      "baseLoc": 438,
+      "growth": 29,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "bytes": 71589,
+      "physicalLoc": 2181,
+      "baseLoc": 2180,
+      "growth": 1,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "bytes": 175180,
+      "physicalLoc": 4571,
+      "baseLoc": 4558,
+      "growth": 13,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-core/src/task/publication.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "bytes": 4388,
+      "physicalLoc": 118,
+      "baseLoc": 78,
+      "growth": 40,
+      "workspaceFanIn": 35,
+      "workspaceFanOut": 12
+    },
+    {
+      "path": "crates/arcweft-runtime-codegen/src/awbc_region.rs",
+      "package": "arcweft-runtime-codegen",
+      "classification": "production",
+      "bytes": 14755,
+      "physicalLoc": 412,
+      "baseLoc": 408,
+      "growth": 4,
+      "workspaceFanIn": 1,
+      "workspaceFanOut": 1
+    }
+  ]
+}
