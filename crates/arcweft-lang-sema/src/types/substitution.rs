@@ -77,6 +77,8 @@ fn contains_generic_parameter_where(
         | TypeKind::Seq(inner)
         | TypeKind::Need(inner)
         | TypeKind::Option(inner)
+        | TypeKind::SlotRef(inner)
+        | TypeKind::Handle { item: inner, .. }
         | TypeKind::ThreadHandle(inner)
         | TypeKind::Shared(inner)
         | TypeKind::DialogueLine(inner)
@@ -199,7 +201,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::AgentResourceBody
         | TypeKind::RagContextPack
         | TypeKind::AgentBuiltin(_)
-        | TypeKind::Handle { .. }
+        | TypeKind::PresentationResource(_)
         | TypeKind::Error(_)
         | TypeKind::CharacterPatch(_)
         | TypeKind::FocusPatch
@@ -222,6 +224,8 @@ fn atomic_contains_generic_parameter(
         | TypeKind::Seq(_)
         | TypeKind::Option(_)
         | TypeKind::DataShape(_)
+        | TypeKind::SlotRef(_)
+        | TypeKind::Handle { .. }
         | TypeKind::ThreadHandle(_)
         | TypeKind::Shared(_)
         | TypeKind::DialogueLine(_)
@@ -406,6 +410,18 @@ impl TypeKind {
             Self::Seq(inner) => Self::Seq(Box::new(recurse(inner)?)),
             Self::Need(inner) => Self::Need(Box::new(recurse(inner)?)),
             Self::Option(inner) => Self::Option(Box::new(recurse(inner)?)),
+            Self::SlotRef(inner) => Self::SlotRef(Box::new(recurse(inner)?)),
+            Self::Handle {
+                item,
+                lifetime,
+                state,
+                must_drop,
+            } => Self::Handle {
+                item: Box::new(recurse(item)?),
+                lifetime: lifetime.clone(),
+                state: *state,
+                must_drop: *must_drop,
+            },
             Self::ThreadHandle(inner) => Self::ThreadHandle(Box::new(recurse(inner)?)),
             Self::Shared(inner) => Self::Shared(Box::new(recurse(inner)?)),
             Self::DialogueLine(inner) => Self::DialogueLine(Box::new(recurse(inner)?)),
@@ -538,6 +554,18 @@ impl TypeKind {
             Self::Slice(inner) => Self::Slice(substitute(inner)),
             Self::Range(inner) => Self::Range(substitute(inner)),
             Self::Option(inner) => Self::Option(substitute(inner)),
+            Self::SlotRef(inner) => Self::SlotRef(substitute(inner)),
+            Self::Handle {
+                item,
+                lifetime,
+                state,
+                must_drop,
+            } => Self::Handle {
+                item: substitute(item),
+                lifetime: lifetime.clone(),
+                state: *state,
+                must_drop: *must_drop,
+            },
             Self::ThreadHandle(inner) => Self::ThreadHandle(substitute(inner)),
             Self::Shared(inner) => Self::Shared(substitute(inner)),
             Self::Probe(inner) => Self::Probe(substitute(inner)),
@@ -634,10 +662,30 @@ fn observe_unary_type_parameters(
         | (TypeKind::Slice(declared), TypeKind::Slice(actual))
         | (TypeKind::Seq(declared), TypeKind::Seq(actual))
         | (TypeKind::Option(declared), TypeKind::Option(actual))
+        | (TypeKind::SlotRef(declared), TypeKind::SlotRef(actual))
         | (TypeKind::ThreadHandle(declared), TypeKind::ThreadHandle(actual))
         | (TypeKind::Shared(declared), TypeKind::Shared(actual))
         | (TypeKind::DialogueLine(declared), TypeKind::DialogueLine(actual))
         | (TypeKind::MetaType(declared), TypeKind::MetaType(actual)) => (declared, actual),
+        (
+            TypeKind::Handle {
+                item: declared,
+                lifetime: declared_lifetime,
+                state: declared_state,
+                must_drop: declared_drop,
+            },
+            TypeKind::Handle {
+                item: actual,
+                lifetime: actual_lifetime,
+                state: actual_state,
+                must_drop: actual_drop,
+            },
+        ) if declared_lifetime == actual_lifetime
+            && declared_state == actual_state
+            && declared_drop == actual_drop =>
+        {
+            (declared, actual)
+        }
         (TypeKind::Array { item: declared, .. }, TypeKind::Array { item: actual, .. }) => {
             (declared, actual)
         }
@@ -672,6 +720,8 @@ fn observe_unary_type_parameters(
             | TypeKind::Slice(_)
             | TypeKind::Seq(_)
             | TypeKind::Option(_)
+            | TypeKind::SlotRef(_)
+            | TypeKind::Handle { .. }
             | TypeKind::ThreadHandle(_)
             | TypeKind::Shared(_)
             | TypeKind::DialogueLine(_)
@@ -821,6 +871,51 @@ fn observe_type_slices(
 mod tests {
     use super::*;
     use crate::types::{DetachedGenericOwnerId, GenericParameterOwnerId};
+
+    #[test]
+    fn presentation_items_participate_in_inference_without_losing_handle_ownership() {
+        use crate::types::{HandleState, LifetimeScopeKind, TypeGenericUseCollector};
+        use arcweft_interaction_model::presentation::PresentationResourceKind;
+
+        let parameter = GenericTypeParameterId::new(
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(72)),
+            0,
+        );
+        let wrap = |item| TypeKind::Handle {
+            item: Box::new(TypeKind::SlotRef(Box::new(item))),
+            lifetime: LifetimeScopeKind::parse("presentation_scope").unwrap(),
+            state: HandleState::Live,
+            must_drop: true,
+        };
+        let declared = wrap(TypeKind::generic_parameter(parameter.clone()));
+        let actual = wrap(TypeKind::PresentationResource(
+            PresentationResourceKind::Background,
+        ));
+        assert_eq!(
+            TypeGenericUseCollector::collect(&declared)
+                .unwrap()
+                .types()
+                .len(),
+            1
+        );
+        let mut substitutions = TypeParameterSubstitutions::default();
+        assert_eq!(substitutions.apply_resolved(&declared), None);
+        assert!(substitutions.observe(&declared, &actual));
+        assert_eq!(
+            substitutions.apply_resolved(&declared),
+            Some(actual.clone())
+        );
+        assert_eq!(
+            substitutions.apply(&TypeKind::generic_parameter(parameter)),
+            TypeKind::PresentationResource(PresentationResourceKind::Background)
+        );
+        assert!(
+            TypeGenericUseCollector::collect(&actual)
+                .unwrap()
+                .types()
+                .is_empty()
+        );
+    }
 
     #[test]
     fn typed_identity_controls_recursive_substitution() {

@@ -22,6 +22,7 @@ use arcweft_core::{
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::presentation::PresentationHandleId;
 use arcweft_id::{PublicId, TextKey};
+use arcweft_interaction_model::presentation::PresentationResourceKind;
 use arcweft_presentation::fx::{
     FxContextSlot, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
@@ -37,7 +38,7 @@ use arcweft_runtime_driver::dialogue::{
     DialogueViewReveal, DialogueViewStage, DialogueViewState,
 };
 use arcweft_runtime_driver::presentation_handles::{
-    PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    PresentationHandleRecord, PresentationResourceState,
 };
 use arcweft_runtime_driver::view_runtime::{
     BundleViewDiagnosticCode, BundleViewEventDispatchError, BundleViewInstancePath,
@@ -193,7 +194,7 @@ fn minimal_program(program: &str, view: &str, schema: u64) -> ViewProgramResourc
 fn handle(id: &str, view: &str) -> PresentationHandleRecord {
     PresentationHandleRecord::new(
         PresentationHandleId::try_new(id).unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         view.to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -2987,7 +2988,7 @@ fn standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_st
     let snapshot = runtime.snapshot().expect("View runtime snapshots");
     let reconciled = [PresentationHandleRecord::new(
         handle.clone(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         view.as_str().to_owned(),
         Some("dialogue".to_owned()),
         PresentationResourceState::Mounted,

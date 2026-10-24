@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "run": "task-final-r2857-presentation-handle-annotations-workspace-check",
+  "exitCode": 101,
+  "sourceInputs": 6276,
+  "sourceDrift": 0,
+  "drift": [
+    null
+  ]
+}

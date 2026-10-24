@@ -1241,6 +1241,8 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 rejected(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner)
             }
             TypeKind::ViewValue
+            | TypeKind::PresentationResource(_)
+            | TypeKind::SlotRef(_)
             | TypeKind::CompileTimeCallable(_)
             | TypeKind::CompileTimeScalar(_)
             | TypeKind::CompileTimeEnum(_)

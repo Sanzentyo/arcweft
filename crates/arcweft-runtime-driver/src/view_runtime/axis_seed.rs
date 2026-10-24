@@ -1,8 +1,9 @@
 //! Host-owned logical-axis seed lifecycle for root View mounts.
 
 use super::BundleViewRuntimeError;
-use crate::presentation_handles::{PresentationHandleKind, PresentationHandleRecord};
+use crate::presentation_handles::PresentationHandleRecord;
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_interaction_model::presentation::PresentationResourceKind;
 use arcweft_view::{
     ViewBoxAxisHostSeed, ViewBoxAxisRevision, ViewBoxAxisSeedGeneration, ViewBoxAxisSeedSource,
     ViewInheritedBoxAxes, ViewMountId,
@@ -177,7 +178,7 @@ impl BundleViewAxisSeedRegistry {
             if record.is_terminal() {
                 return Err(BundleViewAxisSeedError::TerminalHandle { handle });
             }
-            if record.kind != PresentationHandleKind::View {
+            if record.kind != PresentationResourceKind::View {
                 return Err(BundleViewAxisSeedError::NonViewHandle { handle });
             }
         }
@@ -289,7 +290,7 @@ impl BundleViewAxisSeedRegistry {
             .collect::<BTreeSet<_>>();
         let non_view_pending = handles
             .iter()
-            .filter(|record| !record.is_terminal() && record.kind != PresentationHandleKind::View)
+            .filter(|record| !record.is_terminal() && record.kind != PresentationResourceKind::View)
             .filter(|record| self.pending.contains_key(&record.id))
             .map(|record| record.id.clone())
             .collect::<Vec<_>>();
@@ -459,7 +460,7 @@ fn validate_snapshot_handle(
             handle: handle.clone(),
         });
     }
-    if record.kind != PresentationHandleKind::View {
+    if record.kind != PresentationResourceKind::View {
         return Err(BundleViewAxisSeedError::SnapshotNonViewHandle {
             handle: handle.clone(),
         });

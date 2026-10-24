@@ -4,6 +4,7 @@ mod support;
 mod text;
 
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_interaction_model::presentation::PresentationResourceKind;
 use support::{
     branch_bounds, control_flow_failure, derive_fx_instance, instruction_ordinal, resolve_path,
 };
@@ -27,9 +28,7 @@ use super::{
     ViewProgramRuntimeAuthority, deterministic_mount_seed, mount_scoped_interaction_target,
 };
 use crate::dialogue::DialogueViewInput;
-use crate::presentation_handles::{
-    PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
-};
+use crate::presentation_handles::{PresentationHandleRecord, PresentationResourceState};
 use arcweft_bundle::resource_codec::view::{ViewParameterRole, ViewProgramInstruction};
 use arcweft_bundle::resource_codec::{
     ViewDefinitionResource, ViewProgramResource, ViewTextResource, ViewValueInputNamespace,
@@ -342,7 +341,7 @@ fn reconcile_root_handles<'a>(
         .map(|input| {
             PresentationHandleRecord::new(
                 input.handle.clone(),
-                PresentationHandleKind::View,
+                PresentationResourceKind::View,
                 input.view.as_str().to_owned(),
                 Some("dialogue".to_owned()),
                 PresentationResourceState::Mounted,
@@ -563,7 +562,7 @@ impl BundleViewRuntime {
                 continue;
             }
             let Ok(view) = ViewId::parse_public(handle.resource_id.clone()) else {
-                if handle.kind == PresentationHandleKind::View
+                if handle.kind == PresentationResourceKind::View
                     && handle.state == PresentationResourceState::Mounted
                 {
                     evaluator.diagnostics.push(BundleViewDiagnostic {
@@ -581,7 +580,7 @@ impl BundleViewRuntime {
                 continue;
             };
             let Some(definition_index) = evaluator.catalog.definition_index(&view) else {
-                if handle.kind == PresentationHandleKind::View
+                if handle.kind == PresentationResourceKind::View
                     && handle.state == PresentationResourceState::Mounted
                 {
                     evaluator.diagnostics.push(BundleViewDiagnostic {

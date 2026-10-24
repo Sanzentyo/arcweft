@@ -77,7 +77,7 @@ impl TypeKind {
             | Self::AgentResourceBody
             | Self::RagContextPack
             | Self::AgentBuiltin(_)
-            | Self::Handle { .. }
+            | Self::PresentationResource(_)
             | Self::CharacterPatch(_)
             | Self::FocusPatch
             | Self::CharacterDialogue(_)
@@ -97,6 +97,23 @@ impl TypeKind {
             Self::MetaType(child) => TypeConstraintShape::Unary {
                 kind: UnaryShape::MetaType,
                 child,
+            },
+            Self::SlotRef(child) => TypeConstraintShape::Unary {
+                kind: UnaryShape::SlotRef,
+                child,
+            },
+            Self::Handle {
+                item,
+                lifetime,
+                state,
+                must_drop,
+            } => TypeConstraintShape::Unary {
+                kind: UnaryShape::Handle {
+                    lifetime,
+                    state: *state,
+                    must_drop: *must_drop,
+                },
+                child: item,
             },
             Self::FixedVector(vector) => TypeConstraintShape::Unary {
                 kind: UnaryShape::FixedVector(vector.dimensions()),
@@ -213,7 +230,7 @@ pub(crate) enum TypeConstraintShape<'a> {
     Generic(&'a GenericTypeReference),
     Unresolved,
     Unary {
-        kind: UnaryShape,
+        kind: UnaryShape<'a>,
         child: &'a TypeKind,
     },
     Iterator {
@@ -472,7 +489,7 @@ impl<'a> Iterator for TypeConstraintChildren<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum UnaryShape {
+pub(crate) enum UnaryShape<'a> {
     FixedVector(crate::callable::VectorDimensions),
     Range,
     Probe,
@@ -486,9 +503,15 @@ pub(crate) enum UnaryShape {
     Shared,
     DialogueLine,
     MetaType,
+    SlotRef,
+    Handle {
+        lifetime: &'a LifetimeScopeKind,
+        state: super::super::HandleState,
+        must_drop: bool,
+    },
 }
 
-impl UnaryShape {
+impl UnaryShape<'_> {
     fn rebuild(self, child: TypeKind) -> TypeKind {
         let child = Box::new(child);
         match self {
@@ -507,6 +530,17 @@ impl UnaryShape {
             Self::Shared => TypeKind::Shared(child),
             Self::DialogueLine => TypeKind::DialogueLine(child),
             Self::MetaType => TypeKind::MetaType(child),
+            Self::SlotRef => TypeKind::SlotRef(child),
+            Self::Handle {
+                lifetime,
+                state,
+                must_drop,
+            } => TypeKind::Handle {
+                item: child,
+                lifetime: lifetime.clone(),
+                state,
+                must_drop,
+            },
         }
     }
 }

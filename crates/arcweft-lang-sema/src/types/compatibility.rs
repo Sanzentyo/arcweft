@@ -491,21 +491,34 @@ where
         }
         (
             TypeKind::Handle {
-                name: expected_name,
+                item: expected_item,
                 lifetime: expected_lifetime,
                 state: expected_state,
                 must_drop: expected_must_drop,
             },
             TypeKind::Handle {
-                name: actual_name,
+                item: actual_item,
                 lifetime: actual_lifetime,
                 state: actual_state,
                 must_drop: actual_must_drop,
             },
-        ) => Ok(expected_name == actual_name
-            && expected_lifetime == actual_lifetime
+        ) => Ok(expected_lifetime == actual_lifetime
             && expected_state == actual_state
-            && expected_must_drop == actual_must_drop),
+            && expected_must_drop == actual_must_drop
+            && accepts_node(
+                expected_item,
+                actual_item,
+                policy,
+                control,
+                meter,
+                structural,
+            )?),
+        (TypeKind::SlotRef(expected), TypeKind::SlotRef(actual)) => {
+            accepts_node(expected, actual, policy, control, meter, structural)
+        }
+        (TypeKind::PresentationResource(expected), TypeKind::PresentationResource(actual)) => {
+            Ok(expected == actual)
+        }
         (TypeKind::Named(expected), TypeKind::Named(actual)) => Ok(expected == actual),
         (TypeKind::Ref(expected), TypeKind::Ref(actual)) if expected.kind() == actual.kind() => {
             // A payload-free family constraint accepts a retained

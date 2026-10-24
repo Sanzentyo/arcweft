@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "run": "task-final-r2856-presentation-handle-annotations-workspace-check",
+  "exitCode": 101,
+  "sourceInputs": 6276,
+  "sourceDrift": 2,
+  "changedAfterTerminal": [
+    "crates/arcweft-lang-sema/src/proof_return/tests.rs",
+    "crates/arcweft-runtime-driver/src/view_runtime.rs"
+  ],
+  "failure": "E0599: new test called NominalTypeDiagnostic::code instead of kind().code()"
+}

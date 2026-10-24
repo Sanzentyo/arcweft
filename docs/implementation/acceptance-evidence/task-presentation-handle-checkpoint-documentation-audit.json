@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "base": "4cea871faf8296250615bf0f76a4962133f1a711",
+  "markdown": [
+    "docs/00-overview/crate-map.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md",
+    "docs/implementation/documentation-cleanup.md"
+  ],
+  "relativeLinks": 40,
+  "unclosedFences": 0,
+  "lostFullIdentifiers": 0,
+  "jsonParse": "PASS",
+  "at": "2026-10-24T21:31:40.6137679Z"
+}

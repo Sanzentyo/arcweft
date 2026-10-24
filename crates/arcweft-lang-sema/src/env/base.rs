@@ -597,7 +597,9 @@ impl TypeCheckEnv {
             .with_standard_function(
                 ["view"],
                 FunctionSignature::new(
-                    TypeKind::presentation_handle("View"),
+                    TypeKind::presentation_handle(TypeKind::PresentationResource(
+                        arcweft_interaction_model::presentation::PresentationResourceKind::View,
+                    )),
                     [
                         FunctionParam::required(
                             "view",
@@ -2672,16 +2674,19 @@ fn map_named_type_kind(ty: TypeKind, resolve_named: &impl Fn(String) -> TypeKind
             TypeKind::Option(Box::new(map_named_type_kind(*inner, resolve_named)))
         }
         TypeKind::Handle {
-            name,
+            item,
             lifetime,
             state,
             must_drop,
         } => TypeKind::Handle {
-            name,
+            item: Box::new(map_named_type_kind(*item, resolve_named)),
             lifetime,
             state,
             must_drop,
         },
+        TypeKind::SlotRef(item) => {
+            TypeKind::SlotRef(Box::new(map_named_type_kind(*item, resolve_named)))
+        }
         TypeKind::ThreadHandle(inner) => {
             TypeKind::ThreadHandle(Box::new(map_named_type_kind(*inner, resolve_named)))
         }

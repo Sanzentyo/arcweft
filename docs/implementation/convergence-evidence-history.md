@@ -10763,3 +10763,32 @@ library 22／integration 84／bin 4の110 test targetを含み、named caseな�
 [runtime原本manifest](acceptance-evidence/task-presentation-role-reverse-evidence-integrity.json)。
 CompilerのPresentation command拒否と一般Handle型のruntime投影未対応は残る。
 引数schemaの受入を実行ABI全体の完了とはせず、現状一覧の当該境界を分けた。
+
+## Presentation resourceとHandle／SlotRefの再帰型 — 2026-10-25
+
+ソース入力の基点は `7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5`、資料整理を先に
+`4cea871faf8296250615bf0f76a4962133f1a711` で公開した。source 36 pathを中間保存する。
+shared interaction-modelが8 resource familyを所有し、driverの旧kind enumと全consumerを
+直接移行した。SemaのHandle itemは文字列から再帰型へ変更し、SlotRefも型constructorにした。
+11 callableの戻り値、型注釈・alias、推論・置換・constraints・nominal visit・Match domain・
+digest・ordering・mismatch・LSP completionは同じ型を使う。旧constructorのtag順序と
+version 1は維持する。runtime ownerのない値は従来どおり拒否し、command ABIを完了扱いしない。
+
+R2854／R2855／R2856／R2857 checkはいずれも終了101だった。順にownershipのexhaustive
+match、driver経由のprivate import、追加テストのdiagnostic API呼出し、Compilerの残存private
+importを修正した。R2856の入力監査は終了後に変更した2 pathも明示し、差分0とは記録しない。
+修正後のR2858 workspace checkとR2861 workspace Clippyはall-targets／all-features／lockedで
+終了0・警告あり。R2862構造gateは3,212 files／97 packages／378 review triggers、blocking 0。
+owner／consumerの責務と実測は[所有境界の確認](acceptance-evidence/task-presentation-handle-ownership-review.json)に残す。
+
+R2859 catalogの1,325件から対象13件を選び、R2860は13／13 PASS、終了0。
+残る1,312件はfilterによる非選択で、ignoredや成功へ数えない。8種のserde roundtrip・unknown
+拒否、typed identityと深いmismatch、generic推論・ownership保持、予約名、alias型解決・arity拒否、
+Optionのexhaustive Matchを実行した。6,276固定入力に対し、check／ClippyのRust・Cargo・test
+入力の差分0。並行した文書整理の差分は別記し、全固定入力の差分0とは言わない。
+
+共有型変更の実Cargo graphは全62逆依存で、R2863 catalogは構築中。
+この中間保存時点では横断runtime、実行ABI、runtime Handle／SlotRef、公開saveは未受入。
+Generic Matchの先行受入・公開を取り消す新しい不具合は確認していない。
+[対象・失敗・gateと残る境界](acceptance-evidence/task-presentation-handle-owner-acceptance.json)、
+[原本保全manifest](acceptance-evidence/task-presentation-handle-owner-evidence-integrity.json)。

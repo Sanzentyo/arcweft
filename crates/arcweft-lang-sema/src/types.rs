@@ -1031,8 +1031,10 @@ pub enum TypeKind {
         error: Box<TypeKind>,
     },
     Option(Box<TypeKind>),
+    PresentationResource(arcweft_interaction_model::presentation::PresentationResourceKind),
+    SlotRef(Box<TypeKind>),
     Handle {
-        name: String,
+        item: Box<TypeKind>,
         lifetime: LifetimeScopeKind,
         state: HandleState,
         must_drop: bool,
@@ -1234,13 +1236,16 @@ impl TypeKind {
                 format!("Result<{}, {}>", ok.source_label(), error.source_label())
             }
             Self::Option(inner) => format!("Option<{}>", inner.source_label()),
+            Self::PresentationResource(kind) => kind.type_name().to_owned(),
+            Self::SlotRef(inner) => format!("SlotRef<{}>", inner.source_label()),
             Self::Handle {
-                name,
+                item,
                 lifetime,
                 state,
                 must_drop,
             } => format!(
-                "Handle<{name}, {}, {state:?}, {must_drop}>",
+                "Handle<{}, {}, {state:?}, {must_drop}>",
+                item.source_label(),
                 lifetime.as_str()
             ),
             Self::ThreadHandle(inner) => format!("ThreadHandle<{}>", inner.source_label()),
@@ -1486,9 +1491,9 @@ impl TypeKind {
     }
 
     #[must_use]
-    pub fn presentation_handle(name: impl Into<String>) -> Self {
+    pub fn presentation_handle(item: Self) -> Self {
         Self::Handle {
-            name: name.into(),
+            item: Box::new(item),
             lifetime: LifetimeScopeKind::Flow,
             state: HandleState::Live,
             must_drop: true,

@@ -1958,7 +1958,7 @@ pub(crate) fn reconciled_root_handles_for_restore(
     for input in dialogue {
         let record = PresentationHandleRecord::new(
             input.handle.clone(),
-            crate::presentation_handles::PresentationHandleKind::View,
+            arcweft_interaction_model::presentation::PresentationResourceKind::View,
             input.view.as_str().to_owned(),
             Some("dialogue".to_owned()),
             crate::presentation_handles::PresentationResourceState::Mounted,

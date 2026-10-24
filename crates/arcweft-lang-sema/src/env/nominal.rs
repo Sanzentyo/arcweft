@@ -26,7 +26,9 @@ use super::{
     identity::EnvironmentBindingId,
 };
 use crate::{
-    nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits},
+    nominal::{
+        AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits, BuiltinTypeConstructor,
+    },
     types::{
         AcceptedNominalType, CharacterNominalType, CompileTimeScalarKind, CompileTimeScalarType,
         SemanticTypeDigest, TypeKind, direct_type_name,
@@ -1572,7 +1574,14 @@ fn is_reserved_path(path: &TypePath) -> bool {
     let [segment] = path.segments() else {
         return false;
     };
-    matches!(
+    BuiltinTypeConstructor::all().any(|constructor| {
+        matches!(
+            constructor,
+            BuiltinTypeConstructor::Handle
+                | BuiltinTypeConstructor::SlotRef
+                | BuiltinTypeConstructor::PresentationResource(_)
+        ) && constructor.spelling() == segment.as_str()
+    }) || matches!(
         segment.as_str(),
         "bool"
             | "i8"

@@ -53,7 +53,7 @@ enum MatchDomainInput<'a> {
     OpenChildren(&'a TypeKind, &'a TypeKind),
     OpenManyThenOne(&'a [TypeKind], &'a TypeKind),
     OpenMany(&'a [TypeKind]),
-    Handle(HandleState),
+    Handle(HandleState, &'a TypeKind),
 }
 
 const UNSUPPORTED_MATCH_DOMAIN: MatchDomainInput<'static> =
@@ -139,7 +139,8 @@ impl TypeKind {
                 ensure_all_valid(children)?;
                 Ok(MatchDomainFamily::OpenOrOpaque)
             }
-            MatchDomainInput::Handle(state) => {
+            MatchDomainInput::Handle(state, item) => {
+                ensure_valid(item)?;
                 if state.match_has_live_value() {
                     Ok(MatchDomainFamily::OpenOrOpaque)
                 } else {
@@ -191,6 +192,7 @@ impl TypeKind {
             | Self::Probe(inner)
             | Self::Need(inner)
             | Self::ThreadHandle(inner)
+            | Self::SlotRef(inner)
             | Self::Shared(inner)
             | Self::BorrowRef { inner, .. } => MatchDomainInput::OpenChild(inner),
             Self::IteratorState { item, .. } => MatchDomainInput::OpenChild(item),
@@ -210,7 +212,7 @@ impl TypeKind {
             } => MatchDomainInput::OpenManyThenOne(params, return_type),
             Self::AcceptedNominal(nominal) => MatchDomainInput::OpenMany(nominal.arguments()),
             Self::OpenNominal(nominal) => MatchDomainInput::OpenMany(nominal.arguments()),
-            Self::Handle { state, .. } => MatchDomainInput::Handle(*state),
+            Self::Handle { state, item, .. } => MatchDomainInput::Handle(*state, item),
             Self::I8
             | Self::I16
             | Self::I32
@@ -266,6 +268,7 @@ impl TypeKind {
             | Self::FocusPatch
             | Self::CharacterDialogue(_)
             | Self::ViewValue
+            | Self::PresentationResource(_)
             | Self::Named(_) => MatchDomainInput::Immediate(MatchDomainFamily::OpenOrOpaque),
         }
     }
@@ -349,7 +352,7 @@ mod tests {
             assoc: "Item".to_owned(),
         };
         let dead_handle = |state| TypeKind::Handle {
-            name: "fixture".to_owned(),
+            item: Box::new(TypeKind::Bool),
             lifetime: LifetimeScopeKind::Scene,
             state,
             must_drop: true,

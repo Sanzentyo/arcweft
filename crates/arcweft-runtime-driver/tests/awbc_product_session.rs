@@ -55,6 +55,7 @@ use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, LocaleTag
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
+use arcweft_interaction_model::presentation::PresentationResourceKind;
 use arcweft_presentation::fx::{
     FiniteF32, FxAbiHash, FxDefinition, FxDefinitionParameter, FxDefinitionParameterType,
     FxDiagnosticCode, FxGraph, FxGraphChildPath, FxId, FxInstanceIdentity, FxInstanceOwnerKey,
@@ -62,9 +63,7 @@ use arcweft_presentation::fx::{
 };
 use arcweft_runtime_driver::{
     clock::RuntimeClockStep,
-    presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
-    },
+    presentation_handles::{PresentationHandleRecord, PresentationResourceState},
     session::{
         BundleEntryStart, BundleHotSwapError, BundleSession, BundleSessionError,
         BundleSessionOptions, BundleStepInput,
@@ -2188,7 +2187,7 @@ fn view_handle(
 ) -> PresentationHandleRecord {
     PresentationHandleRecord::new(
         PresentationHandleId::try_new(id).expect("valid handle id"),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.FeedbackPanel".to_owned(),
         Some("flow.feedback".to_owned()),
         state,

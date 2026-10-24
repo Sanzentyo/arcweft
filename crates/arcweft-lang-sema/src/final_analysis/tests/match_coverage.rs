@@ -52,7 +52,9 @@ flow main() -> i64 {
     .expect("slot removal publishes a structural Option of its surface value");
     assert!(product.coverage().exhaustive());
     assert_eq!(product.arms().len(), 2);
-    let expected = TypeKind::Option(Box::new(TypeKind::Named("BackgroundSurface".to_owned())));
+    let expected = TypeKind::Option(Box::new(TypeKind::PresentationResource(
+        arcweft_interaction_model::presentation::PresentationResourceKind::Background,
+    )));
     assert_eq!(
         product.scrutinee_type(),
         expected

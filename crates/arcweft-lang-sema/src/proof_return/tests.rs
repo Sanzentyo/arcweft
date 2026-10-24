@@ -476,6 +476,65 @@ fn local_alias_chain_and_generic_alias_to_unit_are_unit() {
 }
 
 #[test]
+fn presentation_type_annotations_resolve_through_generic_aliases_and_reject_wrong_arity() {
+    use crate::nominal::{BuiltinTypeConstructor, NominalTypeDiagnosticCode};
+    use crate::types::TypeKind;
+    use arcweft_interaction_model::presentation::PresentationResourceKind;
+
+    let inventory = BuiltinTypeConstructor::all().collect::<Vec<_>>();
+    let spellings = inventory
+        .iter()
+        .map(|constructor| constructor.spelling())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(inventory.len(), spellings.len());
+    for resource in PresentationResourceKind::ALL {
+        let constructor = BuiltinTypeConstructor::PresentationResource(resource);
+        assert!(inventory.contains(&constructor));
+        assert_eq!(constructor.arity(), 0);
+        let fixture = Fixture::new(&format!(
+            "type Identity<T> = T\ntype Surface = {}\ntype Owned = Handle<Identity<Surface>>\ntype Slot = SlotRef<Identity<Surface>>\n",
+            resource.type_name(),
+        ));
+        let surface = TypeKind::PresentationResource(resource);
+        for (alias, expected) in [
+            ("Surface", surface.clone()),
+            ("Owned", TypeKind::presentation_handle(surface.clone())),
+            ("Slot", TypeKind::SlotRef(Box::new(surface))),
+        ] {
+            let (_, ty) = fixture.alias(alias);
+            let report = fixture.report(ty);
+            assert!(report.diagnostics().is_empty(), "{alias}: {report:?}");
+            let ResolvedTypeRefOutcome::Complete(product) = report.outcome() else {
+                panic!("presentation annotation must resolve: {report:?}");
+            };
+            assert_eq!(product.recovered(), &expected);
+        }
+    }
+    for invalid in [
+        "Handle",
+        "Handle<View, Menu>",
+        "SlotRef",
+        "SlotRef<View, Menu>",
+        "View<bool>",
+    ] {
+        let fixture = Fixture::new(&format!("type Invalid = {invalid}\n"));
+        let (_, ty) = fixture.alias("Invalid");
+        let report = fixture.report(ty);
+        assert!(matches!(
+            report.outcome(),
+            ResolvedTypeRefOutcome::Poisoned(_)
+        ));
+        assert!(
+            report
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.kind().code() == NominalTypeDiagnosticCode::WrongArity),
+            "{invalid}: {report:?}"
+        );
+    }
+}
+
+#[test]
 fn authoritative_non_unit_stays_non_unit() {
     let fixture = Fixture::new("struct ResultRecord {}\ntype ResultType = ResultRecord\n");
     assert_eq!(

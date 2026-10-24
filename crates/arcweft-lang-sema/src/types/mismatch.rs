@@ -41,7 +41,9 @@ pub enum TypeMismatchPathSegment {
     ResultOk,
     ResultError,
     OptionItem,
-    HandleName,
+    HandleItem,
+    SlotRefItem,
+    PresentationResourceKind,
     HandleLifetime,
     HandleState,
     HandleMustDrop,
@@ -771,13 +773,13 @@ impl TypeKind {
                     .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::OptionItem))
             }
             Self::Handle {
-                name: expected_name,
+                item: expected_item,
                 lifetime: expected_lifetime,
                 state: expected_state,
                 must_drop: expected_must_drop,
             } => {
                 let Self::Handle {
-                    name: actual_name,
+                    item: actual_item,
                     lifetime: actual_lifetime,
                     state: actual_state,
                     must_drop: actual_must_drop,
@@ -785,13 +787,8 @@ impl TypeKind {
                 else {
                     unreachable!("equal discriminants")
                 };
-                if expected_name != actual_name {
-                    Some(TypeMismatch::at(
-                        self,
-                        actual,
-                        TypeMismatchPathSegment::HandleName,
-                        TypeMismatchReason::NonTypeParameter,
-                    ))
+                if let Some(mismatch) = expected_item.first_mismatch(actual_item) {
+                    Some(mismatch.prepend(TypeMismatchPathSegment::HandleItem))
                 } else if expected_lifetime != actual_lifetime {
                     Some(TypeMismatch::at(
                         self,
@@ -1278,6 +1275,27 @@ impl TypeKind {
                     unreachable!("equal discriminants")
                 };
                 None
+            }
+            Self::SlotRef(expected) => {
+                let Self::SlotRef(actual) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                expected
+                    .first_mismatch(actual)
+                    .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::SlotRefItem))
+            }
+            Self::PresentationResource(expected) => {
+                let Self::PresentationResource(actual) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected != actual).then(|| {
+                    TypeMismatch::at(
+                        self,
+                        &TypeKind::PresentationResource(*actual),
+                        TypeMismatchPathSegment::PresentationResourceKind,
+                        TypeMismatchReason::NonTypeParameter,
+                    )
+                })
             }
             Self::Unit => {
                 let Self::Unit = actual else {

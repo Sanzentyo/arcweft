@@ -5,43 +5,9 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_interaction_model::presentation::PresentationResourceKind;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-
-/// Typed runtime family for scoped presentation handles.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PresentationHandleKind {
-    Image,
-    View,
-    Menu,
-    Overlay,
-    RuntimeControl,
-}
-
-impl PresentationHandleKind {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Image => "image",
-            Self::View => "view",
-            Self::Menu => "menu",
-            Self::Overlay => "overlay",
-            Self::RuntimeControl => "runtime_control",
-        }
-    }
-
-    fn from_arg(value: &str) -> Option<Self> {
-        match clean_runtime_arg(value) {
-            "image" => Some(Self::Image),
-            "view" => Some(Self::View),
-            "menu" => Some(Self::Menu),
-            "overlay" => Some(Self::Overlay),
-            "runtime_control" => Some(Self::RuntimeControl),
-            _ => None,
-        }
-    }
-}
 
 /// Lifecycle state carried by the portable presentation snapshot.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -82,7 +48,7 @@ impl PresentationResourceState {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PresentationHandleRecord {
     pub id: PresentationHandleId,
-    pub kind: PresentationHandleKind,
+    pub kind: PresentationResourceKind,
     pub resource_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
@@ -102,7 +68,7 @@ impl PresentationHandleRecord {
     #[must_use]
     pub fn new(
         id: PresentationHandleId,
-        kind: PresentationHandleKind,
+        kind: PresentationResourceKind,
         resource_id: String,
         owner: Option<String>,
         state: PresentationResourceState,
@@ -140,7 +106,7 @@ impl PresentationHandleRecord {
     }
 
     #[must_use]
-    pub fn matches_resource(&self, kind: PresentationHandleKind, resource_id: &str) -> bool {
+    pub fn matches_resource(&self, kind: PresentationResourceKind, resource_id: &str) -> bool {
         self.kind == kind && self.resource_id == resource_id
     }
 }
@@ -151,7 +117,7 @@ impl PresentationHandleRecord {
 pub enum PresentationHandleOperation {
     Create {
         id: PresentationHandleId,
-        kind: PresentationHandleKind,
+        kind: PresentationResourceKind,
         resource_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         owner: Option<String>,
@@ -220,13 +186,13 @@ impl PresentationHandleOperation {
 
     fn create_from_call(call: &RuntimeCall) -> Result<Self, PresentationHandleDiagnostic> {
         let id = handle_id_arg(call)?;
-        let Some(kind) =
-            named_runtime_arg(&call.args, "kind").and_then(PresentationHandleKind::from_arg)
+        let Some(kind) = named_runtime_arg(&call.args, "kind")
+            .and_then(|value| PresentationResourceKind::from_label(clean_runtime_arg(value)))
         else {
             return Err(PresentationHandleDiagnostic::new(
                 PresentationHandleDiagnosticCode::InvalidCall,
                 Some(id),
-                "presentation.handle.create requires kind = image|view|menu|overlay|runtime_control",
+                "presentation.handle.create requires a supported presentation resource kind",
             ));
         };
         let resource_id = named_runtime_arg(&call.args, "resource")
@@ -511,7 +477,7 @@ pub(crate) fn apply_presentation_image_handles(
 ) {
     for handle in handles
         .iter()
-        .filter(|handle| handle.kind == PresentationHandleKind::Image)
+        .filter(|handle| handle.kind == PresentationResourceKind::Image)
     {
         if handle.is_render_visible() {
             if let Some(object) = image_objects
@@ -693,16 +659,16 @@ pub(crate) fn hidden_focus_diagnostics(
         .collect()
 }
 
-const RUNTIME_CONTROL_FAMILIES: [PresentationHandleKind; 4] = [
-    PresentationHandleKind::View,
-    PresentationHandleKind::Menu,
-    PresentationHandleKind::Overlay,
-    PresentationHandleKind::RuntimeControl,
+const RUNTIME_CONTROL_FAMILIES: [PresentationResourceKind; 4] = [
+    PresentationResourceKind::View,
+    PresentationResourceKind::Menu,
+    PresentationResourceKind::Overlay,
+    PresentationResourceKind::RuntimeControl,
 ];
 
 fn resource_is_render_visible(
     handles: &[PresentationHandleRecord],
-    kinds: &[PresentationHandleKind],
+    kinds: &[PresentationResourceKind],
     aliases: &[&str],
     default_visible: bool,
 ) -> bool {
@@ -720,7 +686,7 @@ fn resource_is_render_visible(
 
 fn hidden_matching_handle<'a>(
     handles: &'a [PresentationHandleRecord],
-    kinds: &[PresentationHandleKind],
+    kinds: &[PresentationResourceKind],
     aliases: &[&str],
 ) -> Option<&'a PresentationHandleRecord> {
     let mut hidden = None;
@@ -852,7 +818,7 @@ mod tests {
     ) -> PresentationHandleRecord {
         PresentationHandleRecord::new(
             handle(id),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             resource_id.to_owned(),
             Some("flow.test".to_owned()),
             state,
@@ -899,7 +865,7 @@ mod tests {
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: handle("handle.flow.menu.background"),
-                kind: PresentationHandleKind::Image,
+                kind: PresentationResourceKind::Image,
                 resource_id: "image.menu.background".to_owned(),
                 owner: Some("flow.menu/block.0".to_owned()),
                 visible: true,
@@ -933,7 +899,7 @@ mod tests {
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: id.clone(),
-                kind: PresentationHandleKind::Overlay,
+                kind: PresentationResourceKind::Overlay,
                 resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.menu/block.0".to_owned()),
                 visible: true,
@@ -970,7 +936,7 @@ mod tests {
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: handle("handle.flow.a.menu"),
-                kind: PresentationHandleKind::View,
+                kind: PresentationResourceKind::View,
                 resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.a".to_owned()),
                 visible: true,
@@ -979,7 +945,7 @@ mod tests {
             },
             PresentationHandleOperation::Create {
                 id: handle("handle.flow.b.menu"),
-                kind: PresentationHandleKind::View,
+                kind: PresentationResourceKind::View,
                 resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.b".to_owned()),
                 visible: true,
@@ -1006,7 +972,7 @@ mod tests {
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: id.clone(),
-                kind: PresentationHandleKind::View,
+                kind: PresentationResourceKind::View,
                 resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.main".to_owned()),
                 visible: true,
@@ -1015,7 +981,7 @@ mod tests {
             },
             PresentationHandleOperation::Create {
                 id,
-                kind: PresentationHandleKind::View,
+                kind: PresentationResourceKind::View,
                 resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.main/reentry".to_owned()),
                 visible: false,
@@ -1114,7 +1080,7 @@ mod tests {
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: id.clone(),
-                kind: PresentationHandleKind::View,
+                kind: PresentationResourceKind::View,
                 resource_id: "view.RollbackPanel".to_owned(),
                 owner: Some("flow.rollback/block.0".to_owned()),
                 visible: true,

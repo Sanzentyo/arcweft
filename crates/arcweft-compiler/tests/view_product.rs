@@ -1,4 +1,5 @@
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_interaction_model::presentation::PresentationResourceKind;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 #[path = "view_product/match_source.rs"]
@@ -368,7 +369,7 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
 fn retained_state_handler_publishes_update_only_on_routed_event() {
     use arcweft_core::value::RuntimeValue;
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
 
@@ -403,7 +404,7 @@ view Main() {
     );
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.command.first").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -927,7 +928,7 @@ fn compiler_rejects_invalid_builtin_view_arguments() {
 fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
 
     for (case, source) in [
@@ -981,14 +982,14 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
         });
         let handle = PresentationHandleRecord::new(
             PresentationHandleId::try_new("view.default.first").unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
             None,
             0,
         );
-        let second = PresentationHandleRecord::new(PresentationHandleId::try_new("view.default.second").unwrap(), PresentationHandleKind::View, "view.Main".to_owned(), None, PresentationResourceState::Mounted, None, 0);
+        let second = PresentationHandleRecord::new(PresentationHandleId::try_new("view.default.second").unwrap(), PresentationResourceKind::View, "view.Main".to_owned(), None, PresentationResourceState::Mounted, None, 0);
         let handles = [handle, second];
         let result = runtime.evaluate(&handles, &[], false);
         assert!(result.diagnostics.is_empty(), "{source}\n{result:#?}");
@@ -1177,7 +1178,7 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
 fn nominal_defaults_keep_distinct_scope_widths_and_share_equal_scopes() {
     use arcweft_core::awbc::schema::AwbcRuntimeTypeShape;
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     let source = r#"
 entry cli @entry.main { goto @flow.main }
@@ -1242,7 +1243,7 @@ view Mirror(first: Holder<i64 -> i64> = Holder { callback = |input: i64| input +
         .map(|(ordinal, name)| {
             PresentationHandleRecord::new(
                 PresentationHandleId::try_new(format!("view.scope.{ordinal}")).unwrap(),
-                PresentationHandleKind::View,
+                PresentationResourceKind::View,
                 format!("view.{name}"),
                 None,
                 PresentationResourceState::Mounted,
@@ -1265,7 +1266,7 @@ view Mirror(first: Holder<i64 -> i64> = Holder { callback = |input: i64| input +
 #[test]
 fn nominal_default_constructed_from_scoped_input_keeps_its_origin() {
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     let source = r#"
 entry cli @entry.main { goto @flow.main }
@@ -1296,7 +1297,7 @@ view Main(first: i64 -> i64 = |input: i64| input + 1,
     .unwrap();
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.origin").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -1423,7 +1424,7 @@ view Main(first: i64 -> i64 = |input: i64| input + 1,
 #[test]
 fn nominal_enum_default_constructed_from_scoped_input_keeps_its_origin() {
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     let source = r#"
 entry cli @entry.main { goto @flow.main }
@@ -1454,7 +1455,7 @@ view Main(first: i64 -> i64 = |input: i64| input + 1,
     .unwrap();
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.enum-origin").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -1971,7 +1972,7 @@ view Main(label: String = "seed") {
             .expect("equivalent expressions retain their accepted roots");
     use arcweft_bundle::resource_codec::view::ViewTextSourceKind;
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     let product = compiled.view_product().product().as_ref().clone();
     let text = compiled.view_product().text().unwrap().clone();
@@ -2023,7 +2024,7 @@ view Main(label: String = "seed") {
     .unwrap();
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.expression.roots").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -2198,7 +2199,7 @@ fn authored_element_geometry_refuses_units_without_a_layout_conversion() {
 fn authored_button_inputs_use_typed_expression_execution() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     for head in [
         "Button(identity(label), enabled = enabled)",
@@ -2306,7 +2307,7 @@ view Main(label: String = "hello", enabled: bool = true) {
                 .unwrap();
         let handles = [PresentationHandleRecord::new(
             PresentationHandleId::try_new("view.button.expression").unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -2351,7 +2352,7 @@ fn authored_text_expression_executes_and_refreshes_typed_parameter_inputs() {
     use arcweft_bundle::resource_codec::view::{ViewTextResource, ViewTextSourceKind};
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
     for expression in [
@@ -2531,7 +2532,7 @@ view Main(label: String = "hello", enabled: bool = true,
         .unwrap();
         let handle = PresentationHandleRecord::new(
             PresentationHandleId::try_new("view.text.expression").unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -2603,7 +2604,7 @@ view Main(label: String = "hello", enabled: bool = true,
 fn authored_text_expression_cache_and_restore_preserve_budget_failure() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewDiagnosticCode;
     let source = r#"
@@ -2635,7 +2636,7 @@ view Main(label: String) { Text(identity(identity(identity(identity(identity(lab
         .map(|index| {
             PresentationHandleRecord::new(
                 PresentationHandleId::try_new(format!("view.text.budget.{index}")).unwrap(),
-                PresentationHandleKind::View,
+                PresentationResourceKind::View,
                 "view.Main".to_owned(),
                 None,
                 PresentationResourceState::Mounted,
@@ -2687,7 +2688,7 @@ fn authored_button_input_failures_preserve_authored_evaluation_order() {
     use arcweft_bundle::resource_codec::view::{ViewActionButtonInput, ViewTextSourceKind};
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     for head in [
         "Button(label = fail_text(zero), enabled = fail_bool(zero))",
@@ -2740,7 +2741,7 @@ view Main(zero: i64) {{ {head} }}
         let mut runtime = BundleViewRuntime::try_new_with_awbc(product, Some(text), awbc).unwrap();
         let handles = [PresentationHandleRecord::new(
             PresentationHandleId::try_new("view.button.order").unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -2771,7 +2772,7 @@ view Main(zero: i64) {{ {head} }}
 fn authored_view_block_locals_keep_patterns_scopes_and_cold_restore() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
     let source = r#"
@@ -2933,7 +2934,7 @@ view Main(label: String = "seed") {
     assert!(BundleViewRuntime::try_new(product.clone(), Some(text.clone())).is_err());
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.block.locals").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -2983,7 +2984,7 @@ view Main(label: String = "seed") {
 fn authored_view_conditionals_use_core_and_isolate_arm_locals() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
     for body in [
@@ -3169,7 +3170,7 @@ fn authored_view_conditionals_use_core_and_isolate_arm_locals() {
         }
         let handle = PresentationHandleRecord::new(
             PresentationHandleId::try_new("view.conditionals").unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -3229,7 +3230,7 @@ fn authored_view_conditionals_use_core_and_isolate_arm_locals() {
 fn authored_view_conditional_does_not_execute_the_unselected_arm_and_recovers_from_failure() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     let source = r#"
 entry cli @entry.main { goto @flow.main }
@@ -3260,7 +3261,7 @@ view Main(active: bool, label: String = "yes", divisor: i64 = 0i64) {
     );
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.conditional.failure").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -3310,7 +3311,7 @@ view Main(active: bool, label: String = "yes", divisor: i64 = 0i64) {
 fn authored_nested_views_pass_core_values_locals_aliases_and_defaults() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
     for body in [
@@ -3408,7 +3409,7 @@ fn authored_nested_views_pass_core_values_locals_aliases_and_defaults() {
         }
         let handle = PresentationHandleRecord::new(
             PresentationHandleId::try_new("view.nested.core").unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -3674,7 +3675,7 @@ view Main(dialogue: DialogueView, label: String) {
     let mut cold = BundleViewRuntime::try_new_with_awbc(product, Some(text), awbc).unwrap();
     let live_owner = arcweft_runtime_driver::presentation_handles::PresentationHandleRecord::new(
         dialogue.handle.clone(),
-        arcweft_runtime_driver::presentation_handles::PresentationHandleKind::View,
+        arcweft_interaction_model::presentation::PresentationResourceKind::View,
         view.as_str().to_owned(),
         None,
         arcweft_runtime_driver::presentation_handles::PresentationResourceState::Mounted,
@@ -3705,7 +3706,7 @@ view Main(dialogue: DialogueView, label: String) {
 fn authored_view_matches_select_core_patterns_and_export_arm_bindings() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
     for body in [
@@ -3826,7 +3827,7 @@ fn authored_view_matches_select_core_patterns_and_export_arm_bindings() {
         }
         let handle = PresentationHandleRecord::new(
             PresentationHandleId::try_new("view.match.bindings").unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -3993,7 +3994,7 @@ fn repeated_retained_operations_keep_their_own_lexical_definitions() {
 fn authored_view_match_failures_publish_no_partial_frame_and_recover() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     let source = r#"
 entry cli @entry.main { goto @flow.main }
@@ -4029,7 +4030,7 @@ view Main(active: bool, divisor: i64 = 1i64) {
     );
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.match.failure").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -4084,7 +4085,7 @@ view Main(active: bool, divisor: i64 = 1i64) {
 #[test]
 fn authored_view_match_pattern_families_share_the_core_selector() {
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
     let cases = [
@@ -4144,7 +4145,7 @@ fn authored_view_match_pattern_families_share_the_core_selector() {
         resource.validate_awbc_programs(&awbc, Some(&text)).unwrap();
         let handle = PresentationHandleRecord::new(
             PresentationHandleId::try_new("view.match.patterns").unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -4238,7 +4239,7 @@ fn uninhabited_view_match_keeps_an_empty_case_inventory() {
 #[test]
 fn nonreturning_empty_match_keeps_frame_failure_atomic_after_restore() {
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     let source = r#"
 entry cli @entry.main { goto @flow.main }
@@ -4266,7 +4267,7 @@ view Main() { Text("prefix"); match spin() {} }
     );
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.empty.loop").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -4298,7 +4299,7 @@ view Main() { Text("prefix"); match spin() {} }
 fn authored_keyed_iteration_reaches_the_retained_program() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
     let source = r#"
@@ -4386,7 +4387,7 @@ view Main(reverse: bool) {
     let native_plan = Arc::new(compiled.runtime_plan().plan.clone());
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.keyed.items").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -4479,7 +4480,7 @@ view Main(reverse: bool) {
 fn keyed_iteration_failure_and_empty_source_are_cache_and_restore_transparent() {
     use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewDiagnosticCode;
     let source = r#"
@@ -4517,7 +4518,7 @@ view Main(duplicate: bool, source_den: i32, key_den: i32, empty: bool) {
     );
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.keyed.failure").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -4598,7 +4599,7 @@ view Main(duplicate: bool, source_den: i32, key_den: i32, empty: bool) {
 #[test]
 fn keyed_iteration_uses_checked_ranges_discard_patterns_and_nested_scopes() {
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     for (ordinal, body, expected_texts) in [
         (0, "{ for id in 0..2 key = id { Text(\"item\") } }", 2),
@@ -4645,7 +4646,7 @@ fn keyed_iteration_uses_checked_ranges_discard_patterns_and_nested_scopes() {
         );
         let handle = PresentationHandleRecord::new(
             PresentationHandleId::try_new(format!("view.iteration.family.{ordinal}")).unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -4673,7 +4674,7 @@ fn keyed_iteration_uses_checked_ranges_discard_patterns_and_nested_scopes() {
 fn authored_local_state_initializes_once_per_mount_and_survives_cold_restore() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
     let source = r#"
@@ -4705,7 +4706,7 @@ view Main(initial: String) {
     let handle = |id: &str| {
         PresentationHandleRecord::new(
             PresentationHandleId::try_new(id).unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -4848,9 +4849,7 @@ fn authored_local_state_rejects_nonretained_and_latent_scopes() {
 fn authored_local_state_follows_repeat_keys_and_rolls_back_failed_initialization() {
     use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
     use arcweft_runtime_driver::{
-        presentation_handles::{
-            PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
-        },
+        presentation_handles::{PresentationHandleRecord, PresentationResourceState},
         view_runtime::BundleViewTextValue,
     };
     let source = r#"
@@ -4887,7 +4886,7 @@ view Main(items: Vec<String>, initial: String, denominator: i64) {
     );
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.keyed.state").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -4993,9 +4992,7 @@ view Main(items: Vec<String>, initial: String, denominator: i64) {
 fn authored_local_state_replacement_preserves_fields_rejects_types_and_removes_fields() {
     use arcweft_core::value::RuntimeValue;
     use arcweft_runtime_driver::{
-        presentation_handles::{
-            PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
-        },
+        presentation_handles::{PresentationHandleRecord, PresentationResourceState},
         view_runtime::{BundleViewTextValue, ViewMountReconcileError, ViewProgramReplacementError},
     };
     let source = r#"
@@ -5136,7 +5133,7 @@ view Different() { let replacement: bool = true; Text("different type") }
     let handle = |id: &str| {
         PresentationHandleRecord::new(
             PresentationHandleId::try_new(id).unwrap(),
-            PresentationHandleKind::View,
+            PresentationResourceKind::View,
             "view.Main".to_owned(),
             None,
             PresentationResourceState::Mounted,
@@ -5211,9 +5208,7 @@ view Different() { let replacement: bool = true; Text("different type") }
 fn authored_local_state_scope_retirement_keeps_inactive_sources_and_retires_descendants() {
     use arcweft_core::value::{RuntimeBinding, RuntimeSeq, RuntimeValue};
     use arcweft_runtime_driver::{
-        presentation_handles::{
-            PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
-        },
+        presentation_handles::{PresentationHandleRecord, PresentationResourceState},
         view_runtime::BundleViewTextValue,
     };
     let source = r#"
@@ -5253,7 +5248,7 @@ view Main(items: Vec<String>, initial: String, show: bool) {
     );
     let handle = PresentationHandleRecord::new(
         PresentationHandleId::try_new("view.nested.state.scope").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -5342,11 +5337,11 @@ fn retained_transition_handle(
     id: &str,
 ) -> arcweft_runtime_driver::presentation_handles::PresentationHandleRecord {
     use arcweft_runtime_driver::presentation_handles::{
-        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        PresentationHandleRecord, PresentationResourceState,
     };
     PresentationHandleRecord::new(
         PresentationHandleId::try_new(id).unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,

@@ -777,13 +777,13 @@ impl Encoder {
                 tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::Handle {
-                name,
+                item,
                 lifetime,
                 state,
                 must_drop,
             } => {
                 self.tag(59);
-                self.string(name);
+                tasks.push(EncodingTask::Type(item, child_depth));
                 self.lifetime(lifetime);
                 self.handle_state(*state);
                 self.bool(*must_drop);
@@ -953,6 +953,14 @@ impl Encoder {
             TypeKind::DataPath => self.tag(98),
             TypeKind::DataPathSegment => self.tag(99),
             TypeKind::DataMapKind => self.tag(100),
+            TypeKind::PresentationResource(kind) => {
+                self.tag(101);
+                self.byte(kind.semantic_tag());
+            }
+            TypeKind::SlotRef(item) => {
+                self.tag(102);
+                tasks.push(EncodingTask::Type(item, child_depth));
+            }
         }
         Ok(None)
     }

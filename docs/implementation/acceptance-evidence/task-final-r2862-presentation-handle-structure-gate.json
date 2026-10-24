@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "name": "task-final-r2862-presentation-handle-structure-gate",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2862-presentation-handle-structure-gate.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T21:25:46.8902886Z",
+  "finishedAt": "2026-10-24T21:25:51.3192693Z"
+}

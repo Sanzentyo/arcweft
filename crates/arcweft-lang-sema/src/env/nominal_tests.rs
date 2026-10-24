@@ -314,6 +314,38 @@ fn exact_records_reject_reserved_paths_and_nonzero_exact_arity() {
 }
 
 #[test]
+fn presentation_constructors_cannot_be_shadowed_by_accepted_nominals() {
+    use crate::nominal::BuiltinTypeConstructor;
+
+    for constructor in BuiltinTypeConstructor::all().filter(|constructor| {
+        matches!(
+            constructor,
+            BuiltinTypeConstructor::Handle
+                | BuiltinTypeConstructor::SlotRef
+                | BuiltinTypeConstructor::PresentationResource(_)
+        )
+    }) {
+        let reserved = path(constructor.spelling());
+        assert!(matches!(AcceptedNominalRecord::try_new(
+            AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, reserved.clone()),
+            constructor.arity(), opaque_semantics("fixture.lang-sema.presentation"),
+            AcceptedNominalOrigin::Domain, None,
+        ), Err(AcceptedNominalCatalogError::ReservedPath { path }) if path == reserved));
+        assert!(
+            standard_record(
+                &format!("vendor.{}", constructor.spelling()),
+                opaque_semantics("fixture.lang-sema.presentation")
+            )
+            .id()
+            .canonical_path()
+            .segments()
+            .len()
+                > 1
+        );
+    }
+}
+
+#[test]
 fn accepted_record_instantiation_checks_arity_and_preserves_exact_identity() {
     let id = AcceptedNominalId::new(
         AcceptedNominalOwnerId::RustPackage(RustPackageId::try_new("typed-box").expect("package")),

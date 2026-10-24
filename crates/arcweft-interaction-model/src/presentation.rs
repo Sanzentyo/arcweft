@@ -7,6 +7,90 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
+/// Resource family shared by executable presentation values and retained state.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PresentationResourceKind {
+    Image,
+    View,
+    Menu,
+    Overlay,
+    RuntimeControl,
+    Background,
+    Character,
+    Viewport,
+}
+
+impl PresentationResourceKind {
+    pub const ALL: [Self; 8] = [
+        Self::Image,
+        Self::View,
+        Self::Menu,
+        Self::Overlay,
+        Self::RuntimeControl,
+        Self::Background,
+        Self::Character,
+        Self::Viewport,
+    ];
+
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Image => 0,
+            Self::View => 1,
+            Self::Menu => 2,
+            Self::Overlay => 3,
+            Self::RuntimeControl => 4,
+            Self::Background => 5,
+            Self::Character => 6,
+            Self::Viewport => 7,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Image => "image",
+            Self::View => "view",
+            Self::Menu => "menu",
+            Self::Overlay => "overlay",
+            Self::RuntimeControl => "runtime_control",
+            Self::Background => "background",
+            Self::Character => "character",
+            Self::Viewport => "viewport",
+        }
+    }
+
+    #[must_use]
+    pub fn from_label(value: &str) -> Option<Self> {
+        match value {
+            "image" => Some(Self::Image),
+            "view" => Some(Self::View),
+            "menu" => Some(Self::Menu),
+            "overlay" => Some(Self::Overlay),
+            "runtime_control" => Some(Self::RuntimeControl),
+            "background" => Some(Self::Background),
+            "character" => Some(Self::Character),
+            "viewport" => Some(Self::Viewport),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn type_name(self) -> &'static str {
+        match self {
+            Self::Image => "ImageSurface",
+            Self::View => "View",
+            Self::Menu => "Menu",
+            Self::Overlay => "Overlay",
+            Self::RuntimeControl => "RuntimeControl",
+            Self::Background => "BackgroundSurface",
+            Self::Character => "CharacterSurface",
+            Self::Viewport => "Viewport",
+        }
+    }
+}
+
 /// How intrinsic image pixels map into authored presentation bounds.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

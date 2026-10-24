@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "base": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "run": "task-final-r2860-presentation-handle-owner-runtime",
+  "catalog": "task-final-r2859-presentation-handle-owner-catalog",
+  "actualExitCode": 0,
+  "executed": 13,
+  "passed": 13,
+  "filteredOut": 1312,
+  "ignored": 0,
+  "catalogCaseDrift": 0,
+  "cases": [
+    {
+      "binary": "arcweft-interaction-model",
+      "test": "presentation::tests::resource_kind_roundtrip_is_closed_and_keeps_distinct_semantic_identities"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "callable::digest::tests::unchecked_presentation_roles_cannot_alias_each_other_or_an_ordinary_value"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "callable::schema::families::tests::presentation_schemas_retain_typed_argument_roles_for_every_callable"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "callable::schema::families::tests::presentation_slot_removals_publish_structural_optional_surface_values"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "env::nominal_tests::presentation_constructors_cannot_be_shadowed_by_accepted_nominals"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::compile_time_scalars::presentation_public_id_reference_rejects_wrong_family_without_selected_call"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::compile_time_scalars::presentation_public_id_reference_tokens_keep_typed_families_and_runtime_strings"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::content_callables::presentation_content_calls_publish_typed_emissions_and_operands"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::match_coverage::presentation_slot_clear_match_requires_the_absent_surface_case"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::match_coverage::presentation_slot_clear_result_has_the_complete_optional_match_transcript"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "proof_return::tests::presentation_type_annotations_resolve_through_generic_aliases_and_reject_wrong_arity"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "types::semantic_tests::presentation_resources_and_recursive_carriers_have_distinct_type_identities"
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "test": "types::substitution::tests::presentation_items_participate_in_inference_without_losing_handle_ownership"
+    }
+  ],
+  "scope": "Focused owner behavior only; reverse consumers, command ABI and runtime Handle projection not accepted",
+  "at": "2026-10-24T21:25:23.3010028Z"
+}

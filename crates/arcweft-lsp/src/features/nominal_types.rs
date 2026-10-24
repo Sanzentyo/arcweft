@@ -408,21 +408,18 @@ pub(crate) fn completions(
             }),
     );
     items.extend(
-        BuiltinTypeConstructor::ALL
-            .iter()
-            .copied()
-            .map(|constructor| CompletionItem {
-                label: constructor.spelling().to_owned(),
-                kind: Some(CompletionItemKind::CLASS),
-                detail: Some(format!(
-                    "language-owned type constructor (arity {})",
-                    constructor.arity()
-                )),
-                documentation: Some(Documentation::String(
-                    "Arcweft language-owned type constructor.".to_owned(),
-                )),
-                ..CompletionItem::default()
-            }),
+        BuiltinTypeConstructor::all().map(|constructor| CompletionItem {
+            label: constructor.spelling().to_owned(),
+            kind: Some(CompletionItemKind::CLASS),
+            detail: Some(format!(
+                "language-owned type constructor (arity {})",
+                constructor.arity()
+            )),
+            documentation: Some(Documentation::String(
+                "Arcweft language-owned type constructor.".to_owned(),
+            )),
+            ..CompletionItem::default()
+        }),
     );
     items
 }

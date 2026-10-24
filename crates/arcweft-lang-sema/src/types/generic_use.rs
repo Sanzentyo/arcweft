@@ -391,6 +391,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
             | TypeKind::AgentBuiltin(_)
             | TypeKind::FocusPatch
             | TypeKind::CharacterDialogue(_)
+            | TypeKind::PresentationResource(_)
             | TypeKind::ViewValue
             | TypeKind::CharacterNominal(_)
             | TypeKind::Named(_)
@@ -410,6 +411,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
             | TypeKind::Seq(inner)
             | TypeKind::Need(inner)
             | TypeKind::Option(inner)
+            | TypeKind::SlotRef(inner)
             | TypeKind::ThreadHandle(inner)
             | TypeKind::Shared(inner)
             | TypeKind::DialogueLine(inner) => self.visit_at(inner, position),
@@ -495,7 +497,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
             TypeKind::VariantPayload(payload) => {
                 payload.visit_types(&mut |field| self.visit_at(field, position))
             }
-            TypeKind::Handle { .. } => Ok(()),
+            TypeKind::Handle { item, .. } => self.visit_at(item, position),
         }
     }
 

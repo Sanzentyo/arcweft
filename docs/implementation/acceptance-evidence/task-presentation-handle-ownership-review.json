@@ -1,0 +1,386 @@
+{
+  "version": 1,
+  "base": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "dirty": true,
+  "owned": [
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "owner": "arcweft-compiler",
+      "classification": "production",
+      "bytes": 432326,
+      "physicalLines": 10164,
+      "basePhysicalLines": 10162,
+      "growth": 2,
+      "embeddedTestLines": 10152
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/project_cache_transaction/rust_defaults.rs",
+      "owner": "arcweft-compiler",
+      "classification": "test",
+      "bytes": 56394,
+      "physicalLines": 1546,
+      "basePhysicalLines": 1547,
+      "growth": -1,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/view_product.rs",
+      "owner": "arcweft-compiler",
+      "classification": "test",
+      "bytes": 234961,
+      "physicalLines": 6069,
+      "basePhysicalLines": 6074,
+      "growth": -5,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-interaction-model/src/presentation.rs",
+      "owner": "arcweft-interaction-model",
+      "classification": "production",
+      "bytes": 9220,
+      "physicalLines": 326,
+      "basePhysicalLines": 242,
+      "growth": 84,
+      "embeddedTestLines": 3
+    },
+    {
+      "path": "crates/arcweft-interaction-model/src/presentation/tests.rs",
+      "owner": "arcweft-interaction-model",
+      "classification": "test",
+      "bytes": 7335,
+      "physicalLines": 207,
+      "basePhysicalLines": 175,
+      "growth": 32,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/identity.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 61547,
+      "physicalLines": 1977,
+      "basePhysicalLines": 1968,
+      "growth": 9,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 115083,
+      "physicalLines": 2965,
+      "basePhysicalLines": 2951,
+      "growth": 14,
+      "embeddedTestLines": 696
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/env/base.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 104573,
+      "physicalLines": 2833,
+      "basePhysicalLines": 2828,
+      "growth": 5,
+      "embeddedTestLines": 99
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/env/nominal_tests.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "test",
+      "bytes": 42750,
+      "physicalLines": 1261,
+      "basePhysicalLines": 1229,
+      "growth": 32,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/env/nominal.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 64672,
+      "physicalLines": 1905,
+      "basePhysicalLines": 1896,
+      "growth": 9,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/match_coverage.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "test",
+      "bytes": 24337,
+      "physicalLines": 730,
+      "basePhysicalLines": 728,
+      "growth": 2,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/nominal/model.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 34781,
+      "physicalLines": 1183,
+      "basePhysicalLines": 1168,
+      "growth": 15,
+      "embeddedTestLines": 96
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/nominal/resolver/engine/resolution.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 46510,
+      "physicalLines": 1166,
+      "basePhysicalLines": 1158,
+      "growth": 8,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/ownership.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 96296,
+      "physicalLines": 2430,
+      "basePhysicalLines": 2428,
+      "growth": 2,
+      "embeddedTestLines": 387
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/proof_return/tests.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "test",
+      "bytes": 31145,
+      "physicalLines": 927,
+      "basePhysicalLines": 868,
+      "growth": 59,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/registration/model.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 84302,
+      "physicalLines": 2320,
+      "basePhysicalLines": 2321,
+      "growth": -1,
+      "embeddedTestLines": 388
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 62308,
+      "physicalLines": 1849,
+      "basePhysicalLines": 1844,
+      "growth": 5,
+      "embeddedTestLines": 1816
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/compatibility.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 72764,
+      "physicalLines": 1962,
+      "basePhysicalLines": 1949,
+      "growth": 13,
+      "embeddedTestLines": 712
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/constraints/shape.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 21659,
+      "physicalLines": 614,
+      "basePhysicalLines": 580,
+      "growth": 34,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/digest.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 53842,
+      "physicalLines": 1482,
+      "basePhysicalLines": 1474,
+      "growth": 8,
+      "embeddedTestLines": 61
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/generic_use.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 35945,
+      "physicalLines": 944,
+      "basePhysicalLines": 942,
+      "growth": 2,
+      "embeddedTestLines": 295
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/match_domain.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 15497,
+      "physicalLines": 419,
+      "basePhysicalLines": 416,
+      "growth": 3,
+      "embeddedTestLines": 127
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/mismatch.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 49705,
+      "physicalLines": 1344,
+      "basePhysicalLines": 1326,
+      "growth": 18,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/openness.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 8991,
+      "physicalLines": 225,
+      "basePhysicalLines": 221,
+      "growth": 4,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/order.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 20389,
+      "physicalLines": 497,
+      "basePhysicalLines": 491,
+      "growth": 6,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/project_nominal_visit.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 6303,
+      "physicalLines": 166,
+      "basePhysicalLines": 164,
+      "growth": 2,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/semantic_tests.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "test",
+      "bytes": 13132,
+      "physicalLines": 367,
+      "basePhysicalLines": 329,
+      "growth": 38,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/substitution.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 41046,
+      "physicalLines": 1056,
+      "basePhysicalLines": 961,
+      "growth": 95,
+      "embeddedTestLines": 188
+    },
+    {
+      "path": "crates/arcweft-lsp/src/features/nominal_types.rs",
+      "owner": "arcweft-lsp",
+      "classification": "production",
+      "bytes": 59341,
+      "physicalLines": 1698,
+      "basePhysicalLines": 1701,
+      "growth": -3,
+      "embeddedTestLines": 799
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+      "owner": "arcweft-runtime-driver",
+      "classification": "production",
+      "bytes": 38439,
+      "physicalLines": 1123,
+      "basePhysicalLines": 1157,
+      "growth": -34,
+      "embeddedTestLines": 345
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/view_runtime.rs",
+      "owner": "arcweft-runtime-driver",
+      "classification": "production",
+      "bytes": 80680,
+      "physicalLines": 2033,
+      "basePhysicalLines": 2033,
+      "growth": 0,
+      "embeddedTestLines": 2022
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/view_runtime/axis_seed_tests.rs",
+      "owner": "arcweft-runtime-driver",
+      "classification": "test",
+      "bytes": 32804,
+      "physicalLines": 889,
+      "basePhysicalLines": 888,
+      "growth": 1,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/view_runtime/axis_seed.rs",
+      "owner": "arcweft-runtime-driver",
+      "classification": "production",
+      "bytes": 18241,
+      "physicalLines": 490,
+      "basePhysicalLines": 489,
+      "growth": 1,
+      "embeddedTestLines": 4
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+      "owner": "arcweft-runtime-driver",
+      "classification": "production",
+      "bytes": 118686,
+      "physicalLines": 2767,
+      "basePhysicalLines": 2768,
+      "growth": -1,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/tests/awbc_product_session.rs",
+      "owner": "arcweft-runtime-driver",
+      "classification": "test",
+      "bytes": 112788,
+      "physicalLines": 2894,
+      "basePhysicalLines": 2895,
+      "growth": -1,
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/tests/view_runtime.rs",
+      "owner": "arcweft-runtime-driver",
+      "classification": "test",
+      "bytes": 125388,
+      "physicalLines": 3436,
+      "basePhysicalLines": 3435,
+      "growth": 1,
+      "embeddedTestLines": 0
+    }
+  ],
+  "manifestLockInputs": 99,
+  "manifestLockDrift": 0,
+  "graph": "task-presentation-handle-final-source.graph.json",
+  "reversePackageCount": 62,
+  "scanner": {
+    "exitCode": 0,
+    "packages": 97,
+    "files": 3212,
+    "blocking": 0,
+    "reviewTriggers": 378
+  },
+  "disposition": [
+    "interaction-model owns the closed resource-family algebra shared directly by semantic constructors and retained driver records; driver enum and all consumer imports are removed without aliases. No dependency/feature edge changed.",
+    "Sema owns recursive Handle/SlotRef item structure, constructor arity and reserved names, generic inference/substitution/constraints, Match domain, mismatch, digest and order. These remain in their existing cohesive type owners; no second type or spelling catalog is added.",
+    "Compiler explicitly refuses runtime projection without a runtime snapshot owner; source annotations and owner tests do not establish execution ABI support. Driver retains lifecycle/registry ownership and uses the shared kind directly. Existing compiler/driver integration tests remain in their existing scenario owners.",
+    "The constructor inventory remains the only Sema source resolver/completion inventory; shared resource ALL is projected into it. New constructors append after existing entries, preserving previous scalar builtin tags. Existing upper LOC triggers are reviewed by these responsibilities; no mechanical split or public API widening for layout."
+  ],
+  "runtimeProjectionAccepted": false,
+  "at": "2026-10-24T21:29:48.0464412Z"
+}

@@ -5695,6 +5695,8 @@ fn runtime_type_scoped_at(
         | TypeKind::LineContext
         | TypeKind::StatementIngress(_)
         | TypeKind::Handle { .. }
+        | TypeKind::SlotRef(_)
+        | TypeKind::PresentationResource(_)
         | TypeKind::GenericParam(_)
         | TypeKind::OpenNominal(_)
         | TypeKind::Projection { .. }

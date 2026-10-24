@@ -70,7 +70,7 @@ pub(crate) fn visit_project_nominals<E>(
         | TypeKind::AgentResourceBody
         | TypeKind::RagContextPack
         | TypeKind::AgentBuiltin(_)
-        | TypeKind::Handle { .. }
+        | TypeKind::PresentationResource(_)
         | TypeKind::GenericParam(_)
         | TypeKind::Error(_)
         | TypeKind::CharacterPatch(_)
@@ -93,6 +93,8 @@ pub(crate) fn visit_project_nominals<E>(
         | TypeKind::Seq(inner)
         | TypeKind::Need(inner)
         | TypeKind::Option(inner)
+        | TypeKind::SlotRef(inner)
+        | TypeKind::Handle { item: inner, .. }
         | TypeKind::ThreadHandle(inner)
         | TypeKind::Shared(inner)
         | TypeKind::DialogueLine(inner)

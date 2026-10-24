@@ -1794,20 +1794,28 @@ pub(in crate::callable) fn presentation_schema(
 }
 
 fn presentation_result(id: PresentationCallableId) -> TypeKind {
+    use arcweft_interaction_model::presentation::PresentationResourceKind as Resource;
+    let handle = |resource| TypeKind::presentation_handle(TypeKind::PresentationResource(resource));
     match id {
-        PresentationCallableId::View => TypeKind::presentation_handle("View"),
-        PresentationCallableId::Menu => TypeKind::presentation_handle("Menu"),
-        PresentationCallableId::Overlay => TypeKind::presentation_handle("Overlay"),
-        PresentationCallableId::Background => TypeKind::presentation_handle("BackgroundSurface"),
-        PresentationCallableId::Image => TypeKind::presentation_handle("ImageSurface"),
-        PresentationCallableId::PlayerViewport => TypeKind::presentation_handle("Viewport"),
-        PresentationCallableId::Show => TypeKind::presentation_handle("CharacterSurface"),
-        PresentationCallableId::RefBackground => named("SlotRef<BackgroundSurface>"),
-        PresentationCallableId::RefShow => named("SlotRef<CharacterSurface>"),
-        PresentationCallableId::ClearBackground => {
-            TypeKind::Option(Box::new(named("BackgroundSurface")))
-        }
-        PresentationCallableId::Hide => TypeKind::Option(Box::new(named("CharacterSurface"))),
+        PresentationCallableId::View => handle(Resource::View),
+        PresentationCallableId::Menu => handle(Resource::Menu),
+        PresentationCallableId::Overlay => handle(Resource::Overlay),
+        PresentationCallableId::Background => handle(Resource::Background),
+        PresentationCallableId::Image => handle(Resource::Image),
+        PresentationCallableId::PlayerViewport => handle(Resource::Viewport),
+        PresentationCallableId::Show => handle(Resource::Character),
+        PresentationCallableId::RefBackground => TypeKind::SlotRef(Box::new(
+            TypeKind::PresentationResource(Resource::Background),
+        )),
+        PresentationCallableId::RefShow => TypeKind::SlotRef(Box::new(
+            TypeKind::PresentationResource(Resource::Character),
+        )),
+        PresentationCallableId::ClearBackground => TypeKind::Option(Box::new(
+            TypeKind::PresentationResource(Resource::Background),
+        )),
+        PresentationCallableId::Hide => TypeKind::Option(Box::new(TypeKind::PresentationResource(
+            Resource::Character,
+        ))),
     }
 }
 
@@ -2381,11 +2389,17 @@ mod tests {
     #[test]
     fn presentation_slot_removals_publish_structural_optional_surface_values() {
         for (remove, surface) in [
-            (PresentationCallableId::ClearBackground, "BackgroundSurface"),
-            (PresentationCallableId::Hide, "CharacterSurface"),
+            (
+                PresentationCallableId::ClearBackground,
+                arcweft_interaction_model::presentation::PresentationResourceKind::Background,
+            ),
+            (
+                PresentationCallableId::Hide,
+                arcweft_interaction_model::presentation::PresentationResourceKind::Character,
+            ),
         ] {
             let removed = presentation_schema(remove, None, None).expect("slot removal schema");
-            let expected = TypeKind::Option(Box::new(named(surface)));
+            let expected = TypeKind::Option(Box::new(TypeKind::PresentationResource(surface)));
             assert_eq!(removed.value_type(), Some(&expected));
         }
     }

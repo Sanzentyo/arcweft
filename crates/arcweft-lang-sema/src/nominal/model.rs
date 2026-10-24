@@ -70,6 +70,9 @@ pub enum BuiltinTypeConstructor {
     Stream,
     Parser,
     Ref,
+    Handle,
+    SlotRef,
+    PresentationResource(arcweft_interaction_model::presentation::PresentationResourceKind),
 }
 
 /// Resolution of a project external through the accepted environment owner map.
@@ -377,7 +380,7 @@ impl TypeSourceEvidence {
 
 impl BuiltinTypeConstructor {
     /// Complete deterministic language-owned constructor inventory.
-    pub const ALL: &'static [Self] = &[
+    const BASE: &'static [Self] = &[
         Self::Bool,
         Self::I8,
         Self::I16,
@@ -423,7 +426,18 @@ impl BuiltinTypeConstructor {
         Self::Stream,
         Self::Parser,
         Self::Ref,
+        Self::Handle,
+        Self::SlotRef,
     ];
+
+    /// Complete deterministic inventory, including the shared resource domain.
+    pub fn all() -> impl Iterator<Item = Self> + Clone {
+        Self::BASE.iter().copied().chain(
+            arcweft_interaction_model::presentation::PresentationResourceKind::ALL
+                .into_iter()
+                .map(Self::PresentationResource),
+        )
+    }
 
     /// Constructors whose sole argument is a contextual entity-family atom.
     pub const ENTITY_FAMILY_PROJECTIONS: &'static [Self] = &[Self::Ref];
@@ -473,6 +487,9 @@ impl BuiltinTypeConstructor {
             Self::Stream => "Stream",
             Self::Parser => "Parser",
             Self::Ref => "Ref",
+            Self::Handle => "Handle",
+            Self::SlotRef => "SlotRef",
+            Self::PresentationResource(kind) => kind.type_name(),
         }
     }
 
@@ -503,7 +520,8 @@ impl BuiltinTypeConstructor {
             | Self::CharacterDialogue
             | Self::StageActorHandle
             | Self::CueHandle
-            | Self::VoiceHandle => 0,
+            | Self::VoiceHandle
+            | Self::PresentationResource(_) => 0,
             Self::DataShape => 1,
             Self::Vec
             | Self::Slice
@@ -511,6 +529,8 @@ impl BuiltinTypeConstructor {
             | Self::Option
             | Self::Probe
             | Self::ThreadHandle
+            | Self::Handle
+            | Self::SlotRef
             | Self::Shared
             | Self::Need
             | Self::Ref => 1,
@@ -537,10 +557,7 @@ impl BuiltinTypeConstructor {
             HirPathSegment::Identifier(name) => name.as_str(),
             HirPathSegment::ProjectSymbol(name) => name.as_str(),
         };
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|constructor| constructor.spelling() == spelling)
+        Self::all().find(|constructor| constructor.spelling() == spelling)
     }
 
     /// Expected semantic category for an in-range constructor argument.
@@ -1075,11 +1092,10 @@ mod tests {
 
     #[test]
     fn builtin_table_has_contractual_spellings_and_arities() {
-        let dense = BuiltinTypeConstructor::ALL
-            .iter()
+        let dense = BuiltinTypeConstructor::all()
             .filter_map(|constructor| {
                 if let BuiltinTypeConstructor::DenseNumeric(dense) = constructor {
-                    Some(*dense)
+                    Some(dense)
                 } else {
                     None
                 }
@@ -1096,9 +1112,8 @@ mod tests {
             );
         }
         assert_eq!(
-            BuiltinTypeConstructor::ALL
-                .iter()
-                .filter(|constructor| **constructor == BuiltinTypeConstructor::Ref)
+            BuiltinTypeConstructor::all()
+                .filter(|constructor| *constructor == BuiltinTypeConstructor::Ref)
                 .count(),
             1
         );

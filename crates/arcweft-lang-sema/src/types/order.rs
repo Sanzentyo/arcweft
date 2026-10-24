@@ -21,6 +21,9 @@ impl TypeKind {
         type_kind_tag(self)
             .cmp(&type_kind_tag(other))
             .then_with(|| match (self, other) {
+                (Self::PresentationResource(left), Self::PresentationResource(right)) => {
+                    left.cmp(right)
+                }
                 (Self::Range(left), Self::Range(right))
                 | (Self::Probe(left), Self::Probe(right))
                 | (Self::Vec(left), Self::Vec(right))
@@ -28,6 +31,7 @@ impl TypeKind {
                 | (Self::Slice(left), Self::Slice(right))
                 | (Self::Seq(left), Self::Seq(right))
                 | (Self::Option(left), Self::Option(right))
+                | (Self::SlotRef(left), Self::SlotRef(right))
                 | (Self::ThreadHandle(left), Self::ThreadHandle(right))
                 | (Self::Shared(left), Self::Shared(right))
                 | (Self::Need(left), Self::Need(right)) => left.stable_ordering(right),
@@ -130,19 +134,19 @@ impl TypeKind {
                     .then_with(|| left_error.stable_ordering(right_error)),
                 (
                     Self::Handle {
-                        name: left_name,
+                        item: left_item,
                         lifetime: left_lifetime,
                         state: left_state,
                         must_drop: left_must_drop,
                     },
                     Self::Handle {
-                        name: right_name,
+                        item: right_item,
                         lifetime: right_lifetime,
                         state: right_state,
                         must_drop: right_must_drop,
                     },
-                ) => left_name
-                    .cmp(right_name)
+                ) => left_item
+                    .stable_ordering(right_item)
                     .then_with(|| left_lifetime.cmp(right_lifetime))
                     .then_with(|| {
                         handle_state_tag(*left_state).cmp(&handle_state_tag(*right_state))
@@ -487,5 +491,7 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::DataPath => 97,
         TypeKind::DataPathSegment => 98,
         TypeKind::DataMapKind => 99,
+        TypeKind::PresentationResource(_) => 101,
+        TypeKind::SlotRef(_) => 102,
     }
 }

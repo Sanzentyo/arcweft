@@ -2,6 +2,38 @@ use super::*;
 use serde_json::{Value, json};
 
 #[test]
+fn resource_kind_roundtrip_is_closed_and_keeps_distinct_semantic_identities() {
+    use std::collections::BTreeSet;
+
+    let mut tags = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    for kind in PresentationResourceKind::ALL {
+        assert!(tags.insert(kind.semantic_tag()));
+        assert!(names.insert(kind.type_name()));
+        assert_eq!(
+            PresentationResourceKind::from_label(kind.as_str()),
+            Some(kind)
+        );
+        let encoded = serde_json::to_value(kind).unwrap();
+        assert_eq!(encoded, json!(kind.as_str()));
+        assert_eq!(
+            serde_json::from_value::<PresentationResourceKind>(encoded).unwrap(),
+            kind
+        );
+    }
+    for unknown in [
+        "",
+        "Image",
+        "ImageSurface",
+        "background_surface",
+        "future_resource",
+    ] {
+        assert_eq!(PresentationResourceKind::from_label(unknown), None);
+        assert!(serde_json::from_value::<PresentationResourceKind>(json!(unknown)).is_err());
+    }
+}
+
+#[test]
 fn alignment_construction_and_decode_enforce_the_same_closed_range() {
     for x in [0, 1, 500, 999, 1_000] {
         for y in [0, 1, 500, 999, 1_000] {

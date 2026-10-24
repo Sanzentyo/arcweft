@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "commit": "4cea871faf8296250615bf0f76a4962133f1a711",
+  "parent": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "tree": "1277b14e4d99a6c764c172d104fe9c33e832058a",
+  "remote": "4cea871faf8296250615bf0f76a4962133f1a711",
+  "advertised": "4cea871faf8296250615bf0f76a4962133f1a711",
+  "paths": [
+    {
+      "path": "docs/00-overview/naming.md",
+      "blob": "908b20b461426d66dd33ba7ef54b9ddea7c4cce1"
+    },
+    {
+      "path": "docs/05-build-and-security/authored-resource-storage.md",
+      "blob": "34f8eb8f4832a5756f07316e52d34157eda0d54b"
+    },
+    {
+      "path": "docs/05-build-and-security/device-generator.md",
+      "blob": "13c47ed6724a48e82e9e2a139591d10a4a141bf8"
+    },
+    {
+      "path": "docs/05-build-and-security/native-web-build.md",
+      "blob": "e0be796089aa1c0ba58e199608c916d2b2a07378"
+    },
+    {
+      "path": "docs/05-build-and-security/packaging.md",
+      "blob": "1c0718e2b416cc901d383b534c41b5ac02017b94"
+    },
+    {
+      "path": "docs/05-build-and-security/security.md",
+      "blob": "6c3d9b00b5a75c82401f4ad6b80cd0c2e62f10c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-documentation-contract-prune-audit.json",
+      "blob": "948fa9da8f4dc1ff730f49435b3afa0974f35128"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "3577fcbed45c09b0be7a729646a1cf2dd9778ad3"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "712aa3215d97560bf4c7185c5df943021bce2d83"
+    }
+  ],
+  "patchSha256": "595461d0582ef16803fd4345ca91963f55e3da6c30b7f535c3d5817fb1449d05",
+  "preservedTrackedSourceWip": 50,
+  "trackedSourceWipDrift": 0,
+  "untrackedFiles": 6,
+  "untrackedDrift": 0,
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T21:27:51.5444579Z"
+}

@@ -1278,9 +1278,8 @@ impl CompileTimeScalarBuiltinIdentity {
     fn semantic_tag(self) -> (u8, u8) {
         match self {
             Self::Constructor(constructor) => {
-                let tag = BuiltinTypeConstructor::ALL
-                    .iter()
-                    .position(|candidate| *candidate == constructor)
+                let tag = BuiltinTypeConstructor::all()
+                    .position(|candidate| candidate == constructor)
                     .and_then(|tag| u8::try_from(tag).ok())
                     .expect("the closed builtin constructor inventory fits one identity tag");
                 (0, tag)

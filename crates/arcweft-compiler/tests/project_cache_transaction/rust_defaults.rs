@@ -1,6 +1,7 @@
 //! Rust declarations, accepted callables and codec defaults share one producer.
 
 use super::*;
+use arcweft_interaction_model::presentation::PresentationResourceKind;
 use std::{cell::RefCell, collections::BTreeMap};
 
 use arcweft_adapter_context::manifest::AdapterNominalPathPrefix;
@@ -1052,9 +1053,7 @@ fn root_replay_recording_after_step_failure_returns_the_actual_transition() {
 #[test]
 fn view_expression_locale_is_execution_input_and_invalidates_only_changed_cache() {
     use arcweft_runtime_driver::{
-        presentation_handles::{
-            PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
-        },
+        presentation_handles::{PresentationHandleRecord, PresentationResourceState},
         view_runtime::BundleViewRuntime,
     };
     let compiled = compile_rust_project(
@@ -1086,7 +1085,7 @@ fn view_expression_locale_is_execution_input_and_invalidates_only_changed_cache(
             .unwrap();
     let handles = [PresentationHandleRecord::new(
         arcweft_id::presentation::PresentationHandleId::try_new("view.locale").unwrap(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Main".to_owned(),
         None,
         PresentationResourceState::Mounted,

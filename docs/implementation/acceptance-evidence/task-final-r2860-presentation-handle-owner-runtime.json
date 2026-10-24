@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "base": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "name": "task-final-r2860-presentation-handle-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-interaction-model",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all",
+    "-E",
+    "test(presentation_) | test(resource_kind_roundtrip)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2860-presentation-handle-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T21:23:28.1533859Z",
+  "finishedAt": "2026-10-24T21:23:29.8660202Z"
+}

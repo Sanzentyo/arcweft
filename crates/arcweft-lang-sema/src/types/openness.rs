@@ -63,7 +63,7 @@ macro_rules! atomic_type_kind_pattern {
             | Self::RagContextPack
             | Self::AgentBuiltin(_)
             | Self::GenericParam(_)
-            | Self::Handle { .. }
+            | Self::PresentationResource(_)
             | Self::CharacterPatch(_)
             | Self::FocusPatch
             | Self::CharacterDialogue(_)
@@ -95,6 +95,8 @@ impl TypeKind {
             | Self::Seq(inner)
             | Self::Need(inner)
             | Self::Option(inner)
+            | Self::SlotRef(inner)
+            | Self::Handle { item: inner, .. }
             | Self::ThreadHandle(inner)
             | Self::Shared(inner)
             | Self::BorrowRef { inner, .. } => inner.contains_dialogue_line_operation(),
@@ -155,6 +157,8 @@ impl TypeKind {
             | Self::Seq(inner)
             | Self::Need(inner)
             | Self::Option(inner)
+            | Self::SlotRef(inner)
+            | Self::Handle { item: inner, .. }
             | Self::ThreadHandle(inner)
             | Self::Shared(inner)
             | Self::DialogueLine(inner)

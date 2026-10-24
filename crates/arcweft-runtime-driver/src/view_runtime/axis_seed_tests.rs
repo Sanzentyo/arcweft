@@ -9,6 +9,7 @@ use arcweft_bundle::resource_codec::{
     ViewProgramResource,
 };
 use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_interaction_model::presentation::PresentationResourceKind;
 use arcweft_view::ViewProgramId;
 
 fn validated(program: Option<ViewProgramResource>) -> ValidatedViewProduct {
@@ -22,7 +23,7 @@ fn handle_id(value: &str) -> PresentationHandleId {
 
 fn handle_record(
     value: &str,
-    kind: PresentationHandleKind,
+    kind: PresentationResourceKind,
     state: PresentationResourceState,
 ) -> PresentationHandleRecord {
     PresentationHandleRecord::new(
@@ -138,12 +139,12 @@ fn host_seed_mode_matrix_and_known_handle_rejections_are_exact_and_atomic() {
 
     let terminal = handle_record(
         "handle.terminal",
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         PresentationResourceState::Released,
     );
     let non_view = handle_record(
         "handle.non-view",
-        PresentationHandleKind::Image,
+        PresentationResourceKind::Image,
         PresentationResourceState::Mounted,
     );
     let before = registry.snapshot();
@@ -330,7 +331,7 @@ fn live_update_is_checked_noop_or_generation_advancing_without_wrap() {
     let roots = BTreeMap::from([(mount, handle.clone())]);
     let handles = [handle_record(
         "handle.live",
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         PresentationResourceState::Mounted,
     )];
     let mut exhausted = BundleViewAxisSeedRegistry::restore(&snapshot, &roots, &handles).unwrap();
@@ -373,7 +374,7 @@ fn hidden_unmounted_terminal_and_remount_lifecycle_retains_or_replaces_exact_sta
         PresentationResourceState::Hidden,
         PresentationResourceState::Unmounted,
     ] {
-        let record = handle_record("handle.lifecycle", PresentationHandleKind::View, state);
+        let record = handle_record("handle.lifecycle", PresentationResourceKind::View, state);
         assert!(registry.cleanup_known_handles(&[record]).is_empty());
         registry.retain_mounts(&BTreeSet::from([mount]));
         assert_eq!(registry.snapshot(), retained);
@@ -381,12 +382,12 @@ fn hidden_unmounted_terminal_and_remount_lifecycle_retains_or_replaces_exact_sta
 
     let terminal = handle_record(
         "handle.lifecycle",
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         PresentationResourceState::Destroyed,
     );
     let terminal_pending = handle_record(
         "handle.pending.lifecycle",
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         PresentationResourceState::Released,
     );
     assert!(
@@ -418,7 +419,7 @@ fn same_evaluation_non_view_resolution_discards_pending_seed_and_emits_one_diagn
         .unwrap();
     let record = handle_record(
         "handle.prospective",
-        PresentationHandleKind::Image,
+        PresentationResourceKind::Image,
         PresentationResourceState::Mounted,
     );
 
@@ -474,7 +475,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
     let mut runtime = BundleViewRuntime::try_new(validated(Some(program)), None).unwrap();
     let parent = PresentationHandleRecord::new(
         handle_id("handle.nested.parent"),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Parent".to_owned(),
         None,
         PresentationResourceState::Mounted,
@@ -550,7 +551,7 @@ fn restore_rejects_duplicates_tampering_and_non_view_lifecycle_atomically() {
     let roots = BTreeMap::from([(mount, handle.clone())]);
     let handles = [handle_record(
         "handle.restore",
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         PresentationResourceState::Mounted,
     )];
     let valid = BundleViewAxisSeedRegistrySnapshot {
@@ -592,7 +593,7 @@ fn restore_rejects_duplicates_tampering_and_non_view_lifecycle_atomically() {
 
     let non_view = [handle_record(
         "handle.restore",
-        PresentationHandleKind::Menu,
+        PresentationResourceKind::Menu,
         PresentationResourceState::Mounted,
     )];
     assert!(matches!(
@@ -631,7 +632,7 @@ fn restore_cross_table_matrix_is_strict_and_replay_is_exact() {
     };
     let handles = [handle_record(
         "handle.matrix",
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         PresentationResourceState::Mounted,
     )];
     let roots = BTreeMap::from([(mount, handle.clone())]);
@@ -724,7 +725,7 @@ fn restore_cross_table_matrix_is_strict_and_replay_is_exact() {
 
     let terminal = [handle_record(
         "handle.matrix.future",
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         PresentationResourceState::Released,
     )];
     assert!(matches!(
@@ -741,7 +742,7 @@ fn restore_cross_table_matrix_is_strict_and_replay_is_exact() {
 
     let non_view = [handle_record(
         "handle.matrix.future",
-        PresentationHandleKind::Overlay,
+        PresentationResourceKind::Overlay,
         PresentationResourceState::Mounted,
     )];
     assert!(matches!(
@@ -822,7 +823,7 @@ fn ordinary_and_dialogue_restore_roots_cannot_share_a_handle_identity() {
     let handle = handle_id("handle.restore.collision");
     let ordinary = PresentationHandleRecord::new(
         handle.clone(),
-        PresentationHandleKind::View,
+        PresentationResourceKind::View,
         "view.Ordinary".to_owned(),
         None,
         PresentationResourceState::Mounted,

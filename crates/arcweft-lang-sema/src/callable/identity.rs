@@ -955,7 +955,7 @@ pub enum PresentationHandleMethodId {
 
 impl PresentationHandleMethodId {
     pub fn resolve(receiver: &TypeKind, method: &CallableName) -> Option<Self> {
-        let TypeKind::Handle { name, .. } = receiver else {
+        let TypeKind::Handle { item, .. } = receiver else {
             return None;
         };
         match method.as_str() {
@@ -964,7 +964,16 @@ impl PresentationHandleMethodId {
             "unmount" => Some(Self::Unmount),
             "release" => Some(Self::Release),
             "destroy" => Some(Self::Destroy),
-            "pop" if name == "Overlay" => Some(Self::OverlayPop),
+            "pop"
+                if matches!(
+                    item.as_ref(),
+                    TypeKind::PresentationResource(
+                        arcweft_interaction_model::presentation::PresentationResourceKind::Overlay
+                    )
+                ) =>
+            {
+                Some(Self::OverlayPop)
+            }
             _ => None,
         }
     }

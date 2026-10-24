@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "name": "task-final-r2854-presentation-handle-sema-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2854-presentation-handle-sema-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T21:06:48.4804435Z",
+  "finishedAt": "2026-10-24T21:07:41.8325743Z"
+}

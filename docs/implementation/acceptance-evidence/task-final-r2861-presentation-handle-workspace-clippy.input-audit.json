@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "run": "task-final-r2861-presentation-handle-workspace-clippy",
+  "exitCode": 0,
+  "frozenInputs": 6276,
+  "relevantInputDrift": 0,
+  "documentationOnlyDrift": [
+    "docs/00-overview/crate-map.md",
+    "docs/00-overview/naming.md",
+    "docs/05-build-and-security/packaging.md",
+    "docs/implementation/current-status.md",
+    "docs/implementation/documentation-cleanup.md"
+  ],
+  "warningsPresent": true,
+  "at": "2026-10-24T21:29:40.6398239Z"
+}

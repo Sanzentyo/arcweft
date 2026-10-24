@@ -917,7 +917,8 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::CharacterDialogue
             | BuiltinTypeConstructor::StageActorHandle
             | BuiltinTypeConstructor::CueHandle
-            | BuiltinTypeConstructor::VoiceHandle => {
+            | BuiltinTypeConstructor::VoiceHandle
+            | BuiltinTypeConstructor::PresentationResource(_) => {
                 unreachable!("scalar constructors returned above")
             }
             BuiltinTypeConstructor::Vec
@@ -927,6 +928,8 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::DataShape
             | BuiltinTypeConstructor::Probe
             | BuiltinTypeConstructor::ThreadHandle
+            | BuiltinTypeConstructor::Handle
+            | BuiltinTypeConstructor::SlotRef
             | BuiltinTypeConstructor::Shared
             | BuiltinTypeConstructor::Need => {
                 self.apply_unary_builtin(context, constructor, arguments.remove(0), child_causes)
@@ -983,6 +986,9 @@ impl Resolver<'_, '_> {
             }
             BuiltinTypeConstructor::CueHandle => TypeKind::CueHandle,
             BuiltinTypeConstructor::VoiceHandle => TypeKind::VoiceHandle,
+            BuiltinTypeConstructor::PresentationResource(kind) => {
+                TypeKind::PresentationResource(kind)
+            }
             _ => return None,
         })
     }
@@ -1003,6 +1009,8 @@ impl Resolver<'_, '_> {
             BuiltinTypeConstructor::DataShape => TypeKind::DataShape(Box::new(inner)),
             BuiltinTypeConstructor::Probe => TypeKind::Probe(Box::new(inner)),
             BuiltinTypeConstructor::ThreadHandle => TypeKind::ThreadHandle(Box::new(inner)),
+            BuiltinTypeConstructor::Handle => TypeKind::presentation_handle(inner),
+            BuiltinTypeConstructor::SlotRef => TypeKind::SlotRef(Box::new(inner)),
             BuiltinTypeConstructor::Shared => TypeKind::Shared(Box::new(inner)),
             BuiltinTypeConstructor::Need => TypeKind::Need(Box::new(inner)),
             _ => unreachable!("unary builtin dispatch preserves constructor arity"),

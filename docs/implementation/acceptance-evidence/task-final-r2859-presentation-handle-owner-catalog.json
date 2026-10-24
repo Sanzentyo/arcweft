@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "name": "task-final-r2859-presentation-handle-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-interaction-model",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json",
+    "-E",
+    "test(presentation_) | test(resource_kind_roundtrip)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2859-presentation-handle-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T21:21:20.2803468Z",
+  "finishedAt": "2026-10-24T21:23:13.1905673Z"
+}

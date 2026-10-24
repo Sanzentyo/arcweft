@@ -1,16 +1,19 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-25。照合したmain HEADは `7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5`、
-最新実装公開は `0b5ac5491d245a5386ca1b44547091e50bcb1955`。
+確認日: 2026-10-25。照合したmain HEADは `4cea871faf8296250615bf0f76a4962133f1a711`。
+先行する実装公開 `0b5ac5491d245a5386ca1b44547091e50bcb1955` は、
 Sema 7 pathでPresentation引数のtyped roleとversion 1 consumer transcriptを接続した。
 [公開ref・全blob・保持入力の照合](acceptance-evidence/task-presentation-role-source-checkpoint.verified.json)。
 検証入力は基点 `d389887e3a27ff01855006b8247bd9a05e57283a` にSema 7 pathと既存WIP 14件を
 含み、この7 pathは公開bytesと一致する。元のtracked WIP 14件／untracked実ファイル6件は保持した。
 
-確認時には、別途Presentation resource／`Handle<T>`／`SlotRef<T>`移行の未コミット36 pathがある。
-この差分は下表の公開済み受入へ加えず、実行command ABIや保存の対応済みとも扱わない。
+今回はPresentation resource／`Handle<T>`／`SlotRef<T>`移行36 pathを中間保存する。
+対象13件は13／13 PASS、workspace check／Clippyは終了0・警告あり、構造gateはblocking 0。
+実行command ABIと一般Handleのruntime投影・保存は未接続のままであり、
+共有domain変更の全62逆依存はcatalog構築中で、最終受入へ加えない。
+[型モデルの対象・途中失敗・未検証範囲](acceptance-evidence/task-presentation-handle-owner-acceptance.json)。
 
-最新のSema全22逆依存通常選択は、R2853の新規実行で
+直近の完了した横断検証は、先行するrole公開入力でのSema全22逆依存R2853で、
 **3,864実行／3,814 PASS／50 FAIL／23既存ignored**、終了100、568.646秒。
 失敗50件は前回とbinary／test識別子が完全一致し、新規失敗0。
 Generic Matchは151／151、Sema全targetは1,330／1,330、Compilerは617／617 PASS。
@@ -44,7 +47,7 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 |---|---|---|
 | Generic Match `.1.2` C3/C5 | **受入・公開済み** | 受入 `850534b9e9bc8c8872f6528dd00050a5e6e7699e`、公開 `f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2`。17入力／公開blobと151件を受入時の2実行で確認し、115 transcript・24 coverage・5公開 query・7 Native/decoded-AWBC継続／保存がPASS。完全transcript、uninhabited-domain、Never／let-else、exhaustive-only atomic publicationを含む。[受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)、[公開記録](acceptance-evidence/accepted-generic-phase-note-publication.json)。最新R2853でも151／151 PASS。[全151件の終端照合](acceptance-evidence/task-presentation-role-reverse-acceptance.json)。受入を再開する新しい不具合はなく、全体goalの未達から受入を取り消さない。 |
 | Collection／variant Map | **公開6 familyとArray反復化は対象条件で検証・公開済み** | Vec／Seq／Array／Slice／Option／Resultが公開catalog。Arrayのexact length、直接／retained-prefix、effect／source order、capture、途中保存復元を含む対象46件がPASSした。4,096要素入力も製品既定上限のままPASS。Need／Parser／Streamのschema候補を公開済みとはしない。[修復の検証履歴](convergence-evidence-history.md#array-map反復化の検証--2026-10-24)、[現行契約](../01-language/traits-seq-ranges.md)。 |
-| Presentation引数schema／command ABI | **宣言済み引数roleは検証・公開済み、実行ABIは未接続** | `0b5ac5491d245a5386ca1b44547091e50bcb1955`。全11 callableの宣言済みparameterに型付きroleを保持し、UncheckedSupplyもconsumerをversion 1 transcriptへ含める。Character固有lookの型、異なるtarget／metadata role、別familyでのconsumer拒否を対象4件と全22逆依存で検証した。[owner範囲・途中失敗](acceptance-evidence/task-presentation-role-owner-acceptance.json)、[横断結果](acceptance-evidence/task-presentation-role-reverse-acceptance.json)。CompilerはPresentation候補をABI未接続として拒否し、一般のpresentation Handle型もruntime投影を持たない。roleの受入を画像sample・handle値・commandの実行受入とはしない。 |
+| Presentation引数schema／resource型／command ABI | **引数roleは検証・公開済み。resource型移行はowner検証済み、実行ABIは未接続** | `0b5ac5491d245a5386ca1b44547091e50bcb1955`。全11 callableの宣言済みparameterに型付きroleを保持し、UncheckedSupplyもconsumerをversion 1 transcriptへ含める。Character固有lookの型、異なるtarget／metadata role、別familyでのconsumer拒否を対象4件と全22逆依存で検証した。[owner範囲・途中失敗](acceptance-evidence/task-presentation-role-owner-acceptance.json)、[横断結果](acceptance-evidence/task-presentation-role-reverse-acceptance.json)。CompilerはPresentation候補をABI未接続として拒否し、一般のpresentation Handle型もruntime投影を持たない。roleの受入を画像sample・handle値・commandの実行受入とはしない。今回の36 pathでresource kindと再帰型itemを共有化し、対象13／13 PASS。62逆依存の横断は未完了で、[中間検証](acceptance-evidence/task-presentation-handle-owner-acceptance.json)と実行ABIの受入を分ける。 |
 | Choice の authored source/index 関係 | **当該境界は完了・公開済み** | `5931e15eb9bf92c8b849216406687c44e348497b` を基点とする閉包記録。owner 13・compiler 1・RAG 1、reverse22 は3,930/3,930。動的な Choice の task lifecycle／scheduling は、この静的関係の受入とは別。 |
 | Dense numeric の単一 authority | **当該 cut は完了・公開済み** | `01af81001e1a7a2ac7ed70e2846371ad1cdb3c08`。reverse53 は5,977 PASS／88 FAIL／39既存除外、追加の fixture leaf 9件 PASS。閉じた authority の受入と、保持された CLI ingress・画像 parity の失敗を混同しない。 |
 | 縦書きの共通 layout／`balanced_v1` | **当該 cut の受入履歴あり・CLI 統合描画に再現失敗あり** | `86958911833f2509f391b70962773236e46a124e` の library 24・document 12・corpus 3・glyphon 6件と当時の統合 gate は PASS。[検証原本](acceptance-evidence/vertical-break-validation-2026-07-14.md)、[現行契約](../03-presentation/text-typesetting.md)。同横断集計のCLI統合描画でも8件の失敗を再現した。具体的な診断は下記「CLIの具体的な観測」に集約する。既存 layout 受入と CLI 統合描画の修復を区別し、PNG golden／hash と当時の実績は保持する。 |
@@ -66,7 +69,7 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **最新CLI選択は641 PASS／50 FAIL・新規失敗0** | R2853の50件は前回とbinary／test識別子が完全一致。Sema全target 1,330／1,330、Compiler 617／617がPASSし、既存のArray Map・継続／保存のconsumerも通常選択に含む。[実行・旧失敗照合](acceptance-evidence/task-presentation-role-reverse-acceptance.json)、[package集計](acceptance-evidence/task-presentation-role-reverse-coverage.json)。前段Core R2843の2,044／2,044を今回の新規実行へ数えない。失敗の具体的な観測は下表に集約する。 |
 | Coreの全53逆依存runtime | **前段のCore変更時に全target通常選択を検証済み・既存CLI 50失敗を保持** | 基点 `1f1c00210abb1a42389cc41b8fcc391e9d12d639` のR2842 catalogとR2843全終端case集合が一致。library 53、integration 161／bin 5 targetで7,269実行／7,219 PASS／50 FAIL／39既存ignored。named caseなしのlibrary 4／bin 4 targetはbuildだけ、integration 6 targetは全件ignored。[target／case集合](acceptance-evidence/task-fanout-child-reverse-coverage.json)。公開 `612cc7a51f9ac04669e62488a8f56fa5cc4ac8c1` の原本と照合を履歴に保持する。後続Sema変更の検証は冒頭の22逆依存であり、53 packageの新規実行としない。 |
-| Workspace gate／Tier 2／Native-Web capture parity | **最新workspace check／Clippyは終了0・警告あり。Tier 2とparityの包括受入は未実施** | Sema変更後のR2850 check／R2851 Clippyをworkspace／all-targets／all-features／lockedで新規実行し、各6,224固定入力の差分0。[check照合](acceptance-evidence/task-final-r2850-presentation-role-workspace-check.input-audit.json)、[Clippy照合](acceptance-evidence/task-final-r2851-presentation-role-workspace-clippy.input-audit.json)。R2849構造gateは終了0・blocking 0。R2795 Core doctest 75／75 PASSは以前の入力の証拠として保持し、今回の新規実行とはしない。今回の23既存ignored、Tier 2とNative-Web capture parityの包括受入は未実行で、Generic Match等の受入済み境界の判定には影響しない。 |
+| Workspace gate／Tier 2／Native-Web capture parity | **型モデル移行後のworkspace check／Clippyは終了0・警告あり。Tier 2とparityの包括受入は未実施** | R2858 check／R2861 Clippyをworkspace／all-targets／all-features／lockedで実行。6,276固定入力のうちRust・Cargo・test入力の差分0、並行した文書差分は別記した。[check照合](acceptance-evidence/task-final-r2858-presentation-handle-workspace-check.input-audit.json)、[Clippy照合](acceptance-evidence/task-final-r2861-presentation-handle-workspace-clippy.input-audit.json)。R2862構造gateは終了0・blocking 0、review trigger 378。以前のCore doctest 75／75やR2853の23 ignoredは元入力の履歴として保持し、今回の実行へ加算しない。Tier 2／Native-Web capture parityの包括受入は未実施。 |
 
 ## CLIの具体的な観測
 

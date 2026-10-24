@@ -306,6 +306,6 @@ version-one AWFB/AWBC契約とresource・patch・signature要件は残した。
 削除範囲に実行結果、validation receipt、full commit SHAはなかった。
 変更した6章の相対link 26件が解決し、未閉鎖fenceは0、`git diff --check` は合格した。
 文書だけの変更のためCargo／Rust検証は実行していない。
-親の最終確認では、現状一覧と理由記録を含む8 Markdownの相対link 58件が解決し、
+親の最終確認では、現状一覧と理由記録を含む8 Markdownの相対link 59件が解決し、
 未閉鎖fence、40桁識別子の欠落、保持untracked 6実ファイルのhash差分は0だった。
 [資料差分の照合](acceptance-evidence/task-documentation-contract-prune-audit.json)。

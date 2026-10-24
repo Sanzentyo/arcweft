@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "run": "task-final-r2858-presentation-handle-workspace-check",
+  "exitCode": 0,
+  "frozenInputs": 6276,
+  "relevantInputDrift": 0,
+  "documentationOnlyDrift": [
+    "docs/00-overview/naming.md",
+    "docs/05-build-and-security/packaging.md"
+  ],
+  "scope": "Source/build/test/Cargo inputs unchanged; concurrent prose cleanup is not Rust acceptance input",
+  "at": "2026-10-24T21:22:20.7803365Z"
+}

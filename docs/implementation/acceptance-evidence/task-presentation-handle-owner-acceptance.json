@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "sourceBase": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "documentationPublication": "4cea871faf8296250615bf0f76a4962133f1a711",
+  "intermediateCheckpoint": true,
+  "scope": "Shared Presentation resource domain and recursive semantic Handle/SlotRef items only",
+  "sourcePaths": [
+    "crates/arcweft-compiler/src/lower.rs",
+    "crates/arcweft-compiler/tests/project_cache_transaction/rust_defaults.rs",
+    "crates/arcweft-compiler/tests/view_product.rs",
+    "crates/arcweft-interaction-model/src/presentation.rs",
+    "crates/arcweft-interaction-model/src/presentation/tests.rs",
+    "crates/arcweft-lang-sema/src/callable/identity.rs",
+    "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+    "crates/arcweft-lang-sema/src/env/base.rs",
+    "crates/arcweft-lang-sema/src/env/nominal_tests.rs",
+    "crates/arcweft-lang-sema/src/env/nominal.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/tests/match_coverage.rs",
+    "crates/arcweft-lang-sema/src/nominal/model.rs",
+    "crates/arcweft-lang-sema/src/nominal/resolver/engine/resolution.rs",
+    "crates/arcweft-lang-sema/src/ownership.rs",
+    "crates/arcweft-lang-sema/src/proof_return/tests.rs",
+    "crates/arcweft-lang-sema/src/registration/model.rs",
+    "crates/arcweft-lang-sema/src/types.rs",
+    "crates/arcweft-lang-sema/src/types/compatibility.rs",
+    "crates/arcweft-lang-sema/src/types/constraints/shape.rs",
+    "crates/arcweft-lang-sema/src/types/digest.rs",
+    "crates/arcweft-lang-sema/src/types/generic_use.rs",
+    "crates/arcweft-lang-sema/src/types/match_domain.rs",
+    "crates/arcweft-lang-sema/src/types/mismatch.rs",
+    "crates/arcweft-lang-sema/src/types/openness.rs",
+    "crates/arcweft-lang-sema/src/types/order.rs",
+    "crates/arcweft-lang-sema/src/types/project_nominal_visit.rs",
+    "crates/arcweft-lang-sema/src/types/semantic_tests.rs",
+    "crates/arcweft-lang-sema/src/types/substitution.rs",
+    "crates/arcweft-lsp/src/features/nominal_types.rs",
+    "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+    "crates/arcweft-runtime-driver/src/view_runtime.rs",
+    "crates/arcweft-runtime-driver/src/view_runtime/axis_seed_tests.rs",
+    "crates/arcweft-runtime-driver/src/view_runtime/axis_seed.rs",
+    "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+    "crates/arcweft-runtime-driver/tests/awbc_product_session.rs",
+    "crates/arcweft-runtime-driver/tests/view_runtime.rs"
+  ],
+  "preservedOriginalTrackedWip": 14,
+  "preservedUntrackedFiles": 6,
+  "resourceFamilies": 8,
+  "callableResultsMigrated": 11,
+  "ownerExecution": {
+    "version": 1,
+    "base": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+    "run": "task-final-r2860-presentation-handle-owner-runtime",
+    "catalog": "task-final-r2859-presentation-handle-owner-catalog",
+    "actualExitCode": 0,
+    "executed": 13,
+    "passed": 13,
+    "filteredOut": 1312,
+    "ignored": 0,
+    "catalogCaseDrift": 0,
+    "cases": [
+      {
+        "binary": "arcweft-interaction-model",
+        "test": "presentation::tests::resource_kind_roundtrip_is_closed_and_keeps_distinct_semantic_identities"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "callable::digest::tests::unchecked_presentation_roles_cannot_alias_each_other_or_an_ordinary_value"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "callable::schema::families::tests::presentation_schemas_retain_typed_argument_roles_for_every_callable"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "callable::schema::families::tests::presentation_slot_removals_publish_structural_optional_surface_values"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "env::nominal_tests::presentation_constructors_cannot_be_shadowed_by_accepted_nominals"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::compile_time_scalars::presentation_public_id_reference_rejects_wrong_family_without_selected_call"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::compile_time_scalars::presentation_public_id_reference_tokens_keep_typed_families_and_runtime_strings"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::content_callables::presentation_content_calls_publish_typed_emissions_and_operands"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::match_coverage::presentation_slot_clear_match_requires_the_absent_surface_case"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::match_coverage::presentation_slot_clear_result_has_the_complete_optional_match_transcript"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "proof_return::tests::presentation_type_annotations_resolve_through_generic_aliases_and_reject_wrong_arity"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "types::semantic_tests::presentation_resources_and_recursive_carriers_have_distinct_type_identities"
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "test": "types::substitution::tests::presentation_items_participate_in_inference_without_losing_handle_ownership"
+      }
+    ],
+    "scope": "Focused owner behavior only; reverse consumers, command ABI and runtime Handle projection not accepted",
+    "at": "2026-10-24T21:25:23.3010028Z"
+  },
+  "gates": {
+    "workspaceClippy": {
+      "actualExitCode": 0,
+      "run": "task-final-r2861-presentation-handle-workspace-clippy",
+      "warningsPresent": true
+    },
+    "structure": {
+      "blocking": 0,
+      "actualExitCode": 0,
+      "files": 3212,
+      "reviewTriggers": 378,
+      "packages": 97,
+      "run": "task-final-r2862-presentation-handle-structure-gate"
+    },
+    "workspaceCheck": {
+      "actualExitCode": 0,
+      "run": "task-final-r2858-presentation-handle-workspace-check",
+      "warningsPresent": true
+    }
+  },
+  "initialFailures": [
+    {
+      "reason": "New Resource/SlotRef variants needed explicit MissingRuntimeSnapshotOwner classification",
+      "actualExitCode": 101,
+      "run": "R2854"
+    },
+    {
+      "reason": "Driver integration test imported shared resource kind through its old driver owner",
+      "actualExitCode": 101,
+      "run": "R2855"
+    },
+    {
+      "reason": "New test used diagnostic.code instead of diagnostic.kind().code; post-terminal edits explicitly recorded",
+      "actualExitCode": 101,
+      "run": "R2856"
+    },
+    {
+      "reason": "Four remaining private imports in Compiler tests migrated to shared owner",
+      "actualExitCode": 101,
+      "run": "R2857"
+    }
+  ],
+  "reverse": {
+    "catalog": "task-final-r2863-presentation-handle-reverse-catalog",
+    "packageCount": 62,
+    "status": "building; runtime not yet executed for this cut"
+  },
+  "runtimeCommandAbiImplemented": false,
+  "runtimeHandleProjectionImplemented": false,
+  "publicSaveOfNewValuesAccepted": false,
+  "goalComplete": false,
+  "ownershipReview": "task-presentation-handle-ownership-review.json",
+  "evidenceManifest": "task-presentation-handle-owner-evidence-integrity.json",
+  "sourceInputScope": "6276 fixed paths; no Rust/Cargo/test drift for successful check and Clippy; concurrent documentation-only drift listed in input audits",
+  "at": "2026-10-24T21:30:56.6327972Z"
+}

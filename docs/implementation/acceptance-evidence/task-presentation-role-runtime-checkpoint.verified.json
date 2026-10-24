@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "commit": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "parent": "0b5ac5491d245a5386ca1b44547091e50bcb1955",
+  "tree": "835fc01f16c9a36e3900b15b60b0f9868ea5c530",
+  "remote": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "advertised": "7ea4e5aa38d6be5ad6bb2e750fc9a772020e21d5",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2853-presentation-role-reverse-runtime.json",
+      "blob": "ccabf03d2d1b24ab901cbdb70bdc3d2ee0498ebc",
+      "workingBlob": "ccabf03d2d1b24ab901cbdb70bdc3d2ee0498ebc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2853-presentation-role-reverse-runtime.log",
+      "blob": "be67524d0433ab7665be715e97a1c31a7f9c2cac",
+      "workingBlob": "be67524d0433ab7665be715e97a1c31a7f9c2cac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2853-presentation-role-reverse-runtime.terminal-audit.json",
+      "blob": "28533de5e79aa6f5574cbcebb8d625a24b000c71",
+      "workingBlob": "28533de5e79aa6f5574cbcebb8d625a24b000c71"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-reverse-acceptance.json",
+      "blob": "07cdd1b3647b5879a46fa8f699efd90fa8bb13db",
+      "workingBlob": "07cdd1b3647b5879a46fa8f699efd90fa8bb13db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-reverse-coverage.json",
+      "blob": "9d05ee3109a65202649dbedb4a5c18d8c05f3df1",
+      "workingBlob": "9d05ee3109a65202649dbedb4a5c18d8c05f3df1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-reverse-evidence-integrity.json",
+      "blob": "e8d3e9b9ba1445482df8b9eaee904e1af2d7c525",
+      "workingBlob": "e8d3e9b9ba1445482df8b9eaee904e1af2d7c525"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-reverse.executable-audit.json",
+      "blob": "39520e8ea9543ac3452f35c30892aa39eeacc6d2",
+      "workingBlob": "39520e8ea9543ac3452f35c30892aa39eeacc6d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-source-checkpoint.verified.json",
+      "blob": "e20066699aa892d35b4a7384f0c646d34ac67c96",
+      "workingBlob": "e20066699aa892d35b4a7384f0c646d34ac67c96"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "fe39e0b9296d21544e80655fd400c895e731799b",
+      "workingBlob": "fe39e0b9296d21544e80655fd400c895e731799b"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "ee9395d1a352d87d75cee966d1952a58577b9aec",
+      "workingBlob": "ee9395d1a352d87d75cee966d1952a58577b9aec"
+    }
+  ],
+  "sourceCount": 6276,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "6a66ab1daf0327fd381ae9631fd03bb17c1cc0e36c11ad9f3b665f4b799c736b",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T20:54:38.7803387Z"
+}

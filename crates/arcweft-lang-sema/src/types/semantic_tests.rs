@@ -21,6 +21,44 @@ use arcweft_lang_syntax::{
 use std::collections::BTreeSet;
 
 #[test]
+fn presentation_resources_and_recursive_carriers_have_distinct_type_identities() {
+    use super::TypeMismatchPathSegment;
+    use arcweft_interaction_model::presentation::PresentationResourceKind;
+
+    let resources = PresentationResourceKind::ALL.map(TypeKind::PresentationResource);
+    let digests = resources
+        .iter()
+        .flat_map(|resource| {
+            [
+                resource.clone(),
+                TypeKind::presentation_handle(resource.clone()),
+                TypeKind::SlotRef(Box::new(resource.clone())),
+            ]
+        })
+        .map(|ty| ty.semantic_identity_digest().unwrap())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(digests.len(), resources.len() * 3);
+    for resource in &resources {
+        assert!(resource.accepts(resource));
+        assert!(!resource.accepts(&TypeKind::Named(resource.source_label())));
+    }
+    for pair in resources.windows(2) {
+        assert!(pair[0].stable_ordering(&pair[1]).is_lt());
+        let expected = TypeKind::presentation_handle(TypeKind::SlotRef(Box::new(pair[0].clone())));
+        let actual = TypeKind::presentation_handle(TypeKind::SlotRef(Box::new(pair[1].clone())));
+        assert!(!expected.accepts(&actual));
+        assert_eq!(
+            expected.first_mismatch(&actual).unwrap().path(),
+            &[
+                TypeMismatchPathSegment::HandleItem,
+                TypeMismatchPathSegment::SlotRefItem,
+                TypeMismatchPathSegment::PresentationResourceKind,
+            ]
+        );
+    }
+}
+
+#[test]
 fn standard_field_semantic_tags_are_unique() {
     let progress = ProgressField::ALL
         .iter()
