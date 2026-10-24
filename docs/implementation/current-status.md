@@ -18,6 +18,8 @@ Generic Matchは151／151 PASS、Coreはlibrary＋integration／binの2,044／2,
 Core単独結果を再利用・加算していない。6,199固定入力、実行ファイル225件の前後hash差分0。
 [実行集計・旧失敗・Generic Match照合](acceptance-evidence/task-fanout-child-reverse-acceptance.json)、
 [package／target別の実行範囲](acceptance-evidence/task-fanout-child-reverse-coverage.json)。
+この検証結果は `612cc7a51f9ac04669e62488a8f56fa5cc4ac8c1` で公開し、
+[公開ref・全blob・保持入力を照合](acceptance-evidence/task-fanout-child-reverse-checkpoint.verified.json)した。
 workspace check／Clippyも同じ基点のall-targets／all-features／lockedで終了0、警告あり。
 過去の集計・途中の失敗・訂正理由は履歴と原本に保持し、最新件数へ重ねて加算しない。
 全14 family・Tier2等の包括的な受入とは下表で区別する。

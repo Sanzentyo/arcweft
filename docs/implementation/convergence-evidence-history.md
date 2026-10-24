@@ -10706,3 +10706,9 @@ named caseなしのlibrary 4／bin 4 targetはbuildだけ、integration 6 target
 [Clippy入力照合](acceptance-evidence/task-final-r2841-fanout-child-workspace-clippy.input-audit.json)。
 原本と監査23件／17,811,374 bytesを元ファイルとbyte／SHA256一致で保全した。
 [保全manifest](acceptance-evidence/task-fanout-child-reverse-evidence-integrity.json)。
+
+上記26 pathは `612cc7a51f9ac04669e62488a8f56fa5cc4ac8c1` で通常commit／non-forced pushした。
+parentは検証基点、treeは `4cd256ab824127e016322db3da2e2ff731457aa9`。
+fresh fetch／公開ref／全pathのblob、6,223入力と元14 tracked WIPのpatchは差分0、index空。
+資料の変更リンク40件、fence／JSON／whitespaceと原本23件のbyte一致も確認した。
+[公開照合receipt](acceptance-evidence/task-fanout-child-reverse-checkpoint.verified.json)をbyte不変で保持する。
