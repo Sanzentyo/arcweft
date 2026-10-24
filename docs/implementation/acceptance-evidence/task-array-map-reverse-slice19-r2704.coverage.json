@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 19,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-launch",
+      "name": "maintained_manifests",
+      "kind": "test",
+      "binary": "arcweft-launch::maintained_manifests",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "name": "manifest_contract",
+      "kind": "test",
+      "binary": "arcweft-resource-manifest::manifest_contract",
+      "caseCount": 13
+    },
+    {
+      "package": "arcweft-view",
+      "name": "logical_axis_provider",
+      "kind": "test",
+      "binary": "arcweft-view::logical_axis_provider",
+      "caseCount": 12
+    },
+    {
+      "package": "arcweft-view",
+      "name": "motion_transitions",
+      "kind": "test",
+      "binary": "arcweft-view::motion_transitions",
+      "caseCount": 5
+    }
+  ],
+  "matched": 32,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2704-array-map-reverse-slice19-catalog",
+  "run": "task-final-r2705-array-map-reverse-slice19-runtime",
+  "buildOnly": false
+}

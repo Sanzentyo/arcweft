@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2754-array-map-reverse-slice44-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcweft-player-native.exe",
+      "bytes": 174497280,
+      "nonTest": true,
+      "sha256": "cef5f717736debced0ebb9d5bff48db649e22dcfd4b012bde793501a850fc876"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_live_patch_smoke-e32d663b8e6e11ad.exe",
+      "bytes": 97536512,
+      "nonTest": false,
+      "sha256": "22541e9f95ead077685759083061494453136622806c13eb3c08c47e51cb2f91"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\windows-tsf-ime-sample.exe",
+      "bytes": 2734592,
+      "nonTest": true,
+      "sha256": "fd70c55f8681e823bec36c0d665ecac21fc16a7850b0a4af5dbb787681cc5c18"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:34:10.5047391Z"
+}

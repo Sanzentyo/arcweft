@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "name": "task-final-r2670-array-map-reverse-slice2-catalog",
+  "all": 13,
+  "matched": 13,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::agent_enum_execution",
+      "test": "agent_enum_cases_match_after_awbc_function_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::agent_enum_execution",
+      "test": "agent_enum_cases_match_after_native_function_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::agent_enum_execution",
+      "test": "agent_resource_body_text_payload_matches_after_native_and_awbc_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "accepted_dialogue_action_button_emits_the_exact_prepared_dialogue_token",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "arrow_navigation_moves_from_text_field_to_right_action_button",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "dialogue_action_button_with_unmatched_root_mount_emits_only_generic_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "keyboard_activation_on_focused_action_button_emits_semantic_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "pointer_activation_on_action_button_does_not_implicitly_advance_dialogue",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "pointer_activation_on_action_button_emits_semantic_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "pointer_activation_on_action_invoke_button_emits_semantic_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "pointer_activation_on_noop_button_does_not_emit_action_or_write_back",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "pointer_activation_reports_semantic_action_rejection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::action_button_submit",
+      "test": "runtime_action_invoke_payload_reads_text_control_projection",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

@@ -10321,3 +10321,74 @@ integration／bin、39既存ignored／Tier2とNative-Web parityは、このlibra
 27原本／9,099,793 bytesをbyte・SHA256一致で保持した。
 [原本整合](acceptance-evidence/task-array-map-library-evidence-integrity.json)。
 バイナリはpath／hashだけを記録し、生成物を移動・コピーしていない。
+
+## Array Map修復後の全Core逆依存integrationと旧試験の訂正 — 2026-10-24
+
+全53 packageのintegration 161／bin 5 targetsを44組で照合した。
+基点は `d3f81dbda05299f6e5d5d912b25e3efad256ce3c`、同じmain checkout、
+既存14 tracked WIPを保持した5,344固定入力。全組のsource／case／target／binary driftは0。
+R2668–R2755の通常選択は1,780実行／1,729 PASS／51 FAIL／39既存ignoredだった。
+library 5,474件との重複なし初回集計は **7,254実行／7,203 PASS／51 FAIL**。
+[初回全体集計](acceptance-evidence/task-array-map-reverse-combined-execution.initial.json)。
+named caseのない4 binはbuildだけで、runtime PASSへ加算していない。
+
+旧CLI失敗51件のうち4,096要素Array MapはPASSした。他の旧50件は再現し、
+追加の失敗1件は `control_local_admission::array_map_rejects_the_complete_local_inventory_before_expanding_rows`。
+旧試験はArrayの要素数Nから2N以上のlocalを要求することを前提に、2³¹要素の型を
+コンパイル時に拒否すべきとしていた。反復化後はその型が実際にコンパイルできるため、
+この前提を取り除いた。新たな製品不具合として受入を戻す判断ではない。
+[初回の51失敗と原診断](acceptance-evidence/task-final-r2683-array-map-reverse-slice8-runtime.failure-recon.json)。
+
+試験を `array_map_admits_extreme_length_with_constant_local_inventory` へ置換した。
+長さ0・1・4,096・2³¹でlocal／function inventoryが一定、かつ結果のexact Array長を
+保つことを型付きAPIで確認する。巨大なArrayの実値は構築していない。
+実際のlocal namespace上限超過の拒否と、拒否前に行を公開しない検査はCoreの
+`plan::construction::tests::local_request_capacity_preflights_without_spending_or_publishing_rows`
+が所有し、既にR2667のCore全1,976件でPASSしている。上限は変更していない。
+[訂正理由とbefore／after](acceptance-evidence/task-array-map-admission-test-correction.json)。
+
+R2757の置換試験は **1／1 PASS**、479件はfilter除外。R2760の同CLI test targetに
+対するClippyはall-feature／lockedで終了0、警告あり。修正した1 Rust pathは
+`5f275a6f91defcddcb50dc52f1559e570089d914` として先に公開した。
+parentは `d3f81dbda05299f6e5d5d912b25e3efad256ce3c`、treeは
+`990de950d0cee62a6cb127a53db352469682bbc5`、raw patch SHA256は
+`5589c60d0db41762a9830ee9edc6deac4d44eaa5c8e9c59c63e4823bdcaf0d3b`。
+公開ref／blob、5,344 working inputs、空indexと保持した14 tracked WIPは差分0。
+[公開照合](acceptance-evidence/task-array-map-admission-checkpoint.verified.json)。
+
+R2758でCLIの全480ケース中、通常選択457件と23 ignoredを再列挙した。
+旧試験名1件と置換後名1件以外は、case名・選択・ignoredの差分0。
+R2759で **457実行／407 PASS／50 FAIL／23 ignored** を確認した。
+失敗は旧CLI識別子の50件と完全一致し、置換試験と4,096要素Array MapはPASS。
+実行中の5,344入力と実行バイナリの差分は0。
+[終端監査](acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.terminal-audit.json)。
+
+最終の重複なし集計は **7,254実行／7,204 PASS／50 FAIL／39既存ignored**。
+CLI 457件を再実行し、変更のない他の実行バイナリの結果を再利用した。
+製品入力の差分0、変更した入力は私有のCLI試験1 pathだけ。
+libraryのCore 1,976再実行／他52バイナリ3,498成功の再利用範囲も維持する。
+[最終集計](acceptance-evidence/task-array-map-reverse-combined-execution.json)、
+[入力とバイナリの再利用照合](acceptance-evidence/task-array-map-admission-current-reuse.json)。
+初回51 FAILの原本を成功へ書き換えず、置換前後のcase対応を保持した。
+
+Generic Matchの115 transcript・24 coverage・5公開query・7 continuation／saveは
+今回も **151／151 PASS**。これらの実行バイナリはCLI試験の訂正後も不変。
+既存の受入・公開は維持する。[今回の151件](acceptance-evidence/task-array-map-reverse-generic-current-execution.json)。
+39既存ignored、Tier2、Native-Web capture parityの包括的な受入は今回未実行。
+現在の項目判定とCLI診断の分類は [現状一覧](current-status.md) だけで管理する。
+
+R2762で他のCLI integration 9 targets／43件も全PASSした。`arcw.exe`のbyte hashが
+初回の`0e504facb539c4ad20a12edfffe018499c3bf3a44850e1901f745f816caeb9f2`から
+`cecb439512ec2c45fba172baf439ebee0496ae9f75a9d819f6e3e397eb6cebbe`へ変わっていたため、
+同じ現在のCLI companionで全CLI integration 500件を確認した。
+新旧のnamed case・選択・ignoredは置換試験1件以外で差分0。これは追加実行であり、
+7,254件へ43件を二重加算しない。[CLI companionの終端](acceptance-evidence/task-final-r2762-array-map-cli-companion-runtime.terminal-audit.json)。
+
+補助出力の`arcweft_player_web.dll`には初回slice28／43間でも異なるhashがあった。
+各実行内のpinは不変で、このDLLはtest executableではない。`cdylib`／`rlib`の
+Cargo定義と219 test executablesのPE importを確認し、このDLLへのimportは0だった。
+二つのhashと実際のimport一覧は[補助DLLの観測](acceptance-evidence/task-array-map-web-dll-artifact-observation.json)へ保持する。
+全Cargo出力が単一hashだったとは扱わず、再利用するtest executableと必要なcompanionを照合した。
+
+529原本／74,233,957 bytesをbyte・SHA256・Git blob一致で保存した。
+[原本整合](acceptance-evidence/task-array-map-reverse-integration-checkpoint.evidence-integrity.json)。生成物はpath／hashのみで、移動・コピーしていない。

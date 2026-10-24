@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2712-array-map-reverse-slice23-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\project_function_instances-6f4f6a2ed3561bc5.exe",
+      "bytes": 115503616,
+      "nonTest": false,
+      "sha256": "5f04afaa4ad35366874bd959ae5fc8feae8c9ca7392228092c9e78d6305299ae"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:09:26.0853415Z"
+}

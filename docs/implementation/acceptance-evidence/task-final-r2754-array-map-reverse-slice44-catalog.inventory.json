@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "name": "task-final-r2754-array-map-reverse-slice44-catalog",
+  "all": 8,
+  "matched": 8,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_live_patch_smoke",
+      "test": "code_generational_patch_commits_new_generation_and_keeps_old_foreground_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_live_patch_smoke",
+      "test": "code_generational_patch_keeps_pending_task_generation_until_task_completion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_live_patch_smoke",
+      "test": "content_only_patch_refreshes_catalog_and_preserves_window_renderer_input_clock_shells",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_live_patch_smoke",
+      "test": "fixture_regeneration_set_contains_all_binary_patches_and_reports",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_live_patch_smoke",
+      "test": "generated_awfb_patch_fixtures_have_expected_compatibility_classes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_live_patch_smoke",
+      "test": "malformed_patch_rejects_without_mutating_active_session_or_catalog",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_live_patch_smoke",
+      "test": "restart_required_patch_restarts_session_but_preserves_shell_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_live_patch_smoke",
+      "test": "wrong_base_patch_rejects_without_mutating_active_session_or_catalog",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

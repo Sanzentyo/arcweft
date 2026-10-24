@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2690-array-map-reverse-slice12-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\diagnostic_ownership-bfd0ddd000e993a4.exe",
+      "bytes": 6767616,
+      "nonTest": false,
+      "sha256": "3ea8113d06d3739b43ea7df754c9a6fc3db1ddeaac6969be269c794d60f65c64"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_profile_admission-fb6fa5fe8de6cabb.exe",
+      "bytes": 97602560,
+      "nonTest": false,
+      "sha256": "831195b6071c7078d01ad746047b6b8f9a7f20db13544a148ceb80863f608a57"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_view_store-6a939922014ef54a.exe",
+      "bytes": 18545664,
+      "nonTest": false,
+      "sha256": "56b8ed290c2a327c8aa919e92a68411d7813fe694b789a1eb3084eb095dcd88c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_view-801b896a1a3d7f7d.exe",
+      "bytes": 65385984,
+      "nonTest": false,
+      "sha256": "2c266d19bd3ff9aec79c6057d511a36379c4d4a675b65668b31298d6336d8718"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T07:52:27.4682322Z"
+}

@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2742-array-map-reverse-slice38-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_blend_hsl_modes-fc9065e39c9be2f8.exe",
+      "bytes": 797184,
+      "nonTest": false,
+      "sha256": "817c07cacbd89f7616c9eb8153ea3dd71beb6316d58326ec21bef761cb38607b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_exact_png_golden-eaab2b9d72d39907.exe",
+      "bytes": 806912,
+      "nonTest": false,
+      "sha256": "193478856455b904b9a61b10a8987cf2842d5680181d6f7384b735f049f22143"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_gpu_smoke-a174b25288ff49ae.exe",
+      "bytes": 13416960,
+      "nonTest": false,
+      "sha256": "cf59e60bce345f158dc41a61543d35f6f8887072a0a314e3af7119666e1f4d62"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_plan-7dc1a3efb529fee3.exe",
+      "bytes": 1016320,
+      "nonTest": false,
+      "sha256": "659b143f84e2f29152c5ae09c6d9b731a1dbdf5eb9cfbc0ff92ce76cb3bc1ab5"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:26:57.9466969Z"
+}

@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2744-array-map-reverse-slice39-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_clip_mask_render_closure-5c4ffaee7d839f66.exe",
+      "bytes": 1029632,
+      "nonTest": false,
+      "sha256": "e8a739990e324df95f35c1f656fcd759d05c6b047199a8c035c56cd999e52e5d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke_seq06_13c-872447893d7961dd.exe",
+      "bytes": 822272,
+      "nonTest": false,
+      "sha256": "3b7b69f009684e7bb0ee2c859edc4291f38036f760386d3aef9e46a5c683b8fb"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke_timestamps-e2f0bdc33dd580d1.exe",
+      "bytes": 739840,
+      "nonTest": false,
+      "sha256": "2dd1d9b1cb7e861077b593f7307a63493f4272acfbde1cd4be28aa08b872a90f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke-3d255cc422bb76e5.exe",
+      "bytes": 739840,
+      "nonTest": false,
+      "sha256": "6e40e919e20a6b4134b1f8382b4a6e16d17cbb4836085f0708a975a2e3c16215"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:27:20.7881309Z"
+}

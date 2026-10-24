@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "name": "task-final-r2718-array-map-reverse-slice26-catalog",
+  "all": 14,
+  "matched": 14,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_cell",
+      "test": "repl_cell_command_input_is_not_committed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_cell",
+      "test": "repl_cell_records_literal_binding_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_cell",
+      "test": "repl_item_cell_compiles_through_a_synthetic_controller_entry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_publish_remote_dry_run_json_does_not_write_objects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_publish_remote_json_then_release_verify_json_succeeds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_verify_json_failure_still_prints_typed_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_verify_json_success_reports_machine_readable_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_verify_json_wrong_policy_is_failure_for_same_archive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_remote_publish_file_mirror_archive_verifies_after_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_failure_matrix_reports_typed_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_file_and_http_payload_mirrors_are_test_owned",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_metadata_only_mode_allows_missing_payload_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_success_cache_hit_verifies_full_graph",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_wrong_policy_fails_same_archive",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

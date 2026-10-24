@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 39,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "view_clip_mask_render_closure",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+      "caseCount": 8
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "view_compositor_gpu_smoke",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "view_compositor_gpu_smoke_seq06_13c",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke_seq06_13c",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "name": "view_compositor_gpu_smoke_timestamps",
+      "kind": "test",
+      "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke_timestamps",
+      "caseCount": 1
+    }
+  ],
+  "matched": 8,
+  "excluded": 3,
+  "ignored": 3,
+  "catalog": "task-final-r2744-array-map-reverse-slice39-catalog",
+  "run": "task-final-r2745-array-map-reverse-slice39-runtime",
+  "buildOnly": false
+}

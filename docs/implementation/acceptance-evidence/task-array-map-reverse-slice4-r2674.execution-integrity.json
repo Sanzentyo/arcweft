@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 4,
+  "run": "task-final-r2675-array-map-reverse-slice4-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "sha256": "0e504facb539c4ad20a12edfffe018499c3bf3a44850e1901f745f816caeb9f2",
+      "bytes": 292126720
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcw_fixtures_check_run-1de0cc0ddf54db9a.exe",
+      "sha256": "e2db5a233b495fc3ef684da4755ec0d523e518550d2dbdebfd7b74d492bcbfc1",
+      "bytes": 868864
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertion_identity-09b23a06226358da.exe",
+      "sha256": "b3a329addc2b23b39d98333e1a69ea45adf926582148c933f86fda1773c56a30",
+      "bytes": 73894400
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertions-cba81240f9033392.exe",
+      "sha256": "cf5d59b63d6d9a2e790e4f82ab82427311089016663eaa2cafa3f1161ff17031",
+      "bytes": 92135936
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_parity-7fa0989d45214c56.exe",
+      "sha256": "55fb2eaf7f3ca6882e2ebb1b37ccc3369c32d97f40692a0f94817c23f2ed2494",
+      "bytes": 44112384
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T07:32:51.5069341Z"
+}

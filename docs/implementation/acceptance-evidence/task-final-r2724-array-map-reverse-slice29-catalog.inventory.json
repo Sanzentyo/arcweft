@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "name": "task-final-r2724-array-map-reverse-slice29-catalog",
+  "all": 29,
+  "matched": 29,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "budgets_fail_for_byte_count_string_and_item_limits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "budgets_fail_for_depth_reference_and_fanout_limits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "canonical_digest_is_stable_for_equivalent_logical_resources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "common_decoder_rejects_noncanonical_input_field_order_before_reconstruction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "common_decoder_requires_the_registry_field_requirement_flag",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "common_wire_bytes_are_deterministic_for_canonical_table_ordering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "duplicate_table_entries_are_rejected_when_decoding_non_canonical_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "inspection_json_round_trips_through_typed_owner_api_not_product_json_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "public_id_table_enforces_count_and_byte_budgets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "public_id_table_rejects_duplicates_without_deduplicating",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "resource_codec_header_validates_magic_schema_and_budgets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "resource_codec_inventory_is_complete_and_bijective",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "string_table_sorts_and_deduplicates_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "test": "unknown_optional_fields_skip_and_unknown_required_fields_reject",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_type_manifest_section",
+      "test": "code_22_required_section_round_trips_against_the_engine_base",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_type_manifest_section",
+      "test": "empty_extension_set_omits_the_section",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_type_manifest_section",
+      "test": "entry_digest_is_checked_before_json_decode",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_type_manifest_section",
+      "test": "final_registry_digest_and_exact_section_end_are_authoritative",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_type_manifest_section",
+      "test": "reordered_entries_are_rejected_before_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_type_manifest_section",
+      "test": "truncated_entry_and_count_overflow_are_rejected_as_malformed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::resource_type_manifest_section",
+      "test": "valid_noncanonical_json_is_rejected_after_the_sole_manifest_decode",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::responsive_stage_placement",
+      "test": "player_frame_uses_same_resolved_bbox_for_render_and_observe",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::retained_identity_contract",
+      "test": "canonical_retained_encoder_does_not_claim_unfrozen_value_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::retained_identity_contract",
+      "test": "reference_requirement_inventory_owns_nested_structural_traversal",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::retained_identity_contract",
+      "test": "retained_dependencies_keep_canonical_target_and_exact_source_occurrence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::retained_identity_contract",
+      "test": "retained_identity_constant_transcripts_match_the_contract_vectors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::retained_identity_contract",
+      "test": "retained_identity_expected_types_match_only_the_exact_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::retained_identity_contract",
+      "test": "retained_identity_kind_is_closed_and_uses_canonical_tokens",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::retained_identity_contract",
+      "test": "retained_identity_value_type_transcripts_match_the_contract_vectors",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

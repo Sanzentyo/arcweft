@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 6,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-cli",
+      "name": "bracket_numeric_batch",
+      "kind": "test",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "caseCount": 5
+    },
+    {
+      "package": "arcweft-core",
+      "name": "builtin_payload_admission",
+      "kind": "test",
+      "binary": "arcweft-core::builtin_payload_admission",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-project",
+      "name": "bytecode_link_producer_inventory",
+      "kind": "test",
+      "binary": "arcweft-project::bytecode_link_producer_inventory",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "name": "bundle_runner",
+      "kind": "test",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "caseCount": 7
+    }
+  ],
+  "matched": 16,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2678-array-map-reverse-slice6-catalog",
+  "run": "task-final-r2679-array-map-reverse-slice6-runtime",
+  "buildOnly": false
+}

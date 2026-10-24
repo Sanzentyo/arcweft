@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 44,
+  "run": "task-final-r2755-array-map-reverse-slice44-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcweft-player-native.exe",
+      "sha256": "cef5f717736debced0ebb9d5bff48db649e22dcfd4b012bde793501a850fc876",
+      "bytes": 174497280
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_live_patch_smoke-e32d663b8e6e11ad.exe",
+      "sha256": "22541e9f95ead077685759083061494453136622806c13eb3c08c47e51cb2f91",
+      "bytes": 97536512
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\windows-tsf-ime-sample.exe",
+      "sha256": "fd70c55f8681e823bec36c0d665ecac21fc16a7850b0a4af5dbb787681cc5c18",
+      "bytes": 2734592
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T08:34:20.9036299Z"
+}

@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "name": "task-final-r2684-array-map-reverse-slice9-catalog",
+  "all": 22,
+  "matched": 22,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::choice_static",
+      "test": "compact_choice_goto_preserves_checked_ids_and_flow_target_through_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::checked_match_query",
+      "test": "public_checked_match_coverage_exposes_precise_or_alternative_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::checked_match_query",
+      "test": "public_checked_match_query_exposes_only_complete_read_only_facts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::checked_match_query",
+      "test": "public_checked_match_query_rejects_stale_project_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::checked_match_query",
+      "test": "public_checked_match_query_returns_typed_nonexhaustive_witness",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::checked_match_query",
+      "test": "public_checked_match_witness_exposes_nested_record_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::checked_statement_read_only_views",
+      "test": "checked_consumers_need_only_borrowed_read_only_accessors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "cache_distinguishes_no_parent_from_a_revision_zero_parent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "deeper_scope_then_later_application_choose_the_winner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "environment_and_element_states_match_together_and_cache_key_tracks_environment",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "exported_part_does_not_expose_private_child_ancestry_to_structural_selectors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "inheritance_copies_only_the_canonical_inherited_property_set",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "inline_patch_rejects_a_property_that_does_not_apply_to_the_node_element",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "inline_patch_uses_authored_application_layer_and_full_trace_is_deterministic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "nested_boundary_exposes_only_the_direct_root_or_an_explicit_exported_part",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "resolver_rejects_specificity_that_cannot_be_represented_exactly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "selector_target_codec_rechecks_closed_kinds_and_refuses_obsolete_element_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "simultaneous_states_use_rule_source_order_instead_of_fixed_state_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "specificity_sequence_traversal_consumes_the_global_selector_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "text_and_rich_text_selectors_match_their_actual_node_family_and_keep_controls_distinct",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "text_targets_refuse_control_only_and_container_only_properties_at_admission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::computed_style",
+      "test": "trace_modes_keep_off_empty_reconstruct_winners_and_bypass_full_cache",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 13,
+  "run": "task-final-r2693-array-map-reverse-slice13-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "sha256": "0e504facb539c4ad20a12edfffe018499c3bf3a44850e1901f745f816caeb9f2",
+      "bytes": 292126720
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\direct_suspension-e010eef430ec8e08.exe",
+      "sha256": "4b32d4bc2e0071e3fcad5b67a373a247c8c0129f4a880ccba7cba99883d39ca5",
+      "bytes": 14533120
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\document_layout-cb9968579eb59d94.exe",
+      "sha256": "ea0864f7da259d8ea1308cc4abdd95223d619427fc8663c1c20f3e0e239431bc",
+      "bytes": 4858880
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\environment_callable_tensor-9b2165f1e5d9a14b.exe",
+      "sha256": "0d090e314bacf93d29769216007ceeaefaff05a3ded63c1668ba3daa766b74f4",
+      "bytes": 167567872
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\evaluated_effects-f918d9c18aa7a9af.exe",
+      "sha256": "2c93e3514cd24aac655c6993ae0bc433f8d04facb583a4c5c9ef1ccaff3d52d7",
+      "bytes": 137930752
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T07:53:18.0181463Z"
+}

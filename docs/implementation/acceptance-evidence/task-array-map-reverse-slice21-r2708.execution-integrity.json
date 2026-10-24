@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 21,
+  "run": "task-final-r2709-array-map-reverse-slice21-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web.dll",
+      "sha256": "42ab7d5149c9a2b3d189244215c999f315d2687f5acbb5740d585372dd995d15",
+      "bytes": 908800
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\nominal_schema_admission-e6a5125f1ef9e69c.exe",
+      "sha256": "726912c0d5108336a1678534ecf8a569340cbbec68387873a79ca81e13546ed9",
+      "bytes": 6994432
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\parity-8941ea2cf3c422a3.exe",
+      "sha256": "195233b85c93de7f7479891d024db103f1c8b633b78109c0de47c250465e5284",
+      "bytes": 20446720
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\parser_diagnostic-4ab1cd48840a61be.exe",
+      "sha256": "7f3b68f048eb0e95c5620e0dcb054e8bdbe08cd28e8cf002fdf7bf53b6bb2a30",
+      "bytes": 91681280
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\patch_schema-5586874d2ff4e1e4.exe",
+      "sha256": "4ef948de9f237b50d49745b4029f53b81033944d53164840717585cd6a0e9549",
+      "bytes": 26432000
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T08:07:48.6784966Z"
+}

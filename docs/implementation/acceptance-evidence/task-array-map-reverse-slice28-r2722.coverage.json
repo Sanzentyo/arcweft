@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 28,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-agent-repl",
+      "name": "repl_trace",
+      "kind": "test",
+      "binary": "arcweft-agent-repl::repl_trace",
+      "caseCount": 5
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "name": "repl_transaction",
+      "kind": "test",
+      "binary": "arcweft-agent-repl::repl_transaction",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-player-web",
+      "name": "report",
+      "kind": "test",
+      "binary": "arcweft-player-web::report",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-render-text",
+      "name": "resolved_document",
+      "kind": "test",
+      "binary": "arcweft-render-text::resolved_document",
+      "caseCount": 13
+    }
+  ],
+  "matched": 21,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2722-array-map-reverse-slice28-catalog",
+  "run": "task-final-r2723-array-map-reverse-slice28-runtime",
+  "buildOnly": false
+}

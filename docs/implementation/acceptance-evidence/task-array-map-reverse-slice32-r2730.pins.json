@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2730-array-map-reverse-slice32-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292126720,
+      "nonTest": true,
+      "sha256": "0e504facb539c4ad20a12edfffe018499c3bf3a44850e1901f745f816caeb9f2"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_style_lowering-4906449f69994609.exe",
+      "bytes": 1957888,
+      "nonTest": false,
+      "sha256": "2ee9441dd0ddd3f127c5e89a15ab5279e501466f92892bb9f82b426d74a315f8"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_style_resolution-28dc1f05e87f45a8.exe",
+      "bytes": 2296320,
+      "nonTest": false,
+      "sha256": "e7cd5550fd1e18110a2c715a00557c33296ae822fc880f297d7b6662b9f78f5d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_id_boundaries-3d452ecd6526d43b.exe",
+      "bytes": 6908416,
+      "nonTest": false,
+      "sha256": "3dd006198ba0bba999db2446701c64e84658dca56e73242785c53032c547e01d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_native_options-b0ca7d54f1f12b13.exe",
+      "bytes": 783360,
+      "nonTest": false,
+      "sha256": "5c268f04acde156838fb797fc1a6fcb17ef6c887acc59044fc9247e14ba03120"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:23:23.4642079Z"
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 17,
+  "run": "task-final-r2701-array-map-reverse-slice17-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web.dll",
+      "sha256": "42ab7d5149c9a2b3d189244215c999f315d2687f5acbb5740d585372dd995d15",
+      "bytes": 908800
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\interaction_visual_state-700e6007ba14a590.exe",
+      "sha256": "b31a2b4bafd8120d469b5888d439217fcef60d57abbff4308110a1f0db15b29b",
+      "bytes": 20495872
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\iterator_witness_awbc-5a43cb4149abeeb6.exe",
+      "sha256": "c58706fcb128a9a8786f8b8e4003bc93f2ba2e82c2b9a84cdd80791d63f9d5fd",
+      "bytes": 34420224
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\iterator_witness_source-dbb493f178eff34c.exe",
+      "sha256": "1946e723cd3a3450551e46736265b5f61ac2276e292bf4047ed9f40a72aa024f",
+      "bytes": 124872192
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\local_declaration_source-9947b00b92d35bc2.exe",
+      "sha256": "ade9149416d61a20e488e4f4bf2b5d0e0c307155cc266aebfe3169a515b5909a",
+      "bytes": 92087808
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T08:01:13.1217058Z"
+}

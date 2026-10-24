@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2758-array-map-cli-final-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292126720,
+      "nonTest": true,
+      "sha256": "cecb439512ec2c45fba172baf439ebee0496ae9f75a9d819f6e3e397eb6cebbe"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\check-8600c8293ec39bf2.exe",
+      "bytes": 304340992,
+      "nonTest": false,
+      "sha256": "fe7989a7ede70ebd7e52e497d71060b4c0064f36ba00e84f31a207aaf0e5aaa3"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:40:08.4814269Z"
+}

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 33,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-bundle",
+      "name": "runtime_resource_codecs",
+      "kind": "test",
+      "binary": "arcweft-bundle::runtime_resource_codecs",
+      "caseCount": 10
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "scope_propagation",
+      "kind": "test",
+      "binary": "arcweft-compiler::scope_propagation",
+      "caseCount": 8
+    },
+    {
+      "package": "arcweft-player-scene",
+      "name": "runtime_text_controls",
+      "kind": "test",
+      "binary": "arcweft-player-scene::runtime_text_controls",
+      "caseCount": 13
+    },
+    {
+      "package": "arcweft-player-scene",
+      "name": "scroll_regions",
+      "kind": "test",
+      "binary": "arcweft-player-scene::scroll_regions",
+      "caseCount": 12
+    }
+  ],
+  "matched": 43,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2732-array-map-reverse-slice33-catalog",
+  "run": "task-final-r2733-array-map-reverse-slice33-runtime",
+  "buildOnly": false
+}

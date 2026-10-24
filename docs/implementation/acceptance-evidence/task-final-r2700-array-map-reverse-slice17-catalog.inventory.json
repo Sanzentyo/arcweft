@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "name": "task-final-r2700-array-map-reverse-slice17-catalog",
+  "all": 13,
+  "matched": 13,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::iterator_witness_source",
+      "test": "bounded_calls::native_for_keeps_the_original_thirty_two_single_operation_steps",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::iterator_witness_source",
+      "test": "source_iterator_identity_witness_executes_on_verified_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::iterator_witness_source",
+      "test": "source_iterator_witness_lowers_trait_methods_and_for_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "authored_closure_capture_keeps_the_captured_declaration_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "authored_retained_storage_survives_view_lowering_to_core_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "authored_shadowing_keeps_distinct_declared_mutability_in_core_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "capture_slot_mutability_is_independent_of_the_captured_source_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "closed_frames_declare_each_materialized_slot_in_one_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "closed_program_and_function_frames_do_not_leave_global_template_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::interaction_visual_state",
+      "test": "web_choice_visuals_are_derived_from_shared_interaction_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::iterator_witness_awbc",
+      "test": "builtin_iterator_exits_after_owned_source_is_exhausted",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::iterator_witness_awbc",
+      "test": "builtin_iterator_lowers_and_executes_on_awbc_product_vm",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::iterator_witness_awbc",
+      "test": "builtin_iterator_reuses_owned_state_on_backedge",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

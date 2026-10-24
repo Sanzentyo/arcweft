@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "name": "task-final-r2726-array-map-reverse-slice30-catalog",
+  "all": 7,
+  "matched": 7,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::runtime_assertion_diagnostic",
+      "test": "agent_debug_diagnostic_projects_fresh_session_fault",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue::rich_text_schema",
+      "test": "dialogue_control_inventory_round_trips",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue::rich_text_schema",
+      "test": "dialogue_control_schemas_preserve_exact_limits_and_outputs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue::rich_text_schema",
+      "test": "dialogue_host_inventory_owns_only_current_names",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue::rich_text_schema",
+      "test": "dialogue_host_schemas_retain_cross_field_inputs_without_guessing_them",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::runtime_assertion_diagnostic",
+      "test": "reloaded_artifact_without_exact_source_association_stays_unassociated",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::runtime_assertion_diagnostic",
+      "test": "runtime_projection_emits_stable_diagnostic_without_message_parsing",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

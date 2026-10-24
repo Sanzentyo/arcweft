@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2708-array-map-reverse-slice21-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web.dll",
+      "bytes": 908800,
+      "nonTest": true,
+      "sha256": "42ab7d5149c9a2b3d189244215c999f315d2687f5acbb5740d585372dd995d15"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\nominal_schema_admission-e6a5125f1ef9e69c.exe",
+      "bytes": 6994432,
+      "nonTest": false,
+      "sha256": "726912c0d5108336a1678534ecf8a569340cbbec68387873a79ca81e13546ed9"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\parity-8941ea2cf3c422a3.exe",
+      "bytes": 20446720,
+      "nonTest": false,
+      "sha256": "195233b85c93de7f7479891d024db103f1c8b633b78109c0de47c250465e5284"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\parser_diagnostic-4ab1cd48840a61be.exe",
+      "bytes": 91681280,
+      "nonTest": false,
+      "sha256": "7f3b68f048eb0e95c5620e0dcb054e8bdbe08cd28e8cf002fdf7bf53b6bb2a30"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\patch_schema-5586874d2ff4e1e4.exe",
+      "bytes": 26432000,
+      "nonTest": false,
+      "sha256": "4ef948de9f237b50d49745b4029f53b81033944d53164840717585cd6a0e9549"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:07:40.8093307Z"
+}

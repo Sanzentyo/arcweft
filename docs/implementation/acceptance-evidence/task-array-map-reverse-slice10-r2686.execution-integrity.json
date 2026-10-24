@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 10,
+  "run": "task-final-r2687-array-map-reverse-slice10-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\controller_navigation-a181c926a6a78bc3.exe",
+      "sha256": "73a0c1fa94ffce72473fac690c8047188240b6ed6d60e13708e6b45acbc91858",
+      "bytes": 1663488
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\data_format_nominal-70a0f34a522d0de0.exe",
+      "sha256": "3af8f0488e5ad0c7c14b91ea502790cdc497f9489e598ff9ecc3f934bdd242be",
+      "bytes": 97703424
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T07:50:59.7395175Z"
+}

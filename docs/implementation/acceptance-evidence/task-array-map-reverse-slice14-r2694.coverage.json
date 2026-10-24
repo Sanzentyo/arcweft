@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 14,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-compiler",
+      "name": "flow_effects",
+      "kind": "test",
+      "binary": "arcweft-compiler::flow_effects",
+      "caseCount": 5
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "flow_include",
+      "kind": "test",
+      "binary": "arcweft-compiler::flow_include",
+      "caseCount": 18
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "generic_continuation_snapshot",
+      "kind": "test",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "caseCount": 11
+    },
+    {
+      "package": "arcweft-render-text",
+      "name": "frame_resolution",
+      "kind": "test",
+      "binary": "arcweft-render-text::frame_resolution",
+      "caseCount": 7
+    }
+  ],
+  "matched": 41,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2694-array-map-reverse-slice14-catalog",
+  "run": "task-final-r2695-array-map-reverse-slice14-runtime",
+  "buildOnly": false
+}

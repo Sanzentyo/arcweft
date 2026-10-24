@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "ordinal": 30,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 3,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-agent-repl",
+      "name": "runtime_assertion_diagnostic",
+      "kind": "test",
+      "binary": "arcweft-agent-repl::runtime_assertion_diagnostic",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-dialogue",
+      "name": "rich_text_schema",
+      "kind": "test",
+      "binary": "arcweft-dialogue::rich_text_schema",
+      "caseCount": 4
+    },
+    {
+      "package": "arcweft-tooling",
+      "name": "runtime_assertion_diagnostic",
+      "kind": "test",
+      "binary": "arcweft-tooling::runtime_assertion_diagnostic",
+      "caseCount": 2
+    }
+  ],
+  "matched": 7,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2726-array-map-reverse-slice30-catalog",
+  "run": "task-final-r2727-array-map-reverse-slice30-runtime",
+  "buildOnly": false
+}

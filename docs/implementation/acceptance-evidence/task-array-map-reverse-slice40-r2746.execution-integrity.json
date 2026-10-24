@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 40,
+  "run": "task-final-r2747-array-map-reverse-slice40-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_plan-5c6b4fb47281eb47.exe",
+      "sha256": "4698f4c14a79c3960d465f2675c55f4d8cbd2bdb4f69457e37a64be374207790",
+      "bytes": 979456
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_export_part-31b3e94f82ee8877.exe",
+      "sha256": "f4f0728983367761656dcee37d960e8c4ae52d25c704480512c3238ff8d38c18",
+      "bytes": 7175680
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_focus_navigation_resources-ef255c80d411d26c.exe",
+      "sha256": "9465b17a73be60a9cd800cfbd796928fa02ce4ebb6efcf4b657d91f176f2039e",
+      "bytes": 6191104
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_geometry_transaction-987aa9622b5e22f2.exe",
+      "sha256": "de1d25a321d07cf4dd3dad235723ce2ce4d9b8d1a4c58fe322346dea23dddcdb",
+      "bytes": 17842176
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T08:28:05.3379233Z"
+}

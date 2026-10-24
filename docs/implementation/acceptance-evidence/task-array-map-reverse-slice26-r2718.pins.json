@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2718-array-map-reverse-slice26-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292126720,
+      "nonTest": true,
+      "sha256": "0e504facb539c4ad20a12edfffe018499c3bf3a44850e1901f745f816caeb9f2"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_e2e-7aec36a4510007d3.exe",
+      "bytes": 31753216,
+      "nonTest": false,
+      "sha256": "4838fcbc1cc18e17e877f083cb6141300584ae5f4bc0bb9a1a54da568900d9a1"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_json-99c65274f985c77a.exe",
+      "bytes": 27243520,
+      "nonTest": false,
+      "sha256": "7814499d59091242d7a09f8a1a83b052b73e4a6719b990a44fb4318354ea0ac0"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_cell-a4eca3a010b0d7c2.exe",
+      "bytes": 125590528,
+      "nonTest": false,
+      "sha256": "ab938937f93c82faae662bb058b6cd93a75db7c1dc613889a3e30299d8d9346c"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:19:20.8105337Z"
+}

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 32,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-bundle",
+      "name": "runtime_control_style_resolution",
+      "kind": "test",
+      "binary": "arcweft-bundle::runtime_control_style_resolution",
+      "caseCount": 5
+    },
+    {
+      "package": "arcweft-cli",
+      "name": "runtime_native_options",
+      "kind": "test",
+      "binary": "arcweft-cli::runtime_native_options",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-core",
+      "name": "runtime_id_boundaries",
+      "kind": "test",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "caseCount": 13
+    },
+    {
+      "package": "arcweft-player-scene",
+      "name": "runtime_control_style_lowering",
+      "kind": "test",
+      "binary": "arcweft-player-scene::runtime_control_style_lowering",
+      "caseCount": 6
+    }
+  ],
+  "matched": 27,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2730-array-map-reverse-slice32-catalog",
+  "run": "task-final-r2731-array-map-reverse-slice32-runtime",
+  "buildOnly": false
+}

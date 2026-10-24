@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "path": "crates/arcweft-cli/tests/check/control_local_admission.rs",
+  "beforeSha256": "06b1f17d85abd1240eae33c36927d28d8af4fdafb0e3099876597da7ac1e964c",
+  "afterSha256": "84f787cfec5f20b87b7ef5b717c912df7b122da14bdcc854404878a6aa29bcec",
+  "replacedCase": "control_local_admission::array_map_rejects_the_complete_local_inventory_before_expanding_rows",
+  "replacementCase": "control_local_admission::array_map_admits_extreme_length_with_constant_local_inventory",
+  "extents": [
+    0,
+    1,
+    4096,
+    2147483648
+  ],
+  "reason": "Array Map now uses one ordinary loop. Element count no longer expands local declarations. Replace the obsolete compilation-rejection premise with constant-inventory and exact-result-extent assertions.",
+  "capacityOwnerCase": "plan::construction::tests::local_request_capacity_preflights_without_spending_or_publishing_rows",
+  "capacityOwnerEvidence": "task-final-r2667-array-map-core-final-runtime.terminal-audit.json",
+  "productionSourceChanges": 0,
+  "recordedAt": "2026-10-24T08:35:29.0632423Z"
+}

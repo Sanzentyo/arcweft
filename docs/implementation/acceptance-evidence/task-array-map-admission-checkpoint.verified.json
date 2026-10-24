@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "commit": "5f275a6f91defcddcb50dc52f1559e570089d914",
+  "parent": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "tree": "990de950d0cee62a6cb127a53db352469682bbc5",
+  "remote": "5f275a6f91defcddcb50dc52f1559e570089d914",
+  "advertised": "5f275a6f91defcddcb50dc52f1559e570089d914",
+  "paths": [
+    {
+      "path": "crates/arcweft-cli/tests/check/control_local_admission.rs",
+      "blob": "2b674376dc79cfa5284341279bffb128bf942cfc",
+      "workingBlob": "2b674376dc79cfa5284341279bffb128bf942cfc"
+    }
+  ],
+  "sourceCount": 5344,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "5589c60d0db41762a9830ee9edc6deac4d44eaa5c8e9c59c63e4823bdcaf0d3b",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T08:38:44.4298373Z"
+}

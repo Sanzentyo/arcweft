@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "packages": 53,
+  "slices": 44,
+  "targets": 166,
+  "graphDrift": 0,
+  "firstCatalogId": 2668,
+  "lastRuntimeId": 2755,
+  "runner": "run-array-map-reverse-integration-slice.ps1",
+  "reusedTargetPlan": "task-program-reverse-integration-batches.json",
+  "started": true,
+  "startedAt": "2026-10-24T07:08:10.3760521Z"
+}

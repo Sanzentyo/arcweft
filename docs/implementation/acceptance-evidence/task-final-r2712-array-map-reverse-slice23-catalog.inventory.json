@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "name": "task-final-r2712-array-map-reverse-slice23-catalog",
+  "all": 12,
+  "matched": 12,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "body_and_nested_closure_projection_obey_the_same_depth_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "curried_project_call_lowers_continue_then_invoke_without_pure_helper_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "distinct_generic_substitutions_publish_distinct_closed_instances",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "growing_instance_graph_stops_at_the_configured_inclusive_bound",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "growing_types_stop_at_the_depth_bound_before_exhausting_instance_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "implicit_callable_site_is_distinct_for_each_closed_generic_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "instance_closure_obeys_the_structural_node_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "named_project_call_lowers_source_ordered_operands_into_typed_anf",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "rest_project_call_lowers_spread_once_and_materializes_source_indices",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "same_type_recursion_reuses_the_single_allowed_instance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "shared_curried_prefix_keeps_one_lineage_and_one_closed_instance_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "specialized_agent_call_materializes_source_order_before_abi_reads",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 16,
+  "run": "task-final-r2699-array-map-reverse-slice16-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web.dll",
+      "sha256": "42ab7d5149c9a2b3d189244215c999f315d2687f5acbb5740d585372dd995d15",
+      "bytes": 908800
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\ime_player_rendered-c072efd104bd55b9.exe",
+      "sha256": "06839160b491c3bb5ed329c5cf2046d02e49dd0c4d2a0159095b77594fa1f80b",
+      "bytes": 157750784
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\inline_failure_policy-c7949a070912d3d8.exe",
+      "sha256": "53e485cbd1840f35bb8eea81d4dddfbf373f6d7272ccbe683cdc1fc44bb65784",
+      "bytes": 114790912
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\input-8c3712d2cc4933bf.exe",
+      "sha256": "80643d6ecc690e44f81bb15eae72dccb30f6ee88071c529f24ad0147149d7b12",
+      "bytes": 20840960
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\interaction_routing-4b610d12100c8e1e.exe",
+      "sha256": "e5c1255e5a04172ed36136395a02ad2f348cccf0abdbe30af64b9abb1e4bb48d",
+      "bytes": 1942528
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T08:00:39.9312558Z"
+}

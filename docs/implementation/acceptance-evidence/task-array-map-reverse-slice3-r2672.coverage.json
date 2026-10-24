@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "ordinal": 3,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 5,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-agent-repl",
+      "name": "api_compile",
+      "kind": "test",
+      "binary": "arcweft-agent-repl::api_compile",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "api_compile",
+      "kind": "test",
+      "binary": "arcweft-compiler::api_compile",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-core",
+      "name": "api_compile",
+      "kind": "test",
+      "binary": "arcweft-core::api_compile",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "name": "api_compile",
+      "kind": "test",
+      "binary": "arcweft-lang-sema::api_compile",
+      "caseCount": 14
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "name": "api_compile",
+      "kind": "test",
+      "binary": "arcweft-runtime-plan::api_compile",
+      "caseCount": 3
+    }
+  ],
+  "matched": 21,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2672-array-map-reverse-slice3-catalog",
+  "run": "task-final-r2673-array-map-reverse-slice3-runtime",
+  "buildOnly": false
+}

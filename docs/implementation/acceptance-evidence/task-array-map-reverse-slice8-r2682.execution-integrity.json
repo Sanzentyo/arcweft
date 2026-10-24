@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 8,
+  "run": "task-final-r2683-array-map-reverse-slice8-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "sha256": "0e504facb539c4ad20a12edfffe018499c3bf3a44850e1901f745f816caeb9f2",
+      "bytes": 292126720
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\character_package-2ed4284c0ccba554.exe",
+      "sha256": "c213c5255b4ab77357757428956844ef38fd3b2e0d28493c569e5df9bada0adc",
+      "bytes": 3067904
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\character_stage-68f0f96faab4185a.exe",
+      "sha256": "c9477997323e8ee7dc64fe9420595dc16e0f40270fc6a8f49c982c321721d6de",
+      "bytes": 5180928
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\check_core_cli-375e940644ebe149.exe",
+      "sha256": "5191de8df5365a51eaf9dcb9725267707ef57239709c9128357848929e856ca0",
+      "bytes": 102862848
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\check-8600c8293ec39bf2.exe",
+      "sha256": "851dc716b813f66897975bf4d1446cf3585801894d0d0e45d7c35a326c0d4b25",
+      "bytes": 304348160
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T07:49:59.4737126Z"
+}

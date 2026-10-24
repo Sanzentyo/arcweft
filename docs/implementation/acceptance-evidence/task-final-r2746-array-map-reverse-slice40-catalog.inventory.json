@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "name": "task-final-r2746-array-map-reverse-slice40-catalog",
+  "all": 10,
+  "matched": 10,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_focus_navigation_resources",
+      "test": "view_focus_navigation_compact_round_trip_is_deterministic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_focus_navigation_resources",
+      "test": "view_focus_navigation_missing_explicit_target_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::view_geometry_transaction",
+      "test": "tx_headless_preflight_rejects_stale_before_side_effecting_staging",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::view_geometry_transaction",
+      "test": "tx_stale_generation_never_invokes_adapter_or_changes_input",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::view_geometry_transaction",
+      "test": "tx_success_atomically_publishes_candidate_arc_and_invokes_adapter_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_compositor_plan",
+      "test": "blur_shadow_mask_and_blend_count_deterministic_passes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_compositor_plan",
+      "test": "compositing_plan_snapshot_covers_core_effect_families",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::view_compositor_plan",
+      "test": "direct_scene_plan_does_not_add_group_effect_passes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::view_export_part",
+      "test": "canonicalizes_valid_export_and_local_part_without_reordering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::view_export_part",
+      "test": "malformed_export_is_untouched_while_valid_surrounding_syntax_is_formatted",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

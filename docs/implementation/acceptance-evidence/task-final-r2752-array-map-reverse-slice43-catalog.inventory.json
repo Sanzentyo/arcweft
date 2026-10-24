@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "name": "task-final-r2752-array-map-reverse-slice43-catalog",
+  "all": 18,
+  "matched": 18,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_style_program",
+      "test": "equivalent_reversed_style_merges_have_deterministic_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_style_program",
+      "test": "native_style_program_round_trips_with_sheet_and_patch_ownership",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_style_program",
+      "test": "style_merge_rebases_patch_and_source_ids_as_one_canonical_program",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_style_program",
+      "test": "style_merge_rejects_public_owner_collision_without_changing_either_input",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_style_program",
+      "test": "style_metadata_inventory_order_does_not_change_canonical_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::view_style_program",
+      "test": "style_program_contract_rejects_dangling_targets_and_inline_definition_roots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_ingress_runtime",
+      "test": "malformed_sidecar_reaches_owner_retained_report_without_session_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-native",
+      "binary": "arcweft-player-native::windowed_ingress_runtime",
+      "test": "wrong_base_sidecar_does_not_mutate_active_session_catalog",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::web_text_input_glue",
+      "test": "player_owned_setup_can_be_explicitly_disabled_without_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::web_text_input_glue",
+      "test": "player_owned_setup_reports_ready_only_for_full_editcontext_support",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::virtualization",
+      "test": "half_open_window_handles_exact_and_one_milli_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::virtualization",
+      "test": "invalid_mount_input_does_not_consume_an_occurrence_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::virtualization",
+      "test": "invalid_snapshot_restore_is_atomic_and_rejects_normalization",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::virtualization",
+      "test": "range_pages_are_bounded_but_keep_global_indices",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::virtualization",
+      "test": "range_table_includes_materialized_and_retained_only_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::virtualization",
+      "test": "serialized_snapshot_round_trips_and_rejects_invalid_scroll_target",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::virtualization",
+      "test": "snapshot_restores_independent_mounts_and_monotonic_allocator",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::virtualization",
+      "test": "source_replacement_preserves_key_relative_anchor",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

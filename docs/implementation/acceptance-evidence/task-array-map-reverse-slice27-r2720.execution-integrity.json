@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 27,
+  "run": "task-final-r2721-array-map-reverse-slice27-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_command-36038b09cdd18a93.exe",
+      "sha256": "7e08029adec308d18699b4388c3a736d1e99c69fc6de26d85ef386ccbe714573",
+      "bytes": 7096832
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_command-611fc298c048d9ab.exe",
+      "sha256": "27445da990f6565c5ded71374c9c37ecb6db72c05a0c19d9437c78890a182fe9",
+      "bytes": 5673984
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_task_adapter-c1245a5caf1501c5.exe",
+      "sha256": "6a393f5b4a84b15628adfc7f5c1517aad18dbec73850ca9f853266ef7692c1be",
+      "bytes": 6315520
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_tiering-428616166bee88f0.exe",
+      "sha256": "5b1b750f639abf018b44c0faf794d1d91f4ab31ace16a9f9613577478814335c",
+      "bytes": 125740032
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T08:20:31.2587091Z"
+}

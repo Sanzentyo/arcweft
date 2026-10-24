@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 35,
+  "run": "task-final-r2737-array-map-reverse-slice35-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\strict_decode-fd52c35e53af5b64.exe",
+      "sha256": "46ad35fe7cbe593c4fbd083faf743070fbd5cb5b6a78eef9b95a0b3182286b74",
+      "bytes": 1290240
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\style_cross_section_refs-e16e892e2bfb252c.exe",
+      "sha256": "d7848bfce89fa34713e6da066e5e28e8e66de03fd46243f19d290f5ddf19fd7e",
+      "bytes": 155132928
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\style_environment-193c93d3942a4809.exe",
+      "sha256": "070a158bef788b59380ea9ba3155b1860a0c783e5c189f71c33eba17c6edbff1",
+      "bytes": 2144256
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\style_metadata-5ef713c4e215f649.exe",
+      "sha256": "b5b16578e0a8fef681211d88b0d5c229f0de22427b885c9c05564f5eb35858db",
+      "bytes": 1201664
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T08:25:34.7898500Z"
+}

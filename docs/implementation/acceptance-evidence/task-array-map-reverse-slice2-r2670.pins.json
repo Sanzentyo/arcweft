@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2670-array-map-reverse-slice2-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\action_button_submit-297596d059d71151.exe",
+      "bytes": 20677120,
+      "nonTest": false,
+      "sha256": "b8237cfe5f316cde7b08d503103e0bffbe1b8e3c8dbc6da9d3168a716ace1c9e"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\agent_enum_execution-66488eeb13e06c07.exe",
+      "bytes": 115395584,
+      "nonTest": false,
+      "sha256": "8c2984d4e013be5eb3096987ea4892aeacc0e07f8b06c65689ee6eb8fcba5a9d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windows_tsf_ime_sample-fad9f469e40b17eb.exe",
+      "bytes": 734208,
+      "nonTest": false,
+      "sha256": "ae4f3c9968fcfd2d019974bd337c9029fc5c72f6d7cdf8db0e4cd743def12af9"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T07:14:48.7020028Z"
+}

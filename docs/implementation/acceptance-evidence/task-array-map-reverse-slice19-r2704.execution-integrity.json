@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 19,
+  "run": "task-final-r2705-array-map-reverse-slice19-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axis_provider-36ef24f68b4d072e.exe",
+      "sha256": "0478404ac12504d88952241d1d13ae2ec09c7e5a01e122a2c5c5d9c97cbf0185",
+      "bytes": 1879040
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\maintained_manifests-f612f0224354ea01.exe",
+      "sha256": "f47f3c356507a5f090fcc8b11c2c4f8931497fcce253a2b086b00d20a3cce888",
+      "bytes": 9744384
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\manifest_contract-12d79ef767e66cbc.exe",
+      "sha256": "70d2f1b6b1bc112f339ccaedd7cd18badbf2cdc65ded9f6f378a117c9aea3338",
+      "bytes": 3814912
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\motion_transitions-7ea05310eee477ab.exe",
+      "sha256": "9912ebc4f4c592c01ec0b11ddd819605b369dc06030d882f646839576d5a4da1",
+      "bytes": 924672
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T08:06:19.9998254Z"
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 28,
+  "run": "task-final-r2723-array-map-reverse-slice28-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web.dll",
+      "sha256": "42ab7d5149c9a2b3d189244215c999f315d2687f5acbb5740d585372dd995d15",
+      "bytes": 908800
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_trace-547180f86d42b234.exe",
+      "sha256": "da72a076614482e25005e3447a5842f8e4a71d434e672ccbd421f7018a7499ea",
+      "bytes": 5627392
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_transaction-2ec6285c4034df5b.exe",
+      "sha256": "51e8b2c0363630507d132dab4907a5f1347f5a3e1777a79a0f3e0ed8e30813a3",
+      "bytes": 5424128
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\report-e1a225739f7548da.exe",
+      "sha256": "90092160359a45ca1c8a25bc1116f6a01b99b6118a3d135150c4fbbd941abfde",
+      "bytes": 1645056
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\resolved_document-988a21d19af8cca0.exe",
+      "sha256": "282f683952e333cc7215791de137c5860e7cd157dbc6d1c26a6f62e977128093",
+      "bytes": 6041600
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T08:21:16.3017612Z"
+}

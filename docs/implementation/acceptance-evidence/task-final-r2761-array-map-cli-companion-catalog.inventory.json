@@ -1,0 +1,310 @@
+{
+  "version": 1,
+  "name": "task-final-r2761-array-map-cli-companion-catalog",
+  "all": 43,
+  "matched": 43,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "await_context_option_boundaries_fixture_passes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "capability_fs_spec_fixture_checks_with_selected_adapter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "cli_stdout_spec_fixture_runs_with_selected_adapter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "current_check_fixtures_pass",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "current_run_fixtures_pass",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_fail_fixtures_fail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_pass_check_fixtures_pass_after_refactor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_pass_run_fixtures_pass_after_refactor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "a_source_equivalent_foreign_plan_owner_does_not_authorize_a_numeric_packet",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "named_bracket_rows_keep_unused_whole_formals_in_the_original_abi",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "nary_bracket_calls_batch_four_complete_rows_with_the_original_eight_op_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "nary_bracket_calls_keep_one_op_results_and_ordinary_continuations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "nary_bracket_calls_keep_the_original_continuation_when_the_packet_cannot_fit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "check_keeps_explicit_id_lint_on_the_independent_lint_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "check_reports_final_call_diagnostics_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "check_reports_typed_statement_unknown_mode_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "help_is_available_without_project_files",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_dialogue::bundled_dialogue_binds_original_generation_for_report_and_resumable_hosts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_dialogue::headless_dialogue_binds_original_generation_for_entry_and_flow_in_every_tier",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_exit::headless_budget_stop_remains_a_successful_bounded_observation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_exit::headless_completed_execution_keeps_a_successful_exit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_exit::headless_runtime_failure_returns_nonzero_after_publishing_its_report",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "unknown_top_level_option_fails_with_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::environment_callable_tensor",
+      "test": "environment_tensor_value_preserves_elements_and_one_op_restoration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "authored_externs_cannot_change_manifest_types_or_omit_manifest_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "cli_process_calls_require_matching_arguments_and_selected_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "host_calls_require_the_selected_target_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "implicit_native_policy_cannot_exit_the_embedding_process",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "pure_host_calls_require_membership_in_the_selected_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "selected_native_cli_preserves_cli_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "selected_native_cli_writes_streams_and_exits_without_a_never_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "typed_virtual_paths_read_and_write_through_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_style_parity_sample",
+      "test": "native_style_parity_sample_authors_observable_and_view_styles_in_dsl",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_publish_remote_dry_run_json_does_not_write_objects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_publish_remote_json_then_release_verify_json_succeeds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_verify_json_failure_still_prints_typed_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_verify_json_success_reports_machine_readable_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_verify_json_wrong_policy_is_failure_for_same_archive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::runtime_native_options",
+      "test": "session_io_rejects_headless_runner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::runtime_native_options",
+      "test": "session_io_rejects_watch_mode",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::runtime_native_options",
+      "test": "text_input_trace_rejects_headless_runner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::seq04_8_4_persistent_cache_build_cli_goldens",
+      "test": "multi_module_build_cli_golden_reports_typed_conservative_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::seq04_8_4_persistent_cache_build_cli_goldens",
+      "test": "normal_single_module_build_cli_goldens_cover_actual_reuse_and_corrupt_record",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

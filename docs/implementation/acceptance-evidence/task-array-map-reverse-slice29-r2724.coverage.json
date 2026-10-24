@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 29,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-bundle",
+      "name": "resource_codec_common",
+      "kind": "test",
+      "binary": "arcweft-bundle::resource_codec_common",
+      "caseCount": 14
+    },
+    {
+      "package": "arcweft-bundle",
+      "name": "resource_type_manifest_section",
+      "kind": "test",
+      "binary": "arcweft-bundle::resource_type_manifest_section",
+      "caseCount": 7
+    },
+    {
+      "package": "arcweft-player-scene",
+      "name": "responsive_stage_placement",
+      "kind": "test",
+      "binary": "arcweft-player-scene::responsive_stage_placement",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-resource-model",
+      "name": "retained_identity_contract",
+      "kind": "test",
+      "binary": "arcweft-resource-model::retained_identity_contract",
+      "caseCount": 7
+    }
+  ],
+  "matched": 29,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2724-array-map-reverse-slice29-catalog",
+  "run": "task-final-r2725-array-map-reverse-slice29-runtime",
+  "buildOnly": false
+}

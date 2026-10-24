@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "name": "task-final-r2672-array-map-reverse-slice3-catalog",
+  "all": 21,
+  "matched": 21,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::api_compile",
+      "test": "internal_repl_source_module_is_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::api_compile",
+      "test": "removed_compiler_apis_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::api_compile",
+      "test": "control_effect_seal_proof_has_no_raw_or_wire_constructor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::api_compile",
+      "test": "core_identity_boundaries_are_compile_time_closed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "associated_capacity_no_runtime_receiver_injection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "capability_policy_has_no_mutable_semantic_record",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "checked_match_reference_is_not_an_external_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "checked_statement_authorities_have_no_external_constructors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "descriptor_has_no_persisted_codec",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "detached_source_expression_effect_reader_is_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "internal_checker_modules_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "removed_character_classifier_and_mutation_bypasses_do_not_compile",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "removed_checked_statement_authorities_and_prepared_proofs_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "removed_zero_consumer_nominal_index_helper_is_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "removed_zero_consumer_type_helpers_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "runtime_manifest_cannot_enter_registration_without_source_provenance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "signature_query_identity_does_not_accept_incremental_snapshot_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "binary": "arcweft-lang-sema::api_compile",
+      "test": "unpublished_final_semantic_draft_is_not_an_external_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::api_compile",
+      "test": "removed_runtime_mark_handler_authority_is_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::api_compile",
+      "test": "removed_runtime_plan_apis_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::api_compile",
+      "test": "runtime_trigger_admission_has_no_external_constructor",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

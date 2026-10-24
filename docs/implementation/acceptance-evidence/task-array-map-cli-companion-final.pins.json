@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2761-array-map-cli-companion-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292126720,
+      "nonTest": true,
+      "sha256": "cecb439512ec2c45fba172baf439ebee0496ae9f75a9d819f6e3e397eb6cebbe"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcw_fixtures_check_run-1de0cc0ddf54db9a.exe",
+      "bytes": 868864,
+      "nonTest": false,
+      "sha256": "79a3320a67dd7a883994972a983944cab89a7eb29c49fc6e38949bf16b550f7f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\bracket_numeric_batch-1d6d43fd89acf6f3.exe",
+      "bytes": 152318464,
+      "nonTest": false,
+      "sha256": "546a535532fdd721d2b73c9335a211ddf362aa5c4bd2a0564e3114ec1dd745b3"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\check_core_cli-375e940644ebe149.exe",
+      "bytes": 102862848,
+      "nonTest": false,
+      "sha256": "9d7ccbb690e0ceeb6dc4d3d95e6478e379b6a916ef529ed0c7d753ba493bb9a6"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\environment_callable_tensor-9b2165f1e5d9a14b.exe",
+      "bytes": 167567872,
+      "nonTest": false,
+      "sha256": "ac3c621077c81bc9de3fd4b0d8f84a22914e1449eb93100a9330eae194383065"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_host_contracts-80cc1db0010ffda3.exe",
+      "bytes": 1065472,
+      "nonTest": false,
+      "sha256": "e5134891531520e7cae8a4e61ff676782c26b85cad9766b06e78193b2a0d00b1"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_style_parity_sample-b01b65d4fa6e12b4.exe",
+      "bytes": 6529024,
+      "nonTest": false,
+      "sha256": "eabb6613fc7d10724930b6820cc5c54db48a9ef4b17f46b9e8d6c53596a9bfd9"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_json-99c65274f985c77a.exe",
+      "bytes": 27243520,
+      "nonTest": false,
+      "sha256": "8b6602fb079b386597ca8ae18a730753ea9c58eef095b4fda522ecfefcaf179c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_native_options-b0ca7d54f1f12b13.exe",
+      "bytes": 783360,
+      "nonTest": false,
+      "sha256": "409dd324ad95485d9c3af1612e3b11fe89356efad6d1be649a4229a8d6864a89"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\seq04_8_4_persistent_cache_build_cli_goldens-4c80dfc374ddcebb.exe",
+      "bytes": 2406912,
+      "nonTest": false,
+      "sha256": "14eaad0f30d069f696e4d0ff7b1dd89e6936d08513df58d74f15860c4c5dd89b"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T09:01:43.2221244Z"
+}

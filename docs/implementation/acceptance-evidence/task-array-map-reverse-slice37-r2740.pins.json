@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2740-array-map-reverse-slice37-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\typed_json_preflight-edda337f439c8ab7.exe",
+      "bytes": 3968512,
+      "nonTest": false,
+      "sha256": "39ef3c89df9bc21de774a3df1ea64aa63bc639a3298bfcb8b1908fcf700d1a31"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\value_contract-59ae2b2e38bd8110.exe",
+      "bytes": 1152512,
+      "nonTest": false,
+      "sha256": "052dda5b1622981d5b092978a2f5055b97e6670b771895ce2cf52e146d0d5262"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\vertical_break_quality-70420b6fa63c4762.exe",
+      "bytes": 1581568,
+      "nonTest": false,
+      "sha256": "bbd060d2c4bbb16c60f78043be88b744dfc32de08d0d92111fc8d8fb3f547e5a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_action_button_resources-354ac72cc18b5fea.exe",
+      "bytes": 2089984,
+      "nonTest": false,
+      "sha256": "01de3022384f8236fa48dee9156d2a137ae399551c3d7372439ccaf14a89d7df"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:26:33.6279620Z"
+}

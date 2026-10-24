@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2668-array-map-reverse-slice1-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcw-3941da92fa867cb1.exe",
+      "bytes": 734208,
+      "nonTest": false,
+      "sha256": "607a3138913ffe9276347eae06ac816b82cdd78c2e87e1532f39de2234bf047d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_browser_bench.dll",
+      "bytes": 909312,
+      "nonTest": true,
+      "sha256": "5b2a9245419e2511a3b1c644e0067c79c2d39069ec02d75fd8adc2487df97ef5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lsp-55b8ec8776f3cc79.exe",
+      "bytes": 732672,
+      "nonTest": false,
+      "sha256": "d76a74539bc52e6ab0e5c9004519a154ae9f3ca8ea09317b28b56bc77d372c90"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_native-49005a6ddb51e29d.exe",
+      "bytes": 176850432,
+      "nonTest": false,
+      "sha256": "6f163437e4bd352c0767af30871cef89f53f7a3460d7699f034f5825b72c0f3c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\browser_bench_host-455e0009e46fd569.exe",
+      "bytes": 732672,
+      "nonTest": false,
+      "sha256": "a2c3dcf031af6f541ea43af3de04bf8e1df48ed8a5588e2669cd7161293ca659"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T07:09:24.0689076Z"
+}

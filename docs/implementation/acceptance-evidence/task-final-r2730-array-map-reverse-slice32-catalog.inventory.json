@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "name": "task-final-r2730-array-map-reverse-slice32-catalog",
+  "all": 27,
+  "matched": 27,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_control_style_resolution",
+      "test": "every_canonical_property_is_retained_in_exactly_one_runtime_partition",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_control_style_resolution",
+      "test": "malformed_computed_property_value_is_a_typed_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_control_style_resolution",
+      "test": "paint_effects_project_without_being_sent_to_layout",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_control_style_resolution",
+      "test": "projection_uses_the_supplied_environment_palette_for_system_colors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-bundle",
+      "binary": "arcweft-bundle::runtime_control_style_resolution",
+      "test": "theme_owns_checked_environment_and_palette_resolution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::runtime_native_options",
+      "test": "session_io_rejects_headless_runner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::runtime_native_options",
+      "test": "session_io_rejects_watch_mode",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::runtime_native_options",
+      "test": "text_input_trace_rejects_headless_runner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "canonical_runtime_id_rejects_source_family_segment",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "canonical_stream_runtime_id_rejects_stream_family_segment",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "checked_flow_identity_is_one_way_and_keeps_public_label_separate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "dynamic_flow_target_selects_one_accepted_identity_or_reports_label_ambiguity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "entry_runtime_ids_have_their_own_path_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "line_runtime_id_does_not_store_say_prefixed_string",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "line_source_boundary_preserves_an_opaque_flow_public_id_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "public_label_dot_is_not_a_runtime_namespace_selector",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "relative_references_are_not_runtime_lookup_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "source_flow_entity_lowers_to_canonical_runtime_id_without_family_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "source_payload_cannot_forge_a_runtime_only_owner_segment",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "stream_runtime_id_does_not_store_stream_prefixed_string",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_id_boundaries",
+      "test": "wrong_source_family_is_a_structured_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_control_style_lowering",
+      "test": "runtime_action_button_style_reaches_render_action_button",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_control_style_lowering",
+      "test": "runtime_control_backdrop_filter_reaches_render_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_control_style_lowering",
+      "test": "runtime_control_corner_frame_reaches_render_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_control_style_lowering",
+      "test": "runtime_control_font_family_reaches_render_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_control_style_lowering",
+      "test": "runtime_text_area_preserves_current_visual_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "binary": "arcweft-player-scene::runtime_control_style_lowering",
+      "test": "runtime_text_control_style_reaches_render_text_input_control",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

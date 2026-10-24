@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "ordinal": 26,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 3,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-agent-repl",
+      "name": "repl_cell",
+      "kind": "test",
+      "binary": "arcweft-agent-repl::repl_cell",
+      "caseCount": 3
+    },
+    {
+      "package": "arcweft-cli",
+      "name": "release_trust_json",
+      "kind": "test",
+      "binary": "arcweft-cli::release_trust_json",
+      "caseCount": 5
+    },
+    {
+      "package": "arcweft-project-loader",
+      "name": "release_trust_e2e",
+      "kind": "test",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "caseCount": 6
+    }
+  ],
+  "matched": 14,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2718-array-map-reverse-slice26-catalog",
+  "run": "task-final-r2719-array-map-reverse-slice26-runtime",
+  "buildOnly": false
+}

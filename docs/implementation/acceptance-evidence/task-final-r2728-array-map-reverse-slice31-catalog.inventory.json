@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "name": "task-final-r2728-array-map-reverse-slice31-catalog",
+  "all": 8,
+  "matched": 5,
+  "excluded": 3,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::runtime_color",
+      "test": "rgb_residualizes_to_a_canonical_awbc_color_constant",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::runtime_color",
+      "test": "rgba8_color_survives_ordinary_function_parameter_and_return_in_both_backends",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_assertion_identity",
+      "test": "invalid_guard_and_fingerprint_zero_values_are_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::runtime_assertion_identity",
+      "test": "runtime_assertion_core_codec_has_no_session_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke",
+      "test": "prepared_control_backdrop_blur_executes_shared_renderer_path",
+      "ignored": true,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke",
+      "test": "prepared_control_foreground_filter_blur_executes_shared_renderer_path",
+      "ignored": true,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "binary": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke",
+      "test": "rounded_runtime_control_stroke_draws_straight_edges",
+      "ignored": true,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::runtime_assertion_identity",
+      "test": "save_round_trip_retains_the_real_core_runtime_assertion_payload",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

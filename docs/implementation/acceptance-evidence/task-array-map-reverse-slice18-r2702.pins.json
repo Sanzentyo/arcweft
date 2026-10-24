@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2702-array-map-reverse-slice18-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\locale_catalog_resource_codec-e52d0f3cb3e346fa.exe",
+      "bytes": 23053824,
+      "nonTest": false,
+      "sha256": "b56bc73f42d6c148ee42e5fe195bc9aa19935a8637a2c046ecba5babbf5a939d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axes-d7fe4432478ce281.exe",
+      "bytes": 1954304,
+      "nonTest": false,
+      "sha256": "06a817d160c446be79ead1a2417e8925e6303f85ddd80e714fb7fa0ba4260fb8"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axis_cascade-b24f597d4500e1cd.exe",
+      "bytes": 1732608,
+      "nonTest": false,
+      "sha256": "1dd3d4d62ecdf93d39a56923f0f4320b79dda53c479ca7bd2d70c38fc417ba65"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axis_host_seed-4996b7d77316a778.exe",
+      "bytes": 1077760,
+      "nonTest": false,
+      "sha256": "0e505deb76f3458f98eef93412fb797ecae9de7457f18c29473230e873a3f131"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:05:36.0440540Z"
+}

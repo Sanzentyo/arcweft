@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2710-array-map-reverse-slice22-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\prepared_text-9a400fb5f5fc52f9.exe",
+      "bytes": 31356928,
+      "nonTest": false,
+      "sha256": "ba9a351d347761c7ef021a39a12cf328f9b84a56ceda954f8ad5c629f8db1db3"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\product_awbc_only-d7932efd407ec1d7.exe",
+      "bytes": 154778112,
+      "nonTest": false,
+      "sha256": "c3f6996dde55eea967bc4274f407570aafedf58fa335e252b7d89a66bc71dd03"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\product_catalog_resource_codecs-a620767a8e9cdae1.exe",
+      "bytes": 154822656,
+      "nonTest": false,
+      "sha256": "9bc49f7e02ccea1109faa7745e75d34a491ce8e43c10589e56a2acf1bf654122"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\project_cache_transaction-1c443ff09b9de9c4.exe",
+      "bytes": 180464128,
+      "nonTest": false,
+      "sha256": "6c716edfa3f6cd5b4203cd0970b2e23bfd3fc10899b10b6bccdb3b4395abb8b7"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T08:08:47.3328455Z"
+}

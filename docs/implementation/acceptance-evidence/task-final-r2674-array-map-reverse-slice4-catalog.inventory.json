@@ -1,0 +1,296 @@
+{
+  "version": 1,
+  "name": "task-final-r2674-array-map-reverse-slice4-catalog",
+  "all": 41,
+  "matched": 41,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "await_context_option_boundaries_fixture_passes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "capability_fs_spec_fixture_checks_with_selected_adapter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "cli_stdout_spec_fixture_runs_with_selected_adapter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "current_check_fixtures_pass",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "current_run_fixtures_pass",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_fail_fixtures_fail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_pass_check_fixtures_pass_after_refactor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_pass_run_fixtures_pass_after_refactor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "compile_source_rejects_unresolved_prove_before_emitting_a_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "predicate_and_non_unit_proof_missing_tails_are_exact_semantic_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "project_assertion_profile_is_the_only_debug_runtime_admission_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "proof_and_predicate_assertion_context_errors_are_final_sema_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "proof_body_prove_is_admitted_until_the_verifier_requires_discharge",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "reloaded_artifact_uses_fresh_inventory_without_old_stmt_equality",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "unit_proof_omitted_tail_remains_implicit_unit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "verifier_consumes_predicate_proof_arena_records",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "check_failure_retains_exact_session_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "condition_index_validation_rejects_invalid_count_and_bounds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "condition_indices_follow_authored_zero_based_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "enabled_debug_failure_retains_exact_session_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "guard_derivation_uses_typed_seed_and_is_deterministic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "prove_has_no_runtime_mode_or_guard",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "release_plan_omits_debug_evaluation_and_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "runtime_fault_artifact_mismatch_is_typed_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "runtime_fault_invalid_guard_is_typed_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::assertion_identity",
+      "test": "runtime_fault_profile_mismatch_is_typed_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "canonical_awbc_rejects_tampered_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "canonical_awbc_roundtrip_preserves_product_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "decoded_awbc_carries_the_complete_original_program_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "decoded_awbc_positional_asset_need_uses_canonical_binding_and_original_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "decoded_awbc_selected_need_uses_the_completed_program_task_plan_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "decoded_selected_code_asserts_the_original_completed_task_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "dense_constants_preserve_exact_bits_in_native_decoded_awbc_and_saved_results",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "flow_library_without_public_entry_preserves_verified_executable_roots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "native_and_decoded_awbc_goto_use_the_target_function_instantiation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "native_positional_asset_need_uses_canonical_binding_and_original_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "native_selected_need_uses_the_completed_program_task_plan_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "owned_program_root_retains_affine_inputs_and_result_across_save_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "owned_unit_program_retains_its_typed_result_across_save_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "product_awbc_matches_first_progress_observer_and_consumes_publication_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "binary": "arcweft-runtime-plan::awbc_product_parity",
+      "test": "typed_runtime_plan_and_product_awbc_return_the_same_value",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

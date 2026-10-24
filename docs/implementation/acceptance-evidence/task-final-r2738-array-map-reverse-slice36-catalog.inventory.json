@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "name": "task-final-r2738-array-map-reverse-slice36-catalog",
+  "all": 31,
+  "matched": 31,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "carrier_block_catches_try_before_the_function_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "nested_try_lifts_the_surrounding_expression_into_the_carrier",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "ordinary_terminal_try_is_not_implicitly_wrapped_for_the_return_type",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "pipe_left_binding_precedes_try_in_the_pipe_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "pipe_lowers_the_left_value_once_through_the_admitted_local",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "try_inside_an_ordinary_block_keeps_the_outer_continuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "try_remains_inside_its_if_branch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "try_remains_inside_its_match_arm",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::task_admission",
+      "test": "conflicting_join_does_not_replace_accepted_work",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::task_admission",
+      "test": "generation_changes_task_identity_while_need_remains_generation_independent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::task_admission",
+      "test": "infrastructure_diagnostics_bound_utf8_and_reject_oversized_saved_input",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::task_admission",
+      "test": "join_reuses_the_complete_receipt_when_only_diagnostics_change",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::task_admission",
+      "test": "need_resolution_keeps_equal_need_ids_in_different_generations_separate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::task_admission",
+      "test": "publication_position_is_independent_of_the_physical_dispatch_attempt",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::task_admission",
+      "test": "rejected_outcome_does_not_consume_the_next_launch_ordinal",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::task_plan_view_prefix",
+      "test": "upper_authority_has_public_read_only_access_to_the_complete_core_prefix",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "canonical_sheet_decode_rejects_unsorted_token_and_rule_arrays",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "checked_sheet_owns_id_tokens_rules_and_round_trips",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "checked_style_records_reject_unknown_fields_at_every_nested_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "declaration_and_rule_validation_rejects_malformed_combinations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "duplicate_rule_source_order_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "rule_token_references_must_resolve_in_the_owning_sheet_with_the_same_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "selector_depth_matches_combinator_chain_length",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "serde_decode_rechecks_nested_values_selectors_and_patch_declarations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "sheet_constructor_canonicalizes_token_and_rule_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "sheet_identity_owns_authored_and_engine_family_invariants",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "sheet_rejects_duplicate_missing_mismatched_and_cyclic_tokens",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "sheet_rejects_token_reference_depth_above_the_canonical_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "style_program_canonicalizes_owned_inventories_and_rejects_noncanonical_decode",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "style_program_owns_inline_patch_token_validation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-view",
+      "binary": "arcweft-view::style_sheet",
+      "test": "style_value_and_application_object_codecs_reject_unknown_fields",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

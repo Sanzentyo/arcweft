@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "ordinal": 10,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 2,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-compiler",
+      "name": "data_format_nominal",
+      "kind": "test",
+      "binary": "arcweft-compiler::data_format_nominal",
+      "caseCount": 2
+    },
+    {
+      "package": "arcweft-player-scene",
+      "name": "controller_navigation",
+      "kind": "test",
+      "binary": "arcweft-player-scene::controller_navigation",
+      "caseCount": 3
+    }
+  ],
+  "matched": 5,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2686-array-map-reverse-slice10-catalog",
+  "run": "task-final-r2687-array-map-reverse-slice10-runtime",
+  "buildOnly": false
+}

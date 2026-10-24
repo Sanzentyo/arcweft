@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "name": "task-final-r2716-array-map-reverse-slice25-catalog",
+  "all": 29,
+  "matched": 29,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::record_admission",
+      "test": "anonymous_record_admission_assigns_authored_one_based_identities",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::record_admission",
+      "test": "anonymous_record_admission_rejects_first_repeated_name",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::record_admission",
+      "test": "awbc_snapshot_reconstruction_admits_the_same_row_and_column_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::record_admission",
+      "test": "first_record_column_length_mismatch_reports_ordinal_zero",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::record_admission",
+      "test": "record_column_length_precedes_duplicate_name",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::record_admission",
+      "test": "record_columns_preserve_ids_and_reconstruct_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::record_field_names",
+      "test": "conflicting_record_names_reject_the_entire_plan_type_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core::record_field_names",
+      "test": "record_name_order_changes_the_contract_even_when_child_types_are_identical",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::publication_contract",
+      "test": "aggregate_duplicate_schema_keeps_cross_revision_primary_and_related_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::publication_contract",
+      "test": "aggregate_record_and_work_limits_are_inclusive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::publication_contract",
+      "test": "invalid_default_points_at_default_and_relates_its_typed_field_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::publication_contract",
+      "test": "nested_record_default_uses_nested_value_and_nested_field_type_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::publication_contract",
+      "test": "required_defaults_nonempty_lists_and_inverted_constraints_fail_closed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "binary": "arcweft-resource-manifest::publication_contract",
+      "test": "selected_versions_for_one_package_are_rejected_before_registry_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "deeply_nested_defaults_fail_with_the_shared_budget_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "duplicate_schema_and_codec_failures_are_input_order_independent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "duplicate_type_evidence_is_deterministic_for_every_input_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "exact_manifest_version_is_the_only_accepted_version",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "family_codec_and_capability_invariants_are_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "local_schema_invariants_report_typed_issues_without_string_coercion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "malformed_field_order_does_not_change_registry_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "nested_record_and_enum_defaults_are_validated_against_published_schemas",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "publication_is_canonical_and_ignores_docs_and_provenance_in_semantic_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "resource_refs_require_registered_types_but_asset_refs_require_only_payload_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "retained_reference_defaults_reject_the_wrong_exact_kind_at_the_nested_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "retained_references_are_validated_recursively_without_a_field_name_switch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "retained_target_identity_participates_in_the_canonical_registry_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "same_kind_duplicate_schema_failures_are_input_order_independent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-resource-model",
+      "binary": "arcweft-resource-model::registry_contract",
+      "test": "value_type_owns_exact_reference_validation_and_preserves_the_caller_path",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

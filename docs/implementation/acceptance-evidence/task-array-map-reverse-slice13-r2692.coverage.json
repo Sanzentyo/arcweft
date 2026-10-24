@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 13,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-cli",
+      "name": "environment_callable_tensor",
+      "kind": "test",
+      "binary": "arcweft-cli::environment_callable_tensor",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "evaluated_effects",
+      "kind": "test",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "caseCount": 46
+    },
+    {
+      "package": "arcweft-core",
+      "name": "direct_suspension",
+      "kind": "test",
+      "binary": "arcweft-core::direct_suspension",
+      "caseCount": 8
+    },
+    {
+      "package": "arcweft-text-layout",
+      "name": "document_layout",
+      "kind": "test",
+      "binary": "arcweft-text-layout::document_layout",
+      "caseCount": 22
+    }
+  ],
+  "matched": 77,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2692-array-map-reverse-slice13-catalog",
+  "run": "task-final-r2693-array-map-reverse-slice13-runtime",
+  "buildOnly": false
+}

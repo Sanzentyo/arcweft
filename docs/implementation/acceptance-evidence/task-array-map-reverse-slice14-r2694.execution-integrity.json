@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 14,
+  "run": "task-final-r2695-array-map-reverse-slice14-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_effects-93699e261777e807.exe",
+      "sha256": "1b536a1dff4a1802df74a4fe293cbcae1e1f975206bf3b8c98e4f9c06e2cf27a",
+      "bytes": 112766976
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-1dfe6d9e6d5b77da.exe",
+      "sha256": "2497e834fea207cba12bf5cf2d169effb020bf28c7434ded2c4e16f4eb47572b",
+      "bytes": 125046784
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\frame_resolution-24742acc51bda994.exe",
+      "sha256": "f12bbbe7875d05b6ad8af5ad192728697694ccf2f6b383c18a167aff2734873f",
+      "bytes": 5943296
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\generic_continuation_snapshot-c2941d503560b89f.exe",
+      "sha256": "62aee588b4a932821fa446f93205b7287c64b4e479fe127edd9567cafaa5e2c0",
+      "bytes": 173972992
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T07:53:57.3518045Z"
+}

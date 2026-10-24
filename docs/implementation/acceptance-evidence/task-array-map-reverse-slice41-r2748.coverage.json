@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 41,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-bundle",
+      "name": "view_product_validation",
+      "kind": "test",
+      "binary": "arcweft-bundle::view_product_validation",
+      "caseCount": 9
+    },
+    {
+      "package": "arcweft-bundle",
+      "name": "view_resource_codecs",
+      "kind": "test",
+      "binary": "arcweft-bundle::view_resource_codecs",
+      "caseCount": 38
+    },
+    {
+      "package": "arcweft-compiler",
+      "name": "view_product",
+      "kind": "test",
+      "binary": "arcweft-compiler::view_product",
+      "caseCount": 69
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "name": "view_interaction_dispatch",
+      "kind": "test",
+      "binary": "arcweft-runtime-host::view_interaction_dispatch",
+      "caseCount": 1
+    }
+  ],
+  "matched": 117,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2748-array-map-reverse-slice41-catalog",
+  "run": "task-final-r2749-array-map-reverse-slice41-runtime",
+  "buildOnly": false
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "ordinal": 6,
+  "run": "task-final-r2679-array-map-reverse-slice6-runtime",
+  "buildOnly": false,
+  "sourceInputs": 5344,
+  "sourceDrift": 0,
+  "targetDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "sha256": "0e504facb539c4ad20a12edfffe018499c3bf3a44850e1901f745f816caeb9f2",
+      "bytes": 292126720
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\bracket_numeric_batch-1d6d43fd89acf6f3.exe",
+      "sha256": "b1c3b2942f865768544591c58c90dd0e1d009b9e7611a093b11a68e168247f80",
+      "bytes": 152318464
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\builtin_payload_admission-41f7bfa00d3dc025.exe",
+      "sha256": "abdb2edc9162ea5201757e64d8a12293e3d288133bbea6a02d68d6d6ac509dd1",
+      "bytes": 6109184
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\bundle_runner-8602e3ee36ea08f0.exe",
+      "sha256": "c4b79cbd415af2ee37b75d6727f9fdc89eaa5b95dc953d7ec806ecc59bc138f7",
+      "bytes": 128455680
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\bytecode_link_producer_inventory-9db05dffc39d980a.exe",
+      "sha256": "53993351b26b7607eadbe16b568e2c66867205dc045e7d0d8a849ecae823612a",
+      "bytes": 794624
+    }
+  ],
+  "held": 14,
+  "recordedAt": "2026-10-24T07:34:43.3680881Z"
+}

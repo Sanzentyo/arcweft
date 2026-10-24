@@ -1,0 +1,910 @@
+{
+  "version": 1,
+  "base": [
+    "d3f81dbda05299f6e5d5d912b25e3efad256ce3c"
+  ],
+  "completedSlices": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44
+  ],
+  "pendingSlices": [],
+  "targetCount": 166,
+  "plannedTargetCount": 166,
+  "executed": 1780.0,
+  "passed": 1729.0,
+  "failed": 51.0,
+  "skipped": 39.0,
+  "ignored": 39,
+  "duplicateCases": 0,
+  "duplicateTargets": 0,
+  "namedPackages": [
+    "arcweft-adapter-desktop",
+    "arcweft-agent-mcp",
+    "arcweft-agent-repl",
+    "arcweft-bundle",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-core",
+    "arcweft-dialogue",
+    "arcweft-glyphon",
+    "arcweft-lang-sema",
+    "arcweft-launch",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-web",
+    "arcweft-project",
+    "arcweft-project-loader",
+    "arcweft-render-text",
+    "arcweft-render-wgpu",
+    "arcweft-resource-manifest",
+    "arcweft-resource-model",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-save",
+    "arcweft-text-layout",
+    "arcweft-tooling",
+    "arcweft-view"
+  ],
+  "zeroCaseTargets": [
+    {
+      "package": "arcweft-browser-bench",
+      "name": "browser_bench_host",
+      "kind": "bin",
+      "binary": "arcweft-browser-bench::bin/browser_bench_host",
+      "caseCount": 0
+    },
+    {
+      "package": "arcweft-cli",
+      "name": "arcw",
+      "kind": "bin",
+      "binary": "arcweft-cli::bin/arcw",
+      "caseCount": 0
+    },
+    {
+      "package": "arcweft-lsp",
+      "name": "arcweft-lsp",
+      "kind": "bin",
+      "binary": "arcweft-lsp::bin/arcweft-lsp",
+      "caseCount": 0
+    },
+    {
+      "package": "arcweft-player-native",
+      "name": "windows-tsf-ime-sample",
+      "kind": "bin",
+      "binary": "arcweft-player-native::bin/windows-tsf-ime-sample",
+      "caseCount": 0
+    }
+  ],
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_indexes_multiple_sources"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_checks_runtime_assert_sections"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_headless_runtime_sections"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_traverse_parallel_file_tasks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_skips_adapter_only_script_benches"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_validates_headless_script_benches"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "control_local_admission::array_map_rejects_the_complete_local_inventory_before_expanding_rows"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "plan_json_lists_runtime_task_graph"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_check_rejects_ambient_route_params"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_runs_native_file_tasks_without_absolute_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_scope_and_loop_value_bindings"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_traverse_parallel_file_tasks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_observes_line_child_tasks_through_scheduler"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_steps_runtime_plan"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "spec_valid_run_edge_fixture_now_executes"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "unsafe_json_lists_audit_regions"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "test_json_executes_headless_scenario_expectations"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_records_required_solver_checks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_missing_promotion_proof"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_invalid_proof_body"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_semantic_thread_join_conflict"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_unknown_proof_dependency"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_respects_semantic_defer_cancel_discharge"
+    }
+  ],
+  "slices": [
+    {
+      "ordinal": 1,
+      "catalog": "task-final-r2668-array-map-reverse-slice1-catalog",
+      "run": "task-final-r2669-array-map-reverse-slice1-runtime",
+      "targets": 4,
+      "executed": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 2,
+      "catalog": "task-final-r2670-array-map-reverse-slice2-catalog",
+      "run": "task-final-r2671-array-map-reverse-slice2-runtime",
+      "targets": 3,
+      "executed": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 3,
+      "catalog": "task-final-r2672-array-map-reverse-slice3-catalog",
+      "run": "task-final-r2673-array-map-reverse-slice3-runtime",
+      "targets": 5,
+      "executed": 21,
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 4,
+      "catalog": "task-final-r2674-array-map-reverse-slice4-catalog",
+      "run": "task-final-r2675-array-map-reverse-slice4-runtime",
+      "targets": 4,
+      "executed": 41,
+      "passed": 41,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 5,
+      "catalog": "task-final-r2676-array-map-reverse-slice5-catalog",
+      "run": "task-final-r2677-array-map-reverse-slice5-runtime",
+      "targets": 4,
+      "executed": 47,
+      "passed": 47,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 6,
+      "catalog": "task-final-r2678-array-map-reverse-slice6-catalog",
+      "run": "task-final-r2679-array-map-reverse-slice6-runtime",
+      "targets": 4,
+      "executed": 16,
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 7,
+      "catalog": "task-final-r2680-array-map-reverse-slice7-catalog",
+      "run": "task-final-r2681-array-map-reverse-slice7-runtime",
+      "targets": 4,
+      "executed": 188,
+      "passed": 188,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 8,
+      "catalog": "task-final-r2682-array-map-reverse-slice8-catalog",
+      "run": "task-final-r2683-array-map-reverse-slice8-runtime",
+      "targets": 4,
+      "executed": 473,
+      "passed": 422,
+      "failed": 51,
+      "skipped": 23,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 9,
+      "catalog": "task-final-r2684-array-map-reverse-slice9-catalog",
+      "run": "task-final-r2685-array-map-reverse-slice9-runtime",
+      "targets": 4,
+      "executed": 22,
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 10,
+      "catalog": "task-final-r2686-array-map-reverse-slice10-catalog",
+      "run": "task-final-r2687-array-map-reverse-slice10-runtime",
+      "targets": 2,
+      "executed": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 11,
+      "catalog": "task-final-r2688-array-map-reverse-slice11-catalog",
+      "run": "task-final-r2689-array-map-reverse-slice11-runtime",
+      "targets": 4,
+      "executed": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 12,
+      "catalog": "task-final-r2690-array-map-reverse-slice12-catalog",
+      "run": "task-final-r2691-array-map-reverse-slice12-runtime",
+      "targets": 4,
+      "executed": 21,
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 13,
+      "catalog": "task-final-r2692-array-map-reverse-slice13-catalog",
+      "run": "task-final-r2693-array-map-reverse-slice13-runtime",
+      "targets": 4,
+      "executed": 77,
+      "passed": 77,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 14,
+      "catalog": "task-final-r2694-array-map-reverse-slice14-catalog",
+      "run": "task-final-r2695-array-map-reverse-slice14-runtime",
+      "targets": 4,
+      "executed": 41,
+      "passed": 41,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 15,
+      "catalog": "task-final-r2696-array-map-reverse-slice15-catalog",
+      "run": "task-final-r2697-array-map-reverse-slice15-runtime",
+      "targets": 4,
+      "executed": 71,
+      "passed": 71,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 16,
+      "catalog": "task-final-r2698-array-map-reverse-slice16-catalog",
+      "run": "task-final-r2699-array-map-reverse-slice16-runtime",
+      "targets": 4,
+      "executed": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 17,
+      "catalog": "task-final-r2700-array-map-reverse-slice17-catalog",
+      "run": "task-final-r2701-array-map-reverse-slice17-runtime",
+      "targets": 4,
+      "executed": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 18,
+      "catalog": "task-final-r2702-array-map-reverse-slice18-catalog",
+      "run": "task-final-r2703-array-map-reverse-slice18-runtime",
+      "targets": 4,
+      "executed": 23,
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 19,
+      "catalog": "task-final-r2704-array-map-reverse-slice19-catalog",
+      "run": "task-final-r2705-array-map-reverse-slice19-runtime",
+      "targets": 4,
+      "executed": 32,
+      "passed": 32,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 20,
+      "catalog": "task-final-r2706-array-map-reverse-slice20-catalog",
+      "run": "task-final-r2707-array-map-reverse-slice20-runtime",
+      "targets": 4,
+      "executed": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 21,
+      "catalog": "task-final-r2708-array-map-reverse-slice21-catalog",
+      "run": "task-final-r2709-array-map-reverse-slice21-runtime",
+      "targets": 4,
+      "executed": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 22,
+      "catalog": "task-final-r2710-array-map-reverse-slice22-catalog",
+      "run": "task-final-r2711-array-map-reverse-slice22-runtime",
+      "targets": 4,
+      "executed": 56,
+      "passed": 56,
+      "failed": 0,
+      "skipped": 7,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 23,
+      "catalog": "task-final-r2712-array-map-reverse-slice23-catalog",
+      "run": "task-final-r2713-array-map-reverse-slice23-runtime",
+      "targets": 1,
+      "executed": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 24,
+      "catalog": "task-final-r2714-array-map-reverse-slice24-catalog",
+      "run": "task-final-r2715-array-map-reverse-slice24-runtime",
+      "targets": 4,
+      "executed": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 25,
+      "catalog": "task-final-r2716-array-map-reverse-slice25-catalog",
+      "run": "task-final-r2717-array-map-reverse-slice25-runtime",
+      "targets": 4,
+      "executed": 29,
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 26,
+      "catalog": "task-final-r2718-array-map-reverse-slice26-catalog",
+      "run": "task-final-r2719-array-map-reverse-slice26-runtime",
+      "targets": 3,
+      "executed": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 27,
+      "catalog": "task-final-r2720-array-map-reverse-slice27-catalog",
+      "run": "task-final-r2721-array-map-reverse-slice27-runtime",
+      "targets": 4,
+      "executed": 18,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 28,
+      "catalog": "task-final-r2722-array-map-reverse-slice28-catalog",
+      "run": "task-final-r2723-array-map-reverse-slice28-runtime",
+      "targets": 4,
+      "executed": 21,
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 29,
+      "catalog": "task-final-r2724-array-map-reverse-slice29-catalog",
+      "run": "task-final-r2725-array-map-reverse-slice29-runtime",
+      "targets": 4,
+      "executed": 29,
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 30,
+      "catalog": "task-final-r2726-array-map-reverse-slice30-catalog",
+      "run": "task-final-r2727-array-map-reverse-slice30-runtime",
+      "targets": 3,
+      "executed": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 31,
+      "catalog": "task-final-r2728-array-map-reverse-slice31-catalog",
+      "run": "task-final-r2729-array-map-reverse-slice31-runtime",
+      "targets": 4,
+      "executed": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 3,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 32,
+      "catalog": "task-final-r2730-array-map-reverse-slice32-catalog",
+      "run": "task-final-r2731-array-map-reverse-slice32-runtime",
+      "targets": 4,
+      "executed": 27,
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 33,
+      "catalog": "task-final-r2732-array-map-reverse-slice33-catalog",
+      "run": "task-final-r2733-array-map-reverse-slice33-runtime",
+      "targets": 4,
+      "executed": 43,
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 34,
+      "catalog": "task-final-r2734-array-map-reverse-slice34-catalog",
+      "run": "task-final-r2735-array-map-reverse-slice34-runtime",
+      "targets": 4,
+      "executed": 36,
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 35,
+      "catalog": "task-final-r2736-array-map-reverse-slice35-catalog",
+      "run": "task-final-r2737-array-map-reverse-slice35-runtime",
+      "targets": 4,
+      "executed": 41,
+      "passed": 41,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 36,
+      "catalog": "task-final-r2738-array-map-reverse-slice36-catalog",
+      "run": "task-final-r2739-array-map-reverse-slice36-runtime",
+      "targets": 4,
+      "executed": 31,
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 37,
+      "catalog": "task-final-r2740-array-map-reverse-slice37-catalog",
+      "run": "task-final-r2741-array-map-reverse-slice37-runtime",
+      "targets": 4,
+      "executed": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 38,
+      "catalog": "task-final-r2742-array-map-reverse-slice38-catalog",
+      "run": "task-final-r2743-array-map-reverse-slice38-runtime",
+      "targets": 4,
+      "executed": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 3,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 39,
+      "catalog": "task-final-r2744-array-map-reverse-slice39-catalog",
+      "run": "task-final-r2745-array-map-reverse-slice39-runtime",
+      "targets": 4,
+      "executed": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 3,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 40,
+      "catalog": "task-final-r2746-array-map-reverse-slice40-catalog",
+      "run": "task-final-r2747-array-map-reverse-slice40-runtime",
+      "targets": 4,
+      "executed": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 41,
+      "catalog": "task-final-r2748-array-map-reverse-slice41-catalog",
+      "run": "task-final-r2749-array-map-reverse-slice41-runtime",
+      "targets": 4,
+      "executed": 117,
+      "passed": 117,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 42,
+      "catalog": "task-final-r2750-array-map-reverse-slice42-catalog",
+      "run": "task-final-r2751-array-map-reverse-slice42-runtime",
+      "targets": 4,
+      "executed": 58,
+      "passed": 58,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 43,
+      "catalog": "task-final-r2752-array-map-reverse-slice43-catalog",
+      "run": "task-final-r2753-array-map-reverse-slice43-runtime",
+      "targets": 4,
+      "executed": 18,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    },
+    {
+      "ordinal": 44,
+      "catalog": "task-final-r2754-array-map-reverse-slice44-catalog",
+      "run": "task-final-r2755-array-map-reverse-slice44-runtime",
+      "targets": 1,
+      "executed": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "buildOnly": false,
+      "sourceInputs": 5344
+    }
+  ],
+  "recordedAt": "2026-10-24T08:35:25.3453562Z"
+}

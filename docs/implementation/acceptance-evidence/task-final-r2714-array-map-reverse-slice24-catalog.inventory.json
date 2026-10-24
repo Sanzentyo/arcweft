@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "name": "task-final-r2714-array-map-reverse-slice24-catalog",
+  "all": 4,
+  "matched": 4,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-lsp",
+      "binary": "arcweft-lsp::public_api",
+      "test": "raw_text_document_analysis_entry_is_not_public",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::public_api",
+      "test": "removed_project_loader_apis_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::public_api",
+      "test": "permissive_typed_json_decoder_is_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::public_api",
+      "test": "detached_text_tooling_entrypoints_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

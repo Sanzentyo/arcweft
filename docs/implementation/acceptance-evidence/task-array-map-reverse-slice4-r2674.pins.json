@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2674-array-map-reverse-slice4-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292126720,
+      "nonTest": true,
+      "sha256": "0e504facb539c4ad20a12edfffe018499c3bf3a44850e1901f745f816caeb9f2"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcw_fixtures_check_run-1de0cc0ddf54db9a.exe",
+      "bytes": 868864,
+      "nonTest": false,
+      "sha256": "e2db5a233b495fc3ef684da4755ec0d523e518550d2dbdebfd7b74d492bcbfc1"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertion_identity-09b23a06226358da.exe",
+      "bytes": 73894400,
+      "nonTest": false,
+      "sha256": "b3a329addc2b23b39d98333e1a69ea45adf926582148c933f86fda1773c56a30"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertions-cba81240f9033392.exe",
+      "bytes": 92135936,
+      "nonTest": false,
+      "sha256": "cf5d59b63d6d9a2e790e4f82ab82427311089016663eaa2cafa3f1161ff17031"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_parity-7fa0989d45214c56.exe",
+      "bytes": 44112384,
+      "nonTest": false,
+      "sha256": "55fb2eaf7f3ca6882e2ebb1b37ccc3369c32d97f40692a0f94817c23f2ed2494"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T07:32:32.7115116Z"
+}

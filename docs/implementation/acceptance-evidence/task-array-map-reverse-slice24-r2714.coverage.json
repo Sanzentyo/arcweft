@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ordinal": 24,
+  "base": "d3f81dbda05299f6e5d5d912b25e3efad256ce3c",
+  "targetCount": 4,
+  "targetDrift": 0,
+  "targets": [
+    {
+      "package": "arcweft-lsp",
+      "name": "public_api",
+      "kind": "test",
+      "binary": "arcweft-lsp::public_api",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-project-loader",
+      "name": "public_api",
+      "kind": "test",
+      "binary": "arcweft-project-loader::public_api",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-save",
+      "name": "public_api",
+      "kind": "test",
+      "binary": "arcweft-save::public_api",
+      "caseCount": 1
+    },
+    {
+      "package": "arcweft-tooling",
+      "name": "public_api",
+      "kind": "test",
+      "binary": "arcweft-tooling::public_api",
+      "caseCount": 1
+    }
+  ],
+  "matched": 4,
+  "excluded": 0,
+  "ignored": 0,
+  "catalog": "task-final-r2714-array-map-reverse-slice24-catalog",
+  "run": "task-final-r2715-array-map-reverse-slice24-runtime",
+  "buildOnly": false
+}
