@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "base": {
+    "head": "1022a12a9d28cfba1149aa6dd8c16d2dd19b7268",
+    "branch": "main"
+  },
+  "scope": "Read-only documentation/status evidence audit at the specified HEAD. No repository files, Cargo state, or Git state were changed by this audit.",
+  "checked_paths": [
+    {"path": "AGENTS.md", "lines": "all", "purpose": "repository workflow and status authority"},
+    {"path": "docs/AGENTS.md", "lines": "all", "purpose": "documentation evidence boundaries"},
+    {"path": "docs/implementation/AGENTS.md", "lines": "all", "purpose": "current and historical evidence rules"},
+    {"path": "crates/AGENTS.md", "lines": "all", "purpose": "source ownership context for inspected Rust facts"},
+    {"path": "docs/implementation/current-status.md", "lines": "3-81", "purpose": "sole itemized current status and recent claims"},
+    {"path": "docs/README.md", "lines": "1-3", "purpose": "top-level documentation navigation"},
+    {"path": "docs/implementation/README.md", "lines": "1-15", "purpose": "implementation-record navigation and status authority"},
+    {"path": "docs/implementation/documentation-cleanup.md", "lines": "1-14, 96-130", "purpose": "cleanup decision and historical-note disposition"},
+    {"path": "docs/implementation/convergence-evidence-history.md", "lines": "10235-10292, 10326-10392", "purpose": "Array Map and latest reverse-runtime evidence"},
+    {"path": "docs/implementation/acceptance-evidence/task-array-map-reverse-combined-execution.json", "lines": "1-20, 747-786", "purpose": "aggregate counts, failure identities, and companion run accounting"},
+    {"path": "docs/implementation/acceptance-evidence/task-array-map-reverse-generic-current-execution.json", "lines": "1-70", "purpose": "current Generic Match acceptance rerun and identity reuse"},
+    {"path": "docs/implementation/acceptance-evidence/accepted-generic-c3-c5-closure-audit.json", "lines": "all", "purpose": "accepted Generic Match scope and retained runs"},
+    {"path": "docs/implementation/acceptance-evidence/accepted-generic-phase-note-publication.json", "lines": "1-12", "purpose": "published phase note identity"},
+    {"path": "docs/implementation/acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json", "lines": "all", "purpose": "50 current CLI failure classes"},
+    {"path": "docs/implementation/acceptance-evidence/task-final-r2661-array-map-workspace-check.log", "lines": "1-2183", "purpose": "raw workspace check output and warnings"},
+    {"path": "docs/implementation/acceptance-evidence/task-final-r2662-array-map-workspace-clippy.json", "lines": "1-15", "purpose": "workspace Clippy receipt"},
+    {"path": "docs/implementation/acceptance-evidence/task-final-r2662-array-map-workspace-clippy.log", "lines": "1-135706", "purpose": "raw workspace Clippy output and terminal summary"},
+    {"path": "docs/implementation/acceptance-evidence/task-final-r2760-array-map-admission-clippy.json", "lines": "1-119", "purpose": "CLI test-target Clippy receipt"},
+    {"path": "docs/implementation/acceptance-evidence/task-final-r2760-array-map-admission-clippy.log", "lines": "1-106198", "purpose": "raw CLI test-target Clippy output and terminal summary"},
+    {"path": "crates/arcweft-lang-sema/src/types.rs", "lines": "850-885", "purpose": "current source declaration of published Map families"},
+    {"path": "crates/arcweft-compiler/src/lower.rs", "lines": "9360-9431", "purpose": "current typed collection Map lowering"},
+    {"path": "crates/arcweft-cli/tests/check/control_local_admission.rs", "lines": "1-60", "purpose": "current fixed-inventory/exact-length Array Map regression test"},
+    {"path": "crates/arcweft-lang-sema/tests/checked_match_query.rs", "lines": "145-170", "purpose": "current checked Match public query contract coverage"}
+  ],
+  "source_facts": [
+    {
+      "claim": "The current combined Core reverse-dependency run is 7,254 executed, 7,204 passed, 50 failed, and 39 ignored, with 5,474 library cases plus 1,780 integration/bin cases and 166 integration/bin targets.",
+      "assessment": "supported",
+      "evidence": [
+        "current-status.md:3-7, 57-59",
+        "task-array-map-reverse-combined-execution.json: selectedPackages=53, libraryExecuted=5474, integrationBinExecuted=1780, executed=7254, passed=7204, failed=50, ignored=39, duplicateCases=0, integrationTargetCount=166",
+        "task-array-map-reverse-library.final-summary.json: passed=5474, failed=0",
+        "task-array-map-reverse-integration-summary.json: executed=1780, passed=1730, failed=50, ignored=39"
+      ]
+    },
+    {
+      "claim": "Generic Match .1.2 C3/C5 remains accepted and published; all 151 accepted cases pass in the current evidence.",
+      "assessment": "supported; no basis found to reopen acceptance from the whole-goal status",
+      "evidence": [
+        "current-status.md:31-40",
+        "accepted-generic-c3-c5-closure-audit.json: status says accepted Generic .1.2 C3/C5 closure; all 151 focused IDs pass in both retained fresh runs",
+        "accepted-generic-phase-note-publication.json: commit/remote f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2, parent 850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+        "task-array-map-reverse-generic-current-execution.json: acceptedCommit=850534b9e9bc8c8872f6528dd00050a5e6e7699e, publication=f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2, genericCases=151, passed=151, failed=0, genericNonPass=[]; productionInputDrift=0 and only unrelated CLI test input changed",
+        "crates/arcweft-lang-sema/tests/checked_match_query.rs:145-170 covers complete read-only checked Match facts"
+      ]
+    },
+    {
+      "claim": "The six public collection/variant Map families and constant-inventory exact-length Array Map behavior are reflected by current source and recent acceptance evidence.",
+      "assessment": "supported for the stated boundary",
+      "evidence": [
+        "current-status.md:41, 75",
+        "convergence-evidence-history.md:10235-10260 records 46/46 targeted Map cases passing, including 4,096 callbacks and exact budget; lines 10272-10277 delimit broader unrun matrix",
+        "types.rs:875-885 declares six PUBLISHED families",
+        "control_local_admission.rs:3-58 checks lengths 0, 1, 4096, and 2147483648 against one local/function inventory and exact Array result length",
+        "task-array-map-reverse-combined-execution.json absentPriorFailureIdentities marks the old 4,096-element CLI case PASS"
+      ]
+    },
+    {
+      "claim": "The 50 CLI failure groups and counts in the current-status table total 50 and match the retained classification/reconciliation evidence.",
+      "assessment": "supported",
+      "evidence": [
+        "current-status.md:61-77",
+        "task-array-map-reverse-cli-current-failure-classification.json: group counts 9+8+6+7+0+6+14=50, total=50, actualExitCode=100",
+        "task-final-r2759-array-map-cli-final-runtime.failure-recon.json: failureCount=50 and failure identities equal the prior CLI set"
+      ]
+    },
+    {
+      "claim": "R2661/R2662 and R2760 warning wording in current status matches the raw logs: the commands exit 0 and warnings are present.",
+      "assessment": "supported; the current status does not overstate a workspace-wide warning count",
+      "evidence": [
+        "current-status.md:15-16, 59",
+        "task-final-r2661-array-map-workspace-check.log: warnings present; terminal line 2183 says Finished dev profile",
+        "task-final-r2662-array-map-workspace-clippy.json:13 exitCode=0; raw log lines 1 and 135705-135706 contain warnings and Finished dev profile",
+        "task-final-r2760-array-map-admission-clippy.json:119 exitCode=0; raw log lines 1 and 106197-106198 contain warnings and Finished dev profile",
+        "Both Clippy logs' 209-warning summary is scoped to arcweft-cli test \"check\"; it is not a workspace-wide total."
+      ]
+    },
+    {
+      "claim": "The short README references route readers to current-status.md rather than duplicating live status content.",
+      "assessment": "supported",
+      "evidence": [
+        "docs/README.md:3 links to implementation/current-status.md and warns against treating history as live status",
+        "docs/implementation/README.md:3,8 names current-status.md as the single live authority"
+      ]
+    }
+  ],
+  "factual_discrepancies": [],
+  "editorial_duplicates": [
+    {
+      "path": "docs/implementation/current-status.md",
+      "location": "lines 15-16 repeat the current validation state later stated in the itemized table at line 59",
+      "evidence": "Both locations report R2661/R2662 success with warnings, R2760 Clippy success, R2663 blocking=0, 39 ignored, and Tier 2/Native-Web parity not run. The wording is supported but duplicates detail within the single status document.",
+      "severity": "low",
+      "suggestion": "If reducing duplicate live descriptions, keep the opening aggregate summary concise and leave these validation details in the table row, or remove the repeated detail from that row."
+    }
+  ],
+  "outside_file_live_status_scan": {
+    "result": "No second short live itemized status description found in the inspected README/implementation navigation. The two 2026-10-09 CLI repair notes are explicitly dated historical handoffs and are named as such by current-status.md:22; evidence histories are historical by their own README/headers.",
+    "evidence": [
+      "docs/README.md:3",
+      "docs/implementation/README.md:1-8",
+      "docs/implementation/current-status.md:19-22",
+      "docs/implementation/evidence-history.md:1-7",
+      "docs/implementation/convergence-evidence-history.md:10235-10238, 10378-10379"
+    ]
+  }
+}

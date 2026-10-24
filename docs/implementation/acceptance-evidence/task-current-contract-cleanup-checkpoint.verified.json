@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "commit": "1022a12a9d28cfba1149aa6dd8c16d2dd19b7268",
+  "parent": "29c864bb3f42da7f5948b03682eaa875a0833089",
+  "tree": "f8991448fbb9d8a94c32cc5afbb732ba9e64dbcc",
+  "remote": "1022a12a9d28cfba1149aa6dd8c16d2dd19b7268",
+  "advertised": "1022a12a9d28cfba1149aa6dd8c16d2dd19b7268",
+  "paths": [
+    {
+      "path": "docs/01-language/traits-seq-ranges.md",
+      "blob": "de3cb78a2c8ec6f74769b78183633294d3652c2d",
+      "workingBlob": "de3cb78a2c8ec6f74769b78183633294d3652c2d"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "blob": "c411fd3111b1d66a08452d361f5a651258e97b07",
+      "workingBlob": "c411fd3111b1d66a08452d361f5a651258e97b07"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "blob": "548c0aaedd1acb9971f34875a9c0d304720d85c3",
+      "workingBlob": "548c0aaedd1acb9971f34875a9c0d304720d85c3"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "blob": "79c1447f030b040336eb6471ac0e5efdb99bfb11",
+      "workingBlob": "79c1447f030b040336eb6471ac0e5efdb99bfb11"
+    },
+    {
+      "path": "docs/04-tooling/agent-debug-mcp-cli.md",
+      "blob": "cce6c4ca18c26e866c8849bd9137bd12607d7d71",
+      "workingBlob": "cce6c4ca18c26e866c8849bd9137bd12607d7d71"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-current-contract-cleanup-audit.json",
+      "blob": "e7e9b03f4eb9751491b8c15fb309c79dd65a4267",
+      "workingBlob": "e7e9b03f4eb9751491b8c15fb309c79dd65a4267"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-array-map-reverse-integration-checkpoint.verified.json",
+      "blob": "f464dcf65c75a178a8db65119a981962c2c6947a",
+      "workingBlob": "f464dcf65c75a178a8db65119a981962c2c6947a"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "14f9bf657d562b9814c8f0f8b210a4cb00d5e2d3",
+      "workingBlob": "14f9bf657d562b9814c8f0f8b210a4cb00d5e2d3"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "a7e75e66be2ce7ff9dbc475a196fbff0764e49c5",
+      "workingBlob": "a7e75e66be2ce7ff9dbc475a196fbff0764e49c5"
+    }
+  ],
+  "sourceCount": 5879,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "220a1f88d3afbefe682cae84e27900169219d7482713252bfc9375112636490d",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T09:13:20.4435452Z"
+}

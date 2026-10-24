@@ -112,9 +112,8 @@ stored/content digests, bundle-kind section validation, unknown required-section
 rejection, optional unknown-section skipping, and read budgets. Product
 manifests at schema version 1 declare
 `executable_payload = "awbc_v1"`, and their `ProgramBytecode` section is exactly
-canonical bytes from `AwbcProgram::encode_canonical()`. Structured
-`BytecodeProgram` data remains an inspection/export surface only and is not read
-by product `.awfb` runtime execution. Runtime types, entrypoints, adapter
+canonical bytes from `AwbcProgram::encode_canonical()`. Product execution does
+not read a structured `RuntimePlan` fallback. Runtime types, entrypoints, adapter
 requirements, content catalog, display catalog, and normalized source still use
 section-specific typed JSON payloads. See `product-awfb-bytecode.md` and
 `docs/schemas/product-awfb-awbc-v1.json` for the AWBC-only product payload

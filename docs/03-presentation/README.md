@@ -1,8 +1,6 @@
 # 03-presentation
 
 - [wgpu renderer](wgpu-renderer.md)
-- [Render / Input Layer System](render-input-layers.md)
-- [Layer System / Layer-based Input](layers-and-input.md)
 - [Layer System / Input Routing](layers.md)
 - [Layered Rendering](layered-rendering.md)
 - [WGSL shader](wgsl-shaders.md)

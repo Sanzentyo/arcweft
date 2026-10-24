@@ -12,9 +12,7 @@ library 5,474件とintegration／bin 1,780件を重複なく集約し、
 最終失敗は下表の既存CLI 50件で、追加失敗0。修復済みの4,096要素Array MapもPASS。
 初回の追加失敗と訂正理由は履歴へ保持し、上限や受入条件を緩めていない。
 
-workspace check／ClippyはR2661／R2662で終了0、警告あり。訂正したCLI test targetのR2760 Clippyも終了0。R2663構造gateはblocking 0。
-39 ignored、Tier2の最終matrix、Native-Web capture parityの包括的な受入は今回未実行。
-libraryはCore再実行と変更のない他52バイナリの成功を再利用しており、全件を再度実行したとは扱わない。
+共有gate、実行結果の再利用範囲、未実行の受入は下表の各項目に記す。
 
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
 [仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは

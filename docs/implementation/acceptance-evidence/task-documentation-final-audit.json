@@ -1,0 +1,501 @@
+{
+  "version": 1,
+  "base": "1022a12a9d28cfba1149aa6dd8c16d2dd19b7268",
+  "at": "2026-10-24T09:48:53.3474906Z",
+  "scope": "Documentation reconciliation only; no new Cargo/runtime execution",
+  "owned": [
+    "docs/00-overview/architecture.md",
+    "docs/02-runtime/executable-runtime-core.md",
+    "docs/02-runtime/runtime-step-and-executors.md",
+    "docs/03-presentation/layers-and-input.md",
+    "docs/03-presentation/layers.md",
+    "docs/03-presentation/README.md",
+    "docs/03-presentation/render-input-layers.md",
+    "docs/05-build-and-security/packaging.md",
+    "docs/05-build-and-security/product-awfb-bytecode.md",
+    "docs/implementation/acceptance-evidence/task-current-contract-cleanup-checkpoint.verified.json",
+    "docs/implementation/acceptance-evidence/task-documentation-final-audit.json",
+    "docs/implementation/acceptance-evidence/task-documentation-status-final-audit.json",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md",
+    "docs/implementation/documentation-cleanup.md"
+  ],
+  "deleted": [
+    {
+      "path": "docs/03-presentation/layers-and-input.md",
+      "baseBlob": "f0c070bf7ecbc97d7b9efd4a2d5e24d4895a3b49"
+    },
+    {
+      "path": "docs/03-presentation/render-input-layers.md",
+      "baseBlob": "2f88e3618c7c267395f673db035cd66f41a13310"
+    }
+  ],
+  "markdown": [
+    {
+      "path": "docs/00-overview/architecture.md",
+      "sha256": "bc73d40b713f685d34536e1a7149d0b317d5fa5ae1311b362916906d956a8f27",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "sha256": "b922c4569ecb9659aac3a07b71c6f3da20c053b815f5d1110f2c5d54e80d957d",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "sha256": "721eddf3cb49e95b84264ae69f5b844c116da936cce7c81b7247dea38e992c99",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "sha256": "13d68ce17dc411ca325c3d8f6d3db9ecf762940068ab244d4ec6840ded33b022",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "sha256": "7e2b5f23e9154abe5dfbdeaf585f3671bafa0d390d413a6089956374c2936352",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/05-build-and-security/packaging.md",
+      "sha256": "7017428a9605d79c97b3ebfa5efb3f581ab0cb6a71b58979fc63ad70d3002954",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/05-build-and-security/product-awfb-bytecode.md",
+      "sha256": "35db30f6308b8ecb54be63aa0257c8f73e56318611277ed3593d2fa1f93896c3",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "sha256": "c8c53dcb073688a2a99cf431c31ca1e448281c701c0449ccbd14ad7c69864f55",
+      "checkedSurface": "added hunks",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "sha256": "636d80dbe326a8c2752fa4a2287b9a1daa99e4bedd03d8700ed7346c644fd10b",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "sha256": "fe1297d5fab0508055c3bd2433aff19586762016013baa76e59c34e6bc62c81a",
+      "checkedSurface": "added hunks",
+      "fencesBalanced": true
+    }
+  ],
+  "checkedRelativeLinks": 99,
+  "relativeLinks": [
+    {
+      "path": "docs/00-overview/architecture.md",
+      "target": "../03-presentation/layers.md"
+    },
+    {
+      "path": "docs/00-overview/architecture.md",
+      "target": "../02-runtime/layered-input.md"
+    },
+    {
+      "path": "docs/00-overview/architecture.md",
+      "target": "../03-presentation/audio.md"
+    },
+    {
+      "path": "docs/00-overview/architecture.md",
+      "target": "../03-presentation/capture-devices.md"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "target": "../05-build-and-security/product-awfb-bytecode.md"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "target": "product-awbc-runtime-step-parity.md"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "target": "../05-build-and-security/product-awfb-bytecode.md"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "target": "product-awbc-runtime-step-parity.md"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "target": "runtime-step-and-executors.md"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/executor.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "executable-runtime-core.md"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../05-build-and-security/product-awfb-bytecode.md"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/executor.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/step.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/pure.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/step.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/executor.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/pure.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/aot.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/step.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/step.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/step.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/effect.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/step.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/value.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "../../crates/arcweft-core/src/stream.rs"
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "target": "product-awbc-runtime-step-parity.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "wgpu-renderer.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "view-reactive.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "html-servo-dom.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../04-tooling/agent-debug-mcp-cli.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../01-language/hooks-and-memoization.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../schemas/layer-manifest.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../schemas/layer-tree.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../02-runtime/layered-input.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../schemas/memo-cache.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../examples/layers-input.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../../crates/arcweft-presentation/src/layer.rs"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "layered-rendering.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../../crates/arcweft-presentation/src/layer.rs"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../02-runtime/layered-input.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../schemas/memo-cache.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../02-runtime/layered-input.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../04-tooling/agent-observe-capture-contract.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../04-tooling/cli.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../01-language/hooks-and-memoization.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../02-runtime/hooks-memoization.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../03-presentation/device-generator-and-usb.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "../03-presentation/virtual-controller.md"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "target": "touch-virtual-controller.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "wgpu-renderer.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "layers.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "layered-rendering.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "wgsl-shaders.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "view-reactive.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "html-servo-dom.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "vector-svg.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "image-presentation-objects.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "text-typesetting.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "text-presentation-objects.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "rich-text-effects-transforms.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "audio.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "character-stage.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "capture-devices.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "usb-devices.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "device-io-usb.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "device-generator-and-usb.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "virtual-controller.md"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "target": "touch-virtual-controller.md"
+    },
+    {
+      "path": "docs/05-build-and-security/packaging.md",
+      "target": "authored-resource-storage.md"
+    },
+    {
+      "path": "docs/05-build-and-security/packaging.md",
+      "target": "../02-runtime/executable-runtime-core.md"
+    },
+    {
+      "path": "docs/05-build-and-security/product-awfb-bytecode.md",
+      "target": "../02-runtime/runtime-step-and-executors.md"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-current-contract-cleanup-checkpoint.verified.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-documentation-status-final-audit.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "documentation-cleanup.md#現状判定の照合と重複レイヤー章の統合--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-documentation-final-audit.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "current-status.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-combined-execution.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../README.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-c3-c5-closure-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-phase-note-publication.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-generic-current-execution.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/vertical-break-validation-2026-07-14.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../03-presentation/text-typesetting.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.acceptance-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-combined-execution.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-combined-execution.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-library.final-summary.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-integration-summary.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.failure-recon.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "documentation-cleanup.md"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "target": "acceptance-evidence/task-documentation-status-final-audit.json"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "target": "acceptance-evidence/task-documentation-final-audit.json"
+    }
+  ],
+  "unclosedFences": 0,
+  "priorFullShaIdentifiers": 1053,
+  "lostFullShaIdentifiers": [],
+  "untrackedHeld": 6,
+  "untrackedHeldDrift": 0,
+  "genericAcceptance": "Preserved; existing151/151PASS and published acceptance unchanged",
+  "validationReuse": "Existing runtime results remain historical evidence, not rerun by this cut"
+}

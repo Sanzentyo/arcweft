@@ -157,3 +157,36 @@ GPT-6 Luna／maxの2担当が、範囲を限定して現行章を照合し、親
 5章の相対リンク37件は解決し、未閉鎖fenceは0。
 このcutの変更はproseと所有APIへの参照で、Rust／Cargoの新規実行はしていない。
 [差分監査](acceptance-evidence/task-array-map-current-contract-cleanup-audit.json)。
+
+## 現状判定の照合と重複レイヤー章の統合 — 2026-10-24
+
+開始時の `main` は `1022a12a9d28cfba1149aa6dd8c16d2dd19b7268`。
+GPT-6 Luna／max の3担当が、現状一覧の根拠、レイヤー資料、executor資料を分担し、
+親がソースと全差分を確認した。
+
+現状一覧の項目判定に新たな誤りは見つからなかった。Generic Match の受入・公開と
+今回の151／151 PASSは維持する。R2662／R2760のClippyは原ログでも終了0・警告あり。
+一覧の冒頭で繰り返していた共有gateの説明だけを項目表へ集約した。
+[判定の根拠照合](acceptance-evidence/task-documentation-status-final-audit.json)。
+
+`layers-and-input.md` と `render-input-layers.md` は同じレイヤー契約の重複と旧実装案のため削除した。
+固有のwheel正規化、cacheの寿命・無効化、accessibility、layer単位のinput bindingの
+要件は `layers.md` へ残した。詳細なrouting／retained hit-test keyとproduct capabilityは、
+既存のruntime入力章とmanifest schemaを所有箇所として参照する。
+旧hit-test keyの「layout revision」はruntime章の「hit-region revision」へ統合し、
+新たな別keyを設けていない。独立した現行compositor passを定義する
+`layered-rendering.md` は保持した。描画順は実際の `LayerOrder` と `LayerId` の順序へ
+訂正し、古い「同じzならtree order」という別規則を削除した。
+レイヤー章内の重複した観測DTO・CLI表も、観測／capture契約とCLIの所有章への参照にまとめた。
+
+`runtime-step-and-executors.md` の不完全な公開DTOコピー、私有executor構成、旧Phase表記と
+実装順序を削除し、所有APIを参照する説明へまとめた。tier名は `RuntimePlanVm`／
+`StructuredAot`／`AwbcProduct` に訂正した。関連する実行・product章からも、現在の
+ソースに型定義がない `BytecodeProgram` の受渡し・export説明を削除した。
+Nativeのadmitted RuntimePlanと、productのAWBC-only実行境界を明記する。
+Sans-I/O、型付き拒否／fallback、budget、所有権、save tier、batch slot再利用の契約は保持した。
+
+削除した2章には実行済みの検証結果やfull SHAはない。過去の検証原本・失敗・公開SHAは
+移動・改変していない。削除章への現行リンク、変更箇所のMarkdownリンク・fence・
+whitespaceと40桁識別子の保全を確認する範囲の整理で、Cargo／runtimeの新規実行はない。
+[資料差分の照合](acceptance-evidence/task-documentation-final-audit.json)。

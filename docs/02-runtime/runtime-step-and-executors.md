@@ -21,62 +21,26 @@ the materialized referent. A qualifier-only cycle cannot manufacture an admitted
 value. The referent contributes its value nodes and canonical bytes once; qualifier traversal
 does not create another value bank or grant Copy or persistence rights.
 
-```rust
-pub trait RuntimeExecutor {
-    fn step(
-        &mut self,
-        input: RuntimeStepInput,
-        options: RuntimeStepOptions,
-    ) -> RuntimeStepResult;
-
-    fn fiber(&self) -> &FlowFiber;
-}
-
-pub struct RuntimeStepResult {
-    pub output: RuntimeStepOutput,
-    pub fiber_status: FlowFiberStatus,
-    pub stop_reason: RuntimeStepStopReason,
-    pub stats: RuntimeStepStats,
-}
-```
-
-`Engine` implements `RuntimeExecutor` directly inside the core. Application
-crates construct `ArcweftRuntimeExecutor`, selecting a typed
-`ArcweftExecutionTier`; they do not construct the concrete VM, bytecode, AOT, or
-product-AWBC executors. Those concrete executors are core-internal implementation
-details, which keeps host wiring independent of backend reshaping.
-
-`BytecodeProgram` remains the pure data bundle between runtime-plan lowering and
-VM/AOT/JIT execution. Structured VM and AOT tiers use the same semantic state
-machine, while the product tier owns the canonical AWBC executor. Snapshot and
-restore are exposed through the facade only for tiers with a defined typed
-snapshot contract; unsupported tiers return a structured error.
+[`RuntimeExecutor`](../../crates/arcweft-core/src/executor.rs) defines the
+Sans-I/O step boundary implemented by `Engine` and the shared executor facade.
+Application crates select `RuntimePlanVm`, `StructuredAot`, or `AwbcProduct`
+through `ArcweftRuntimeExecutor`; concrete executor construction remains owned
+by core. Structured tiers are constructed from `RuntimePlan` or
+`RuntimeFlowInvocation`; the product tier owns canonical AWBC.
+See the [executable runtime contract](executable-runtime-core.md) and
+[product AWFB contract](../05-build-and-security/product-awfb-bytecode.md).
+The public snapshot enum has a Product AWBC variant; tiers without a typed save
+contract return a structured unsupported-tier error. The tier and snapshot
+contract is defined in [`executor.rs`](../../crates/arcweft-core/src/executor.rs).
 
 ## Executors
 
-```rust
-pub enum ArcweftExecutionTier {
-    StructuredVm,
-    StructuredAot,
-    AwbcProduct,
-}
-
-pub struct ArcweftRuntimeExecutor {
-    inner: ArcweftRuntimeExecutorInner,
-}
-
-enum ArcweftRuntimeExecutorInner {
-    StructuredVm(BytecodeVmExecutor),
-    StructuredAot(AotExecutor),
-    AwbcProduct(Box<AwbcProductExecutor>),
-}
-```
-
-All tiers use the same `RuntimeStepInput`, `RuntimeStepOptions`, and
-`RuntimeStepResult`. The facade can also be stepped with an adapter-provided
-`RuntimePureCallBackend`; this keeps pure helper acceleration outside
-`arcweft-core` while allowing ordinary flow code to benefit from AOT/JIT pure
-helpers automatically.
+All tiers use the same typed step input, options, and result contract, owned by
+[`step.rs`](../../crates/arcweft-core/src/step.rs). The facade also accepts an
+adapter-provided `RuntimeCallBackend` for pure helper acceleration, keeping
+backend execution outside `arcweft-core` while making it available to ordinary
+flow calls; the backend boundary is defined in
+[`pure.rs`](../../crates/arcweft-core/src/pure.rs).
 
 Runtime external producers retain the same accepted resource generation as
 their executable. Bundle admission binds the CharacterDialogue declaration,
@@ -93,14 +57,10 @@ the actual value's exact identity. This applies to function sites, pure helpers
 and trait methods. Native source plans bind the existing accepted runtime-plan
 artifact key before executable lowering; they do not derive a second identity.
 
-`RuntimeStepStats.pure` reports per-step pure helper calls, batch calls, batch
-item counts, JIT/AOT/VM call counts, fixed-stack argument packs, copied
-argument/result byte counts, thread-pool jobs, Vec argument allocations, and
-fallback counts. These counters are step-local even when an adapter keeps a
-persistent JIT/AOT compile cache across steps. Executor-level stats report the
-selected pure backend, worker policy, batch threshold, selected dense math
-backend, math GPU auto threshold, helper acceleration summary, compile
-attempts, cache hits/misses, and compile elapsed time.
+`RuntimeStepStats` and `RuntimePureCallStats` report deterministic per-step
+work, as defined in [`step.rs`](../../crates/arcweft-core/src/step.rs). These
+counters describe the step even when an adapter retains a pure-helper compile
+cache across steps.
 For deterministic integer helpers, VM fallback evaluation also consumes the
 fixed-stack argument pack directly; `arg_vec_allocations` therefore identifies
 runtime call-site argument materialization rather than backend fallback
@@ -109,9 +69,11 @@ by ownership transfer, including affine values, and reuses VM scratch root
 bindings between calls.
 `arg_bytes_borrowed` counts the backend's temporary slice inspection of that
 owned vector; it does not represent a copy of the value graph.
-Bytecode VM programs preserve the runtime plan's pure-helper table, so executor
-artifact lowering does not change whether ordinary flow calls can use the
-adapter-provided pure backend.
+Executor tier lowering preserves the runtime pure-call contract, so ordinary
+flow calls can use the adapter-provided backend across the structured VM and
+AOT tiers.
+Batch helper execution reuses caller-owned slot storage; repeated evaluation
+does not clone the compiled plan's local-slot vector for every item.
 
 The pure-call boundary includes both scalar fixed-argument calls and row-major
 integer batch calls. `arcweft-core` provides a Sans I/O VM batch implementation
@@ -185,61 +147,24 @@ before materializing arguments or preparing/promoting a backend.
 
 ## Interpreter / compiled modes
 
-```text
-VM interpreter
-  - semantic source of truth
-  - dev/test/replay/LSP/Agent
-
-AOT compiled player
-  - native/web player is compiled
-  - script remains bytecode bundle initially
-
-Pure AOT/JIT helper
-  - pure deterministic functions only
-  - VM fallback and VM equivalence checks required
-  - current AOT helper compiles deterministic exact-width integer and
-    floating-point expressions to typed plans
-
-Full script AOT
-  - late release backend
-  - generated state machine implements RuntimeExecutor
-```
-
-AOT never directly touches filesystem, network, renderer, audio, or wall-clock.
-It emits `RuntimeEffectBatch` and `HostRequestBatch` just like the VM.
-Full generated state-machine AOT remains future work. The current
-`AotExecutor` already owns a typed `AotProgram` with pre-lowered linear
-operation blocks, executes fully linear flows and mixed-flow linear prefixes
-through that artifact without cloning `FlowOp` values during each step, and
-continues through the VM-compatible state machine in the same runtime step when
-a mixed control-flow boundary is reached.
-Pure helper AOT is narrower and already executable: `AotPureFunctionBackend`
-rejects unsupported helpers instead of falling back, then compares its typed
-integer and floating-point plans against `VmPureFunctionBackend` in tests.
-Batch AOT calls reuse caller-owned slot storage, so repeated runtime helper
-evaluation does not clone the compiled plan's local slot vector for every item.
+The VM defines the structured runtime's semantic reference. Pure helper AOT and
+JIT acceleration is limited to deterministic functions and preserves VM
+behavior. Unsupported helpers follow the selected backend's typed rejection or
+VM fallback contract. A generated script
+backend must implement the same `RuntimeExecutor` boundary. No executor touches
+the filesystem, network, renderer, audio device, or wall clock: it returns
+`RuntimeEffectBatch` and `HostRequestBatch` data for hosts to handle. See the
+[executor API](../../crates/arcweft-core/src/executor.rs),
+[pure-call API](../../crates/arcweft-core/src/pure.rs), and
+[AOT artifact](../../crates/arcweft-core/src/aot.rs).
 
 ## Step options
 
-```rust
-pub enum RuntimeStepMode {
-    OneOp,
-    Drain,
-    Game,
-    Server,
-}
+`RuntimeStepOptions` combines the selected mode and operation budget with a cap
+on newly emitted host task requests. Its typed shape and mode enum are
+owned by [`step.rs`](../../crates/arcweft-core/src/step.rs).
 
-pub struct RuntimeStepBudget {
-    pub max_ops: usize,
-}
-
-pub struct RuntimeStepOptions {
-    pub mode: RuntimeStepMode,
-    pub budget: RuntimeStepBudget,
-}
-```
-
-`Engine::step` drains internally according to the selected mode:
+Runtime execution drains internally according to the selected mode:
 
 - `OneOp`: execute at most one runtime operation.
 - `Drain`: execute until blocked, done, failed, or `max_ops` is exhausted.
@@ -269,41 +194,20 @@ instruction and does not consume an operation charge.
 
 ## Stop reasons
 
-```rust
-pub enum RuntimeStepStopReason {
-    OneOp,
-    Blocked,
-    Output,
-    BudgetExhausted,
-    Done,
-    Failed,
-}
-```
-
 `Blocked` covers runtime states that require later host input, such as choices or
 awaited task results. `Output` covers host-visible output in `Game` mode and host
 requests that require the adapter to act. `Done` and `Failed` are terminal hard
-stops.
+stops. The stop-reason enum is defined in
+[`step.rs`](../../crates/arcweft-core/src/step.rs).
 
 ## Effect batch
 
-```rust
-pub struct RuntimeStepOutput {
-    pub diagnostics: Vec<RuntimeDiagnostic>,
-    pub flow_events: Vec<FlowEvent>,
-    pub effects: RuntimeEffectBatch,
-    pub requests: HostRequestBatch,
-}
-
-pub struct RuntimeEffectBatch {
-    pub line: Vec<LineEffectRequest>,
-    pub stream_events: Vec<RuntimeStreamEvent>,
-}
-```
-
-`LineEffectRequest` is still the current Phase 2.0 line/runtime effect IR. Hosts
-must treat it as pure data and perform actual presentation, audio, logging,
-signal, or metric side effects outside `arcweft-core`.
+The step output groups diagnostics, flow events, effect batches, host requests,
+and other typed runtime results. [`step.rs`](../../crates/arcweft-core/src/step.rs)
+owns the output and batch shapes. `LineEffectRequest` is pure effect data;
+hosts perform presentation, audio, logging, signal, metric, and event side
+effects outside `arcweft-core`, as defined by
+[`effect.rs`](../../crates/arcweft-core/src/effect.rs).
 
 ## Host requests
 
@@ -318,24 +222,17 @@ real reservation from the receiving builder; an ordinal or equal task key does
 not grant another program's construction handle. Source carries definitions;
 the actual builder and common executable seal issue the completed task identity.
 
-```rust
-pub struct HostRequestBatch {
-    pub tasks: Vec<TaskSubmission>,
-    pub program_task_completions: Vec<ProgramTaskCompletion>,
-    pub cancel_scopes: Vec<CancelScopeId>,
-    pub host_calls: Vec<RuntimeHostCallRequest>,
-}
-```
+The complete host request batch is owned by
+[`step.rs`](../../crates/arcweft-core/src/step.rs); it carries typed requests
+for host-owned task, content, audio, host-call, presentation, and root work.
 
 ## Structured payloads
 
-```rust
-pub struct RuntimePayload(pub RuntimeValue);
-```
-
-`StreamEvent<String, String>` is removed. Use `RuntimeStreamEvent` for typed
-external-capability stream events. Display tooling may derive a payload label,
-but the runtime boundary preserves the structured value.
+[`RuntimePayload`](../../crates/arcweft-core/src/value.rs) retains a structured
+`RuntimeValue`, and [`RuntimeStreamEvent`](../../crates/arcweft-core/src/stream.rs)
+carries typed payloads for external-capability stream events. Display tooling
+may derive a payload label, but the runtime boundary preserves the structured
+value.
 
 Host `Ready` and HostCall results transfer their admitted `RuntimePayload` into
 the runtime owner. `FlowEvent::AwaitReady` includes a value only when that exact

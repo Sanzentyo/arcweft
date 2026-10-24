@@ -10,11 +10,15 @@
 - [Agent Debug Bus / MCP / CLI](../04-tooling/agent-debug-mcp-cli.md)
 - [Object Hooks / Memoization](../01-language/hooks-and-memoization.md)
 - [Layer Manifest schema](../schemas/layer-manifest.md)
+- [Layer Tree schema](../schemas/layer-tree.md)
+- [Layered Input](../02-runtime/layered-input.md)
+- [Memoization cache schema](../schemas/memo-cache.md)
 - [Layer example](../examples/layers-input.md)
 
 ## 目的
 
-従来の `RenderSpec.layers: Vec<LayerSpec>` を、明示的な `LayerTree` に拡張する。
+描画と入力は明示的な `LayerTree` を共有し、layer identity、順序、表示、hit-test、focus、
+modal routing、Agent 観測、test、replay を同じ構造に結びつけます。
 
 ```text
 LayerTree
@@ -33,7 +37,7 @@ LayerTree
 各 layer は以下を持つ。
 
 ```text
-- EntityId / PublicId
+- stable `LayerId` / optional `PublicId`
 - render order / input order
 - visibility / opacity / transform / clip
 - camera / viewport / render target
@@ -44,90 +48,37 @@ LayerTree
 
 ## 中核型
 
-```rust
-pub struct RenderSpec {
-    pub size: UVec2,
-    pub clear: Color,
-    pub layers: LayerTree,
-    pub postprocess: Vec<ShaderPassSpec>,
-}
+`LayerId` は tree 内で安定した識別子です。Pure-data の `LayerTree` は root、
+`LayerNode` 群、決定的な `render_order` / `input_order` を所有します。各 node は
+layer kind と content、親子関係、`LayerOrder`、transform、visibility、input policy
+を持ちます。公開識別子は任意です。現在の型と private-field API は
+[`arcweft-presentation` の layer model](../../crates/arcweft-presentation/src/layer.rs)
+を参照してください。
 
-pub struct LayerTree {
-    pub root: LayerId,
-    pub nodes: IndexMap<LayerId, LayerNode>,
-}
-
-pub struct LayerNode {
-    pub id: LayerId,
-    pub entity: EntityId,
-    pub public_id: PublicId,
-    pub kind: LayerKind,
-
-    pub render: LayerRenderPolicy,
-    pub input: LayerInputPolicy,
-    pub capture: LayerCapturePolicy,
-
-    pub children: Vec<LayerId>,
-    pub content: LayerContent,
-}
-```
-
-`LayerId` は frame 内部 ID、`entity` は履歴・参照・Graph 用の安定 ID。
-
-```arcw
-pub enum LayerKind {
-    World,
-    Character,
-    Effect,
-    Activity,
-    NativeView,
-    HtmlView,
-    Overlay,
-    Modal,
-    Debug,
-    Capture,
-}
-
-pub enum LayerContent {
-    Empty,
-    Sprites(Vec<SpriteSpec>),
-    Vectors(Vec<VectorSpec>),
-    Text(Vec<TextSpec>),
-    View(ViewRenderSpec),
-    Html(HtmlPanelLayerSpec),
-    Activity(ActivityRenderSpec),
-    Group,
-    CustomShader(CustomMaterialSpec),
-}
-```
+Presentation contract はさらに、各 layer に visibility、opacity、blend、transform、
+clip、camera、viewport、render target、postprocess を含む描画 policy、入力・hit-test・
+focus・capture policy、および Agent 観測 metadata を関連づけます。Rendered frame plan は
+viewport size、clear policy、`LayerTree`、global postprocess をまとめます。
 
 ## Layer render policy
 
-```rust
-pub struct LayerRenderPolicy {
-    pub z: i32,
-    pub visible: bool,
-    pub opacity: f32,
-    pub blend: BlendMode,
-    pub transform: Transform2D,
-    pub clip: Option<ClipSpec>,
-    pub camera: Option<Camera2D>,
-    pub viewport: Option<ViewportSpec>,
-    pub target: LayerTarget,
-    pub postprocess: Vec<ShaderPassSpec>,
-}
+描画 policy は opacity、blend、transform、clip、camera、viewport、target、layer-local
+postprocess を制御します。target は main surface、offscreen、object-id pass、mask-only
+のいずれかです。View scene の group pass と compositor の実行順は
+[Layered Rendering](layered-rendering.md) を参照してください。
 
-pub enum LayerTarget {
-    MainSurface,
-    Offscreen { format: TextureFormat, usage: LayerTargetUsage },
-    ObjectIdPass,
-    MaskOnly,
-}
-```
+`LayerOrder` は `(phase, z, stable_index)` の typed key で、各 RenderPhase は
+Background、World、Characters、Effects、Dialogue、GameView、HtmlView、Modal、Debug、
+AgentOverlay です。型定義は
+[`arcweft-presentation` の layer model](../../crates/arcweft-presentation/src/layer.rs)
+にあります。
 
 ### 描画順
 
-描画は `render.z` 昇順、同一 z では tree order で行う。
+`LayerTree` は typed `LayerOrder` の昇順で描画順を導出し、同じ key の場合は
+`LayerId` を最後の tie-breaker にします。入力順は通常、描画順の逆順です。Modal、
+capture、input priority は routing policy に従って入力候補と配送先を決めます。詳細は
+[Layered Input](../02-runtime/layered-input.md)。
 
 ```text
 z=-1000 background
@@ -139,58 +90,24 @@ z=3000  modal
 z=9000  debug overlay
 ```
 
+### Layer cache
+
+Offscreen layer output may use no cache, reuse until invalidated, or reuse for a fixed
+number of frames. The runtime owns cache keys and invalidation: a change to a layer or
+dependent View subtree invalidates the affected cached output, including after a hot
+reload patch. See the [memoization cache contract](../schemas/memo-cache.md).
+
 ## Input routing
 
-入力は layer stack を上から下へ走査する。render z と input priority は基本連動するが、必要なら別指定できる。
+入力は `input_order` を上から下へ走査します。layer の typed input policy は有効状態、
+priority、hit-test、route、focus、pointer/keyboard/gamepad capture を制御します。
+Hit-test は none、bbox、polygon、mask、View tree、または owner-provided logic を使えます。
+Route behavior は pass-through、hit 時に下位を止める block-below、miss でも下位を止める
+modal、read-only な observe-only を含みます。
 
-```rust
-pub struct LayerInputPolicy {
-    pub enabled: bool,
-    pub priority: i32,
-    pub hit_test: HitTestPolicy,
-    pub route: InputRoutePolicy,
-    pub focus: FocusPolicy,
-    pub pointer_capture: PointerCapturePolicy,
-    pub keyboard_capture: KeyboardCapturePolicy,
-    pub gamepad_capture: GamepadCapturePolicy,
-}
-```
-
-```rust
-pub enum HitTestPolicy {
-    None,
-    BBox,
-    Polygon,
-    Mask,
-    ViewTree,
-    Custom(EntityId),
-}
-
-pub enum InputRoutePolicy {
-    /// layer が受け取っても、消費しなければ下へ流す。
-    PassThrough,
-
-    /// hit したら下位 layer へ流さない。
-    BlockBelow,
-
-    /// modal。hit しない場所でも下位 layer をブロックする。
-    Modal,
-
-    /// 見えているが入力対象ではない。
-    ObserveOnly,
-}
-```
-
-### ルーティング結果
-
-```rust
-pub enum LayerInputResult {
-    Consumed { by: LayerId, action: Option<ActionTargetId> },
-    PassThrough,
-    Blocked { by: LayerId, reason: BlockReason },
-    FocusChanged { to: FocusTarget },
-}
-```
+Routing results record consumed、passed-through、blocked と focus changes。実際の
+`RoutedInputEvent`、`InputDisposition`、policy enum は
+[Layered Input](../02-runtime/layered-input.md) が所有します。
 
 ### ルーティング手順
 
@@ -206,26 +123,30 @@ InputEvent
   → produce GameEvent / SemanticAction / ActivityInput / AgentActionResult
 ```
 
+### Wheel input units
+
+Native と Web の host は platform の line delta または physical-pixel delta を
+共有する `arcweft-player-scene` 境界へ渡し、そこで logical pixel に正規化します。
+既定では 1 line を 32 logical pixels とし、physical pixel は window scale factor
+で除算します。非有限値、正でない scale factor、logical `f32` 範囲を超える値は
+input error です。0、clamp、saturating cast へ暗黙変換しません。
+
 ## Focus scopes
 
-keyboard / text input / gamepad は pointer hit-test だけでは扱えないため、layer ごとに focus scope を持つ。
+Keyboard、text input、gamepad は pointer hit-test だけでは扱えないため、layer ごとに
+focus scope と traversal policy を持ちます。Traversal は View tree order、明示順、
+spatial、または無効です。Modal layer は独立した focus scope を持ち、閉じるまで下位
+scope を停止します。
 
-```rust
-pub struct FocusScope {
-    pub layer: LayerId,
-    pub active: Option<FocusTarget>,
-    pub traversal: FocusTraversalPolicy,
-}
+Hidden layer は既定で描画・入力の対象外です。hidden-but-focusable な内容は明示的な
+policy が必要です。Screen reader 用 accessibility tree は View semantics と
+LayerTree membership から生成します。
 
-pub enum FocusTraversalPolicy {
-    ViewTreeOrder,
-    Explicit(Vec<FocusTarget>),
-    Spatial,
-    None,
-}
-```
+## Layer-scoped input bindings
 
-modal layer は独立した focus scope を持ち、閉じるまで下位 scope を停止する。
+Flow や Activity は layer に紐づく input scope を有効にできます。scope は安定した
+identity、受け付ける input kind、priority、semantic action への binding を持ち、
+focus と modal の規則に従って同じ routing path へ入ります。
 
 ## DSL: layer 宣言
 
@@ -376,48 +297,12 @@ pub layer @layer.activity.fps: Activity {
 
 ## Agent observation
 
-Observation は layer 情報を含む。
-
-```rust
-pub struct Observation {
-    pub layers: Vec<ObservedLayer>,
-    pub objects: Vec<ObservedObject>,
-    pub actions: Vec<ActionTarget>,
-    // ...
-}
-
-pub struct ObservedLayer {
-    pub layer: PublicId,
-    pub kind: LayerKind,
-    pub z: i32,
-    pub visible: bool,
-    pub input_policy: LayerInputPolicySummary,
-    pub bbox: Option<BBox>,
-    pub objects: Vec<ObjectId>,
-}
-```
-
-各 object/action は所属 layer を持つ。
-
-```rust
-pub struct ObservedObject {
-    pub id: ObjectId,
-    pub entity: Option<EntityId>,
-    pub layer: LayerId,
-    pub bbox: BBox,
-    pub polygon: Option<Polygon>,
-    pub mask: Option<MaskRef>,
-}
-```
-
-CLI:
-
-```bash
-arcw agent layers
-arcw agent observe --layers --objects --image overlay
-arcw agent click --layer layer.view.game --target choice.opening.listen
-arcw agent click --x 520 --y 540 --layer layer.view.modal
-```
+Observation は layer identity、kind、描画順、visibility、input policy、bounds、
+所属objectとactionを保持します。各object/actionには所属layerがあり、hit-testと
+captureに必要なbbox、polygon、maskを同じ座標系で扱います。
+公開観測・captureの型とCLI境界は
+[Agent Observe and Capture Contract](../04-tooling/agent-observe-capture-contract.md)、
+操作方法は [CLI](../04-tooling/cli.md) が所有します。
 
 ## Testing
 
@@ -471,8 +356,8 @@ ensures result.actions.all(_.layer == @layer.view.game)
 ## 固定する設計判断
 
 ```text
-1. layer は描画・入力・Agent 観測を結びつける一級 Entity。
-2. render order と input priority は別指定可能だが、デフォルトは z に従う。
+1. layer は描画・入力・Agent 観測を結びつける一級の単位。
+2. render order は LayerOrder と LayerId で決め、input order はその逆順を基準とする。
 3. 入力は上位 layer から下位 layer へ hit-test し、Consumed / PassThrough / Blocked を返す。
 4. Modal layer は hit していない領域でも下位入力をブロックする。
 5. View、HTML、Activity、Debug overlay はすべて layer に載る。

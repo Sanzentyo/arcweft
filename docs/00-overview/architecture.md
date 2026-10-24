@@ -97,7 +97,7 @@ Snapshot は pure data。serialize、compress、encrypt、file write は host / 
 overlay を共通の `LayerTree` に載せる。描画と入力は同じ layer state を使い、
 routing、hit-test、focus、pointer capture、semantic action を扱う。詳細は
 [Layer System](../03-presentation/layers.md) と
-[Render / Input Layer System](../03-presentation/render-input-layers.md)。
+[Layered Input](../02-runtime/layered-input.md)。
 
 ### View は二系統
 

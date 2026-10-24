@@ -7,12 +7,10 @@ suspension, source identity, or host calls.
 ## 1. Decision summary
 
 1. **AWBC v1 is the sole product executable representation.** It is a typed,
-   register-based control-flow graph stored as canonical index tables. The old
-   `compact_bytecode` table is removed rather than adapted. Structured
-   `BytecodeProgram` is an inspection/export surface within the product boundary; `.awfb`
-   files contain canonical AWBC and have no structured-bytecode execution
-   fallback. Source/development execution may use structured bytecode under its
-   own boundary. Product payload rules are in [Product AWFB bytecode](../05-build-and-security/product-awfb-bytecode.md);
+   register-based control-flow graph stored as canonical index tables. Product
+   `.awfb` files contain canonical AWBC and have no structured execution fallback.
+   Source/development execution uses the admitted `RuntimePlan` through its
+   separate executor boundary. Product payload rules are in [Product AWFB bytecode](../05-build-and-security/product-awfb-bytecode.md);
    product stepping is in [Product AWBC RuntimeStepResult parity](product-awbc-runtime-step-parity.md).
 2. **All table identities are implicit zero-based indices.** Rust newtypes make
    cross-table mistakes visible. Product bytes do not repeat string IDs or
@@ -1212,14 +1210,15 @@ an unchanged region can be reused across hot swaps; `RuntimeDispatchKey` adds
 
 ## 15. Product AWBC payload and regression coverage
 
-Product `.awfb` files contain canonical AWBC v1 only. Structured `BytecodeProgram`
-is an inspection/export surface, not a product execution fallback. The current
+Product `.awfb` files contain canonical AWBC v1 only. They neither encode nor
+execute a structured `RuntimePlan` fallback. The current
 payload contract is defined in [Product AWFB bytecode](../05-build-and-security/product-awfb-bytecode.md);
 runtime behavior is defined in [Product AWBC RuntimeStepResult parity](product-awbc-runtime-step-parity.md).
 The continuing product codec, verifier, parity, dependency, and payload regression
 conditions are listed in [Product payload regression](#product-payload-regression)
-below. `RuntimePlan` remains compiler-side lowering IR; removing it is not a
-product migration requirement.
+below. `RuntimePlan` owns the typed source/development executable and supplies
+compiler-side AWBC lowering; its executor contract is defined by the
+[shared facade](runtime-step-and-executors.md).
 
 ## 16. Native original-source execution
 

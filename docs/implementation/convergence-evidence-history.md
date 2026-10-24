@@ -10396,3 +10396,21 @@ Cargo定義と219 test executablesのPE importを確認し、このDLLへのimpo
 前節の全体集計は公開 `29c864bb3f42da7f5948b03682eaa875a0833089`、parent `5f275a6f91defcddcb50dc52f1559e570089d914`、
 tree `af65e6c0908a7b45c8dc1d2f0da3344a7b96e67e`。公開ref／全blob／working入力／空indexと
 保持WIPを照合した。[公開照合](acceptance-evidence/task-array-map-reverse-integration-checkpoint.verified.json)。
+
+## 現行契約資料の公開・最終照合 — 2026-10-24
+
+5章の旧実装案整理は `1022a12a9d28cfba1149aa6dd8c16d2dd19b7268` へ公開した。
+parentは `29c864bb3f42da7f5948b03682eaa875a0833089`、treeは
+`f8991448fbb9d8a94c32cc5afbb732ba9e64dbcc`、raw patch SHA256は
+`220a1f88d3afbefe682cae84e27900169219d7482713252bfc9375112636490d`。
+9 paths、5,879 working inputs、公開ref／blob、空index、保持した14 tracked WIPを照合した。
+[公開原本](acceptance-evidence/task-current-contract-cleanup-checkpoint.verified.json)。
+
+同基点の現状一覧を完了監査・実行原本・現在のソースへ照合し、項目判定の新しい誤りは
+見つからなかった。Generic Matchの既存受入と151／151 PASS、全体7,204 PASS／50 FAIL／
+39 ignoredの実測、未実行のTier2等の境界を保持した。新しいruntime実行ではない。
+[照合結果](acceptance-evidence/task-documentation-status-final-audit.json)。
+その後、重複するレイヤー2章と不完全なexecutor APIコピーを現行の所有章へ統合した。
+削除・訂正理由は [資料整理記録](documentation-cleanup.md#現状判定の照合と重複レイヤー章の統合--2026-10-24)、
+文書差分の確認は [資料差分の照合](acceptance-evidence/task-documentation-final-audit.json) に置く。
+現在の項目判定は引き続き [現状一覧](current-status.md) だけで管理する。
