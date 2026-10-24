@@ -1265,8 +1265,8 @@ pub struct AwbcFunction {
     pub public_id: Option<AwbcStringId>,
     pub kind: AwbcFunctionKind,
     pub signature: AwbcSignatureId,
-    /// Lexical frame contract; None denotes the fixed root-scope signature.
-    pub type_context: Option<AwbcTypeId>,
+    /// Lexical frame contract; None denotes a fixed root-scope signature.
+    pub type_context: Option<AwbcFunctionTypeContext>,
     /// Per-entry ownership proof required before a positional input enters
     /// this function. It is aligned with `signature.params`.
     pub input_ownership: Vec<AwbcFunctionInputOwnership>,
@@ -1274,6 +1274,23 @@ pub struct AwbcFunction {
     pub blocks: AwbcTableRange,
     pub entry_block: AwbcBlockId,
     pub flags: AwbcFunctionFlags,
+}
+
+/// A callable instantiates its own signature. A Program body retains the
+/// enclosing invocation's binding while accepting a distinct capture ABI.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcFunctionTypeContext {
+    Signature(AwbcTypeId),
+    ProgramBody(AwbcTypeId),
+}
+
+impl AwbcFunctionTypeContext {
+    #[must_use]
+    pub const fn owner_type(self) -> AwbcTypeId {
+        match self {
+            Self::Signature(owner) | Self::ProgramBody(owner) => owner,
+        }
+    }
 }
 
 /// Exact bindings whose values must be unrestricted when one positional
@@ -1767,7 +1784,7 @@ pub enum AwbcOpcode {
     AbandonFormatAttempt = 0x2d,
     EmitEffect = 0x25,
     StartNeed = 0x26,
-    SpawnFiber = 0x27,
+    StartProgram = 0x27,
     StreamYield = 0x32,
     StreamClose = 0x34,
     ExecuteLineOperation = 0x35,
@@ -1839,7 +1856,7 @@ impl AwbcOpcode {
         Self::EnsureContent,
         Self::EmitEffect,
         Self::StartNeed,
-        Self::SpawnFiber,
+        Self::StartProgram,
         Self::MakeDialogueContent,
         Self::CharacterDialogue,
         Self::FormatContent,
@@ -1952,7 +1969,7 @@ impl AwbcOpcode {
             | Self::AbandonFormatAttempt
             | Self::EmitEffect
             | Self::StartNeed
-            | Self::SpawnFiber => AwbcOpcodeFamily::CallTask,
+            | Self::StartProgram => AwbcOpcodeFamily::CallTask,
             Self::StreamYield
             | Self::StreamClose
             | Self::ExecuteLineOperation
@@ -2224,9 +2241,9 @@ pub enum AwbcInstruction {
         plan: AwbcTaskPlanId,
         args: Vec<AwbcRegisterId>,
     },
-    SpawnFiber {
-        dst: Option<AwbcRegisterId>,
-        function: AwbcFunctionId,
+    StartProgram {
+        dst: AwbcRegisterId,
+        plan: AwbcTaskPlanId,
         args: Vec<AwbcRegisterId>,
     },
     StreamYield {
@@ -2371,7 +2388,7 @@ impl AwbcInstruction {
             Self::AbandonFormatAttempt { .. } => AwbcOpcode::AbandonFormatAttempt,
             Self::EmitEffect { .. } => AwbcOpcode::EmitEffect,
             Self::StartNeed { .. } => AwbcOpcode::StartNeed,
-            Self::SpawnFiber { .. } => AwbcOpcode::SpawnFiber,
+            Self::StartProgram { .. } => AwbcOpcode::StartProgram,
             Self::StreamYield { .. } => AwbcOpcode::StreamYield,
             Self::StreamClose { .. } => AwbcOpcode::StreamClose,
             Self::ExecuteLineOperation { .. } => AwbcOpcode::ExecuteLineOperation,

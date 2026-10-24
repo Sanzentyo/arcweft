@@ -23,6 +23,8 @@ pub(crate) enum RuntimeAwbcProgramSourceField {
     Kind,
     Kernel,
     Definition,
+    TypeContext,
+    Effects,
     Class,
     Priority,
     CancelScope,
@@ -187,6 +189,41 @@ impl RuntimeTaskSourceProgram {
             signature.result == Some(row.payload_type),
             meter,
         )?;
+        let enclosing = original
+            .function_sites()
+            .get(source.request_endpoint().function_id())
+            .ok_or_else(|| mismatch(Field::TypeContext))?;
+        let context = match (enclosing.function_type(), kernel.type_context) {
+            (None, None) => None,
+            (
+                Some(original),
+                Some(crate::awbc::schema::AwbcFunctionTypeContext::ProgramBody(actual)),
+            ) => Some((original, actual)),
+            _ => return Err(mismatch(Field::TypeContext)),
+        };
+        let effects = executable
+            .effect_sets
+            .get(signature.effects.index())
+            .ok_or_else(|| mismatch(Field::Effects))?;
+        check(
+            Field::Effects,
+            effects.effects.len() == enclosing.invocation_effects().len(),
+            meter,
+        )?;
+        meter.charge_work(effects.effects.len() as u64)?;
+        for (actual, expected) in effects
+            .effects
+            .iter()
+            .zip(enclosing.invocation_effects().iter())
+        {
+            let actual = executable
+                .strings
+                .get(actual.index())
+                .ok_or_else(|| mismatch(Field::Effects))?;
+            let bytes = meter.checked_count_sum(actual.len(), expected.as_str().len())?;
+            meter.charge_work((bytes as u64).div_ceil(32))?;
+            check(Field::Effects, actual == expected.as_str(), meter)?;
+        }
         check(
             Field::CaptureCount,
             captures.len() == signature.params.len()
@@ -220,6 +257,18 @@ impl RuntimeTaskSourceProgram {
             }
         }
         let mut types = RuntimeAwbcSourceTypeRelation::new(original, executable, limits, meter);
+        if let Some((original, actual)) = context {
+            types
+                .admit(original, actual)
+                .map_err(|source| match source {
+                    RuntimeAwbcSourceTypeError::Encoding(error) => Error::Encoding(error),
+                    source => Error::Type {
+                        task,
+                        field: Field::TypeContext,
+                        source,
+                    },
+                })?;
+        }
         types
             .admit(payload, row.payload_type)
             .map_err(|source| match source {

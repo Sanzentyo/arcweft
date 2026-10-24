@@ -2416,8 +2416,14 @@ impl AwbcProductStepExecutor {
                     Ok(target) => output.flow_events.push(FlowEvent::Goto { target }),
                     Err(error) => self.record_error(error, output),
                 },
-                VmObservation::FiberSpawned { function, args, .. } => {
-                    self.spawn_child(function, &args, output);
+                VmObservation::ProgramTaskStarted {
+                    cursor,
+                    fiber,
+                    dst,
+                    plan,
+                    captures,
+                } => {
+                    self.commit_program_task_started(cursor, fiber, dst, plan, &captures, output);
                 }
                 VmObservation::StreamYield { stream, value } => {
                     let event_value =
@@ -2499,73 +2505,6 @@ impl AwbcProductStepExecutor {
         let dispatch = AudioDispatchId::new(0, self.next_audio_sequence);
         self.next_audio_sequence = self.next_audio_sequence.saturating_add(1);
         dispatch
-    }
-
-    pub(super) fn spawn_child(
-        &mut self,
-        function: AwbcFunctionId,
-        args: &[RuntimeValue],
-        output: &mut RuntimeStepOutput,
-    ) {
-        self.spawn_owned_child(
-            super::ProductChildFiberOwner::Independent,
-            function,
-            args,
-            output,
-        );
-    }
-
-    pub(super) fn spawn_owned_child(
-        &mut self,
-        owner: super::ProductChildFiberOwner,
-        function: AwbcFunctionId,
-        args: &[RuntimeValue],
-        output: &mut RuntimeStepOutput,
-    ) {
-        let Some(next_generation) = self.next_generation.checked_add(1) else {
-            self.record_error(ProductStepError::ChildGenerationOverflow, output);
-            return;
-        };
-        let mut next_fiber_instance = self.next_fiber_instance;
-        let fiber_instance = match next_fiber_instance
-            .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
-        {
-            Ok(instance) => crate::runtime_id::RuntimeFiberInstanceId::from_allocated(instance),
-            Err(error) => {
-                self.record_error(ProductStepError::RuntimeIdentity(error), output);
-                return;
-            }
-        };
-        match FiberState::for_function_with_instance(
-            &self.program,
-            crate::awbc::fiber::AwbcFiberRoot::Function(function),
-            function,
-            fiber_instance,
-            self.next_generation,
-            self.fiber.budget.quantum.max(1),
-        ) {
-            Ok(mut child) => {
-                match child
-                    .active_frame_mut()
-                    .and_then(|frame| frame.bind_positional_arguments(&self.program, args))
-                {
-                    Ok(()) => {
-                        self.next_generation = next_generation;
-                        self.next_fiber_instance = next_fiber_instance;
-                        self.child_fibers.push_back(super::ProductChildFiber {
-                            owner,
-                            fiber: child,
-                            runtime_generation: self.runtime_generation,
-                            pending_host_call: None,
-                        });
-                    }
-                    Err(error) => {
-                        self.record_error(ProductStepError::Type(error.to_string()), output);
-                    }
-                }
-            }
-            Err(error) => self.record_error(ProductStepError::Internal(error.to_string()), output),
-        }
     }
 
     fn commit_need_producer_started(
@@ -2734,7 +2673,11 @@ impl AwbcProductStepExecutor {
         }
     }
 
-    fn fail_with_budget_error(&mut self, message: String, output: &mut RuntimeStepOutput) {
+    pub(super) fn fail_with_budget_error(
+        &mut self,
+        message: String,
+        output: &mut RuntimeStepOutput,
+    ) {
         output.diagnostics.push(RuntimeDiagnostic::categorized(
             RuntimeDiagnosticCategory::Budget,
             message.clone(),

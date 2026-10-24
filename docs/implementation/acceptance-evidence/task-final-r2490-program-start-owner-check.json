@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "ad2fd687a87186ee8560861b60c49add5ad2f321",
+  "name": "task-final-r2490-program-start-owner-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2490-program-start-owner-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-23T23:46:29.7015449Z",
+  "finishedAt": "2026-10-23T23:47:38.1315697Z"
+}

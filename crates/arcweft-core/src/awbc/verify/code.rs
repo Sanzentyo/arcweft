@@ -2154,13 +2154,14 @@ fn apply_instruction(
             }
             write_register(verifier, function, block, *dst, state)?;
         }
-        AwbcInstruction::SpawnFiber {
-            dst,
-            function: target,
-            args,
-        } => {
-            check_index(program.functions.len(), target.0, "functions", &at)?;
-            let signature = program.functions[target.index()].signature;
+        AwbcInstruction::StartProgram { dst, plan, args } => {
+            check_index(program.task_plans.len(), plan.0, "task_plans", &at)?;
+            let task = &program.task_plans[plan.index()];
+            let crate::awbc::schema::AwbcTaskPlanExecution::Program(task_body) = &task.execution
+            else {
+                return invalid_type(&at, "original Program task execution contract");
+            };
+            let signature = program.functions[task_body.kernel.index()].signature;
             verify_call_args(
                 verifier,
                 function,
@@ -2169,20 +2170,18 @@ fn apply_instruction(
                 args,
                 state,
                 &at,
-                &format!("function {}", target.0),
+                &format!("Program task {}", plan.0),
             )?;
-            if let Some(dst) = dst {
-                require_type_kind(
-                    verifier,
-                    function,
-                    block,
-                    *dst,
-                    is_task_handle,
-                    "task handle",
-                    &at,
-                )?;
-                write_register(verifier, function, block, *dst, state)?;
+            let destination = register_type(verifier, function, block, *dst)?;
+            let AwbcRuntimeTypeShape::Task(item) =
+                program.runtime_types[destination.index()].shape()
+            else {
+                return invalid_type(&at, "ThreadHandle<T> Program destination");
+            };
+            if *item != task.payload_type {
+                return invalid_type(&at, "ThreadHandle<T> matching Program payload type");
             }
+            write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::StreamYield { stream, value } => {
             check_index(program.stream_plans.len(), stream.0, "stream_plans", &at)?;
@@ -2767,14 +2766,23 @@ fn apply_instruction_copy_and_move_effects(
         }
         AwbcInstruction::EmitEffect { args, .. }
         | AwbcInstruction::RegisterCleanup { args, .. }
-        | AwbcInstruction::StartNeed { args, .. }
-        | AwbcInstruction::SpawnFiber { args, .. } => {
+        | AwbcInstruction::StartNeed { args, .. } => {
             consumed.extend(args.iter().copied());
             match instruction {
                 AwbcInstruction::StartNeed { dst, .. } => outputs.push(*dst),
-                AwbcInstruction::SpawnFiber { dst, .. } => outputs.extend(dst.iter().copied()),
                 _ => {}
             }
+        }
+        AwbcInstruction::StartProgram { dst, args, .. } => {
+            for capture in args {
+                if !state.copy_proofs[capture.index()].permits_copy() {
+                    return invalid_type(
+                        at,
+                        "original Program capture with unrestricted Copy custody",
+                    );
+                }
+            }
+            outputs.push(*dst);
         }
         AwbcInstruction::StreamYield { value, .. } => {
             if !state.copy_proofs[value.index()].permits_copy() {
@@ -3607,7 +3615,7 @@ fn apply_terminator(
                 return invalid_type(&at, "task or need handle");
             };
             let result_ty = match handle_shape {
-                AwbcRuntimeTypeShape::Need(item) => *item,
+                AwbcRuntimeTypeShape::Need(item) | AwbcRuntimeTypeShape::Task(item) => *item,
                 _ => return invalid_type(&at, "task or need handle"),
             };
             if !is_await_handle(Some(handle_shape)) {
@@ -6419,7 +6427,10 @@ fn is_dynamic(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
 }
 
 fn is_await_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
-    matches!(ty, Some(AwbcRuntimeTypeShape::Need(_)))
+    matches!(
+        ty,
+        Some(AwbcRuntimeTypeShape::Need(_) | AwbcRuntimeTypeShape::Task(_))
+    )
 }
 
 fn is_task_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {

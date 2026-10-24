@@ -1628,6 +1628,9 @@ impl super::AwbcProductStepExecutor {
                         })
                     }
                     VmExit::Returned(Some(_)) => Err(LineRuntimeError::ResultNotCommitted.into()),
+                    VmExit::TaskReturned => Err(ProductStepError::Internal(
+                        "line activation returned through a Program task owner".to_owned(),
+                    )),
                     VmExit::DialogueResultSelected(_) => Err(ProductStepError::ActivationTrap(
                         crate::awbc::fiber::FiberTrap {
                             code: crate::awbc::schema::AwbcTrapCode::InternalInvariant,

@@ -66,7 +66,7 @@ fn direct_call_reaches_need_await_on_the_same_fiber() {
     );
     assert!(entered.observations.iter().all(|observation| !matches!(
         observation,
-        VmObservation::NeedProducerStarted { .. } | VmObservation::FiberSpawned { .. }
+        VmObservation::NeedProducerStarted { .. } | VmObservation::ProgramTaskStarted { .. }
     )));
 
     let suspended = vm::step(

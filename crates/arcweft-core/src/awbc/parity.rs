@@ -100,7 +100,7 @@ impl ParityTrace {
             VmExit::Suspended(reason) => ParityEvent::Stop {
                 reason: format!("suspended:{reason:?}"),
             },
-            VmExit::Returned(_) => ParityEvent::Stop {
+            VmExit::Returned(_) | VmExit::TaskReturned => ParityEvent::Stop {
                 reason: "returned".to_owned(),
             },
             VmExit::DialogueResultSelected(_) => ParityEvent::Stop {
@@ -182,8 +182,8 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
         VmObservation::Goto(function) => ParityEvent::Effect {
             id: format!("goto#{}", function.0),
         },
-        VmObservation::FiberSpawned { function, .. } => ParityEvent::Effect {
-            id: format!("fiber#{}", function.0),
+        VmObservation::ProgramTaskStarted { plan, .. } => ParityEvent::Effect {
+            id: format!("program-task-admission#{}", plan.0),
         },
         VmObservation::EnsureContent(id) => ParityEvent::Content {
             id: format!("content#{}", id.0),

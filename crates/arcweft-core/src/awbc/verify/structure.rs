@@ -831,10 +831,19 @@ fn verify_parameter_layout(
     };
     let scope = match function.type_context {
         None => crate::plan::RuntimeTypeScope::root(),
-        Some(owner) => {
+        Some(context) => {
+            let lexical_body = matches!(
+                context,
+                crate::awbc::schema::AwbcFunctionTypeContext::ProgramBody(_)
+            );
+            if lexical_body != (function.kind == AwbcFunctionKind::ProgramTask) {
+                return Err(invalid_context(
+                    "function kind does not own this type context role",
+                ));
+            }
             let row = program
                 .runtime_types
-                .get(owner.index())
+                .get(context.owner_type().index())
                 .ok_or_else(|| invalid_context("function context type is absent"))?;
             let AwbcRuntimeTypeShape::Function {
                 contract,
@@ -852,8 +861,8 @@ fn verify_parameter_layout(
             )
             .map_err(|_| invalid_context("function effect set contains an invalid identity"))?;
             if !row.scope().is_root()
-                || parameters != &signature.params
-                || Some(*result) != signature.result
+                || (!lexical_body
+                    && (parameters != &signature.params || Some(*result) != signature.result))
                 || contract.invocation()
                     != &crate::effect_row::EffectFormula::literal(effects, None)
             {
@@ -1428,7 +1437,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
         let signature = &program.signatures[function.signature.index()];
         let context = function
             .type_context
-            .and_then(|ty| program.runtime_types.get(ty.index()))
+            .and_then(|context| program.runtime_types.get(context.owner_type().index()))
             .map(AwbcRuntimeType::semantic_identity);
         if context != binding.function_type {
             return Err(AwbcVerifyError::InvalidInvariant {

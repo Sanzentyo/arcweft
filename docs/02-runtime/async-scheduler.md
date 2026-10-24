@@ -58,6 +58,23 @@ the actual sealed Thread operation and its enclosing declaration. Its shared
 rejected after an invalid lookup. The projection contains the original capture
 order, body and producer; it grants neither a launch receipt nor a runtime task.
 
+Generated AWBC Program kernels use `AwbcFunctionTypeContext::ProgramBody` to
+retain the enclosing invocation's type and effect binding while accepting the
+original capture ABI. Ordinary callables use `Signature`; these contexts are
+not interchangeable. The original Source checks both the lexical owner and
+the complete invocation effect set.
+
+`StartProgram` names the admitted task-plan row and a typed `ThreadHandle<T>`
+destination. Captures stay in the parent and require unrestricted Copy custody.
+The product executor prepares the child, authenticates the original Source and
+captures, and admits the actual launch receipt before committing the parent
+write, child queue, quota and identity cursors. Program kernels require a Task
+fiber root owned by that accepted launch. A returning child retains its result
+until attached descendants retire, then transfers the value to the common
+producer registry. Saved child metadata records the handle and parent identity;
+restore must resolve the actual executing launch and validate the original
+Program row, generation, code owner and parent relation.
+
 Native Thread operations also own a checked `ThreadHandle<T>` result pattern.
 Statement use has a typed discard pattern; value use binds the actual accepted
 task receipt. Child preparation checks the original Source and captures without

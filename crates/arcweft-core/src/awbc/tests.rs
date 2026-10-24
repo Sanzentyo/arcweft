@@ -3104,7 +3104,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::EnsureContent, 0x24, CallTask),
         (AwbcOpcode::EmitEffect, 0x25, CallTask),
         (AwbcOpcode::StartNeed, 0x26, CallTask),
-        (AwbcOpcode::SpawnFiber, 0x27, CallTask),
+        (AwbcOpcode::StartProgram, 0x27, CallTask),
         (AwbcOpcode::MakeDialogueContent, 0x28, CallTask),
         (AwbcOpcode::CharacterDialogue, 0x29, CallTask),
         (AwbcOpcode::FormatContent, 0x2a, CallTask),

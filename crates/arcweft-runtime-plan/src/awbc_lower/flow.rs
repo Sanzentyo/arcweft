@@ -1,3 +1,5 @@
+mod program_task;
+
 use crate::awbc_lower::AwbcAudioLowerer;
 use crate::awbc_lower::AwbcTraitMethodLowerer;
 use crate::awbc_lower::expr::AwbcExprLowerer;
@@ -989,54 +991,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let previous_effect_set = self.active_effect_set.replace(executable.effects().clone());
         self.lower_ops(&mut frame, &mut body, executable.ops(), path);
         self.active_effect_set = previous_effect_set;
-        let result_type = admitted_plan_type(self.inventory, self.plan, result);
-        let unit_result = matches!(
-            self.plan.checked_type(result),
-            Ok(Some(arcweft_core::pattern::RuntimeCheckedType::Unit))
+        let result_type = self.close_executable_body(
+            &mut frame,
+            &mut body,
+            result,
+            role.allows_implicit_unit_completion(),
         );
-        let never_result = matches!(
-            self.plan.checked_type(result),
-            Ok(Some(arcweft_core::pattern::RuntimeCheckedType::Never))
-        );
-        if role.allows_implicit_unit_completion() && unit_result && !body.terminated {
-            self.close_active_scopes_for_terminator(&mut frame);
-            body.terminate(
-                self.inventory,
-                AwbcTerminator::Complete,
-                AwbcSafePointKind::Return,
-            );
-        } else if never_result && !body.terminated {
-            self.close_active_scopes_for_terminator(&mut frame);
-            body.terminate(
-                self.inventory,
-                AwbcTerminator::Unreachable,
-                AwbcSafePointKind::Return,
-            );
-        } else if unit_result && !body.terminated {
-            // Ordinary callable transitions always carry their declared result,
-            // including Unit. Effect-only bodies synthesize that final value.
-            let value = frame.return_value(result_type);
-            let constant = self.inventory.constant_runtime_value(&RuntimeValue::Unit);
-            self.inventory.push_instruction(AwbcInstruction::LoadConst {
-                dst: value,
-                constant,
-            });
-            self.close_active_scopes_for_terminator(&mut frame);
-            body.terminate(
-                self.inventory,
-                AwbcTerminator::Return { value: Some(value) },
-                AwbcSafePointKind::Return,
-            );
-        } else if !body.terminated {
-            // A non-Unit signature has no implicit result value. Any residual
-            // continuation is unreachable; an invalid manual body traps.
-            self.close_active_scopes_for_terminator(&mut frame);
-            body.terminate(
-                self.inventory,
-                AwbcTerminator::Unreachable,
-                AwbcSafePointKind::Return,
-            );
-        }
         let body = body.finish(self.inventory);
         let layout = self
             .inventory
@@ -1054,8 +1014,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let signature = self
             .inventory
             .intern_signature(params, Some(result_type), effects);
-        let type_context =
-            function_type.map(|ty| admitted_plan_type(self.inventory, self.plan, ty));
+        let type_context = function_type.map(|ty| {
+            arcweft_core::awbc::schema::AwbcFunctionTypeContext::Signature(admitted_plan_type(
+                self.inventory,
+                self.plan,
+                ty,
+            ))
+        });
         let mut flags = AwbcFunctionFlags::empty()
             .with(AwbcFunctionFlag::Deterministic)
             .with(AwbcFunctionFlag::MaySuspend);
@@ -1078,6 +1043,64 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 flags,
             },
         )
+    }
+
+    fn close_executable_body(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        result: arcweft_core::runtime_id::RuntimePlanTypeId,
+        allow_implicit_unit_completion: bool,
+    ) -> arcweft_core::awbc::schema::AwbcTypeId {
+        let result_type = admitted_plan_type(self.inventory, self.plan, result);
+        let unit_result = matches!(
+            self.plan.checked_type(result),
+            Ok(Some(arcweft_core::pattern::RuntimeCheckedType::Unit))
+        );
+        let never_result = matches!(
+            self.plan.checked_type(result),
+            Ok(Some(arcweft_core::pattern::RuntimeCheckedType::Never))
+        );
+        if allow_implicit_unit_completion && unit_result && !body.terminated {
+            self.close_active_scopes_for_terminator(frame);
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Complete,
+                AwbcSafePointKind::Return,
+            );
+        } else if never_result && !body.terminated {
+            self.close_active_scopes_for_terminator(frame);
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Unreachable,
+                AwbcSafePointKind::Return,
+            );
+        } else if unit_result && !body.terminated {
+            // Ordinary callable transitions always carry their declared result,
+            // including Unit. Effect-only bodies synthesize that final value.
+            let value = frame.return_value(result_type);
+            let constant = self.inventory.constant_runtime_value(&RuntimeValue::Unit);
+            self.inventory.push_instruction(AwbcInstruction::LoadConst {
+                dst: value,
+                constant,
+            });
+            self.close_active_scopes_for_terminator(frame);
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Return { value: Some(value) },
+                AwbcSafePointKind::Return,
+            );
+        } else if !body.terminated {
+            // A non-Unit signature has no implicit result value. Any residual
+            // continuation is unreachable; an invalid manual body traps.
+            self.close_active_scopes_for_terminator(frame);
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Unreachable,
+                AwbcSafePointKind::Return,
+            );
+        }
+        result_type
     }
 
     pub(crate) fn lower_flow(&mut self, flow: &RuntimeFlow) -> AwbcFunctionId {
@@ -1648,19 +1671,36 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             FlowOp::Loop { result, body: ops } => {
                 self.lower_loop(frame, body, result.as_ref(), ops, path);
             }
-            FlowOp::Thread { body: ops, .. } => {
-                let scope = frame.enter_scope();
-                self.inventory
-                    .push_instruction(AwbcInstruction::EnterScope { scope });
-                self.lower_ops(frame, body, ops, &format!("{path}.body"));
-                if !body.terminated {
-                    body.suspend(self.inventory, AwbcSafePointKind::BudgetYield, |resume| {
-                        AwbcTerminator::BudgetYield { resume }
-                    });
+            FlowOp::Thread {
+                producer,
+                binding,
+                captures,
+                ..
+            } => {
+                if let Some(plan) =
                     self.inventory
-                        .push_instruction(AwbcInstruction::ExitScope { scope });
+                        .intern_program_task(self.plan, &producer.plan, path)
+                {
+                    let args = captures
+                        .iter()
+                        .map(|local| {
+                            frame
+                                .register_for_local(*local)
+                                .expect("checked Thread capture is bound in its enclosing frame")
+                        })
+                        .collect();
+                    let ty = admitted_plan_type(self.inventory, self.plan, binding.ty());
+                    let dst = frame.temp(ty);
+                    let pattern = lower_pattern(self.inventory, self.plan, frame, binding);
+                    self.inventory
+                        .push_instruction(AwbcInstruction::StartProgram { dst, plan, args });
+                    self.inventory
+                        .push_instruction(AwbcInstruction::BindPattern {
+                            pattern,
+                            value: dst,
+                            mode: AwbcBindMode::Declare,
+                        });
                 }
-                frame.exit_scope();
             }
             FlowOp::While {
                 condition,

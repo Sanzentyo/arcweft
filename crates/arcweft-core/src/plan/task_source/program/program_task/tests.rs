@@ -18,6 +18,10 @@ fn context() -> AwbcVerifyContext<'static> {
 
 fn executable() -> AwbcProgram {
     let original = crate::plan::task_source::template_tests::thread();
+    executable_from(original)
+}
+
+fn executable_from(original: RuntimeTaskSourceProgram) -> AwbcProgram {
     let original = original.original();
     let row = original
         .task_plans()
@@ -329,4 +333,90 @@ fn program_source_rejects_host_rows_and_exhausted_work_without_issuing_a_lease()
         Err(RuntimeAwbcProgramSourceError::Encoding(_))
     ));
     assert!(work.charge_work(0).is_err());
+}
+
+#[test]
+fn program_kernel_retains_the_original_lexical_context_with_its_distinct_capture_abi() {
+    let original = crate::plan::task_source::template_tests::thread_with_lexical_context();
+    let mut code = executable_from(original);
+    code.runtime_types.push(AwbcRuntimeType::new(
+        crate::pattern::RuntimeSemanticTypeId::from_bytes([40; 32]),
+        AwbcRuntimeTypeShape::Function {
+            contract: crate::plan::RuntimeFunctionTypeContract::default(),
+            parameters: Vec::new(),
+            result: AwbcTypeId(0),
+        },
+    ));
+    code.functions[0].type_context = Some(AwbcFunctionTypeContext::ProgramBody(AwbcTypeId(2)));
+    let encoded = code.encode_canonical().unwrap();
+    let decoded =
+        AwbcProgram::decode_canonical(&encoded, crate::awbc::codec::AwbcDecodeBudget::default())
+            .unwrap();
+    assert_eq!(decoded, code);
+    let program = admit(decoded);
+    program
+        .awbc_program_source(
+            AwbcTaskPlanId(0),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter(),
+        )
+        .unwrap();
+    let mut wrong = code.clone();
+    wrong.functions[0].type_context = Some(AwbcFunctionTypeContext::Signature(AwbcTypeId(2)));
+    assert!(
+        wrong
+            .verify(AwbcVerifyBudget::default(), context())
+            .is_err()
+    );
+    let mut wrong = code.clone();
+    wrong.functions[0].kind = AwbcFunctionKind::Ordinary;
+    wrong.task_plans.clear();
+    assert!(
+        wrong
+            .verify(AwbcVerifyBudget::default(), context())
+            .is_err()
+    );
+    let mut wrong = code;
+    let plain = executable();
+    wrong.original_source = plain.original_source;
+    let AwbcTaskPlanExecution::Program(plain) = &plain.task_plans[0].execution else {
+        unreachable!()
+    };
+    let AwbcTaskPlanExecution::Program(actual) = &mut wrong.task_plans[0].execution else {
+        unreachable!()
+    };
+    actual.source = plain.source;
+    let program = admit(wrong);
+    assert!(matches!(
+        program.awbc_program_source(
+            AwbcTaskPlanId(0),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter()
+        ),
+        Err(RuntimeAwbcProgramSourceError::Mismatch {
+            field: RuntimeAwbcProgramSourceField::TypeContext,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn program_source_rejects_effect_permissions_not_owned_by_the_enclosing_invocation() {
+    let mut code = executable();
+    code.effect_sets.push(AwbcEffectSet {
+        effects: vec![AwbcStringId(1)],
+    });
+    code.signatures[0].effects = AwbcEffectSetId(1);
+    let program = admit(code);
+    assert!(matches!(
+        program.awbc_program_source(
+            AwbcTaskPlanId(0),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter()
+        ),
+        Err(RuntimeAwbcProgramSourceError::Mismatch {
+            field: RuntimeAwbcProgramSourceField::Effects,
+            ..
+        })
+    ));
 }

@@ -14,6 +14,7 @@ mod lifecycle;
 mod line;
 mod mapping;
 pub mod program;
+mod program_task;
 mod root;
 mod runtime_id;
 mod snapshot;
@@ -242,7 +243,7 @@ pub enum AwbcProductStepBuildError {
     GenerationRegression { current: u64, requested: u64 },
 }
 
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Debug, Error)]
 pub(super) enum ProductStepError {
     #[error(transparent)]
     Root(Box<crate::root::RootRuntimeError>),
@@ -281,6 +282,8 @@ pub(super) enum ProductStepError {
     RuntimeIdentity(#[from] crate::runtime_id::RuntimeIdExhausted),
     #[error(transparent)]
     Fiber(#[from] crate::awbc::fiber::FiberStateError),
+    #[error(transparent)]
+    ProgramTask(#[from] program_task::ProgramTaskError),
 }
 
 impl From<crate::root::RootRuntimeError> for ProductStepError {
@@ -313,6 +316,7 @@ impl ProductStepError {
             | Self::StaleLineTaskChildContent { .. }
             | Self::RuntimeIdentity(_)
             | Self::Fiber(_)
+            | Self::ProgramTask(_)
             | Self::Vm(_) => RuntimeDiagnosticCategory::Internal,
         }
     }
@@ -333,6 +337,7 @@ impl ProductStepError {
             | Self::StaleLineTaskChildContent { .. }
             | Self::RuntimeIdentity(_)
             | Self::Fiber(_)
+            | Self::ProgramTask(_)
             | Self::Vm(_) => AwbcTrapCode::InternalInvariant,
             Self::ActivationTrap(trap) => trap.code,
         }
@@ -596,9 +601,13 @@ impl AwbcProductStepExecutor {
 
 /// Ownership of a compact child fiber. A child may never outlive an active
 /// dialogue scope merely because it was stored in a shared queue.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum ProductChildFiberOwner {
     Independent,
+    Program {
+        launch: crate::task::ProgramTaskLaunch,
+        parent: crate::runtime_id::RuntimeFiberInstanceId,
+    },
     LineTask {
         content: AwbcContentUnitId,
         tag: LineTaskWorkTag,
@@ -680,7 +689,7 @@ impl ProductChildFiberOwner {
             | Self::ScopedDeferred {
                 activation: owner, ..
             } => owner == activation,
-            Self::Independent => false,
+            Self::Independent | Self::Program { .. } => false,
         }
     }
 }
@@ -694,6 +703,7 @@ impl ProductChildFiber {
                     self.owner,
                     ProductChildFiberOwner::Deferred { .. }
                         | ProductChildFiberOwner::ScopedDeferred { .. }
+                        | ProductChildFiberOwner::Program { .. }
                 ) && matches!(
                     self.fiber
                         .suspension
@@ -706,6 +716,7 @@ impl ProductChildFiber {
                 self.owner,
                 ProductChildFiberOwner::Deferred { .. }
                     | ProductChildFiberOwner::ScopedDeferred { .. }
+                    | ProductChildFiberOwner::Program { .. }
             ),
         }
     }
@@ -2011,6 +2022,11 @@ impl AwbcProductStepExecutor {
                 crate::awbc::fiber::AwbcFiberRoot::Empty => {
                     unreachable!("empty origin is handled above")
                 }
+                crate::awbc::fiber::AwbcFiberRoot::Task(_) => {
+                    return Err(AwbcProductStepBuildError::FiberState {
+                        message: "Program task root requires its accepted launch".into(),
+                    });
+                }
                 crate::awbc::fiber::AwbcFiberRoot::RootReducer(_) => {
                     return Err(AwbcProductStepBuildError::FiberState {
                         message: "Root reducer requires its owning executor".into(),
@@ -2652,7 +2668,7 @@ impl AwbcProductStepExecutor {
             || self
                 .child_fibers
                 .iter()
-                .any(ProductChildFiber::has_internal_work)
+                .any(|child| self.child_has_internal_work(child))
     }
 
     fn dialogue_activation_budget_exhausted(&self) -> bool {
@@ -2805,6 +2821,10 @@ impl AwbcProductStepExecutor {
                         };
                         Self::record_return(retained.or(value.as_ref()), output);
                     }
+                    VmExit::TaskReturned => self.fail_with_error(
+                        ProductStepError::Internal("Program return escaped its task owner".into()),
+                        output,
+                    ),
                     VmExit::DialogueResultSelected(_) => self.fail_with_error(
                         ProductStepError::Internal(
                             "dialogue result selection escaped its line-task child".to_owned(),
@@ -2901,6 +2921,16 @@ impl AwbcProductStepExecutor {
                     self.consume_observations(vm_output.observations, output);
                     match vm_output.exit {
                         VmExit::Running => {}
+                        VmExit::TaskReturned => {
+                            self.record_error(
+                                ProductStepError::Internal(
+                                    "stream transform returned through a Program task owner"
+                                        .to_owned(),
+                                ),
+                                output,
+                            );
+                            return;
+                        }
                         VmExit::Returned(_)
                         | VmExit::DialogueResultSelected(_)
                         | VmExit::Cancelled => return,
@@ -3031,9 +3061,32 @@ impl AwbcProductStepExecutor {
         let Some(front) = self.child_fibers.front() else {
             return false;
         };
+        if matches!(
+            front.fiber.status,
+            FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Trapped
+        ) {
+            if self.has_program_children(front.fiber.instance) {
+                let child = self
+                    .child_fibers
+                    .pop_front()
+                    .expect("observed child remains queued");
+                self.child_fibers.push_back(child);
+                return false;
+            }
+            if matches!(front.owner, ProductChildFiberOwner::Program { .. }) {
+                let child = self
+                    .child_fibers
+                    .pop_front()
+                    .expect("observed Program child remains queued");
+                self.retire_program_child(child, output);
+                return true;
+            }
+        }
         let deferred_owner = matches!(
             &front.owner,
-            ProductChildFiberOwner::Deferred { .. } | ProductChildFiberOwner::ScopedDeferred { .. }
+            ProductChildFiberOwner::Deferred { .. }
+                | ProductChildFiberOwner::ScopedDeferred { .. }
+                | ProductChildFiberOwner::Program { .. }
         );
         if front.fiber.status != FiberStatus::Running
             && !(deferred_owner
@@ -3108,12 +3161,13 @@ impl AwbcProductStepExecutor {
                                 self.fail_with_error(error.into(), output);
                                 true
                             }
-                            ProductChildFiberOwner::Independent => unreachable!(),
+                            ProductChildFiberOwner::Independent
+                            | ProductChildFiberOwner::Program { .. } => unreachable!(),
                         };
                     }
                 }
             }
-            ProductChildFiberOwner::Independent => None,
+            ProductChildFiberOwner::Independent | ProductChildFiberOwner::Program { .. } => None,
         };
         let mut skip_vm_instruction = false;
         if child.fiber.status == FiberStatus::Suspended {
@@ -3226,7 +3280,8 @@ impl AwbcProductStepExecutor {
                             output,
                         );
                     }
-                    ProductChildFiberOwner::Deferred { .. }
+                    ProductChildFiberOwner::Program { .. }
+                    | ProductChildFiberOwner::Deferred { .. }
                     | ProductChildFiberOwner::ScopedDeferred { .. } => {
                         child.fiber.mark_trapped(FiberTrap {
                             code: AwbcTrapCode::InternalInvariant,
@@ -3316,6 +3371,7 @@ impl AwbcProductStepExecutor {
             }
             return true;
         }
+        let program_returned = matches!(&vm_output.exit, VmExit::TaskReturned);
         if let VmExit::DialogueResultSelected(value) = vm_output.exit {
             // VmExit is the first-delivery owner. The child remains the sole
             // live carrier until result-selection admission moves it to the
@@ -3338,7 +3394,8 @@ impl AwbcProductStepExecutor {
                     }
                     return self.begin_product_line_task_child_failure(&tag, error.into(), output);
                 }
-                ProductChildFiberOwner::Deferred { .. }
+                ProductChildFiberOwner::Program { .. }
+                | ProductChildFiberOwner::Deferred { .. }
                 | ProductChildFiberOwner::ScopedDeferred { .. } => {
                     child.fiber.mark_trapped(FiberTrap {
                         code: AwbcTrapCode::InternalInvariant,
@@ -3380,6 +3437,28 @@ impl AwbcProductStepExecutor {
                 return true;
             }
         };
+        if matches!(&owner, ProductChildFiberOwner::Program { .. }) {
+            if program_returned {
+                let value = child
+                    .fiber
+                    .return_summary
+                    .clone()
+                    .unwrap_or_else(|| crate::value::runtime_value_label(&RuntimeValue::Unit));
+                output.flow_events.push(FlowEvent::Return { value });
+            }
+            resume_journal.commit(self, staged_resume_output, output);
+            self.compact_pure_stats = candidate_stats;
+            if matches!(
+                child.fiber.status,
+                FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Trapped
+            ) {
+                self.retire_program_child(child, output);
+            } else {
+                self.child_fibers.push_back(child);
+            }
+            self.consume_observations(observations, output);
+            return true;
+        }
         if matches!(&owner, ProductChildFiberOwner::Independent) {
             if matches!(
                 child.fiber.status,
@@ -3435,7 +3514,7 @@ impl AwbcProductStepExecutor {
                     site,
                 }),
             ),
-            ProductChildFiberOwner::Independent => {
+            ProductChildFiberOwner::Independent | ProductChildFiberOwner::Program { .. } => {
                 self.fail_with_error(
                     crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
                     output,

@@ -136,7 +136,7 @@ impl<V, O, N> FiberSuspension<V, O, N> {
                     .get(handle.index())
                     .ok_or(FiberStateError::InvalidFrame)?
                     .ty;
-                if !matches!(frame.program.runtime_types.get(ty.index()).map(AwbcRuntimeType::shape), Some(AwbcRuntimeTypeShape::Need(item)) if item == item_type)
+                if !matches!(frame.program.runtime_types.get(ty.index()).map(AwbcRuntimeType::shape), Some(AwbcRuntimeTypeShape::Need(item) | AwbcRuntimeTypeShape::Task(item)) if item == item_type)
                     || frame
                         .registers
                         .get(handle.index())
@@ -144,7 +144,7 @@ impl<V, O, N> FiberSuspension<V, O, N> {
                 {
                     return Err(FiberStateError::InvalidRuntimeValue {
                         path: "suspension.await.target".into(),
-                        reason: "Need identity or selected item type disagrees with its consumed handle register".into(),
+                        reason: "task identity or selected item type disagrees with its consumed handle register".into(),
                     });
                 }
                 if binding.is_some_and(|p| frame.program.patterns.get(p.index()).is_none()) {

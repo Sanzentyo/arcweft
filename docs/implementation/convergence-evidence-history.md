@@ -9685,3 +9685,70 @@ R2487 Clippy raw logのtrailing whitespace3行を保持し、staged whitespace�
 その原本1件のみ除外する。現状一覧は `current-status.md` の一か所を維持する。
 変更した3文書の相対リンク229件は解決可能、未閉鎖fenceは0。
 文書更新後も検証済み4 Rust pathsのformatと全Rust入力のhash差分0を確認した。
+
+## AWBC Thread独立実行への途中接続 — 2026-10-24
+
+前節は `ad2fd687a87186ee8560861b60c49add5ad2f321` で公開した。
+parentは `e9a1894f76059e47d4a56868c8f5269bd2990f8b`、treeは
+`90bfb5dd759640e9bfa91fe96defef6926bd32af`、raw patch SHA256は
+`eb1118daecf7b0f57ba63dc52829580b219d7d728478cd29063b0bd38ea30398`。
+[公開照合](acceptance-evidence/task-program-body-checkpoint.verified.json)は30公開blob、
+4,444入力、fresh origin／advertised ref、empty index、保持14 tracked WIPの差分0を記録する。
+
+同基点から33 Rust pathsを変更した途中checkpointである。ユーザーはdirtyの蓄積を避ける
+ため、途中commitの正常動作確認を必須にしないよう明示した。今回は最終検証を待たずに
+公開し、以下の失敗と修正後の未再検証を残す。Threadや全体goalの完了とは判定しない。
+
+### 実装の所有境界
+
+元Thread bodyをSource readerから借り、capture ABIを持つ別kernelへloweringする。
+enclosing callableの`Signature`と、元invocation bindingを継承する`ProgramBody`を
+閉じたenumで区別し、Sourceで元の型contextと効果集合を照合する。v1 codecを直接更新し、
+旧`SpawnFiber`と文字列の疑似handle、親frame内のinline Thread経路を削除した。
+
+`StartProgram`のVM observationは親の実際のregisterとcursorを残す。Product ownerが
+元Source・capture・入力・出力型・quotaを検査し、実際のaccepted receiptを取得してから
+親へのhandle書込み、子queue、ID cursorを確定する。子はTask rootとprivate launchを持ち、
+返却値はattached子のjoinまで実際のfiberに保持し、退役時に共通registryへ移す。
+保存metadataのhandle／parentだけからlaunchを捏造せず、復元済みの共通registryにある
+実際のExecuting launchと元Program行・code owner・generation・parentを照合する。
+
+型context／元効果集合／capture ingress上限の3 regressionを追加したが、今回runtimeは
+未実行である。既存queue公平性testは旧spawn opcodeからtest所有の実際のtail fiber投入へ
+移し、元の1-op予算・host resume・保存のassertionを保持する。このtestを実際のProgram
+起動の検証と呼ばない。実Sourceからの起動／結果／await／保存の実行検証はまだ必要である。
+
+### 実際のチェック結果
+
+4実行とも `cargo check -p arcweft-core -p arcweft-runtime-plan --all-targets
+--all-features --locked`。各実行のreceipt・raw log・入力freezeを原本のまま保持する。
+
+| 実行 | 入力と結果 |
+|---|---|
+| R2489 | 初期context変更9 paths、4,444入力。exit 0、143.288秒。後続のkernel／起動／退役変更を検証した結果ではない。 |
+| R2490 | 起動接続23 paths、4,446入力。exit 101、68.430秒。旧observation、snapshot registryのadmitted/live型、error derive、child ownerやrootの網羅漏れを修復した。 |
+| R2491 | 退役接続27 paths、4,447入力。exit 101、75.179秒。新しい`TaskReturned`の普通callable・line activation・stream consumer 3件を、owner外の不正な退役として拒否するよう修復した。 |
+| R2492 | 30 paths、4,447入力。exit 101、81.896秒。Core統合test `direct_suspension.rs:69` の旧`FiberSpawned`参照が失敗。該当参照と、実際に残っていたcodegen／CLIの旧opcode参照を最終33 Rust pathsへ移行した。修正後はcheck未再実行。 |
+
+[最終checkpoint入力](acceptance-evidence/task-program-runtime-checkpoint.source-freeze.json)は
+4,447入力と保持14 tracked WIPを記録する。99 manifest／lockとowned外の差分は0。
+[解決済みgraph](acceptance-evidence/task-program-runtime-checkpoint.graph.json)の逆依存は53で、
+今回そのruntimeは実行していない。新しいSource regression、実際のThread起動、返却handle、
+1-op予算と各step保存復元、cancel／子join、workspace check／Clippy、canonical gate、
+doctest、ignored／Tier2、Native-Web capture parityも未実行。旧PASSを最終入力へ転用しない。
+Generic Matchの受入は維持し、機能全体を未完了へ戻す新しい根拠は得ていない。
+
+[owner計測](acceptance-evidence/task-program-runtime-ownership-metrics.json)は33 Rust pathsを記録する。
+新規の起動ownerは270 LOC、退役ownerは108、kernel lowererは97で、それぞれ既存のSource／
+registry／fiberのtyped APIを使用する。新しい結果table、I/O、crate edge、互換readerはない。
+既存のcodec 2,953、schema 3,838、verifier 6,506／3,863 LOCは同じ閉じたgrammarの検査を所有し、
+fiber 7,125はTask入口／lexical binding、Product 5,915・snapshot 4,236はそのchild lifecycleを所有する。
+line 4,207は不正な返却の拒否、suspension 2,810はobservationのdispatchと旧spawn削除である。
+RuntimePlan flow 3,928・expr 1,864・inventory 2,484は元body生成とそのinterningを担当する。
+既存の大きなtest ownerはopcode／queue契約の移行に限り、CLI 9,036 LOCへの変更も旧名1箇所のみ。
+元のCLI `--steps` WIP hunkは公開対象へ混ぜない。結合を増やす新しい公開APIの拡張や別authorityは
+加えていない。数値による分割は行わず、実際の起動と退役の責任をprivate子moduleへ分けた。
+
+今回の20原本、4,689,118 bytesをbyte・SHA256・Git blob一致で保持する。
+相対リンク・fence・差分と公開blobの確認は資料の検証であり、runtime合格とは区別する。
+現状説明は `current-status.md` の一か所に集約し、現在もinline実装だとする古い説明を置換した。

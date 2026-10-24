@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "commit": "ad2fd687a87186ee8560861b60c49add5ad2f321",
+  "parent": "e9a1894f76059e47d4a56868c8f5269bd2990f8b",
+  "tree": "90bfb5dd759640e9bfa91fe96defef6926bd32af",
+  "remote": "ad2fd687a87186ee8560861b60c49add5ad2f321",
+  "advertised": "ad2fd687a87186ee8560861b60c49add5ad2f321",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/plan.rs",
+      "blob": "3e79a1cc2f3df78d66e7e5c69305b1cc55df3e34",
+      "workingBlob": "3e79a1cc2f3df78d66e7e5c69305b1cc55df3e34",
+      "workingSha256": "7eceb6ab79b0bf58001203b8740f31a4ddab5b1cd7ed9d06c69856cc82df166c"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source.rs",
+      "blob": "e0508818c2d48c5f358ccd9a320f316f6d356861",
+      "workingBlob": "e0508818c2d48c5f358ccd9a320f316f6d356861",
+      "workingSha256": "2c37ed86534bc5f613180228ebc94acdc2c9e45de612d96f321f50af345939eb"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body.rs",
+      "blob": "fb360de0a5dd7e26634ef9052cdba62bc07a30ef",
+      "workingBlob": "fb360de0a5dd7e26634ef9052cdba62bc07a30ef",
+      "workingSha256": "ff58e8a95f192e02801599aed5dddf764896ed4dc0d17918ee1260b51844cc6a"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body/tests.rs",
+      "blob": "fe0b6cbe1920feceb89d87be4251dfb2bcef9cb3",
+      "workingBlob": "fe0b6cbe1920feceb89d87be4251dfb2bcef9cb3",
+      "workingSha256": "e59e1d9d76e939172dbdb5d1e3959e2aa0a23c475fca2031ba1cb694ecc82f9a"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "blob": "5763cfd155dd20a9494fbce9fc514deef1b873b6",
+      "workingBlob": "5763cfd155dd20a9494fbce9fc514deef1b873b6",
+      "workingSha256": "b0919f51e454f668b0d5643fdbd3943a5f6767e27924bfe928704c09a71515a5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2484-program-body-core-check.json",
+      "blob": "31024b266097d3ae56bfbc1c918ae1f13eff6adb",
+      "workingBlob": "31024b266097d3ae56bfbc1c918ae1f13eff6adb",
+      "workingSha256": "c777375c56fb46ba04e573559e7c344171bd5a9f1bc6ca369c2889e278f2282e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2484-program-body-core-check.log",
+      "blob": "35fb347f5dfb6199b843f3ade7364ebe8da9cfad",
+      "workingBlob": "35fb347f5dfb6199b843f3ade7364ebe8da9cfad",
+      "workingSha256": "44df8f3658b18edc9e40dca7db3a685c275a59ef3eba9a718214cc37a8149fe5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2485-program-body-source-catalog.inventory.json",
+      "blob": "0aa4004fb8be50140f702937aad593e98b17114d",
+      "workingBlob": "0aa4004fb8be50140f702937aad593e98b17114d",
+      "workingSha256": "7684ef16a84834cd39d8406fe919853602013837b94dcaf07c07bb76108fce6d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2485-program-body-source-catalog.json",
+      "blob": "e1c269a58346832cfe98486e6063a15fa16b8972",
+      "workingBlob": "e1c269a58346832cfe98486e6063a15fa16b8972",
+      "workingSha256": "bd3ef92d240168ac1cae92f8b7c725a447f28e6d4dd51ce1c9e3f326cb9c31ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2485-program-body-source-catalog.log",
+      "blob": "38109108d4efda82e0a6e7205d6d5a3e0eb22a4d",
+      "workingBlob": "38109108d4efda82e0a6e7205d6d5a3e0eb22a4d",
+      "workingSha256": "13e693cee6ee8b93671d23e0f8366718467fb4b9bbb63898f88c01885374d906"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2486-program-body-source-runtime.binary-audit.json",
+      "blob": "8a99e2f76ac943b836daec054553463956ed9c9d",
+      "workingBlob": "8a99e2f76ac943b836daec054553463956ed9c9d",
+      "workingSha256": "deb3cf0111077000350fdb7a0bf63a4f860bf26061616a22d02952c2a71fdb4a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2486-program-body-source-runtime.json",
+      "blob": "0ac1823220cde8a534fd2cc970b6980d4d0057ee",
+      "workingBlob": "0ac1823220cde8a534fd2cc970b6980d4d0057ee",
+      "workingSha256": "17c5c3d3271c8661257e97ed3ffbb3971dac014118520491d17bf9c520d7e552"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2486-program-body-source-runtime.log",
+      "blob": "99a7aa97911f98127f726c57f1eb1c2b2b7d4eed",
+      "workingBlob": "99a7aa97911f98127f726c57f1eb1c2b2b7d4eed",
+      "workingSha256": "fa0a1cf756233135dff31081457147c2fc1912e03e606ad2f7f02208cb7a8a2f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2486-program-body-source-runtime.terminal-audit.json",
+      "blob": "1b2925212f2b1015bfbaf6f37c77b056388b4e0d",
+      "workingBlob": "1b2925212f2b1015bfbaf6f37c77b056388b4e0d",
+      "workingSha256": "d5958d60b0ca9c82f88ce974c7fa6404ad5d159d7ca8eac05d501482569b65fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2487-program-body-core-clippy.json",
+      "blob": "adad6bcc6cbaefac8d7c0de67be8ac12d0b0f2c1",
+      "workingBlob": "adad6bcc6cbaefac8d7c0de67be8ac12d0b0f2c1",
+      "workingSha256": "95439188592cd651cc99fd772a97a0644e4efdee0d3f286fa837a5b97e5ddf13"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2487-program-body-core-clippy.log",
+      "blob": "564762ea9139d62ee0a378fb1f4f0c86769f5584",
+      "workingBlob": "564762ea9139d62ee0a378fb1f4f0c86769f5584",
+      "workingSha256": "3f9f14271920c62c486688c7f65c33f6a37b4ea03e312226174a90ac789a97b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2488-program-body-structure.json",
+      "blob": "7bd464a775988f408747da328018a98cb2134e95",
+      "workingBlob": "7bd464a775988f408747da328018a98cb2134e95",
+      "workingSha256": "241f6ff9f869c0d25bb45064ae65266a3666be05d0ad8387be65172ca1a1a145"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2488-program-body-structure.log",
+      "blob": "480fc72316d0342b0a6ae298f9c4a713aa25af69",
+      "workingBlob": "480fc72316d0342b0a6ae298f9c4a713aa25af69",
+      "workingSha256": "fdb58a59cc066959edd849165b4d30b93a43444d3288b6c8a1254539be4863b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-ownership-metrics.json",
+      "blob": "e2ad64c361b72c850414b42708fdbe87724a1ae6",
+      "workingBlob": "e2ad64c361b72c850414b42708fdbe87724a1ae6",
+      "workingSha256": "c1c3472096ebf700d777d1bb244afe5fad8df1d0fe21e737f679753acb559a9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-r2484.graph.json",
+      "blob": "78c5fccb5f811dbaa1b33484257748b32c191e5e",
+      "workingBlob": "78c5fccb5f811dbaa1b33484257748b32c191e5e",
+      "workingSha256": "8710742ef3d98b179f8440e9b0fdb1903cb8f48b1e54fe7bb95f8d3e41cde053"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-r2484.source-freeze.json",
+      "blob": "beb73a36a407497ae00ec054488b816d09d8adfb",
+      "workingBlob": "beb73a36a407497ae00ec054488b816d09d8adfb",
+      "workingSha256": "90912a518421ffa3205756492d24edb70591221a18d719c5617bcb76c2f65c74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-r2485.pins.json",
+      "blob": "d0a317f14c26c0fdbd4d21a59a253d961ce1955b",
+      "workingBlob": "d0a317f14c26c0fdbd4d21a59a253d961ce1955b",
+      "workingSha256": "1a1f3a12df2d1b8feae402cd0040d85a0cac95758be40282a562e76c4f13ad66"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-structure-r2488/dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingBlob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingSha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-structure-r2488/file_metrics.csv",
+      "blob": "1898c90f6587805fda32d359a9fe357270483795",
+      "workingBlob": "1898c90f6587805fda32d359a9fe357270483795",
+      "workingSha256": "5f47d6370e9ddaccd54579837fe01f2a81eeaa132f21a27d875aced345d41805"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-structure-r2488/findings.md",
+      "blob": "4ce896e49a1db464a999b31afcd53410b456940c",
+      "workingBlob": "4ce896e49a1db464a999b31afcd53410b456940c",
+      "workingSha256": "3eaae6f586c927bc7ae74194789f8ae6ce8cc99860765cb96edbb54899eb0e4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-structure-r2488/package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingBlob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingSha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-structure-r2488/public_type_duplicates.csv",
+      "blob": "6b4d445f2f83ebb8a5591b527ef744c6ba2324c6",
+      "workingBlob": "6b4d445f2f83ebb8a5591b527ef744c6ba2324c6",
+      "workingSha256": "cc8c2f38252c43c42c84ab10aa3f7af38862675eceb933813181bca4cb2137d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-source-checkpoint.verified.json",
+      "blob": "62219ff3101358f79aea63af3c49438c27ccf3e7",
+      "workingBlob": "62219ff3101358f79aea63af3c49438c27ccf3e7",
+      "workingSha256": "5a4a7e15328ca305fcde5ac49bd943c00f7b24416ab0196649c3e43177aadd13"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "07bf3d2d5f800099703c2e01bd385623a10325e4",
+      "workingBlob": "07bf3d2d5f800099703c2e01bd385623a10325e4",
+      "workingSha256": "562929115283443e140acdb60342ae7193ce9346d41dbc864fcb4aee68f626f6"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "b37aca5b39f0c0875b13ba21e08a833c33943f3a",
+      "workingBlob": "b37aca5b39f0c0875b13ba21e08a833c33943f3a",
+      "workingSha256": "6528918c1f035bb280c6baa4b2307683f10395bc0e814fd5c04bb86a5ccf8587"
+    }
+  ],
+  "sourceCount": 4444,
+  "sourceDrift": 0,
+  "heldPatchSha256": "19984db578254ef3c99a418175e11cd3c5eb442e0d3a42fe4ccf189e88a71983",
+  "patchSha256": "eb1118daecf7b0f57ba63dc52829580b219d7d728478cd29063b0bd38ea30398",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-23T23:18:28.6156052Z"
+}

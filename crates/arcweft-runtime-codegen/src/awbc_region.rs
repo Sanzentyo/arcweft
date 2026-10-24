@@ -186,7 +186,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         AwbcOpcode::EnsureContent
         | AwbcOpcode::EmitEffect
         | AwbcOpcode::StartNeed
-        | AwbcOpcode::SpawnFiber
+        | AwbcOpcode::StartProgram
         | AwbcOpcode::StreamYield
         | AwbcOpcode::StreamClose => options.allow_host_boundaries,
         AwbcOpcode::MakeCallable

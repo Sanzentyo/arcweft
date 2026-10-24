@@ -65,6 +65,18 @@ impl RuntimePlan {
             context.meter.reject_owner();
             return Err(RuntimeTaskSourceError::NotProgramBody);
         };
+        context.meter.charge_work(1).map_err(|error| {
+            RuntimeTaskSourceError::Function(crate::plan::RuntimeBodySemanticError::from(error))
+        })?;
+        if captures.len() > context.limits.max_function_roles as usize {
+            context.meter.reject_owner();
+            return Err(RuntimeTaskSourceError::Function(
+                crate::plan::RuntimeBodySemanticError::FunctionRoles {
+                    actual: captures.len(),
+                    maximum: context.limits.max_function_roles,
+                },
+            ));
+        }
         let function = self
             .function_sites()
             .get(endpoint.function_id())

@@ -38,6 +38,11 @@ impl AwbcProductStepExecutor {
                 AwbcTrapCode::InternalInvariant,
                 error.to_string(),
             ),
+            ProductStepError::ProgramTask(error) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                error.to_string(),
+            ),
             ProductStepError::Type(message) => (
                 RuntimeDiagnosticCategory::Type,
                 AwbcTrapCode::TypeMismatch,
@@ -158,6 +163,9 @@ impl AwbcProductStepExecutor {
                 (RuntimeDiagnosticCategory::Internal, error.to_string())
             }
             ProductStepError::Vm(error) => (RuntimeDiagnosticCategory::Internal, error.to_string()),
+            ProductStepError::ProgramTask(error) => {
+                (RuntimeDiagnosticCategory::Internal, error.to_string())
+            }
             ProductStepError::Input(message) => (RuntimeDiagnosticCategory::Input, message),
             ProductStepError::Type(message) => (RuntimeDiagnosticCategory::Type, message),
             ProductStepError::Host(message) => (RuntimeDiagnosticCategory::Host, message),

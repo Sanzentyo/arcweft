@@ -119,3 +119,12 @@ R2469のCore全53逆依存と現在のソースで照合した。現状一覧に
 その他の非文書 dirty 41件は、整理開始時から path／SHA256 の差分0を確認した。
 変更 Markdown 7件（大きな履歴は追加行のみ）の相対リンク67件が解決し、未閉鎖 fence は0。
 追加／移動 JSON 3件の parse と、CRLF を改行として扱う差分の whitespace check も通過した。
+
+## AWBC実装移行に伴う現状説明の訂正 — 2026-10-24
+
+基点 `ad2fd687a87186ee8560861b60c49add5ad2f321` 後のソースでは、親frame内の
+inline Threadを独立kernelと実際のlaunch経路へ置換した。「kernel生成への接続は
+まだ行っていない」「現在もinline loweringする」という現状説明を置換した。
+R2491／R2492はconsumer移行漏れで失敗し、修正後の再検証は未実行である。
+実装が存在することを受入完了とはせず、過去のpanic・検証結果・公開SHAは履歴に残す。
+この修正によってGeneric MatchやNativeの受入済み境界を未完了へ戻していない。

@@ -234,10 +234,12 @@ pub enum VmObservation {
         args: Vec<RuntimeValue>,
     },
     Goto(AwbcFunctionId),
-    FiberSpawned {
-        function: AwbcFunctionId,
-        handle: Option<RuntimeValue>,
-        args: Vec<RuntimeValue>,
+    ProgramTaskStarted {
+        cursor: FiberCursor,
+        fiber: crate::runtime_id::RuntimePersistentFiberId,
+        dst: AwbcRegisterId,
+        plan: AwbcTaskPlanId,
+        captures: Vec<AwbcRegisterId>,
     },
     StreamYield {
         stream: AwbcStreamPlanId,
@@ -321,6 +323,8 @@ pub enum VmExit {
     Running,
     Suspended(FiberSuspensionReason),
     Returned(Option<RuntimeValue>),
+    /// The actual task fiber retains its return value until Product retirement.
+    TaskReturned,
     DialogueResultSelected(RuntimeValue),
     Cancelled,
     Trapped(FiberTrap),
@@ -2281,25 +2285,17 @@ fn execute_instruction(
             });
             return Ok(InstructionControl::Yield);
         }
-        AwbcInstruction::SpawnFiber {
-            dst,
-            function,
-            args,
-        } => {
-            let args = fiber
-                .active_frame_mut()?
-                .take_register_values(program, args)?;
-            let handle = dst.map(|_| RuntimeValue::String(format!("awbc.fiber.{}", function.0)));
-            if let (Some(dst), Some(handle)) = (dst, handle.as_ref()) {
-                fiber
-                    .active_frame_mut()?
-                    .set_register(*dst, handle.clone())?;
-            }
-            observations.push(VmObservation::FiberSpawned {
-                function: *function,
-                handle,
-                args,
+        AwbcInstruction::StartProgram { dst, plan, args } => {
+            observations.push(VmObservation::ProgramTaskStarted {
+                cursor: fiber.cursor,
+                fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
+                    fiber.instance.get().get(),
+                ),
+                dst: *dst,
+                plan: *plan,
+                captures: args.clone(),
             });
+            return Ok(InstructionControl::Yield);
         }
         AwbcInstruction::StreamYield { stream, value } => {
             let next_count = fiber
@@ -4020,6 +4016,13 @@ fn jump(fiber: &mut FiberState, block: AwbcBlockId) {
 
 pub(crate) fn terminal_exit(fiber: &mut FiberState) -> VmExit {
     match fiber.terminal.take() {
+        Some(FiberTerminalValue::Returned(value))
+            if matches!(fiber.root, crate::awbc::fiber::AwbcFiberRoot::Task(_)) =>
+        {
+            fiber.return_summary = value.as_ref().map(runtime_value_label);
+            fiber.terminal = Some(FiberTerminalValue::Returned(value));
+            VmExit::TaskReturned
+        }
         Some(FiberTerminalValue::Returned(value)) => {
             if let Some(value) = value.as_ref() {
                 fiber.return_summary = Some(runtime_value_label(value));

@@ -6896,11 +6896,7 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
         AwbcFunctionId(u32::try_from(program.functions.len()).expect("tail function ordinal"));
     let tail_block = AwbcBlockId(u32::try_from(program.blocks.len()).expect("tail block ordinal"));
     let spawn = u32::try_from(program.instructions.len()).expect("spawn instruction ordinal");
-    program.instructions.push(AwbcInstruction::SpawnFiber {
-        dst: None,
-        function: tail,
-        args: Vec::new(),
-    });
+    program.instructions.push(AwbcInstruction::Nop);
     program.blocks[0].instructions = AwbcTableRange::new(spawn, 1);
     program.functions.push(AwbcFunction {
         definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
@@ -6932,7 +6928,7 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
         .expect("mixed queue canonical program");
     let program =
         AwbcProgram::decode_canonical(&bytes, crate::awbc::codec::AwbcDecodeBudget::default())
-            .expect("the actual SpawnFiber program decodes");
+            .expect("the actual queue program decodes");
     let (mut executor, activation, mut backend) = registered_root_defer_executor(program);
     let (prepared, inflight) = prepare_root_defer_child(&mut executor, &activation);
     assert!(prepared);
@@ -6963,6 +6959,28 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
     };
     let spawned = executor.step(RuntimeStepInput::default(), one_op);
     assert_eq!(spawned.stats.executed_ops, 1);
+    let instance = crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
+        executor
+            .next_fiber_instance
+            .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
+            .unwrap(),
+    );
+    let fiber = FiberState::for_function_with_instance(
+        &executor.program,
+        crate::awbc::fiber::AwbcFiberRoot::Function(tail),
+        tail,
+        instance,
+        executor.next_generation,
+        executor.fiber.budget.quantum,
+    )
+    .unwrap();
+    executor.next_generation += 1;
+    executor.child_fibers.push_back(super::ProductChildFiber {
+        owner: super::ProductChildFiberOwner::Independent,
+        fiber,
+        runtime_generation: executor.runtime_generation,
+        pending_host_call: None,
+    });
     assert_eq!(executor.child_fibers.len(), 2);
     assert_eq!(executor.child_fibers[1].fiber.cursor.function, tail);
     let returned = executor.step(RuntimeStepInput::default(), one_op);

@@ -2549,6 +2549,24 @@ impl NeedProducerRegistry {
         self.task_journal.accepted_spec(handle)
     }
 
+    pub(crate) fn program_launch_for_handle(
+        &self,
+        handle: super::TaskHandle,
+    ) -> Option<&super::ProgramTaskLaunch> {
+        let state = self.launch_for_correlation(&handle.correlation)?;
+        match &state.origin {
+            RuntimeTaskLaunchOrigin::Program {
+                launch,
+                retirement: super::ProgramTaskRetirementPhase::Executing,
+            } if !state.task_terminal
+                && matches!(state.state, RuntimeNeedProducerState::Pending(_)) =>
+            {
+                Some(launch)
+            }
+            _ => None,
+        }
+    }
+
     pub fn task_admissions(&self) -> impl Iterator<Item = TaskSubmission> + '_ {
         self.task_journal.submissions()
     }

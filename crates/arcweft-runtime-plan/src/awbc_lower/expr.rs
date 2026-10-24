@@ -1048,6 +1048,16 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
 
     while let Some(closure) = inventory.pop_pending_closure() {
         match closure {
+            PendingAwbcClosure::ProgramTask {
+                source,
+                function,
+                path,
+            } => {
+                if let Some(source) = inventory.program_task_body(plan, &source, &path) {
+                    super::flow::AwbcFlowLowerer::new(inventory, plan)
+                        .lower_program_task(function, &source, &path);
+                }
+            }
             PendingAwbcClosure::TaskRequest {
                 definition,
                 function,
@@ -1198,8 +1208,11 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         let result = admitted_plan_type(inventory, plan, result);
                         let effects = inventory.intern_effect_set(declaration.invocation_effects());
                         let signature = inventory.intern_signature(params, Some(result), effects);
-                        let type_context =
-                            function_type.map(|ty| admitted_plan_type(inventory, plan, ty));
+                        let type_context = function_type.map(|ty| {
+                            arcweft_core::awbc::schema::AwbcFunctionTypeContext::Signature(
+                                admitted_plan_type(inventory, plan, ty),
+                            )
+                        });
                         inventory.replace_function(
                             function,
                             AwbcFunction {

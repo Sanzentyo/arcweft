@@ -8242,7 +8242,7 @@ mod source_map_batch_owner_tests {
                         }
                         AwbcInstruction::CallPureHelper { .. }
                         | AwbcInstruction::CallTraitMethod { .. }
-                        | AwbcInstruction::SpawnFiber { .. }
+                        | AwbcInstruction::StartProgram { .. }
                         | AwbcInstruction::StartNeed { .. }
                         | AwbcInstruction::FormatContent { .. }
                         | AwbcInstruction::RegisterDefer { .. } => {

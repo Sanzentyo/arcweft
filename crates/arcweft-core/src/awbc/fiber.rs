@@ -68,6 +68,7 @@ pub enum AwbcFiberRoot {
     RootInitializer(AwbcEntryId),
     RootReducer(AwbcEntryId),
     Program(arcweft_id::runtime_program::RuntimePureProgramId),
+    Task(crate::awbc::schema::AwbcTaskPlanId),
     Function(AwbcFunctionId),
     Empty,
 }
@@ -102,7 +103,7 @@ impl AwbcFiberRoot {
         program: &AwbcProgram,
         children: impl Iterator<Item = (Self, FiberStatus, bool, bool)>,
     ) -> Result<(), FiberStateError> {
-        if matches!(self, Self::RootReducer(_)) {
+        if matches!(self, Self::RootReducer(_) | Self::Task(_)) {
             return Err(FiberStateError::InvalidFrame);
         }
         self.admit_root_phase(root, program)?;
@@ -177,7 +178,7 @@ impl AwbcFiberRoot {
                 Ok(())
             }
             (Self::Entry(_), None, Some(entry)) if entry.roles.stateful().is_none() => Ok(()),
-            (Self::Program(_) | Self::Function(_) | Self::Empty, None, _) => Ok(()),
+            (Self::Program(_) | Self::Task(_) | Self::Function(_) | Self::Empty, None, _) => Ok(()),
             _ => Err(FiberStateError::InvalidFrame),
         }
     }
@@ -186,7 +187,7 @@ impl AwbcFiberRoot {
             Self::Entry(entry) | Self::RootInitializer(entry) | Self::RootReducer(entry) => {
                 Some(entry)
             }
-            Self::Program(_) | Self::Function(_) | Self::Empty => None,
+            Self::Program(_) | Self::Task(_) | Self::Function(_) | Self::Empty => None,
         }
     }
 
@@ -244,6 +245,26 @@ impl AwbcFiberRoot {
                 .pure_program_binding(id)
                 .map(|binding| Some(binding.function))
                 .ok_or(FiberStateError::UnknownProgram(id)),
+            Self::Task(task) => {
+                let row = program
+                    .task_plans
+                    .get(task.index())
+                    .ok_or(FiberStateError::InvalidFrame)?;
+                let crate::awbc::schema::AwbcTaskPlanExecution::Program(body) = &row.execution
+                else {
+                    return Err(FiberStateError::InvalidFrame);
+                };
+                if program
+                    .functions
+                    .get(body.kernel.index())
+                    .is_none_or(|function| {
+                        function.kind != crate::awbc::schema::AwbcFunctionKind::ProgramTask
+                    })
+                {
+                    return Err(FiberStateError::InvalidFrame);
+                }
+                Ok(Some(body.kernel))
+            }
             Self::Function(function) => program
                 .functions
                 .get(function.index())
@@ -268,7 +289,8 @@ impl AwbcFiberRoot {
                 .functions
                 .get(function.index())
                 .is_some_and(|row| row.kind == crate::awbc::schema::AwbcFunctionKind::ProgramTask)
-        }) {
+        }) && !matches!(self, Self::Task(_))
+        {
             return Err(FiberStateError::InvalidFrame);
         }
         if let (Some(expected), Some(function)) = (expected, function)
@@ -2040,6 +2062,9 @@ impl FiberState {
         generation: u64,
         budget_quantum: u64,
     ) -> Result<Self, FiberStateError> {
+        if matches!(root, AwbcFiberRoot::Task(_)) {
+            return Err(FiberStateError::InvalidFrame);
+        }
         let mut fiber = Self::allocate_function_frame(
             program,
             root,
@@ -3906,7 +3931,7 @@ fn validate_frame_layout<'program>(
         (Some(context), Some(binding))
             if program
                 .runtime_types
-                .get(context.index())
+                .get(context.owner_type().index())
                 .is_some_and(|row| row.semantic_identity() == binding.context())
                 && binding.is_valid_with_work(program, work) => {}
         _ => return Err(FiberStateError::InvalidFrame),
@@ -4242,6 +4267,50 @@ pub(crate) fn validate_function_argument_value_refs(
     function: AwbcFunctionId,
     values: &[&RuntimeValue],
 ) -> Result<PreparedFunctionInputBinding, FiberStateError> {
+    validate_function_argument_value_refs_in(
+        program,
+        function,
+        values,
+        FunctionInputInstantiation::Infer,
+    )
+}
+
+pub(crate) fn validate_program_task_argument_refs(
+    program: &AwbcProgram,
+    task: crate::awbc::schema::AwbcTaskPlanId,
+    values: &[&RuntimeValue],
+    binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    work: &crate::entry::schema::value_budget::ValidationWork,
+) -> Result<PreparedFunctionInputBinding, FiberStateError> {
+    let row = program
+        .task_plans
+        .get(task.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let crate::awbc::schema::AwbcTaskPlanExecution::Program(body) = &row.execution else {
+        return Err(FiberStateError::InvalidFrame);
+    };
+    validate_function_argument_value_refs_in(
+        program,
+        body.kernel,
+        values,
+        FunctionInputInstantiation::ProgramBody { binding, work },
+    )
+}
+
+enum FunctionInputInstantiation<'a> {
+    Infer,
+    ProgramBody {
+        binding: Option<&'a crate::program_types::RuntimeFunctionEffectInstantiation>,
+        work: &'a crate::entry::schema::value_budget::ValidationWork,
+    },
+}
+
+fn validate_function_argument_value_refs_in(
+    program: &AwbcProgram,
+    function: AwbcFunctionId,
+    values: &[&RuntimeValue],
+    context: FunctionInputInstantiation<'_>,
+) -> Result<PreparedFunctionInputBinding, FiberStateError> {
     let function_record = program
         .functions
         .get(function.index())
@@ -4273,8 +4342,34 @@ pub(crate) fn validate_function_argument_value_refs(
             actual: values.len(),
         });
     }
-    let type_instantiation =
-        FiberFrame::instantiate_context(program, function_record.type_context, values)?;
+    let type_instantiation = match context {
+        FunctionInputInstantiation::Infer => {
+            if function_record.kind == crate::awbc::schema::AwbcFunctionKind::ProgramTask {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            FiberFrame::instantiate_context(program, function_record.type_context, values)?
+        }
+        FunctionInputInstantiation::ProgramBody { binding, work } => {
+            if function_record.kind != crate::awbc::schema::AwbcFunctionKind::ProgramTask {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            match (function_record.type_context, binding) {
+                (None, None) => None,
+                (
+                    Some(crate::awbc::schema::AwbcFunctionTypeContext::ProgramBody(owner)),
+                    Some(binding),
+                ) if program
+                    .runtime_types
+                    .get(owner.index())
+                    .is_some_and(|row| row.semantic_identity() == binding.context())
+                    && binding.is_valid_with_work(program, work) =>
+                {
+                    Some(binding.clone())
+                }
+                _ => return Err(FiberStateError::InvalidFrame),
+            }
+        }
+    };
     for (position, ((register, slot), value)) in parameter_registers
         .iter()
         .map(|register| (*register, &layout.slots[register.index()]))
@@ -5102,12 +5197,16 @@ impl FiberFrame {
 
     fn instantiate_context(
         program: &AwbcProgram,
-        context: Option<AwbcTypeId>,
+        context: Option<crate::awbc::schema::AwbcFunctionTypeContext>,
         values: &[&RuntimeValue],
     ) -> Result<Option<crate::program_types::RuntimeFunctionEffectInstantiation>, FiberStateError>
     {
         context
             .map(|context| {
+                let crate::awbc::schema::AwbcFunctionTypeContext::Signature(context) = context
+                else {
+                    return Err(FiberStateError::InvalidFrame);
+                };
                 program
                     .instantiate_function_effects(
                         context,

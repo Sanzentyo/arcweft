@@ -80,6 +80,18 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
         if self.root == AwbcFiberRoot::Empty {
             return self.validate_empty_origin();
         }
+        if matches!(self.root, AwbcFiberRoot::Task(_))
+            && matches!(
+                self.terminal.as_ref(),
+                Some(
+                    FiberTerminalValue::ReturnedTransferred
+                        | FiberTerminalValue::DialogueResultSelected(_)
+                        | FiberTerminalValue::DialogueResultTransferred
+                )
+            )
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
         self.status.validate_retained_shape(
             self.suspension.is_some(),
             self.terminal.as_ref(),

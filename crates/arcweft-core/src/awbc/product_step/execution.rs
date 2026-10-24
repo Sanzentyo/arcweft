@@ -185,6 +185,11 @@ fn run_function_with_host(
         match output.exit {
             VmExit::Running => {}
             VmExit::Returned(value) => return Ok(value.unwrap_or(RuntimeValue::Unit)),
+            VmExit::TaskReturned => {
+                return Err(VmError::Runtime(
+                    "ordinary function returned through a Program task owner".to_owned(),
+                ));
+            }
             VmExit::DialogueResultSelected(value) => {
                 return Err(VmError::NestedCallExit(Box::new(
                     VmNestedCallExit::DialogueResultSelected(value),

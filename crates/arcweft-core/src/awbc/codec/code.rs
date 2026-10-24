@@ -384,13 +384,38 @@ impl Wire for AwbcFunction {
             public_id: Option::<AwbcStringId>::read_wire(reader)?,
             kind: AwbcFunctionKind::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,
-            type_context: Option::<crate::awbc::schema::AwbcTypeId>::read_wire(reader)?,
+            type_context: Option::<crate::awbc::schema::AwbcFunctionTypeContext>::read_wire(
+                reader,
+            )?,
             input_ownership: Vec::read_wire(reader)?,
             frame_layout: AwbcFrameLayoutId::read_wire(reader)?,
             blocks: AwbcTableRange::read_wire(reader)?,
             entry_block: AwbcBlockId::read_wire(reader)?,
             flags: AwbcFunctionFlags::read_wire(reader)?,
         })
+    }
+}
+
+impl Wire for crate::awbc::schema::AwbcFunctionTypeContext {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(match self {
+            Self::Signature(_) => 0,
+            Self::ProgramBody(_) => 1,
+        });
+        self.owner_type().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Signature(AwbcTypeId::read_wire(reader)?)),
+            1 => Ok(Self::ProgramBody(AwbcTypeId::read_wire(reader)?)),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "function type context",
+                tag,
+                offset,
+            }),
+        }
     }
 }
 
@@ -1051,13 +1076,9 @@ impl Wire for AwbcInstruction {
                 plan.write_wire(writer)?;
                 args.write_wire(writer)?;
             }
-            Self::SpawnFiber {
-                dst,
-                function,
-                args,
-            } => {
+            Self::StartProgram { dst, plan, args } => {
                 dst.write_wire(writer)?;
-                function.write_wire(writer)?;
+                plan.write_wire(writer)?;
                 args.write_wire(writer)?;
             }
             Self::StreamYield { stream, value } => {
@@ -1372,9 +1393,9 @@ impl Wire for AwbcInstruction {
                 plan: AwbcTaskPlanId::read_wire(reader)?,
                 args: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
-            AwbcOpcode::SpawnFiber => Self::SpawnFiber {
-                dst: Option::<AwbcRegisterId>::read_wire(reader)?,
-                function: AwbcFunctionId::read_wire(reader)?,
+            AwbcOpcode::StartProgram => Self::StartProgram {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                plan: AwbcTaskPlanId::read_wire(reader)?,
                 args: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
             AwbcOpcode::StreamYield => Self::StreamYield {
@@ -1922,7 +1943,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::AbandonFormatAttempt
             | AwbcOpcode::EmitEffect
             | AwbcOpcode::StartNeed
-            | AwbcOpcode::SpawnFiber
+            | AwbcOpcode::StartProgram
             | AwbcOpcode::StreamYield
             | AwbcOpcode::StreamClose
             | AwbcOpcode::ExecuteLineOperation

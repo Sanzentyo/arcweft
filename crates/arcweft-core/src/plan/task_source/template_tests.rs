@@ -613,28 +613,57 @@ fn template_source_container_graphs_reject_same_identity_with_another_shape_befo
 }
 
 pub(in crate::plan::task_source) fn thread() -> RuntimeTaskSourceProgram {
+    thread_context(false, 1)
+}
+
+pub(in crate::plan::task_source) fn thread_with_lexical_context() -> RuntimeTaskSourceProgram {
+    thread_context(true, 1)
+}
+
+pub(in crate::plan::task_source) fn thread_with_captures(count: usize) -> RuntimeTaskSourceProgram {
+    thread_context(false, count)
+}
+
+fn thread_context(lexical_context: bool, capture_count: usize) -> RuntimeTaskSourceProgram {
     let mut builder = RuntimePlanBuilder::new();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
     let handle = RuntimeSemanticTypeId::from_bytes([20; 32]);
+    let function_type = RuntimeSemanticTypeId::from_bytes([40; 32]);
     let locals = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(handle, RuntimePlanTypeProjection::ThreadHandle(unit)),
+                RuntimePlanTypeSeed::new(
+                    function_type,
+                    RuntimePlanTypeProjection::Function {
+                        contract: crate::plan::RuntimeFunctionTypeContract::default(),
+                        parameters: Box::new([]),
+                        result: unit,
+                    },
+                ),
             ],
-            [RuntimeLocalDeclarationSeed::new(
-                RuntimeLocalDeclarationSource::Binding {
-                    identity: [31; 32],
-                    declaration: RuntimeLocalBindingDeclaration::new(
-                        RuntimeLocalBindingKind::PatternBinding,
-                        false,
-                        RuntimeLocalBindingStorage::Derived,
-                    ),
-                },
-                boolean,
-            )],
+            (0..capture_count).map(|index| {
+                RuntimeLocalDeclarationSeed::new(
+                    RuntimeLocalDeclarationSource::Binding {
+                        identity: {
+                            let mut identity = [31; 32];
+                            if index != 0 {
+                                identity[..8].copy_from_slice(&(index as u64).to_le_bytes());
+                            }
+                            identity
+                        },
+                        declaration: RuntimeLocalBindingDeclaration::new(
+                            RuntimeLocalBindingKind::PatternBinding,
+                            false,
+                            RuntimeLocalBindingStorage::Derived,
+                        ),
+                    },
+                    boolean,
+                )
+            }),
         )
         .unwrap();
     let mut functions = Vec::new();
@@ -646,7 +675,7 @@ pub(in crate::plan::task_source) fn thread() -> RuntimeTaskSourceProgram {
                         [marker; 32],
                     ),
                     role: RuntimeFunctionSemanticRole::Ordinary,
-                    function_type: None,
+                    function_type: (lexical_context && marker == 1).then_some(function_type),
                     inputs: Box::new([]),
                     result: unit,
                     body_kind: RuntimeFunctionSiteBodyKind::Executable,
@@ -665,53 +694,53 @@ pub(in crate::plan::task_source) fn thread() -> RuntimeTaskSourceProgram {
             }),
         )
         .unwrap();
-    let local = locals.local_ids()[0].clone();
+    let captures = locals.local_ids().to_vec();
     let coordinate = builder
         .task_plan_construction()
         .reserve_original_source()
         .unwrap();
+    let mut ops = captures
+        .iter()
+        .map(|local| RuntimeFlowOpSeed::Let {
+            pattern: RuntimePatternSeed::new(
+                boolean,
+                RuntimePatternSeedKind::Bind {
+                    local: local.clone(),
+                    mutable: false,
+                },
+            ),
+            expr: RuntimeExprSeed::new(
+                boolean,
+                RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
+            ),
+        })
+        .collect::<Vec<_>>();
+    ops.push(RuntimeFlowOpSeed::Thread {
+        name: None,
+        binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
+        captures,
+        producer: crate::task::NeedProducerDefinition {
+            function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([2; 32]),
+            family: NeedProducerFamily::StructuredTaskPlan,
+            contract: NeedProducerContractDigest::from_bytes([21; 32]),
+            plan: coordinate,
+            producer_site: NeedProducerSiteDigest::from_bytes([22; 32]),
+            payload_type: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+            class: TaskClass::Cpu,
+            priority: TaskPriority(0),
+            cancel_scope: CancelScopeId("thread".into()),
+            policy: TaskPolicy::AlwaysStart,
+            debug_label: "thread source".into(),
+        },
+        body: vec![RuntimeFlowOpSeed::ReturnExpr(unit_value.clone())],
+    });
+    ops.push(RuntimeFlowOpSeed::ReturnExpr(unit_value));
     builder
         .define_function_site_seed(
             &functions[0],
             RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
                 effects: RuntimeEffectSet::empty(),
-                ops: Box::new([
-                    RuntimeFlowOpSeed::Let {
-                        pattern: RuntimePatternSeed::new(
-                            boolean,
-                            RuntimePatternSeedKind::Bind {
-                                local: local.clone(),
-                                mutable: false,
-                            },
-                        ),
-                        expr: RuntimeExprSeed::new(
-                            boolean,
-                            RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
-                        ),
-                    },
-                    RuntimeFlowOpSeed::Thread {
-                        name: None,
-                        binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
-                        captures: vec![local.clone()],
-                        producer: crate::task::NeedProducerDefinition {
-                            function: RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                                [2; 32],
-                            ),
-                            family: NeedProducerFamily::StructuredTaskPlan,
-                            contract: NeedProducerContractDigest::from_bytes([21; 32]),
-                            plan: coordinate,
-                            producer_site: NeedProducerSiteDigest::from_bytes([22; 32]),
-                            payload_type: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
-                            class: TaskClass::Cpu,
-                            priority: TaskPriority(0),
-                            cancel_scope: CancelScopeId("thread".into()),
-                            policy: TaskPolicy::AlwaysStart,
-                            debug_label: "thread source".into(),
-                        },
-                        body: vec![RuntimeFlowOpSeed::ReturnExpr(unit_value.clone())],
-                    },
-                    RuntimeFlowOpSeed::ReturnExpr(unit_value),
-                ]),
+                ops: ops.into_boxed_slice(),
             }),
         )
         .unwrap();

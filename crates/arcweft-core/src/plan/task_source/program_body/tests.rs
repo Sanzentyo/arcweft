@@ -97,3 +97,45 @@ fn compiler_program_body_rejects_a_genuine_host_endpoint_without_refreshing_work
             .is_err()
     );
 }
+
+#[test]
+fn compiler_program_body_bounds_capture_roles_before_exposing_an_ingress_packet() {
+    let owner = crate::plan::task_source::template_tests::thread_with_captures(5);
+    let plan = owner.original();
+    let coordinate = thread_coordinate(plan);
+    let limits = RuntimeTaskPlanSealLimits {
+        max_function_roles: 4,
+        ..RuntimeTaskPlanSealLimits::default()
+    };
+    assert!(
+        plan.task_source(
+            coordinate,
+            limits,
+            &mut TaskSemanticMeter::new(1_000_000, 1_000_000)
+        )
+        .is_ok(),
+        "enclosing function endpoint count is distinct from child capture ingress"
+    );
+    let mut work = RuntimeTaskSourceReadContext::new(limits);
+    assert!(matches!(
+        plan.task_program_body(coordinate, &mut work),
+        Err(RuntimeTaskSourceError::Function(
+            crate::plan::RuntimeBodySemanticError::FunctionRoles {
+                actual: 5,
+                maximum: 4
+            }
+        ))
+    ));
+    assert!(plan.task_program_body(coordinate, &mut work).is_err());
+    let mut exact = RuntimeTaskSourceReadContext::new(RuntimeTaskPlanSealLimits {
+        max_function_roles: 5,
+        ..limits
+    });
+    assert_eq!(
+        plan.task_program_body(coordinate, &mut exact)
+            .unwrap()
+            .captures()
+            .len(),
+        5
+    );
+}

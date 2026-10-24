@@ -128,7 +128,7 @@ impl AwbcLowerStats {
 
 /// Deterministic table inventory. Each `intern_*` method owns one table's
 /// stable key; lowerers never scan unrelated tables ad hoc.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AwbcInventory {
     pub(crate) program: AwbcProgram,
     pub(crate) diagnostics: Vec<AwbcLowerDiagnostic>,
@@ -146,6 +146,8 @@ pub struct AwbcInventory {
     effects: BTreeMap<AwbcEffectPlan, AwbcEffectPlanId>,
     audio_commands: BTreeMap<String, AwbcAudioCommandId>,
     tasks: BTreeMap<AwbcTaskPlan, AwbcTaskPlanId>,
+    program_tasks: BTreeMap<arcweft_core::task::TaskPlanSemanticDigest, AwbcTaskPlanId>,
+    source_reads: arcweft_core::plan::RuntimeTaskSourceReadContext,
     host_calls: BTreeMap<AwbcHostCall, AwbcHostCallId>,
     streams: BTreeMap<StreamRuntimeId, AwbcStreamPlanId>,
     choices: BTreeMap<String, AwbcChoiceId>,
@@ -168,6 +170,11 @@ struct BlockEmission {
 
 #[derive(Clone, Debug)]
 pub(crate) enum PendingAwbcClosure {
+    ProgramTask {
+        source: arcweft_core::plan::RuntimeTaskPlanBuildCoordinate,
+        function: AwbcFunctionId,
+        path: String,
+    },
     TaskRequest {
         definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
         function: AwbcFunctionId,
@@ -241,6 +248,10 @@ impl AwbcInventory {
             effects: BTreeMap::new(),
             audio_commands: BTreeMap::new(),
             tasks: BTreeMap::new(),
+            program_tasks: BTreeMap::new(),
+            source_reads: arcweft_core::plan::RuntimeTaskSourceReadContext::new(
+                options.original_source_limits.seal,
+            ),
             host_calls: BTreeMap::new(),
             streams: BTreeMap::new(),
             choices: BTreeMap::new(),
@@ -1657,6 +1668,70 @@ impl AwbcInventory {
         self.program.audio_commands.push(command);
         self.audio_commands.insert(key, id);
         id
+    }
+
+    pub(crate) fn program_task_body<'plan>(
+        &mut self,
+        plan: &'plan arcweft_core::plan::RuntimePlan,
+        source: &arcweft_core::plan::RuntimeTaskPlanBuildCoordinate,
+        path: &str,
+    ) -> Option<arcweft_core::plan::RuntimeProgramTaskBodyRef<'plan>> {
+        match plan.task_program_body(source, &mut self.source_reads) {
+            Ok(body) => Some(body),
+            Err(error) => {
+                self.diagnostic(AwbcLowerDiagnostic::error(path, error.to_string()));
+                None
+            }
+        }
+    }
+
+    pub(crate) fn intern_program_task(
+        &mut self,
+        plan: &arcweft_core::plan::RuntimePlan,
+        coordinate: &arcweft_core::plan::RuntimeTaskPlanBuildCoordinate,
+        path: &str,
+    ) -> Option<AwbcTaskPlanId> {
+        let source = self.program_task_body(plan, coordinate, path)?;
+        let key = source.task_plan().key();
+        if let Some(task) = self.program_tasks.get(&key) {
+            return Some(*task);
+        }
+        let producer = source.producer();
+        let Some(payload_type) = self.semantic_type(RuntimeSemanticTypeId::from_bytes(
+            *producer.payload_type.as_bytes(),
+        )) else {
+            self.diagnostic(AwbcLowerDiagnostic::error(
+                path,
+                "original Program payload has no admitted AWBC type",
+            ));
+            return None;
+        };
+        let kernel = self.reserve_function_slot(
+            producer
+                .function
+                .generated_child(arcweft_core::plan::RuntimeGeneratedFunctionRole::TaskBody),
+        );
+        self.push_pending_closure(PendingAwbcClosure::ProgramTask {
+            source: coordinate.clone(),
+            function: kernel,
+            path: format!("{path}.body"),
+        });
+        let row = AwbcTaskPlan {
+            class: awbc_task_class(&producer.class),
+            priority: producer.priority.0,
+            cancel_scope: self.intern_string(&producer.cancel_scope.0),
+            policy: awbc_task_policy(producer.policy),
+            payload_type,
+            execution: arcweft_core::awbc::schema::AwbcTaskPlanExecution::Program(
+                arcweft_core::awbc::schema::AwbcProgramTaskPlan {
+                    source: key.into(),
+                    kernel,
+                },
+            ),
+        };
+        let task = self.intern_task_plan(row);
+        self.program_tasks.insert(key, task);
+        Some(task)
     }
 
     pub fn intern_await_many_task(

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "ad2fd687a87186ee8560861b60c49add5ad2f321",
+  "name": "task-final-r2489-program-context-owner-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2489-program-context-owner-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-23T23:23:34.8716736Z",
+  "finishedAt": "2026-10-23T23:25:58.1595449Z"
+}

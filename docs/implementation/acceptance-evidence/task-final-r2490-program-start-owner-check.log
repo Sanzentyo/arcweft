@@ -1,0 +1,613 @@
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-syntax\src\attachment\snapshot.rs:47:14
+   |
+47 |             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |              ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+47 -             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+47 +             .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: `arcweft-lang-syntax` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-syntax` to apply 1 suggestion)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-hir\src\identity.rs:26:10
+   |
+26 |         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |          ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+26 -         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+26 +         .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: `arcweft-lang-hir` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-hir` to apply 1 suggestion)
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ProductStepError`
+ --> crates\arcweft-core\src\awbc\product_step\program_task.rs:4:81
+  |
+4 | use super::{AwbcProductStepExecutor, ProductChildFiber, ProductChildFiberOwner, ProductStepError};
+  |                                                                                 ^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:19:43
+   |
+19 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+22 |     SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
+   |                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:67:33
+   |
+67 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeAwbcProgramSourceField`
+  --> crates\arcweft-core\src\plan\task_source\program.rs:23:62
+   |
+23 | pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:13:5
+   |
+13 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+15 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:56:32
+   |
+56 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+warning: unused imports: `NeedId`, `TaskId`, and `TaskPublicationRevision`
+  --> crates\arcweft-core\src\awbc\product_step\tests.rs:31:33
+   |
+31 |     GenerationId, LogicalEpoch, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId,
+   |                                 ^^^^^^                                              ^^^^^^
+32 |     TaskPublicationRevision, TaskSequence,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+  --> crates\arcweft-core\src\engine\flow\iterator_tests.rs:10:5
+   |
+10 | use crate::task::NeedId;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+    --> crates\arcweft-core\src\engine\flow.rs:1923:9
+     |
+1923 |     use crate::task::NeedId;
+     |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::num::NonZeroU32`
+    --> crates\arcweft-core\src\engine.rs:4794:9
+     |
+4794 |     use std::num::NonZeroU32;
+     |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AwbcRuntimeValueSnapshotError`
+  --> crates\arcweft-core\src\plan\task_source\program\tests.rs:12:5
+   |
+12 |     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue, RuntimeValue,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:14:5
+   |
+14 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+15 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+   --> crates\arcweft-core\src\pure\program\tests.rs:161:9
+    |
+161 |     use crate::task::NeedId;
+    |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskClass`, `TaskId`, `TaskKey`, `TaskPolicy`, `TaskPriority`, and `TaskSpec`
+  --> crates\arcweft-core\src\task\outcome\tests.rs:16:9
+   |
+16 |         CancelScopeId, FileReadTextRequest, HostTaskRequest, TaskClass, TaskId, TaskKey,
+   |         ^^^^^^^^^^^^^                                        ^^^^^^^^^  ^^^^^^  ^^^^^^^
+17 |         TaskOutcomeContract, TaskPolicy, TaskPriority, TaskSpec,
+   |                              ^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `task::NeedId`
+ --> crates\arcweft-core\src\tests\affine_intrinsics.rs:4:5
+  |
+4 |     task::NeedId,
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `RuntimeNeedState`
+  --> crates\arcweft-core\src\tests\flow.rs:31:26
+   |
+31 |     task::{LogicalEpoch, NeedId, RuntimeNeedState, TaskSequence},
+   |                          ^^^^^^  ^^^^^^^^^^^^^^^^
+
+error[E0599]: no variant named `FiberSpawned` found for enum `VmObservation`
+   --> crates\arcweft-core\src\awbc\parity.rs:185:24
+    |
+185 |         VmObservation::FiberSpawned { function, .. } => ParityEvent::Effect {
+    |                        ^^^^^^^^^^^^ variant not found in `VmObservation`
+    |
+   ::: crates\arcweft-core\src\awbc\vm.rs:214:1
+    |
+214 | pub enum VmObservation {
+    | ---------------------- variant `FiberSpawned` not found here
+
+error[E0624]: method `fail_with_budget_error` is private
+    --> crates\arcweft-core\src\awbc\product_step\program_task.rs:75:18
+     |
+  75 |             self.fail_with_budget_error(
+     |                  ^^^^^^^^^^^^^^^^^^^^^^ private method
+     |
+    ::: crates\arcweft-core\src\awbc\product_step\suspension.rs:2743:5
+     |
+2743 |     fn fail_with_budget_error(&mut self, message: String, output: &mut RuntimeStepOutput) {
+     |     ------------------------------------------------------------------------------------- private method defined here
+
+error[E0599]: no method named `program_launch_for_handle` found for struct `NeedProducerRegistryRestore<V, P, S>` in the current scope
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:3723:43
+     |
+3723 |               let accepted = need_producers.program_launch_for_handle(*handle);
+     |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `NeedProducerRegistryRestore`
+     |
+    ::: crates\arcweft-core\src\task\producer.rs:1611:1
+     |
+1611 | / pub struct NeedProducerRegistryRestore<
+1612 | |     V = RuntimeValue,
+1613 | |     P = RuntimePayload,
+1614 | |     S = crate::plan::RuntimeTaskSource,
+1615 | | > {
+     | |_- method `program_launch_for_handle` not found for this struct
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:3755:74
+     |
+3755 |                     owner: ProductChildFiberOwner::restore(&child.owner, &need_producers)?,
+     |                            -------------------------------               ^^^^^^^^^^^^^^^ expected `&NeedProducerRegistry`, found `&NeedProducerRegistryRestore`
+     |                            |
+     |                            arguments to this function are incorrect
+     |
+     = note: expected reference `&producer::NeedProducerRegistry`
+                found reference `&NeedProducerRegistryRestore`
+note: associated function defined here
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:292:8
+     |
+ 292 |     fn restore(
+     |        ^^^^^^^
+ 293 |         snapshot: &AwbcProductChildFiberOwnerSnapshot,
+ 294 |         registry: &NeedProducerRegistry,
+     |         -------------------------------
+
+error[E0277]: the trait bound `ProgramTaskError: Clone` is not satisfied
+   --> crates\arcweft-core\src\awbc\product_step.rs:286:25
+    |
+246 | #[derive(Clone, Debug, Error, PartialEq)]
+    |          ----- in this derive macro expansion
+...
+286 |     ProgramTask(#[from] program_task::ProgramTaskError),
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Clone` is not implemented for `ProgramTaskError`
+   --> crates\arcweft-core\src\awbc\product_step\program_task.rs:18:1
+    |
+ 18 | pub(in crate::awbc) enum ProgramTaskError {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0369]: binary operation `==` cannot be applied to type `&ProgramTaskError`
+   --> crates\arcweft-core\src\awbc\product_step.rs:286:25
+    |
+246 | #[derive(Clone, Debug, Error, PartialEq)]
+    |                               --------- in this derive macro expansion
+...
+286 |     ProgramTask(#[from] program_task::ProgramTaskError),
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: an implementation of `PartialEq` might be missing for `ProgramTaskError`
+   --> crates\arcweft-core\src\awbc\product_step\program_task.rs:18:1
+    |
+ 18 | pub(in crate::awbc) enum ProgramTaskError {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ must implement `PartialEq`
+help: consider annotating `ProgramTaskError` with `#[derive(PartialEq)]`
+   --> crates\arcweft-core\src\awbc\product_step\program_task.rs:18:1
+    |
+ 18 + #[derive(PartialEq)]
+ 19 | pub(in crate::awbc) enum ProgramTaskError {
+    |
+
+error[E0599]: no method named `program_launch_for_handle` found for struct `producer::NeedProducerRegistryRestore<V, P, S>` in the current scope
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:3723:43
+     |
+3723 |               let accepted = need_producers.program_launch_for_handle(*handle);
+     |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `producer::NeedProducerRegistryRestore`
+     |
+    ::: crates\arcweft-core\src\task\producer.rs:1611:1
+     |
+1611 | / pub struct NeedProducerRegistryRestore<
+1612 | |     V = RuntimeValue,
+1613 | |     P = RuntimePayload,
+1614 | |     S = crate::plan::RuntimeTaskSource,
+1615 | | > {
+     | |_- method `program_launch_for_handle` not found for this struct
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:3755:74
+     |
+3755 |                     owner: ProductChildFiberOwner::restore(&child.owner, &need_producers)?,
+     |                            -------------------------------               ^^^^^^^^^^^^^^^ expected `&NeedProducerRegistry`, found `&NeedProducerRegistryRestore`
+     |                            |
+     |                            arguments to this function are incorrect
+     |
+     = note: expected reference `&producer::NeedProducerRegistry`
+                found reference `&producer::NeedProducerRegistryRestore`
+note: associated function defined here
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:292:8
+     |
+ 292 |     fn restore(
+     |        ^^^^^^^
+ 293 |         snapshot: &AwbcProductChildFiberOwnerSnapshot,
+ 294 |         registry: &NeedProducerRegistry,
+     |         -------------------------------
+
+error[E0308]: mismatched types
+    --> crates\arcweft-core\src\awbc\product_step\tests.rs:6900:14
+     |
+6900 |         dst: None,
+     |              ^^^^ expected `AwbcRegisterId`, found `Option<_>`
+     |
+     = note: expected struct `awbc::schema::AwbcRegisterId`
+                  found enum `std::option::Option<_>`
+
+error[E0559]: variant `awbc::schema::AwbcInstruction::StartProgram` has no field named `function`
+    --> crates\arcweft-core\src\awbc\product_step\tests.rs:6901:9
+     |
+6901 |         function: tail,
+     |         ^^^^^^^^ `awbc::schema::AwbcInstruction::StartProgram` does not have this field
+     |
+     = note: available fields are: `plan`
+
+error[E0004]: non-exhaustive patterns: `ProductStepError::ProgramTask(_)` not covered
+   --> crates\arcweft-core\src\awbc\product_step\lifecycle.rs:30:47
+    |
+ 30 |         let (category, code, message) = match error {
+    |                                               ^^^^^ pattern `ProductStepError::ProgramTask(_)` not covered
+    |
+note: `ProductStepError` defined here
+   --> crates\arcweft-core\src\awbc\product_step.rs:247:17
+    |
+247 | pub(super) enum ProductStepError {
+    |                 ^^^^^^^^^^^^^^^^
+...
+286 |     ProgramTask(#[from] program_task::ProgramTaskError),
+    |     ----------- not covered
+    = note: the matched value is of type `ProductStepError`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+ 95 ~             ),
+ 96 ~             ProductStepError::ProgramTask(_) => todo!(),
+    |
+
+error[E0004]: non-exhaustive patterns: `ProductStepError::ProgramTask(_)` not covered
+   --> crates\arcweft-core\src\awbc\product_step\lifecycle.rs:156:41
+    |
+156 |         let (category, message) = match error {
+    |                                         ^^^^^ pattern `ProductStepError::ProgramTask(_)` not covered
+    |
+note: `ProductStepError` defined here
+   --> crates\arcweft-core\src\awbc\product_step.rs:247:17
+    |
+247 | pub(super) enum ProductStepError {
+    |                 ^^^^^^^^^^^^^^^^
+...
+286 |     ProgramTask(#[from] program_task::ProgramTaskError),
+    |     ----------- not covered
+    = note: the matched value is of type `ProductStepError`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+189 ~             },
+190 +             ProductStepError::ProgramTask(_) => todo!()
+    |
+
+error[E0004]: non-exhaustive patterns: `AwbcFiberRoot::Task(_)` not covered
+    --> crates\arcweft-core\src\awbc\product_step.rs:1982:31
+     |
+1982 |             let fiber = match origin {
+     |                               ^^^^^^ pattern `AwbcFiberRoot::Task(_)` not covered
+     |
+note: `AwbcFiberRoot` defined here
+    --> crates\arcweft-core\src\awbc\fiber.rs:66:10
+     |
+  66 | pub enum AwbcFiberRoot {
+     |          ^^^^^^^^^^^^^
+...
+  71 |     Task(crate::awbc::schema::AwbcTaskPlanId),
+     |     ---- not covered
+     = note: the matched value is of type `AwbcFiberRoot`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+2027 ~                 },
+2028 +                 AwbcFiberRoot::Task(_) => todo!()
+     |
+
+error[E0004]: non-exhaustive patterns: `&ProductChildFiberOwner::Program { .. }` not covered
+    --> crates\arcweft-core\src\awbc\product_step.rs:3091:36
+     |
+3091 |         let before_handles = match &owner {
+     |                                    ^^^^^^ pattern `&ProductChildFiberOwner::Program { .. }` not covered
+     |
+note: `ProductChildFiberOwner` defined here
+    --> crates\arcweft-core\src\awbc\product_step.rs:605:6
+     |
+ 605 | enum ProductChildFiberOwner {
+     |      ^^^^^^^^^^^^^^^^^^^^^^
+ 606 |     Independent,
+ 607 |     Program {
+     |     ------- not covered
+     = note: the matched value is of type `&ProductChildFiberOwner`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+3125 ~             ProductChildFiberOwner::Independent => None,
+3126 ~             &ProductChildFiberOwner::Program { .. } => todo!(),
+     |
+
+error[E0004]: non-exhaustive patterns: `&ProductChildFiberOwner::Program { .. }` not covered
+    --> crates\arcweft-core\src\awbc\product_step.rs:3108:38
+     |
+3108 |                         return match &owner {
+     |                                      ^^^^^^ pattern `&ProductChildFiberOwner::Program { .. }` not covered
+     |
+note: `ProductChildFiberOwner` defined here
+    --> crates\arcweft-core\src\awbc\product_step.rs:605:6
+     |
+ 605 | enum ProductChildFiberOwner {
+     |      ^^^^^^^^^^^^^^^^^^^^^^
+ 606 |     Independent,
+ 607 |     Program {
+     |     ------- not covered
+     = note: the matched value is of type `&ProductChildFiberOwner`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+3120 ~                             ProductChildFiberOwner::Independent => unreachable!(),
+3121 ~                             &ProductChildFiberOwner::Program { .. } => todo!(),
+     |
+
+error[E0004]: non-exhaustive patterns: `&ProductChildFiberOwner::Program { .. }` not covered
+    --> crates\arcweft-core\src\awbc\product_step.rs:3220:23
+     |
+3220 |                 match &owner {
+     |                       ^^^^^^ pattern `&ProductChildFiberOwner::Program { .. }` not covered
+     |
+note: `ProductChildFiberOwner` defined here
+    --> crates\arcweft-core\src\awbc\product_step.rs:605:6
+     |
+ 605 | enum ProductChildFiberOwner {
+     |      ^^^^^^^^^^^^^^^^^^^^^^
+ 606 |     Independent,
+ 607 |     Program {
+     |     ------- not covered
+     = note: the matched value is of type `&ProductChildFiberOwner`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+3288 ~                     },
+3289 +                     &ProductChildFiberOwner::Program { .. } => todo!()
+     |
+
+error[E0004]: non-exhaustive patterns: `&ProductChildFiberOwner::Program { .. }` not covered
+    --> crates\arcweft-core\src\awbc\product_step.rs:3336:33
+     |
+3336 |             Err(error) => match &owner {
+     |                                 ^^^^^^ pattern `&ProductChildFiberOwner::Program { .. }` not covered
+     |
+note: `ProductChildFiberOwner` defined here
+    --> crates\arcweft-core\src\awbc\product_step.rs:605:6
+     |
+ 605 | enum ProductChildFiberOwner {
+     |      ^^^^^^^^^^^^^^^^^^^^^^
+ 606 |     Independent,
+ 607 |     Program {
+     |     ------- not covered
+     = note: the matched value is of type `&ProductChildFiberOwner`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+3372 ~                 },
+3373 +                 &ProductChildFiberOwner::Program { .. } => todo!()
+     |
+
+error[E0004]: non-exhaustive patterns: `ProductChildFiberOwner::Program { .. }` not covered
+    --> crates\arcweft-core\src\awbc\product_step.rs:3404:61
+     |
+3404 |         let (content, tag, policy, phase, deferred) = match owner {
+     |                                                             ^^^^^ pattern `ProductChildFiberOwner::Program { .. }` not covered
+     |
+note: `ProductChildFiberOwner` defined here
+    --> crates\arcweft-core\src\awbc\product_step.rs:605:6
+     |
+ 605 | enum ProductChildFiberOwner {
+     |      ^^^^^^^^^^^^^^^^^^^^^^
+ 606 |     Independent,
+ 607 |     Program {
+     |     ------- not covered
+     = note: the matched value is of type `ProductChildFiberOwner`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+3453 ~             },
+3454 +             ProductChildFiberOwner::Program { .. } => todo!()
+     |
+
+error[E0004]: non-exhaustive patterns: `fiber::AwbcFiberRoot::Task(_)` not covered
+    --> crates\arcweft-core\src\awbc\product_step.rs:1982:31
+     |
+1982 |             let fiber = match origin {
+     |                               ^^^^^^ pattern `fiber::AwbcFiberRoot::Task(_)` not covered
+     |
+note: `fiber::AwbcFiberRoot` defined here
+    --> crates\arcweft-core\src\awbc\fiber.rs:66:10
+     |
+  66 | pub enum AwbcFiberRoot {
+     |          ^^^^^^^^^^^^^
+...
+  71 |     Task(crate::awbc::schema::AwbcTaskPlanId),
+     |     ---- not covered
+     = note: the matched value is of type `fiber::AwbcFiberRoot`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+2027 ~                 },
+2028 +                 fiber::AwbcFiberRoot::Task(_) => todo!()
+     |
+
+Some errors have detailed explanations: E0004, E0277, E0308, E0369, E0599, E0624.
+For more information about an error, try `rustc --explain E0004`.
+warning: `arcweft-core` (lib) generated 25 warnings
+error: could not compile `arcweft-core` (lib) due to 14 previous errors; 25 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: unused variable: `type_instantiation`
+   --> crates\arcweft-core\src\awbc\value_admission\tests.rs:849:13
+    |
+849 |             type_instantiation,
+    |             ^^^^^^^^^^^^^^^^^^ help: try ignoring the field: `type_instantiation: _`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `group`
+    --> crates\arcweft-core\src\engine\dialogue.rs:2964:13
+     |
+2964 |         let group = LineTaskGroup::new(
+     |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_group`
+
+Some errors have detailed explanations: E0004, E0277, E0308, E0369, E0559, E0599, E0624.
+warning: `arcweft-core` (lib test) generated 32 warnings (20 duplicates)
+error: could not compile `arcweft-core` (lib test) due to 16 previous errors; 32 warnings emitted

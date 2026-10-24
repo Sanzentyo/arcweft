@@ -238,6 +238,10 @@ impl ProductChildFiberOwner {
     fn snapshot(&self) -> AwbcProductChildFiberOwnerSnapshot {
         match self {
             Self::Independent => AwbcProductChildFiberOwnerSnapshot::Independent,
+            Self::Program { launch, parent } => AwbcProductChildFiberOwnerSnapshot::Program {
+                handle: launch.handle(),
+                parent: *parent,
+            },
             Self::LineTask {
                 content,
                 tag,
@@ -285,9 +289,21 @@ impl ProductChildFiberOwner {
         }
     }
 
-    fn restore(snapshot: &AwbcProductChildFiberOwnerSnapshot) -> Self {
-        match snapshot {
+    fn restore(
+        snapshot: &AwbcProductChildFiberOwnerSnapshot,
+        registry: &NeedProducerRegistry,
+    ) -> Result<Self, String> {
+        Ok(match snapshot {
             AwbcProductChildFiberOwnerSnapshot::Independent => Self::Independent,
+            AwbcProductChildFiberOwnerSnapshot::Program { handle, parent } => Self::Program {
+                launch: registry
+                    .program_launch_for_handle(*handle)
+                    .ok_or_else(|| {
+                        "Program child has no corresponding executing launch".to_owned()
+                    })?
+                    .clone(),
+                parent: *parent,
+            },
             AwbcProductChildFiberOwnerSnapshot::LineTask {
                 content,
                 tag,
@@ -333,7 +349,7 @@ impl ProductChildFiberOwner {
                 registration: *registration,
                 site: *site,
             },
-        }
+        })
     }
 }
 
@@ -3127,6 +3143,10 @@ pub enum AwbcProductLineTaskCancelSnapshot {
 #[serde(deny_unknown_fields)]
 pub enum AwbcProductChildFiberOwnerSnapshot {
     Independent,
+    Program {
+        handle: crate::task::TaskHandle,
+        parent: crate::runtime_id::RuntimeFiberInstanceId,
+    },
     LineTask {
         content: AwbcContentUnitId,
         tag: AwbcProductLineTaskWorkTagSnapshot,
@@ -3681,6 +3701,50 @@ impl AwbcProductStepExecutor {
                 });
             }
         };
+        let mut registry = NeedProducerRegistry::default();
+        registry
+            .restore_admitted_registry_with_policy(need_producers, policy)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: format!("invalid Need producer registry snapshot: {error}"),
+            })?;
+        let need_producers = registry;
+        let fibers = std::iter::once(snapshot.fiber.instance)
+            .chain(
+                snapshot
+                    .child_fibers
+                    .iter()
+                    .map(|child| child.fiber.instance),
+            )
+            .collect::<BTreeSet<_>>();
+        let mut launches = BTreeSet::new();
+        for child in &snapshot.child_fibers {
+            let AwbcProductChildFiberOwnerSnapshot::Program { handle, parent } = &child.owner
+            else {
+                if matches!(child.fiber.root, crate::awbc::fiber::AwbcFiberRoot::Task(_)) {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "task root lacks its accepted Program owner".into(),
+                    });
+                }
+                continue;
+            };
+            let accepted = need_producers.program_launch_for_handle(*handle);
+            let matched = accepted.is_some_and(|launch| {
+                let crate::awbc::fiber::AwbcFiberRoot::Task(task) = child.fiber.root else { return false; };
+                let Some(crate::awbc::schema::AwbcTaskPlan { execution: crate::awbc::schema::AwbcTaskPlanExecution::Program(body), .. }) = program.task_plans.get(task.index()) else { return false; };
+                matches!(launch.source().program_owner(), crate::task::RuntimeProgramOwner::Awbc(owner) if std::sync::Arc::ptr_eq(&owner, &program.program_arc()))
+                    && body.source.bytes() == launch.source().task_plan().key().as_bytes()
+                    && child.runtime_generation == handle.correlation.generation
+            });
+            if !matched
+                || !fibers.contains(parent)
+                || parent.get() >= child.fiber.instance.get()
+                || !launches.insert(handle.correlation)
+            {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "Program child origin, parent or launch is invalid".into(),
+                });
+            }
+        }
         let fiber = snapshot
             .fiber
             .into_admitted_live_for_program(&program_owner)
@@ -3695,7 +3759,7 @@ impl AwbcProductStepExecutor {
             .into_iter()
             .map(|child| {
                 Ok(ProductChildFiber {
-                    owner: ProductChildFiberOwner::restore(&child.owner),
+                    owner: ProductChildFiberOwner::restore(&child.owner, &need_producers)?,
                     fiber: child
                         .fiber
                         .into_admitted_live_for_program(&program_owner)
@@ -3725,13 +3789,7 @@ impl AwbcProductStepExecutor {
         executor.started_tasks = snapshot.started_tasks;
         executor.task_publications = snapshot.task_publications;
         executor.need_publications = snapshot.need_publications;
-        executor.need_producers = NeedProducerRegistry::default();
-        executor
-            .need_producers
-            .restore_admitted_registry_with_policy(need_producers, policy)
-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                message: format!("invalid Need producer registry snapshot: {error}"),
-            })?;
+        executor.need_producers = need_producers;
         executor.queued_task_events = queued_task_events;
         executor.emitted_content = snapshot.emitted_content;
         executor.stream_sequences = snapshot.stream_sequences;

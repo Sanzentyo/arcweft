@@ -10,9 +10,9 @@ pub use artifact::{
     RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits,
 };
 pub(crate) use program::{
-    RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcSelectedSourceError,
-    RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField,
-    RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+    RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+    RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+    RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
 };
 pub use program_body::{RuntimeProgramTaskBodyRef, RuntimeTaskSourceReadContext};
 #[cfg(test)]
