@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "a1b0797a538aa246931e1566dcd0fa8499da48bc",
+  "run": "task-final-r2543-program-reverse-libs-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 126.985s] 5470 tests run: 5470 passed, 0 skipped",
+  "executed": 5470,
+  "passed": 5470,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 53,
+  "matchedPackages": 49,
+  "noNamedTestsOnHost": [
+    "arcweft",
+    "arcweft-bundle-assets",
+    "arcweft-render-text",
+    "arcweft-render-web"
+  ],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4681,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T03:05:50.6003064Z"
+}

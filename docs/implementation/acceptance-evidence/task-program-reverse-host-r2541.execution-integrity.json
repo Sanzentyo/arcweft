@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r2541-program-reverse-host-runtime",
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_host-807ad275a74081ad.exe",
+      "sha256": "1ccc6dce21968c58bdd613f58dd0e5b7c33ec0e77ed5d006c4bd9b75e56db8d1",
+      "bytes": 156767744
+    }
+  ],
+  "executableDrift": 0,
+  "sourceInputs": 4681,
+  "sourceDrift": 0,
+  "caseDrift": 0,
+  "actualExitCode": 0,
+  "recordedAt": "2026-10-24T02:57:59.9433170Z"
+}

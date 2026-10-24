@@ -1,16 +1,15 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-24。基点 `aa2fc1a9427a09b2be48013c1bb405d6a2e00a14` から、
-private fiber checkpointがProgram handleの元Sourceを復元できない不具合を修復した。
-R2535は **2,071実行／2,071 PASS／0 FAIL／0 skip**。
-Core library 1,972件、codegen 12件、Compiler `flow_include` 18件／`view_product` 69件。
-4,602固定入力・case set・5 executableのdriftは0。Coreのintegration targetは今回の選択に含めない。
-元leaseと完全なadmitted programを使うprivate復元、別leaseの拒否、
-不正な子owner／親／重複saveの拒否後も元handleから正しい結果へ進めることを確認した。
-generic capture・nested join・各step公開保存復元の既存受入を維持する。
-R2531の非Serde境界doctest 2件、R2532 workspace Clippy、R2536 workspace checkはexit 0。
-Clippyは警告あり。R2537 canonicalはblocking 0。
-全53逆依存runtimeは今回未実行。
+確認日: 2026-10-24。公開 `a1b0797a538aa246931e1566dcd0fa8499da48bc` のソースを変更せず、
+Coreの全53逆依存packageをlibrary targetで選択した。
+R2543は **5,470実行／5,470 PASS／0 FAIL／0 skip**。
+実際のnamed caseは49 package、残る4 packageはこのhostのlibrary targetにnamed caseがない。
+4,681固定入力・case set・53 executableのdriftは0。
+最初のR2538 catalogはICE／import解決／rlib読込でexit 101。単独Host 60件と同じrlibのimport probeが
+成功し、同じ53 package／feature条件のR2542 catalogとR2543 runtimeが通過した。原因は未確定として保持する。
+R2535のprivate復元・公開save拒否を含む2,071件、doctest 2件、workspace check／Clippy・構造gateの
+合格はその入力の実績として維持する。Clippyは警告あり。
+161 integration targetと5 bin target、Tier2、Native-Web capture parityは今回未実行。
 Generic Matchの受入・公開済み判定を維持する。
 公開 SHA・固定入力・実際の途中失敗と修復は [検証履歴](convergence-evidence-history.md) に保持する。
 
@@ -50,13 +49,14 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | 元 executable lease・Native root/callee 座標 | **当該修復は公開・検証済み** | `6a86816246cd8e1bfae8f8250324cdbf0a2c559a` の必須 program lease と、`1be0eb4d09a958b099225a1c7fbbd506afe39d26` の callee 退役処理。キュー切替前の修復入力で R2355 は8 library／2,463 PASS。現在のキュー移行全体の runtime 合格を意味しない。 |
 | Native の original-source queue／runtime continuation・結果保管 | **Program の結果保管・退役は owner／consumer 検証済み** | 実際の返却 frame が値を cleanup／join／rollback 中も保持し、退役時に共通 registry の `Ready` へ移す。ローカル await が一度だけ値を取得し、`ReadyTransferred` をHost ACKで復活させない。R2424／R2426の結果を保持し、公開 `a74957e455597a0d3160af11c914e2e93f58d144` のR2469では実際のlive handleを親環境へ束縛した状態で、非Unit返却・各step後rollback・ACK・metadata再送・fallthrough失敗の3件も全PASS。Core全2,013件がPASS。[前回入力の照合](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.acceptance-audit.json)。公開Native saveとAWBCの受入は別項目。 |
 | Thread の返り値／返却 handle | **意味解析・3 backendの結果受渡し／nested joinを対象条件で検証済み／最終受入は未確認** | 公開 `dd7ce52715d3beda046ad465063623ece4ea5092` の子task結果型・Return／Try所有境界と、公開 `a74957e455597a0d3160af11c914e2e93f58d144` のNative CPS／accepted receipt束縛を維持する。型付きresult pattern、起動前の拒否／panic rollback、Host NeedとProgram ThreadHandleおよびpayload型の取り違え拒否は既存の実績を保持する。R2510ではNativeの非Unit返却とACK／rollback、Compilerの返却handle・include複合ケースがPASS。AWBCの実際のBool capture／結果と各step公開保存復元も次項の範囲でPASS。以前の13 PASS／1 FAILを現在の失敗件数として残さない。[今回の116件](acceptance-evidence/task-final-r2510-program-publication-runtime.terminal-audit.json)。 |
-| AWBC の独立 Thread scheduling | **実Source起動・結果／generic capture・nested join・各step公開保存復元は対象条件でPASS／最終受入は未確認** | 独立kernel・`StartProgram`・accepted handle・Task root・結果退役・保存child照合を実際に通過する。値復元はProductの元Sourceと共有予算を使い、VM awaitはNeed／Taskを共通の型authorityで消費前に検証する。R2506の停止原因は、ローカルProgram値の読み出しをHost ACKのpublication cursorに依存させていたことだった。元registry状態からPending／Terminal／Transferredの観測を得るよう修復し、R2510はSource 95件を含むCore 101件とCompiler 15件が全PASS。全体／entry選択lowering×Bool false／true、1-op予算、各step公開save／restore、実際の結果・task／completion各1件を確認した。[terminal audit](acceptance-evidence/task-final-r2510-program-publication-runtime.terminal-audit.json)。R2518ではgeneric `T=bool`のcaptureを本体で2回使用するケースと、親のreturn後にattached子孫をjoinして値を渡すケースが、各3 backend×false／trueでPASSした。両AWBCは各stepの公開保存復元も通過する。この条件の受入と、cancel・program continuationのdetached入力rollback・不正saveの資源境界・全53逆依存の未確認を分ける。 |
+| AWBC の独立 Thread scheduling | **実Source起動・結果／generic capture・nested join・各step公開保存復元は対象条件でPASS／最終受入は未確認** | 独立kernel・`StartProgram`・accepted handle・Task root・結果退役・保存child照合を実際に通過する。値復元はProductの元Sourceと共有予算を使い、VM awaitはNeed／Taskを共通の型authorityで消費前に検証する。R2506の停止原因は、ローカルProgram値の読み出しをHost ACKのpublication cursorに依存させていたことだった。元registry状態からPending／Terminal／Transferredの観測を得るよう修復し、R2510はSource 95件を含むCore 101件とCompiler 15件が全PASS。全体／entry選択lowering×Bool false／true、1-op予算、各step公開save／restore、実際の結果・task／completion各1件を確認した。[terminal audit](acceptance-evidence/task-final-r2510-program-publication-runtime.terminal-audit.json)。R2518ではgeneric `T=bool`のcaptureを本体で2回使用するケースと、親のreturn後にattached子孫をjoinして値を渡すケースが、各3 backend×false／trueでPASSした。両AWBCは各stepの公開保存復元も通過する。この条件の受入と、cancel・program continuationのdetached入力rollback・不正saveの資源境界・全consumer integration／bin／Tier2の未確認を分ける。 |
 | 公開 executor save | **バックエンドごとに異なる** | `crates/arcweft-core/src/executor.rs` の `snapshot_for_save` は Product AWBC を扱う一方、RuntimePlanVm／StructuredAot は `UnsupportedTier` を返す。Product の既存 save/restore の成功は保持し、Native 公開 save の未対応を別項目として扱う。 |
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、実際に受理されたProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗した。checkpointに元executable leaseを保持し、復元先は同じleaseのadmitted Productに限定する。元Sourceと同一admissionを値mapperへ渡し、Product・activation・codegenの呼出側を移行した。R2535の新規Coreケースでhandleを取り出して破棄した候補から元状態へ復元でき、同内容の別leaseは元fiberを変えず拒否する。private checkpointは非Serde、公開wire DTOのJSON／cleanup検証は維持し、R2531のcompile-fail 2件もPASS。program continuationのdetached入力rollbackや資源上限の全条件まで合格へ数えない。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **前回広域入力でCLI 51件／Compiler 1件FAIL。当該Compilerケースは今回PASS、広域は未再実行** | R2469はCoreの全53逆依存を選択。CLIは640 PASS／51 FAIL、Compilerは612 PASS／1 FAILだった。52失敗識別子はR2458と一致し、新規・消失とも0。当時もtyped Presentation ABI未接続9件、JLREQ geometry／raw crop8件を再現し、hyphenのcolumnは1169／1127。CompilerのThreadHandle／includeケースは修復後のR2510でPASSした。現在の全体失敗件数を52件と断定せず、CLI統合描画の当時の具体的診断を保持する。[前回入力の全診断](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.failure-recon.json)、[件数・受入照合](acceptance-evidence/task-final-r2469-thread-handle-reverse-runtime.acceptance-audit.json)。 |
-| 最終 workspace／Tier 2／Native-Web capture parity | **対象runtimeとworkspace check／ClippyはPASS／全体の最終受入は未確認** | R2535はCore library 1,972件・codegen 12件・Compilerのflow 18件／View 69件、計2,071件が全PASS。R2531は非Serde境界doctest 2件がPASS。R2532 all-target／all-feature／locked workspace ClippyとR2536の同checkはexit 0、R2537構造gateはblocking 0。途中のSource復元失敗・API移行漏れ・別leaseを作っていたfixture 6件の失敗は履歴へ保持する。全53逆依存runtime、39既存ignored、Tier2、Native-Web capture parityは今回未実行。R2481／R2482のworkspace合格、R2469の7,182 PASS／52 FAIL、R2420の76 doctestは当時の入力の履歴として保持する。[固定入力・owner disposition・実結果](convergence-evidence-history.md)。 |
+| Coreの全53逆依存library | **当該host／feature条件は全PASS** | R2543は49 packageのnamed case 5,470件が全PASS、filter／ignored skipは0。53 packageをbuild対象にし、`arcweft`・`arcweft-bundle-assets`・`arcweft-render-text`・`arcweft-render-web`はこのlibrary選択にnamed caseがない。Compiler libraryの172件、Sema 1,304件、Core library 1,972件を含む。[実際のcase set／固定入力](acceptance-evidence/task-final-r2543-program-reverse-libs-runtime.terminal-audit.json)。初回build失敗を履歴へ残し、source修復成功と混同しない。161 integration／5 bin target、他target／feature条件の受入をこの結果から推定しない。 |
+| 最終 workspace／Tier 2／Native-Web capture parity | **対象runtimeとworkspace check／ClippyはPASS／全体の最終受入は未確認** | R2535はCore library 1,972件・codegen 12件・Compilerのflow 18件／View 69件、計2,071件が全PASS。R2531は非Serde境界doctest 2件がPASS。R2532 all-target／all-feature／locked workspace ClippyとR2536の同checkはexit 0、R2537構造gateはblocking 0。途中のSource復元失敗・API移行漏れ・別leaseを作っていたfixture 6件の失敗は履歴へ保持する。全53逆依存libraryはR2543で5,470件全PASS。161 integration／5 bin target、39既存ignored、Tier2、Native-Web capture parityは今回未実行。R2481／R2482のworkspace合格、R2469の7,182 PASS／52 FAIL、R2420の76 doctestは当時の入力の履歴として保持する。[固定入力・owner disposition・実結果](convergence-evidence-history.md)。 |
 
 旧ロードマップ、着手前の実装ガイド、重複 feature matrix、完了した runtime-boundary
 移行手順、旧レビュー依頼・設計 mirror は、現行契約への整理と検証履歴の保全後に削除した。

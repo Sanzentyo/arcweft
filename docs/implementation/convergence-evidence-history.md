@@ -10018,3 +10018,61 @@ whitespace 5行とR2531 doctest原本のEOF空行1行は保持し、この2 log�
 3,091 Rust入力のhash差分0と15 owned Rustの全file format、Viewの変更1行のrange formatを
 確認した。現状一覧は `current-status.md` の一か所に維持する。
 変更3文書の相対リンク250件は解決可能、未閉鎖fenceは0。
+
+## 全53逆依存libraryの再検証 — 2026-10-24
+
+前節は `a1b0797a538aa246931e1566dcd0fa8499da48bc` で公開した。
+parentは `aa2fc1a9427a09b2be48013c1bb405d6a2e00a14`、treeは
+`527a0d5f85aedc61cc8b04c71c72d6db07f88179`、raw patch SHA256は
+`1ffbc8f3ca6358fe24d5f6b0937dbacb288c8ee4e272a218fe1f34e0376b96f4`。
+[公開照合](acceptance-evidence/task-program-fiber-checkpoint.verified.json)は98公開blob、
+4,681入力、fresh origin／advertised ref、empty index、保持14 tracked WIPの差分0を記録する。
+
+### Build失敗の切り分け
+
+ソースを変更せず、Cargoのresolved graphからCore自身を含む逆依存53 packageを選択した。
+R2538のlibrary catalogはexit 101。複数crateで公開importが解決できないE0432、delayed ICE、
+rlib形式が見つからない診断を記録した。RuntimeHostの`bound`に関する5診断も含む。
+このrunではOS error 1455を確認しておらず、過去のページングファイル不足と同一原因とは断定しない。
+
+診断が参照したCore／RuntimePlan／Semaのrlibは実在し、該当APIは現在のソースで無条件に公開されていた。
+R2540の小さいRust import probeは、同じCore rlibから`Engine`／`FlowFiberStatus`／
+`RuntimeStepBudget`／`RuntimeStepOptions`を読み込み、metadata emitがexit 0だった。
+probe前後のrlib hashは一致した。これはAPI読込の検査であり、runtime testとして加算しない。
+
+R2539のRuntimeHost単独catalogはソース変更なしでexit 0、60件を選択した。
+R2541は **60 PASS／0 FAIL／0 skip、0.843秒、actual exit 0**。
+[terminal audit](acceptance-evidence/task-final-r2541-program-reverse-host-runtime.terminal-audit.json)と
+[実行整合性](acceptance-evidence/task-program-reverse-host-r2541.execution-integrity.json)は、
+4,681入力・case set・1 executableのdrift 0を記録する。
+通常のsource errorを解消したと報告する変更は行っていない。
+
+### 同じ53 package／feature条件での再試行
+
+R2542は最初と同じ53 package、`--lib --all-features --locked`、`rdeps(=arcweft-core)`で
+catalogを再実行し、exit 0。R2543は **5,470 PASS／0 FAIL／0 skip、126.985秒、actual exit 0**。
+named caseは49 package、53 executableを固定した。
+[terminal audit](acceptance-evidence/task-final-r2543-program-reverse-libs-runtime.terminal-audit.json)と
+[実行整合性](acceptance-evidence/task-program-reverse-libs-r2543.execution-integrity.json)で、
+4,681固定入力・case set・53 executableのdrift 0、保持14 WIPの差分0を確認した。
+初回のbuild診断は同じソース／条件で再現していないが、根本原因は未確定として原本を保持する。
+Cargo jobs／profile／実行条件を変更せず、artifactを移動・コピー・退避していない。
+
+Core library 1,972件、Sema 1,304件、Compiler library 172件、RuntimePlan 127件、
+runtime-accelerator 117件、runtime-driver 101件、runtime-host 60件、scheduler 17件、
+codegen 12件などを含む。`arcweft`／bundle-assets／render-text／render-webは、このhostの
+library targetにnamed caseがないため、build実績とruntimeの合格を区別する。
+前節R2535の「Compiler libraryのnamed runtime case 0」は、binary-level filterで当該suiteを
+実行選択から除いた範囲の記録であり、Compiler libraryにtestが存在しないという意味ではない。
+今回172件を実際に実行し、過去の2,071件・Host 60件と重複加算しない。
+
+Cargo target inventoryは別に161 integration targetと5 bin targetを示す。これら166 targetを
+同じ53 packageのfeature rootsで選択する44 sliceを用意した。同名targetが複数packageにある
+組は一緒に扱うため、1 sliceは最大5 targetになる。これはtest commandの選択であり、
+productionのbudget／batch／fusion／copy／captureやassertionを弱める変更ではない。
+この段階ではintegration／bin、既存ignored／Tier2、Native-Web capture parityは未実行である。
+現状一覧にはlibraryの合格範囲だけを反映し、Generic Matchの受入・公開済み判定を維持する。
+
+32原本、8,469,452 bytesをbyte・SHA256・Git blob一致で保持した。差分0、
+raw logのwhitespace例外0。probeはソースだけを`.rs.txt`として保持し、生成metadataは含めない。
+変更2文書の相対リンク255件は解決可能、未閉鎖fenceは0、proseのwhitespace検査も通過した。

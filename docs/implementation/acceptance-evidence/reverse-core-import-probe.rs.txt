@@ -1,0 +1,9 @@
+use arcweft_core::engine::{Engine, FlowFiberStatus};
+use arcweft_core::step::{RuntimeStepBudget, RuntimeStepOptions};
+
+fn main() {
+    let _ = std::mem::size_of::<*const Engine>();
+    let _ = std::mem::size_of::<*const FlowFiberStatus>();
+    let _ = std::mem::size_of::<RuntimeStepBudget>();
+    let _ = std::mem::size_of::<RuntimeStepOptions>();
+}

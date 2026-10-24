@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "a1b0797a538aa246931e1566dcd0fa8499da48bc",
+  "name": "task-final-r2541-program-reverse-host-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-runtime-host",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2541-program-reverse-host-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T02:57:01.4206616Z",
+  "finishedAt": "2026-10-24T02:57:05.1453531Z"
+}

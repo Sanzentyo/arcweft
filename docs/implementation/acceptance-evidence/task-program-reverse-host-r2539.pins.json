@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2539-program-reverse-host-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_host-807ad275a74081ad.exe",
+      "bytes": 156767744,
+      "nonTest": false,
+      "sha256": "1ccc6dce21968c58bdd613f58dd0e5b7c33ec0e77ed5d006c4bd9b75e56db8d1"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T02:57:01.3825368Z"
+}

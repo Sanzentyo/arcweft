@@ -1,0 +1,604 @@
+{
+  "version": 1,
+  "commit": "a1b0797a538aa246931e1566dcd0fa8499da48bc",
+  "parent": "aa2fc1a9427a09b2be48013c1bb405d6a2e00a14",
+  "tree": "527a0d5f85aedc61cc8b04c71c72d6db07f88179",
+  "remote": "a1b0797a538aa246931e1566dcd0fa8499da48bc",
+  "advertised": "a1b0797a538aa246931e1566dcd0fa8499da48bc",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/tests/flow_include.rs",
+      "blob": "831f11d960bd50dda74a72cab81aa2b3ab825357",
+      "workingBlob": "831f11d960bd50dda74a72cab81aa2b3ab825357",
+      "workingSha256": "a389177c33fe4fd47fac3389cbb3f5ca9631230b648a211d80cde25667b55851"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/view_product.rs",
+      "blob": "f81908f4970818a35679c7e4f96103e377eb830d",
+      "workingBlob": "f81908f4970818a35679c7e4f96103e377eb830d",
+      "workingSha256": "4ba3af4d50712d6c0f94ae059b93c8bb32b92f31606f415c8d8385064aa5a01c"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "blob": "1fe1fae9f30ec426baabd9e98b07ee02c08b5eac",
+      "workingBlob": "1fe1fae9f30ec426baabd9e98b07ee02c08b5eac",
+      "workingSha256": "1e36714172508a87b10bcb58ab7a40116fce93127d302d63e119bd4016fccb97"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "blob": "442ddffee4eaa5f8857d9bd40c4d4cb3434c915c",
+      "workingBlob": "442ddffee4eaa5f8857d9bd40c4d4cb3434c915c",
+      "workingSha256": "e0cb104666885d06592d9d58f2ae9c9ff05cbfdf5e067fbce8659fe6a4675b3c"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/admission.rs",
+      "blob": "60f92fd8841f05f42841e011ad3d8be1d256c0ed",
+      "workingBlob": "60f92fd8841f05f42841e011ad3d8be1d256c0ed",
+      "workingSha256": "ab062a4876feb5257d0df523c107a8a62808ba7225c47c42e3d22b81d95b50f3"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "blob": "a6bb6315b7d7793324f5bbc018154e71ac31fd14",
+      "workingBlob": "a6bb6315b7d7793324f5bbc018154e71ac31fd14",
+      "workingSha256": "173b47cf32a9eda05513f78ab23686aaa5aca7d23f4f088bf898f4699374f5af"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task.rs",
+      "blob": "0e7789ee49e2cc9f07914087cfaa44f5c6a5227d",
+      "workingBlob": "0e7789ee49e2cc9f07914087cfaa44f5c6a5227d",
+      "workingSha256": "8702d7112de8a798f73b737d06689514293782ff69e6023d8cf23c9af2ad3c02"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+      "blob": "1879f99479d488f32d020dea2a6640de96e2fda8",
+      "workingBlob": "1879f99479d488f32d020dea2a6640de96e2fda8",
+      "workingSha256": "8dc96c9f959c8cb8c60f58555fc84b1e5782c347765d4e501074b7e9ce700b3c"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "blob": "b89b20aa4c06d225ac47cba90a8951426bb96855",
+      "workingBlob": "b89b20aa4c06d225ac47cba90a8951426bb96855",
+      "workingSha256": "f36944d8e87a709bece25fedd32cb45454cd804b27ba4230f61a7c55953a73fa"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests.rs",
+      "blob": "d70ac0fc305a6c9b105092145be94eb32fc80139",
+      "workingBlob": "d70ac0fc305a6c9b105092145be94eb32fc80139",
+      "workingSha256": "c222b3affd03da3dc3aa2be24e51f310c097f63647edc50383c1896a814b2eea"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests/local_assignment.rs",
+      "blob": "017f586003d2590e0e4a2f6c52fadfa4349302ec",
+      "workingBlob": "017f586003d2590e0e4a2f6c52fadfa4349302ec",
+      "workingSha256": "c2a90aef78f0e673f1ec824da7758bc8ad36e21870c3b7dbb661cc69917d56a2"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source.rs",
+      "blob": "57adeae5ac3fda05ab01ba668700e713a020860f",
+      "workingBlob": "57adeae5ac3fda05ab01ba668700e713a020860f",
+      "workingSha256": "27d6ce922b0d7bf451eacd4412e2b72f7d5d7757c0a1aa4e72a915d2446720b1"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program.rs",
+      "blob": "a665f6819669e5b581b19e6c580c0cfe01e22db0",
+      "workingBlob": "a665f6819669e5b581b19e6c580c0cfe01e22db0",
+      "workingSha256": "89ae213099573018c0f64653f35578675c5cd6f1047eb8dbeec3ad3b405905dc"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+      "blob": "af7163ff75e000d0fea8ea49c0550ec09cc47f30",
+      "workingBlob": "af7163ff75e000d0fea8ea49c0550ec09cc47f30",
+      "workingSha256": "3ad51de9f8b5b0a5661c289eb52ca8d2d6121714c489cd61e410e2d98b3f0d7b"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+      "blob": "e8ef66b01fdaabe351f85ce9d2aa20ec7b1f6c0d",
+      "workingBlob": "e8ef66b01fdaabe351f85ce9d2aa20ec7b1f6c0d",
+      "workingSha256": "3034280f425eeeda9d2da0a876e82062642005bc9e1e6db79f46f59589c7af9f"
+    },
+    {
+      "path": "crates/arcweft-runtime-codegen/src/region.rs",
+      "blob": "9607cac19249972a866d8a07c57bded535d213a8",
+      "workingBlob": "9607cac19249972a866d8a07c57bded535d213a8",
+      "workingSha256": "aa3e8d52b7f00036711c06ef06aa35dde4f3afd6eb641f8691fd2260911ae600"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "blob": "672782b4d135674aa28c450f8d1ded7c3fd74f61",
+      "workingBlob": "672782b4d135674aa28c450f8d1ded7c3fd74f61",
+      "workingSha256": "f119d3f52324f34fa399ba221eaa756eb341307fe6480c2615123e298232dcc2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2521-program-rejection-catalog.inventory.json",
+      "blob": "97a6213c306e50b28d568528e87196f90efe3067",
+      "workingBlob": "97a6213c306e50b28d568528e87196f90efe3067",
+      "workingSha256": "cac2592f343582a397d4bdfb4f8d291af1fd8653c1e81fc76891538f7108e270"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2521-program-rejection-catalog.json",
+      "blob": "5205e15945d0130b8077c9f795278c2725ebc04c",
+      "workingBlob": "5205e15945d0130b8077c9f795278c2725ebc04c",
+      "workingSha256": "383866340043f4af908e3d4d978f52df1762e079bc9ef2472abcd2ac0b4a0b8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2521-program-rejection-catalog.log",
+      "blob": "e4af00b02e674c29e69fe2cf7ce5d7a3ea5c3f64",
+      "workingBlob": "e4af00b02e674c29e69fe2cf7ce5d7a3ea5c3f64",
+      "workingSha256": "ad63781c3d2f343ecd9464d7660e134439f1841bbcec79be5770990cc937f4b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2522-program-rejection-runtime.json",
+      "blob": "69f665851c965492705bb057f92f3f3d57039b8b",
+      "workingBlob": "69f665851c965492705bb057f92f3f3d57039b8b",
+      "workingSha256": "d494b2fd9bceb49f8271a669f7cf91d2473dccadea33caf5bf34f6f94462e63e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2522-program-rejection-runtime.log",
+      "blob": "ca0fd0ccb36c736e9294ead69590b554461d64f1",
+      "workingBlob": "ca0fd0ccb36c736e9294ead69590b554461d64f1",
+      "workingSha256": "f5679a82871e766ab1384cce87c6b3b62fb741fc7b9949ed4cac61d2b5a21971"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2522-program-rejection-runtime.terminal-audit.json",
+      "blob": "5cf46c12bcf06a89ee451a1c4fc1da0b0df3201d",
+      "workingBlob": "5cf46c12bcf06a89ee451a1c4fc1da0b0df3201d",
+      "workingSha256": "35a908c7db0e445d608e6f83511f2c2eea5b66a5d3b28d108b832da02c6237f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2523-program-checkpoint-catalog.json",
+      "blob": "dee8fa0391e2cc46dc6fa7badf000f4b5a8df05b",
+      "workingBlob": "dee8fa0391e2cc46dc6fa7badf000f4b5a8df05b",
+      "workingSha256": "8e743466105f98004694e28404f7d240aacfe59fbfdea5722f2e6a61cc025450"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2523-program-checkpoint-catalog.log",
+      "blob": "9f06125fb4b9d609de5e578533c000cfc66314be",
+      "workingBlob": "9f06125fb4b9d609de5e578533c000cfc66314be",
+      "workingSha256": "53558096023875ef6ca9dd78d79ea2d4eac125c3bb84abed89987f0cbc25acc2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2524-program-checkpoint-catalog.inventory.json",
+      "blob": "c847cefe692f4ecd15a876e475e25008550347dd",
+      "workingBlob": "c847cefe692f4ecd15a876e475e25008550347dd",
+      "workingSha256": "904824cae3d76bc93147af712b37bc9a5c3b2c8d2a360c6b726f9d4ce88ed541"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2524-program-checkpoint-catalog.json",
+      "blob": "11b20db5139222980d3fb742da7ab0f984d79eda",
+      "workingBlob": "11b20db5139222980d3fb742da7ab0f984d79eda",
+      "workingSha256": "bd2ef21ab3e088c976e0478dcdf84af8cc343528ceec5939fe2cd8404979a3f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2524-program-checkpoint-catalog.log",
+      "blob": "dd53b12c2aebb0f3875f6c77c916578d200f4c80",
+      "workingBlob": "dd53b12c2aebb0f3875f6c77c916578d200f4c80",
+      "workingSha256": "51f58134b844d0b1ceec0fe6603640f4035801477df5664137465abb0f547dfe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2525-program-checkpoint-runtime.json",
+      "blob": "3f0eca5c76ea913a45276e852cfcbb022c34778f",
+      "workingBlob": "3f0eca5c76ea913a45276e852cfcbb022c34778f",
+      "workingSha256": "25fbd6490c9dc29737070970f3e311420fa4030665d688c61a6cef06e4c5dc00"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2525-program-checkpoint-runtime.log",
+      "blob": "e4ca17c3d350e77ba11873aeb0569970fdee314f",
+      "workingBlob": "e4ca17c3d350e77ba11873aeb0569970fdee314f",
+      "workingSha256": "e23a39873153af3572e9807a2e5bdee2eec4aea9c58b7dbb13d905357e218fd4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2525-program-checkpoint-runtime.terminal-audit.json",
+      "blob": "281b1131c4a782867da7128a11a8c0e7a9074b50",
+      "workingBlob": "281b1131c4a782867da7128a11a8c0e7a9074b50",
+      "workingSha256": "c62dc14e3701f3f9639f6b8dba69b79b760618542e7a3b6b9c0e7287d9f95d06"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2526-program-checkpoint-check.json",
+      "blob": "ff268c144d5d55ccccdd9226ba0f80cfca211cd8",
+      "workingBlob": "ff268c144d5d55ccccdd9226ba0f80cfca211cd8",
+      "workingSha256": "047554b99994c087ff6db7f2a100422e835c0256ba405666ef56b1dbf15e79e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2526-program-checkpoint-check.log",
+      "blob": "5e0c1763bf0b87f47bc2132c78628ff99b68c883",
+      "workingBlob": "5e0c1763bf0b87f47bc2132c78628ff99b68c883",
+      "workingSha256": "2d07bd3a12f5c271421c5b3f51a3683347cd1d605a124a5985a5ec862b0687a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2527-program-checkpoint-workspace-check.json",
+      "blob": "0369c2496cce8512d85282bf27e60b382aa4be31",
+      "workingBlob": "0369c2496cce8512d85282bf27e60b382aa4be31",
+      "workingSha256": "6ac809b6eb1e64ff6dd5359e210a37f8e0dfef3ed9486727161e6ce677f3569e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2527-program-checkpoint-workspace-check.log",
+      "blob": "e24fdce35161dc35c2f0af0c3fa4817b631f61ee",
+      "workingBlob": "e24fdce35161dc35c2f0af0c3fa4817b631f61ee",
+      "workingSha256": "0877b33aa7b8fbdee3b151a9d28498e873383594f49bcdffa6a61d5faa8857eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2528-program-checkpoint-workspace-check.json",
+      "blob": "a430645a11f42950637febca2af4df398d73bced",
+      "workingBlob": "a430645a11f42950637febca2af4df398d73bced",
+      "workingSha256": "009026ca0888c42fff8faacc47f8626bd3ff6611df095a7da59f38f84a2e1594"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2528-program-checkpoint-workspace-check.log",
+      "blob": "5708647c9cc14b2f65027e3d12d8e6acecc72f0a",
+      "workingBlob": "5708647c9cc14b2f65027e3d12d8e6acecc72f0a",
+      "workingSha256": "1d6889c373728ea4f94e567f8d07085576b7c83a5a93b7a627b15bfd388ebce2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2529-program-checkpoint-owner-catalog.inventory.json",
+      "blob": "fb6f16b0738d53009eba5c71e2cda5c2907b90e7",
+      "workingBlob": "fb6f16b0738d53009eba5c71e2cda5c2907b90e7",
+      "workingSha256": "c7fb6598608de0eb68ae49a107fced8ac8d401f838c00b7d53931b80ff0f867e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2529-program-checkpoint-owner-catalog.json",
+      "blob": "2388373c2937bfac9785977376dfd2834bee62d8",
+      "workingBlob": "2388373c2937bfac9785977376dfd2834bee62d8",
+      "workingSha256": "680bb1076ed9ad2abbfb0e59d7a1b361a94ab5b25ec27c4faf2e62bc2e67a2ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2529-program-checkpoint-owner-catalog.log",
+      "blob": "466c6d7ee5c32dc31f96880325ddd68a0e09d52d",
+      "workingBlob": "466c6d7ee5c32dc31f96880325ddd68a0e09d52d",
+      "workingSha256": "3f3ecd70ea679f62d3bc30ae6dbdf4e29fb31cb25e35909537944e8e6a48a180"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2530-program-checkpoint-owner-runtime.json",
+      "blob": "e116760c154f757a4e799b6794d88ef41cfd7a1b",
+      "workingBlob": "e116760c154f757a4e799b6794d88ef41cfd7a1b",
+      "workingSha256": "15d5de8284ee6d76bfebbd00920140fe8557c9b5bebb9a8c0822ce1599691c1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2530-program-checkpoint-owner-runtime.log",
+      "blob": "94bb4809f2deb23a0517dcba1f7c209dc0bc3c04",
+      "workingBlob": "94bb4809f2deb23a0517dcba1f7c209dc0bc3c04",
+      "workingSha256": "02c8656979300b85a1d3c005fe42d233d526340c79adf9020b3330f493ef8294"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2530-program-checkpoint-owner-runtime.terminal-audit.json",
+      "blob": "2aa9e2db8878390e493ad2f110c1956cd1351b81",
+      "workingBlob": "2aa9e2db8878390e493ad2f110c1956cd1351b81",
+      "workingSha256": "224a0d005db7bd344a9b64c214e3764f0657d712962e85caf235e9fa26a19cf4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2531-program-checkpoint-doctests.json",
+      "blob": "55127d41881da6c66064ef5be775369aebe2569a",
+      "workingBlob": "55127d41881da6c66064ef5be775369aebe2569a",
+      "workingSha256": "45c0504c43814c2b0179b21ae9dc41e3fb4fc63bf53e2499334f2988975701bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2531-program-checkpoint-doctests.log",
+      "blob": "85bef1dab4dc155c254983f6cdf60d0aca855d11",
+      "workingBlob": "85bef1dab4dc155c254983f6cdf60d0aca855d11",
+      "workingSha256": "b64a95375469fd7228d987f990f1228d25f7cc5b3bd467a9178200375d9ceab2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2532-program-checkpoint-workspace-clippy.json",
+      "blob": "4fa669c9a88251bd9c9339b45d6edcd2af41bf37",
+      "workingBlob": "4fa669c9a88251bd9c9339b45d6edcd2af41bf37",
+      "workingSha256": "93f6162f11c3afe4ef696a6e728951d6bd007ec2721723dbe50a3d18f3a989be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2532-program-checkpoint-workspace-clippy.log",
+      "blob": "92bb64289458b75f191bb025826aa9b52028bc3e",
+      "workingBlob": "92bb64289458b75f191bb025826aa9b52028bc3e",
+      "workingSha256": "92afe445c799985a78331a248251bf6b150c0302a1c8785e02bbf862a349edeb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2533-program-checkpoint-structure.json",
+      "blob": "a3f680d994114435bff104c1c4f20b445934afbc",
+      "workingBlob": "a3f680d994114435bff104c1c4f20b445934afbc",
+      "workingSha256": "471ff761b6cd75db954a8c762724655909c74ed3ca2667662466db59a33121be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2533-program-checkpoint-structure.log",
+      "blob": "f3b2c2c870c6e42272ddf9567ef23bd08fd08363",
+      "workingBlob": "f3b2c2c870c6e42272ddf9567ef23bd08fd08363",
+      "workingSha256": "21b413dadd02f6cd96f5bee4d3075c007c7202ba5726e42f7f54d0f0d5d15341"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2534-program-checkpoint-owner-catalog.inventory.json",
+      "blob": "a125b55f7aaf6f4c4ec710eb03a7c59a5517470f",
+      "workingBlob": "a125b55f7aaf6f4c4ec710eb03a7c59a5517470f",
+      "workingSha256": "a2a24c609bb765098a4d2e86b94772822df52a410a9517c45a38ed7e088905a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2534-program-checkpoint-owner-catalog.json",
+      "blob": "2c5e293b8c0fc2ad32950ccd9f67cebbfe01ecb0",
+      "workingBlob": "2c5e293b8c0fc2ad32950ccd9f67cebbfe01ecb0",
+      "workingSha256": "dc961d077fce352c3929789eed0556d682503e01cadaf9c8a4c01c6a44d86d0e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2534-program-checkpoint-owner-catalog.log",
+      "blob": "a7b62d1a151471ff0fa60518ab4139ea06b6c44e",
+      "workingBlob": "a7b62d1a151471ff0fa60518ab4139ea06b6c44e",
+      "workingSha256": "44c4d890eb7248dc1517e917963e70b9133222b8c962a20e67ed3a4b2d2c9a30"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2535-program-checkpoint-owner-runtime.json",
+      "blob": "66644aa724d6962207afa982643dc1a52b21d940",
+      "workingBlob": "66644aa724d6962207afa982643dc1a52b21d940",
+      "workingSha256": "f0c2b38e372642feaadce6d171734158c610695f5c12500c651cd540d59afb28"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2535-program-checkpoint-owner-runtime.log",
+      "blob": "47f69185aaa5db93c3d464f94c045a76dcfbcaf9",
+      "workingBlob": "47f69185aaa5db93c3d464f94c045a76dcfbcaf9",
+      "workingSha256": "690d882e302c80a4f40efbbd7c73b2bde93d9f7beace52ed8ee710f317ee1973"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2535-program-checkpoint-owner-runtime.terminal-audit.json",
+      "blob": "2c8add58135a39b49c68e40ba62d2b063cd4d64e",
+      "workingBlob": "2c8add58135a39b49c68e40ba62d2b063cd4d64e",
+      "workingSha256": "bebf9024b36b56c14abd76544fe3791631fbcdfd418694439d770173e9c6fea7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2536-program-checkpoint-workspace-check.json",
+      "blob": "316b257bba96e072a0622d237808e29f05032206",
+      "workingBlob": "316b257bba96e072a0622d237808e29f05032206",
+      "workingSha256": "2dace565d78051641f3efc225a16205d1c1e9001fc1c355b7202a1d98626d30b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2536-program-checkpoint-workspace-check.log",
+      "blob": "ffe95a95248538956948ff96dc208fd5d03fe3a0",
+      "workingBlob": "ffe95a95248538956948ff96dc208fd5d03fe3a0",
+      "workingSha256": "647ceaaf4174c5b45c04d825bdea20eef427f049ab45d64e96cdfbdfa451a6c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2537-program-checkpoint-structure.json",
+      "blob": "b54099dc60a9d24896735bd63a2444d68f2ccc4f",
+      "workingBlob": "b54099dc60a9d24896735bd63a2444d68f2ccc4f",
+      "workingSha256": "affce1c3a7d92ad0c4d1d69ffc19b316bba7d42cdf0452e6db8897d638a47eec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2537-program-checkpoint-structure.log",
+      "blob": "fa87bcf52a695d1ca580e19899aaf2a87e73ef00",
+      "workingBlob": "fa87bcf52a695d1ca580e19899aaf2a87e73ef00",
+      "workingSha256": "f9de616627b7c3dd4d6e2eb83c0636f8be1384c29cfd8107950a40af26b63d8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2523.graph.json",
+      "blob": "066f2bec0b7cfbdca8115ea96d7c69d81400d315",
+      "workingBlob": "066f2bec0b7cfbdca8115ea96d7c69d81400d315",
+      "workingSha256": "e89e6b64546bf0e360cdd5a61f6215b997debcc5ffc3825d3a0863ea94b5a060"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2523.source-freeze.json",
+      "blob": "bd542a357d41362dd6a3c1ffe1655508c34a5bd4",
+      "workingBlob": "bd542a357d41362dd6a3c1ffe1655508c34a5bd4",
+      "workingSha256": "60bef56626c8ab16969ebb2012db3ac6d5d6fc6db9d519b6546a778bd074cd3c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2524.graph.json",
+      "blob": "066f2bec0b7cfbdca8115ea96d7c69d81400d315",
+      "workingBlob": "066f2bec0b7cfbdca8115ea96d7c69d81400d315",
+      "workingSha256": "e89e6b64546bf0e360cdd5a61f6215b997debcc5ffc3825d3a0863ea94b5a060"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2524.pins.json",
+      "blob": "44c00ce9e4e3e9aecc6263ee7144cac4ebdc8071",
+      "workingBlob": "44c00ce9e4e3e9aecc6263ee7144cac4ebdc8071",
+      "workingSha256": "7aba28515a43459cc3aaae06c3a0cfcd25b143ee4ea579ddc3133c6dad4a0f1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2524.source-freeze.json",
+      "blob": "d8145515e0a2c7a7c1478c45c64e298a63d7f8df",
+      "workingBlob": "d8145515e0a2c7a7c1478c45c64e298a63d7f8df",
+      "workingSha256": "1f3571727db238ba431bcab0db87f47aec637a632415e298ea839ee885fef5a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2525.execution-integrity.json",
+      "blob": "afc488eb6972ac8668f2164af2194d2077076874",
+      "workingBlob": "afc488eb6972ac8668f2164af2194d2077076874",
+      "workingSha256": "253ecd74a8efc0fcb24a8614501b55ba03f2c364e5b553047ad68648f633ef7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2526.graph.json",
+      "blob": "db4708dce6e61a8764ea86318eea886794ca3ad7",
+      "workingBlob": "db4708dce6e61a8764ea86318eea886794ca3ad7",
+      "workingSha256": "563161ccb1731de80d478ab3dd0f6d996d0df922a29f375e1c671df74e5def9e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2526.source-freeze.json",
+      "blob": "84df6efcc8c56ed3332c6835cf0521fa0d56c2d9",
+      "workingBlob": "84df6efcc8c56ed3332c6835cf0521fa0d56c2d9",
+      "workingSha256": "d26b290a621542ad6cdffad320496f423b4cf82712c17202dc09df92b248509a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2527.graph.json",
+      "blob": "cb9bae7199754ba25cfa8fbfdc4df5ec690d8a89",
+      "workingBlob": "cb9bae7199754ba25cfa8fbfdc4df5ec690d8a89",
+      "workingSha256": "621b0fc7cff04c93b20cd8360c2c57bf809e2af95b59f0d49abef9dc486d475e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2527.source-freeze.json",
+      "blob": "2cd4adda14b1113478f78907f66d404c93615aa3",
+      "workingBlob": "2cd4adda14b1113478f78907f66d404c93615aa3",
+      "workingSha256": "bb3f63a535c660ce9d5ddc6cdca896a03fc8da38a21e20ad1eddba9a37fa6e29"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2528.graph.json",
+      "blob": "b5fcf6da4b9c36130d830090427da1446bb6c327",
+      "workingBlob": "b5fcf6da4b9c36130d830090427da1446bb6c327",
+      "workingSha256": "8a59cbbe7b30cfead09f2fd11d2028426173fb488591ac0eac84d99825d2d1cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2528.source-freeze.json",
+      "blob": "29b21299cd98714176092773509ae34a37466f81",
+      "workingBlob": "29b21299cd98714176092773509ae34a37466f81",
+      "workingSha256": "e9e6fad9b466d7a0a3fb949a0abef2a30b296fd7b8d985f2a7f039f902fcc8d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2529.pins.json",
+      "blob": "a6fe9ed5c3e9f00fdde34db8d78dddb8b8241af1",
+      "workingBlob": "a6fe9ed5c3e9f00fdde34db8d78dddb8b8241af1",
+      "workingSha256": "480e9b8a8e02f14e664636700b5e55af11eeb49c8b5326927a692cf63b941318"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2530.execution-integrity.json",
+      "blob": "75bb398b39160d568cd7534479ec8f899e1a78a5",
+      "workingBlob": "75bb398b39160d568cd7534479ec8f899e1a78a5",
+      "workingSha256": "9cab1f9c3961b351559f4342ca56c4a8c76bca882615b21ddb9cc63fab89c9a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2534.graph.json",
+      "blob": "b5fcf6da4b9c36130d830090427da1446bb6c327",
+      "workingBlob": "b5fcf6da4b9c36130d830090427da1446bb6c327",
+      "workingSha256": "8a59cbbe7b30cfead09f2fd11d2028426173fb488591ac0eac84d99825d2d1cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2534.pins.json",
+      "blob": "fd4d90ceefca2bfc9c30bb38e0772f13807dc4c7",
+      "workingBlob": "fd4d90ceefca2bfc9c30bb38e0772f13807dc4c7",
+      "workingSha256": "234ca0f9654cbc6cfd770ff066b59b37a70040a5f3599960a62ca3caeabd1277"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2534.source-freeze.json",
+      "blob": "fb771c93d9e489bb98688805c7c5d24880ee2663",
+      "workingBlob": "fb771c93d9e489bb98688805c7c5d24880ee2663",
+      "workingSha256": "a0836fbee88beef6715c409feb776066d09c52397223becb1b8749f6352a6950"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2534.source-integrity.json",
+      "blob": "88539f9410a7244b4ad1088f8b6947dd32ae9191",
+      "workingBlob": "88539f9410a7244b4ad1088f8b6947dd32ae9191",
+      "workingSha256": "cec944881e7da5f66411074dff923cc13b5509c52a0629663fbdeb4b2860d72e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-r2535.execution-integrity.json",
+      "blob": "d7329689c534be4c312248791fb141b5a84199af",
+      "workingBlob": "d7329689c534be4c312248791fb141b5a84199af",
+      "workingSha256": "945e99a39d534d36bc64b2e139a790c72569aef88160e4e6b1ece0c34d60a31a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2533/dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingBlob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingSha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2533/file_metrics.csv",
+      "blob": "79e26a7c76e4cc2fbc01b661619b1af74dc7c705",
+      "workingBlob": "79e26a7c76e4cc2fbc01b661619b1af74dc7c705",
+      "workingSha256": "18529076711450d7af207990ff42f238f3be99847aad17aeb0dcb17f1c4d342c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2533/findings.md",
+      "blob": "a682d6680b2ffa669feca06427d6d0e001045719",
+      "workingBlob": "a682d6680b2ffa669feca06427d6d0e001045719",
+      "workingSha256": "47b187cbac975502d04a61fe34ba3643e5a0d772283d049f5087313642b7fe6b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2533/package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingBlob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingSha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2533/public_type_duplicates.csv",
+      "blob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingBlob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingSha256": "c3012de2b7c825ba8d8d272c923eefe7c9d68c3e69921d3396e2cebbd577e52f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2537/dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingBlob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingSha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2537/file_metrics.csv",
+      "blob": "11a1d41c67591a2cd4d624401ead43df3656f3ac",
+      "workingBlob": "11a1d41c67591a2cd4d624401ead43df3656f3ac",
+      "workingSha256": "16d3165e5a89e77cf3115b08038716b186e752609af60e4fe0eedd3e94262ebe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2537/findings.md",
+      "blob": "8b2d9ffd97576fdc6d92f60703f68ae0b4eda6ba",
+      "workingBlob": "8b2d9ffd97576fdc6d92f60703f68ae0b4eda6ba",
+      "workingSha256": "c8a156f396eeb72ee36d353e71dcf51f0d92ebf8bfa4087f045f606ab948ab10"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2537/package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingBlob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingSha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-checkpoint-structure-r2537/public_type_duplicates.csv",
+      "blob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingBlob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingSha256": "c3012de2b7c825ba8d8d272c923eefe7c9d68c3e69921d3396e2cebbd577e52f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fiber-checkpoint.graph.json",
+      "blob": "6e5e5be7c175e25f1dac94ed2841fea10a6fa406",
+      "workingBlob": "6e5e5be7c175e25f1dac94ed2841fea10a6fa406",
+      "workingSha256": "958b4c77882baaf92613a6125d9d765d40b35764266bfa1ec830056bc6486e5d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fiber-checkpoint.source-freeze.json",
+      "blob": "bc75ce40751d134a7a575f4f2b4b6ac69b974f31",
+      "workingBlob": "bc75ce40751d134a7a575f4f2b4b6ac69b974f31",
+      "workingSha256": "486eda48c67fc5ece6fb216741d0f8f6f5d74b632633b2be439d466460529ff5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fiber-ownership-metrics.json",
+      "blob": "d72c66d6a3a485b76229e65517faecb9cae00a26",
+      "workingBlob": "d72c66d6a3a485b76229e65517faecb9cae00a26",
+      "workingSha256": "fd5e01ce52e181f083775ca379e6a78288d37ba71503e166a96b1d273f0b90a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-lifecycle-checkpoint.verified.json",
+      "blob": "c236b0a7cb9a57e0f88014259ed7106b6b9ca96e",
+      "workingBlob": "c236b0a7cb9a57e0f88014259ed7106b6b9ca96e",
+      "workingSha256": "c4430931ff0c658448e2f88d776cffbfc2dab488b31c55c4c1c219ffd8b68743"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-rejection-r2521.graph.json",
+      "blob": "6fabd7a15ac9e9bd66783653b107a29dea43fa09",
+      "workingBlob": "6fabd7a15ac9e9bd66783653b107a29dea43fa09",
+      "workingSha256": "d72fdadfe79dc2926cffc342726697cf2a428c9aef8eb50df811c984f46d6f3e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-rejection-r2521.pins.json",
+      "blob": "edb17cedb60c4b141561b37cd737fa88e47b05d5",
+      "workingBlob": "edb17cedb60c4b141561b37cd737fa88e47b05d5",
+      "workingSha256": "a8f403a30a2ca427e5fc4b561cfe1ca4e189e046897eb06e395f5822bc1eb537"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-rejection-r2521.source-freeze.json",
+      "blob": "0fdecc90dcc26ae05a5173a2f337283e39b79ae9",
+      "workingBlob": "0fdecc90dcc26ae05a5173a2f337283e39b79ae9",
+      "workingSha256": "55733d0cef2ef43c24b1dfab5c9490328b073788819c3b23ff8d8ecaa57c79bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-rejection-r2522.execution-integrity.json",
+      "blob": "417383f4d6fe1db43c3c4e01618f9695c493c674",
+      "workingBlob": "417383f4d6fe1db43c3c4e01618f9695c493c674",
+      "workingSha256": "0596bbbb1851771716e7d7dc889f01a70ca3f24e138bbe215156b2bf66681b33"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "5d50e2c68c9cb09af72ddfbacb20695fb4ba7e97",
+      "workingBlob": "5d50e2c68c9cb09af72ddfbacb20695fb4ba7e97",
+      "workingSha256": "3d6dfb115b0e4a8bee8bf9bcb6f72ae38f267c9b78a5bdf26f510d95f43f5900"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "871c2e8440c90414abddea4b298b18ea74244b28",
+      "workingBlob": "871c2e8440c90414abddea4b298b18ea74244b28",
+      "workingSha256": "16211d297f1ad88c640d3f445c378ffccdf69a8467703b9f4ff46b88e0328ac4"
+    }
+  ],
+  "sourceCount": 4681,
+  "sourceDrift": 0,
+  "heldPatchSha256": "e0eb55633fd17a5af5c72130ac3adc6ca58f69fd52c140d3b2940ca776d77150",
+  "patchSha256": "1ffbc8f3ca6358fe24d5f6b0937dbacb288c8ee4e272a218fe1f34e0376b96f4",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T02:33:41.8643568Z"
+}

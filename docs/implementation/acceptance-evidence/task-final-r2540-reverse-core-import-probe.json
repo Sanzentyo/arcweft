@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "a1b0797a538aa246931e1566dcd0fa8499da48bc",
+  "command": [
+    "rustc",
+    "--edition=2024",
+    "--crate-name",
+    "reverse_core_import_probe",
+    "--emit=metadata",
+    "--extern",
+    "arcweft_core=D:/git/arcweft/target/debug/deps/libarcweft_core-6604ac7bd51c6528.rlib",
+    "-L",
+    "dependency=D:/git/arcweft/target/debug/deps",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/reverse-core-import-probe.rs",
+    "-o",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/reverse-core-import-probe.rmeta"
+  ],
+  "exitCode": 0,
+  "sourceSha256": "3cc85c155b66b2791f477d5087456c8110d32619828f0ea037dd1e2cc6ec500b",
+  "rlib": "D:/git/arcweft/target/debug/deps/libarcweft_core-6604ac7bd51c6528.rlib",
+  "rlibShaBefore": "0cc76b1d49cd32bf83a12b1d660a3b32fc70a95554fa69b6323aae081f8b31c5",
+  "rlibShaAfter": "0cc76b1d49cd32bf83a12b1d660a3b32fc70a95554fa69b6323aae081f8b31c5",
+  "rlibDrift": false,
+  "startedAt": "2026-10-24T02:54:56.3345397Z",
+  "finishedAt": "2026-10-24T02:54:56.9990546Z"
+}

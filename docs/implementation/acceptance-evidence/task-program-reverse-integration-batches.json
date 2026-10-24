@@ -1,0 +1,1989 @@
+{
+  "version": 1,
+  "base": "a1b0797a538aa246931e1566dcd0fa8499da48bc",
+  "packages": [
+    "arcweft",
+    "arcweft-adapter-desktop",
+    "arcweft-adapter-sema",
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-policy",
+    "arcweft-agent-protocol",
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-browser-bench",
+    "arcweft-bundle",
+    "arcweft-bundle-assets",
+    "arcweft-character-view",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-core",
+    "arcweft-debug-model",
+    "arcweft-debug-sqlite",
+    "arcweft-dialogue",
+    "arcweft-glyphon",
+    "arcweft-host-adapter",
+    "arcweft-lang-jit-cranelift",
+    "arcweft-lang-sema",
+    "arcweft-launch",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-text-input",
+    "arcweft-player-web",
+    "arcweft-project",
+    "arcweft-project-loader",
+    "arcweft-rag",
+    "arcweft-render-text",
+    "arcweft-render-web",
+    "arcweft-render-wgpu",
+    "arcweft-resource-manifest",
+    "arcweft-resource-model",
+    "arcweft-runtime-accelerator",
+    "arcweft-runtime-codegen",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-runtime-scheduler",
+    "arcweft-save",
+    "arcweft-test",
+    "arcweft-text-layout",
+    "arcweft-text-model",
+    "arcweft-tooling",
+    "arcweft-verify",
+    "arcweft-verify-lsp",
+    "arcweft-verify-oxiz",
+    "arcweft-verify-z3",
+    "arcweft-view"
+  ],
+  "featureSelection": "all-features",
+  "locked": true,
+  "targetCount": 166,
+  "batches": [
+    {
+      "ordinal": 1,
+      "targets": [
+        {
+          "package": "arcweft-cli",
+          "name": "arcw",
+          "kind": [
+            "bin"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\src\\main.rs"
+        },
+        {
+          "package": "arcweft-lsp",
+          "name": "arcweft-lsp",
+          "kind": [
+            "bin"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-lsp\\src\\main.rs"
+        },
+        {
+          "package": "arcweft-player-native",
+          "name": "arcweft-player-native",
+          "kind": [
+            "bin"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-native\\src\\main.rs"
+        },
+        {
+          "package": "arcweft-browser-bench",
+          "name": "browser_bench_host",
+          "kind": [
+            "bin"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-browser-bench\\src\\bin\\browser_bench_host.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 2,
+      "targets": [
+        {
+          "package": "arcweft-player-native",
+          "name": "windows-tsf-ime-sample",
+          "kind": [
+            "bin"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-native\\src\\bin\\windows_tsf_ime_sample.rs"
+        },
+        {
+          "package": "arcweft-player-scene",
+          "name": "action_button_submit",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\tests\\action_button_submit.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "agent_enum_execution",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\agent_enum_execution.rs"
+        }
+      ],
+      "targetCount": 3
+    },
+    {
+      "ordinal": 3,
+      "targets": [
+        {
+          "package": "arcweft-agent-repl",
+          "name": "api_compile",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\tests\\api_compile.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "api_compile",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\api_compile.rs"
+        },
+        {
+          "package": "arcweft-core",
+          "name": "api_compile",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\api_compile.rs"
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "name": "api_compile",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-lang-sema\\tests\\api_compile.rs"
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "name": "api_compile",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-plan\\tests\\api_compile.rs"
+        }
+      ],
+      "targetCount": 5
+    },
+    {
+      "ordinal": 4,
+      "targets": [
+        {
+          "package": "arcweft-cli",
+          "name": "arcw_fixtures_check_run",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\arcw_fixtures_check_run.rs"
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "name": "assertion_identity",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-plan\\tests\\assertion_identity.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "assertions",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\assertions.rs"
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "name": "awbc_product_parity",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-plan\\tests\\awbc_product_parity.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 5,
+      "targets": [
+        {
+          "package": "arcweft-runtime-host",
+          "name": "awbc_product_runner",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-host\\tests\\awbc_product_runner.rs"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "name": "awbc_product_session",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-driver\\tests\\awbc_product_session.rs"
+        },
+        {
+          "package": "arcweft-core",
+          "name": "awbc_record_type",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\awbc_record_type.rs"
+        },
+        {
+          "package": "arcweft-core",
+          "name": "awbc_variant_types",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\awbc_variant_types.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 6,
+      "targets": [
+        {
+          "package": "arcweft-cli",
+          "name": "bracket_numeric_batch",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\bracket_numeric_batch.rs"
+        },
+        {
+          "package": "arcweft-core",
+          "name": "builtin_payload_admission",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\builtin_payload_admission.rs"
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "name": "bundle_runner",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-host\\tests\\bundle_runner.rs"
+        },
+        {
+          "package": "arcweft-project",
+          "name": "bytecode_link_producer_inventory",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-project\\tests\\bytecode_link_producer_inventory.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 7,
+      "targets": [
+        {
+          "package": "arcweft-compiler",
+          "name": "callable_execution",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\callable_execution.rs"
+        },
+        {
+          "package": "arcweft-tooling",
+          "name": "capability_policy",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-tooling\\tests\\capability_policy.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "catalog_asset_execution",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\catalog_asset_execution.rs"
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "name": "character_nominal_mismatch",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-lang-sema\\tests\\character_nominal_mismatch.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 8,
+      "targets": [
+        {
+          "package": "arcweft-bundle",
+          "name": "character_package",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\character_package.rs"
+        },
+        {
+          "package": "arcweft-player-scene",
+          "name": "character_stage",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\tests\\character_stage.rs"
+        },
+        {
+          "package": "arcweft-cli",
+          "name": "check",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\check.rs"
+        },
+        {
+          "package": "arcweft-cli",
+          "name": "check_core_cli",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\check_core_cli.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 9,
+      "targets": [
+        {
+          "package": "arcweft-lang-sema",
+          "name": "checked_match_query",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-lang-sema\\tests\\checked_match_query.rs"
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "name": "checked_statement_read_only_views",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-lang-sema\\tests\\checked_statement_read_only_views.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "choice_static",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\choice_static.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "computed_style",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\computed_style.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 10,
+      "targets": [
+        {
+          "package": "arcweft-player-scene",
+          "name": "controller_navigation",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\tests\\controller_navigation.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "data_format_nominal",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\data_format_nominal.rs"
+        }
+      ],
+      "targetCount": 2
+    },
+    {
+      "ordinal": 11,
+      "targets": [
+        {
+          "package": "arcweft-lsp",
+          "name": "dependency_direction",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-lsp\\tests\\dependency_direction.rs"
+        },
+        {
+          "package": "arcweft-project-loader",
+          "name": "dependency_direction",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-project-loader\\tests\\dependency_direction.rs"
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "name": "dependency_direction",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-host\\tests\\dependency_direction.rs"
+        },
+        {
+          "package": "arcweft-agent-mcp",
+          "name": "descriptor_invariants",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-mcp\\tests\\descriptor_invariants.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 12,
+      "targets": [
+        {
+          "package": "arcweft-compiler",
+          "name": "diagnostic_ownership",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\diagnostic_ownership.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "dialogue_profile_admission",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\dialogue_profile_admission.rs"
+        },
+        {
+          "package": "arcweft-player-scene",
+          "name": "dialogue_view",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\tests\\dialogue_view.rs"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "name": "dialogue_view_store",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-driver\\tests\\dialogue_view_store.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 13,
+      "targets": [
+        {
+          "package": "arcweft-core",
+          "name": "direct_suspension",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\direct_suspension.rs"
+        },
+        {
+          "package": "arcweft-text-layout",
+          "name": "document_layout",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-text-layout\\tests\\document_layout.rs"
+        },
+        {
+          "package": "arcweft-cli",
+          "name": "environment_callable_tensor",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\environment_callable_tensor.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "evaluated_effects",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\evaluated_effects.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 14,
+      "targets": [
+        {
+          "package": "arcweft-compiler",
+          "name": "flow_effects",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\flow_effects.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "flow_include",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\flow_include.rs"
+        },
+        {
+          "package": "arcweft-render-text",
+          "name": "frame_resolution",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-text\\tests\\frame_resolution.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "generic_continuation_snapshot",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\generic_continuation_snapshot.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 15,
+      "targets": [
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "geometry",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\geometry.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "geometry_contract",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\geometry_contract.rs"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "geometry_runtime_control_styles",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\geometry_runtime_control_styles.rs"
+        },
+        {
+          "package": "arcweft-resource-model",
+          "name": "identity_contract",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-resource-model\\tests\\identity_contract.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 16,
+      "targets": [
+        {
+          "package": "arcweft-bundle",
+          "name": "ime_player_rendered",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\ime_player_rendered.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "inline_failure_policy",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\inline_failure_policy.rs"
+        },
+        {
+          "package": "arcweft-player-web",
+          "name": "input",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-web\\tests\\input.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "interaction_routing",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\interaction_routing.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 17,
+      "targets": [
+        {
+          "package": "arcweft-player-web",
+          "name": "interaction_visual_state",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-web\\tests\\interaction_visual_state.rs"
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "name": "iterator_witness_awbc",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-plan\\tests\\iterator_witness_awbc.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "iterator_witness_source",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\iterator_witness_source.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "local_declaration_source",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\local_declaration_source.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 18,
+      "targets": [
+        {
+          "package": "arcweft-bundle",
+          "name": "locale_catalog_resource_codec",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\locale_catalog_resource_codec.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "logical_axes",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\logical_axes.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "logical_axis_cascade",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\logical_axis_cascade.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "logical_axis_host_seed",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\logical_axis_host_seed.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 19,
+      "targets": [
+        {
+          "package": "arcweft-view",
+          "name": "logical_axis_provider",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\logical_axis_provider.rs"
+        },
+        {
+          "package": "arcweft-launch",
+          "name": "maintained_manifests",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-launch\\tests\\maintained_manifests.rs"
+        },
+        {
+          "package": "arcweft-resource-manifest",
+          "name": "manifest_contract",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-resource-manifest\\tests\\manifest_contract.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "motion_transitions",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\motion_transitions.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 20,
+      "targets": [
+        {
+          "package": "arcweft-compiler",
+          "name": "named_scopes",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\named_scopes.rs"
+        },
+        {
+          "package": "arcweft-cli",
+          "name": "native_host_contracts",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\native_host_contracts.rs"
+        },
+        {
+          "package": "arcweft-adapter-desktop",
+          "name": "native_integration",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-adapter-desktop\\tests\\native_integration.rs"
+        },
+        {
+          "package": "arcweft-cli",
+          "name": "native_style_parity_sample",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\native_style_parity_sample.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 21,
+      "targets": [
+        {
+          "package": "arcweft-core",
+          "name": "nominal_schema_admission",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\nominal_schema_admission.rs"
+        },
+        {
+          "package": "arcweft-player-web",
+          "name": "parity",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-web\\tests\\parity.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "parser_diagnostic",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\parser_diagnostic.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "patch_schema",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\patch_schema.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 22,
+      "targets": [
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "prepared_text",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\prepared_text.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "product_awbc_only",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\product_awbc_only.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "product_catalog_resource_codecs",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\product_catalog_resource_codecs.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "project_cache_transaction",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\project_cache_transaction.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 23,
+      "targets": [
+        {
+          "package": "arcweft-compiler",
+          "name": "project_function_instances",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\project_function_instances.rs"
+        }
+      ],
+      "targetCount": 1
+    },
+    {
+      "ordinal": 24,
+      "targets": [
+        {
+          "package": "arcweft-lsp",
+          "name": "public_api",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-lsp\\tests\\public_api.rs"
+        },
+        {
+          "package": "arcweft-project-loader",
+          "name": "public_api",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-project-loader\\tests\\public_api.rs"
+        },
+        {
+          "package": "arcweft-save",
+          "name": "public_api",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-save\\tests\\public_api.rs"
+        },
+        {
+          "package": "arcweft-tooling",
+          "name": "public_api",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-tooling\\tests\\public_api.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 25,
+      "targets": [
+        {
+          "package": "arcweft-resource-manifest",
+          "name": "publication_contract",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-resource-manifest\\tests\\publication_contract.rs"
+        },
+        {
+          "package": "arcweft-core",
+          "name": "record_admission",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\record_admission.rs"
+        },
+        {
+          "package": "arcweft-core",
+          "name": "record_field_names",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\record_field_names.rs"
+        },
+        {
+          "package": "arcweft-resource-model",
+          "name": "registry_contract",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-resource-model\\tests\\registry_contract.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 26,
+      "targets": [
+        {
+          "package": "arcweft-project-loader",
+          "name": "release_trust_e2e",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-project-loader\\tests\\release_trust_e2e.rs"
+        },
+        {
+          "package": "arcweft-cli",
+          "name": "release_trust_json",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\release_trust_json.rs"
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "name": "repl_cell",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\tests\\repl_cell.rs"
+        }
+      ],
+      "targetCount": 3
+    },
+    {
+      "ordinal": 27,
+      "targets": [
+        {
+          "package": "arcweft-agent-mcp",
+          "name": "repl_command",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-mcp\\tests\\repl_command.rs"
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "name": "repl_command",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\tests\\repl_command.rs"
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "name": "repl_task_adapter",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\tests\\repl_task_adapter.rs"
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "name": "repl_tiering",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\tests\\repl_tiering.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 28,
+      "targets": [
+        {
+          "package": "arcweft-agent-repl",
+          "name": "repl_trace",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\tests\\repl_trace.rs"
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "name": "repl_transaction",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\tests\\repl_transaction.rs"
+        },
+        {
+          "package": "arcweft-player-web",
+          "name": "report",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-web\\tests\\report.rs"
+        },
+        {
+          "package": "arcweft-render-text",
+          "name": "resolved_document",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-text\\tests\\resolved_document.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 29,
+      "targets": [
+        {
+          "package": "arcweft-bundle",
+          "name": "resource_codec_common",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\resource_codec_common.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "resource_type_manifest_section",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\resource_type_manifest_section.rs"
+        },
+        {
+          "package": "arcweft-player-scene",
+          "name": "responsive_stage_placement",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\tests\\responsive_stage_placement.rs"
+        },
+        {
+          "package": "arcweft-resource-model",
+          "name": "retained_identity_contract",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-resource-model\\tests\\retained_identity_contract.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 30,
+      "targets": [
+        {
+          "package": "arcweft-dialogue",
+          "name": "rich_text_schema",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-dialogue\\tests\\rich_text_schema.rs"
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "name": "runtime_assertion_diagnostic",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\tests\\runtime_assertion_diagnostic.rs"
+        },
+        {
+          "package": "arcweft-tooling",
+          "name": "runtime_assertion_diagnostic",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-tooling\\tests\\runtime_assertion_diagnostic.rs"
+        }
+      ],
+      "targetCount": 3
+    },
+    {
+      "ordinal": 31,
+      "targets": [
+        {
+          "package": "arcweft-core",
+          "name": "runtime_assertion_identity",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\runtime_assertion_identity.rs"
+        },
+        {
+          "package": "arcweft-save",
+          "name": "runtime_assertion_identity",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-save\\tests\\runtime_assertion_identity.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "runtime_color",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\runtime_color.rs"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "runtime_control_backdrop_gpu_smoke",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\runtime_control_backdrop_gpu_smoke.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 32,
+      "targets": [
+        {
+          "package": "arcweft-player-scene",
+          "name": "runtime_control_style_lowering",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\tests\\runtime_control_style_lowering.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "runtime_control_style_resolution",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\runtime_control_style_resolution.rs"
+        },
+        {
+          "package": "arcweft-core",
+          "name": "runtime_id_boundaries",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\runtime_id_boundaries.rs"
+        },
+        {
+          "package": "arcweft-cli",
+          "name": "runtime_native_options",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\runtime_native_options.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 33,
+      "targets": [
+        {
+          "package": "arcweft-bundle",
+          "name": "runtime_resource_codecs",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\runtime_resource_codecs.rs"
+        },
+        {
+          "package": "arcweft-player-scene",
+          "name": "runtime_text_controls",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\tests\\runtime_text_controls.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "scope_propagation",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\scope_propagation.rs"
+        },
+        {
+          "package": "arcweft-player-scene",
+          "name": "scroll_regions",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\tests\\scroll_regions.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 34,
+      "targets": [
+        {
+          "package": "arcweft-cli",
+          "name": "seq04_8_4_persistent_cache_build_cli_goldens",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\seq04_8_4_persistent_cache_build_cli_goldens.rs"
+        },
+        {
+          "package": "arcweft-glyphon",
+          "name": "shared_text_layout",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-glyphon\\tests\\shared_text_layout.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "source_map",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\source_map.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "standard_dialogue_view",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\standard_dialogue_view.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 35,
+      "targets": [
+        {
+          "package": "arcweft-save",
+          "name": "strict_decode",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-save\\tests\\strict_decode.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "style_cross_section_refs",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\style_cross_section_refs.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "style_environment",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\style_environment.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "style_metadata",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\style_metadata.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 36,
+      "targets": [
+        {
+          "package": "arcweft-view",
+          "name": "style_sheet",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\style_sheet.rs"
+        },
+        {
+          "package": "arcweft-core",
+          "name": "task_admission",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\task_admission.rs"
+        },
+        {
+          "package": "arcweft-core",
+          "name": "task_plan_view_prefix",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-core\\tests\\task_plan_view_prefix.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "try_pipe",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\try_pipe.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 37,
+      "targets": [
+        {
+          "package": "arcweft-save",
+          "name": "typed_json_preflight",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-save\\tests\\typed_json_preflight.rs"
+        },
+        {
+          "package": "arcweft-resource-model",
+          "name": "value_contract",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-resource-model\\tests\\value_contract.rs"
+        },
+        {
+          "package": "arcweft-text-layout",
+          "name": "vertical_break_quality",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-text-layout\\tests\\vertical_break_quality.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "view_action_button_resources",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\view_action_button_resources.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 38,
+      "targets": [
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_blend_hsl_modes",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_blend_hsl_modes.rs"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_box_shadow_exact_png_golden",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_box_shadow_exact_png_golden.rs"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_box_shadow_gpu_smoke",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_box_shadow_gpu_smoke.rs"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_box_shadow_plan",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_box_shadow_plan.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 39,
+      "targets": [
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_clip_mask_render_closure",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_clip_mask_render_closure.rs"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_compositor_gpu_smoke",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_compositor_gpu_smoke.rs"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_compositor_gpu_smoke_seq06_13c",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_compositor_gpu_smoke_seq06_13c.rs"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_compositor_gpu_smoke_timestamps",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_compositor_gpu_smoke_timestamps.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 40,
+      "targets": [
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_compositor_plan",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_compositor_plan.rs"
+        },
+        {
+          "package": "arcweft-tooling",
+          "name": "view_export_part",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-tooling\\tests\\view_export_part.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "view_focus_navigation_resources",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\view_focus_navigation_resources.rs"
+        },
+        {
+          "package": "arcweft-player-scene",
+          "name": "view_geometry_transaction",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\tests\\view_geometry_transaction.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 41,
+      "targets": [
+        {
+          "package": "arcweft-runtime-host",
+          "name": "view_interaction_dispatch",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-host\\tests\\view_interaction_dispatch.rs"
+        },
+        {
+          "package": "arcweft-compiler",
+          "name": "view_product",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\tests\\view_product.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "view_product_validation",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\view_product_validation.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "view_resource_codecs",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\view_resource_codecs.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 42,
+      "targets": [
+        {
+          "package": "arcweft-runtime-driver",
+          "name": "view_runtime",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-driver\\tests\\view_runtime.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "view_runtime_text_controls",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\view_runtime_text_controls.rs"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "name": "view_scene_player_path",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-render-wgpu\\tests\\view_scene_player_path.rs"
+        },
+        {
+          "package": "arcweft-bundle",
+          "name": "view_style_environment_codec",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\view_style_environment_codec.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 43,
+      "targets": [
+        {
+          "package": "arcweft-bundle",
+          "name": "view_style_program",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-bundle\\tests\\view_style_program.rs"
+        },
+        {
+          "package": "arcweft-view",
+          "name": "virtualization",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-view\\tests\\virtualization.rs"
+        },
+        {
+          "package": "arcweft-player-web",
+          "name": "web_text_input_glue",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-web\\tests\\web_text_input_glue.rs"
+        },
+        {
+          "package": "arcweft-player-native",
+          "name": "windowed_ingress_runtime",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-native\\tests\\windowed_ingress_runtime.rs"
+        }
+      ],
+      "targetCount": 4
+    },
+    {
+      "ordinal": 44,
+      "targets": [
+        {
+          "package": "arcweft-player-native",
+          "name": "windowed_live_patch_smoke",
+          "kind": [
+            "test"
+          ],
+          "test": true,
+          "doctest": false,
+          "src_path": "D:\\git\\arcweft\\crates\\arcweft-player-native\\tests\\windowed_live_patch_smoke.rs"
+        }
+      ],
+      "targetCount": 1
+    }
+  ],
+  "scope": "integration and bin targets only; same 53 package feature roots; no Cargo jobs/profile or test execution conditions changed"
+}
