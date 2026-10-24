@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "name": "task-final-r2763-await-many-native-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "--all-features",
+    "--locked",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "-E",
+    "test(await_many) | test(fanout) | test(template_source) | test(template_producer)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2763-await-many-native-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T10:00:24.0430952Z",
+  "finishedAt": "2026-10-24T10:02:33.6925275Z"
+}

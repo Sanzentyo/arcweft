@@ -11,6 +11,8 @@ use crate::line_task::{
     cancel_live_line_task_group, finalize_live_line_task_close, finish_live_line_task_group,
     progress_live_line_task_group,
 };
+use crate::plan::RuntimeTaskPlanSealLimits;
+use crate::plan::task_source::RuntimeTaskSourceProgram;
 use crate::pure::RuntimeCallBackend;
 use crate::step::RuntimeDiagnosticCategory;
 use crate::task::{
@@ -18,10 +20,13 @@ use crate::task::{
     FileWriteBytesRequest, FileWriteTextRequest, HostTaskRequest, HostTaskRequestTemplate,
     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
     NeedProducerTaskDisposition, ProcessRunRequest, RuntimeHostArgumentTemplate,
-    RuntimeNeedProducerState, RuntimeNeedPublication, ShaderRequest, SystemInfoKind,
-    SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
+    RuntimeNeedProducerState, RuntimeNeedPublication, RuntimeTaskTemplateArguments, ShaderRequest,
+    SystemInfoKind, SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
 };
-use crate::value::{DenseSeq, RuntimeFieldValue, RuntimeVirtualPath};
+use crate::value::{
+    DenseSeq, RuntimeFieldValue, RuntimeRetainedValueAdmission, RuntimeValueSource,
+    RuntimeVirtualPath,
+};
 use arcweft_need::Need;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -1152,50 +1157,83 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let items = match self.evaluate_expr_with_backend(&target.source, pure_backend) {
-            Ok(value) => match runtime_value_into_sequence_values(value) {
-                Ok(items) => items,
-                Err(value) => {
-                    self.fail_eval(
-                        RuntimeEvalError::ExpectedBracketSeq(super::runtime_value_label(&value)),
-                        output,
-                    );
-                    return;
-                }
-            },
+        let source_value = match self.evaluate_expr_with_backend(&target.source, pure_backend) {
+            Ok(value) => value,
             Err(error) => {
                 self.fail_eval(error, output);
                 return;
             }
         };
-        if u32::try_from(items.len()).is_err() || target.limit == 0 {
-            self.fail_eval(
-                "AwaitMany source/limit exceeds its checked u32 domain",
-                output,
-            );
-            return;
-        }
-        let captured = target
-            .captures()
-            .map(|local| {
-                let value = self
-                    .fiber
-                    .frame
-                    .env
-                    .get(local)
-                    .ok_or_else(|| "AwaitMany capture is unavailable".to_owned())?;
-                if !value.ownership().permits_copy() {
-                    return Err(
-                        "AwaitMany host request capture requires its checked Copy input".to_owned(),
-                    );
-                }
-                Ok(value.clone())
-            })
-            .collect::<Result<Vec<_>, String>>();
-        let captured = match captured {
-            Ok(captured) => captured,
+        let program = RuntimeTaskSourceProgram::native(Arc::clone(&self.plan));
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            program.program_owner(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let limits = RuntimeTaskPlanSealLimits::default();
+        let prepared = (|| {
+            let mut meter = admission
+                .task_source_meter(limits)
+                .map_err(|error| error.to_string())?;
+            let source = program
+                .original()
+                .task_source(&target.base.definition.plan, limits, &mut meter)
+                .map_err(|error| error.to_string())?;
+            admission
+                .validate_metadata_collection(target.base.request.captures().len())
+                .map_err(|error| error.to_string())?;
+            admission
+                .validate_metadata_collection(target.child.request.captures().len())
+                .map_err(|error| error.to_string())?;
+            let mut values = Vec::new();
+            target.try_visit_captures(|local| {
+                admission
+                    .validate_metadata_collection(
+                        values
+                            .len()
+                            .checked_add(1)
+                            .ok_or("AwaitMany capture count overflow")?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                values.push(
+                    self.fiber
+                        .frame
+                        .env
+                        .get(local)
+                        .ok_or("AwaitMany capture is unavailable")?,
+                );
+                Ok::<_, String>(())
+            })?;
+            let checked = source
+                .template_producer_spec(
+                    &program,
+                    RuntimeTaskTemplateArguments::AwaitManyBase {
+                        captures: &values,
+                        source: RuntimeValueSource::Live(&source_value),
+                    },
+                    self.fiber.frame.env.function_instantiation(),
+                    &mut admission,
+                )
+                .map_err(|error| error.to_string())?;
+            admission
+                .validate_metadata_string(&target.base.definition.debug_label)
+                .map_err(|error| error.to_string())?;
+            let captured = values.into_iter().cloned().collect::<Vec<_>>();
+            Ok::<_, String>((source, checked, captured))
+        })();
+        let (source, checked, captured) = match prepared {
+            Ok(prepared) => prepared,
             Err(error) => {
                 self.fail_eval(error, output);
+                return;
+            }
+        };
+        let items = match runtime_value_into_sequence_values(source_value) {
+            Ok(items) => items,
+            Err(value) => {
+                self.fail_eval(
+                    RuntimeEvalError::ExpectedBracketSeq(super::runtime_value_label(&value)),
+                    output,
+                );
                 return;
             }
         };
@@ -1207,19 +1245,14 @@ impl Engine {
                     return;
                 }
             };
-        let spec = match target.instantiate_base(
-            self.generation,
-            &captured,
-            &items,
-            request,
-            16 * 1024 * 1024,
-        ) {
-            Ok(spec) => spec,
-            Err(error) => {
-                self.fail_eval(error, output);
-                return;
-            }
-        };
+        let spec =
+            match source.template_task_spec(&checked, self.generation, request, &mut admission) {
+                Ok(spec) => spec,
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            };
         let submission = match self.need_producers.ensure_task(spec.clone()) {
             Ok(submission) => submission,
             Err(error) => {
@@ -1458,6 +1491,44 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<TaskSpec> {
+        let program = RuntimeTaskSourceProgram::native(Arc::clone(&self.plan));
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            program.program_owner(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let prepared = (|| {
+            let limits = RuntimeTaskPlanSealLimits::default();
+            let mut meter = admission
+                .task_source_meter(limits)
+                .map_err(|error| error.to_string())?;
+            let source = program
+                .original()
+                .task_source(&target.child.definition.plan, limits, &mut meter)
+                .map_err(|error| error.to_string())?;
+            let checked = source
+                .template_producer_spec(
+                    &program,
+                    RuntimeTaskTemplateArguments::AwaitManyChild {
+                        captures: captured,
+                        index: u32::try_from(index).map_err(|error| error.to_string())?,
+                        item: RuntimeValueSource::Live(item),
+                    },
+                    self.fiber.frame.env.function_instantiation(),
+                    &mut admission,
+                )
+                .map_err(|error| error.to_string())?;
+            admission
+                .validate_metadata_string(&target.child.definition.debug_label)
+                .map_err(|error| error.to_string())?;
+            Ok::<_, String>((source, checked))
+        })();
+        let (source, checked) = match prepared {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return None;
+            }
+        };
         let bindings = target
             .captures()
             .zip(captured)
@@ -1478,21 +1549,7 @@ impl Engine {
                 return None;
             }
         };
-        let index = match u32::try_from(index) {
-            Ok(index) => index,
-            Err(error) => {
-                self.fail_eval(error, output);
-                return None;
-            }
-        };
-        match target.instantiate_child(
-            self.generation,
-            captured,
-            index,
-            item,
-            request,
-            16 * 1024 * 1024,
-        ) {
+        match source.template_task_spec(&checked, self.generation, request, &mut admission) {
             Ok(spec) => Some(spec),
             Err(error) => {
                 self.fail_eval(error, output);

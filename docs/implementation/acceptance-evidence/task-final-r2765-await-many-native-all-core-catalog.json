@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "name": "task-final-r2765-await-many-native-all-core-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "--all-features",
+    "--locked",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2765-await-many-native-all-core-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T10:06:37.4917356Z",
+  "finishedAt": "2026-10-24T10:07:42.6558892Z"
+}

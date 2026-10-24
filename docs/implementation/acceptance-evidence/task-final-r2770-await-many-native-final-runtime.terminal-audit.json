@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "run": "task-final-r2770-await-many-native-final-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  24.039s] 1977 tests run: 1977 passed, 0 skipped",
+  "executed": 1977,
+  "passed": 1977,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 5883,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T10:22:48.4664539Z"
+}

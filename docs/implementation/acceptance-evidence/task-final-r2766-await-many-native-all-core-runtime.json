@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "name": "task-final-r2766-await-many-native-all-core-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--all-features",
+    "--locked",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--no-fail-fast",
+    "--status-level",
+    "none",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2766-await-many-native-all-core-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T10:08:48.6519015Z",
+  "finishedAt": "2026-10-24T10:09:14.9502960Z"
+}

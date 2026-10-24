@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2769-await-many-native-final-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79366144,
+      "nonTest": false,
+      "sha256": "eabe707e743d787907e35fbe329650f6d658c22f8bea501addb462dbca0b21ba"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T10:20:42.2732231Z"
+}

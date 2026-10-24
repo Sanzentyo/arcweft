@@ -35,6 +35,8 @@ pub(crate) enum RuntimeTaskProducerSourceError {
     Request(#[from] crate::task::NeedProducerRequestError),
     #[error(transparent)]
     Identity(#[from] crate::task::TaskIdentityError),
+    #[error(transparent)]
+    Task(#[from] crate::task::TaskEnsureError),
     #[error("stored task specification differs from its admitted original producer")]
     Specification,
 }

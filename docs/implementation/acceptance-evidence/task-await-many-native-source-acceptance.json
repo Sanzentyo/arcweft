@@ -1,0 +1,272 @@
+{
+  "version": 1,
+  "base": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "at": "2026-10-24T10:34:05.4584156Z",
+  "scope": "Native AwaitMany original-Source operand admission and original template scheduling metadata; AWBC launch/restore cutover and reverse53 runtime remain unverified",
+  "finalCore": {
+    "run": "task-final-r2770-await-many-native-final-runtime",
+    "executed": 1977,
+    "failed": 0,
+    "ignored": 0,
+    "passed": 1977
+  },
+  "gates": [
+    "task-final-r2771-await-many-native-final-clippy",
+    "task-final-r2772-await-many-native-final-workspace-check"
+  ],
+  "warningsPresent": true,
+  "changedLineClippyWarnings": 0,
+  "graph": "task-await-many-native-final.graph.json",
+  "reversePackages": 53,
+  "manifestInputs": 99,
+  "manifestDrift": 0,
+  "code": [
+    {
+      "path": "crates/arcweft-core/src/engine/suspend.rs",
+      "bytes": 85063,
+      "sha256": "75fb76ed9656e1caad411a0d7ac96bd3448a0bf805b4485e921502c6d66eb4c4"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "bytes": 39857,
+      "sha256": "3838633d838e485d2a11bc2b0af543d99ae8a66393334fbfc5c0df232d6964c3"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer/source.rs",
+      "bytes": 15029,
+      "sha256": "b3a4896bedb5590d0717be565d1764fe0f963e6adb97ba9374606849b4f42256"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer/source/template.rs",
+      "bytes": 14518,
+      "sha256": "1ea5fe952290caa8b3b959336c255dbb6b44099cc57cf26383848edb45480687"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/template.rs",
+      "bytes": 6320,
+      "sha256": "41a7efb7af723e320511e527afd4c1eb7ec589bf0e8f1cb1b8dffa0abc48f88f"
+    }
+  ],
+  "sourceInputs": 5883,
+  "sourceDriftBeforeEvidencePublication": 0,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79366144,
+      "sha256": "eabe707e743d787907e35fbe329650f6d658c22f8bea501addb462dbca0b21ba",
+      "unchanged": true
+    }
+  ],
+  "artifactCopyMove": false,
+  "held": 14,
+  "rawFiles": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2763-await-many-native-catalog.json",
+      "bytes": 666,
+      "sha256": "419f9f4fe6c507f80fd5f31853b206d7751af5450457604a5154302425927471",
+      "gitBlob": "7fe266002854e7120584c1d4e420f4c3fdfddab4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2763-await-many-native-catalog.log",
+      "bytes": 413144,
+      "sha256": "507146f2c2adcb0488abcf62351c5610de8df1f3eaf87963984eed5db373a779",
+      "gitBlob": "ca17b09e39b100bfc7727e672e4f50091bd2853d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2763-await-many-native-catalog.inventory.json",
+      "bytes": 502457,
+      "sha256": "216cbeed9b6950b04b087e29ffddbd2b5688ae1cfebb54cd63a2ffb96e3caf78",
+      "gitBlob": "94e36e374946af4c30845325618c56792f01071a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2764-await-many-native-runtime.json",
+      "bytes": 650,
+      "sha256": "12bb628598552a1b64fcdb60b394ac1883f49ff244891608af16f20eeb9412bc",
+      "gitBlob": "67bad9bc548ca04fe6927c02d1da2e796d43e880"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2764-await-many-native-runtime.log",
+      "bytes": 31069,
+      "sha256": "67956409bd14db941531971607f7310d712db8917bf18b2cc84fccf15075cd3f",
+      "gitBlob": "609b124173677637beb5385c5fa3e5f276d4d10e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2764-await-many-native-runtime.terminal-audit.json",
+      "bytes": 571,
+      "sha256": "5da1e0d0df6d771134764904f31c08ffa93a9830dc98a8bfc70baa92cfd6d5c4",
+      "gitBlob": "2deb78681579b16a888297babd38ff0042f6f574"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2764-await-many-native-runtime.pins.json",
+      "bytes": 477,
+      "sha256": "3777b4c4f5e742b3d958b69ec233e82acffb8b21b508d4fcb7ab004bf8bbcd43",
+      "gitBlob": "ca912091d7bc6e5fc03cb6e3012928bceee9bcb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2765-await-many-native-all-core-catalog.json",
+      "bytes": 583,
+      "sha256": "ec21b5517d163c930d0c829187b561669755b9369418a6becd255cccf64c4f51",
+      "gitBlob": "1d8ed8da597607ef0f9a826cb7308b46788ec3e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2765-await-many-native-all-core-catalog.log",
+      "bytes": 368208,
+      "sha256": "22799d5c972a81f5185dea4bece9685a5cb7f99728ab84e19b621bfe3173100f",
+      "gitBlob": "6ed44c83c87b8cb4cf722ac4bb5e62df550c15fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2765-await-many-native-all-core-catalog.inventory.json",
+      "bytes": 500775,
+      "sha256": "a2433bddda03635f35d6bbbb5e9e849cb53e81024515844f35acfca12cbeca8a",
+      "gitBlob": "c1c95f9c13d6f2ff466f4a4c7d45322f085e7151"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2766-await-many-native-all-core-runtime.json",
+      "bytes": 644,
+      "sha256": "57f2ca679ba2d782729969c37d79b7f4b5530fbd50c5949e6315e205d6bf56a7",
+      "gitBlob": "32fd6256d3eb3bd09b7c5be89a40c533be8028b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2766-await-many-native-all-core-runtime.log",
+      "bytes": 329772,
+      "sha256": "39f596d8c5c0174fdf681d14de3f91bc68b20434174914d4ec182a1aac3bfe56",
+      "gitBlob": "1d9db6bc974167dc9222a88a5e891c246bc90d18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2766-await-many-native-all-core-runtime.terminal-audit.json",
+      "bytes": 582,
+      "sha256": "dfbf29ae69c52ed0193d419d24b4d8ec1e2a1ad442942353ff27553514f1b911",
+      "gitBlob": "8d51637324dd205170d38364455c28b0734aa12f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2766-await-many-native-all-core-runtime.pins.json",
+      "bytes": 486,
+      "sha256": "a10f03c6e5814b9500a27787ccbfdf557216ed1b4ad13a80c0c2616a015bbd77",
+      "gitBlob": "f97005ebf4d2c9680cf7f7f94c2ffb1c76949070"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2767-await-many-native-workspace-check.json",
+      "bytes": 524,
+      "sha256": "e27c2144f903a730218e61877a2ad2b2c40ccd22920b0aa9262e73132341dc29",
+      "gitBlob": "62b2c5c5adfa6c01431ce01ecc55905b43c63c3c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2767-await-many-native-workspace-check.log",
+      "bytes": 101100,
+      "sha256": "9b3b5341caa9991bcd8d838b068e0525c616a9d1bedc3254c7ba267c03291d41",
+      "gitBlob": "e47c3c769bbc8d95f876f49bb619dc777bf446ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2768-await-many-native-core-clippy.json",
+      "bytes": 529,
+      "sha256": "8f5e3968e08e0f54a345bfaf0d38e84cfb1f4af5c2ee66296a263c62b6058b43",
+      "gitBlob": "a640eb5e99cc7fcac36c397079d208d9f5178f39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2768-await-many-native-core-clippy.log",
+      "bytes": 2758591,
+      "sha256": "77f23f90001cccb4a84a36743f454c07837c1c3cbef3a6ab1e3df7716d12cfde",
+      "gitBlob": "383f7a5d4d49b37dddbdad49abdee69beee51c8c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2769-await-many-native-final-catalog.json",
+      "bytes": 577,
+      "sha256": "2150055d6aa94224119165563634c35eda554c3207d1bf168b7562895ed23b00",
+      "gitBlob": "e5a96944b01cd692b3c107f9b9c92949766b3672"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2769-await-many-native-final-catalog.log",
+      "bytes": 368208,
+      "sha256": "ba4e25a70a23af2c3eacc140b54393c40ee50d1d4677d1d5203de0c0867db800",
+      "gitBlob": "b543777f064ebe7c54875e44fc017ce00b44befc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2769-await-many-native-final-catalog.inventory.json",
+      "bytes": 500772,
+      "sha256": "4ce9de3b5e95451b06f6ae7d0c4b92df476d97a27ce9355bb005437972f29f66",
+      "gitBlob": "f9ab7b1740d6f90f2c77596d3cdb9a434fd209a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2770-await-many-native-final-runtime.json",
+      "bytes": 638,
+      "sha256": "e146ff6290821308f3db1709a289a12a8e05de1aefe1138b804b1299c3e3c37f",
+      "gitBlob": "719eb790d3d67e52b20762108037125888ffd113"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2770-await-many-native-final-runtime.log",
+      "bytes": 329772,
+      "sha256": "ba674395073058f72b3c6ae3eb010cfe1b18a85c5366b0200b51262e0f17f66c",
+      "gitBlob": "9a90d3b807e39c21471d6d1b3e46933fdf5c1f7f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2770-await-many-native-final-runtime.terminal-audit.json",
+      "bytes": 579,
+      "sha256": "f7dd6c0fd422c03f4b319d4deea2d68821434a47fcb44f8db1f3e16cbecd141b",
+      "gitBlob": "b6dba2d2edbbf0c6bb19bf95cce4c8e0758b970e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2770-await-many-native-final-runtime.pins.json",
+      "bytes": 483,
+      "sha256": "cd417f66fba8b8488c9ed2060a3a61f9dd65cb89b4a4a5f39f67cfd66adfb400",
+      "gitBlob": "618d0934e244aa237c73e8ad511c9b56cb5af09b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2771-await-many-native-final-clippy.json",
+      "bytes": 531,
+      "sha256": "8632154fa31618e1d47bc39895b87252bafe927674feb2d859ef10d77949863e",
+      "gitBlob": "70fbbdb63f949cdf383f2a1985bd6df221ca4fdb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2771-await-many-native-final-clippy.log",
+      "bytes": 2758591,
+      "sha256": "7e8fd28e44e1b459606325fbfc149e74371f0de43d8607ca18aad32e639f9580",
+      "gitBlob": "26a4c232a886c33f1b39292c716a0238e93f0190"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2772-await-many-native-final-workspace-check.json",
+      "bytes": 536,
+      "sha256": "1dc3592771cb2efb78e9b62ee4f1346c6a877d4a072f1390f36181b8ac0c5c99",
+      "gitBlob": "789b21841458b3dd617f46a78bd301c648ef330a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2772-await-many-native-final-workspace-check.log",
+      "bytes": 96815,
+      "sha256": "de59b406795a31eb1697d6792ff549385130387523cba98ef804f337774276df",
+      "gitBlob": "a99b7d740062c420a60ba74a339b2181ecc8c553"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-native-source.source-freeze.json",
+      "bytes": 1220903,
+      "sha256": "f07de99408352bd43d3b883782d48ebbfeaa4094865a906ee54054937b4d69af",
+      "gitBlob": "d492b27100281b3b3e17ca27fb8b5fef9fb36466"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-native-source-tests.source-freeze.json",
+      "bytes": 1220970,
+      "sha256": "03914611b51f7a16ebdc239101b559addd9a7462f66e1e5cc0e337f9dc628820",
+      "gitBlob": "5a283c985d5912310d615d03cf3d51363b4177a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-native-final.source-freeze.json",
+      "bytes": 1220970,
+      "sha256": "d0267dd22ff84eec91ca47a2409d437aa430b1f7521f612250615fa217b6bf96",
+      "gitBlob": "2ca99633fde5066e677360162a1813641e635cbe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-native-final.graph.json",
+      "bytes": 3029,
+      "sha256": "27e63668a2aa91974fb2d17871373762c95d7d20180cc3df7286c65c28b20de3",
+      "gitBlob": "43cd2cc0d5691698243caae4cc584024f9c20d0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-documentation-final-checkpoint.verified.json",
+      "bytes": 3056,
+      "sha256": "ca05ada13dba38eb0c354135fa319736d684ab0c1e9c9a2ccce73e770a5fa8f9",
+      "gitBlob": "92f0e40957c9b8548a02ba8fb05490ec403aaa6c"
+    }
+  ],
+  "rawBytes": 12737258.0,
+  "genericAcceptance": "Existing accepted/published Generic Match remains accepted; current151 suite was not rerun by this Native-only cut",
+  "priorReverseSummary": "Keep prior7254/7204PASS/50FAIL/39ignored at its pinned input; do not add the new Core case to form an unexecuted current aggregate",
+  "rawGitFilterDrift": 0
+}

@@ -145,55 +145,6 @@ impl NeedProducerTemplate {
             encoder.ordinal(capture.get().get());
         }
     }
-
-    pub fn instantiate(
-        &self,
-        generation: GenerationId,
-        arguments: &RuntimeValue,
-        request: HostTaskRequest,
-        max_encoded_bytes: usize,
-    ) -> Result<TaskSpec, NeedProducerAdmissionError> {
-        self.instantiate_view(generation, arguments.view(), request, max_encoded_bytes)
-    }
-
-    pub(crate) fn instantiate_view(
-        &self,
-        generation: GenerationId,
-        arguments: RuntimeValueView<'_>,
-        request: HostTaskRequest,
-        max_encoded_bytes: usize,
-    ) -> Result<TaskSpec, NeedProducerAdmissionError> {
-        let definition = &self.definition;
-        let plan = definition
-            .plan
-            .sealed_plan()
-            .ok_or(NeedProducerAdmissionError::UnsealedTaskPlan)?
-            .key();
-        let digest =
-            crate::entry::schema::canonical_runtime_value_view_digest(arguments, max_encoded_bytes)
-                .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;
-        let input = NeedProducerSpec::new(
-            definition.family,
-            definition.contract,
-            plan,
-            definition.producer_site,
-            definition.payload_type,
-            digest,
-        );
-        let spec = TaskSpec {
-            generation,
-            producer: NeedProducerInstance::try_from(&input)?,
-            class: definition.class.clone(),
-            priority: definition.priority,
-            cancel_scope: definition.cancel_scope.clone(),
-            policy: definition.policy,
-            outcome: self.outcome(),
-            request: request.into(),
-            debug_label: definition.debug_label.clone(),
-        };
-        spec.validate_outcome()?;
-        Ok(spec)
-    }
 }
 
 impl AwaitManyTarget {
@@ -230,50 +181,5 @@ impl AwaitManyTarget {
             .chain(self.child.request.captures())
             .copied()
             .filter(move |local| seen.insert(*local))
-    }
-
-    pub fn instantiate_base(
-        &self,
-        generation: GenerationId,
-        captured: &[RuntimeValue],
-        source: &[RuntimeValue],
-        request: HostTaskRequest,
-        max_encoded_bytes: usize,
-    ) -> Result<TaskSpec, NeedProducerAdmissionError> {
-        u32::try_from(source.len())
-            .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;
-        let fields = [
-            RuntimeValueView::Tuple(RuntimeTupleView::Values(captured)),
-            RuntimeValueView::Tuple(RuntimeTupleView::Values(source)),
-        ];
-        self.base.instantiate_view(
-            generation,
-            RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-            request,
-            max_encoded_bytes,
-        )
-    }
-
-    pub fn instantiate_child(
-        &self,
-        generation: GenerationId,
-        captured: &[RuntimeValue],
-        source_index: u32,
-        item: &RuntimeValue,
-        request: HostTaskRequest,
-        max_encoded_bytes: usize,
-    ) -> Result<TaskSpec, NeedProducerAdmissionError> {
-        let index = RuntimeValue::u32(source_index);
-        let fields = [
-            RuntimeValueView::Tuple(RuntimeTupleView::Values(captured)),
-            index.view(),
-            item.view(),
-        ];
-        self.child.instantiate_view(
-            generation,
-            RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-            request,
-            max_encoded_bytes,
-        )
     }
 }

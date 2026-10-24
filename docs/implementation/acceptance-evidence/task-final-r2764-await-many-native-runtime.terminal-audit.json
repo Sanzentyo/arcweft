@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "run": "task-final-r2764-await-many-native-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.141s] 14 tests run: 14 passed, 1962 skipped",
+  "executed": 14,
+  "passed": 14,
+  "failed": 0,
+  "skipped": 1962,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 5883,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T10:05:13.3862527Z"
+}

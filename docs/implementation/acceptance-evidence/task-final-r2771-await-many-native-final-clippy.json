@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "name": "task-final-r2771-await-many-native-final-clippy",
+  "command": [
+    "clippy",
+    "--all-features",
+    "--all-targets",
+    "--locked",
+    "-p",
+    "arcweft-core"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2771-await-many-native-final-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T10:22:48.6183806Z",
+  "finishedAt": "2026-10-24T10:23:15.5713810Z"
+}

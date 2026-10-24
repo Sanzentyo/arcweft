@@ -10414,3 +10414,33 @@ parentは `29c864bb3f42da7f5948b03682eaa875a0833089`、treeは
 削除・訂正理由は [資料整理記録](documentation-cleanup.md#現状判定の照合と重複レイヤー章の統合--2026-10-24)、
 文書差分の確認は [資料差分の照合](acceptance-evidence/task-documentation-final-audit.json) に置く。
 現在の項目判定は引き続き [現状一覧](current-status.md) だけで管理する。
+
+## Native AwaitManyの元Source接続 — 2026-10-24
+
+開始基点は `1e1a4d41cb54899f5968c72f132f15ea300e720b`、既存mainの14 tracked WIPを保持した。
+Nativeのbase／childは直接digestを組み立てる代わりに、元のTask Sourceと実際の
+capture／source／item／indexを共通admissionへ渡す。capture複製とrequest評価はその後に行う。
+Specの起動metadataは元templateから取得し、未使用になったNeedProducerTemplateおよび
+AwaitManyTargetの直接生成APIを削除した。旧16 MiBの別上限ではなく、変更していない
+共通RuntimeSchemaLimitsの既定8 MiBと、その同じwork／value bankで検査する。
+別leaseの同内容Source、別endpoint、失敗済みbankはSpecを構築せず拒否する。
+
+R2763／R2764は関連14件が全PASS。R2765／R2766は新規の元metadata・別lease拒否を
+含むCore全1,977件がPASSした。追加テストのrequest引数を元Sourceのpositional／named
+引数へ揃えた後、R2769／R2770でCore全1,977件を改めて実行し、全PASS／0 skipped。
+catalog・終端case setの差分0、5,883固定入力と実行バイナリの差分0を照合した。
+R2767／R2772 workspace全target・全feature・locked check、R2768／R2771の
+Core全target・全feature・locked Clippyも終了0。警告は保持し、最終変更行のClippy警告は0。
+公開API削除のworkspace consumerはcompile checkで確認した。Cargo manifest／lock 99入力は
+差分0で、実際の依存graphからCoreの逆依存53 packageを保持した。
+
+このcutはNative起動経路と共通Spec materializationの検証であり、53 packageのruntimeを
+再実行した結果ではない。AWBC launch／restoreの旧直接経路、全14 family、DSL traverseの
+受入を、この結果で完了扱いにしない。前回の7,254／7,204 PASS／50 FAIL／39 ignoredと
+Generic Match151件は固定された過去入力の実績として維持し、新規Core1件をそこへ足さない。
+[検証範囲・固定入力・原本整合](acceptance-evidence/task-await-many-native-source-acceptance.json)。
+
+直前の資料整理公開は `1e1a4d41cb54899f5968c72f132f15ea300e720b`、
+parent `1022a12a9d28cfba1149aa6dd8c16d2dd19b7268`、tree `fa8522f06c5c0c45697483bd399de4b3dec97249`。
+15 paths／削除2、5,883入力、元の14 tracked・6 untracked WIPと空indexを照合した。
+[公開原本](acceptance-evidence/task-documentation-final-checkpoint.verified.json)。

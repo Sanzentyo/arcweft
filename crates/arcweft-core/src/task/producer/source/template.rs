@@ -74,6 +74,46 @@ impl<'value, V: RuntimeStoredValue> RuntimeTaskTemplateArguments<'value, V> {
 }
 
 impl RuntimeTaskSourceRef<'_> {
+    /// Materializes only the original template's scheduling metadata after its
+    /// complete operand admission. An equal digest from another lease cannot
+    /// supply either the source endpoint or a caller-selected task policy.
+    pub(crate) fn template_task_spec(
+        &self,
+        checked: &NeedProducerSpec<RuntimeTaskSource>,
+        generation: crate::task::GenerationId,
+        request: crate::task::HostTaskRequest,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<crate::task::TaskSpec, RuntimeTaskProducerSourceError> {
+        admission.status()?;
+        let Some(owner) = admission.program_owner() else {
+            return Err(RuntimeTaskProducerSourceError::OriginalProgram);
+        };
+        if !checked.source().program().owns_source_for(self, owner)
+            || self.task_plan() != checked.source().task_plan()
+        {
+            return Err(RuntimeTaskProducerSourceError::OriginalProgram);
+        }
+        let Some(RuntimeBodyTaskSource::Producer(template)) = self.request_endpoint().task_source()
+        else {
+            return Err(RuntimeTaskProducerSourceError::RequestKind);
+        };
+        let definition = &template.definition;
+        admission.validate_metadata_string(&definition.debug_label)?;
+        let spec = crate::task::TaskSpec {
+            generation,
+            producer: crate::task::NeedProducerInstance::try_from(checked)?,
+            class: definition.class.clone(),
+            priority: definition.priority,
+            cancel_scope: definition.cancel_scope.clone(),
+            policy: definition.policy,
+            outcome: definition.outcome(),
+            request: request.into(),
+            debug_label: definition.debug_label.clone(),
+        };
+        spec.validate_outcome()?;
+        Ok(spec)
+    }
+
     /// Validates the complete capture grammar and actual source/item types on
     /// the caller's existing bank. Borrowed views hash the existing tuple ABI;
     /// no argument value, request definition or lease is copied before success.

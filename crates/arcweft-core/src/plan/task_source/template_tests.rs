@@ -74,6 +74,91 @@ fn input() -> RuntimeValue {
 }
 
 #[test]
+fn template_materialization_keeps_original_metadata_and_rejects_foreign_or_failed_banks() {
+    for program in [native(), compiled()] {
+        let base = source(&program, false);
+        let child = source(&program, true);
+        let captures = values();
+        let source_value = input();
+        let mut admission = bank(&program, RuntimeSchemaLimits::engine_default());
+        let checked = base
+            .template_producer_spec(
+                &program,
+                RuntimeTaskTemplateArguments::AwaitManyBase {
+                    captures: &captures,
+                    source: RuntimeValueSource::Live(&source_value),
+                },
+                None,
+                &mut admission,
+            )
+            .unwrap();
+        let request = || {
+            HostTaskRequest::custom_with_named_args(
+                "source",
+                "request",
+                [crate::value::RuntimePayload(captures[0].clone())],
+                [(
+                    "条件".into(),
+                    crate::value::RuntimePayload(captures[1].clone()),
+                )],
+            )
+        };
+        let generation = GenerationId::new(13);
+        let spec = base
+            .template_task_spec(&checked, generation, request(), &mut admission)
+            .unwrap();
+        assert_eq!(spec.generation, generation);
+        assert_eq!(
+            spec.producer,
+            NeedProducerInstance::try_from(&checked).unwrap()
+        );
+        assert_eq!(spec.class, TaskClass::Cpu);
+        assert_eq!(spec.priority, TaskPriority(-3));
+        assert_eq!(spec.cancel_scope, CancelScopeId("元scope".into()));
+        assert_eq!(spec.policy, TaskPolicy::AlwaysStart);
+        assert_eq!(spec.debug_label, "template source fixture");
+        assert_eq!(
+            spec.outcome.payload_semantic_identity().as_bytes(),
+            checked.payload_type().as_bytes()
+        );
+        assert!(matches!(
+            child.template_task_spec(&checked, generation, request(), &mut admission),
+            Err(RuntimeTaskProducerSourceError::OriginalProgram)
+        ));
+
+        let foreign = match program.program_owner() {
+            RuntimeProgramOwner::Plan(_) => native(),
+            RuntimeProgramOwner::Awbc(_) => compiled(),
+        };
+        let foreign_base = source(&foreign, false);
+        assert_eq!(base.task_plan().key(), foreign_base.task_plan().key());
+        assert!(matches!(
+            foreign_base.template_task_spec(&checked, generation, request(), &mut admission),
+            Err(RuntimeTaskProducerSourceError::OriginalProgram)
+        ));
+        assert!(matches!(
+            base.template_task_spec(
+                &checked,
+                generation,
+                request(),
+                &mut bank(&foreign, RuntimeSchemaLimits::engine_default())
+            ),
+            Err(RuntimeTaskProducerSourceError::OriginalProgram)
+        ));
+
+        let failure = admission
+            .validate_metadata_collection(usize::MAX)
+            .unwrap_err();
+        let Err(RuntimeTaskProducerSourceError::Admission(retained)) =
+            base.template_task_spec(&checked, generation, request(), &mut admission)
+        else {
+            panic!("a failed shared bank cannot construct a task specification")
+        };
+        assert_eq!(retained, failure);
+    }
+}
+
+#[test]
 fn template_sources_keep_original_keys_and_exact_nested_argument_transcripts() {
     let native = native();
     let code = compiled();

@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "commit": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "parent": "1022a12a9d28cfba1149aa6dd8c16d2dd19b7268",
+  "tree": "fa8522f06c5c0c45697483bd399de4b3dec97249",
+  "remote": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "advertised": "1e1a4d41cb54899f5968c72f132f15ea300e720b",
+  "paths": [
+    {
+      "path": "docs/00-overview/architecture.md",
+      "blob": "1acd8475ef99896eda5a7122eb52f3963877fc1d",
+      "deleted": false
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "blob": "3c959ebf82e8dc36584ae3cd3fa5ebadfb73ed2f",
+      "deleted": false
+    },
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "blob": "5116f8069709889ced5e1265a279a651b714d28e",
+      "deleted": false
+    },
+    {
+      "path": "docs/03-presentation/layers-and-input.md",
+      "blob": null,
+      "deleted": true
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "blob": "5ccf2c53cf51e35e73ee88403363672cf84dab94",
+      "deleted": false
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "blob": "9e465fbe05efebbb35bebaa14c03851a56af62d9",
+      "deleted": false
+    },
+    {
+      "path": "docs/03-presentation/render-input-layers.md",
+      "blob": null,
+      "deleted": true
+    },
+    {
+      "path": "docs/05-build-and-security/packaging.md",
+      "blob": "270d159f12d013101cf5adc66bffb2886679edab",
+      "deleted": false
+    },
+    {
+      "path": "docs/05-build-and-security/product-awfb-bytecode.md",
+      "blob": "968c408498c9a8a7aa8c163800ea2b974f2f1196",
+      "deleted": false
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-current-contract-cleanup-checkpoint.verified.json",
+      "blob": "0ad41dfc08ae7e62c39d5f9d6954482e406b46f8",
+      "deleted": false
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-documentation-final-audit.json",
+      "blob": "f4ee4a94a0676d92f23e0fda8365d94c393b018b",
+      "deleted": false
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-documentation-status-final-audit.json",
+      "blob": "74226929f2bd1b293e205fd125b7c600a00851ce",
+      "deleted": false
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "4525df731f56e801812f0a8c770c7001d41d729c",
+      "deleted": false
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "3b2cad30dca5e0599a977e4c7d268cb2a0bd1910",
+      "deleted": false
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "688694c5d36a420dadbaf66f44cbe33d35537d07",
+      "deleted": false
+    }
+  ],
+  "sourceCount": 5883,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "untrackedHeld": 6,
+  "patchSha256": "b747d4e26a6bd29928ca3c27a58ae0e40d9dbb20d8be14afd4a64bdcea49c059",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T09:49:59.2446232Z"
+}
