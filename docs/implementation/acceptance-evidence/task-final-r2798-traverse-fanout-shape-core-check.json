@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "06b4830260397da3c64ab72d79b9f76bb3072bc5",
+  "name": "task-final-r2798-traverse-fanout-shape-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2798-traverse-fanout-shape-core-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T16:37:15.8419458Z",
+  "finishedAt": "2026-10-24T16:39:02.6869874Z"
+}

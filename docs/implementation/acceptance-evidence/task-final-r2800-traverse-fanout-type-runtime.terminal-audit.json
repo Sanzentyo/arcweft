@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "06b4830260397da3c64ab72d79b9f76bb3072bc5",
+  "run": "task-final-r2800-traverse-fanout-type-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.081s] 9 tests run: 8 passed, 1 failed, 1974 skipped",
+  "executed": 9,
+  "passed": 8,
+  "failed": 1,
+  "skipped": 1974,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 6027,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::body_semantic::tests::request_endpoints::thread_and_both_await_many_endpoints_use_their_own_request_definition"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-24T16:58:50.2229834Z"
+}

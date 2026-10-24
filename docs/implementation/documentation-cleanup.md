@@ -220,3 +220,27 @@ Cargo／runtimeの新規実行は行っていない。
 変更24 pathの相対リンク201件はすべて解決し、未閉鎖fence・whitespace違反・
 40桁識別子の欠落は0。保持したtracked変更18件とuntracked 6件は、path集合と
 全24ファイルのSHA256が開始時と一致した。
+
+## 公開時の検証入力と未公開変更の区別・overviewの整理 — 2026-10-25
+
+照合基点は既存main `06b4830260397da3c64ab72d79b9f76bb3072bc5`。
+GPT-6 Luna／maxの2担当が現状一覧の根拠とoverviewを分担し、親が全差分と保全を確認した。
+現状一覧以外に現行の残作業表は見つからず、Generic Matchの受入を取り消す新規不具合も
+確認していない。公開済みの横断検証と、その後のCore未コミット変更7 pathを分けた。
+未公開変更の8 PASS／1 FAILとfixture宣言修正後の未実行を履歴・原ログへ残した。
+これは公開済みSource接続やGeneric Matchを未完了へ戻す判断ではない。
+
+`terminology.md` は所有章と重複し、Parserを含む旧定義が現行の契約と一致しないため削除した。
+overview索引からの参照も削除した。`architecture.md` の旧Typed IR VM図、公開APIのコピー、
+重複した詳細説明は、RuntimePlanとAWBC productの実行境界、および既存の所有章への案内に整理した。
+`crate-map.md` の古いworkspace分割一覧と重複device箇条書きも削除し、構成の参照先を
+Cargo manifestへ統一した。層の責務、data-formatのSans-I/O、Needの明示的待機、
+Activity snapshotのpure data、Native／HTML Viewのrouting、権限付きport、typed stream、
+generator、backpressure、privacy、cancelの要件は現行の所有契約へ残した。
+未実装であることだけを機能要件の削除理由にはしていない。
+
+今回も現状一覧を唯一の項目別一覧とし、過去の実行・失敗・full SHAは履歴に保持する。
+この整理で新しいCargo／runtime検証は実行していない。資料のリンク・fence・JSON・
+whitespace・証拠のbyte一致と、開始時のtracked変更21件／untracked 6件および
+既存のstaged 2 pathの保全を照合した。対象Markdown 9件の相対リンク390件は解決し、
+未閉鎖fence・既存の40桁識別子の欠落は0、追加したJSON 7件はparseに成功した。

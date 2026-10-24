@@ -10532,3 +10532,33 @@ doctest終端75件と5,997固定入力の差分0を照合した。75件は上記
 [資料保全](acceptance-evidence/task-await-many-awbc-reverse-evidence-integrity.json)。
 現状一覧は今回の結果へ更新し、古い集計の重複した現状説明は履歴と原本へ集約した。
 全14 familyの最終監査、Native公開save、既存CLI修復、Tier2、Native-Web画像／capture parityは別に残る。
+
+## 未公開fanout型検査の途中結果 — 2026-10-25
+
+基点は既存main `06b4830260397da3c64ab72d79b9f76bb3072bc5`。
+[前回の公開照合receipt](acceptance-evidence/task-await-many-awbc-reverse-final-checkpoint.verified.json)
+も原本のまま保持する。
+Coreの未公開変更は、元型からsequence集約とResult集約の型関係を検査するもので、
+DSLのtraverse入口やResult集約の実行まで完成した変更ではない。
+
+R2798のCore限定library／all-features／locked checkは終了0、警告あり。
+R2799はCore libraryの全1,983件から `test(fanout_output) | test(await_many)` の9件を選択した。
+R2800は同じ選択を新規実行し、9実行／8 PASS／1 FAIL、終了100。
+1,974件はfilterによる非選択で、既存ignoredや実行成功へ数えない。
+実行時の6,027入力とcatalogの差分は0で、新しい型関係テストはPASSした。
+[check receipt](acceptance-evidence/task-final-r2798-traverse-fanout-shape-core-check.json)、
+[check原ログ](acceptance-evidence/task-final-r2798-traverse-fanout-shape-core-check.log)、
+[catalog receipt](acceptance-evidence/task-final-r2799-traverse-fanout-type-catalog.json)、
+[case集合](acceptance-evidence/task-final-r2799-traverse-fanout-type-catalog.inventory.json)、
+[実行receipt](acceptance-evidence/task-final-r2800-traverse-fanout-type-runtime.json)、
+[実行原ログ](acceptance-evidence/task-final-r2800-traverse-fanout-type-runtime.log)、
+[終端と固定入力の照合](acceptance-evidence/task-final-r2800-traverse-fanout-type-runtime.terminal-audit.json)。
+
+失敗した既存ケースは
+`plan::body_semantic::tests::request_endpoints::thread_and_both_await_many_endpoints_use_their_own_request_definition`。
+fixtureのsourceは `Vec<Bool>`、子payloadはUnitなのに、集約payloadを同じ `Vec<Bool>` と
+宣言していたため、`InvalidFanoutOutput` がaggregate `[64; 32]`／child `[62; 32]` を拒否した。
+実行後にfixtureへ別の `Vec<Unit>` 型 `[65; 32]` を追加し、集約payloadの宣言だけを修正した。
+Source endpointとrequestの検査は維持した。修正後のテストはまだ再実行しておらず、
+この失敗をPASSへ置き換えない。現状一覧では公開済みのSource接続と、この未公開変更を分けた。
+Generic Matchの受入・公開と以前の151／151 PASSを変更する根拠にはしていない。

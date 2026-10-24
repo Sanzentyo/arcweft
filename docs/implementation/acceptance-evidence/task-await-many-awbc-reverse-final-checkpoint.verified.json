@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "commit": "06b4830260397da3c64ab72d79b9f76bb3072bc5",
+  "parent": "dec74c879c651705e41d23cfcf9b6b0f8dc50f71",
+  "tree": "af10a1a30d632160ad30e498f8bf2ecc11b70294",
+  "remote": "06b4830260397da3c64ab72d79b9f76bb3072bc5",
+  "advertised": "06b4830260397da3c64ab72d79b9f76bb3072bc5",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-checkpoint.verified.json",
+      "blob": "fabc0d1b7460cfd655adf0e0ddc8e420ef49748f",
+      "workingBlob": "fabc0d1b7460cfd655adf0e0ddc8e420ef49748f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-core-reuse.json",
+      "blob": "eece32f248305001cd36d1d68ed9d24bc057aec6",
+      "workingBlob": "eece32f248305001cd36d1d68ed9d24bc057aec6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json",
+      "blob": "21d0dcf980a42890cf05a70e548d24d00b820a99",
+      "workingBlob": "21d0dcf980a42890cf05a70e548d24d00b820a99"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse-coverage.json",
+      "blob": "d1633598509ba5bc28c52d2c6f23c8cca880224f",
+      "workingBlob": "d1633598509ba5bc28c52d2c6f23c8cca880224f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse-evidence-integrity.json",
+      "blob": "76cbac9cacbcb8eb96b48bf9667ff266b33e2548",
+      "workingBlob": "76cbac9cacbcb8eb96b48bf9667ff266b33e2548"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse-package-execution.json",
+      "blob": "ed72e5c9b53409143a4e58a9cdb6acdd17d468eb",
+      "workingBlob": "ed72e5c9b53409143a4e58a9cdb6acdd17d468eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse.before-run.pins.json",
+      "blob": "5db3c10411a38ef164b616e1267c6075180b1d98",
+      "workingBlob": "5db3c10411a38ef164b616e1267c6075180b1d98"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse.executable-audit.json",
+      "blob": "3206a09774dbc882190df0405e8bc458716bd2f3",
+      "workingBlob": "3206a09774dbc882190df0405e8bc458716bd2f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse.graph.json",
+      "blob": "69543d690a5cb7ef728f641aa871a64bafb1a7a8",
+      "workingBlob": "69543d690a5cb7ef728f641aa871a64bafb1a7a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse.source-freeze.json",
+      "blob": "7fe91b273617036ff5970209ead761b1d3b3ac19",
+      "workingBlob": "7fe91b273617036ff5970209ead761b1d3b3ac19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-unified-core.before-run.json",
+      "blob": "27ca0e3e4bba99a89cfb0e6c5c1449e3197cc290",
+      "workingBlob": "27ca0e3e4bba99a89cfb0e6c5c1449e3197cc290"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-unified-core.graph.json",
+      "blob": "2ad2c261893145ff9598a1efc701b3385b168e63",
+      "workingBlob": "2ad2c261893145ff9598a1efc701b3385b168e63"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-unified-core.source-freeze.json",
+      "blob": "83d2a052bad2811903c8e3c2500dd4c5495be04c",
+      "workingBlob": "83d2a052bad2811903c8e3c2500dd4c5495be04c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2793-await-many-awbc-reverse-catalog.inventory.json",
+      "blob": "379d98eb656448858eeb70dd355e8d224482f032",
+      "workingBlob": "379d98eb656448858eeb70dd355e8d224482f032"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2793-await-many-awbc-reverse-catalog.json",
+      "blob": "b32b4430614da4762921e55b877dc913cc6b04de",
+      "workingBlob": "b32b4430614da4762921e55b877dc913cc6b04de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2793-await-many-awbc-reverse-catalog.log",
+      "blob": "bdb43f6de59863eaf87d0530dcee412fe13d0a53",
+      "workingBlob": "bdb43f6de59863eaf87d0530dcee412fe13d0a53"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2794-await-many-awbc-reverse-runtime.json",
+      "blob": "89c4fe1b17f84176e31a73cc4657f3a8ae2a5d5f",
+      "workingBlob": "89c4fe1b17f84176e31a73cc4657f3a8ae2a5d5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2794-await-many-awbc-reverse-runtime.log",
+      "blob": "9c65188b854567dcda295d1f0e8b6c1feb0f5d46",
+      "workingBlob": "9c65188b854567dcda295d1f0e8b6c1feb0f5d46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2794-await-many-awbc-reverse-runtime.terminal-audit.json",
+      "blob": "b794fe0a7be45dc883496b16b995f0a95e8f61fd",
+      "workingBlob": "b794fe0a7be45dc883496b16b995f0a95e8f61fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2795-await-many-awbc-core-doctest.json",
+      "blob": "179396a32311bb803f459a48685a54e43028f3f7",
+      "workingBlob": "179396a32311bb803f459a48685a54e43028f3f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2795-await-many-awbc-core-doctest.log",
+      "blob": "91568a2316f5c7c373b44f17fe6105e20d4bf879",
+      "workingBlob": "91568a2316f5c7c373b44f17fe6105e20d4bf879"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2795-await-many-awbc-core-doctest.terminal-audit.json",
+      "blob": "0f05d2f15c326eab810baa02c389bed645194d37",
+      "workingBlob": "0f05d2f15c326eab810baa02c389bed645194d37"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2796-await-many-awbc-unified-core-catalog.inventory.json",
+      "blob": "677be5064360d7ecef1f9aa0b489b7815971e4d2",
+      "workingBlob": "677be5064360d7ecef1f9aa0b489b7815971e4d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2796-await-many-awbc-unified-core-catalog.json",
+      "blob": "c8181e765ce8a4fd3e9077c8470791d625daa22c",
+      "workingBlob": "c8181e765ce8a4fd3e9077c8470791d625daa22c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2796-await-many-awbc-unified-core-catalog.log",
+      "blob": "f82cee306848700ff160599c932eee29e11da9c6",
+      "workingBlob": "f82cee306848700ff160599c932eee29e11da9c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2797-await-many-awbc-unified-core-runtime.json",
+      "blob": "d0ad76b5cb2df8f0456088ff6a85e05f88ca84df",
+      "workingBlob": "d0ad76b5cb2df8f0456088ff6a85e05f88ca84df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2797-await-many-awbc-unified-core-runtime.log",
+      "blob": "827d1f43e5460ffdff795f6148327ded20cfd684",
+      "workingBlob": "827d1f43e5460ffdff795f6148327ded20cfd684"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2797-await-many-awbc-unified-core-runtime.terminal-audit.json",
+      "blob": "755035e192dd5226f63ffe38f0cad2e32f960a1c",
+      "workingBlob": "755035e192dd5226f63ffe38f0cad2e32f960a1c"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "806672ec02a988555149d40199b99fed5b11b954",
+      "workingBlob": "806672ec02a988555149d40199b99fed5b11b954"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "a4c275eef6cd89790d344df763477ef99ad17c0c",
+      "workingBlob": "a4c275eef6cd89790d344df763477ef99ad17c0c"
+    }
+  ],
+  "sourceCount": 6025,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "d038c960b838799889e5972bee5e126f8549641a5f22def8caff77b900293747",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T16:12:43.6149806Z"
+}

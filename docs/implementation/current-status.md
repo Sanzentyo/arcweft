@@ -1,7 +1,11 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-25。今回の検証基点は main `dec74c879c651705e41d23cfcf9b6b0f8dc50f71`。
-既存のtracked WIP 14件とuntracked 6件を保持し、各実行の入力を固定して検証した。
+確認日: 2026-10-25。照合した main は `06b4830260397da3c64ab72d79b9f76bb3072bc5`。
+以下の横断検証のソース基点は `dec74c879c651705e41d23cfcf9b6b0f8dc50f71` で、
+結果を前記commitで公開した。各実行の入力を固定し、既存のtracked WIP 14件とuntracked 6件を保持した。
+現在は、それらに加えてCoreのfanout型検査・fixtureに
+[未コミット変更7 path](acceptance-evidence/task-live-status-working-tree-audit.json) がある。
+横断検証の結果は公開時の固定入力に適用し、その後の変更は下表で検証範囲を区別する。
 
 Core全53逆依存packageの通常選択は、重複を除いて
 **7,260実行／7,210 PASS／50 FAIL／39既存ignored**。
@@ -53,6 +57,7 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | AWBC の独立 Thread scheduling | **実Source起動・結果／capture・nested join・各step公開保存復元は対象条件で検証・公開済み** | `StartProgram`、独立kernel、accepted handle、Task root、共有registryへの結果退役を実際に通過する。元Sourceと同じadmissionで値を復元し、VM awaitは消費前にNeed／Taskを型で検査する。ローカルProgram値をHost ACK待ちから切り離した修復後、全体／entry選択lowering×Bool false／true、1-op予算、各stepの公開save／restore、task／completion各1件がPASS。generic capture／nested joinも3 backendでPASSし、同横断集計の逆依存通常選択で新規失敗はない。cancelと全資源境界の包括的な受入は未確認であり、上記の受入条件とは分ける。 |
 | Native AwaitMany の Source／operand admission | **起動経路を接続し、Core owner検証済み** | baseは元Source、完全なcapture群と評価済みsourceを検査してからcaptureを複製する。childも実際のitem／indexとcaptureを検査してから一時bindingを作る。TaskSpecのclass／priority／scope／policy／outcomeは元のtemplateが所有する。別lease・別endpoint・失敗済みbankの拒否をNative／AWBCのSource carrierで確認し、Core library全1,977件がPASS。未使用になった直接生成APIは削除した。実際のAWBC launch／restoreの切替と、全14 familyの最終受入はこの結果に含めない。[検証範囲と原本](acceptance-evidence/task-await-many-native-source-acceptance.json)。 |
 | AWBC AwaitMany の Source起動／save／checkpoint | **元Sourceへの接続を公開済み・owner／逆依存検証済み** | 公開 `dec74c879c651705e41d23cfcf9b6b0f8dc50f71`。base／childを元Sourceで認証し、実際のframeの型bindingとoperandからproducerを導出してからrequest kernelを実行する。digestだけで生成・照合する旧3 APIは削除した。live／inertの保持値を同じbankで検査し、元型とexpected-keyの照合でnodesを二重課金しない。公開saveとsession復元はadmitted ProductのSourceを保持し、private checkpointは同じexecutable Arcでも別Source leaseや型を保ったitem改変を拒否する。debug labelはcapture参照前に検査する。53 package選択のCore library 1,982／1,982 PASSを新規実行し、横断実行に新規失敗0、Core単独doctest 75／75 PASS。[初回owner検証](acceptance-evidence/task-await-many-awbc-source-acceptance.json)、[後続の横断・doctest検証](acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json)。全14 family・Tier2の最終受入は別。 |
+| `traverse(...).parallel(...)` のResult集約 | **CLI入口に具体的な未達あり・型検査の変更は未公開／受入前** | 上記Source接続の受入とは別の契約。下記CLI分類の2件は未知の `traverse` で失敗している。現在ソースのNative完了処理とAWBCの通常／deferred完了処理は子結果をsequenceへ集めるため、[採用契約](../01-language/traits-seq-ranges.md#traversable)の `Result<Vec<U>, E>` 集約まで実装済みとはしない。未公開の型関係検査はR2798 Core限定checkが終了0、R2800対象9件は8 PASS／1 FAIL。失敗はSource endpoint fixtureの集約型と子payload型の不整合で、宣言修正後の再実行は未実施。[原結果と入力照合](acceptance-evidence/task-final-r2800-traverse-fanout-type-runtime.terminal-audit.json)。新規の型検査がPASSしたことをDSL／集約実行全体の受入へ広げない。 |
 | 公開 executor save | **バックエンドごとに異なる** | `crates/arcweft-core/src/executor.rs` の `snapshot_for_save` は Product AWBC を扱う一方、RuntimePlanVm／StructuredAot は `UnsupportedTier` を返す。Product の既存 save/restore の成功は保持し、Native 公開 save の未対応を別項目として扱う。 |
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、実際に受理されたProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗した。checkpointに元executable leaseを保持し、復元先は同じleaseのadmitted Productに限定する。元Sourceと同一admissionを値mapperへ渡し、Product・activation・codegenの呼出側を移行した。R2535の新規Coreケースでhandleを取り出して破棄した候補から元状態へ復元でき、同内容の別leaseは元fiberを変えず拒否する。private checkpointは非Serde、公開wire DTOのJSON／cleanup検証は維持し、R2531のcompile-fail 2件もPASS。既存のdetached Bool入力rollbackも通過している。private checkpointの受入と、公開saveの全資源境界の包括的な受入は分ける。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |

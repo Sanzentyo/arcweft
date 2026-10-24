@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "06b4830260397da3c64ab72d79b9f76bb3072bc5",
+  "name": "task-final-r2799-traverse-fanout-type-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(fanout_output) | test(await_many)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2799-traverse-fanout-type-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T16:49:22.3430981Z",
+  "finishedAt": "2026-10-24T16:53:45.8845302Z"
+}

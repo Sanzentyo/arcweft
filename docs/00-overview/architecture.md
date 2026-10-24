@@ -1,133 +1,55 @@
 # 全体アーキテクチャ
 
-## 目的
+このページは現在の層と仕様 owner の案内です。構文、実行形式、描画、入力、
+device permission、Agent protocol の詳細は、以下の保守章がそれぞれ所有します。
 
-wgpu を基盤にした、native と WebGPU/WebGL 経路の両方に対応するノベルゲームエンジンを作る。ノベルゲーム本編だけでなく、トラックゲームや FPS ミニゲーム、HTML/CSS View、リアクティブ native View、カスタム WGSL、WASM plugin、Rust plugin、Cranelift JIT、形式検証、LLM デバッグを一体として扱う。
+## 言語と実行
 
-## 全体図
+`.arcw` source は parser、HIR、sema を通り、受理済み実行入力になります。
+source / development 実行は受理済み `RuntimePlan` を `RuntimePlanVm` または
+`StructuredAot` で実行し、product 実行は `.awfb` 内の canonical `AWBC v1` を
+`AwbcProduct` で実行します。どの tier も同じ `RuntimeStep` 入出力契約を通ります。
+実行 tier と product representation の
+詳細は [Converged Language Surface](../01-language/converged-language-surface.md)、
+[Await and Need](../01-language/await-need-result.md)、
+[State, Flow, Reducer, and View](../01-language/state-flow-reducer.md)、
+[RuntimeStep and Executors](../02-runtime/runtime-step-and-executors.md)、
+[Executable Runtime Core](../02-runtime/executable-runtime-core.md)、
+[Product AWFB Bytecode](../05-build-and-security/product-awfb-bytecode.md) が所有します。
 
-```text
-Game Source / Bundle
-  .arcw DSL
-  .wgsl / shader blocks
-  .svg / vector
-  .typ / rich text / typst blocks
-  .wasm plugin
-  Rust Activity crate
-  assets / audio / view html
-        │
-        ▼
-Compiler / Tooling
-  lossless CST → typed AST/HIR → Typed IR → Bytecode/Bundle
-  contracts / parser / shader / audio / View / graph / RAG
-  optional native JIT / generated Rust / generated Wasm helpers
-        │
-        ▼
-Sans I/O Core / Typed IR VM
-  Engine::step(RuntimeStepInput) -> RuntimeStepOutput
-  bytecode interpreter is the semantic source of truth
-  deterministic state machine
-  no GPU / no FS / no wall-clock / no raw network
-        │
-        ▼
-Host / Adapter Layer
-  Task runner / Need executors
-  Activity host
-  WASM / Rust plugin host
-  native-only Cranelift pure-function tier
-  wgpu renderer
-  Render / Input LayerTree
-  Game Native View renderer
-  Servo / DOM HTML View backend
-  Audio mixer / spatial / TTS / BGM graph
-  Agent Debug Bus / MCP / CLI
-```
+## Core と host
 
-## 主要な境界
+`arcweft-core` は Sans I/O です。typed input を受け取り、effect と host request
+をデータとして返します。filesystem、network、device access、window、renderer、
+audio backend の実行は host / adapter 層が担当します。data-format model と codec
+も Sans I/O とし、その crate 境界は [crate/workspace map](crate-map.md) が示します。
+step 境界は
+[Runtime Core](../02-runtime/core.md) と
+[RuntimeStep and Executors](../02-runtime/runtime-step-and-executors.md)、
+外部資源の保存規則は
+[Authored resource and local state storage](../05-build-and-security/authored-resource-storage.md)
+を、Activity lifecycle と snapshot は
+[Activity Model](../02-runtime/activity.md) を参照してください。
 
-### Core は Sans I/O
+## Presentation と input
 
-`arcweft-core` は GPU、Audio、Servo、DOM、filesystem、network、WASM runtime、Cranelift runtime に直接依存しない。
+Presentation の `LayerTree` は描画と input routing で共有します。OS、window、
+browser の raw input は host が受け取り、routing 済みの event を Core に渡します。
+詳細は [Layer System](../03-presentation/layers.md) と
+[Layered Input](../02-runtime/layered-input.md)、[Game Native View](../03-presentation/view-reactive.md)、
+[HTML / Servo / DOM View](../03-presentation/html-servo-dom.md) を参照してください。
 
-```rust
-Engine::step(input: RuntimeStepInput) -> RuntimeStepOutput
-```
+Audio と microphone / camera capture はそれぞれの presentation owner が typed
+contract と permission boundary を定義します: [Audio System](../03-presentation/audio.md)、
+[Microphone / Camera Capture Devices](../03-presentation/capture-devices.md)。
+Device ports、typed streams、generator policy、backpressure、privacy、cancellation は
+[Streams, Generators, and External Capabilities](../02-runtime/streams-generators.md)、
+[Device Generator / Profile System](../05-build-and-security/device-generator.md)、
+[Security](../05-build-and-security/security.md) が所有します。
 
-`RuntimeStepOutput` は命令を実行しない。実行すべきことを `Command` / `EffectRequest` / `TaskSpec` として返す。
+## Tooling と観測
 
-### Data format も Sans I/O
-
-`.arcw` source、lossless CST、AST/HIR、Typed IR、bytecode、manifest、schema、save snapshot、`.awfb` bundle はデータ形式であり、filesystem や network を直接触らない。
-
-Data-format crate は Rust 構造体と encode/decode を `&str` / `&[u8]` / `Vec<u8>` の上で提供する。path を開く、環境変数を見る、wall-clock を読む、backend resource を確保する処理は `arcweft-cli`、build tool、native/web player adapter に置く。
-
-### VM が意味論の正本
-
-Arcweft Typed IR と bytecode VM が実行意味論の正本になる。Cranelift JIT、generated Rust、generated Wasm helper は最適化または配布形式であり、flow、dialogue、choice、`Need`、effect 発行の意味論を置き換えない。
-
-Native product の基本形は AOT compiled player + embedded `.awfb` / bytecode bundle。Web product の基本形は AOT compiled Wasm player + bytecode bundle。完全 AOT の generated Rust/Wasm は後段の release backend として扱う。
-
-### 時間がかかるものは `Need<T>`
-
-asset load、content ensure、shader compile、Activity instantiate、TTS 生成、BGM pre-render、Typeset block の組版などは unary `Need<T>` として扱う。domain failureを持つ処理は`Need<Result<T, E>>`を返す。
-
-`Need<T>` は `T` に暗黙変換できない。Flowでは
-`await ... with { pending ... }`で継続をsuspendする。Viewではordinary
-`match Need`をchecked retained subscription/branchへprojectし、待機中の
-表示を明示する。`AwaitView`専用surfaceは残さない。
-
-### 実行可能単位は Activity
-
-ノベルゲーム本編、トラックゲーム、FPS ミニゲーム、外部プロセス、WASM plugin、Rust plugin は `Activity` として統一する。
-
-```rust
-pub trait Activity {
-    fn mount(&mut self, ctx: MountContext<'_>) -> Result<MountResult, ActivityError>;
-    fn step(&mut self, input: RuntimeStepInputRef<'_>, out: RuntimeStepOutputSink<'_>) -> StepStatus;
-    fn snapshot(&self) -> Result<ActivitySnapshot, ActivityError>;
-    fn restore(&mut self, snapshot: ActivitySnapshotRef<'_>) -> Result<(), ActivityError>;
-}
-```
-
-Snapshot は pure data。serialize、compress、encrypt、file write は host / packaging adapter の責務であり、Activity や core が path を開かない。
-
-### LayerTree は描画と入力を統合する
-
-`RenderSpec` は world、character、dialogue、View、modal、Activity、debug
-overlay を共通の `LayerTree` に載せる。描画と入力は同じ layer state を使い、
-routing、hit-test、focus、pointer capture、semantic action を扱う。詳細は
-[Layer System](../03-presentation/layers.md) と
-[Layered Input](../02-runtime/layered-input.md)。
-
-### View は二系統
-
-- Game Native View: SwiftUI 風、リアクティブ、wgpu/vector/text、Agent 観測に最適。
-- HTML/CSS View: native は Servo、web は browser DOM。
-
-どちらも layer に載り、最終的に route 済み input と `ActionTarget` / semantic action を返す。
-
-### 音声も構造化
-
-BGM、SE、Voice、TTS、spatial source、mixer bus、ducking、loudness、loop、stem はすべて audio graph で扱う。詳細は [Audio System](../03-presentation/audio.md)。
-
-### LLM は構造化 API で操作
-
-Agent Debug Bus は画像だけでなく以下を返す。
-
-- screenshot
-- View tree
-- scene graph
-- bbox / polygon / segmentation mask
-- action target
-- logs / signals / metrics / assertions
-- state diff
-- replay trace
-
-MCP と CLI は同じ `arcweft-agent-protocol` を使う。
-
-
-
-## Capture Device Layer
-
-Microphone and camera input are handled by a dedicated permissioned capture layer. Native audio uses CPAL, native camera prefers `shiguredo_video_device`, optional camera compatibility uses `nokhwa`, and Web capture uses `web-sys` MediaDevices. Capture enters the runtime through `Need`, signals, and Activity ports rather than direct device APIs. See [Microphone / Camera Capture Devices](../03-presentation/capture-devices.md).
+CLI と MCP は共通の agent protocol を使います。observation と capture bytes の
+metadata は別の維持章が所有します: [Agent Debug Bus / MCP / CLI](../04-tooling/agent-debug-mcp-cli.md)、
+[Agent Observe and Capture Contract](../04-tooling/agent-observe-capture-contract.md)。
 

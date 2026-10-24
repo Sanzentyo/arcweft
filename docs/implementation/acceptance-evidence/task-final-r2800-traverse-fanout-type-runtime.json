@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "06b4830260397da3c64ab72d79b9f76bb3072bc5",
+  "name": "task-final-r2800-traverse-fanout-type-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(fanout_output) | test(await_many)",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail",
+    "--status-level",
+    "none",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2800-traverse-fanout-type-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-24T16:57:08.6610322Z",
+  "finishedAt": "2026-10-24T16:57:10.7945095Z"
+}

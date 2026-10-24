@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "inspectedMain": "06b4830260397da3c64ab72d79b9f76bb3072bc5",
+  "publishedRuntimeSource": "dec74c879c651705e41d23cfcf9b6b0f8dc50f71",
+  "scope": "Seven unpublished Core fanout paths; not a complete traverse implementation or acceptance",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/program_types.rs",
+      "r2800Sha256": "7741f3a69d24da613747f16383bf16171d271932543646b915988aad2ccc7801",
+      "inspectedSha256": "7741f3a69d24da613747f16383bf16171d271932543646b915988aad2ccc7801"
+    },
+    {
+      "path": "crates/arcweft-core/src/program_types/fanout.rs",
+      "r2800Sha256": "35aed6f9507a224ff967b5ae90b1980dbd1837697b8d9782ab9b6ce097ed8102",
+      "inspectedSha256": "35aed6f9507a224ff967b5ae90b1980dbd1837697b8d9782ab9b6ce097ed8102"
+    },
+    {
+      "path": "crates/arcweft-core/src/program_types/fanout/tests.rs",
+      "r2800Sha256": "14108cef84af8e84c570e3bbb5d8faee2dfc0887a0e887caff4d7ad8db3ac7d3",
+      "inspectedSha256": "14108cef84af8e84c570e3bbb5d8faee2dfc0887a0e887caff4d7ad8db3ac7d3"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+      "r2800Sha256": "fb0e0a1a4abae2b13446c26fde9211f0c1604ed33fc4de9a80994ea44e58ef3d",
+      "inspectedSha256": "fb0e0a1a4abae2b13446c26fde9211f0c1604ed33fc4de9a80994ea44e58ef3d"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic.rs",
+      "r2800Sha256": "968cc62591972040dde83c3b5674854c09299d8d80e3f366dd9303834015031f",
+      "inspectedSha256": "968cc62591972040dde83c3b5674854c09299d8d80e3f366dd9303834015031f"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+      "r2800Sha256": "3b60af459e76f188d341badebe9d02467736538da4d2f233f818dd5104e58850",
+      "inspectedSha256": "3b60af459e76f188d341badebe9d02467736538da4d2f233f818dd5104e58850"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/tests/request_endpoints.rs",
+      "r2800Sha256": "a7b1919721ed2b634a7c27bb4b664da2ddfddeabdce0ef56342e467b917b589f",
+      "inspectedSha256": "7775824a800c4ac1171b7050230faaa85298ec04bd980e23a9e3f185be4e2f84"
+    }
+  ],
+  "afterRunChange": "Only the request_endpoints fixture changes after R2800: add Vec<Unit> and select it as aggregate payload; not rerun",
+  "evidence": [
+    {
+      "path": "task-final-r2798-traverse-fanout-shape-core-check.json",
+      "bytes": 526,
+      "sha256": "8f3550942835add06b545fc78f24dbd05f5feabfa607ba8c77c5756aad23186f"
+    },
+    {
+      "path": "task-final-r2798-traverse-fanout-shape-core-check.log",
+      "bytes": 65383,
+      "sha256": "1b9d8bb4fa036af19d92069ae60c94ed7131985e9c9bf2aa89a18933dcad83b9"
+    },
+    {
+      "path": "task-final-r2799-traverse-fanout-type-catalog.inventory.json",
+      "bytes": 504285,
+      "sha256": "05e1f33aca16e0f13c6787e82365b2a697883a65345e4f85805e4e257c80eb96"
+    },
+    {
+      "path": "task-final-r2799-traverse-fanout-type-catalog.json",
+      "bytes": 629,
+      "sha256": "b7688fc62d5c4109d7ccdfdfa946c5c5163bfbda258ed6a22b96b3c13fe74152"
+    },
+    {
+      "path": "task-final-r2800-traverse-fanout-type-runtime.json",
+      "bytes": 724,
+      "sha256": "b1adad627c316921fc844389b50e1ad184a8a9526310780a97ce1d11dc0bd407"
+    },
+    {
+      "path": "task-final-r2800-traverse-fanout-type-runtime.log",
+      "bytes": 332114,
+      "sha256": "7afd25a8314a1dc097e8526819aa10e9e21c17159144427872d21fac4bfc4363"
+    },
+    {
+      "path": "task-final-r2800-traverse-fanout-type-runtime.terminal-audit.json",
+      "bytes": 793,
+      "sha256": "0c96eb893ef616cb4089f9fbe4e0328a04944e73cdcc7a081716b1b0d643e770"
+    }
+  ],
+  "retainedWorkingFiles": 27,
+  "retainedPriorStagedPaths": 2
+}
