@@ -1,0 +1,464 @@
+{
+  "version": 1,
+  "base": "71a01d7eb872193f8b3baf6665fa2766bc0e7a4c",
+  "scope": "Ordered AwaitMany Sequence/Result aggregation and pre-consumption pattern/ownership admission; DSL traverse construction is not implemented",
+  "sourcePaths": [
+    "crates/arcweft-core/src/awbc/product_step/line.rs",
+    "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+    "crates/arcweft-core/src/awbc/product_step/tests.rs",
+    "crates/arcweft-core/src/awbc/verify/structure.rs",
+    "crates/arcweft-core/src/awbc/vm.rs",
+    "crates/arcweft-core/src/engine/suspend.rs",
+    "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+    "crates/arcweft-core/src/pattern.rs",
+    "crates/arcweft-core/src/plan/body_semantic.rs",
+    "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+    "crates/arcweft-core/src/plan/body_semantic/tests/request_endpoints.rs",
+    "crates/arcweft-core/src/plan/value_admission.rs",
+    "crates/arcweft-core/src/program_types.rs",
+    "crates/arcweft-core/src/program_types/fanout.rs",
+    "crates/arcweft-core/src/program_types/fanout/tests.rs",
+    "crates/arcweft-core/src/program_types/function_contract.rs",
+    "crates/arcweft-core/src/value.rs",
+    "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+    "crates/arcweft-core/src/value/awbc_save/retained_admission/fanout.rs",
+    "crates/arcweft-core/src/value/view.rs",
+    "crates/arcweft-core/src/value/view/nominal.rs"
+  ],
+  "runtime": {
+    "run": "task-final-r2821-fanout-publication-core-runtime",
+    "catalog": "task-final-r2820-fanout-publication-core-catalog",
+    "configuration": "Core owner only: --lib --all-features --locked",
+    "executed": 1989,
+    "passed": 1989,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0,
+    "sourceInputs": 6038,
+    "sourceDrift": 0,
+    "notReusedAsReverse53": true
+  },
+  "clippy": {
+    "run": "task-final-r2819-fanout-final-core-clippy",
+    "configuration": "Core only: --all-targets --all-features --locked",
+    "exitCode": 0,
+    "warningsRemain": true
+  },
+  "runtimeCases": [
+    "Native: empty, all Ok, reverse delivery with first source Err",
+    "Product AWBC: same three cases",
+    "Product AWBC: same three cases with public JSON save/restore after each step"
+  ],
+  "resourceCases": [
+    "same bank: nodes and canonical encoded bytes charged once per retained child plus new container headers",
+    "exact nodes, depth, encoded byte budgets and prior consumption",
+    "rejection and abandoned preparation preserve all original slots",
+    "selected String error payload moves without cloning",
+    "original scoped Result construction binding admitted by both Native/AWBC owners"
+  ],
+  "failuresPreserved": [
+    {
+      "run": "task-final-r2801-fanout-construction-core-check",
+      "exit": 101,
+      "cause": "borrowed slots escaped FnMut closure; fixed by returning metadata then creating exclusive proof"
+    },
+    {
+      "run": "task-final-r2804-fanout-runtime-connection-core-check",
+      "exit": 101,
+      "cause": "composite admission returned unit; now returns typed preflight result while retaining the same bank"
+    },
+    {
+      "run": "task-final-r2807-fanout-runtime-connection-runtime",
+      "executed": 17,
+      "passed": 16,
+      "failed": 1,
+      "cause": "new test incorrectly required no Native delivery diagnostics"
+    },
+    {
+      "run": "task-final-r2809-fanout-runtime-connection-runtime",
+      "executed": 17,
+      "passed": 16,
+      "failed": 1,
+      "cause": "Product also records normal publication delivery diagnostics; exact input diagnostic counts and typed failure status checks retained"
+    }
+  ],
+  "unverified": [
+    "Result fanout inside an independently scheduled deferred Program child",
+    "DSL sema/lowering and first-class lazy Need construction for traverse/parallel",
+    "reverse53 consumers and workspace gates on this source cut",
+    "Native public save, Tier2 and Native/Web capture parity"
+  ],
+  "genericMatch": "Previously accepted and published; no new defect found and acceptance not reopened",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2801-fanout-construction-core-check.json",
+      "bytes": 524,
+      "sha256": "f7a203373026a74a21047621f4b13c5cc0764f2427a1623049f148c2f38380a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2801-fanout-construction-core-check.log",
+      "bytes": 8686,
+      "sha256": "b0747a8d917108c04de032abf8600d7f20e101c7e611615f3f28d89fb0d92818"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2802-fanout-construction-catalog.inventory.json",
+      "bytes": 505078,
+      "sha256": "cb7249cc59bbb33afd1b89bafb59422f0b6cf7636fd15871c9c2c070c59d5f11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2802-fanout-construction-catalog.json",
+      "bytes": 621,
+      "sha256": "b50e423c1b3fb9d32fabe003b530e913edb2a49af3b8b3344a4d278e2ea982a5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2802-fanout-construction-catalog.log",
+      "bytes": 415141,
+      "sha256": "370aad090ebdab38f165a9daa14908bf496127be4e7e65d59307b8a7644b42d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2803-fanout-construction-runtime.json",
+      "bytes": 714,
+      "sha256": "6e887ada2b44772f0ea61dcdde94f93c257ab1c2820213171a8047422f4cf2d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2803-fanout-construction-runtime.log",
+      "bytes": 342985,
+      "sha256": "48e9341b6fcab067ad24480878b59ebecde5624400b508b63afbe2e77383cbc5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2803-fanout-construction-runtime.terminal-audit.json",
+      "bytes": 573,
+      "sha256": "60f6d918e9256d13255a22690fd3f436e9c640ac0e84ed3ffe772369fc7bba8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2804-fanout-runtime-connection-core-check.json",
+      "bytes": 536,
+      "sha256": "be34f3e54dfe6eaf77a2a1fe02de754a109fbe0990bc5a2be60b6e63cede374c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2804-fanout-runtime-connection-core-check.log",
+      "bytes": 11379,
+      "sha256": "4b7ffaf87dd8b3f538aa2316b42395789d72729353da94e37ad44f445986ba72"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2805-fanout-runtime-connection-core-check.json",
+      "bytes": 534,
+      "sha256": "3d089eccd4e416907fc6aaabdb75de2aa5a2ca1c784cbb6204a320d37991f4bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2805-fanout-runtime-connection-core-check.log",
+      "bytes": 65685,
+      "sha256": "c5be8ddbef8bb51c5ac55d3de5e751a8337a9f757f7f74fe0ac909195177731f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2806-fanout-runtime-connection-catalog.inventory.json",
+      "bytes": 505616,
+      "sha256": "7c1ad0f11e9bf1f33fd5ca2461c3447757c3f0e3b6d83465b6c9cdf3a35f113e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2806-fanout-runtime-connection-catalog.json",
+      "bytes": 633,
+      "sha256": "d5f9ca8600647d58c128103c801f6496dd33f4e55694806c23635a235a00ced4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2806-fanout-runtime-connection-catalog.log",
+      "bytes": 416278,
+      "sha256": "c06e88356ddd13887e6f3729470481502851b476338a19123e153aa24d84f426"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2807-fanout-runtime-connection-runtime.json",
+      "bytes": 728,
+      "sha256": "1bcecf6e7ef9ea688a27e605c62aacdfb1b357cec81e950743c72125aa8ef8ad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2807-fanout-runtime-connection-runtime.log",
+      "bytes": 345386,
+      "sha256": "0e01560f3f89fdc4f62dcfa318b098264ffb6587be3866cea92114663e93f08f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2807-fanout-runtime-connection-runtime.terminal-audit.json",
+      "bytes": 805,
+      "sha256": "03e41ae20662b9e2c67e1eee5b9906943b093ac9e5aa9479c254d8f015f172ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2808-fanout-runtime-connection-catalog.inventory.json",
+      "bytes": 505616,
+      "sha256": "db3c022e49dbc923222d44a6262b9b537504c0a069c83e3e47587f76b3527ecc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2808-fanout-runtime-connection-catalog.json",
+      "bytes": 633,
+      "sha256": "4f2d5e1fbcad6ae292a037799cdf435728c3d9de98b0807b105335ff69fa9676"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2808-fanout-runtime-connection-catalog.log",
+      "bytes": 416278,
+      "sha256": "1604b651fb59d31a7c23804fa0087b0e91103f58659d6c80b43b44526f57a4d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2809-fanout-runtime-connection-runtime.json",
+      "bytes": 728,
+      "sha256": "7a0df9d89593310b718bd291961ac21affe46668048f5846adbad65586c5dfb2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2809-fanout-runtime-connection-runtime.log",
+      "bytes": 345367,
+      "sha256": "57583217d922afe05a082a48b4563235391fbd00bc3f7dd282901d3fbf234eba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2809-fanout-runtime-connection-runtime.terminal-audit.json",
+      "bytes": 805,
+      "sha256": "0a2f4a4de5387b741e33195e42c05ce6491af9f299348d21e7ddb4839357077e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2810-fanout-runtime-connection-catalog.inventory.json",
+      "bytes": 505616,
+      "sha256": "b7ca9c1383860b94ba3d5e138db93f3ed9f8e6cf66688fd8411440fd041daf3e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2810-fanout-runtime-connection-catalog.json",
+      "bytes": 633,
+      "sha256": "c49401507016dac54381db6cb80dca0ef80b6a42a6bf355ee936f8fba3284fa9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2810-fanout-runtime-connection-catalog.log",
+      "bytes": 416278,
+      "sha256": "e8810521d7a845446e82fc89d625a4f5f78e8e63462b71aec3141e0d4ff70d93"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2811-fanout-runtime-connection-runtime.json",
+      "bytes": 726,
+      "sha256": "c9b06f748e449e598cc0d1351d4185cac28af3e5d7b06cb25fa73b71a96f12c1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2811-fanout-runtime-connection-runtime.log",
+      "bytes": 344076,
+      "sha256": "33491214552df2ad3c0118510c7e3cccc962145b3ff63f37584341cd3a869e65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2811-fanout-runtime-connection-runtime.terminal-audit.json",
+      "bytes": 579,
+      "sha256": "639e9a97054c832458900bccbdecedef08fed6c5a8c06e553d5f73bdc1d02054"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2812-fanout-core-full-catalog.inventory.json",
+      "bytes": 503635,
+      "sha256": "1b87a30fef2e8764206d710dc82dd5f6e65ae9f1b7daccaf84e5ab697434349f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2812-fanout-core-full-catalog.json",
+      "bytes": 563,
+      "sha256": "df8406a64cbb936690bb7c4e88ffede5e1364f8564b02c14f1269138bb035f1f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2812-fanout-core-full-catalog.log",
+      "bytes": 370873,
+      "sha256": "5e411b6c4740c3c28030a6e0bcbf3212a98ac48942092a43a48833fc8a6e9780"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2813-fanout-core-full-runtime.json",
+      "bytes": 656,
+      "sha256": "66e43b90c8f256084158c6dd8d4e381690ad683c2821dad98e46d5316f0a56e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2813-fanout-core-full-runtime.log",
+      "bytes": 332300,
+      "sha256": "8d5009d37463387499595e21b9448f08613d57d5a45f51e5bdffa6a1c6ecc2b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2813-fanout-core-full-runtime.terminal-audit.json",
+      "bytes": 572,
+      "sha256": "f51738cfe4f72cffa5e92d1cc94ee6cd460450eec7e7d24e14db9a452d1a305a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2814-fanout-core-clippy.changed-lines.json",
+      "bytes": 3093,
+      "sha256": "573833a900783bd7cf4647c25f1ffec6ae8bc519cb25a669803783fc78dfd750"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2814-fanout-core-clippy.json",
+      "bytes": 507,
+      "sha256": "634710537396aaaf5725fd84a473bf475cb0c4012b2e7825eb1c2e0a6ae9f739"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2814-fanout-core-clippy.log",
+      "bytes": 2770991,
+      "sha256": "970d66dcb5a59783ea7f416c80641ee0a4b62b2e32fcd5d457ecd7becf30e8a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2815-fanout-core-clippy.json",
+      "bytes": 507,
+      "sha256": "2d34d6f66ce4f07fc9318123902d9d4cebaafe8c88e77a1214cc214a132b03a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2815-fanout-core-clippy.log",
+      "bytes": 2764493,
+      "sha256": "0f9600eacfdabd8508b26f7e49d98412ec6c1a116f6fa3144d62be43ac731785"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2816-fanout-final-core-catalog.inventory.json",
+      "bytes": 503878,
+      "sha256": "bdf71a4b21812ed5031b09ed0ef6dfe91812c7cd830cdbc8a1c18cce324cf5bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2816-fanout-final-core-catalog.json",
+      "bytes": 565,
+      "sha256": "cb2761843d06a3dd892b569d5bf605c695d65f31674aca674e6d5da8f08499c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2816-fanout-final-core-catalog.log",
+      "bytes": 370855,
+      "sha256": "261533b5e5a77283fc9740eb7476ea6d284dba6bbc1794b1dc813fe601c3a92c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2817-fanout-final-core-runtime.json",
+      "bytes": 658,
+      "sha256": "6e0c513e87744f2029a71f7105da249d4299ae316ae2043611ab8edd556f8cfe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2817-fanout-final-core-runtime.log",
+      "bytes": 332191,
+      "sha256": "442091e12bae7be62a36b1100e84cb16d9620545f08e6d250d6f9f5b7145a32a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2817-fanout-final-core-runtime.terminal-audit.json",
+      "bytes": 573,
+      "sha256": "ca22bb09ff758ed693c563d5ab34b995256a66e7c884aa282cdea22e7a8eaa05"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2818-fanout-final-core-clippy.changed-lines.json",
+      "bytes": 1496,
+      "sha256": "5f7213882094180a3eef32d02c6a0e6b3e0c10a8996486d225f221da2428fdbd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2818-fanout-final-core-clippy.json",
+      "bytes": 519,
+      "sha256": "5119b1b7a32bfe8f0ff975825f0463cb2721db884b95566da0aa897666489029"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2818-fanout-final-core-clippy.log",
+      "bytes": 2765792,
+      "sha256": "f0512a62236641219053ce82ee84bbbb8cb6885f10f5cac705f28243249538be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2819-fanout-final-core-clippy.json",
+      "bytes": 519,
+      "sha256": "acd28a135e6b19beb84a5d0eee11e1b92e1ba53fb53d036cb298accbf098cd7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2819-fanout-final-core-clippy.log",
+      "bytes": 2761986,
+      "sha256": "81a81bb81eff4f2b6d3449c0d0e72580b03e3250ae5dcbe1cf30851db9500056"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2820-fanout-publication-core-catalog.inventory.json",
+      "bytes": 503884,
+      "sha256": "808043d3fdc8cd2f63202cd4e664e15765182fecc90563568d41367e1464b9ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2820-fanout-publication-core-catalog.json",
+      "bytes": 577,
+      "sha256": "93b5b070cfee3874322dd3fde0efdf055bb9ac64434b01df22008e43aa7e7fdc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2820-fanout-publication-core-catalog.log",
+      "bytes": 370855,
+      "sha256": "4279b4351b36d69fb50d720eecce51085a4118cd314dc8c7fd56414266cc4437"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2821-fanout-publication-core-runtime.json",
+      "bytes": 670,
+      "sha256": "9e773d8fd65f06bb06e78569590fac3bb273889fb2822376f2ff9b971c061555"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2821-fanout-publication-core-runtime.log",
+      "bytes": 332191,
+      "sha256": "2b284c0f55e4cbf4f37d71a9b4b871e6ffaa89a407dd76969e9552c71bcd82ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2821-fanout-publication-core-runtime.terminal-audit.json",
+      "bytes": 579,
+      "sha256": "0f2bd58b3aebf11cf8f11465a94eadac80474bca0f498abd3474270224efed94"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-construction-source.source-freeze.json",
+      "bytes": 1257761,
+      "sha256": "23f311295d570b0453dbb361a0e961d31e0ceca8a3702c7067a0f2977019caac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-construction-source.graph.json",
+      "bytes": 3508,
+      "sha256": "4b4fe7043832d894a09bf1223a823860e67476525738a1ba92d677559eec82e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-construction.before-run.pins.json",
+      "bytes": 479,
+      "sha256": "edf49c2986469c78413660ee3f31ba5b278004d320d28b32af885fff1b2200f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-runtime-connection-source.source-freeze.json",
+      "bytes": 1258201,
+      "sha256": "31050142ca705871cfa0604cc32c50937a0ea04cead3e51940fa14a374d24b95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-runtime-connection.before-run.pins.json",
+      "bytes": 485,
+      "sha256": "773d43dcb08f26bef28cb9159cad61071d780a06851758e774e1d3beb0071df2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-runtime-diagnostic-source.source-freeze.json",
+      "bytes": 1258201,
+      "sha256": "32761506ceaeca123f01e628dc83fba41b3981a94095cbfdf3e9db24853195bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-runtime-diagnostic.before-run.pins.json",
+      "bytes": 485,
+      "sha256": "c94a15ad92b9f257943947a14bff2bd4608dff795d9c86986c1b7b8a94d5c307"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-runtime-journal-source.source-freeze.json",
+      "bytes": 1258201,
+      "sha256": "5adf0f170a5b88127396b91089cd55b754426f202069a4106990031eb9e3088e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-runtime-journal.before-run.pins.json",
+      "bytes": 485,
+      "sha256": "87ebfa69eac50ad2b62a95f2502e69f44e683003fe3d8e294ba0fdb8913b56f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-core-full.before-run.pins.json",
+      "bytes": 476,
+      "sha256": "8de2bcea6e67bb5db09afe47b04f08fba841258da32df4d0668bac30402684f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-final-source.source-freeze.json",
+      "bytes": 1258202,
+      "sha256": "6b69f92a84132b834fa784b4d1775dcc36ef1319e0687c13c8e896896b7f051c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-final-core.before-run.pins.json",
+      "bytes": 477,
+      "sha256": "162405d4cfe71ae58c6aa080436015b05246923c2dcc9dc069195916389e60e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-publication-source.source-freeze.json",
+      "bytes": 1258202,
+      "sha256": "0b23d0051b3b0ea74b45369cdee4e311b98a39ee9ef51f554f04cf7c5bd06062"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-publication-source.graph.json",
+      "bytes": 3948,
+      "sha256": "26cfb0b55c53989568132567781bb6e46c7e9a023034ea37eace72694ac002ac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-publication-core.before-run.pins.json",
+      "bytes": 483,
+      "sha256": "6a516ebc560c03529674320a94f8bce39810aa401ccdb6d351d7de5d31e22d62"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-current-ledger-doc-cut.verified.json",
+      "bytes": 4449,
+      "sha256": "3a487c8eefb9ffac2a58ed53b387ecd8f857cb31ae5a7c6991f4be7c08331e87"
+    }
+  ]
+}

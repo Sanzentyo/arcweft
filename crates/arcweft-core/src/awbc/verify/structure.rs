@@ -1311,8 +1311,13 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 if base_inputs.len() != captures.len()
                     || child_inputs.len() != base_inputs.len() + 1
                     || child_inputs[..base_inputs.len()] != *base_inputs
-                    || !matches!(program.runtime_types[task.payload_type.index()].shape(),
-                        AwbcRuntimeTypeShape::Sequence { item, .. } if *item == child_plan.payload_type)
+                    || crate::program_types::RuntimeProgramTypes::Awbc(program)
+                        .fanout_output_kind(
+                            program.runtime_types[task.payload_type.index()].semantic_identity(),
+                            program.runtime_types[child_plan.payload_type.index()]
+                                .semantic_identity(),
+                        )
+                        .is_err()
                 {
                     return Err(AwbcVerifyError::InvalidInvariant { at, message: "AwaitMany capture ABI or aggregate payload differs from its child template".into() });
                 }

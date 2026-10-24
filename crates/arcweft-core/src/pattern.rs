@@ -1954,12 +1954,30 @@ pub(crate) fn match_runtime_pattern_owned(
     value: RuntimeValue,
     instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
 ) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimePatternMatchError> {
-    if !inspect_runtime_pattern_owned(plan, pattern, &value, instantiation)? {
-        return Ok(None);
+    let prepared = prepare_runtime_pattern_owned_view(
+        plan,
+        pattern,
+        value.live_view(),
+        instantiation,
+        &crate::entry::schema::value_budget::ValidationWork::new(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )?;
+    Ok(prepared.map(|prepared| prepared.commit(value)))
+}
+
+/// Consumed proof that an exact, immutable pattern accepted an owning value's
+/// live projection, including all affine overlap checks, before its move.
+pub(crate) struct RuntimePreparedPatternBinding<'a> {
+    pattern: &'a RuntimePattern,
+}
+
+impl RuntimePreparedPatternBinding<'_> {
+    pub(crate) fn commit(self, value: RuntimeValue) -> Vec<RuntimeLocalBinding> {
+        let mut bindings = Vec::with_capacity(pattern_binding_capacity(self.pattern));
+        collect_pattern_bindings_owned(self.pattern, value, &mut bindings);
+        bindings
     }
-    let mut bindings = Vec::with_capacity(pattern_binding_capacity(pattern));
-    collect_pattern_bindings_owned(pattern, value, &mut bindings);
-    Ok(Some(bindings))
 }
 
 /// Exact borrowed preflight for a later owning bind. Success seals all
@@ -1970,16 +1988,37 @@ pub(crate) fn inspect_runtime_pattern_owned(
     value: &RuntimeValue,
     instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
 ) -> Result<bool, RuntimePatternMatchError> {
+    Ok(prepare_runtime_pattern_owned_view(
+        plan,
+        pattern,
+        value.live_view(),
+        instantiation,
+        &crate::entry::schema::value_budget::ValidationWork::new(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )?
+    .is_some())
+}
+
+pub(crate) fn prepare_runtime_pattern_owned_view<'a>(
+    plan: &RuntimePlan,
+    pattern: &'a RuntimePattern,
+    value: LiveRuntimeValueView<'_>,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    work: &crate::entry::schema::value_budget::ValidationWork,
+) -> Result<Option<RuntimePreparedPatternBinding<'a>>, RuntimePatternMatchError> {
     validate_runtime_pattern(plan, pattern)?;
     let type_matches = match instantiation {
-        Some(binding) => binding.value_matches(plan, pattern.ty(), value),
-        None => plan.value_matches_type(pattern.ty(), value)?,
+        Some(binding) => {
+            binding.value_view_matches_with_work(plan, pattern.ty(), value.inspect(), work)
+        }
+        None => plan.value_view_matches_type_with_work(pattern.ty(), value.inspect(), work)?,
     };
-    if !type_matches || !pattern_matches_borrowed(pattern, value) {
-        return Ok(false);
+    if !type_matches || !pattern_matches_view(pattern, value.inspect()) {
+        return Ok(None);
     }
-    check_owned_pattern_overlap(pattern, value)?;
-    Ok(true)
+    check_owned_pattern_overlap_view(pattern, value)?;
+    Ok(Some(RuntimePreparedPatternBinding { pattern }))
 }
 
 fn pattern_matches_borrowed(pattern: &RuntimePattern, value: &RuntimeValue) -> bool {
@@ -2053,13 +2092,6 @@ fn pattern_matches_view(pattern: &RuntimePattern, value: RuntimeValueView<'_>) -
     }
 }
 
-fn check_owned_pattern_overlap(
-    pattern: &RuntimePattern,
-    value: &RuntimeValue,
-) -> Result<(), RuntimePatternMatchError> {
-    check_owned_pattern_overlap_view(pattern, value.live_view())
-}
-
 fn check_owned_pattern_overlap_view(
     pattern: &RuntimePattern,
     value: LiveRuntimeValueView<'_>,
@@ -2111,11 +2143,11 @@ fn check_owned_pattern_overlap_view(
             Ok(())
         }
         RuntimePatternKind::Sequence { items, .. } => {
-            let Some(sequence) = value.sequence() else {
+            let RuntimeValueView::Sequence(_) = value.inspect() else {
                 return Ok(());
             };
             for (index, pattern) in items.iter().enumerate() {
-                if let Some(value) = sequence.live_value_view(index) {
+                if let Some(value) = value.child_at(index) {
                     check_owned_pattern_overlap_view(pattern, value)?;
                 }
             }
@@ -2881,10 +2913,21 @@ impl RuntimePlan {
         value: &RuntimeValue,
         work: &crate::entry::schema::value_budget::ValidationWork,
     ) -> Result<bool, RuntimePlanValueTypeError> {
+        self.value_view_matches_type_with_work(ty, value.view(), work)
+    }
+
+    pub(crate) fn value_view_matches_type_with_work(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: RuntimeValueView<'_>,
+        work: &crate::entry::schema::value_budget::ValidationWork,
+    ) -> Result<bool, RuntimePlanValueTypeError> {
         if self.type_table().get(ty).is_none() {
             return Err(RuntimePlanValueTypeError::UnknownType { ty });
         }
-        Ok(self.validate_live_value_with_work(ty, value, work).is_ok())
+        Ok(self
+            .validate_live_value_view_with_work(ty, value, work)
+            .is_ok())
     }
 }
 

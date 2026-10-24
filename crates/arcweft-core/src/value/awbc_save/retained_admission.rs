@@ -13,6 +13,7 @@ use crate::program_types::RuntimeFunctionEffectInstantiation;
 use crate::value::RuntimeValueView;
 use crate::value::ownership::RuntimeValueOwnershipRequirement;
 
+mod fanout;
 mod metadata;
 
 #[cfg(test)]
@@ -523,14 +524,14 @@ impl RuntimeRetainedValueAdmission {
     /// An owning composite authenticates its custody and original metadata
     /// while borrowing this context's existing program and resource bank.
     /// Success grants no copying or executable capability.
-    pub(crate) fn admit_composite(
+    pub(crate) fn admit_composite<T>(
         &mut self,
         origin: ValueAdmissionOrigin,
         admit: impl FnOnce(
             Option<&RuntimeProgramOwner>,
             &mut ValueResourceAdmission,
-        ) -> Result<(), AwbcRuntimeValueSnapshotError>,
-    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        ) -> Result<T, AwbcRuntimeValueSnapshotError>,
+    ) -> Result<T, AwbcRuntimeValueSnapshotError> {
         self.status()?;
         self.resources.set_origin(origin);
         let result = admit(self.owner.as_ref(), &mut self.resources);

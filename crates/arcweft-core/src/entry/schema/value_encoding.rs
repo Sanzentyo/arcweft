@@ -60,6 +60,13 @@ pub(crate) enum ValueAdmission<C, A> {
     Admitted,
 }
 
+/// Canonical collection headers share accounting while retaining their shape.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ValueCollectionKind {
+    Tuple,
+    Sequence,
+}
+
 /// An inert candidate is correlated with the selected original type authority;
 /// a live candidate must already lease that exact immutable executable.
 #[derive(Clone, Copy, Debug)]
@@ -666,6 +673,54 @@ impl ValueResourceAdmission {
             .into());
         }
         self.work.charge(depth)
+    }
+
+    /// Admits only a newly constructed collection node. Its existing children
+    /// have already been charged at their final depth in this same bank.
+    pub(crate) fn collection_header(
+        &mut self,
+        kind: ValueCollectionKind,
+        count: usize,
+        depth: usize,
+    ) -> Result<(), RuntimeSchemaError> {
+        self.vacant(depth)?;
+        self.budget.node(depth)?;
+        self.budget.collection(count)?;
+        let tag = match kind {
+            ValueCollectionKind::Tuple => 11,
+            ValueCollectionKind::Sequence => 12,
+        };
+        self.work.encoded_fixed(ResourceByteKind::Value, &[tag])?;
+        self.work.encoded_count(ResourceByteKind::Value, count)
+    }
+
+    /// A builtin construction uses the canonical case registry and the same
+    /// byte/work allowance as its retained payload; it grants no fresh quota.
+    pub(crate) fn builtin_variant_header(
+        &mut self,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+        depth: usize,
+    ) -> Result<(), RuntimeSchemaError> {
+        self.vacant(depth)?;
+        self.budget.node(depth)?;
+        let (ordinal, schema) = case
+            .owner()
+            .resolve_case(case)
+            .expect("builtin case belongs to its canonical owner");
+        let limits = self.work.limits();
+        let mut sink = self.work.clone();
+        let mut writer = CanonicalWriter {
+            sink: &mut sink,
+            max_encoded_bytes: limits.max_encoded_bytes,
+            max_string_bytes: Some(limits.max_string_bytes),
+        };
+        writer.u8(14)?;
+        writer.variant_identity(&crate::pattern::RuntimeVariantIdentity::Builtin(
+            case.owner(),
+        ))?;
+        writer.var_u32(ordinal)?;
+        writer.string(schema.name())?;
+        writer.u8(u8::from(schema.has_payload()))
     }
 
     /// Bounds retained metadata before it is cloned. Its length-prefixed UTF-8

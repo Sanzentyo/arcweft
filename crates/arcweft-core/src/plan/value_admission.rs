@@ -63,8 +63,17 @@ impl RuntimePlan {
         value: &RuntimeValue,
         work: &ValidationWork,
     ) -> Result<(), RuntimePlanValueAdmissionError> {
+        self.validate_live_value_view_with_work(ty, value.view(), work)
+    }
+
+    pub(crate) fn validate_live_value_view_with_work(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: View<'_>,
+        work: &ValidationWork,
+    ) -> Result<(), RuntimePlanValueAdmissionError> {
         self.inventory
-            .validate_live_value_view_with_work(ty, value.view(), work)
+            .validate_live_value_view_with_work(ty, value, work)
     }
 
     /// Validates a decoded private snapshot candidate before publication.

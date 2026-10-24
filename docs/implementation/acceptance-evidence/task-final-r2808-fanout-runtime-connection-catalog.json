@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "71a01d7eb872193f8b3baf6665fa2766bc0e7a4c",
+  "name": "task-final-r2808-fanout-runtime-connection-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(fanout_) | test(await_many)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2808-fanout-runtime-connection-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T18:10:56.4893877Z",
+  "finishedAt": "2026-10-24T18:11:30.1605286Z"
+}

@@ -272,6 +272,12 @@ let images =
 
 The bounded traversal contract is `Vec<T>.traverse(capability.fn).parallel(limit = N)`, where the capability function returns `Need<Result<U, E>>`. The limit bounds in-flight child requests, and the aggregate preserves source order. Awaiting produces `Result<Vec<U>, E>`; `try await` applies the `Need` and `Result` rules described in [Result / Option, `try`, and Context](result-option-context.md). Runtime fanout details are in [Async scheduler and Need](../02-runtime/async-scheduler.md#need-handling).
 
+Empty traversal produces `.Ok([])`. Domain results are collected at their source
+positions; after collection, all `.Ok` payloads form the ordered vector, or the
+lowest source position containing `.Err` supplies the aggregate error. Host
+completion order does not select the error. Infrastructure failure and
+cancellation retain their separate runtime lifecycle rules.
+
 ## Stream is not Seq
 
 `Stream<T, E>` は外部 capability または別の Stream 変換が返す ordered

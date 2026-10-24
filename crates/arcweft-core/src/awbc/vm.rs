@@ -4620,11 +4620,22 @@ pub(crate) fn prepare_pattern_binding(
     pattern: AwbcPatternId,
     value: &RuntimeValue,
 ) -> Result<PreparedPatternBinding, VmError> {
+    prepare_pattern_binding_view(program, fiber, pattern, value.live_view())
+}
+
+/// A construction owner can preflight its checked live projection before
+/// moving any affine child out of the original source slots.
+pub(crate) fn prepare_pattern_binding_view(
+    program: &AwbcProgram,
+    fiber: &FiberState,
+    pattern: AwbcPatternId,
+    value: LiveRuntimeValueView<'_>,
+) -> Result<PreparedPatternBinding, VmError> {
     if !test_pattern_view(
         program,
         Some(fiber.active_frame()?),
         pattern,
-        value.view(),
+        value.inspect(),
         0,
     )? {
         return Err(VmError::PatternMismatch);
@@ -4639,7 +4650,7 @@ pub(crate) fn prepare_pattern_binding(
         program,
         Some(fiber.active_frame()?),
         pattern,
-        value.live_view(),
+        value,
         0,
         &mut |register, view| {
             let slot =
@@ -4894,13 +4905,23 @@ pub(crate) fn pattern_handle_destinations(
     value: &RuntimeValue,
     token: &crate::runtime_id::RuntimeLineHandleToken,
 ) -> Result<Vec<AwbcRegisterId>, VmError> {
-    let prepared = prepare_pattern_binding(program, fiber, pattern, value)?;
+    pattern_handle_destinations_view(program, fiber, pattern, value.live_view(), token)
+}
+
+pub(crate) fn pattern_handle_destinations_view(
+    program: &AwbcProgram,
+    fiber: &FiberState,
+    pattern: AwbcPatternId,
+    value: LiveRuntimeValueView<'_>,
+    token: &crate::runtime_id::RuntimeLineHandleToken,
+) -> Result<Vec<AwbcRegisterId>, VmError> {
+    let prepared = prepare_pattern_binding_view(program, fiber, pattern, value)?;
     let mut destinations = Vec::new();
     visit_pattern_bindings_view(
         program,
         Some(fiber.active_frame()?),
         pattern,
-        value.live_view(),
+        value,
         0,
         &mut |register, view| {
             if view
@@ -5048,20 +5069,19 @@ fn visit_pattern_bindings_view(
             Ok(())
         }
         AwbcPattern::Sequence { items, rest } => {
-            let Some(values) = value.sequence() else {
+            let RuntimeValueView::Sequence(values) = value.inspect() else {
                 return Err(VmError::PatternMismatch);
             };
             for (index, pattern) in items.iter().enumerate() {
-                let nested = values
-                    .live_value_view(index)
-                    .ok_or(VmError::PatternMismatch)?;
+                let nested = value.child_at(index).ok_or(VmError::PatternMismatch)?;
                 visit_pattern_bindings_view(program, frame, *pattern, nested, depth + 1, visitor)?;
             }
             if let AwbcPatternRest::Bind(register) = rest {
-                for index in items.len()..values.len() {
-                    let nested = values
-                        .live_value_view(index)
-                        .ok_or(VmError::PatternMismatch)?;
+                let length = values
+                    .len()
+                    .map_err(|error| VmError::Runtime(error.to_string()))?;
+                for index in items.len()..length {
+                    let nested = value.child_at(index).ok_or(VmError::PatternMismatch)?;
                     visitor(*register, nested)?;
                 }
             }

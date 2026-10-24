@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2808-fanout-runtime-connection-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79729664,
+      "nonTest": false,
+      "sha256": "ba1648d00a7ae814c7bced8b9a5f82512d0d241b8f78fa1ff264e8f4085d3cd7"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T18:13:01.9136998Z"
+}

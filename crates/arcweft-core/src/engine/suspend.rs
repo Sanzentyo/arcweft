@@ -5,7 +5,7 @@ use super::{
     Engine, FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest,
     RuntimeDiagnostic, RuntimeEvalError, RuntimePayload, RuntimeSeq, RuntimeStepInput,
     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
-    TaskSpec, WaitingManyStatus, runtime_sequence_values, runtime_value_into_sequence_values,
+    TaskSpec, WaitingManyStatus, runtime_value_into_sequence_values,
 };
 use crate::line_task::{
     cancel_live_line_task_group, finalize_live_line_task_close, finish_live_line_task_group,
@@ -1441,36 +1441,76 @@ impl Engine {
                 FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(Box::new(state)));
             return;
         }
-        let values = std::mem::take(&mut state.results)
-            .into_iter()
-            .map(|value| {
-                value
-                    .expect("completed AwaitMany has every Ready result")
-                    .into_value()
-            })
-            .collect::<Vec<_>>();
-        let ready_value = runtime_sequence_values(values);
+        let program = RuntimeTaskSourceProgram::native(Arc::clone(&self.plan));
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            program.program_owner(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let aggregate = match admission.prepare_fanout(
+            state.target.base.outcome().payload_semantic_identity(),
+            state.target.child.outcome().payload_semantic_identity(),
+            state.source_context.instantiation(),
+            &mut state.results,
+        ) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.fiber.frame.status =
+                    FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(Box::new(state)));
+                output
+                    .diagnostics
+                    .push(RuntimeDiagnostic::new(error.to_string()));
+                return;
+            }
+        };
+        let binding = if let Some(pattern) = &state.binding {
+            let prepared = aggregate.with_view(|value| {
+                admission.admit_composite(
+                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+                    |_, resources| {
+                        let work = resources.work();
+                        let result = crate::pattern::prepare_runtime_pattern_owned_view(
+                            &self.plan,
+                            pattern,
+                            value,
+                            self.fiber.frame.env.function_instantiation(),
+                            &work,
+                        );
+                        if let Some(error) = work.failure() {
+                            return Err(error.into());
+                        }
+                        result.map_err(|error| {
+                            crate::value::AwbcRuntimeValueSnapshotError::Message {
+                                message: error.to_string(),
+                            }
+                        })
+                    },
+                )
+            });
+            match prepared {
+                Ok(Some(prepared)) => Some(prepared),
+                refused => {
+                    let message = match refused {
+                        Err(error) => error.to_string(),
+                        Ok(None) => "await result did not match binding pattern".to_owned(),
+                        Ok(Some(_)) => unreachable!("accepted pattern handled above"),
+                    };
+                    aggregate.abort();
+                    self.fiber.frame.status =
+                        FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(Box::new(state)));
+                    output.diagnostics.push(RuntimeDiagnostic::new(message));
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        let ready_value = aggregate.commit();
         let observed = ready_value
             .ownership()
             .permits_copy()
             .then(|| RuntimePayload::new(ready_value.clone()));
-        if let Some(binding) = &state.binding {
-            match self.try_bind_pattern_owned(binding, ready_value) {
-                Ok(None) => {}
-                Ok(Some(_ready_value)) => {
-                    self.fiber.frame.status = FlowFiberStatus::Failed(
-                        "await result did not match binding pattern".to_owned(),
-                    );
-                    output.diagnostics.push(RuntimeDiagnostic::new(
-                        "await result did not match binding pattern".to_owned(),
-                    ));
-                    return;
-                }
-                Err(error) => {
-                    self.fail_eval(error, output);
-                    return;
-                }
-            }
+        if let Some(binding) = binding {
+            self.fiber.frame.env.bind_all(binding.commit(ready_value));
         }
         output.flow_events.push(FlowEvent::AwaitReady {
             need: state.base.need_id(),

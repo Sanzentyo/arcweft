@@ -6,8 +6,8 @@ use super::{
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode,
     RuntimeHostCallRequest, RuntimeNeedState, RuntimePayload, RuntimeStepOutput,
     RuntimeStreamEvent, RuntimeValue, TaskEvent, TaskEventKind, TaskId, TaskSequence,
-    VmObservation, content_request, resolved_runtime_need_state, runtime_sequence_values,
-    runtime_value_label, stream_id_for,
+    VmObservation, content_request, resolved_runtime_need_state, runtime_value_label,
+    stream_id_for,
 };
 use crate::awbc::vm::cancel_fiber;
 use crate::stream::StreamEventKind;
@@ -1023,16 +1023,41 @@ impl AwbcProductStepExecutor {
                 }
                 return true;
             }
-            let values = state
-                .results
-                .iter_mut()
-                .map(|slot| {
-                    slot.take()
-                        .expect("completed AwaitMany result remains present")
-                })
-                .collect::<Vec<_>>();
-            let value = runtime_sequence_values(values);
-            let prepared = (|| -> Result<_, ProductStepError> {
+            let child = self.await_many_child_plan(state.plan);
+            let mut admission = self
+                .program
+                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+            let binding = match self.fiber.active_frame() {
+                Ok(frame) => frame.type_instantiation.clone(),
+                Err(error) => {
+                    if let Some(suspension) = self.fiber.suspension.as_mut() {
+                        suspension.reason = FiberSuspensionReason::AwaitMany(state);
+                    }
+                    self.record_error(ProductStepError::Fiber(error), output);
+                    return false;
+                }
+            };
+            let aggregate = match admission.prepare_fanout(
+                self.program.runtime_types[self.program.task_plans[state.plan.index()]
+                    .payload_type
+                    .index()]
+                .semantic_identity(),
+                self.program.runtime_types
+                    [self.program.task_plans[child.index()].payload_type.index()]
+                .semantic_identity(),
+                binding.as_deref(),
+                &mut state.results,
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    if let Some(suspension) = self.fiber.suspension.as_mut() {
+                        suspension.reason = FiberSuspensionReason::AwaitMany(state);
+                    }
+                    self.record_error(ProductStepError::Input(error.to_string()), output);
+                    return false;
+                }
+            };
+            let prepared = aggregate.with_view(|value| -> Result<_, Box<ProductStepError>> {
                 let need = state
                     .base
                     .as_ref()
@@ -1046,11 +1071,11 @@ impl AwbcProductStepExecutor {
                     .map_err(ProductStepError::Fiber)?;
                 let frame = self.fiber.active_frame().map_err(ProductStepError::Fiber)?;
                 let binding = if let Some(pattern) = state.binding {
-                    let prepared = crate::awbc::vm::prepare_pattern_binding(
+                    let prepared = crate::awbc::vm::prepare_pattern_binding_view(
                         &self.program,
                         &self.fiber,
                         pattern,
-                        &value,
+                        value,
                     )
                     .map_err(|error| ProductStepError::Internal(error.to_string()))?;
                     if prepared.registers().iter().any(|register| {
@@ -1061,7 +1086,8 @@ impl AwbcProductStepExecutor {
                     }) {
                         return Err(ProductStepError::Internal(
                             "AwaitMany binding destination register is occupied".to_owned(),
-                        ));
+                        )
+                        .into());
                     }
                     Some(prepared)
                 } else {
@@ -1073,13 +1099,13 @@ impl AwbcProductStepExecutor {
                     state.plan,
                 );
                 if let Some(pattern) = state.binding {
-                    for handle in super::line::unique_line_handles(&value)? {
+                    for handle in super::line::unique_line_handles_view(value)? {
                         let token = handle.token().clone();
-                        let destinations = crate::awbc::vm::pattern_handle_destinations(
+                        let destinations = crate::awbc::vm::pattern_handle_destinations_view(
                             &self.program,
                             &self.fiber,
                             pattern,
-                            &value,
+                            value,
                             &token,
                         )
                         .map_err(|error| ProductStepError::Internal(error.to_string()))?;
@@ -1096,54 +1122,36 @@ impl AwbcProductStepExecutor {
                         }
                     }
                 }
-                let reconciliation = self.dialogues.inspect_parent_fiber_reconciliation(
-                    self.facade_fiber.execution,
-                    &before_handles,
-                    &after,
-                    &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
-                        crate::effect::RuntimeDropPolicy::Default,
-                    )),
-                )?;
-                Ok((need, resume, binding, reconciliation))
-            })();
-            let (need, prepared_resume, binding, reconciliation) = match prepared {
-                Ok(prepared) => prepared,
-                Err(error) => {
-                    let dropped = super::line::without_await_many_slots(
-                        &before_handles,
-                        self.fiber.instance,
-                        state.plan,
-                    );
-                    if let Ok(reconciliation) = self.dialogues.inspect_parent_fiber_reconciliation(
+                let reconciliation = self
+                    .dialogues
+                    .inspect_parent_fiber_reconciliation(
                         self.facade_fiber.execution,
                         &before_handles,
-                        &dropped,
+                        &after,
                         &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
                             crate::effect::RuntimeDropPolicy::Default,
                         )),
+                    )
+                    .map_err(ProductStepError::from)?;
+                Ok((need, resume, binding, reconciliation))
+            });
+            let (need, prepared_resume, binding, reconciliation) = match prepared {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    aggregate.abort();
+                    if !self.discard_extracted_await_many(
+                        state,
+                        &before_handles,
+                        crate::effect::RuntimeDropPolicy::Default,
+                        output,
                     ) {
-                        let receipt = self
-                            .dialogues
-                            .commit_parent_fiber_reconciliation(reconciliation);
-                        output
-                            .requests
-                            .line_commands
-                            .extend(receipt.into_commands());
-                        self.fail_with_error(error, output);
-                        return true;
+                        return false;
                     }
-                    state.results = runtime_value_into_sequence_values(value)
-                        .expect("owned AwaitMany aggregate remains a sequence")
-                        .into_iter()
-                        .map(Some)
-                        .collect();
-                    if let Some(suspension) = self.fiber.suspension.as_mut() {
-                        suspension.reason = FiberSuspensionReason::AwaitMany(state);
-                    }
-                    self.record_error(error, output);
-                    return false;
+                    self.fail_with_error(*error, output);
+                    return true;
                 }
             };
+            let value = aggregate.commit();
             let observation = value
                 .ownership()
                 .permits_copy()
@@ -2266,15 +2274,6 @@ impl AwbcProductStepExecutor {
             && state.next_index as usize >= state.items.len()
             && state.results.iter().all(Option::is_some)
         {
-            let values = state
-                .results
-                .iter_mut()
-                .map(|slot| {
-                    slot.take()
-                        .expect("completed deferred AwaitMany result remains present")
-                })
-                .collect::<Vec<_>>();
-            let value = runtime_sequence_values(values);
             let Some(base) = &state.base else {
                 journal.record_default_drop_policy();
                 mark_child_trapped(
@@ -2293,13 +2292,50 @@ impl AwbcProductStepExecutor {
                     return true;
                 }
             };
+            let invocation = match fiber.active_frame() {
+                Ok(frame) => frame.type_instantiation.clone(),
+                Err(error) => {
+                    if let Some(suspension) = fiber.suspension.as_mut() {
+                        suspension.reason = FiberSuspensionReason::AwaitMany(state);
+                    }
+                    self.record_error(ProductStepError::Fiber(error), output);
+                    return false;
+                }
+            };
+            let child = self.await_many_child_plan(state.plan);
+            let mut admission = self
+                .program
+                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+            let aggregate = match admission.prepare_fanout(
+                self.program.runtime_types[self.program.task_plans[state.plan.index()]
+                    .payload_type
+                    .index()]
+                .semantic_identity(),
+                self.program.runtime_types
+                    [self.program.task_plans[child.index()].payload_type.index()]
+                .semantic_identity(),
+                invocation.as_deref(),
+                &mut state.results,
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    if let Some(suspension) = fiber.suspension.as_mut() {
+                        suspension.reason = FiberSuspensionReason::AwaitMany(state);
+                    }
+                    self.record_error(ProductStepError::Input(error.to_string()), output);
+                    return false;
+                }
+            };
             let binding = if let Some(pattern) = state.binding {
-                let prepared = match crate::awbc::vm::prepare_pattern_binding(
-                    &self.program,
-                    fiber,
-                    pattern,
-                    &value,
-                ) {
+                let prepared = match aggregate.with_view(|value| {
+                    crate::awbc::vm::prepare_pattern_binding_view(
+                        &self.program,
+                        fiber,
+                        pattern,
+                        value,
+                    )
+                    .map_err(Box::new)
+                }) {
                     Ok(prepared) => prepared,
                     Err(error) => {
                         journal.record_default_drop_policy();
@@ -2328,6 +2364,7 @@ impl AwbcProductStepExecutor {
             } else {
                 None
             };
+            let value = aggregate.commit();
             let observation = value
                 .ownership()
                 .permits_copy()

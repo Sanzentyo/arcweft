@@ -5060,8 +5060,6 @@ Baseline R842 fails both before this API change (0 passed / 2 failed, 0.037 s). 
 
 R844 workspace all-target/all-feature locked check passed. R845 selected all 1,484 Core library cases; R846 executed 1,484/1,484 passed, 0 skipped, 20.257 s. R848 executed both RuntimeTaskPlanRef compile-fail doctests, 2/2 passed. R849 workspace all-target/all-feature locked Clippy passed; R850 workspace format and R851 canonical structure gate passed.
 
-Preserve all outstanding Presentation, Generic Match, retained View, function application, save/replace, NativeSerialized, Native/Web and 55 historical CLI acceptance failures.
-
 ## 2026-10-18 — source admission no longer mints final task-plan keys
 
 Initial fixture attempts R853 (Agent operation in a CLI Flow) and R854 (collecting general tasks rather than dedicated host-call submissions) failed for those fixture errors and were corrected before changing production. R855 is the real semantic baseline: Native/AWBC parity passed for all three programs, then the checkpoint contract-equality assertion failed (0/1 passed, 0.248 s, exit 100). R857 passes the complete repaired regression (1/1, 0.374 s).
@@ -10562,3 +10560,52 @@ fixtureのsourceは `Vec<Bool>`、子payloadはUnitなのに、集約payloadを�
 Source endpointとrequestの検査は維持した。修正後のテストはまだ再実行しておらず、
 この失敗をPASSへ置き換えない。現状一覧では公開済みのSource接続と、この未公開変更を分けた。
 Generic Matchの受入・公開と以前の151／151 PASSを変更する根拠にはしていない。
+
+## AwaitManyのResult集約と消費前検査 — 2026-10-25
+
+実装基点は既存main `71a01d7eb872193f8b3baf6665fa2766bc0e7a4c`。
+元の14 tracked WIPと6 untrackedを保持し、Coreの21 pathを変更した。
+資料整理の[前回公開receipt](acceptance-evidence/task-current-ledger-doc-cut.verified.json)も保持する。
+
+10月18日のR842–R851記録末尾に残っていた未完了一覧も削除した。
+Generic Matchを再開する新しい失敗の根拠がなく、受入済み機能を残作業へ戻す誤記だったためである。
+同節の実行結果・失敗件数・doctestと、前後のCLI 55失敗の実績は変更していない。
+
+元型から `Sequence<Child>` と `Result<Sequence<U>, E>`／`Result<U, E>` の関係を選び、
+Native／AWBCの通常・deferred完了処理を同じadmissionへ移行した。
+子結果とoriginal binding、追加headerを同じ資源bankで検査し、出力の借用viewで
+patternと所有権を準備してから入力slotを消費する。拒否・準備の中断は元slotを保持する。
+AWBCで一度作ったsequenceからslotへ戻す旧経路は削除した。
+canonical Resultの型検査と、unscoped literal向けの制約を分け、正当なscoped bindingも通す。
+child payloadをcloneせず移動し、既存ノード／bytesと追加headerだけを一度ずつ課金する。
+
+Domain Errは全childの結果が揃った後、最小のsource位置から選ぶ。hostの到着順を
+選択条件にしないことを決定し、現行の言語／scheduler契約へ明記した。
+空入力はOkの空vector、全成功はsource順のvectorになる。InfrastructureFailureとcancelは
+別の既存lifecycleを維持する。DSLの意味解析・loweringとlazy Need構築はこのcutに含まない。
+
+途中の失敗は保持する。R2801 checkは借用がFnMut closureからescapeするため終了101。
+検証closureはmetadataだけを返し、その後にexclusive proofを作る形へ修正した。
+R2804 checkはadmit_compositeのunit返却とpattern tokenの不一致で終了101。
+同じbankと最初の失敗を保つまま、検査済みtokenも返せる型へ変更した。
+修正後のR2805 checkは終了0。
+R2807／R2809の17件は各16 PASS／1 FAIL。新しい実行fixtureが通常のpublication delivery
+diagnosticsを誤ってエラー扱いしていた。Native／Product双方の既存実装と既存テストに合わせ、
+入力event数に対応する正確な診断件数、Runtime category、typed failure status、
+集約値・task数・順序・save/restoreを検査する形へ訂正した。結果やassertionを削除していない。
+
+R2803は対象15／15、R2811は追加後の17／17、R2813はCore library全1,988／1,988 PASS。
+scoped bindingの追加後、R2817と最終R2821はそれぞれCore library全1,989／1,989 PASS、
+ignored／filtered 0、終了0。最終catalog R2820と全caseが一致し、6,038固定入力の差分0。
+Native／Product／各stepの公開JSON save/restore付きProductで3ケースずつを実行した。
+caseの実行回数を、nextestのnamed test件数へ重複加算していない。
+R2819 Core限定Clippyはall-targets／all-features／lockedで終了0、既存の警告あり。
+型・scope・資源上限・slot保持・payload非clone移動のownerテストも最終実行に含む。
+
+[集計・入力と原本hash](acceptance-evidence/task-fanout-runtime-acceptance.json)、
+[最終runtime receipt](acceptance-evidence/task-final-r2821-fanout-publication-core-runtime.json)、
+[終端・固定入力の照合](acceptance-evidence/task-final-r2821-fanout-publication-core-runtime.terminal-audit.json)、
+[Clippy receipt](acceptance-evidence/task-final-r2819-fanout-final-core-clippy.json)。
+過去の横断7,260件へCore単独結果を再利用・加算しない。今回の逆依存53 consumer、workspace gate、
+新しいResultの独立deferred Program child実行は未確認。Native公開save／Tier2／Native-Web parityも
+今回の受入へ含めない。Generic Matchの既存受入を未完了へ戻す新たな根拠はない。

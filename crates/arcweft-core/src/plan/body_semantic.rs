@@ -41,6 +41,11 @@ pub use request::{
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum RuntimeBodySemanticError {
+    #[error("fanout output {aggregate:?} does not collect child payload {child:?}")]
+    InvalidFanoutOutput {
+        aggregate: crate::pattern::RuntimeSemanticTypeId,
+        child: crate::pattern::RuntimeSemanticTypeId,
+    },
     #[error("body references unknown type {ty}")]
     UnknownType { ty: RuntimePlanTypeId },
     #[error("body references unknown local {local}")]

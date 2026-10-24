@@ -30,12 +30,14 @@ pub use function_contract::{
 };
 mod data_shapes;
 mod entry;
+mod fanout;
 mod iterator;
 pub use construction::RuntimeProgramValueConstructionError;
 pub use data_shapes::{
     RuntimeDataFieldDefaultError, RuntimeDataFieldDefaultRequest, RuntimeProgramDataShapeError,
     RuntimeProgramDataShapes,
 };
+pub(crate) use fanout::RuntimeFanoutOutputKind;
 
 /// One active executable type authority borrowed for producer-side admission.
 #[derive(Clone, Copy, Debug)]
@@ -81,6 +83,11 @@ impl<'a> RuntimeProgramTypes<'a> {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeProgramTypeError {
+    #[error("fanout output {aggregate:?} does not collect child payload {child:?}")]
+    InvalidFanoutOutput {
+        aggregate: RuntimeSemanticTypeId,
+        child: RuntimeSemanticTypeId,
+    },
     #[error("an unrestricted value graph is required")]
     UnrestrictedValueRequired,
     #[error("active program has no semantic type {semantic_type:?}")]

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "71a01d7eb872193f8b3baf6665fa2766bc0e7a4c",
+  "name": "task-final-r2805-fanout-runtime-connection-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2805-fanout-runtime-connection-core-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T17:49:26.8381569Z",
+  "finishedAt": "2026-10-24T17:50:23.5792607Z"
+}

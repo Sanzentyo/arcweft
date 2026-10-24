@@ -6604,11 +6604,197 @@ fn await_many_executor(
     .expect("AwaitMany Product executor starts")
 }
 
+enum ResultFanoutExecutor {
+    Native(Box<crate::engine::Engine>),
+    Product(Box<AwbcProductStepExecutor>),
+}
+
+impl ResultFanoutExecutor {
+    fn base_need(&self) -> Option<NeedId> {
+        match self {
+            Self::Native(engine) => match &engine.fiber().frame.status {
+                FlowFiberStatus::WaitingMany(crate::engine::WaitingManyStatus::Native(state)) => {
+                    Some(state.base.need_id())
+                }
+                _ => None,
+            },
+            Self::Product(executor) => match &executor.fiber.suspension.as_ref()?.reason {
+                crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state) => state
+                    .base
+                    .as_ref()
+                    .map(crate::task::RuntimeNeedHandle::need_id),
+                _ => None,
+            },
+        }
+    }
+
+    fn step(
+        mut self,
+        input: RuntimeStepInput,
+        restore: bool,
+    ) -> (Self, crate::step::RuntimeStepResult) {
+        let delivered = input.task_events.len();
+        let output = match &mut self {
+            Self::Native(engine) => engine.step(input, RuntimeStepOptions::default()),
+            Self::Product(executor) => executor.step(input, RuntimeStepOptions::default()),
+        };
+        assert_ne!(
+            output.stop_reason,
+            RuntimeStepStopReason::Failed,
+            "{:?}",
+            output.output.diagnostics
+        );
+        // Both executors record one Runtime diagnostic per input publication.
+        // Exact counts retain rejection/error detection alongside typed status.
+        assert_eq!(
+            output.output.diagnostics.len(),
+            delivered,
+            "{:?}",
+            output.output.diagnostics
+        );
+        assert!(
+            output
+                .output
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.category == RuntimeDiagnosticCategory::Runtime)
+        );
+        match &self {
+            Self::Native(engine) => {
+                assert!(
+                    !matches!(engine.fiber().frame.status, FlowFiberStatus::Failed(_)),
+                    "{:?}",
+                    output.output.diagnostics
+                );
+            }
+            Self::Product(executor) => assert_ne!(executor.fiber.status, FiberStatus::Trapped),
+        }
+        if restore {
+            let Self::Product(executor) = self else {
+                panic!("public save belongs to Product")
+            };
+            let live = executor.snapshot_for_save().expect("Result fanout save");
+            let saved =
+                AwbcProductExecutorSaveSnapshot::from_live(&live, executor.admitted_program())
+                    .unwrap();
+            let encoded = serde_json::to_vec(&saved).unwrap();
+            let decoded: AwbcProductExecutorSaveSnapshot =
+                serde_json::from_slice(&encoded).unwrap();
+            let live = decoded
+                .into_live_for_program(executor.admitted_program())
+                .unwrap();
+            self = Self::Product(Box::new((*executor).restore_snapshot_owned(live).unwrap()));
+        }
+        (self, output)
+    }
+}
+
+#[test]
+fn await_many_result_aggregation_runs_native_and_product_with_ordered_errors_and_public_restore() {
+    for backend in 0..3 {
+        for case in 0..3 {
+            let generation = GenerationId::new(7);
+            let items = if case == 0 {
+                crate::value::runtime_sequence_values(vec![])
+            } else {
+                await_many_items()
+            };
+            let mut executor = if backend == 0 {
+                let plan = await_many_original_program_for(AwaitManyFixtureOutput::Result);
+                let invocation = plan
+                    .seal_flow_invocation(
+                        crate::plan::FlowRuntimeId::canonical("main").unwrap(),
+                        [RuntimeFlowParameterBinding {
+                            parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+                            value: items,
+                        }],
+                    )
+                    .unwrap();
+                ResultFanoutExecutor::Native(Box::new(
+                    crate::engine::Engine::for_flow_invocation_with_generation(
+                        invocation, generation,
+                    )
+                    .unwrap(),
+                ))
+            } else {
+                let program = await_many_product_program_for(AwaitManyFixtureOutput::Result);
+                ResultFanoutExecutor::Product(Box::new(await_many_executor(
+                    &program, items, generation,
+                )))
+            };
+            let mut next_child = 0;
+            let mut base = None;
+            let mut pending = vec![];
+            let mut result = None;
+            for _ in 0..32 {
+                let (updated, step) = executor.step(
+                    RuntimeStepInput {
+                        task_events: std::mem::take(&mut pending),
+                        ..RuntimeStepInput::default()
+                    },
+                    backend == 2,
+                );
+                executor = updated;
+                base = base.or_else(|| executor.base_need());
+                for task in &step.output.requests.tasks {
+                    let index = next_child;
+                    next_child += 1;
+                    let value = if case == 2 && index > 0 {
+                        RuntimeValue::result_err(RuntimeValue::String(format!("failure-{index}")))
+                    } else {
+                        RuntimeValue::result_ok(RuntimeValue::String(format!("value-{index}")))
+                    };
+                    pending.push(producer_task_event(
+                        generation,
+                        task.handle().correlation,
+                        1,
+                        TaskEventKind::Ready(RuntimePayload::new(value)),
+                    ));
+                }
+                pending.reverse();
+                for event in step.output.flow_events {
+                    if let crate::plan::FlowEvent::AwaitReady {
+                        need,
+                        value: Some(value),
+                    } = event
+                        && (base == Some(need) || case == 0)
+                    {
+                        assert!(
+                            result.replace(value.into_value()).is_none(),
+                            "aggregate publishes once"
+                        );
+                    }
+                }
+                if result.is_some() {
+                    break;
+                }
+            }
+            let expected = if case == 2 {
+                RuntimeValue::result_err(RuntimeValue::String("failure-1".into()))
+            } else {
+                RuntimeValue::result_ok(crate::value::runtime_sequence_values(
+                    (0..if case == 0 { 0 } else { 3 })
+                        .map(|index| RuntimeValue::String(format!("value-{index}")))
+                        .collect(),
+                ))
+            };
+            assert_eq!(result, Some(expected), "backend={backend}, case={case}");
+            assert_eq!(next_child, if case == 0 { 0 } else { 3 });
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AwaitManyFixtureOutput {
+    Sequence,
+    Result,
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "one genuine Source fixture owns the complete original input, capture, request and fanout contract"
 )]
-fn await_many_original_program() -> crate::plan::RuntimePlan {
+fn await_many_original_program_for(output: AwaitManyFixtureOutput) -> crate::plan::RuntimePlan {
     use crate::plan::*;
     use crate::task::{
         CancelScopeId, HostCapabilityId, NeedProducerContractDigest, NeedProducerDefinition,
@@ -6619,23 +6805,58 @@ fn await_many_original_program() -> crate::plan::RuntimePlan {
     let unit = RuntimeSemanticTypeId::from_bytes([0x90; 32]);
     let string = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
     let sequence = RuntimeSemanticTypeId::from_bytes([0x92; 32]);
+    let child_result = RuntimeSemanticTypeId::from_bytes([0xb0; 32]);
+    let aggregate_result = RuntimeSemanticTypeId::from_bytes([0xb1; 32]);
+    let sequence_tuple = RuntimeSemanticTypeId::from_bytes([0xb2; 32]);
+    let string_tuple = RuntimeSemanticTypeId::from_bytes([0x94; 32]);
     let parameter = manual_awbc_formal_identity(
         "arcweft-core.src.awbc.product_step.tests.await_many_product_program.input-a",
     );
     let mut builder = RuntimePlanBuilder::new();
+    let mut types = vec![
+        RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+        RuntimePlanTypeSeed::new(string, RuntimePlanTypeProjection::String),
+        RuntimePlanTypeSeed::new(
+            sequence,
+            RuntimePlanTypeProjection::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item: string,
+            },
+        ),
+    ];
+    if output == AwaitManyFixtureOutput::Result {
+        types.extend([
+            RuntimePlanTypeSeed::new(
+                string_tuple,
+                RuntimePlanTypeProjection::Tuple(Box::new([string])),
+            ),
+            RuntimePlanTypeSeed::new(
+                sequence_tuple,
+                RuntimePlanTypeProjection::Tuple(Box::new([sequence])),
+            ),
+            RuntimePlanTypeSeed::new(
+                child_result,
+                RuntimePlanTypeProjection::Result {
+                    value: string,
+                    error: string,
+                    value_payload: string_tuple,
+                    error_payload: string_tuple,
+                },
+            ),
+            RuntimePlanTypeSeed::new(
+                aggregate_result,
+                RuntimePlanTypeProjection::Result {
+                    value: sequence,
+                    error: string,
+                    value_payload: sequence_tuple,
+                    error_payload: string_tuple,
+                },
+            ),
+        ]);
+    }
     let admitted = builder
         .admit_type_batch(
-            [
-                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
-                RuntimePlanTypeSeed::new(string, RuntimePlanTypeProjection::String),
-                RuntimePlanTypeSeed::new(
-                    sequence,
-                    RuntimePlanTypeProjection::Sequence {
-                        kind: RuntimePlanSequenceKind::Vec,
-                        item: string,
-                    },
-                ),
-            ],
+            types,
             [
                 RuntimeLocalDeclarationSeed::new(
                     RuntimeLocalDeclarationSource::Parameter(parameter),
@@ -6728,8 +6949,8 @@ fn await_many_original_program() -> crate::plan::RuntimePlan {
                     source: RuntimeExprSeed::new(sequence, RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(source, RuntimeLocalReadMode::Move))),
                     item_binding: item.clone(),
                     limit: 3,
-                    base: template(base, NeedProducerFamily::AwaitManyBase, 0xa0, 0x96, sequence, vec![]),
-                    child: template(child, NeedProducerFamily::AwaitManyChild, 0xa1, 0x98, string, vec![RuntimeHostArgumentTemplate::positional(
+                    base: template(base, NeedProducerFamily::AwaitManyBase, 0xa0, 0x96, if output == AwaitManyFixtureOutput::Result { aggregate_result } else { sequence }, vec![]),
+                    child: template(child, NeedProducerFamily::AwaitManyChild, 0xa1, 0x98, if output == AwaitManyFixtureOutput::Result { child_result } else { string }, vec![RuntimeHostArgumentTemplate::positional(
                         RuntimeRequestRoleIdentity::from_accepted_identity([0xa3; 32]),
                         RuntimeExprSeed::new(string, RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(item, RuntimeLocalReadMode::Copy))),
                     )]),
@@ -6741,7 +6962,15 @@ fn await_many_original_program() -> crate::plan::RuntimePlan {
     builder.finish().unwrap()
 }
 fn await_many_product_program() -> AwbcProgram {
-    let original = await_many_original_program();
+    await_many_product_program_for(AwaitManyFixtureOutput::Sequence)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "one Source-backed fixture keeps payload rows, request kernels and original task keys together"
+)]
+fn await_many_product_program_for(output: AwaitManyFixtureOutput) -> AwbcProgram {
+    let original = await_many_original_program_for(output);
     let crate::plan::FlowOp::AwaitMany { target, .. } = &original
         .function_sites()
         .iter()
@@ -6878,7 +7107,7 @@ fn await_many_product_program() -> AwbcProgram {
             priority: 0,
             cancel_scope: AwbcStringId(3),
             policy: AwbcTaskPolicy::JoinSameKey,
-            payload_type: sequence_ty,
+            payload_type: if output == AwaitManyFixtureOutput::Result { AwbcTypeId(7) } else { sequence_ty },
             execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
                 crate::awbc::schema::AwbcHostTaskPlan {
                     signature: AwbcSignatureId(2),
@@ -6920,7 +7149,11 @@ fn await_many_product_program() -> AwbcProgram {
         priority: 0,
         cancel_scope: AwbcStringId(3),
         policy: AwbcTaskPolicy::JoinSameKey,
-        payload_type: item_ty,
+        payload_type: if output == AwaitManyFixtureOutput::Result {
+            AwbcTypeId(6)
+        } else {
+            item_ty
+        },
         execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
             crate::awbc::schema::AwbcHostTaskPlan {
                 signature: AwbcSignatureId(1),
@@ -6945,6 +7178,39 @@ fn await_many_product_program() -> AwbcProgram {
             },
         ),
     });
+    if output == AwaitManyFixtureOutput::Result {
+        program.strings.extend(["Ok".to_owned(), "Err".to_owned()]);
+        let result = |ok| AwbcRuntimeTypeShape::Variant {
+            owner: crate::awbc::schema::AwbcVariantIdentity::Builtin(
+                crate::pattern::RuntimeBuiltinVariantIdentity::Result,
+            ),
+            arguments: vec![],
+            cases: vec![
+                crate::awbc::schema::AwbcVariantCase {
+                    name: AwbcStringId(4),
+                    payload: Some(ok),
+                },
+                crate::awbc::schema::AwbcVariantCase {
+                    name: AwbcStringId(5),
+                    payload: Some(AwbcTypeId(4)),
+                },
+            ],
+        };
+        program.runtime_types.extend([
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([0xb2; 32]),
+                AwbcRuntimeTypeShape::Tuple(vec![sequence_ty]),
+            ),
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([0xb0; 32]),
+                result(AwbcTypeId(4)),
+            ),
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([0xb1; 32]),
+                result(AwbcTypeId(5)),
+            ),
+        ]);
+    }
     program.instructions = vec![
         AwbcInstruction::MakeTuple {
             dst: AwbcRegisterId(0),

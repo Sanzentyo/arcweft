@@ -439,6 +439,17 @@ let texts = try await paths.traverse(fs.read_text).parallel(limit = 4) with {
 
 `AwaitMany` evaluates its source once, creates no more than `limit` in-flight child requests, and assembles ready values in source order. The runtime-plan source accepts a sequence, an array, or a homogeneous tuple. The source-facing `traverse` contract in [Traits and Seq](../01-language/traits-seq-ranges.md#traversable) uses `Vec<T>`. Child results retain their source indices, so same-key joining can share host work without merging waiting positions. See [AwaitManyTarget](../../crates/arcweft-core/src/task.rs#L789) and [source type validation](../../crates/arcweft-core/src/plan/construction/lower.rs#L4548). The VM owns bounded fanout; thread pools, async runtimes, and I/O remain adapter responsibilities.
 
+The original aggregate and child payload rows determine collection behavior.
+`Sequence<Child>` retains each complete child value, including a child `Result`.
+`Result<Sequence<U>, E>` with child `Result<U, E>` collects domain results and
+transposes them: empty input gives `Ok([])`, success preserves source order, and
+the lowest source index with `Err` supplies the error after collection.
+Completion order does not change that choice. Native and both Product fiber
+completion paths use one original-program admission before moving any slots;
+output headers share the retained children's node, byte, depth and relation-work
+allowance. Pattern/ownership refusal preserves the original result slots until
+the owning execution boundary can commit or authorize their drop.
+
 ```text
 TaskEventKind::Ready(value)                  -> validate and resume with the exact admitted Host Need payload
 TaskEventKind::ProgramTerminal(report)       -> acknowledge the accepted Program launch; consume its local producer result

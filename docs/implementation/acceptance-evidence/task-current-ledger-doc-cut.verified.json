@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "commit": "71a01d7eb872193f8b3baf6665fa2766bc0e7a4c",
+  "parent": "06b4830260397da3c64ab72d79b9f76bb3072bc5",
+  "tree": "f15de1209c46fbaa07dd0eaca7d5961dda9e96a6",
+  "remote": "71a01d7eb872193f8b3baf6665fa2766bc0e7a4c",
+  "advertised": "71a01d7eb872193f8b3baf6665fa2766bc0e7a4c",
+  "paths": [
+    {
+      "path": "docs/00-overview/README.md",
+      "blob": "5627777889efa6a00158c4a7dc6696fed332283f",
+      "sha256": "4307a7202e24f57c76a31f5a373fa0dbbaba6ef5ff34c7f49777f4fbd9c99431"
+    },
+    {
+      "path": "docs/00-overview/architecture.md",
+      "blob": "4f1cdc6392f86956519fa12c53dd64f94cbe15a2",
+      "sha256": "2767bf2e5647ac2d953f20fbea728247290164d91e3808fb573770ad2e38ede2"
+    },
+    {
+      "path": "docs/00-overview/crate-map.md",
+      "blob": "fda16ef4ceeb5fb1a0ff82b7b3474439ac5f1b19",
+      "sha256": "fbe63476cdda262d5e1a5a9791e9b9e6758fe81f7c142ef392221c1e34187d9b"
+    },
+    {
+      "path": "docs/00-overview/terminology.md",
+      "deleted": true
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "709a7c569239edcab9fcce591a8e499258608e90",
+      "sha256": "6ce960e18b87a80b46a093bac4b7eab977e8c788071bad0bd02a2fc6441fbd6c"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "ec60bf705c85d4d66cebb233b76d4ad44cb3da59",
+      "sha256": "fab12b8fb4b3dddece69a476e7e1d15c32c15b0c33698aab69799f04bb300e2a"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "18072258cc32f012d5c19192fdb3a2a44255da46",
+      "sha256": "e61609fd52d95342dfaddf31b15ca97a94aea86500cbfdfae693b601aa80fa86"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2798-traverse-fanout-shape-core-check.json",
+      "blob": "3ce412b6caf0ee5d0eb1c675d7ab7a87a39178ae",
+      "sha256": "8f3550942835add06b545fc78f24dbd05f5feabfa607ba8c77c5756aad23186f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2798-traverse-fanout-shape-core-check.log",
+      "blob": "341638c9fb1e81dfc5123f2407a7567e7cdf2959",
+      "sha256": "1b9d8bb4fa036af19d92069ae60c94ed7131985e9c9bf2aa89a18933dcad83b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2799-traverse-fanout-type-catalog.json",
+      "blob": "19a42ee2252e7849c2a54eae5aa880c3e7ed4bab",
+      "sha256": "b7688fc62d5c4109d7ccdfdfa946c5c5163bfbda258ed6a22b96b3c13fe74152"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2799-traverse-fanout-type-catalog.inventory.json",
+      "blob": "8de1cb2c8d912545b0bfa1e8ec8ba4d4f08dc8af",
+      "sha256": "05e1f33aca16e0f13c6787e82365b2a697883a65345e4f85805e4e257c80eb96"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2800-traverse-fanout-type-runtime.json",
+      "blob": "1855d24aa98f4d7056e2bb4d106977850eb4d3cc",
+      "sha256": "b1adad627c316921fc844389b50e1ad184a8a9526310780a97ce1d11dc0bd407"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2800-traverse-fanout-type-runtime.log",
+      "blob": "0d6c4f31ab68144323b3565d0485c1d30807f0f4",
+      "sha256": "7afd25a8314a1dc097e8526819aa10e9e21c17159144427872d21fac4bfc4363"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2800-traverse-fanout-type-runtime.terminal-audit.json",
+      "blob": "cb0093cd24fbc29551bf3a1726691f14b3f19dcf",
+      "sha256": "0c96eb893ef616cb4089f9fbe4e0328a04944e73cdcc7a081716b1b0d643e770"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-live-status-working-tree-audit.json",
+      "blob": "725e6f4c2f623d51666c6e8af1ce675c8767167b",
+      "sha256": "d8196fb721d41e45a4cfa0ef8d7564533277a95cd99d6d9a971c7168e2713a63"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse-final-checkpoint.verified.json",
+      "blob": "06c189c4f1183d6d820591ff0c8811fb291b2c7a",
+      "sha256": "cb03d46d6fcf02fa71bc055296c49adfc6ca0fe16ef55df41b1f2ca8e225bea6"
+    }
+  ],
+  "patchSha256": "cf8677a72c59ba2487694e0994004dc0ee3d651f12de6aa10895f4ee50f05bf5",
+  "protectedWorkingFiles": 27,
+  "protectedIndexEntries": 2,
+  "remainingTracked": 21,
+  "remainingUntracked": 6,
+  "scope": "Documentation and retained validation evidence only",
+  "verifiedAt": "2026-10-24T17:22:44.1895127Z"
+}

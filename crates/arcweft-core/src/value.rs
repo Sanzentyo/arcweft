@@ -2947,6 +2947,12 @@ impl From<RuntimeValue> for RuntimePayload {
     }
 }
 
+impl From<RuntimePayload> for RuntimeValue {
+    fn from(payload: RuntimePayload) -> Self {
+        payload.into_value()
+    }
+}
+
 impl From<String> for RuntimePayload {
     fn from(value: String) -> Self {
         Self(RuntimeValue::String(value))

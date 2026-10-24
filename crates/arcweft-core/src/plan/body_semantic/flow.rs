@@ -212,6 +212,14 @@ impl RuntimeBodySemanticContext<'_> {
                 target,
                 pending,
             } => {
+                let aggregate = target.base.outcome().payload_semantic_identity();
+                let child = target.child.outcome().payload_semantic_identity();
+                crate::program_types::RuntimeProgramTypes::Plan(self.plan)
+                    .fanout_output_kind(aggregate, child)
+                    .map_err(|_| RuntimeBodySemanticError::InvalidFanoutOutput {
+                        aggregate,
+                        child,
+                    })?;
                 encoder.tag(u8::from(binding.is_some()));
                 self.write_local(encoder, target.item_binding)?;
                 encoder.ordinal(target.limit);

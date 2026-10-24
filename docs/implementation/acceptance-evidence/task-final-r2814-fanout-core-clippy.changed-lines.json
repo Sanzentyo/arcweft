@@ -1,0 +1,87 @@
+[
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+    "line": 4083,
+    "message": "the `Err`-variant returned from this function is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+    "line": 1060,
+    "message": "the `Err`-variant returned from this closure is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+    "line": 1137,
+    "message": "call to `std::mem::drop` with a value that does not implement `Drop`. Dropping such a type only extends its contained lifetimes"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+    "line": 2326,
+    "message": "the `Err`-variant returned from this closure is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/vm.rs",
+    "line": 4622,
+    "message": "the `Err`-variant returned from this function is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/vm.rs",
+    "line": 4917,
+    "message": "the `Err`-variant returned from this function is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/suspend.rs",
+    "line": 1497,
+    "message": "call to `std::mem::drop` with a value that does not implement `Drop`. Dropping such a type only extends its contained lifetimes"
+  },
+  {
+    "path": "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+    "line": 681,
+    "message": "this argument is passed by value, but not consumed in the function body"
+  },
+  {
+    "path": "crates/arcweft-core/src/value/awbc_save/retained_admission/fanout.rs",
+    "line": 3,
+    "message": "usage of wildcard import"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+    "line": 6792,
+    "message": "function `await_many_original_program` is never used"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+    "line": 6623,
+    "message": "redundant closure"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+    "line": 6971,
+    "message": "this function has too many lines (351/100)"
+  },
+  {
+    "path": "crates/arcweft-core/src/program_types/fanout/tests.rs",
+    "line": 50,
+    "message": "adding items after statements is confusing, since items exist from the start of the scope"
+  },
+  {
+    "path": "crates/arcweft-core/src/program_types/fanout/tests.rs",
+    "line": 157,
+    "message": "consider adding a `;` to the last statement for consistent formatting"
+  },
+  {
+    "path": "crates/arcweft-core/src/program_types/fanout/tests.rs",
+    "line": 229,
+    "message": "call to `std::mem::drop` with a value that does not implement `Drop`. Dropping such a type only extends its contained lifetimes"
+  },
+  {
+    "path": "crates/arcweft-core/src/program_types/fanout/tests.rs",
+    "line": 236,
+    "message": "this could be rewritten as `let...else`"
+  },
+  {
+    "path": "crates/arcweft-core/src/program_types/fanout/tests.rs",
+    "line": 247,
+    "message": "this could be rewritten as `let...else`"
+  }
+]

@@ -88,6 +88,7 @@ fn fixture(
     let boolean = RuntimeSemanticTypeId::from_bytes([61; 32]);
     let handle = RuntimeSemanticTypeId::from_bytes([63; 32]);
     let sequence = RuntimeSemanticTypeId::from_bytes([64; 32]);
+    let aggregate = RuntimeSemanticTypeId::from_bytes([65; 32]);
     let locals = builder
         .admit_type_batch(
             [
@@ -99,6 +100,13 @@ fn fixture(
                     RuntimePlanTypeProjection::Sequence {
                         kind: RuntimePlanSequenceKind::Vec,
                         item: boolean,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    aggregate,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: unit,
                     },
                 ),
             ],
@@ -147,7 +155,7 @@ fn fixture(
                     builder.task_coordinate_owner(2).resolve(0).unwrap(),
                     73,
                     NeedProducerFamily::AwaitManyBase,
-                    sequence,
+                    aggregate,
                     argument(91, source),
                 ),
                 child: producer(

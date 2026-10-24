@@ -644,7 +644,7 @@ impl RuntimeFunctionEffectInstantiation {
             &ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
         )
     }
-    fn value_view_matches_with_work<A: FunctionTypeAuthority>(
+    pub(crate) fn value_view_matches_with_work<A: FunctionTypeAuthority>(
         &self,
         program: &A,
         ty: A::Type,

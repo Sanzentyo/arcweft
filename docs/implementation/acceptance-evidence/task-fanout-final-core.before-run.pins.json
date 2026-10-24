@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2816-fanout-final-core-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79739904,
+      "nonTest": false,
+      "sha256": "96319706159159cd1fe3568b49de1e2c83610eba9dc69abc3f1031801c3df830"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T18:36:07.4029848Z"
+}

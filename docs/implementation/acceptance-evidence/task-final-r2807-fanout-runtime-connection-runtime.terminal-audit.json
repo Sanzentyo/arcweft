@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "71a01d7eb872193f8b3baf6665fa2766bc0e7a4c",
+  "run": "task-final-r2807-fanout-runtime-connection-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.113s] 17 tests run: 16 passed, 1 failed, 1971 skipped",
+  "executed": 17,
+  "passed": 16,
+  "failed": 1,
+  "skipped": 1971,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 6038,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::await_many_result_aggregation_runs_native_and_product_with_ordered_errors_and_public_restore"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-24T18:09:45.8905317Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2802-fanout-construction-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79644672,
+      "nonTest": false,
+      "sha256": "73bd10da0f64a28397bd7b20e1516332d0155db86d9f6630594167d5d7e1c1d6"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T17:39:15.3677750Z"
+}

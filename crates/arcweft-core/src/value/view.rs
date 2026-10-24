@@ -75,6 +75,12 @@ pub(crate) enum RuntimeValueView<'a> {
 pub(crate) struct LiveRuntimeValueView<'a>(RuntimeValueView<'a>);
 
 impl<'a> LiveRuntimeValueView<'a> {
+    /// A checked exclusive construction may project its genuine live children
+    /// before moving them. The owner has admitted the complete output shape.
+    pub(super) const fn construction(value: RuntimeValueView<'a>) -> Self {
+        Self(value)
+    }
+
     pub(crate) fn sequence(self) -> Option<&'a RuntimeSeq> {
         match self.0 {
             RuntimeValueView::Sequence(value) => value.live_value(),

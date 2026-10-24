@@ -1,0 +1,47 @@
+[
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+    "line": 4083,
+    "message": "the `Err`-variant returned from this function is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+    "line": 1060,
+    "message": "the `Err`-variant returned from this closure is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+    "line": 2326,
+    "message": "the `Err`-variant returned from this closure is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/vm.rs",
+    "line": 4622,
+    "message": "the `Err`-variant returned from this function is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/vm.rs",
+    "line": 4917,
+    "message": "the `Err`-variant returned from this function is very large"
+  },
+  {
+    "path": "crates/arcweft-core/src/value/awbc_save/retained_admission/fanout.rs",
+    "line": 141,
+    "message": "unused `self` argument"
+  },
+  {
+    "path": "crates/arcweft-core/src/program_types/fanout/tests.rs",
+    "line": 19,
+    "message": "this function has too many lines (110/100)"
+  },
+  {
+    "path": "crates/arcweft-core/src/program_types/fanout/tests.rs",
+    "line": 65,
+    "message": "this OR pattern can be rewritten using a range"
+  },
+  {
+    "path": "crates/arcweft-core/src/program_types/fanout/tests.rs",
+    "line": 120,
+    "message": "this OR pattern can be rewritten using a range"
+  }
+]

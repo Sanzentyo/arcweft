@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "71a01d7eb872193f8b3baf6665fa2766bc0e7a4c",
+  "run": "task-final-r2817-fanout-final-core-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  11.738s] 1989 tests run: 1989 passed, 0 skipped",
+  "executed": 1989,
+  "passed": 1989,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 6038,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T18:37:52.0103985Z"
+}

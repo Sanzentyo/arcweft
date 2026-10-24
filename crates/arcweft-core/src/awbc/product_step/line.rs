@@ -4081,7 +4081,14 @@ pub(super) fn product_fiber_handle_tokens(
 pub(super) fn unique_line_handles(
     value: &RuntimeValue,
 ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, ProductStepError> {
+    unique_line_handles_view(value.live_view())
+}
+
+pub(super) fn unique_line_handles_view(
+    value: crate::value::LiveRuntimeValueView<'_>,
+) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, ProductStepError> {
     let handles = value
+        .inspect()
         .affine_line_handles()
         .map_err(|_| LineRuntimeError::InvalidHandlePayload)?;
     let mut unique = BTreeSet::new();

@@ -73,6 +73,24 @@ pub(crate) struct RuntimeVariantView<'a> {
 }
 
 impl<'a> RuntimeVariantView<'a> {
+    /// Borrowed construction preview. Payload provenance is retained and no
+    /// owning carrier or Copy capability is issued by this projection.
+    pub(crate) const fn borrowed(
+        owner: &'a RuntimeVariantIdentity,
+        ordinal: u32,
+        name: &'a str,
+        payload: Option<super::RuntimeValueSource<'a>>,
+    ) -> Self {
+        Self {
+            owner,
+            ordinal,
+            name,
+            type_instantiation: None,
+            payload,
+            live: None,
+        }
+    }
+
     pub(super) fn live(value: &'a RuntimeVariantValue) -> Self {
         Self {
             owner: value.owner(),
