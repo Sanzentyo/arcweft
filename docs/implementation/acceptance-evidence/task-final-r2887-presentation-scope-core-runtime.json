@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "name": "task-final-r2887-presentation-scope-core-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2887-presentation-scope-core-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T23:10:38.5280032Z",
+  "finishedAt": "2026-10-24T23:11:52.5585201Z"
+}

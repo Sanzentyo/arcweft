@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "name": "task-final-r2886-presentation-scope-core-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2886-presentation-scope-core-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T23:08:14.0049243Z",
+  "finishedAt": "2026-10-24T23:09:51.7531098Z"
+}

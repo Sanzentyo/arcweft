@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "name": "task-final-r2890-presentation-scope-structure-gate",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2890-presentation-scope-structure-gate.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T23:13:29.8769117Z",
+  "finishedAt": "2026-10-24T23:13:33.0924309Z"
+}

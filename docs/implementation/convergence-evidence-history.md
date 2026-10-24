@@ -10909,3 +10909,63 @@ Cargo graphのCore逆依存は53、manifest／lock 99入力の差分0。今回�
 driverやresource-aware restoreの受入へ広げない。次は実際のframeのdynamic ownerと
 Source admissionを同じledgerへ接続する。元14 tracked WIP／6 untracked実ファイルを保持し、
 Generic Match等の先行受入と全体goalが未完了であることを分けている。
+
+上記private ledgerは `da080ab0d3181dcf51c27019649b4d3ce89455ec` で通常commit／
+non-forced pushした。parentは `59861dac939fc05e47f7aa6b9b6fee45d9664407`、
+treeは `32208573a50116536bc2087d9be5719ae3739d31`。全38 pathの公開blob、
+6,400保持入力、元14 tracked WIPのpatchは一致し、indexは空だった。
+[公開後の照合](acceptance-evidence/task-presentation-ledger-checkpoint.verified.json)。
+
+## Native frameとPresentation scope grantの接続 — 2026-10-25
+
+基点は `da080ab0d3181dcf51c27019649b4d3ce89455ec`。Coreの8 source pathで、
+実際のNative `FlowFiber`が持つ元program lease／execution／fiberと、到達した環境scopeから
+resource grantを得る経路を接続した。privateなownerの直接構築を封じ、ledgerがnonzero IDと
+activeなgrantの状態を所有する。環境のscopeはinertな参照を保持する。同じframe内では
+grantを再利用し、明示終了後や別のscopeへの再入で旧IDを再利用しない。
+
+Scope grantとhandleには独立した上限があり、scopeへの束縛・ID発行より前に検査する。
+親のunrestricted captureにscope grantを複製せず、別program lease／execution／fiberや
+終了済みgrantは拒否する。scope名や静的命令座標を動的所有者の代わりにしない。
+既存のstandalone rollbackはledgerを所有しないため、grantを持つscopeを
+`PresentationScopeCustodyRequired`で拒否する。Headerの複製だけを復元権限にしていない。
+
+R2884 Core checkは終了0、R2885 workspace checkも終了0・警告ありだったが、どちらも
+最終のscope上限・テストを含む入力とは区別する。上限・テスト追加後、取付け証明追加前の
+sourceでR2886 catalogのCore全target
+2,065件をR2887で実行し、**2,065／2,065 PASS**、終了0、72.571秒、非選択0。
+新規8件は実Native frameの再入・別execution／program拒否・親grantの非継承・
+ledgerなしrollback拒否とcleanup後の通常rollback、scope ID枯渇・別context拒否・
+scope上限の事前検査を扱う。前段のledger遷移7件も含む。
+6,401固定入力と実行ファイル13件の前後hash差分0。
+[全件・範囲](acceptance-evidence/task-presentation-scope-acceptance.json)、
+[終端照合](acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-presentation-scope-runtime.audit.json)。
+
+取付け証明追加前の同sourceで、R2888 workspace check／R2889 workspace Clippyはall-targets／
+all-features／lockedで終了0・警告あり、6,401入力の差分0。R2890構造gateは
+3,216 files／3,086 Rust files／97 packages、review trigger 378、blocking 0だった。
+この時点の原本・照合23件／10,242,047 bytesをbyte／SHA256一致で保持した。
+新しいproduction fileを増やさず、既存のframe／環境／resource ownerを接続し、
+新規Native test moduleは159行に分けた。
+[所有境界・実測](acceptance-evidence/task-presentation-scope-ownership-review.json)、
+[原本保全](acceptance-evidence/task-presentation-scope-evidence-integrity.json)。
+
+公開前のレビューでは、inert参照を複製してframeの取付け口へ渡せる内部APIを修正した。
+取付け証明はledgerだけが構築し、一度だけ環境へ移動する。参照自体のCloneを
+scope grantの発行・取付け権限へ変換しない。この変更より前のR2887等を最終入力の
+再実行とせず、R2891 catalogの全2,065件をR2892で新規実行した。
+結果は**2,065／2,065 PASS**、終了0、71.286秒、非選択0。
+6,428固定入力と実行ファイル13件の前後hash差分0。
+[最終終端照合](acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.terminal-audit.json)、
+[最終実行ファイル照合](acceptance-evidence/task-presentation-scope-install-runtime.audit.json)。
+同sourceのR2893 workspace check／R2894 workspace Clippyはall-targets／all-features／
+lockedで終了0・警告あり、6,428入力の差分0。R2895構造gateは3,216 files／
+3,086 Rust files／97 packages、review trigger 378、blocking 0。
+追加した原本も含めて計41件／20,302,196 bytesをbyte／SHA256一致で保持した。
+
+これはprivateなNative frame束縛と明示終了の検証であり、通常のSource命令・全scope終了を
+移行した結果ではない。AWBC、ledgerを含むrollback、Source body admission、typed command
+lowering／driverへの接続と全53逆依存runtimeは未完了。grant参照だけで復元を受理しない
+境界を保持したまま、ledgerの実行側所有と通常のcleanupを接続する。
+元14 tracked WIP／6 untracked実ファイルを保持し、Generic Match等の先行受入は取り消さない。

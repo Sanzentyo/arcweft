@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "intermediateCheckpoint": true,
+  "sourcePaths": [
+    "crates/arcweft-core/src/engine.rs",
+    "crates/arcweft-core/src/engine/presentation_tests.rs",
+    "crates/arcweft-core/src/presentation/resources.rs",
+    "crates/arcweft-core/src/presentation/resources/tests.rs",
+    "crates/arcweft-core/src/runtime_id.rs",
+    "crates/arcweft-core/src/value.rs",
+    "crates/arcweft-core/src/value/awbc_save.rs",
+    "crates/arcweft-core/src/value/env.rs"
+  ],
+  "nativeFrameScopeBindingImplemented": true,
+  "scopeAndHandleLimitsAreSeparate": true,
+  "scopeIdentityIsLedgerIssued": true,
+  "rawScopeOwnerConstructorSealed": true,
+  "standaloneRollbackWithoutLedger": "Typed PresentationScopeCustodyRequired rejection",
+  "ownerRun": {
+    "run": "R2892",
+    "executed": 2065,
+    "passed": 2065,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 71.286,
+    "requiredNewCases": 8,
+    "sourceInputs": 6428,
+    "sourceDrift": 0,
+    "binaries": 13,
+    "binaryDrift": 0
+  },
+  "workspaceCheck": {
+    "run": "R2893",
+    "exitCode": 0,
+    "warnings": true,
+    "sourceDrift": 0
+  },
+  "workspaceClippy": {
+    "run": "R2894",
+    "exitCode": 0,
+    "warnings": true,
+    "sourceDrift": 0
+  },
+  "structure": {
+    "run": "R2895",
+    "exitCode": 0,
+    "files": 3216,
+    "rustFiles": 3086,
+    "packages": 97,
+    "reviewTriggers": 378,
+    "blocking": 0
+  },
+  "earlierChecks": [
+    {
+      "run": "R2884",
+      "exitCode": 0,
+      "scope": "Before typed snapshot rejection and new final cases; no claim of final input hash equivalence"
+    },
+    {
+      "run": "R2885",
+      "exitCode": 0,
+      "scope": "Before separate scope quota and last three test cases; no claim of final input hash equivalence"
+    },
+    {
+      "run": "R2887",
+      "executed": 2065,
+      "passed": 2065,
+      "scope": "Before one-use installation proof; input6401/binaries13 drift0"
+    },
+    {
+      "run": "R2888/R2889/R2890",
+      "exitCode": 0,
+      "scope": "Workspace and structure gates before one-use installation proof; input6401 drift0"
+    }
+  ],
+  "sourceProducerEnabled": false,
+  "allOrdinaryNativeExitsMigrated": false,
+  "awbcScopeBindingImplemented": false,
+  "ledgerAwareRollbackAccepted": false,
+  "runtimeCommandAbiImplemented": false,
+  "goalComplete": false,
+  "preservedOriginalTrackedWip": 14,
+  "preservedOriginalUntrackedFiles": 6,
+  "ownershipReview": "task-presentation-scope-ownership-review.json",
+  "evidenceManifest": "task-presentation-scope-evidence-integrity.json",
+  "inertReferenceCannotInstallGrant": true
+}

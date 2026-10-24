@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "name": "task-final-r2893-presentation-scope-install-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2893-presentation-scope-install-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T23:24:16.0345853Z",
+  "finishedAt": "2026-10-24T23:25:43.9171503Z"
+}

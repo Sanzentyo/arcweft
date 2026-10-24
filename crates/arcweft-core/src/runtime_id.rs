@@ -751,6 +751,7 @@ pub enum RuntimeIdNamespace {
     AffineOwner,
     FiberInstance,
     FrameInstance,
+    ScopeInstance,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]

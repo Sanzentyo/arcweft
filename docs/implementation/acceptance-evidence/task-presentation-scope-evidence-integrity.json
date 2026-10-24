@@ -1,0 +1,255 @@
+{
+  "version": 1,
+  "count": 41,
+  "bytes": 20302196.0,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2884-presentation-scope-core-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2884-presentation-scope-core-check.json",
+      "bytes": 528,
+      "sha256": "1e2ac3c93c5d9dc368c57a1f01133b9b90993653c4703f35d2e26ac373e9aa30"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2884-presentation-scope-core-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2884-presentation-scope-core-check.log",
+      "bytes": 79757,
+      "sha256": "aeae1c5d356c24c486fcf9afe72215c28cebb4f02fecac515de0c055bc96dc81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2885-presentation-scope-workspace-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2885-presentation-scope-workspace-check.json",
+      "bytes": 526,
+      "sha256": "ccc15eb25ced358ca8edf9e6790798e45fb85765e8578a65f4b879e6b22d85ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2885-presentation-scope-workspace-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2885-presentation-scope-workspace-check.log",
+      "bytes": 105716,
+      "sha256": "a6dbc7815b61b6c6c6ec67fc94e5343eb52236a327fad4dc8c9d6a2d3a19175e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2886-presentation-scope-core-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2886-presentation-scope-core-catalog.json",
+      "bytes": 585,
+      "sha256": "2cd8c132f660da8e4e43834385c3512d8dfe9e788052adadeffebd9e61b056ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2886-presentation-scope-core-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2886-presentation-scope-core-catalog.log",
+      "bytes": 437945,
+      "sha256": "2fc2b3fd31dcc1f05be80c27ae97d21c16269a37dd572d7094ad9f88659eadc5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2887-presentation-scope-core-runtime.json",
+      "bytes": 642,
+      "sha256": "3e5e77ace4088ce675fee45d9046caa47eede4ca406024a350e0cbaed0a3ba47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2887-presentation-scope-core-runtime.log",
+      "bytes": 707199,
+      "sha256": "e3ac0d376a71790f31cce9be81a8f6f5cf679b64f27e98fe4f6755528041142b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2888-presentation-scope-workspace-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2888-presentation-scope-workspace-check.json",
+      "bytes": 526,
+      "sha256": "5fdd95bb9d35404f0b1b1cace5cdee3dedce945f8899fe6c5f31982e716f1a3f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2888-presentation-scope-workspace-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2888-presentation-scope-workspace-check.log",
+      "bytes": 105957,
+      "sha256": "f77e22d525609a04e4913ec8b8be3be2aee65d0ece38829baa0f912e8e176129"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2889-presentation-scope-workspace-clippy.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2889-presentation-scope-workspace-clippy.json",
+      "bytes": 529,
+      "sha256": "742df12801ac6fae0c75cc2901c48e3c147548a8a15b098d5187da001df3198b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2889-presentation-scope-workspace-clippy.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2889-presentation-scope-workspace-clippy.log",
+      "bytes": 7377862,
+      "sha256": "a54de73e20e3a693f04f8866a15a817e75a91b9fb0ed0c7d9040d6761d5e5da6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2890-presentation-scope-structure-gate.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2890-presentation-scope-structure-gate.json",
+      "bytes": 547,
+      "sha256": "47b782ad12b9edaaa2cb7fcf3e896b1da686b498cdb582837ca48a073b9776e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2890-presentation-scope-structure-gate.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2890-presentation-scope-structure-gate.log",
+      "bytes": 64139,
+      "sha256": "05acc1809537856cd17b0149c1e68656a4125d68b10088747935cd5a98efa2c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.terminal-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2887-presentation-scope-core-runtime.terminal-audit.json",
+      "bytes": 579,
+      "sha256": "2625588a9103bce7286d8b03d9e43c31f5ec850e3cd6ddc1707ba244621a224c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2888-presentation-scope-workspace-check.input-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2888-presentation-scope-workspace-check.input-audit.json",
+      "bytes": 186,
+      "sha256": "93102d8cf166c78fb1d50b6626b07ece4df86d03f0cb87ede57570605d8a9750"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2889-presentation-scope-workspace-clippy.input-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2889-presentation-scope-workspace-clippy.input-audit.json",
+      "bytes": 187,
+      "sha256": "af058291bcb0ab6b13ad66c1a41ea78cd0c1b347386b04555060e385c03d5dae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2890-presentation-scope-structure-gate.input-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2890-presentation-scope-structure-gate.input-audit.json",
+      "bytes": 185,
+      "sha256": "eddf786fa8451b9a23f68517ce9092395feddb5e7d475e13445730ff09127f66"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-source.source-freeze.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-scope-source.source-freeze.json",
+      "bytes": 1341652,
+      "sha256": "d911b0814e4ead5766038c83b6185832116a9925015684a14c8abf29ecb75ada"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-source.graph.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-scope-source.graph.json",
+      "bytes": 3150,
+      "sha256": "74f72bf4e1cc70205f520d4cf64f92aad742daa7501cc09e601a98e227a89cb8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope.before.pins.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-scope.before.pins.json",
+      "bytes": 3446,
+      "sha256": "e63238a1400270dda585bd9966b20a98990bd3f2772559f4b3e1f498098b4683"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-runtime.audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-scope-runtime.audit.json",
+      "bytes": 300,
+      "sha256": "00dd59f1aec510cbc5d8477ec56c48abd16a2420c4e9dfe717d374d60048d79b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-checkpoint.verified.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-ledger-checkpoint.verified.json",
+      "bytes": 9904,
+      "sha256": "3114eed056f00e3839ee15b7f0e0cf4ae94fec643f533e411fc3b1d6bad181d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2891-presentation-scope-install-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2891-presentation-scope-install-catalog.json",
+      "bytes": 591,
+      "sha256": "852fac4b0f78dd5fa0b1faf6592392435317bf9bc8f988d6910c8abfbfc1ab90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2891-presentation-scope-install-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2891-presentation-scope-install-catalog.log",
+      "bytes": 438544,
+      "sha256": "3bc496234e96495800c063e6d384c2ba42b4678dc07e6e0ed12839d96ea12fd7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2892-presentation-scope-install-runtime.json",
+      "bytes": 648,
+      "sha256": "3471474ff9b1400d6b7452f233d72c15b7cc8968c4bd9dc7e50ed225d8390883"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2892-presentation-scope-install-runtime.log",
+      "bytes": 707854,
+      "sha256": "d287f346a2aab352c4866997b79a8ea806102d0351cb36f3eb62f41b1e98bc02"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2893-presentation-scope-install-workspace-check.json",
+      "bytes": 542,
+      "sha256": "ae2f07596f111d80a3668e2992b6a15ab4ce23d00c67c54925c8a12845570af9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2893-presentation-scope-install-workspace-check.log",
+      "bytes": 106570,
+      "sha256": "6dd2bac3b1ccf3c81b9fab5b3a6d4340962926f5a9a0e98a8574318d3fd287e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2894-presentation-scope-install-workspace-clippy.json",
+      "bytes": 545,
+      "sha256": "b71fa91f7f746b7a7088ca65dfaf30e1d02b6ed88a070133977a5c72c9d1e1fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2894-presentation-scope-install-workspace-clippy.log",
+      "bytes": 7378461,
+      "sha256": "84796ff912f4e96e05146a0ec0cfbc908ba5ac44ee609a580ec5dd8e32b4ae2d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2895-presentation-scope-install-structure-gate.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2895-presentation-scope-install-structure-gate.json",
+      "bytes": 563,
+      "sha256": "2b214034647d6a7df7f2074d3583300553fd2bc1679e00824ee3fe8b188ba2bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2895-presentation-scope-install-structure-gate.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2895-presentation-scope-install-structure-gate.log",
+      "bytes": 64139,
+      "sha256": "86072ef8a740cfd5ec8273d33e4f698ec033faf38331f4d09eeedd3a296c488e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.terminal-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2892-presentation-scope-install-runtime.terminal-audit.json",
+      "bytes": 582,
+      "sha256": "9bfc530d344dda4e5798e97aa37738f9b8dbd3a95716a8b5dd04dfc8362d2107"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.input-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2893-presentation-scope-install-workspace-check.input-audit.json",
+      "bytes": 194,
+      "sha256": "001a6fb183c46ed3976858d07fe613b845de2fbc0bb4a98e8cb59264b6c2e23f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.input-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2894-presentation-scope-install-workspace-clippy.input-audit.json",
+      "bytes": 195,
+      "sha256": "39060fc8c5bec72ff7be73d5aabf4b60fd134132177ab566a329c1094f2340c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2895-presentation-scope-install-structure-gate.input-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2895-presentation-scope-install-structure-gate.input-audit.json",
+      "bytes": 193,
+      "sha256": "ab182d5e6a728f074b10781e7d2dff337f385c0fcfc065e0499294648160c9d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-install-source.source-freeze.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-scope-install-source.source-freeze.json",
+      "bytes": 1350780,
+      "sha256": "75b4da8fdd3d5d27800e84df5f2cbc5f7becd0023ee2d402756a85d59c8b4cb1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-install-source.graph.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-scope-install-source.graph.json",
+      "bytes": 5996,
+      "sha256": "650aa02494265fb7a1bd5f04c2e372f7df44851479069e8e806c8c3382f907c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-install.before.pins.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-scope-install.before.pins.json",
+      "bytes": 3449,
+      "sha256": "d7c873b15c36fcc6db75e69806cff3c7a63ba8415a910a06b95f0af5997e2cef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-install-runtime.audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-scope-install-runtime.audit.json",
+      "bytes": 303,
+      "sha256": "dc659aa2f2524f029d4abab5841a8b8923500810720c3d62c4e4bccfaf664a67"
+    }
+  ],
+  "byteDrift": 0,
+  "at": "2026-10-24T23:29:33.7090179Z"
+}

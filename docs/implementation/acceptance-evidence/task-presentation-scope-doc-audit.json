@@ -1,0 +1,260 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "at": "2026-10-24T23:30:45.0994624Z",
+  "scope": "Documentation reconciliation only; no new Cargo/runtime execution",
+  "owned": [
+    "docs/implementation/acceptance-evidence/task-final-r2884-presentation-scope-core-check.json",
+    "docs/implementation/acceptance-evidence/task-final-r2884-presentation-scope-core-check.log",
+    "docs/implementation/acceptance-evidence/task-final-r2885-presentation-scope-workspace-check.json",
+    "docs/implementation/acceptance-evidence/task-final-r2885-presentation-scope-workspace-check.log",
+    "docs/implementation/acceptance-evidence/task-final-r2886-presentation-scope-core-catalog.json",
+    "docs/implementation/acceptance-evidence/task-final-r2886-presentation-scope-core-catalog.log",
+    "docs/implementation/acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.json",
+    "docs/implementation/acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.log",
+    "docs/implementation/acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.terminal-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2888-presentation-scope-workspace-check.input-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2888-presentation-scope-workspace-check.json",
+    "docs/implementation/acceptance-evidence/task-final-r2888-presentation-scope-workspace-check.log",
+    "docs/implementation/acceptance-evidence/task-final-r2889-presentation-scope-workspace-clippy.input-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2889-presentation-scope-workspace-clippy.json",
+    "docs/implementation/acceptance-evidence/task-final-r2889-presentation-scope-workspace-clippy.log",
+    "docs/implementation/acceptance-evidence/task-final-r2890-presentation-scope-structure-gate.input-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2890-presentation-scope-structure-gate.json",
+    "docs/implementation/acceptance-evidence/task-final-r2890-presentation-scope-structure-gate.log",
+    "docs/implementation/acceptance-evidence/task-final-r2891-presentation-scope-install-catalog.json",
+    "docs/implementation/acceptance-evidence/task-final-r2891-presentation-scope-install-catalog.log",
+    "docs/implementation/acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.json",
+    "docs/implementation/acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.log",
+    "docs/implementation/acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.terminal-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.input-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.json",
+    "docs/implementation/acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.log",
+    "docs/implementation/acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.input-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.json",
+    "docs/implementation/acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.log",
+    "docs/implementation/acceptance-evidence/task-final-r2895-presentation-scope-install-structure-gate.input-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2895-presentation-scope-install-structure-gate.json",
+    "docs/implementation/acceptance-evidence/task-final-r2895-presentation-scope-install-structure-gate.log",
+    "docs/implementation/acceptance-evidence/task-presentation-ledger-checkpoint.verified.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-acceptance.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-doc-audit.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-evidence-integrity.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-install-runtime.audit.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-install-source.graph.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-install-source.source-freeze.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-install.before.pins.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-ownership-review.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-runtime.audit.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-source.graph.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope-source.source-freeze.json",
+    "docs/implementation/acceptance-evidence/task-presentation-scope.before.pins.json",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "deleted": [],
+  "markdown": [
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "sha256": "20696ebd9c3962ca26533466ef0169e8184d4afda533dc87e762676fa9cf544f",
+      "checkedSurface": "added hunks",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "sha256": "9e14a5cc3e39d2f54177ed0871a296783284239fbde1783e781f4fb0d2ab41f1",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    }
+  ],
+  "checkedRelativeLinks": 45,
+  "relativeLinks": [
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-ledger-checkpoint.verified.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-scope-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-scope-runtime.audit.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-scope-ownership-review.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-scope-evidence-integrity.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-scope-install-runtime.audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-ledger-checkpoint.verified.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-resource-owner-checkpoint.verified.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../README.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-c3-c5-closure-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-phase-note-publication.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-handle-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-handle-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-resource-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-ledger-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-scope-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/vertical-break-validation-2026-07-14.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../03-presentation/text-typesetting.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.acceptance-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-fanout-child-reverse-coverage.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-native-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-fanout-child-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md#traversable"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#awaitmanyのresult集約と消費前検査--2026-10-25"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-handle-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-handle-reverse-coverage.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-handle-reverse-coverage.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2864-presentation-handle-reverse-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.input-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.input-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-scope-ownership-review.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.failure-recon.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "documentation-cleanup.md"
+    }
+  ],
+  "unclosedFences": 0,
+  "priorFullShaIdentifiers": 1080,
+  "lostFullShaIdentifiers": [],
+  "untrackedHeld": 6,
+  "untrackedHeldDrift": 0,
+  "genericAcceptance": "Preserved; existing151/151PASS and published acceptance unchanged",
+  "validationReuse": "Existing runtime results remain historical evidence, not rerun by this cut"
+}

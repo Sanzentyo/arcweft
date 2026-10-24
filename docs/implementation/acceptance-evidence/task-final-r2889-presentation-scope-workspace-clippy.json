@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "name": "task-final-r2889-presentation-scope-workspace-clippy",
+  "command": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2889-presentation-scope-workspace-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T23:13:19.6519962Z",
+  "finishedAt": "2026-10-24T23:15:06.7512824Z"
+}

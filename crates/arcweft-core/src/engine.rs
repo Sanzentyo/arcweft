@@ -53,6 +53,8 @@ pub mod dialogue;
 pub mod eval;
 mod frame_progress;
 mod numeric_map;
+#[cfg(test)]
+mod presentation_tests;
 mod rollback;
 mod root;
 #[cfg(test)]
@@ -242,6 +244,37 @@ pub struct FlowFiber<F = NativeFlowExecutionFrame> {
     pub persistent_id: RuntimePersistentFiberId,
     pub execution: crate::runtime_id::ExecutionInstanceId,
     pub(crate) owner: FlowFiberOwner,
+}
+
+impl FlowFiber {
+    /// Binds resources to this exact reached execution frame, never caller-
+    /// supplied coordinates or a scope name reconstructed from source text.
+    pub(crate) fn bind_presentation_scope<V>(
+        &mut self,
+        ledger: &mut crate::presentation::resources::PresentationLedger<V>,
+    ) -> Result<
+        crate::presentation::resources::PresentationScopeOwner,
+        crate::presentation::resources::PresentationLedgerError,
+    > {
+        ledger.bind_scope(
+            &self.frame.program,
+            self.execution,
+            self.persistent_id,
+            &mut self.frame.env,
+        )
+    }
+
+    pub(crate) fn release_presentation_scope<V>(
+        &self,
+        ledger: &mut crate::presentation::resources::PresentationLedger<V>,
+    ) -> Result<Vec<V>, crate::presentation::resources::PresentationLedgerError> {
+        ledger.exit_bound_scope(
+            &self.frame.program,
+            self.execution,
+            self.persistent_id,
+            &self.frame.env,
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]

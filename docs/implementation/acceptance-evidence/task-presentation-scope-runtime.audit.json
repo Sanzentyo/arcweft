@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "run": "task-final-r2887-presentation-scope-core-runtime",
+  "executed": 2065,
+  "passed": 2065,
+  "failed": 0,
+  "sourceInputs": 6401,
+  "sourceDrift": 0,
+  "binaryCount": 13,
+  "binaryDrift": 0,
+  "artifactCopyMove": false,
+  "at": "2026-10-24T23:14:06.5811659Z"
+}

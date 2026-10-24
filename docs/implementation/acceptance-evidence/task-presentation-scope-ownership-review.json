@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "sourcePaths": [
+    "crates/arcweft-core/src/engine.rs",
+    "crates/arcweft-core/src/engine/presentation_tests.rs",
+    "crates/arcweft-core/src/presentation/resources.rs",
+    "crates/arcweft-core/src/presentation/resources/tests.rs",
+    "crates/arcweft-core/src/runtime_id.rs",
+    "crates/arcweft-core/src/value.rs",
+    "crates/arcweft-core/src/value/awbc_save.rs",
+    "crates/arcweft-core/src/value/env.rs"
+  ],
+  "metrics": [
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "bytes": 227921,
+      "physicalLines": 5667,
+      "basePhysicalLines": 5634,
+      "growth": 33,
+      "classification": "production",
+      "embeddedTestLines": 819
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+      "bytes": 4941,
+      "physicalLines": 159,
+      "basePhysicalLines": 0,
+      "growth": 159,
+      "classification": "unit tests",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "bytes": 14564,
+      "physicalLines": 416,
+      "basePhysicalLines": 277,
+      "growth": 139,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "bytes": 14298,
+      "physicalLines": 454,
+      "basePhysicalLines": 337,
+      "growth": 117,
+      "classification": "unit tests",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/runtime_id.rs",
+      "bytes": 48959,
+      "physicalLines": 1536,
+      "basePhysicalLines": 1535,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLines": 144
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "bytes": 168445,
+      "physicalLines": 4667,
+      "basePhysicalLines": 4665,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save.rs",
+      "bytes": 64301,
+      "physicalLines": 1545,
+      "basePhysicalLines": 1537,
+      "growth": 8,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/value/env.rs",
+      "bytes": 76626,
+      "physicalLines": 1991,
+      "basePhysicalLines": 1963,
+      "growth": 28,
+      "classification": "production",
+      "embeddedTestLines": 997
+    }
+  ],
+  "owner": "Core presentation resource grants and Native reached lexical frames",
+  "cohesion": "Native FlowFiber derives exact program/execution/fiber. RuntimeEnv owns the physical reached scope and its inert grant reference; PresentationLedger owns grant issuance/active retirement and resource bodies. These are distinct responsibilities, not copied mutable scope authority. No I/O, dependency, feature, source reconstruction or public facade was added. A non-Clone installation proof is issued only inside the ledger and immediately consumed by the frame setter; copied inert references cannot install another frame grant.",
+  "validation": "Final Core all-targets R2892 2065 PASS; final workspace all-target/all-feature R2893 check and R2894 Clippy exit 0 with warnings; final R2895 structure blocking 0. Earlier R2887/2888/2889/2890 belong to bytes before installation-proof sealing. Reverse graph remains 53, non-Core runtime not rerun at this intermediate boundary.",
+  "remaining": "Normal Source operation issuance, all ordinary scope exits, AWBC, owned ledger rollback/source admission, typed command lowering and driver execution remain unconnected. Private constructors/methods still produce unsuppressed dead-code diagnostics.",
+  "measurements": "Physical LOC from current bytes and pinned base blobs; unchanged embedded-module counts reused from canonical R2890/R2895 scanner. Final R2895 total 3216 files, 3086 Rust files, blocking 0."
+}

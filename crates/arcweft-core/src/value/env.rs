@@ -135,6 +135,7 @@ impl RuntimeEnv {
                 .map(|scope| {
                     Ok(RuntimeScope {
                         identity: scope.identity.clone(),
+                        presentation_scope: scope.presentation_scope.clone(),
                         function_context: scope.function_context.clone(),
                         slots: scope
                             .slots
@@ -181,6 +182,7 @@ impl RuntimeEnvRollbackImage {
                 .map(|scope| {
                     Ok(RuntimeScope {
                         identity: scope.identity,
+                        presentation_scope: scope.presentation_scope,
                         function_context: scope.function_context,
                         slots: scope
                             .slots
@@ -202,6 +204,26 @@ impl RuntimeEnvRollbackImage {
 }
 
 impl<V> RuntimeEnv<V> {
+    pub(crate) fn presentation_scope_binding(
+        &self,
+    ) -> Option<&crate::presentation::resources::PresentationScopeBinding> {
+        self.scopes
+            .last()
+            .and_then(|scope| scope.presentation_scope.as_ref())
+    }
+
+    pub(crate) fn bind_presentation_scope(
+        &mut self,
+        install: crate::presentation::resources::PresentationScopeInstall,
+    ) -> Result<(), crate::presentation::resources::PresentationLedgerError> {
+        let scope = self
+            .scopes
+            .last_mut()
+            .ok_or(crate::presentation::resources::PresentationLedgerError::MissingScope)?;
+        scope.presentation_scope = Some(install.into_binding());
+        Ok(())
+    }
+
     pub(crate) fn source_function_context(&self) -> super::RuntimeScopeTypeContext {
         self.scopes
             .iter()
@@ -258,6 +280,9 @@ impl<V> RuntimeEnv<V> {
         self.assignment_discards.admit_retained(admission)?;
         for scope in &self.scopes {
             admission.validate_metadata(&scope.identity)?;
+            if let Some(binding) = &scope.presentation_scope {
+                binding.admit_retained(admission)?;
+            }
             admission.validate_metadata_collection(scope.slots.len())?;
         }
         admission.admit_composite(V::admission_origin(), |owner, resources| {
@@ -372,6 +397,7 @@ impl RuntimeEnv {
         Ok(Self {
             scopes: vec![RuntimeScope {
                 identity: RuntimeScopeIdentity::Anonymous,
+                presentation_scope: None,
                 function_context,
                 slots,
             }],
@@ -864,6 +890,7 @@ impl RuntimeScope {
     fn with_capacity(binding_capacity: usize) -> Self {
         Self {
             identity: RuntimeScopeIdentity::Anonymous,
+            presentation_scope: None,
             function_context: super::RuntimeScopeTypeContext::Lexical,
             slots: Vec::with_capacity(binding_capacity),
         }
@@ -925,6 +952,7 @@ impl RuntimeScope {
     }
 
     fn clear(&mut self) {
+        self.presentation_scope = None;
         self.identity = RuntimeScopeIdentity::Anonymous;
         self.function_context = super::RuntimeScopeTypeContext::Lexical;
         self.slots.clear();

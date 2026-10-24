@@ -2628,6 +2628,7 @@ pub struct RuntimeEnv<V = RuntimeValue> {
 #[derive(Clone, Debug, PartialEq)]
 struct RuntimeScope<T = RuntimeValue> {
     identity: RuntimeScopeIdentity,
+    presentation_scope: Option<crate::presentation::resources::PresentationScopeBinding>,
     function_context: RuntimeScopeTypeContext,
     slots: Vec<RuntimeLocalSlot<T>>,
 }
@@ -2636,6 +2637,7 @@ impl<T> Default for RuntimeScope<T> {
     fn default() -> Self {
         Self {
             identity: RuntimeScopeIdentity::default(),
+            presentation_scope: None,
             function_context: RuntimeScopeTypeContext::default(),
             slots: Vec::new(),
         }

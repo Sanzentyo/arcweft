@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "commit": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "parent": "59861dac939fc05e47f7aa6b9b6fee45d9664407",
+  "tree": "32208573a50116536bc2087d9be5719ae3739d31",
+  "remote": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "advertised": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/presentation.rs",
+      "blob": "18ef37c9d70a9fc9e585f5c97d91a8442e755fab",
+      "workingBlob": "18ef37c9d70a9fc9e585f5c97d91a8442e755fab"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "bccf7816f9d317b4d610650f135e25029a24d4ef",
+      "workingBlob": "bccf7816f9d317b4d610650f135e25029a24d4ef"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "blob": "58da973966fd5763f072c349fe2f8c706a65586a",
+      "workingBlob": "58da973966fd5763f072c349fe2f8c706a65586a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-current-status-final-checkpoint.verified.json",
+      "blob": "f8ad071da43981605b2cc0e7f5e061f0694217a5",
+      "workingBlob": "f8ad071da43981605b2cc0e7f5e061f0694217a5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2874-presentation-ledger-core-check.json",
+      "blob": "58c440eada655c55de12a8cfa553183c0695ce6f",
+      "workingBlob": "58c440eada655c55de12a8cfa553183c0695ce6f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2874-presentation-ledger-core-check.log",
+      "blob": "9c546ba24e0be145b5721230688caf1a29b21bc5",
+      "workingBlob": "9c546ba24e0be145b5721230688caf1a29b21bc5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2875-presentation-ledger-owner-catalog.json",
+      "blob": "4299c8d0976cba8069f3ebefc1a91d982b3324cf",
+      "workingBlob": "4299c8d0976cba8069f3ebefc1a91d982b3324cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2875-presentation-ledger-owner-catalog.log",
+      "blob": "4e9e93c7a17dadc375f396f681aa04f89ec8009a",
+      "workingBlob": "4e9e93c7a17dadc375f396f681aa04f89ec8009a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2876-presentation-ledger-owner-runtime.json",
+      "blob": "432f7922e75e227ce145630a88362d25890248a6",
+      "workingBlob": "432f7922e75e227ce145630a88362d25890248a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2876-presentation-ledger-owner-runtime.log",
+      "blob": "3089deb0afaa39c9c21453ea3854abc28f0c48f0",
+      "workingBlob": "3089deb0afaa39c9c21453ea3854abc28f0c48f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2876-presentation-ledger-owner-runtime.terminal-audit.json",
+      "blob": "b3ab5c349c4147de2a2ada32610655be20a43d89",
+      "workingBlob": "b3ab5c349c4147de2a2ada32610655be20a43d89"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2877-presentation-ledger-core-clippy.json",
+      "blob": "958d0167dee967917101dfefa04ec1df88133854",
+      "workingBlob": "958d0167dee967917101dfefa04ec1df88133854"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2877-presentation-ledger-core-clippy.log",
+      "blob": "0f7cc4ef4d2bc43d328a348033b9e473f9a9c7a7",
+      "workingBlob": "0f7cc4ef4d2bc43d328a348033b9e473f9a9c7a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2878-presentation-ledger-final-catalog.json",
+      "blob": "292f8104e64648d36ab2723fd4fb935fc2a4959a",
+      "workingBlob": "292f8104e64648d36ab2723fd4fb935fc2a4959a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2878-presentation-ledger-final-catalog.log",
+      "blob": "a80863f1a08dae3290acd1c44960ef18e8f47eb8",
+      "workingBlob": "a80863f1a08dae3290acd1c44960ef18e8f47eb8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2880-presentation-ledger-final-clippy.json",
+      "blob": "312db7d856d2d1d6ce0720e5cfb7b0fd0ba67bd0",
+      "workingBlob": "312db7d856d2d1d6ce0720e5cfb7b0fd0ba67bd0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2880-presentation-ledger-final-clippy.log",
+      "blob": "967c3adea50c52d170995ff252a1f49ab3ce814b",
+      "workingBlob": "967c3adea50c52d170995ff252a1f49ab3ce814b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2881-presentation-ledger-final-catalog.json",
+      "blob": "10331426ab9e2f81b4a4071e84ef519c122c21a1",
+      "workingBlob": "10331426ab9e2f81b4a4071e84ef519c122c21a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2881-presentation-ledger-final-catalog.log",
+      "blob": "5d9ae1f64c5c8fd3a860d20d93f6711faa19e007",
+      "workingBlob": "5d9ae1f64c5c8fd3a860d20d93f6711faa19e007"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2882-presentation-ledger-final-runtime.json",
+      "blob": "c055fdfe0c30ce0220059f063657ffecba4f330b",
+      "workingBlob": "c055fdfe0c30ce0220059f063657ffecba4f330b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2882-presentation-ledger-final-runtime.log",
+      "blob": "25228dcabde68bb0493650c3618fcff15c54d30d",
+      "workingBlob": "25228dcabde68bb0493650c3618fcff15c54d30d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2882-presentation-ledger-final-runtime.terminal-audit.json",
+      "blob": "0cf9523a7e4f8bcefa4a762db25da76a520870ea",
+      "workingBlob": "0cf9523a7e4f8bcefa4a762db25da76a520870ea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2883-presentation-ledger-final-clippy.input-audit.json",
+      "blob": "d03b2c79e7213b81023373d8543b81042c0738e6",
+      "workingBlob": "d03b2c79e7213b81023373d8543b81042c0738e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2883-presentation-ledger-final-clippy.json",
+      "blob": "5ca2a320cc050dacc63b46d7fd73e48c2215a5b8",
+      "workingBlob": "5ca2a320cc050dacc63b46d7fd73e48c2215a5b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2883-presentation-ledger-final-clippy.log",
+      "blob": "0c0b7e8bedfea53a0ed17e95e1253a611536bb70",
+      "workingBlob": "0c0b7e8bedfea53a0ed17e95e1253a611536bb70"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-acceptance.json",
+      "blob": "dba7445eac6f719ad496902593d5bc0f6131b0ed",
+      "workingBlob": "dba7445eac6f719ad496902593d5bc0f6131b0ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-doc-audit.json",
+      "blob": "b10a03ebe670a2921e89b51ef6528968f2d7b3cd",
+      "workingBlob": "b10a03ebe670a2921e89b51ef6528968f2d7b3cd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-evidence-integrity.json",
+      "blob": "c7a5629767ca80e10b22670879d07d1883dbc97c",
+      "workingBlob": "c7a5629767ca80e10b22670879d07d1883dbc97c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-final-runtime.audit.json",
+      "blob": "31104469efd5784688c72a5aa4573c02bb2eb0e6",
+      "workingBlob": "31104469efd5784688c72a5aa4573c02bb2eb0e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-final.before.pins.json",
+      "blob": "cddd2cda38bf4cb587d648599381a2a9a2a88f9a",
+      "workingBlob": "cddd2cda38bf4cb587d648599381a2a9a2a88f9a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-lint-source.graph.json",
+      "blob": "e8e2357cd6763a9b4b4bb4968c7fa9b1cec34082",
+      "workingBlob": "e8e2357cd6763a9b4b4bb4968c7fa9b1cec34082"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-lint-source.source-freeze.json",
+      "blob": "15cc6ce2b08287a3b63efa3cd22e4a3320e2c411",
+      "workingBlob": "15cc6ce2b08287a3b63efa3cd22e4a3320e2c411"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-ownership-review.json",
+      "blob": "b81bea73a6d475d91b8f733e1c24038abbac42f4",
+      "workingBlob": "b81bea73a6d475d91b8f733e1c24038abbac42f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-runtime.audit.json",
+      "blob": "4326fabdf34258726823fdbbf79f67ada4040589",
+      "workingBlob": "4326fabdf34258726823fdbbf79f67ada4040589"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-source.source-freeze.json",
+      "blob": "db2b64f979a74bd019817511d222ce687a8f1a4f",
+      "workingBlob": "db2b64f979a74bd019817511d222ce687a8f1a4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger.before.pins.json",
+      "blob": "9d3fa5e47ee684212ffd07538fd5af108f9a0139",
+      "workingBlob": "9d3fa5e47ee684212ffd07538fd5af108f9a0139"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "56d94422fc8ee1d9109a580c46434e9c6f3c9766",
+      "workingBlob": "56d94422fc8ee1d9109a580c46434e9c6f3c9766"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "4575a6ac94cd8739b7e2716f2eca1f19c1b680c7",
+      "workingBlob": "4575a6ac94cd8739b7e2716f2eca1f19c1b680c7"
+    }
+  ],
+  "sourceCount": 6400,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "46e60e4453ba1d3392be89c268913dab04e3c1368bc92ac93a75a99557cd3939",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T22:56:47.5308462Z"
+}

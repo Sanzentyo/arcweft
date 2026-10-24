@@ -42,6 +42,14 @@ pub enum AwbcRuntimeValueSnapshotError {
     ProgramOwnerRequired { expected: RuntimeSemanticTypeId },
     #[error("retained type {expected:?} belongs to another original program owner")]
     ProgramOwnerMismatch { expected: RuntimeSemanticTypeId },
+    #[error(
+        "presentation scope {scope} in execution {execution} requires its owning resource ledger"
+    )]
+    PresentationScopeCustodyRequired {
+        execution: crate::runtime_id::ExecutionInstanceId,
+        fiber: crate::runtime_id::RuntimePersistentFiberId,
+        scope: crate::runtime_id::RuntimeScopeInstanceId,
+    },
     #[error(transparent)]
     Nesting(#[from] super::RuntimeValueNestingError),
     #[error(transparent)]

@@ -13,6 +13,21 @@ fn scope(fiber: u64, scope: u64) -> PresentationScopeOwner {
     }
 }
 
+fn new_scope<V>(
+    ledger: &mut PresentationLedger<V>,
+    program: &RuntimeProgramOwner,
+    fiber: u64,
+) -> PresentationScopeOwner {
+    ledger
+        .bind_scope(
+            program,
+            ledger.execution,
+            RuntimePersistentFiberId::from_allocated(fiber),
+            &mut crate::value::RuntimeEnv::default(),
+        )
+        .unwrap()
+}
+
 fn address(name: &str) -> PresentationSlotAddress {
     PresentationSlotAddress::try_new(
         PublicId::try_new("target.scene").unwrap(),
@@ -27,7 +42,10 @@ fn new_ledger<V>(program: RuntimeProgramOwner, capacity: usize) -> PresentationL
         program,
         RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap(),
         ExecutionInstanceId::from_allocated(NonZeroU64::MIN),
-        capacity,
+        PresentationLedgerLimits {
+            handles: capacity,
+            scopes: capacity,
+        },
     )
 }
 
@@ -37,8 +55,8 @@ fn replacement_and_clear_move_non_clone_bodies_without_old_handle_clearing_new_s
     struct CapturedBody(Box<i32>);
     let program = new_program();
     let mut ledger = new_ledger(program.clone(), 4);
-    let outer = scope(0, 1);
-    let inner = scope(0, 2);
+    let outer = new_scope(&mut ledger, &program, 0);
+    let inner = new_scope(&mut ledger, &program, 0);
     let (first, previous) = ledger
         .register(
             &program,
@@ -87,7 +105,7 @@ fn replacement_and_clear_move_non_clone_bodies_without_old_handle_clearing_new_s
 fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
     let program = new_program();
     let mut ledger = new_ledger(program.clone(), 3);
-    let owner = scope(0, 1);
+    let owner = new_scope(&mut ledger, &program, 0);
     let (token, _) = ledger
         .register(
             &program,
@@ -152,8 +170,8 @@ fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
 fn moved_and_detached_leases_survive_only_their_former_scope_cleanup() {
     let program = new_program();
     let mut ledger = new_ledger(program.clone(), 8);
-    let original = scope(0, 7);
-    let destination = scope(1, 7);
+    let original = new_scope(&mut ledger, &program, 0);
+    let destination = new_scope(&mut ledger, &program, 1);
     let (moved, _) = ledger
         .register(
             &program,
@@ -192,7 +210,7 @@ fn moved_and_detached_leases_survive_only_their_former_scope_cleanup() {
 fn capacity_and_cursor_exhaustion_return_body_and_preserve_prior_slot_and_cursor() {
     let program = new_program();
     let mut ledger = new_ledger(program.clone(), 1);
-    let owner = scope(0, 1);
+    let owner = new_scope(&mut ledger, &program, 0);
     let (token, _) = ledger
         .register(
             &program,
@@ -238,7 +256,7 @@ fn capacity_and_cursor_exhaustion_return_body_and_preserve_prior_slot_and_cursor
 fn scope_cleanup_is_issuance_ordered_and_address_families_are_checked() {
     let program = new_program();
     let mut ledger = new_ledger(program.clone(), 3);
-    let owner = scope(0, 1);
+    let owner = new_scope(&mut ledger, &program, 0);
     for (name, value) in [("z", 3), ("a", 2), ("m", 1)] {
         ledger
             .register(
@@ -251,8 +269,8 @@ fn scope_cleanup_is_issuance_ordered_and_address_families_are_checked() {
     }
     assert_eq!(ledger.exit_scope(&program, owner).unwrap(), [3, 2, 1]);
     assert_eq!(
-        ledger.exit_scope(&program, owner).unwrap(),
-        Vec::<i32>::new()
+        ledger.exit_scope(&program, owner),
+        Err(PresentationLedgerError::Owner)
     );
     assert_eq!(
         PresentationSlotAddress::try_new(
@@ -268,7 +286,7 @@ fn scope_cleanup_is_issuance_ordered_and_address_families_are_checked() {
 fn independent_resources_of_every_family_never_replace_each_other() {
     let program = new_program();
     let mut ledger = new_ledger(program.clone(), 16);
-    let owner = scope(0, 1);
+    let owner = new_scope(&mut ledger, &program, 0);
     for kind in PresentationResourceKind::ALL {
         for value in [10, 20] {
             let (token, previous) = ledger
@@ -294,7 +312,7 @@ fn last_identity_is_issued_once_and_foreign_registration_does_not_consume_it() {
     let program = new_program();
     let mut ledger = new_ledger(program.clone(), 3);
     ledger.next = RuntimeIdCursor::Next(NonZeroU64::MAX);
-    let owner = scope(0, 1);
+    let owner = new_scope(&mut ledger, &program, 0);
     assert_eq!(
         ledger.register(
             &new_program(),
@@ -333,5 +351,104 @@ fn last_identity_is_issued_once_and_foreign_registration_does_not_consume_it() {
     assert_eq!(
         ledger.release(&program, &token, Some(owner)).unwrap(),
         Some(14)
+    );
+}
+
+#[test]
+fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_grants() {
+    let program = new_program();
+    let mut ledger = new_ledger::<i32>(program.clone(), 2);
+    let fiber = RuntimePersistentFiberId::from_allocated(3);
+    let mut env = crate::value::RuntimeEnv::default();
+    let owner = ledger
+        .bind_scope(&program, ledger.execution, fiber, &mut env)
+        .unwrap();
+    ledger.next_scope = RuntimeIdCursor::Exhausted;
+    assert_eq!(
+        ledger
+            .bind_scope(&program, ledger.execution, fiber, &mut env)
+            .unwrap(),
+        owner
+    );
+    env.push_scope();
+    assert!(matches!(
+        ledger.bind_scope(&program, ledger.execution, fiber, &mut env),
+        Err(PresentationLedgerError::Identity(_))
+    ));
+    assert!(env.presentation_scope_binding().is_none());
+    assert_eq!(ledger.scopes.len(), 1);
+    assert_eq!(ledger.next_scope, RuntimeIdCursor::Exhausted);
+    env.pop_scope();
+    assert_eq!(
+        ledger
+            .bind_scope(&program, ledger.execution, fiber, &mut env)
+            .unwrap(),
+        owner
+    );
+    ledger
+        .exit_bound_scope(&program, ledger.execution, fiber, &env)
+        .unwrap();
+    assert_eq!(
+        ledger.bind_scope(&program, ledger.execution, fiber, &mut env),
+        Err(PresentationLedgerError::Owner)
+    );
+}
+
+#[test]
+fn foreign_context_cannot_adopt_a_reached_scope_grant() {
+    let program = new_program();
+    let mut ledger = new_ledger::<i32>(program.clone(), 2);
+    let fiber = RuntimePersistentFiberId::from_allocated(3);
+    let mut env = crate::value::RuntimeEnv::default();
+    let owner = ledger
+        .bind_scope(&program, ledger.execution, fiber, &mut env)
+        .unwrap();
+    assert_eq!(
+        ledger.bind_scope(&new_program(), ledger.execution, fiber, &mut env),
+        Err(PresentationLedgerError::Program)
+    );
+    assert_eq!(
+        ledger.bind_scope(
+            &program,
+            ledger.execution,
+            RuntimePersistentFiberId::from_allocated(4),
+            &mut env
+        ),
+        Err(PresentationLedgerError::Owner)
+    );
+    let execution = ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap());
+    assert_eq!(
+        ledger.bind_scope(&program, execution, fiber, &mut env),
+        Err(PresentationLedgerError::Execution)
+    );
+    assert_eq!(env.presentation_scope_binding().unwrap().owner, owner);
+    assert_eq!(ledger.scopes.len(), 1);
+}
+
+#[test]
+fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
+    let program = new_program();
+    let mut ledger = new_ledger::<i32>(program.clone(), 2);
+    ledger.limits.scopes = 1;
+    let fiber = RuntimePersistentFiberId::from_allocated(3);
+    let mut env = crate::value::RuntimeEnv::default();
+    let owner = ledger
+        .bind_scope(&program, ledger.execution, fiber, &mut env)
+        .unwrap();
+    let before = ledger.next_scope;
+    env.push_scope();
+    assert_eq!(
+        ledger.bind_scope(&program, ledger.execution, fiber, &mut env),
+        Err(PresentationLedgerError::ScopeCapacity)
+    );
+    assert!(env.presentation_scope_binding().is_none());
+    assert_eq!(ledger.scopes.len(), 1);
+    assert_eq!(ledger.next_scope, before);
+    env.pop_scope();
+    assert_eq!(
+        ledger
+            .bind_scope(&program, ledger.execution, fiber, &mut env)
+            .unwrap(),
+        owner
     );
 }

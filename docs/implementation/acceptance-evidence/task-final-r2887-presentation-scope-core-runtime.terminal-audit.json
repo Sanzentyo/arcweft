@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "run": "task-final-r2887-presentation-scope-core-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  72.571s] 2065 tests run: 2065 passed, 0 skipped",
+  "executed": 2065,
+  "passed": 2065,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 6401,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T23:14:06.1959287Z"
+}

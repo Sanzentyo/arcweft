@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "name": "task-final-r2884-presentation-scope-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2884-presentation-scope-core-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T23:03:45.5468105Z",
+  "finishedAt": "2026-10-24T23:04:27.1869135Z"
+}
