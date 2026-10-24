@@ -10865,3 +10865,9 @@ filter／ignoredによる非選択0。新規6件と既存のtag／codec／affine
 実際の発行ledger、scope cleanup、Source admission、compiler/runtime-plan、Native／AWBC／driver
 commandとresource-aware restoreは未接続。一般Handleの実行や公開saveの受入とはしない。
 Generic Match等の先行受入を、この未接続や全体goalの未達から取り消していない。
+
+このcutを `a08de43545edfe2a3d8848190035a69a447afb8d` で通常commit／non-forced pushした。
+parentは `36c3e0f109617a865841a59d311736db513d5872`、treeは
+`1af7bc630eac92a903abf22164bd60d8b9fe6b07`。fresh fetch、remote refと全48 pathのblob、
+6,363保持入力と元14 tracked WIPのpatchは一致し、indexは空だった。
+[公開後の照合](acceptance-evidence/task-presentation-resource-owner-checkpoint.verified.json)。

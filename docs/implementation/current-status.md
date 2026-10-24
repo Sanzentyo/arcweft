@@ -1,10 +1,10 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-25。照合したmain基点は `36c3e0f109617a865841a59d311736db513d5872`。
-前段の実装公開は `fb04fd878622fac57a22db7e2c005ee6daa829ea`
-（[公開ref・全blobの照合](acceptance-evidence/task-presentation-handle-source-checkpoint.verified.json)）。
-現在の差分はCore／interaction-modelの13 source pathと本記録・検証原本で、
-元のtracked WIP 14件／untracked実ファイル6件を保持した。
+確認日: 2026-10-25。照合したmainの実装公開は `a08de43545edfe2a3d8848190035a69a447afb8d`。
+Core／interaction-modelの13 source pathと検証原本を公開し、元のtracked WIP 14件／
+untracked実ファイル6件を保持した。
+[公開ref・全48 pathのblob・保持入力の照合](acceptance-evidence/task-presentation-resource-owner-checkpoint.verified.json)。
+前段の型モデル公開 `fb04fd878622fac57a22db7e2c005ee6daa829ea` の検証範囲は下表で区別する。
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
 [仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。

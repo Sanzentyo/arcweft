@@ -309,3 +309,20 @@ version-one AWFB/AWBC契約とresource・patch・signature要件は残した。
 親の最終確認では、現状一覧と理由記録を含む8 Markdownの相対link 59件が解決し、
 未閉鎖fence、40桁識別子の欠落、保持untracked 6実ファイルのhash差分は0だった。
 [資料差分の照合](acceptance-evidence/task-documentation-contract-prune-audit.json)。
+
+## 最新の検証範囲と重複説明の整理 — 2026-10-25
+
+既存main `a08de43545edfe2a3d8848190035a69a447afb8d` と保持WIPを確認した。
+現状一覧の冒頭に重複していた実装・検証の説明を項目別の表へ集約し、Presentationの
+引数role／型モデルの公開と、後続Core tokenのowner検証・未接続の実行境界を別行にした。
+前段sourceの全62逆依存結果を、新sourceの実行結果と誤読できる表現も訂正した。
+受入の取消しや新しい不具合認定ではなく、証拠を適用できる入力と境界の明確化である。
+
+Generic Matchの受入・公開済み状態を維持し、新規不具合のない完了項目を残作業へ戻していない。
+数値・失敗・full SHAは表または検証履歴・原本に保持した。削除済みの歴史的設計や
+旧ロードマップを現状のauthorityとして復活させていない。
+
+最終の資料確認では相対link 34件、fenceと40桁識別子の保全、保持WIPを照合した。
+通常の `git diff --cached --check` は、byte不変で取り込んだCRLFのJSON原本等を
+trailing whitespaceと判定して終了1だった。原本を改行変換せず、既述の
+`core.whitespace=trailing-space,space-before-tab,cr-at-eol` を指定した検査で確認する。
