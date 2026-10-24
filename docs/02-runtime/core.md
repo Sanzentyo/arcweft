@@ -296,7 +296,6 @@ pub struct RuntimeStepResult {
 }
 ```
 
-Phase 2.0 の `Engine` は headless structured-control-flow runtime slice であり、まだ完全な story VM ではない。
 Flow roots and structured function sites share `RuntimeExecutableBody`.
 Consumers read `RuntimeFlow::body()` and its `effects()` / `ops()` accessors;
 construction admits the closed effect row and operations together. Semantic
@@ -473,7 +472,7 @@ association, CLI, LSP, Agent, and debug presentation use persisted evidence and
 must not fabricate HIR or syntax identity. Both paths emit the stable code
 `runtime.assertion_failed`.
 
-Current Phase 2.0 lowering maps checked HIR dialogue plans into this data model:
+Checked HIR dialogue plans map into this data model:
 
 ```text
 init statements             -> LineTaskGroup.root.node effects
@@ -518,14 +517,12 @@ obvious deterministic conflicts such as two children writing the same signal or
 line `out` value unless the effect category is append-only, such as structured
 logs or event emission.
 
-The minimal runtime spine treats child tasks as Sans I/O requests. When a child
-trigger is ready, the engine emits a `TaskSpec` and also exposes the child scope
-body as deterministic effect data for tests and future adapters. Native workers,
-cooperative jobs, and web workers consume those requests outside `arcweft-core`.
+Child task triggers emit a `TaskSpec` and expose the child scope body as
+deterministic effect data. Native workers, cooperative jobs, and web workers
+consume those requests outside `arcweft-core`.
 
-Flow-level execution now has a small Sans I/O vertical slice. HIR runtime
-lowering converts checked flows to `RuntimeFlow` / `FlowOp` data, while dialogue
-line plans continue to lower to `LineTaskGroup` and are referenced by index from
+HIR runtime lowering converts checked flows to `RuntimeFlow` / `FlowOp` data;
+dialogue line plans lower to `LineTaskGroup` and are referenced by index from
 `FlowOp::Dialogue`.
 
 ```text
@@ -544,17 +541,13 @@ cancel on input(.SkipLine)  -> line cancel rule selected from RuntimeStepInput
 ```
 
 This slice is intentionally strict: runtime lowering errors on unsupported flow
-items instead of converting them to `Noop`. Expression values are still stable
-labels in the runtime data; the later typed VM/HIR evaluator should replace
-those labels with typed value nodes.
+items instead of converting them to `Noop`.
 
 Raw line-plan statements fail lowering. They are not reparsed, silently accepted,
-or dropped from the runtime plan. Phase 2.0 keeps expression payloads as stable
-labels inside Sans I/O data; later HIR execution work should replace those labels
-with typed expression/runtime nodes without changing the effect categories.
+or dropped from the runtime plan.
 
 `defer` is not thread-specific syntax. It registers cleanup on the current
-runtime scope. In the Phase 2.0 line-plan model, the line/root scope, child
+runtime scope. In the line-plan model, the line/root scope, child
 thread scopes, and event-handler scopes each have a cleanup stack. A bare
 `defer` must run when its owning scope exits, including normal completion,
 early control transfer, line cancellation, and child-task cancellation.
@@ -643,44 +636,6 @@ line-scope defer stacks.
 - random は seeded RNG capability。
 - task 完了は frame boundary で正規化。
 - replay は `RuntimeStepInput` 列と task/audio/view result を記録。
-
-## Flow fiber
-
-Flow/dialogue/choice/`Need`/effect emission は bytecode VM が意味論の正本として処理する。Cranelift JIT や generated Rust/Wasm は pure function の最適化または release packaging backend であり、FlowFiber の control transfer や awaiting semantics を置き換えない。
-
-```rust
-pub enum FlowFiber {
-    Running { pc: ProgramCounter, stack: ValueStack, locals: LocalSlots },
-    Waiting { await_target: AwaitTarget, continuation: ContinuationId, locals: LocalSlots },
-    Done,
-    Failed(RuntimeDiagnostic),
-}
-```
-
-`await with` は FlowFiber の `Waiting` へ lowering する。
-
-
-
-## Dispatch and cache integration
-
-Owner-local handlers do not directly mutate durable state; each dispatch point
-returns only the typed outputs allowed by its owner.
-Phase 2.0 の `RuntimeStepOutput` は diagnostics、flow events、`RuntimeEffectBatch`、
-`HostRequestBatch` に分かれ、render/audio/device の実行は adapter 側に残る。将来の
-presentation runtime は、この境界から render/audio/view desired state を導出する。
-
-```rust
-pub struct RuntimeStepOutput {
-    pub diagnostics: Vec<RuntimeDiagnostic>,
-    pub flow_events: Vec<FlowEvent>,
-    pub effects: RuntimeEffectBatch,
-    pub requests: HostRequestBatch,
-}
-```
-
-Pure-evaluation reuse and task joining are owned separately by the VM/compiler
-and scheduler. Cache hit/miss は性能には影響するが、ゲーム意味論と
-`state_hash` には影響してはならない。
 
 ## Dispatch and caches in core
 

@@ -58,8 +58,8 @@ a Cranelift dependency:
 - AOT/JIT candidates are checked through the same backend trait and compared
   against the VM result before they are allowed to replace VM execution.
 
-The flow-level AOT executor boundary is intentionally VM-equivalent while
-generated dispatch is still future work. Pure helper AOT is already executable:
+The flow-level AOT executor boundary is VM-equivalent. Pure helper AOT is
+executable:
 `AotPureFunctionBackend` compiles the deterministic `i64` subset to a typed
 plan, rejects unsupported helpers, and is checked against `VmPureFunctionBackend`
 before use.
@@ -183,9 +183,9 @@ failure, and byte counters next to JIT/AOT compile counters; attempts and
 successes count helpers, and bytes count the bundled object. Object emission is
 off by default so ordinary Auto/AOT startup avoids build-time AOT generation
 cost. These counters prove that supported typed helpers can be lowered to a
-relocatable bundle without changing execution semantics. Runtime execution still
-uses the typed AOT plan or native JIT function pointers; loading and calling
-object files is a later backend boundary.
+relocatable bundle without changing execution semantics. Runtime execution uses
+the typed AOT plan or native JIT function pointers; it does not load or call
+object files.
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
@@ -315,6 +315,6 @@ jit
 - JIT code は engine internal only。
 - user/mod script では VM が正。
 - native product では feature flag で有効化。
-- web では runtime JIT 無効。AOT compiled Wasm player + bytecode VM を使用し、必要なら将来の build-time AOT Wasm helper として扱う。
+- web では runtime JIT 無効。AOT compiled Wasm player + bytecode VM を使用する。
 - Wasmtime は plugin/activity sandbox 用であり、JIT backend ではない。
 

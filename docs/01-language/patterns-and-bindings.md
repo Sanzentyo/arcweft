@@ -98,7 +98,7 @@ GameEvent.ChoiceSelected { id }
 
 ## Bracket sequence patterns
 
-Phase 1 syntax supports fixed-length bracket sequence patterns and rest patterns.
+Sequence patterns use fixed-length brackets and rest patterns.
 
 ```arcw
 match items {

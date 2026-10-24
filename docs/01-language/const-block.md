@@ -213,17 +213,6 @@ stack. They distinguish type/value admission, runtime capture, forbidden
 operation, residual phase escape, fuel/size limits, cycles, and evaluator
 faults.
 
-## Implementation order
-
-Const implementation follows the Checked Try/carrier boundary and unary Need
-cuts. The atomic Const transaction is:
-
-1. syntax/HIR `ComputationBlock(Const)` and source ownership;
-2. checked phase/capture/callable/admission facts;
-3. typed constant interning and exact-type `LoadConst` lowering;
-4. ConstEval verifier profile, VM budgets, and diagnostics;
-5. incremental artifact integration and complete negative/parity tests.
-
 ## See also
 
 - [Await, unary Need, carrier blocks, and `try`](await-need-result.md)

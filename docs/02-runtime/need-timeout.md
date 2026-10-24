@@ -189,23 +189,9 @@ mismatch performs ordinary reload cancellation; it is not converted to
 All Arcweft-owned runtime, AWBC, codec, snapshot, and save markers remain `1`.
 No compatibility reader is retained.
 
-## Implementation order
-
-Timeout is implemented only after the final temporal/carrier foundations:
-
-1. Checked Try and Result/Option boundary authority;
-2. unary `Need<T>` across every layer;
-3. deletion of Await physical-Result, Error/Denied branches, and Await-specific
-   Try paths;
-4. canonical runtime Need identity and producer ownership;
-5. Timeout type, checked intrinsic fact, and NeedTimeout plan operation;
-6. logical-time reducer and structured tests;
-7. AWBC verifier/codec/VM parity;
-8. save/replay/hot-reload tests and obsolete timeout-branch deletion.
-
 ## Required behavioral matrix
 
-Tests cover already-Ready and zero-duration sources, same-step Ready/cancel/
+Tests must cover already-Ready and zero-duration sources, same-step Ready/cancel/
 progress races, late completion, two wrappers over one source, wrapper-only
 cancellation, nested source Result errors, infrastructure faults, save/load on
 both sides of expiry, malformed AWBC and snapshots, and structured/AWBC parity.

@@ -183,9 +183,7 @@ arcw verify game/main.arcw --mode release
 arcw verify game/main.arcw --emit-obligations out/proofs
 ```
 
-## Implementation Status
-
-Phase 1.5 now has a first verifier pass:
+## Verifier ownership
 
 ```text
 arcweft-lang-hir

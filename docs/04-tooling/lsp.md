@@ -28,13 +28,10 @@
 - RichText has no migration or canonicalization code action. The server
   consumes only current typed content applications and point actions; ordinary
   grammar diagnostics handle invalid input without a removed-spelling route.
-- Typed ID actions are future work and are not part of the current server:
-  - hints, materialization, and rename must consume the accepted typed
-    project/source-site identity inventory
-  - they must not reconstruct declaration, choice, or dialogue identity from
-    raw source or restore provisional `@say...` / `@text...` identities
-  - formatting continues to preserve authored `@.suffix` / `@..suffix` /
-    `@...suffix` and `@super...` relative IDs
+- Identity navigation and rename consume accepted typed project and source-site
+  identities. They do not reconstruct declaration or dialogue identity from raw
+  source. Formatting preserves authored `@.suffix` / `@..suffix` / `@...suffix`
+  and `@super...` relative IDs.
 - `Need` unhandled diagnostics
 - naked await in flow diagnostics
 - borrow crosses await diagnostics
@@ -165,8 +162,8 @@ negotiation.
 `arcweft-lsp` is the transport crate. It uses `lsp-server` with synchronous stdio
 transport and keeps the language-server session, FULL text-document cache,
 client capability negotiation, publish-diagnostics notifications, and request
-dispatch outside the verifier helper. MVP document sync is
-`TextDocumentSyncKind::FULL`; incremental sync and `ropey` remain future work.
+dispatch outside the verifier helper. Document sync is
+`TextDocumentSyncKind::FULL`.
 
 The verifier helper returns `lsp-types` data only; opening documents, applying
 workspace edits, watching files, and

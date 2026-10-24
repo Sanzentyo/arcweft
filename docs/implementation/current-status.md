@@ -1,14 +1,16 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-25。main HEAD／実装基点は `71a01d7eb872193f8b3baf6665fa2766bc0e7a4c`。
-作業ツリーではAwaitManyの型関係・Result集約・消費前検査をCore 21 pathで未コミット変更した。
+確認日: 2026-10-25。照合したmainの実装公開は `8a4a62cf6ee5a901bea1127517dea7ecf84e6362`。
+AwaitManyの型関係・Result集約・消費前検査をCore 21 pathで変更し、
+実装基点 `71a01d7eb872193f8b3baf6665fa2766bc0e7a4c` から公開した。
 このcutのCore library単独検証は **1,989／1,989 PASS**、Clippyはall-target／all-featureで終了0・警告あり。
 6,038固定入力の差分は0。既存のtracked WIP 14件／untracked 6件は保持した。
 [このcutの範囲・途中の失敗・検証原本](acceptance-evidence/task-fanout-runtime-acceptance.json)。
+[公開commit・tree・全pathの照合](acceptance-evidence/task-fanout-runtime-checkpoint.verified.json)。
 
 以下の横断runtime集計とworkspace gateは、ソース基点
 `dec74c879c651705e41d23cfcf9b6b0f8dc50f71` での結果を
-`06b4830260397da3c64ab72d79b9f76bb3072bc5` で公開したもの。この作業ツリーの21 path cutでは
+`06b4830260397da3c64ab72d79b9f76bb3072bc5` で公開したもの。このCore 21 pathの変更後は
 逆依存runtime／workspace gateを再実行しておらず、Core単独の件数を53 package構成へ再利用・加算しない。
 
 前回のCore全53逆依存package通常選択は、重複を除いて

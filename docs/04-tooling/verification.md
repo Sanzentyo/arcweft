@@ -148,7 +148,7 @@ solver checks, executable runtime plan or generated proof artifacts. Solver
 execution and `--emit-obligations`/`--emit-smt` begin only after compilation
 succeeds. The accepted verifier JSON grammar remains the shared verifier report.
 
-This Phase 1.9 pass is CFG-aware for blocks, branches, line plans,
+Verifier analysis is CFG-aware for blocks, branches, line plans,
 cancellation rules, bounded loop fixed points, and scoped `defer` outcomes. It
 checks proof references against typed `ensures` / `check` proof-body targets,
 reports unjustified proof `assume` clauses and unknown proof dependencies
@@ -158,9 +158,8 @@ values escaping through block final values, returns, line-plan `out`, or
 upper-lifetime registry writes, and the type checker tracks direct local borrow
 drops across branch merges so maybe-dropped values cannot cross suspension
 boundaries or be reused. It remains conservative for full solver-backed proof
-term checking and open-ended effect inference; later compiler passes should
-refine or discharge these obligations rather than bypassing the verifier
-report.
+term checking and open-ended effect inference; consumers use the verifier report
+for those obligations.
 
 Verifier JSON serializes proof expressions with adjacent tags so string-carrying
 variants remain stable across serde implementations:

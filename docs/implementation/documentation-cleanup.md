@@ -244,3 +244,33 @@ generator、backpressure、privacy、cancelの要件は現行の所有契約へ�
 whitespace・証拠のbyte一致と、開始時のtracked変更21件／untracked 6件および
 既存のstaged 2 pathの保全を照合した。対象Markdown 9件の相対リンク390件は解決し、
 未閉鎖fence・既存の40桁識別子の欠落は0、追加したJSON 7件はparseに成功した。
+
+## 残存stable章の旧計画・重複状態表現の除去 — 2026-10-25
+
+照合基点は公開済み `main` の `8a4a62cf6ee5a901bea1127517dea7ecf84e6362`。
+開始時に既存Rust／sample変更14 tracked pathとuntracked 6 filesを確認し、維持した。
+GPT-6 Luna／maxの2担当が現状一覧と残存資料を分担し、親が差分・根拠・公開を照合した。
+現状一覧を公開SHAへ更新し、実行結果の履歴は保持した。
+
+残存stable章から実装順序や過去の段階表現を除いた。`need-timeout.md` と
+`const-block.md` は仕様・必要な負例／parityの条件を保ち、段取りだけを削除した。
+timeoutのBehavioral Matrixは実施済み結果と誤読されないよう `Tests must cover` とした。
+`core.md` は旧Phase 2.0説明、式値を将来typed evaluatorへ置換する計画、構造体と競合する
+旧 `FlowFiber` enum、重複 `RuntimeStepOutput`／dispatch記述を除去した。fail-closed
+loweringとcache hit/missが `state_hash` に入らない契約は残した。
+
+`cli.md` の旧Phase 2.0／vertical-slice表記、削除済みcommandの経緯、将来の
+materialization／player案を除いた。
+runtime対応一覧に誤って含まれていた `traverse(...).parallel` は、現runtimeの接続がない
+ため一覧から外し、言語契約は維持対象の[traits・sequence・range章](../01-language/traits-seq-ranges.md)
+に残した。`lsp.md` はaccepted typed identityに基づく現行のnavigation／renameへ訂正した。
+LSP、verification、proofs章の古いfuture-work／Phase進捗表現も削除し、同期方式、検証要件、
+crate ownershipなど現在の契約を残した。sequence pattern／arrayのPhase表記とCraneliftの
+将来executor案も、契約から進捗・ロードマップを切り離した。
+
+削除した文に実行結果やfull SHAはなく、`docs/reviews/` の検証原本・履歴および
+既存の受入原本は変更していない。公開照合receiptを追加し、変更したstable章は10 path。
+確認は内容・相対リンク・fence・diff whitespaceと40桁識別子保全に限り、Rust／Cargo／
+runtimeは実行していない。親による最終照合では変更Markdown 13件の相対リンク47件が
+解決し、未閉鎖fence・whitespace違反・40桁識別子の欠落は0。
+既存tracked WIP 14件とuntracked実ファイル6件の内容を保持し、公開receiptのbyte一致も確認した。

@@ -1,10 +1,11 @@
 # CLI
 
-The CLI should expose syntax-normalization tools without forcing formatter users to give up script-friendly source.
+The CLI exposes syntax-normalization tools while preserving script-friendly source.
 
 ## Check
 
-`arcw check <file.arcw> [--json]` is the first developer-facing vertical slice.
+`arcw check <file.arcw> [--json]` validates a source file and its checked project
+context.
 It keeps file I/O in the CLI adapter and runs the Sans I/O compiler stages over
 the exact accepted source-document snapshot:
 
@@ -847,9 +848,7 @@ captures expand through the rich-text display map, so the image contains glyph
 geometry rather than a filled panel bbox and reports `framebuffer` or
 `framebuffer_crop`. Native color scopes that have no rich-text element mapping
 now use `masked_framebuffer_crop`; native object-id/mask scopes without a
-rich-text mapping still fall back to `debug_geometry`. Later player sessions
-should extend those slots with real overlay, non-text object-id/mask
-attachments, and dedicated layer framebuffer passes.
+rich-text mapping still fall back to `debug_geometry`.
 
 ```bash
 arcw agent observe game/routes/opening.arcw --json
@@ -869,14 +868,13 @@ arcw agent observe game/routes/opening.arcw --image raw-rgba --object object.dia
 arcw agent observe --manifest arcw.toml --profile game.dev --json
 ```
 
-Current runtime lowering is strict and still intentionally bounded. It supports
-the Phase 2.0 headless flow slice: dialogue lines, line task groups, `choice`, `await
-with`, bounded `traverse(...).parallel(limit = N)` fanout, `let`, `let else`,
+Runtime lowering is strict and bounded. It supports this headless flow surface:
+dialogue lines, line task groups, `choice`, `await with`, `let`, `let else`,
 `if`, `if let`, `match`, `loop`, `while`, `while let`, `for`, `scope`, dynamic
 `goto`, dynamic `return`, `out`, ordinary call-shaped effects, and line
-`cancel on` rules. The runtime also executes the first generation slice: typed
-`RuntimeStepInput` stream events feed stream queues, and stream plans drain
-those queues and emit stream events under a deterministic per-step budget.
+`cancel on` rules. Typed `RuntimeStepInput` stream events feed stream queues,
+and stream plans drain those queues and emit stream events under a deterministic
+per-step budget.
 External capability calls remain ordinary host-call operations. Explicit
 `--flow --value` inputs are sealed once into the selected Flow invocation;
 `RuntimeStepInput` does not carry Flow arguments and later steps cannot rebind
@@ -1412,11 +1410,9 @@ kind, source span, and call-based body rows so CLI, LSP, headless player
 adapters, and Agent tooling can share one planning schema without reparsing
 source text.
 
-Line-plan lowering must not silently drop parsed syntax. Stable Phase 2.0 cue
-syntax such as `at(0.35s): ...` is lowered into Sans I/O line task data.
-Line-plan items that are parsed but not yet represented in the Phase 2.0 runtime
-model fail `arcw check` with a `LinePlanLowerError` until their lowering is
-implemented.
+Line-plan lowering must not silently drop parsed syntax. Cue syntax such as
+`at(0.35s): ...` is lowered into Sans I/O line task data. Items not represented
+in the runtime model fail `arcw check` with a `LinePlanLowerError`.
 
 ## Formatting
 
@@ -1470,25 +1466,12 @@ accepted as an explicit identity form, while `proof opening(...)` is the
 canonical hand-written spelling. A redundant explicit identity produces the
 same warning; it is not rejected by parsing.
 
-The former sema-backed `arcw canonicalize` command was deleted. It deepened a
-provisional speaker-line model that is superseded by typed `CharacterDialogue`
-construction and content application. The CLI does not retain an alias, dual
-reader, or replacement string-based canonicalizer.
-
 The formatting command must preserve IDs, source anchors where possible, comments,
 and stable child entity slots. They must never renumber dialogue or choice IDs
 as a side effect of editing.
 
-Relative IDs are not expanded by default because they are author-facing source
-syntax. The CLI currently exposes no ID-materialization command. The former
-implementation reparsed raw source and reconstructed declaration/choice
-context with a textual CST-line scanner; it was deleted rather than repaired
-or retained beside the final typed identity owner.
-
-Any future materialization command must consume the accepted project identity
-inventory and the AW-AH-009.4.2/.3 typed source-site owners. It must not infer
-identity from source strings, preserve a compatibility alias for `arcw ids`, or
-invent support for ambiguous forms such as `goto @.next`. `arcw fmt` remains a
-dry run by default and writes only with `--write`.
+Relative IDs remain author-facing source syntax and are not expanded by default.
+The CLI exposes no ID-materialization command. `arcw fmt` remains a dry run by
+default and writes only with `--write`.
 
 

@@ -10609,3 +10609,9 @@ R2819 Core限定Clippyはall-targets／all-features／lockedで終了0、既存�
 過去の横断7,260件へCore単独結果を再利用・加算しない。今回の逆依存53 consumer、workspace gate、
 新しいResultの独立deferred Program child実行は未確認。Native公開save／Tier2／Native-Web parityも
 今回の受入へ含めない。Generic Matchの既存受入を未完了へ戻す新たな根拠はない。
+
+この実装・資料・検証原本の100 pathは `8a4a62cf6ee5a901bea1127517dea7ecf84e6362` で
+通常commit／non-forced pushした。parentは上記基点、treeは
+`37acc72f2078042f111d674cbcbcee8767922c0f`。fresh fetchと公開ref、全pathのblob、
+6,113入力のhash、保持したWIPのpatchを照合し、差分0・index空を確認した。
+[公開照合receipt](acceptance-evidence/task-fanout-runtime-checkpoint.verified.json)をbyte不変で保持する。

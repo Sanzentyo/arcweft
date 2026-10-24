@@ -196,8 +196,7 @@ let dynamic: Vec<i32> = [1, 2, 3]
 let fixed: Array<i32, 3> = [1, 2, 3]
 ```
 
-`[value; N]` is fixed-length array construction. `N` must be an integer
-constant in the current Phase 2 surface.
+`[value; N]` is fixed-length array construction. `N` must be an integer constant.
 
 ```arcw
 let zeros: Array<i32, 4> = [0; 4]
