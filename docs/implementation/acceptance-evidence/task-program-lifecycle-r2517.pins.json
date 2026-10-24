@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2517-program-lifecycle-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-47fbc0b026cb7ec4.exe",
+      "bytes": 125075968,
+      "nonTest": false,
+      "sha256": "100cea0ab9281fa4bd80d5b798d24ffb9b946406adafdf57ff9a443accf90f31"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T01:41:58.1075292Z"
+}

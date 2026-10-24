@@ -9890,3 +9890,44 @@ whitespace 5行は原本のまま保持し、そのlogのみstaged whitespace検
 11 owned Rustのformatと3,090 Rust入力のhash差分0を文書更新時にも確認した。
 変更3文書の相対リンク240件は解決可能、未閉鎖fenceは0。
 現状・未確認の一覧は `current-status.md` のみとし、過去のR2506停止条件を重複した残作業へ戻さない。
+
+## Generic captureとnested Thread joinの実行 — 2026-10-24
+
+前節は `e609b644a2ecaf9875f6a19f040caa246e10b7f9` で公開した。
+parentは `be826a846f2557d8db77464f3c09093b3a6e6611`、treeは
+`ecdbb4af881cd6c25ef03bd08f26f21a3dda7831`、raw patch SHA256は
+`4abfec505877a00fbfabd2ca6f89f3c4cea63687f60a67814e60e3fa2de3b04a`。
+[公開照合](acceptance-evidence/task-program-publication-checkpoint.verified.json)は55公開blob、
+4,577入力、fresh origin／advertised ref、empty index、保持14 tracked WIPの差分0を記録する。
+
+同基点からproductionを変更せず、Compiler `flow_include` に2統合test、104行を追加した。
+既存15件のassertion・実行量・1-op予算は変更していない。両新規testはNative／全体AWBC／
+entry選択AWBC×Bool false／trueの各6 subcaseを実行し、両AWBCでは毎step公開saveを
+JSON roundtripして復元する。返却結果、実際のtaskとcompletion、最終child数を確認する。
+
+generic caseは `launch<T>(value: T) -> ThreadHandle<(T, T)>` のThread内でcaptureを2回使い、
+元bindingの下で返ったtupleをawait後に利用し、`T=bool`の両値で成功した。
+nested caseは外側taskのreturnが子孫終了より先に進むこと、子孫完了のlogより前に外側taskが
+退役しないこと、completionが子孫→親の順で各1件であることと、正しいBoolを確認する。
+親の結果をjoin・各step保存復元の間保持する条件が、全6 subcaseで成立した。
+
+R2517 catalogはexit 0、対象17件／除外0件、実際のtest executable 1件を固定した。
+R2518は **17 PASS／0 FAIL／0 skip、2.142秒、actual exit 0**。
+[terminal audit](acceptance-evidence/task-final-r2518-program-lifecycle-runtime.terminal-audit.json)は
+4,577固定入力とcase setのdrift 0、保持14 WIPの差分0を記録する。
+[実行整合性](acceptance-evidence/task-program-lifecycle-r2518.execution-integrity.json)は
+executable hash差分0を確認した。2新規caseを追加した17件と、以前の116件を重複加算しない。
+
+R2519はCompilerの同test target／all-feature／locked Clippy、exit 0、警告あり、95.008秒。
+R2520 canonicalはexit 0、3,208 files・3,078 Rust files・1,739,845 physical LOC・97 package・
+376 review triggers、blocking 0。新しい失敗を得ておらず、Generic Matchや既存の機能受入を
+未完了へ戻さない。この結果でcancel、private rollback、資源境界や全consumerの未実行条件を
+合格へ数えず、対象条件の判定だけを現状一覧へ反映した。
+
+[owner計測](acceptance-evidence/task-program-lifecycle-ownership-metrics.json)では、変更ownerは
+Compiler統合test 695 LOC（+104）のみ。workspace fan-in／outは5／34、算出した逆依存は10。
+本体の型契約・Cargo依存・I/O境界は変更せず、他consumerのruntimeを今回実行したとは報告しない。
+3,090 Rust入力のhash差分0と当該testのformatを確認した。
+24原本、7,980,059 bytesをbyte・SHA256・Git blob一致で保持する。R2519 Clippy原本のtrailing
+whitespace 4行は保持し、そのlogのみstaged whitespace検査から除外する。
+変更2文書の相対リンク243件は解決可能、未閉鎖fenceは0。

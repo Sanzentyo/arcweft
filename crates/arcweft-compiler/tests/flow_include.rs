@@ -261,6 +261,110 @@ fn awbc_returned_thread_handle_preserves_capture_and_result_through_each_step_sa
     }
 }
 
+#[test]
+fn generic_thread_capture_is_copied_under_its_original_binding_and_survives_save() {
+    for backend in BACKENDS {
+        for returned in [false, true] {
+            let source = format!(
+                "fn launch<T>(value: T) -> ThreadHandle<(T, T)> effects {{ control.spawn }} {{ thread {{ return (value, value) }} }}\n\
+                 flow main() -> bool {{ let child = launch({returned}); let (left, right) = await child; return left && right }}\n\
+                 entry cli @entry.main {{ goto @flow.main }}\n"
+            );
+            thread_bool_result(&source, backend, returned);
+        }
+    }
+}
+
+#[test]
+fn returned_thread_result_waits_for_its_actual_nested_child_through_each_step_save() {
+    use arcweft_core::effect::LineEffectRequest;
+
+    for backend in BACKENDS {
+        for returned in [false, true] {
+            let source = format!(
+                "fn launch(flag: bool) -> ThreadHandle<bool> effects {{ control.spawn, log.write }} {{\n\
+                     thread {{\n\
+                         thread descendant {{\n\
+                             log.info(\"descendant-start\")\n\
+                             log.info(\"descendant-1\")\n\
+                             log.info(\"descendant-2\")\n\
+                             log.info(\"descendant-3\")\n\
+                             log.info(\"descendant-finish\")\n\
+                         }}\n\
+                         log.info(\"parent-returning\")\n\
+                         return flag\n\
+                     }}\n\
+                 }}\n\
+                 flow main() -> bool {{ let child = launch({returned}); return await child }}\n\
+                 entry cli @entry.main {{ goto @flow.main }}\n"
+            );
+            let mut runtime = executor(&source, backend);
+            let mut tasks = Vec::new();
+            let mut completions = Vec::new();
+            let mut logs = Vec::new();
+            let mut done = false;
+            for step in 0..128 {
+                let result =
+                    runtime.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+                assert!(result.stats.executed_ops <= 1);
+                assert!(
+                    result.output.diagnostics.is_empty(),
+                    "backend={backend:?}, returned={returned}, step={step}: {:?}",
+                    result.output.diagnostics
+                );
+                tasks.extend(result.output.requests.tasks.iter().map(|task| {
+                    assert!(matches!(
+                        task.spec().request,
+                        arcweft_core::task::TaskRequest::Program(_)
+                    ));
+                    task.handle().correlation
+                }));
+                logs.extend(result.output.effects.line.into_iter().filter_map(|effect| {
+                    if let LineEffectRequest::Log(log) = effect {
+                        Some(log.message)
+                    } else {
+                        None
+                    }
+                }));
+                for report in result.output.requests.program_task_completions {
+                    assert_eq!(
+                        report.terminal(),
+                        &arcweft_core::task::ProgramTaskTerminal::Completed
+                    );
+                    if report.handle().correlation == tasks[0] {
+                        assert!(logs.iter().any(|message| message == "descendant-finish"));
+                    }
+                    completions.push(report.handle().correlation);
+                }
+                if !matches!(backend, Backend::Native) {
+                    runtime = restore_product(runtime);
+                }
+                if let FlowFiberStatus::Done(exit) = &runtime.fiber().frame.status {
+                    assert_eq!(exit, &FlowExit::Return(returned.to_string()));
+                    assert_eq!(tasks.len(), 2);
+                    assert_eq!(completions, [tasks[1], tasks[0]]);
+                    let returning = logs
+                        .iter()
+                        .position(|message| message == "parent-returning")
+                        .unwrap();
+                    let finished = logs
+                        .iter()
+                        .position(|message| message == "descendant-finish")
+                        .unwrap();
+                    assert!(returning < finished, "nested child ran inline: {logs:?}");
+                    assert_eq!(result.stats.child_fibers, 0);
+                    done = true;
+                    break;
+                }
+            }
+            assert!(
+                done,
+                "nested Thread join did not finish; backend={backend:?}"
+            );
+        }
+    }
+}
+
 fn thread_bool_result(source: &str, backend: Backend, returned: bool) {
     let mut runtime = executor(source, backend);
     let mut tasks = Vec::new();

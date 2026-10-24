@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "name": "task-final-r2518-program-lifecycle-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "flow_include",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2518-program-lifecycle-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T01:41:58.1304065Z",
+  "finishedAt": "2026-10-24T01:42:02.1345457Z"
+}

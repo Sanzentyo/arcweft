@@ -1,0 +1,346 @@
+{
+  "version": 1,
+  "commit": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "parent": "be826a846f2557d8db77464f3c09093b3a6e6611",
+  "tree": "ecdbb4af881cd6c25ef03bd08f26f21a3dda7831",
+  "remote": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "advertised": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "blob": "f3a61e5e1b758b2635c6ddd7e9dc9c1159f2febb",
+      "workingBlob": "f3a61e5e1b758b2635c6ddd7e9dc9c1159f2febb",
+      "workingSha256": "ea3c6569c83e5f84f5c470d608485fa3079bd2a9aa700b97365c5070db6cd1ed"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+      "blob": "84ce9f989c905f857af1a5f49906607c7194a41d",
+      "workingBlob": "84ce9f989c905f857af1a5f49906607c7194a41d",
+      "workingSha256": "7a933e4ad7365ba9dd037e53d8d3a61554b8d2231a6859ef45ff8edf308a1da2"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+      "blob": "5faefdbca38b5bc84c0dabe092f69e1c9a1bf31a",
+      "workingBlob": "5faefdbca38b5bc84c0dabe092f69e1c9a1bf31a",
+      "workingSha256": "1b4f63d86b3df27a76bcee2b25292d0fc83878d4b37f06f2247c0d31ddbcdabd"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "blob": "3f5684fa661b761b51cd9438cf6f1995ea047740",
+      "workingBlob": "3f5684fa661b761b51cd9438cf6f1995ea047740",
+      "workingSha256": "1d340e8bfa94d6a02d1657b68ae93a8e871b2817dfcb75299128ca36995ad1c4"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "blob": "532ddb903c14bc0262295a334d474866b17d1299",
+      "workingBlob": "532ddb903c14bc0262295a334d474866b17d1299",
+      "workingSha256": "ac7e28c26c46365d4bc5b6d86f50f1b0c1e7c3df6b827d5e04b324b289f4a27d"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "blob": "4d4fae144b26a356e41fad3c57f0925a9276086d",
+      "workingBlob": "4d4fae144b26a356e41fad3c57f0925a9276086d",
+      "workingSha256": "576f8a93efef057f69373ffbb052f009b0205856601177dbb2df8f2a6986cafb"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+      "blob": "669077db0be95bc641bb3f8812909df802dd0617",
+      "workingBlob": "669077db0be95bc641bb3f8812909df802dd0617",
+      "workingSha256": "4027c02314be0dc545cb2e0a9b639dacdb0e0ba3d8fbf56495ffd06069a89356"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "blob": "5f3f48ba5af68917e4aa7150cd89505095276a1f",
+      "workingBlob": "5f3f48ba5af68917e4aa7150cd89505095276a1f",
+      "workingSha256": "23c935b88be842736bdcb5c4b81cdaa05852faf191d82daaf0f56a5c9f925e84"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer.rs",
+      "blob": "5f3cda04e44a315916cb28bdaa4ce75374534d78",
+      "workingBlob": "5f3cda04e44a315916cb28bdaa4ce75374534d78",
+      "workingSha256": "0b68d61facbb3881b8cb039ff7ff00338c262376fa087d105a7529be1c0b94be"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/publication.rs",
+      "blob": "6cc0904737f752f1ab2764ccc8962ecbd4e83e5a",
+      "workingBlob": "6cc0904737f752f1ab2764ccc8962ecbd4e83e5a",
+      "workingSha256": "2aa3456ed40fa9a12a0b6029eaec877982117a357ab25ec90201dfaf8e90352d"
+    },
+    {
+      "path": "crates/arcweft-runtime-codegen/src/awbc_region.rs",
+      "blob": "58cc66744a063d49e597e357820f8d841d9878ad",
+      "workingBlob": "58cc66744a063d49e597e357820f8d841d9878ad",
+      "workingSha256": "c17748507d2264b83e165c64c07f17cf63b0c5fddc12718b40ef45c415335000"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "blob": "6162fbfeff61032b7f7b1a184704f8d3a361b15a",
+      "workingBlob": "6162fbfeff61032b7f7b1a184704f8d3a361b15a",
+      "workingSha256": "84cc6f6a323a40531a84a71fa95989686a092d8943327866c90701ed1f039a4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2508-program-publication-check.json",
+      "blob": "01e79af4428e55690d09449bff6140bba52b8bde",
+      "workingBlob": "01e79af4428e55690d09449bff6140bba52b8bde",
+      "workingSha256": "aad3a3692d9812076a537e72af57162fb2ae7b28ab49902a63662d10ba9f0012"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2508-program-publication-check.log",
+      "blob": "7dfe739f4d6c40b2b2ade87d8cb78d311deadb8d",
+      "workingBlob": "7dfe739f4d6c40b2b2ade87d8cb78d311deadb8d",
+      "workingSha256": "876070a2a249adebfde3b2252db1301de55ef5a9819421c066292e62e370e27b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2509-program-publication-catalog.inventory.json",
+      "blob": "715e75c7a526e1a14c31f4a3b1865eae5a3b7507",
+      "workingBlob": "715e75c7a526e1a14c31f4a3b1865eae5a3b7507",
+      "workingSha256": "d5229df11aae01f08e8473faef1d0b65c13f9afcbd67514749f325b5c6183786"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2509-program-publication-catalog.json",
+      "blob": "dd64515a09e912878a01e86f244b1939c216f85c",
+      "workingBlob": "dd64515a09e912878a01e86f244b1939c216f85c",
+      "workingSha256": "d1a2d425da190fe44cdf9f68f5d7af6ea7e544f0de080aa034a0071232d9bdda"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2509-program-publication-catalog.log",
+      "blob": "625ec68035e388c2b17096d99b6a39c3555fbde7",
+      "workingBlob": "625ec68035e388c2b17096d99b6a39c3555fbde7",
+      "workingSha256": "7d813dcd167ea86c613e774c61d270c11ff91801c3f2d4c5d904aee6d38437c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2510-program-publication-runtime.json",
+      "blob": "3e2d859507af76fb21e8742a0ecee41db6c704d3",
+      "workingBlob": "3e2d859507af76fb21e8742a0ecee41db6c704d3",
+      "workingSha256": "bbd45d37f48af33e6df23a290d8be75e5634044b7dc33439d50a7df332e828ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2510-program-publication-runtime.log",
+      "blob": "8effe3fdce67548e3db09b130c896020b04ae364",
+      "workingBlob": "8effe3fdce67548e3db09b130c896020b04ae364",
+      "workingSha256": "23b91e7b07a0ff8a1515928ef1c4b3070827808192dc089cba2560cc602d8a90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2510-program-publication-runtime.terminal-audit.json",
+      "blob": "357e5a85afa011bf240cc898b8d0f2eb0573c43f",
+      "workingBlob": "357e5a85afa011bf240cc898b8d0f2eb0573c43f",
+      "workingSha256": "4b9631b8348a249f11d5ba1aa6c262aa7ed4a11594dd4a78256c73d0027c78d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2511-program-publication-structure.json",
+      "blob": "ace51dc5412f6e7f1735b0a07843c7e593780a9d",
+      "workingBlob": "ace51dc5412f6e7f1735b0a07843c7e593780a9d",
+      "workingSha256": "46d3e79d48a56c9409036d0f89ac3a34a9788abcc1fb38821e1592b1399c5c1e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2511-program-publication-structure.log",
+      "blob": "0374f13e1f61617d7dc216d2c78d02844bfb7e96",
+      "workingBlob": "0374f13e1f61617d7dc216d2c78d02844bfb7e96",
+      "workingSha256": "90568ec250e89f73d133fddf25a3d46f87f440cadd8f9d96b5bfa6016d56345f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2512-program-publication-workspace-check.json",
+      "blob": "8bebc7197031740a97ccbfe7eb58b08951ea9262",
+      "workingBlob": "8bebc7197031740a97ccbfe7eb58b08951ea9262",
+      "workingSha256": "54153665c24cd392873cf04ce4555c65d50453b2dcc53c50d9ced710699e2236"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2512-program-publication-workspace-check.log",
+      "blob": "052922c344cd7c8ae273dc151e92bb68166ff299",
+      "workingBlob": "052922c344cd7c8ae273dc151e92bb68166ff299",
+      "workingSha256": "d4e7ac2ed24880a7d8c5159e075350af13fccd8e6af3dd107a6c5fe830be340e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2514-program-publication-workspace-check.json",
+      "blob": "969b975ac7962eaaa151d205c0f034fcb539d828",
+      "workingBlob": "969b975ac7962eaaa151d205c0f034fcb539d828",
+      "workingSha256": "2f57008ba44f3c5b6c3e999b7dfbe6b9f4139cd15691ace9fbdc6914cec76de0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2514-program-publication-workspace-check.log",
+      "blob": "c36e44ca06f0b3bdd5a73086528369af6285a152",
+      "workingBlob": "c36e44ca06f0b3bdd5a73086528369af6285a152",
+      "workingSha256": "a1b3eed4e1295977b430361dc979190882798b7643494dee95e85066599bc46c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2515-program-publication-workspace-clippy.json",
+      "blob": "40d0515f2c851e46364a312cd6a078f38bfb78e5",
+      "workingBlob": "40d0515f2c851e46364a312cd6a078f38bfb78e5",
+      "workingSha256": "580777bc3582d382c5164d2ed8c3ea0a8e593014806688e8404f7e187513fe54"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2515-program-publication-workspace-clippy.log",
+      "blob": "2d76b53ec76f608ef37b6d09a34ea34ca1c5e6c1",
+      "workingBlob": "2d76b53ec76f608ef37b6d09a34ea34ca1c5e6c1",
+      "workingSha256": "ccdb589e2e375470102fc927eb9010576fb7b58d60f7507b1678ab5f50028ae2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2516-program-publication-structure.json",
+      "blob": "f406a82797f3da928846b4e9a2b8aaa5f9410565",
+      "workingBlob": "f406a82797f3da928846b4e9a2b8aaa5f9410565",
+      "workingSha256": "b851327512e3b62ff0fe79948c4426f0ee7a52d0ee97fa407b6d98f851bcebfc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2516-program-publication-structure.log",
+      "blob": "71b8ae197091698a72ecd8cc4c555c46024412c0",
+      "workingBlob": "71b8ae197091698a72ecd8cc4c555c46024412c0",
+      "workingSha256": "f84362ff596be02268cf05e5bbc8c4bec2ee32a12c813db5066be106d9307e96"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-checkpoint.graph.json",
+      "blob": "0cdeb3597fa15a6ae729d76b187ca0a09c0500da",
+      "workingBlob": "0cdeb3597fa15a6ae729d76b187ca0a09c0500da",
+      "workingSha256": "0a0d0bf2c76c1a1fc2621a6064750d3d8962f6f0a779ce9651479cbef7e23670"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-checkpoint.source-freeze.json",
+      "blob": "6dda5b1b70243bbb59f05309caa007b32184f159",
+      "workingBlob": "6dda5b1b70243bbb59f05309caa007b32184f159",
+      "workingSha256": "9e4e3a2ee44f755bc0135f4b039a6a75a08584ce3bf57c3ab8874b049d34bf93"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-ownership-metrics.json",
+      "blob": "38cacd02c898322e2c745ca4ace6cdeb745e391d",
+      "workingBlob": "38cacd02c898322e2c745ca4ace6cdeb745e391d",
+      "workingSha256": "aa8be3c37d2e05775cc79aacb287b9978e406e532536ee092d89aa975ea4884f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-r2508.graph.json",
+      "blob": "4e2f820342b12c7f690a055824098a29d96c66a6",
+      "workingBlob": "4e2f820342b12c7f690a055824098a29d96c66a6",
+      "workingSha256": "94ca9def07a84c2497794f960ea8bb2a65a0a55c776f416cbf4c476236e9973b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-r2508.source-freeze.json",
+      "blob": "c635132902a21c9c0dd008e5981c65705fd2cfb2",
+      "workingBlob": "c635132902a21c9c0dd008e5981c65705fd2cfb2",
+      "workingSha256": "64b1140310dcd1a63746815b2ac946412208cca3e30aa45eaf2109fb4627c34a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-r2509.graph.json",
+      "blob": "3dafc48ca0c52980fcc914ce862e298da99323af",
+      "workingBlob": "3dafc48ca0c52980fcc914ce862e298da99323af",
+      "workingSha256": "f77b7f3e2a6be3019736064dbafcaa57651d95780a212bb6ed2472b76261050d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-r2509.pins.json",
+      "blob": "93d32d165be7f3f885b842783f53ea276fc7b671",
+      "workingBlob": "93d32d165be7f3f885b842783f53ea276fc7b671",
+      "workingSha256": "4ff8dd02a11ecb2280a028cacefc2be53b162a1dd3c3244a8514a607057fbba4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-r2509.source-freeze.json",
+      "blob": "cc5f821ba96aa807f6b37d283e39895581c2b7bf",
+      "workingBlob": "cc5f821ba96aa807f6b37d283e39895581c2b7bf",
+      "workingSha256": "cb03f02a8650c4074e9ac0d629f0ea5ec2c474cd00bb6195562e283410577e65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-r2510.execution-integrity.json",
+      "blob": "f6f778ea486ef99f43440d7e73538f2b185ba028",
+      "workingBlob": "f6f778ea486ef99f43440d7e73538f2b185ba028",
+      "workingSha256": "6137e20a666a26550f8fc2fcacb7adbc687927b622745432cfd75d5a699bc420"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-r2514.graph.json",
+      "blob": "eb84dae9f8f338c63864a313705218ef7a50ed4a",
+      "workingBlob": "eb84dae9f8f338c63864a313705218ef7a50ed4a",
+      "workingSha256": "7bfae687707e25646080b512ad5af958bd0066a602d5c855b359a069fbdfb629"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-r2514.source-freeze.json",
+      "blob": "5f64b73e012dc3ed1332d0a92db0bf64fbfabac0",
+      "workingBlob": "5f64b73e012dc3ed1332d0a92db0bf64fbfabac0",
+      "workingSha256": "f14cca0317a18362fc8967be031bfd46d00184bbfb9ab0b34cd169ed64b42cb2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-r2514.source-integrity.json",
+      "blob": "4234fd6ddcc3326b0c8d2bd3538033cc4dd1f469",
+      "workingBlob": "4234fd6ddcc3326b0c8d2bd3538033cc4dd1f469",
+      "workingSha256": "33c4f898509ad8cdd9f9e9affd63b2829d698e56958afd87afe0da98d90b79f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2511/dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingBlob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingSha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2511/file_metrics.csv",
+      "blob": "5e625a932794b87aab00f9469110670c99c67428",
+      "workingBlob": "5e625a932794b87aab00f9469110670c99c67428",
+      "workingSha256": "f57038c289c955a9820a4c4583bafb3a99fbfa7e4ea7ffb8c78fe43d6f441e41"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2511/findings.md",
+      "blob": "6d63833d9eec189b8d0ef62bdbcd8f12806317ca",
+      "workingBlob": "6d63833d9eec189b8d0ef62bdbcd8f12806317ca",
+      "workingSha256": "9dee440fda4f80d34c0791e0c7702bff99a8335ca0826af192a06dea0eab2ba7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2511/package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingBlob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingSha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2511/public_type_duplicates.csv",
+      "blob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingBlob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingSha256": "c3012de2b7c825ba8d8d272c923eefe7c9d68c3e69921d3396e2cebbd577e52f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2516/dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingBlob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingSha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2516/file_metrics.csv",
+      "blob": "ea78970df00aaccd59f1470591ad320e095193e7",
+      "workingBlob": "ea78970df00aaccd59f1470591ad320e095193e7",
+      "workingSha256": "e41b84365bcfb79b7322ca3df7799febb3567ca1bd4d593e976433106c152f39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2516/findings.md",
+      "blob": "6d63833d9eec189b8d0ef62bdbcd8f12806317ca",
+      "workingBlob": "6d63833d9eec189b8d0ef62bdbcd8f12806317ca",
+      "workingSha256": "9dee440fda4f80d34c0791e0c7702bff99a8335ca0826af192a06dea0eab2ba7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2516/package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingBlob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingSha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-publication-structure-r2516/public_type_duplicates.csv",
+      "blob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingBlob": "6b27d41a070ba7d8339492ac93f3bf5e0a53b38c",
+      "workingSha256": "c3012de2b7c825ba8d8d272c923eefe7c9d68c3e69921d3396e2cebbd577e52f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-restore-checkpoint.verified.json",
+      "blob": "d4bd779be4a71ce03dbbcada9b10ce4c0e7e154d",
+      "workingBlob": "d4bd779be4a71ce03dbbcada9b10ce4c0e7e154d",
+      "workingSha256": "abe2611a367743b99ba851d1055bdd416fbf83d8eaa006c5abcaabcfe0056d60"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "59a3ba4f90998958d42451c1ea7e104daecbc847",
+      "workingBlob": "59a3ba4f90998958d42451c1ea7e104daecbc847",
+      "workingSha256": "81ca1a3a7ff491ece659e0414be30967e9324e8c3074990724aa56f4a4011c4a"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "eb147957b7e206643bb3951e28f019a211fa6d33",
+      "workingBlob": "eb147957b7e206643bb3951e28f019a211fa6d33",
+      "workingSha256": "f0931c61fe671e3304eee8e9e462a23cdad7e1aa2ac1cfa64b604f1a9d0de701"
+    }
+  ],
+  "sourceCount": 4577,
+  "sourceDrift": 0,
+  "heldPatchSha256": "e0eb55633fd17a5af5c72130ac3adc6ca58f69fd52c140d3b2940ca776d77150",
+  "patchSha256": "4abfec505877a00fbfabd2ca6f89f3c4cea63687f60a67814e60e3fa2de3b04a",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T01:40:22.2792911Z"
+}

@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "dirty": true,
+  "retainedTracked": 14,
+  "changedRust": 1,
+  "manifestLockInputs": 99,
+  "manifestLockDrift": 0,
+  "graphSource": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+  "graphSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "metrics": [
+    {
+      "path": "crates/arcweft-compiler/tests/flow_include.rs",
+      "package": "arcweft-compiler",
+      "classification": "test",
+      "bytes": 26593,
+      "physicalLoc": 695,
+      "baseLoc": 591,
+      "growth": 104,
+      "workspaceFanIn": 5,
+      "workspaceFanOut": 34
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "name": "task-final-r2517-program-lifecycle-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "flow_include",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2517-program-lifecycle-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T01:41:23.5089722Z",
+  "finishedAt": "2026-10-24T01:41:38.0057734Z"
+}

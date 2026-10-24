@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "name": "task-final-r2520-program-lifecycle-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-lifecycle-structure-r2520",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2520-program-lifecycle-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T01:43:11.1475198Z",
+  "finishedAt": "2026-10-24T01:43:14.8593907Z"
+}

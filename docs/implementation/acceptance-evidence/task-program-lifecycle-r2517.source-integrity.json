@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "base": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "freeze": "task-program-lifecycle-r2517.source-freeze.json",
+  "ownedRust": 1,
+  "rustInputs": 3090,
+  "rustDrift": 0,
+  "formatExit": 0,
+  "recordedAt": "2026-10-24T01:44:32.3269577Z"
+}

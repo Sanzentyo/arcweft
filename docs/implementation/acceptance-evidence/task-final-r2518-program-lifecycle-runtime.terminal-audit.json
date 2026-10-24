@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "e609b644a2ecaf9875f6a19f040caa246e10b7f9",
+  "run": "task-final-r2518-program-lifecycle-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   2.142s] 17 tests run: 17 passed, 0 skipped",
+  "executed": 17,
+  "passed": 17,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4577,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T01:42:21.1759037Z"
+}
