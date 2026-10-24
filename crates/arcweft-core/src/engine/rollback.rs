@@ -1072,6 +1072,31 @@ impl NativeEngineRollbackImage {
                 .frame
                 .admit_owned_values(&mut admission)
                 .map_err(|error| error.to_string())?;
+            if let FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Native(state)) =
+                &fiber.frame.status
+            {
+                for flight in &state.in_flight {
+                    if let Some(observed) = flight.observed_through {
+                        let correlation =
+                            crate::value::RuntimeNeedView::from(&flight.handle).correlation();
+                        if !self
+                            .need_publication_frontiers
+                            .get(&correlation)
+                            .is_some_and(|frontier| {
+                                matches!(
+                                    frontier.compare_same_source(observed),
+                                    Some(std::cmp::Ordering::Equal | std::cmp::Ordering::Greater)
+                                )
+                            })
+                        {
+                            return Err(
+                                "native fanout observer exceeds its retained publication frontier"
+                                    .into(),
+                            );
+                        }
+                    }
+                }
+            }
         }
         let expected_deferred_children = self.expected_deferred_children(|activation| {
             self.dialogue_activations

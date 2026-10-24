@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2830-fanout-program-kernel-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79825408,
+      "nonTest": false,
+      "sha256": "9c7d772701d7e5f11135336be3abd11d455f93b5f99161cc9ef302a0647089a0"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T19:21:21.4614197Z"
+}

@@ -3438,6 +3438,17 @@ impl AwbcProductStepExecutor {
             }
         };
         if matches!(&owner, ProductChildFiberOwner::Program { .. }) {
+            if !skip_vm_instruction
+                && child.fiber.status == FiberStatus::Suspended
+                && let Err(error) =
+                    self.initialize_deferred_child_suspension(&mut child, output, pure_backend)
+            {
+                child.fiber.mark_trapped(FiberTrap {
+                    code: error.trap_code(),
+                    message: Some(error.to_string()),
+                    source_map: None,
+                });
+            }
             if program_returned {
                 let value = child
                     .fiber

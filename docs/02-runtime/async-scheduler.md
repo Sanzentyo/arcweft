@@ -450,6 +450,12 @@ output headers share the retained children's node, byte, depth and relation-work
 allowance. Pattern/ownership refusal preserves the original result slots until
 the owning execution boundary can commit or authorize their drop.
 
+Child publications survive parent or sibling scheduling steps. Native fanout
+uses the existing Need publication queue and retains an observed cursor per
+in-flight child; rollback checks that cursor against the retained frontier.
+Program children initialize their suspension before polling it, including empty
+fanout, and use the actual child frame's binding and generation for admission.
+
 ```text
 TaskEventKind::Ready(value)                  -> validate and resume with the exact admitted Host Need payload
 TaskEventKind::ProgramTerminal(report)       -> acknowledge the accepted Program launch; consume its local producer result

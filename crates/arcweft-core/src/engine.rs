@@ -1643,6 +1643,7 @@ impl AwaitManyState {
                 .map(|flight| {
                     Ok(AwaitManyInFlight {
                         index: flight.index,
+                        observed_through: flight.observed_through,
                         handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live_admitted(
                             &flight.handle,
                             Some(owner),
@@ -1698,6 +1699,7 @@ impl AwaitManyState {
                 .map(|flight| {
                     Ok(AwaitManyInFlight {
                         index: flight.index,
+                        observed_through: flight.observed_through,
                         handle: flight
                             .handle
                             .into_live_admitted(owner)
@@ -1723,6 +1725,7 @@ impl AwaitManyState {
 pub struct AwaitManyInFlight<H = crate::task::RuntimeNeedHandle> {
     pub index: usize,
     pub handle: H,
+    pub observed_through: Option<TaskPublicationCursor>,
 }
 
 /// Shared status projection for both native and Product AwaitMany execution.
@@ -2643,7 +2646,12 @@ impl Engine {
         let mut remaining = Vec::new();
         for event in events {
             let Some(publication) = self.need_producers.publication_for_task_event(&event) else {
-                remaining.push(event);
+                if let Some(event) = self.latch_await_many_task_event(event, output) {
+                    remaining.push(event);
+                }
+                if matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)) {
+                    return remaining;
+                }
                 continue;
             };
             match self.need_producers.publish_task_event_owned(event) {

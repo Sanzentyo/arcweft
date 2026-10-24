@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "954315205ecac131a62180f25cb56fe246e0051f",
+  "name": "task-final-r2839-fanout-child-core-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2839-fanout-child-core-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T19:28:43.1163593Z",
+  "finishedAt": "2026-10-24T19:29:04.0421274Z"
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "954315205ecac131a62180f25cb56fe246e0051f",
+  "run": "task-final-r2838-fanout-child-core-full-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  11.516s] 1991 tests run: 1991 passed, 0 skipped",
+  "executed": 1991,
+  "passed": 1991,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 6122,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T19:28:43.0337152Z"
+}

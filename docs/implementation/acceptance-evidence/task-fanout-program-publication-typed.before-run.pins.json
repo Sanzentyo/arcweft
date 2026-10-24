@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2828-fanout-program-publication-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79825408,
+      "nonTest": false,
+      "sha256": "0f7369be74d7fc165b4b47706717b8b577ce9568be714e21d02899622fe55015"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T19:19:22.2964285Z"
+}

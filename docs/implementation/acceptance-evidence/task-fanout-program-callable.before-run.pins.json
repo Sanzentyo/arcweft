@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2832-fanout-program-callable-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79825408,
+      "nonTest": false,
+      "sha256": "145ebfb66ad1a39cf249145e6c11b7b9ab8d1cd75b71cb00d25465ff8d54ecb7"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T19:23:16.9022629Z"
+}

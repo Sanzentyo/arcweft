@@ -1,0 +1,482 @@
+{
+  "version": 1,
+  "base": "954315205ecac131a62180f25cb56fe246e0051f",
+  "sourcePaths": [
+    "crates/arcweft-core/src/awbc/product_step.rs",
+    "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+    "crates/arcweft-core/src/awbc/product_step/tests.rs",
+    "crates/arcweft-core/src/engine.rs",
+    "crates/arcweft-core/src/engine/rollback.rs",
+    "crates/arcweft-core/src/engine/rollback/await_state.rs",
+    "crates/arcweft-core/src/engine/rollback/await_state/many_tests.rs",
+    "crates/arcweft-core/src/engine/suspend.rs"
+  ],
+  "scope": "Native child Host publications persist in the existing Need queue; AWBC Program suspensions initialize with the actual child context; ordered Result fanout binds and retires through real Program tasks",
+  "runtime": {
+    "run": "task-final-r2838-fanout-child-core-full-runtime",
+    "catalog": "task-final-r2837-fanout-child-core-full-catalog",
+    "configuration": "Core only: --lib --all-features --locked",
+    "executed": 1991,
+    "passed": 1991,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0,
+    "fixedInputs": 6122,
+    "inputDrift": 0,
+    "notReusedAsReverse53": true
+  },
+  "targeted": {
+    "run": "task-final-r2836-fanout-child-frame-runtime",
+    "executed": 20,
+    "passed": 20,
+    "filtered": 1971
+  },
+  "clippy": {
+    "run": "task-final-r2839-fanout-child-core-clippy",
+    "configuration": "Core only: --all-targets --all-features --locked",
+    "exitCode": 0,
+    "warningsRemain": true
+  },
+  "cases": [
+    "Actual Program launch, child Result binding/return, parent await and one result retirement: Native, Product, Product with public JSON save/restore after every step; empty/all Ok/reverse arrival lowest source Err = nine integration cases",
+    "Native queued progress and Ready survive private rollback after every step; each progress cursor observed once, source order preserved",
+    "Private rollback rejects an observed child cursor beyond its retained publication frontier",
+    "Existing direct Native/Product Result cases now include a real aggregate binding"
+  ],
+  "failedAttempts": [
+    {
+      "runs": [
+        "R2823",
+        "R2825"
+      ],
+      "result": "18 PASS / 1 FAIL of 19",
+      "cause": "Native nonempty child loses one-step Host events when a parent consumes the scheduling step",
+      "fixedBy": "Existing Need queue retains owned publications; each flight retains its observation cursor"
+    },
+    {
+      "runs": [
+        "R2826"
+      ],
+      "exitCode": 101,
+      "cause": "Integration test called private Native rollback APIs from another owner module",
+      "fixedBy": "Native rollback regression moved to the existing owning test module"
+    },
+    {
+      "runs": [
+        "R2827"
+      ],
+      "exitCode": 101,
+      "cause": "Test delay integer needed an explicit type"
+    },
+    {
+      "runs": [
+        "R2829",
+        "R2831"
+      ],
+      "result": "19 PASS / 1 FAIL of 20",
+      "cause": "New Program fixture required MayAllocate and CallableBoundary"
+    },
+    {
+      "runs": [
+        "R2833"
+      ],
+      "result": "19 PASS / 1 FAIL of 20",
+      "cause": "Program child skipped initial suspension admission; empty fanout reached completion without an accepted base",
+      "fixedBy": "Program owner invokes common suspension initialization and fanout derives binding/generation from the actual child"
+    },
+    {
+      "runs": [
+        "R2834"
+      ],
+      "exitCode": 101,
+      "cause": "GenerationId name needed its existing crate path"
+    }
+  ],
+  "unverified": [
+    "Reverse53 and workspace gates for this source cut",
+    "DSL traverse sema/lowering and first-class lazy Need construction",
+    "All14 and nominal final C6 acceptance",
+    "Native public save, Tier2 and Native/Web capture/image parity",
+    "Scoped generic Program-child fanout and distinct child/parent generations are not separately exercised by the new integration matrix"
+  ],
+  "genericMatch": "Accepted and published; no new Generic Match defect or acceptance reopening",
+  "heldTracked": 14,
+  "heldUntracked": 6,
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-child-core-full.before-run.pins.json",
+      "bytes": 482,
+      "sha256": "e5a97e8b02b327ce754d9375bcfcee22a883d366c0b7b59118ad7ef57cdd9e80"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-child-frame-source.graph.json",
+      "bytes": 3198,
+      "sha256": "02d3a1d25241d066c83eb16db5f97ef5042a7514875e2ab8ac30e90cf6b41f0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-child-frame-source.source-freeze.json",
+      "bytes": 1276522,
+      "sha256": "81c949c72e2685427e823b46bd5605066292dee0f195cc277693181f1801ecf5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-child-frame.before-run.pins.json",
+      "bytes": 478,
+      "sha256": "14db69d2c3103e9959be3abc414c9a477dfaaed66889909208c5b779e50e1714"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-child-initialization-source.graph.json",
+      "bytes": 3198,
+      "sha256": "02d3a1d25241d066c83eb16db5f97ef5042a7514875e2ab8ac30e90cf6b41f0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-child-initialization-source.source-freeze.json",
+      "bytes": 1276522,
+      "sha256": "dc8acaa0a520b03c050f1c37d14f04017904d39caf1af5496cb5e8d1c701895b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-callable-source.graph.json",
+      "bytes": 3081,
+      "sha256": "fbd1740b50a3e2a8a4b66b4a971cf7e88658b1783c96481168ea40ba722187df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-callable-source.source-freeze.json",
+      "bytes": 1276405,
+      "sha256": "085594da01ed709d324e565c9608d4f95f3fab00537cb02833b2db0a6bd45b2b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-callable.before-run.pins.json",
+      "bytes": 483,
+      "sha256": "190003b159776b874154cc083cce7c8daafa8b2133868ba06a93d2aa9c38ce69"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-child-observation-source.graph.json",
+      "bytes": 2801,
+      "sha256": "e7f452cd38b491c15c90ecd95a370d37482fe3bc7e822e3fa8fddd2fa16db6a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-child-observation-source.source-freeze.json",
+      "bytes": 1276124,
+      "sha256": "bbb84e0d15f02a00c9591da527e0f1d6dd48f671655abeeab47dbda179e05aa6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-child-observation.before-run.pins.json",
+      "bytes": 480,
+      "sha256": "5b1b94ed0fc4c2fd4eecfa96370c998d69b8f68e6b0ac2c4592fe42dd2a29b1f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-child-source.graph.json",
+      "bytes": 2801,
+      "sha256": "e7f452cd38b491c15c90ecd95a370d37482fe3bc7e822e3fa8fddd2fa16db6a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-child-source.source-freeze.json",
+      "bytes": 1276124,
+      "sha256": "69ffba88971524bd2b88cfc032907ec738bb1f6fc73fdd26409d061fdfbae4a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-child.before-run.pins.json",
+      "bytes": 480,
+      "sha256": "6d08872eac7ea3ce815720a9fceabc0f8754776788bac4dec2b4a43122799fa9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-kernel-source.graph.json",
+      "bytes": 3081,
+      "sha256": "fbd1740b50a3e2a8a4b66b4a971cf7e88658b1783c96481168ea40ba722187df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-kernel-source.source-freeze.json",
+      "bytes": 1276405,
+      "sha256": "17db801da3eb8c554f66f24ece892caa4cbf2800633864fd33b36ec1e997e737"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-kernel.before-run.pins.json",
+      "bytes": 481,
+      "sha256": "656f0255864c5bf1abc209b2f88bce420d0a94ff153cd8c65ffba24d057a14ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-publication-fixed-source.graph.json",
+      "bytes": 3081,
+      "sha256": "fbd1740b50a3e2a8a4b66b4a971cf7e88658b1783c96481168ea40ba722187df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-publication-fixed-source.source-freeze.json",
+      "bytes": 1276405,
+      "sha256": "4e72c8238ae85f0a9a836c702e89f40f469bf4e4a63f3b3393635e0a089e9916"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-publication-source.graph.json",
+      "bytes": 3081,
+      "sha256": "fbd1740b50a3e2a8a4b66b4a971cf7e88658b1783c96481168ea40ba722187df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-publication-source.source-freeze.json",
+      "bytes": 1276404,
+      "sha256": "d6302010d9d4b5592b1bfd7051c78f1789f3b3a2aefbf20d4401b0cd379e112a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-publication-typed-source.graph.json",
+      "bytes": 3081,
+      "sha256": "fbd1740b50a3e2a8a4b66b4a971cf7e88658b1783c96481168ea40ba722187df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-publication-typed-source.source-freeze.json",
+      "bytes": 1276405,
+      "sha256": "68e8a04ff148b0da57d812837f50bacdd6e09a7af5267a75ef83857484ce611d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-program-publication-typed.before-run.pins.json",
+      "bytes": 486,
+      "sha256": "0c057ae3cf6811ec7ae9f0382248a504cce774075cb967ad96105a8b071acc47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2822-fanout-program-child-catalog.inventory.json",
+      "bytes": 506107,
+      "sha256": "8f0e4c2e1abb2e585a60b98ff1d0cb8012624e9afd472d038492665acbf60e31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2822-fanout-program-child-catalog.json",
+      "bytes": 623,
+      "sha256": "0dfb7ebdeaab85c0249880bd6f62654c0ae6105b8beb7a031fbe9ad38366cdb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2822-fanout-program-child-catalog.log",
+      "bytes": 416360,
+      "sha256": "0896b40e443c6d070daaf35b97edff42dfb9938175eed823d90646726e4c5d86"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2823-fanout-program-child-runtime.json",
+      "bytes": 685,
+      "sha256": "4c207434e774abaeea71d640940e32e560e4b7caefa86c0735c50f279ff5c642"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2823-fanout-program-child-runtime.log",
+      "bytes": 659712,
+      "sha256": "62c89724bef49ed386aa3f0679a1124c995062b8b945a14382afc3b326bc7d04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2823-fanout-program-child-runtime.terminal-audit.json",
+      "bytes": 782,
+      "sha256": "c711648de6caa4de40594f2fb35ca060631d0bc3baef5937fde069cae8cecd40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2824-fanout-program-child-catalog.inventory.json",
+      "bytes": 506107,
+      "sha256": "570bd72eb6f92165055c7e038a640c710d2972fb134f48584fe9cf87b328981b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2824-fanout-program-child-catalog.json",
+      "bytes": 623,
+      "sha256": "89dd1afdfb3124fb4238b04a468bf5a7ae8e732605697b4d78f20e3d6b05b405"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2824-fanout-program-child-catalog.log",
+      "bytes": 416360,
+      "sha256": "e0085521af6b698b6d2e9331c032f3b65987ea4bb4a7b1c2e55b26cb14679b56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2825-fanout-program-child-runtime.json",
+      "bytes": 685,
+      "sha256": "022daf49132bf8c6e6e1fd132d51d586a76a5e2d5291c656647ad3f71eabd5a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2825-fanout-program-child-runtime.log",
+      "bytes": 659748,
+      "sha256": "282d700241df865684bb80437856fc12a5f1ee287e451f1c37e5321a34bd29af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2825-fanout-program-child-runtime.terminal-audit.json",
+      "bytes": 782,
+      "sha256": "9576b510b42c6f4ca33327ba90c89c28c18e60c93277c60d754be0672cb6211c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2826-fanout-program-publication-catalog.json",
+      "bytes": 637,
+      "sha256": "e6bad9141f0e4d076cec1a754bb178575ad26fe704677b48fc5237d5816e2233"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2826-fanout-program-publication-catalog.log",
+      "bytes": 11033,
+      "sha256": "96a86748464edae8b9e33c8dad7f75a6df2c30ecb5299176e8dd8bfb0192faca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2827-fanout-program-publication-catalog.json",
+      "bytes": 637,
+      "sha256": "69a77c28cbb71d14c55be007b46f41b904a77a470806492359f932406e60d624"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2827-fanout-program-publication-catalog.log",
+      "bytes": 10174,
+      "sha256": "0af11d8b511d5c20aa1b291e034aa8b2fff6776614981885d2176d2465045cd0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2828-fanout-program-publication-catalog.inventory.json",
+      "bytes": 506379,
+      "sha256": "4042e4e18cb3605b9e766d46d4cb15e805b68f25f0f072abcb451168aebe498b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2828-fanout-program-publication-catalog.json",
+      "bytes": 635,
+      "sha256": "674355cd3be9eb2b9632853d06ba1c9220c84c6dd808fbd26ec55e030ddf15af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2828-fanout-program-publication-catalog.log",
+      "bytes": 416523,
+      "sha256": "7ece5205cba0e9225eb87ad646840c896641e31a7d0f3956d9b1d82315f092bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2829-fanout-program-publication-runtime.json",
+      "bytes": 697,
+      "sha256": "5242d133f400207f431fd5028d634e61465455754b5a85f63e8ee59e9744064d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2829-fanout-program-publication-runtime.log",
+      "bytes": 660118,
+      "sha256": "ef0a01d45f53e573b5893289010dea31896ce9ee0aaf90fd5422b121377fbe78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2829-fanout-program-publication-runtime.terminal-audit.json",
+      "bytes": 788,
+      "sha256": "f52236570aa9f95bda9a2cb2c3d8eeb0c467409690d3b75cd6e2b1aa8957e7e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2830-fanout-program-kernel-catalog.inventory.json",
+      "bytes": 506374,
+      "sha256": "b694001ce0f8f19fd41bc24a93be1e25d6b3f4a167248a14131944be551acf76"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2830-fanout-program-kernel-catalog.json",
+      "bytes": 625,
+      "sha256": "dbef936374d011a71574281a4452b2917462e1a4a217cde09fe4395b340c37a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2830-fanout-program-kernel-catalog.log",
+      "bytes": 416523,
+      "sha256": "07e0877cfceb7fe4c667d02175109d714f1f6c4832c4a7e0cfa9a80abf3c739d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2831-fanout-program-kernel-runtime.json",
+      "bytes": 687,
+      "sha256": "6ac52bde817ed5cb03526cd95beae38f51599368b63216a15403b935c9485f95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2831-fanout-program-kernel-runtime.log",
+      "bytes": 660059,
+      "sha256": "d4322118a00ad79a5dd06d05091e577c04963464e452c3602f6638d6226daa1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2831-fanout-program-kernel-runtime.terminal-audit.json",
+      "bytes": 783,
+      "sha256": "132ae730e92febe83862b76e9ec57567a8a16e01c16ec6a3bfdc3c59454fd971"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2832-fanout-program-callable-catalog.inventory.json",
+      "bytes": 506376,
+      "sha256": "be870ea6e1dca64588a8901cd6263d151f8fdc6fda29bff124e627765dfea3ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2832-fanout-program-callable-catalog.json",
+      "bytes": 629,
+      "sha256": "8641c52ce5a4c7b3d96cce6460d18b656d34a6332c626cd4f9ca8924a6bb2b51"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2832-fanout-program-callable-catalog.log",
+      "bytes": 416523,
+      "sha256": "837886cea1b19bbe110a263415ebc97bd3a392d61edf81cbfa84284dc4761edb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2833-fanout-program-callable-runtime.json",
+      "bytes": 691,
+      "sha256": "187f127de50435e44513ac8540f2ca626ca7fffe933e2ee85fb8b4f796900d36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2833-fanout-program-callable-runtime.log",
+      "bytes": 660108,
+      "sha256": "36bd23785842bbc90fe509343605f1fa234ba8059acc85a913ec6660efb05b36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2833-fanout-program-callable-runtime.terminal-audit.json",
+      "bytes": 785,
+      "sha256": "feda03b22632c77b4be50708369a5e9237c2d798747cb18d0d5ca0bcd65529de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2834-fanout-child-initialization-catalog.json",
+      "bytes": 639,
+      "sha256": "5c731afc1a3bc45811d50c072aa500a693217fbbd7adba6d47d61bcc8728082a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2834-fanout-child-initialization-catalog.log",
+      "bytes": 10100,
+      "sha256": "e357b666eaf20ac651f9d451e27093ca08b415a9a812beff56f1f6ea77d1b078"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2835-fanout-child-frame-catalog.inventory.json",
+      "bytes": 506371,
+      "sha256": "a858a76c1941bac55e7ea417bc5643a042be20e918bb3ea671fa4350be4f852d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2835-fanout-child-frame-catalog.json",
+      "bytes": 619,
+      "sha256": "6705efd3f56c82561f409dd7ec4e4a8e30c23a3a78b142a25bfff45d8aaf8f9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2835-fanout-child-frame-catalog.log",
+      "bytes": 416523,
+      "sha256": "3a3498e5d7944b258cf886ec7e5e78eaca9a5740ac135d436aba1440ca7a94f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2836-fanout-child-frame-runtime.json",
+      "bytes": 679,
+      "sha256": "55388f9446a9c1f92ed1b7f32190b09d18ee444d1d41fc64dd6dc0f72cad1e9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2836-fanout-child-frame-runtime.log",
+      "bytes": 659154,
+      "sha256": "514951ecd51390d7a329d3640f3a3f23ac1200e07198fcf17e663777a7c069be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2836-fanout-child-frame-runtime.terminal-audit.json",
+      "bytes": 572,
+      "sha256": "28fe48eaddccd09e7dfb8fa88022e38bcebecf01f9a08b0dffbfd7c023851689"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2837-fanout-child-core-full-catalog.inventory.json",
+      "bytes": 504403,
+      "sha256": "f4a9a8c0df421fc700c3d43d91c430f84993cceffd7c80422fc5a157148f6598"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2837-fanout-child-core-full-catalog.json",
+      "bytes": 575,
+      "sha256": "4301ba43f85d7cb02873eae6dea7a62caa88af64c2f18597e3d145ad862d3d70"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2837-fanout-child-core-full-catalog.log",
+      "bytes": 371118,
+      "sha256": "950f616ed81041fba48eea6db8ce012c9164c304e03b466456858a433767c864"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2838-fanout-child-core-full-runtime.json",
+      "bytes": 635,
+      "sha256": "e5c3735ef3d69a4e2b49d6c66c1b6219e8fa45b0341ab59cf1f631bd53c349d8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2838-fanout-child-core-full-runtime.log",
+      "bytes": 635644,
+      "sha256": "0f701c1ff6bf1439ccfb97d8425b1e392f103df5bcd3a608ed18b25eb3027ef1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2838-fanout-child-core-full-runtime.terminal-audit.json",
+      "bytes": 578,
+      "sha256": "7eb624967512cfcbc510119c1648c6cb44522b96dfe2f0829eedc38dfc4064d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2839-fanout-child-core-clippy.json",
+      "bytes": 519,
+      "sha256": "f9df8b1df8cb7710db5bd03e83a5c1e61c407ffc8284398c8d97ae01f5afd0b3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2839-fanout-child-core-clippy.log",
+      "bytes": 2763351,
+      "sha256": "69ff2dac388b5363d7c6404d98584e2e8d04f41a3198dd916cac2d9542268817"
+    }
+  ]
+}

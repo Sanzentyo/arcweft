@@ -160,11 +160,98 @@ fn state(image: &mut NativeEngineRollbackImage) -> &mut AwaitManyStateRollbackIm
 }
 
 #[test]
+fn native_fanout_publications_survive_rollback_without_repeating_progress() {
+    use crate::plan::FlowEvent;
+    use crate::step::{RuntimeStepInput, RuntimeStepOptions};
+    let (plan, flow) = fanout_plan();
+    let mut engine = Engine::for_flow(plan, &flow).unwrap();
+    let mut pending = vec![];
+    let mut launched = 0;
+    let mut progresses = 0;
+    let mut result = None;
+    let mut ready = vec![];
+    let mut delay = 0_u8;
+    for _ in 0..64 {
+        let step = engine.step(
+            RuntimeStepInput {
+                task_events: std::mem::take(&mut pending),
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepOptions::default(),
+        );
+        assert!(step.stats.executed_ops <= 1);
+        assert!(
+            !matches!(engine.fiber.frame.status, FlowFiberStatus::Failed(_)),
+            "{:?}",
+            step.output.diagnostics
+        );
+        for task in step.output.requests.tasks {
+            let index = launched;
+            launched += 1;
+            let correlation = task.handle().correlation;
+            pending.push(TaskEvent {
+                correlation,
+                cursor: TaskPublicationCursor {
+                    logical_epoch: LogicalEpoch(17),
+                    sequence: TaskSequence(1),
+                },
+                kind: TaskEventKind::Progress(arcweft_need::Progress::new(0.5).unwrap()),
+            });
+            ready.push(TaskEvent {
+                correlation,
+                cursor: TaskPublicationCursor {
+                    logical_epoch: LogicalEpoch(17),
+                    sequence: TaskSequence(2),
+                },
+                kind: TaskEventKind::Ready(RuntimeValue::Bool(index % 2 == 0).into()),
+            });
+            delay = 3;
+        }
+        for event in step.output.flow_events {
+            match event {
+                FlowEvent::AwaitProgress { .. } => progresses += 1,
+                FlowEvent::AwaitReady {
+                    value: Some(value), ..
+                } if matches!(value.value(), RuntimeValue::Seq(_)) => {
+                    assert!(result.replace(value.into_value()).is_none());
+                }
+                _ => {}
+            }
+        }
+        let owner = RuntimeProgramOwner::Plan(engine.program_plan());
+        let image = engine.inert_rollback_image().unwrap();
+        engine = Engine::from_rollback_image(image, &owner).unwrap();
+        if pending.is_empty() && delay == 0 {
+            pending = std::mem::take(&mut ready);
+            pending.reverse();
+        } else {
+            delay = delay.saturating_sub(1);
+        }
+        if result.is_some() {
+            break;
+        }
+    }
+    assert_eq!(launched, 3);
+    assert_eq!(
+        progresses, 3,
+        "one progress per cursor, including after rollback and empty polls"
+    );
+    assert_eq!(
+        result,
+        Some(crate::value::runtime_sequence_values(vec![
+            RuntimeValue::Bool(true),
+            RuntimeValue::Bool(false),
+            RuntimeValue::Bool(true),
+        ]))
+    );
+}
+
+#[test]
 fn native_fanout_preflight_rejects_corrupt_frontiers_indices_and_results() {
     let engine = suspended_engine();
     let owner = RuntimeProgramOwner::Plan(engine.program_plan());
     let image = engine.inert_rollback_image().unwrap();
-    for case in 0..9 {
+    for case in 0..10 {
         let mut corrupt = image.clone();
         let state = state(&mut corrupt);
         assert_eq!(state.next_index, 2);
@@ -187,6 +274,12 @@ fn native_fanout_preflight_rejects_corrupt_frontiers_indices_and_results() {
                     ),
                     instantiation: None,
                 };
+            }
+            9 => {
+                state.in_flight[0].observed_through = Some(TaskPublicationCursor {
+                    logical_epoch: LogicalEpoch(99),
+                    sequence: TaskSequence(99),
+                })
             }
             _ => unreachable!(),
         }

@@ -176,7 +176,7 @@ where
         let mut indices = std::collections::BTreeSet::new();
         let mut correlations = std::collections::BTreeSet::new();
         for flight in &self.in_flight {
-            admission.validate_metadata(&flight.index)?;
+            admission.validate_metadata(&(flight.index, flight.observed_through))?;
             let handle = RuntimeNeedView::from(&flight.handle);
             handle.admit_retained(admission)?;
             if flight.index >= self.next_index

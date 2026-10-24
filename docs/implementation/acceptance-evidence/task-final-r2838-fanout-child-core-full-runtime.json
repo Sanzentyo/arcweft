@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "954315205ecac131a62180f25cb56fe246e0051f",
+  "name": "task-final-r2838-fanout-child-core-full-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2838-fanout-child-core-full-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T19:28:14.6996915Z",
+  "finishedAt": "2026-10-24T19:28:27.4152983Z"
+}

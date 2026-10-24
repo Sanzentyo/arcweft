@@ -21,7 +21,7 @@ use crate::task::{
     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
     NeedProducerTaskDisposition, ProcessRunRequest, RuntimeHostArgumentTemplate,
     RuntimeNeedProducerState, RuntimeNeedPublication, RuntimeTaskTemplateArguments, ShaderRequest,
-    SystemInfoKind, SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
+    SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
 };
 use crate::value::{
     DenseSeq, RuntimeFieldValue, RuntimeRetainedValueAdmission, RuntimeValueSource,
@@ -32,29 +32,69 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 impl Engine {
-    fn task_outcome_accepts_live_value(
-        &self,
-        outcome: &TaskOutcomeContract,
-        value: &RuntimeValue,
-    ) -> bool {
-        match outcome {
-            TaskOutcomeContract::Standalone { payload } => {
-                outcome.standalone_contract_is_valid() && payload.accepts_value(value)
-            }
-            TaskOutcomeContract::Program { payload } => self
-                .plan
-                .type_table()
-                .id_for_semantic(*payload)
-                .is_some_and(|ty| {
-                    self.plan
-                        .validate_live_value(
-                            ty,
-                            value,
-                            crate::entry::RuntimeSchemaLimits::engine_default(),
-                        )
-                        .is_ok()
-                }),
+    /// Retain Host fanout publications before the scheduler selects a fiber.
+    /// A parent operation may consume this step's budget before its waiting
+    /// child runs. The existing Need queue owns that child's value meanwhile.
+    pub(super) fn latch_await_many_task_event(
+        &mut self,
+        event: TaskEvent,
+        output: &mut RuntimeStepOutput,
+    ) -> Option<TaskEvent> {
+        let handle = std::iter::once(&self.fiber)
+            .chain(&self.child_fibers)
+            .find_map(|fiber| {
+                let FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(state)) =
+                    &fiber.frame.status
+                else {
+                    return None;
+                };
+                state.in_flight.iter().find_map(|flight| {
+                    (flight.handle.correlation() == event.correlation)
+                        .then(|| flight.handle.clone())
+                })
+            });
+        let Some(handle) = handle else {
+            return Some(event);
+        };
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        if let Err(error) = event.admit_retained(Some(handle.spec()), &mut admission) {
+            self.fail_eval(error, output);
+            return None;
         }
+        let correlation = event.correlation;
+        let cursor = event.cursor;
+        let publication = match event.kind {
+            TaskEventKind::Ready(value) => RuntimeNeedPublication::State {
+                correlation,
+                cursor,
+                state: Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)),
+            },
+            TaskEventKind::Progress(progress) => RuntimeNeedPublication::State {
+                correlation,
+                cursor,
+                state: Need::Pending(progress),
+            },
+            TaskEventKind::Cancelled => RuntimeNeedPublication::State {
+                correlation,
+                cursor,
+                state: Need::Cancelled,
+            },
+            TaskEventKind::InfrastructureFailure(failure) => {
+                RuntimeNeedPublication::InfrastructureFailure {
+                    correlation,
+                    cursor,
+                    failure,
+                }
+            }
+            TaskEventKind::ProgramTerminal(_) => {
+                unreachable!("Host fanout publication was admitted before moving it")
+            }
+        };
+        self.enqueue_need_publication(publication, output);
+        None
     }
 
     pub(super) fn resume_suspended(
@@ -83,7 +123,7 @@ impl Engine {
                 true
             }
             FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(state)) => {
-                self.resume_await_many_state(*state, events, output, pure_backend);
+                self.resume_await_many_state(*state, output, pure_backend);
                 true
             }
             waiting @ FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(_)) => {
@@ -1280,63 +1320,61 @@ impl Engine {
     pub(super) fn resume_await_many_state(
         &mut self,
         mut state: AwaitManyState,
-        events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        for event in events {
-            let Some(position) = state
-                .in_flight
-                .iter()
-                .position(|task| task.handle.correlation().task_id == event.correlation.task_id)
-            else {
-                continue;
-            };
-            match &event.kind {
-                TaskEventKind::ProgramTerminal(_) => {
-                    self.fail_eval(
-                        "a Host AwaitMany child cannot accept a Program retirement acknowledgement",
-                        output,
-                    );
+        let mut position = 0;
+        while position < state.in_flight.len() {
+            let in_flight = &state.in_flight[position];
+            let publication = match self
+                .next_need_publication_for_await(&in_flight.handle, in_flight.observed_through)
+            {
+                Ok(Some(publication)) => publication,
+                Ok(None) => {
+                    position += 1;
+                    continue;
+                }
+                Err(error) => {
+                    self.fiber.frame.status =
+                        FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(Box::new(state)));
+                    self.fail_eval(error, output);
                     return;
                 }
-                TaskEventKind::Ready(value) => {
-                    if !self.task_outcome_accepts_live_value(
-                        &state.target.child.outcome(),
-                        value.value(),
-                    ) {
-                        let in_flight = &state.in_flight[position];
-                        let message = format!(
-                            "await task {} at index {} published a payload outside its checked outcome contract",
-                            in_flight.handle.correlation().task_id,
-                            in_flight.index
-                        );
-                        self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
-                        output.diagnostics.push(RuntimeDiagnostic::categorized(
-                            RuntimeDiagnosticCategory::Host,
-                            message,
-                        ));
-                        return;
-                    }
+            };
+            state.in_flight[position].observed_through = Some(publication.cursor());
+            match publication {
+                RuntimeNeedPublication::State {
+                    state: Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)),
+                    ..
+                } => {
                     let in_flight = state.in_flight.remove(position);
-                    state.results[in_flight.index] = Some(value.clone());
+                    let observed = value
+                        .value()
+                        .ownership()
+                        .permits_copy()
+                        .then(|| value.clone());
+                    state.results[in_flight.index] = Some(value);
                     output.flow_events.push(FlowEvent::AwaitReady {
                         need: in_flight.handle.need_id(),
-                        value: value
-                            .value()
-                            .ownership()
-                            .permits_copy()
-                            .then(|| value.clone()),
+                        value: observed,
                     });
                 }
-                TaskEventKind::Progress(progress) => {
+                RuntimeNeedPublication::State {
+                    state: Need::Pending(progress),
+                    ..
+                } => {
                     let in_flight = &state.in_flight[position];
                     output.flow_events.push(FlowEvent::AwaitProgress {
                         need: in_flight.handle.need_id(),
-                        progress: progress.clone(),
+                        progress,
                     });
                 }
-                TaskEventKind::InfrastructureFailure(error) => {
+                RuntimeNeedPublication::InfrastructureFailure { failure: error, .. }
+                | RuntimeNeedPublication::State {
+                    state:
+                        Need::Ready(crate::task::RuntimeNeedOutcome::InfrastructureFailure(error)),
+                    ..
+                } => {
                     let in_flight = &state.in_flight[position];
                     let message = format!(
                         "await task {} at index {} failed: {error}",
@@ -1350,8 +1388,22 @@ impl Engine {
                     ));
                     return;
                 }
-                TaskEventKind::Cancelled => {
+                RuntimeNeedPublication::State {
+                    state: Need::Cancelled,
+                    ..
+                } => {
                     self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
+                    return;
+                }
+                RuntimeNeedPublication::State {
+                    state: Need::NotStarted,
+                    ..
+                } => {}
+                RuntimeNeedPublication::Producer { .. } => {
+                    self.fail_eval(
+                        "AwaitMany Host result has a local producer publication",
+                        output,
+                    );
                     return;
                 }
             }
@@ -1425,7 +1477,11 @@ impl Engine {
                 task: Some(correlation.task_id),
             });
             output.requests.tasks.push(submission);
-            state.in_flight.push(AwaitManyInFlight { index, handle });
+            state.in_flight.push(AwaitManyInFlight {
+                index,
+                handle,
+                observed_through: None,
+            });
             state.next_index += 1;
         }
         true

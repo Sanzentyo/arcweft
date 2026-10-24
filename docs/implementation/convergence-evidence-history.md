@@ -10615,3 +10615,50 @@ R2819 Core限定Clippyはall-targets／all-features／lockedで終了0、既存�
 `37acc72f2078042f111d674cbcbcee8767922c0f`。fresh fetchと公開ref、全pathのblob、
 6,113入力のhash、保持したWIPのpatchを照合し、差分0・index空を確認した。
 [公開照合receipt](acceptance-evidence/task-fanout-runtime-checkpoint.verified.json)をbyte不変で保持する。
+
+## 独立Program childのResult fanout・publication保持 — 2026-10-25
+
+基点はmain `954315205ecac131a62180f25cb56fe246e0051f`。Core 8 pathを変更し、
+元の14 tracked WIPと6 untracked実ファイルを保持した。
+実際のThread／Program起動、子のAwaitMany result bindingとreturn、親のawaitを一続きにした。
+Native／Product／各step公開JSON save/restore付きProductで、空入力・全Ok・逆順到着時の
+最小source位置のErrを実行する。9回の統合実行をnamed test 9件と数えていない。
+通常fiberのResult fixtureにも実際のaggregate bindingを加えた。
+
+R2823／R2825は対象19件中18 PASS／1 FAIL。Nativeの非空childで、到着stepに親が
+先に選ばれるとraw Host eventが次stepまで保持されず、256 step後も子のretirementが0だった。
+既存のNeed publication queueへ元correlation／outcomeを検査したイベントの値を移し、
+in-flight childに観測cursorを保持した。Readyの無条件cloneを削除し、既存のCopy可否を
+検査するobserver経路を使う。rollback後もprogressを重複通知せず、保持frontierより未来の
+cursorは復元前に拒否する。新しい並行queue／別のtask authorityは作っていない。
+
+R2833は20件中19 PASS／1 FAIL。AWBC Program childの空入力が
+`AwaitMany has no accepted base` で実際に失敗した。Program ownerが既存のsuspension
+初期化を通らない早期returnを修復し、base受付を含む共通の初期化をpoll前に実行する。
+共通fanout admissionには親のframeではなく実際のchildのbindingとgenerationを渡す。
+これは新しい具体的な不具合に対する追加修復であり、先行する通常fiberの受入や
+Generic Matchの受入を取り消すものではない。
+
+途中のfixture／compile失敗も保持する。R2826は別ownerからprivate Native rollback APIを
+呼んだため終了101。公開範囲を広げず、rollbackの実行テストを既存のNative所有moduleへ置いた。
+R2827はtest delayの整数型、R2834はGenerationIdの修飾が不足して終了101。
+R2829／R2831はそれぞれ20件中19 PASS／1 FAILで、新しいProgram fixtureの
+MayAllocate flagとCallableBoundary指定の不足を修正した。製品のverifierを緩めていない。
+R2825ではchild単体のAwaitReadyとaggregateの観測も区別し、どちらも期待値を検査する。
+
+R2836は対象20／20 PASS、1,971件はfilterによる非選択。R2837はCore全1,991件を
+filterなしで列挙し、R2838は**1,991／1,991 PASS**、ignored／filtered 0、終了0、11.516秒。
+全caseと6,122固定入力の差分0を確認した。新しいNativeテストは各stepのprivate rollback、
+空pollを挟むprogress一回通知、逆順Ready、source順出力を検査し、元の1-op上限を維持した。
+R2839のCore all-targets／all-features／locked Clippyは終了0・警告あり。
+新しい統合matrixは160行の一つの実行契約として所有を確認し、LOCだけの分割や
+testのためのproduction API公開は行っていない。警告0とは報告しない。
+
+[集計・失敗理由・原本hash](acceptance-evidence/task-fanout-child-acceptance.json)、
+[最終runtime receipt](acceptance-evidence/task-final-r2838-fanout-child-core-full-runtime.json)、
+[終端・固定入力照合](acceptance-evidence/task-final-r2838-fanout-child-core-full-runtime.terminal-audit.json)、
+[Clippy receipt](acceptance-evidence/task-final-r2839-fanout-child-core-clippy.json)。
+検証原本75件／25,335,927 bytesはbyte／SHA256一致で保全した。
+このCore単独実行は53 package構成へ再利用しない。scoped genericの独立child、親子の
+異なるgenerationは今回の統合fixtureで別途実行していない。DSL、逆依存53／workspace、
+全14／最終C6、Native公開save、Tier2、Native-Web capture parityの残る範囲は現状一覧で区別する。

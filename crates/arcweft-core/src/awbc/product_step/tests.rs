@@ -6790,11 +6790,182 @@ enum AwaitManyFixtureOutput {
     Result,
 }
 
+#[test]
+fn program_child_result_fanout_binds_retires_and_survives_each_public_restore() {
+    for backend in 0..3 {
+        for case in 0..3 {
+            let items = if case == 0 {
+                crate::value::runtime_sequence_values(vec![])
+            } else {
+                await_many_items()
+            };
+            let mut executor = if backend == 0 {
+                let plan =
+                    await_many_original_program_with_thread(AwaitManyFixtureOutput::Result, true);
+                let invocation = plan
+                    .seal_flow_invocation(
+                        crate::plan::FlowRuntimeId::canonical("main").unwrap(),
+                        [RuntimeFlowParameterBinding {
+                            parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+                            value: items,
+                        }],
+                    )
+                    .unwrap();
+                ResultFanoutExecutor::Native(Box::new(
+                    crate::engine::Engine::for_flow_invocation_with_generation(
+                        invocation,
+                        GenerationId::new(7),
+                    )
+                    .unwrap(),
+                ))
+            } else {
+                let program =
+                    await_many_product_program_with_thread(AwaitManyFixtureOutput::Result, true);
+                ResultFanoutExecutor::Product(Box::new(
+                    AwbcProductStepExecutor::for_function_invocation_with_generation(
+                        program,
+                        AwbcEntryId(0),
+                        AwbcFunctionId(3),
+                        [RuntimeFlowParameterBinding {
+                            parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+                            value: items,
+                        }],
+                        64,
+                        GenerationId::new(7),
+                    )
+                    .unwrap(),
+                ))
+            };
+            let expected = if case == 2 {
+                RuntimeValue::result_err(RuntimeValue::String("failure-1".into()))
+            } else {
+                RuntimeValue::result_ok(crate::value::runtime_sequence_values(
+                    (0..if case == 0 { 0 } else { 3 })
+                        .map(|index| RuntimeValue::String(format!("value-{index}")))
+                        .collect(),
+                ))
+            };
+            let mut program_need = None;
+            let mut host_children = 0;
+            let mut child_results = BTreeMap::new();
+            let mut completions = 0;
+            let mut publications = Vec::new();
+            let mut pending = vec![];
+            let mut saw_child_wait = false;
+            for _ in 0..256 {
+                let (updated, step) = executor.step(
+                    RuntimeStepInput {
+                        task_events: std::mem::take(&mut pending),
+                        ..RuntimeStepInput::default()
+                    },
+                    backend == 2,
+                );
+                executor = updated;
+                if let ResultFanoutExecutor::Product(product) = &executor {
+                    saw_child_wait |= product.child_fibers.iter().any(|child| {
+                        matches!(child.owner, ProductChildFiberOwner::Program { .. })
+                            && child.fiber.suspension.as_ref().is_some_and(|suspension| {
+                                matches!(
+                                    suspension.reason,
+                                    crate::awbc::fiber::FiberSuspensionReason::AwaitMany(_)
+                                )
+                            })
+                    });
+                }
+                for task in &step.output.requests.tasks {
+                    if matches!(&task.spec().request, crate::task::TaskRequest::Program(_)) {
+                        let handle =
+                            crate::task::RuntimeNeedHandle::try_from(task.clone()).unwrap();
+                        assert!(
+                            program_need.replace(handle.need_id()).is_none(),
+                            "one actual Program launch"
+                        );
+                        continue;
+                    }
+                    let index = host_children;
+                    host_children += 1;
+                    let value = if case == 2 && index > 0 {
+                        RuntimeValue::result_err(RuntimeValue::String(format!("failure-{index}")))
+                    } else {
+                        RuntimeValue::result_ok(RuntimeValue::String(format!("value-{index}")))
+                    };
+                    let correlation = task.handle().correlation;
+                    child_results.insert(correlation.need, value.clone());
+                    pending.push(producer_task_event(
+                        correlation.generation,
+                        correlation,
+                        1,
+                        TaskEventKind::Ready(value.into()),
+                    ));
+                }
+                pending.reverse();
+                for report in &step.output.requests.program_task_completions {
+                    assert_eq!(
+                        report.terminal(),
+                        &crate::task::ProgramTaskTerminal::Completed
+                    );
+                    completions += 1;
+                }
+                for event in step.output.flow_events {
+                    if let crate::plan::FlowEvent::AwaitReady {
+                        need,
+                        value: Some(value),
+                    } = event
+                    {
+                        if let Some(expected_child) = child_results.get(&need) {
+                            assert_eq!(value.value(), expected_child);
+                            continue;
+                        }
+                        assert_eq!(value.value(), &expected, "backend={backend}, case={case}");
+                        assert!(
+                            !publications.contains(&need),
+                            "each aggregate publishes once"
+                        );
+                        publications.push(need);
+                    }
+                }
+                if program_need.is_some_and(|need| publications.contains(&need)) && completions == 1
+                {
+                    break;
+                }
+            }
+            assert!(program_need.is_some(), "actual Program start");
+            assert_eq!(host_children, if case == 0 { 0 } else { 3 });
+            assert_eq!(
+                completions, 1,
+                "actual child result retires once: backend={backend}, case={case}, publications={publications:?}"
+            );
+            assert_eq!(
+                publications.len(),
+                2,
+                "child fanout and parent Program await"
+            );
+            assert!(
+                publications.contains(&program_need.unwrap()),
+                "parent consumes the Program result"
+            );
+            if backend != 0 && case != 0 {
+                assert!(
+                    saw_child_wait,
+                    "actual Program child runs deferred AwaitMany"
+                );
+            }
+        }
+    }
+}
+
+fn await_many_original_program_for(output: AwaitManyFixtureOutput) -> crate::plan::RuntimePlan {
+    await_many_original_program_with_thread(output, false)
+}
+
 #[expect(
     clippy::too_many_lines,
-    reason = "one genuine Source fixture owns the complete original input, capture, request and fanout contract"
+    reason = "one Source fixture keeps root and independently scheduled fanout contracts together"
 )]
-fn await_many_original_program_for(output: AwaitManyFixtureOutput) -> crate::plan::RuntimePlan {
+fn await_many_original_program_with_thread(
+    output: AwaitManyFixtureOutput,
+    threaded: bool,
+) -> crate::plan::RuntimePlan {
     use crate::plan::*;
     use crate::task::{
         CancelScopeId, HostCapabilityId, NeedProducerContractDigest, NeedProducerDefinition,
@@ -6807,6 +6978,7 @@ fn await_many_original_program_for(output: AwaitManyFixtureOutput) -> crate::pla
     let sequence = RuntimeSemanticTypeId::from_bytes([0x92; 32]);
     let child_result = RuntimeSemanticTypeId::from_bytes([0xb0; 32]);
     let aggregate_result = RuntimeSemanticTypeId::from_bytes([0xb1; 32]);
+    let handle = RuntimeSemanticTypeId::from_bytes([0xb3; 32]);
     let sequence_tuple = RuntimeSemanticTypeId::from_bytes([0xb2; 32]);
     let string_tuple = RuntimeSemanticTypeId::from_bytes([0x94; 32]);
     let parameter = manual_awbc_formal_identity(
@@ -6854,28 +7026,40 @@ fn await_many_original_program_for(output: AwaitManyFixtureOutput) -> crate::pla
             ),
         ]);
     }
-    let admitted = builder
-        .admit_type_batch(
-            types,
-            [
-                RuntimeLocalDeclarationSeed::new(
-                    RuntimeLocalDeclarationSource::Parameter(parameter),
-                    sequence,
+    if threaded {
+        assert_eq!(output, AwaitManyFixtureOutput::Result);
+        types.push(RuntimePlanTypeSeed::new(
+            handle,
+            RuntimePlanTypeProjection::ThreadHandle(aggregate_result),
+        ));
+    }
+    let local = |identity, ty| {
+        RuntimeLocalDeclarationSeed::new(
+            RuntimeLocalDeclarationSource::Binding {
+                identity: [identity; 32],
+                declaration: RuntimeLocalBindingDeclaration::new(
+                    RuntimeLocalBindingKind::PatternBinding,
+                    false,
+                    RuntimeLocalBindingStorage::Derived,
                 ),
-                RuntimeLocalDeclarationSeed::new(
-                    RuntimeLocalDeclarationSource::Binding {
-                        identity: [0xa2; 32],
-                        declaration: RuntimeLocalBindingDeclaration::new(
-                            RuntimeLocalBindingKind::PatternBinding,
-                            false,
-                            RuntimeLocalBindingStorage::Derived,
-                        ),
-                    },
-                    string,
-                ),
-            ],
+            },
+            ty,
         )
-        .unwrap();
+    };
+    let mut locals = vec![
+        RuntimeLocalDeclarationSeed::new(
+            RuntimeLocalDeclarationSource::Parameter(parameter),
+            sequence,
+        ),
+        local(0xa2, string),
+    ];
+    if output == AwaitManyFixtureOutput::Result {
+        locals.push(local(0xb5, aggregate_result));
+    }
+    if threaded {
+        locals.push(local(0xb6, handle));
+    }
+    let admitted = builder.admit_type_batch(types, locals).unwrap();
     let source = admitted.local_ids()[0].clone();
     let item = admitted.local_ids()[1].clone();
     let base = builder
@@ -6910,6 +7094,122 @@ fn await_many_original_program_for(output: AwaitManyFixtureOutput) -> crate::pla
             },
         }
     };
+    let result_binding = (output == AwaitManyFixtureOutput::Result).then(|| {
+        RuntimePatternSeed::new(
+            aggregate_result,
+            RuntimePatternSeedKind::Bind {
+                local: admitted.local_ids()[2].clone(),
+                mutable: false,
+            },
+        )
+    });
+    let mut ops = vec![RuntimeFlowOpSeed::AwaitMany {
+        binding: result_binding.clone(),
+        target: RuntimeAwaitManyTargetSeed {
+            source: RuntimeExprSeed::new(
+                sequence,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    source.clone(),
+                    RuntimeLocalReadMode::Move,
+                )),
+            ),
+            item_binding: item.clone(),
+            limit: 3,
+            base: template(
+                base,
+                NeedProducerFamily::AwaitManyBase,
+                0xa0,
+                0x96,
+                if output == AwaitManyFixtureOutput::Result {
+                    aggregate_result
+                } else {
+                    sequence
+                },
+                vec![],
+            ),
+            child: template(
+                child,
+                NeedProducerFamily::AwaitManyChild,
+                0xa1,
+                0x98,
+                if output == AwaitManyFixtureOutput::Result {
+                    child_result
+                } else {
+                    string
+                },
+                vec![RuntimeHostArgumentTemplate::positional(
+                    RuntimeRequestRoleIdentity::from_accepted_identity([0xa3; 32]),
+                    RuntimeExprSeed::new(
+                        string,
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            item,
+                            RuntimeLocalReadMode::Copy,
+                        )),
+                    ),
+                )],
+            ),
+        },
+        pending: vec![],
+    }];
+    if threaded {
+        ops.push(RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+            aggregate_result,
+            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                admitted.local_ids()[2].clone(),
+                RuntimeLocalReadMode::Move,
+            )),
+        )));
+        let coordinate = builder
+            .task_plan_construction()
+            .reserve_original_source()
+            .unwrap();
+        ops = vec![
+            RuntimeFlowOpSeed::Thread {
+                name: None,
+                binding: RuntimePatternSeed::new(
+                    handle,
+                    RuntimePatternSeedKind::Bind {
+                        local: admitted.local_ids()[3].clone(),
+                        mutable: false,
+                    },
+                ),
+                captures: vec![source.clone()],
+                producer: NeedProducerDefinition {
+                    function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xb4; 32]),
+                    family: NeedProducerFamily::StructuredTaskPlan,
+                    contract: NeedProducerContractDigest::from_bytes([0xb7; 32]),
+                    plan: coordinate,
+                    producer_site: NeedProducerSiteDigest::from_bytes([0xb8; 32]),
+                    payload_type: crate::task::RuntimeTypeSemanticDigest::from_bytes(
+                        *aggregate_result.as_bytes(),
+                    ),
+                    class: TaskClass::Cpu,
+                    priority: TaskPriority(0),
+                    cancel_scope: CancelScopeId("flow".into()),
+                    policy: TaskPolicy::AlwaysStart,
+                    debug_label: "Result fanout child".into(),
+                },
+                body: ops,
+            },
+            RuntimeFlowOpSeed::Await {
+                binding: result_binding,
+                target: RuntimeAwaitTargetSeed {
+                    source: RuntimeExprSeed::new(
+                        handle,
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            admitted.local_ids()[3].clone(),
+                            RuntimeLocalReadMode::Move,
+                        )),
+                    ),
+                },
+                observers: vec![],
+            },
+            RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                unit,
+                RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+            )),
+        ];
+    }
     let flow = FlowRuntimeId::canonical("main").unwrap();
     builder
         .push_flow_schema(crate::entry::RuntimeFlowSchema {
@@ -6943,20 +7243,7 @@ fn await_many_original_program_for(output: AwaitManyFixtureOutput) -> crate::pla
         ),
         RuntimeExecutableBodySeed {
             effects: RuntimeEffectSet::empty(),
-            ops: Box::new([RuntimeFlowOpSeed::AwaitMany {
-                binding: None,
-                target: RuntimeAwaitManyTargetSeed {
-                    source: RuntimeExprSeed::new(sequence, RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(source, RuntimeLocalReadMode::Move))),
-                    item_binding: item.clone(),
-                    limit: 3,
-                    base: template(base, NeedProducerFamily::AwaitManyBase, 0xa0, 0x96, if output == AwaitManyFixtureOutput::Result { aggregate_result } else { sequence }, vec![]),
-                    child: template(child, NeedProducerFamily::AwaitManyChild, 0xa1, 0x98, if output == AwaitManyFixtureOutput::Result { child_result } else { string }, vec![RuntimeHostArgumentTemplate::positional(
-                        RuntimeRequestRoleIdentity::from_accepted_identity([0xa3; 32]),
-                        RuntimeExprSeed::new(string, RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(item, RuntimeLocalReadMode::Copy))),
-                    )]),
-                },
-                pending: vec![],
-            }]),
+            ops: ops.into_boxed_slice(),
         },
     )).unwrap();
     builder.finish().unwrap()
@@ -6965,13 +7252,20 @@ fn await_many_product_program() -> AwbcProgram {
     await_many_product_program_for(AwaitManyFixtureOutput::Sequence)
 }
 
+fn await_many_product_program_for(output: AwaitManyFixtureOutput) -> AwbcProgram {
+    await_many_product_program_with_thread(output, false)
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "one Source-backed fixture keeps payload rows, request kernels and original task keys together"
 )]
-fn await_many_product_program_for(output: AwaitManyFixtureOutput) -> AwbcProgram {
-    let original = await_many_original_program_for(output);
-    let crate::plan::FlowOp::AwaitMany { target, .. } = &original
+fn await_many_product_program_with_thread(
+    output: AwaitManyFixtureOutput,
+    threaded: bool,
+) -> AwbcProgram {
+    let original = await_many_original_program_with_thread(output, threaded);
+    let first = &original
         .function_sites()
         .iter()
         .next()
@@ -6979,8 +7273,17 @@ fn await_many_product_program_for(output: AwaitManyFixtureOutput) -> AwbcProgram
         .body()
         .executable()
         .unwrap()
-        .ops()[0]
-    else {
+        .ops()[0];
+    let (fanout, thread) = match first {
+        crate::plan::FlowOp::Thread {
+            body,
+            producer,
+            captures,
+            ..
+        } => (&body[0], Some((producer, captures))),
+        op => (op, None),
+    };
+    let crate::plan::FlowOp::AwaitMany { target, .. } = fanout else {
         unreachable!()
     };
     let item_ty = AwbcTypeId(1);
@@ -7210,6 +7513,21 @@ fn await_many_product_program_for(output: AwaitManyFixtureOutput) -> AwbcProgram
                 result(AwbcTypeId(5)),
             ),
         ]);
+        program.frame_layouts[0].slots.push(AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(7),
+            role: AwbcFrameSlotRole::ReturnValue,
+            scope_depth: 0,
+        });
+        program.patterns.push(AwbcPattern::Bind {
+            target: AwbcRegisterId(1),
+            mutable: false,
+            expected: Some(AwbcTypeId(7)),
+        });
+        let AwbcTerminator::AwaitMany { binding, .. } = &mut program.blocks[0].terminator else {
+            unreachable!()
+        };
+        *binding = Some(AwbcPatternId(0));
     }
     program.instructions = vec![
         AwbcInstruction::MakeTuple {
@@ -7317,6 +7635,130 @@ fn await_many_product_program_for(output: AwaitManyFixtureOutput) -> AwbcProgram
                 0,
                 crate::plan::RuntimeFunctionCaptureMode::Copy,
             )]
+        };
+    }
+    if let Some((producer, captures)) = thread {
+        let root_definition = program.functions[0].definition;
+        let root_inputs = program.functions[0].input_ownership.clone();
+        program.functions[0].definition = producer
+            .function
+            .generated_child(crate::plan::RuntimeGeneratedFunctionRole::TaskBody);
+        program.functions[0].semantic_role = crate::plan::RuntimeFunctionSemanticRole::Ordinary;
+        program.functions[0].kind = AwbcFunctionKind::ProgramTask;
+        program.blocks[0].safe_point = AwbcSafePointKind::CallableBoundary;
+        program.functions[0].flags = program.functions[0]
+            .flags
+            .with(AwbcFunctionFlag::MayAllocate);
+        program.functions[0].public_id = None;
+        program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::owned(
+            original
+                .local_declarations()
+                .get(captures[0])
+                .unwrap()
+                .origin(),
+            crate::plan::RuntimeFunctionInputSource::Capture { position: 0 },
+            crate::plan::RuntimeFunctionInputTransfer::ExternalBinding,
+        )];
+        program.signatures[0].result = Some(AwbcTypeId(7));
+        program.blocks[1].terminator = AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(1)),
+        };
+        program.runtime_types.push(AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0xb3; 32]),
+            AwbcRuntimeTypeShape::Task(AwbcTypeId(7)),
+        ));
+        program.task_plans.push(AwbcTaskPlan {
+            class: AwbcTaskClass::Cpu,
+            priority: producer.priority.0,
+            cancel_scope: AwbcStringId(3),
+            policy: AwbcTaskPolicy::AlwaysStart,
+            payload_type: AwbcTypeId(7),
+            execution: crate::awbc::schema::AwbcTaskPlanExecution::Program(
+                crate::awbc::schema::AwbcProgramTaskPlan {
+                    source: original.task_plan(&producer.plan).unwrap().key().into(),
+                    kernel: AwbcFunctionId(0),
+                },
+            ),
+        });
+        program.signatures.push(AwbcSignature {
+            params: vec![sequence_ty],
+            result: None,
+            effects: AwbcEffectSetId(0),
+        });
+        program.frame_layouts.push(AwbcFrameLayout {
+            scopes: vec![],
+            slots: [sequence_ty, AwbcTypeId(8), AwbcTypeId(7)]
+                .into_iter()
+                .enumerate()
+                .map(|(index, ty)| AwbcFrameSlot {
+                    name: None,
+                    ty,
+                    role: if index == 0 {
+                        AwbcFrameSlotRole::Parameter
+                    } else {
+                        AwbcFrameSlotRole::Temporary
+                    },
+                    scope_depth: 0,
+                })
+                .collect(),
+            max_scope_depth: 0,
+        });
+        program.instructions.push(AwbcInstruction::StartProgram {
+            dst: AwbcRegisterId(1),
+            plan: crate::awbc::schema::AwbcTaskPlanId(2),
+            args: vec![AwbcRegisterId(0)],
+        });
+        program.patterns.push(AwbcPattern::Bind {
+            target: AwbcRegisterId(2),
+            mutable: false,
+            expected: Some(AwbcTypeId(7)),
+        });
+        program.resume_points.push(AwbcResumePoint {
+            function: AwbcFunctionId(3),
+            block: AwbcBlockId(5),
+            frame_layout: AwbcFrameLayoutId(3),
+            kind: AwbcSafePointKind::Await,
+        });
+        program.blocks.extend([
+            AwbcBlock {
+                owner: AwbcFunctionId(3),
+                instructions: AwbcTableRange::new(2, 1),
+                terminator: AwbcTerminator::Await {
+                    handle: AwbcRegisterId(1),
+                    binding: Some(AwbcPatternId(1)),
+                    observer: None,
+                    resume: AwbcResumePointId(1),
+                },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            },
+            AwbcBlock {
+                owner: AwbcFunctionId(3),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return { value: None },
+                safe_point: AwbcSafePointKind::Return,
+                source_map: None,
+            },
+        ]);
+        program.functions.push(AwbcFunction {
+            definition: root_definition,
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Flow,
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(5),
+            type_context: None,
+            input_ownership: root_inputs,
+            frame_layout: AwbcFrameLayoutId(3),
+            blocks: AwbcTableRange::new(4, 2),
+            entry_block: AwbcBlockId(4),
+            flags: AwbcFunctionFlags::empty()
+                .with(AwbcFunctionFlag::Deterministic)
+                .with(AwbcFunctionFlag::MaySuspend),
+        });
+        program.flow_bindings[0].function = AwbcFunctionId(3);
+        program.flow_executables[0].function = AwbcFunctionId(3);
+        program.entries[0].target = crate::awbc::schema::AwbcEntryTarget::Function {
+            function: AwbcFunctionId(3),
         };
     }
     program.canonicalize_string_table();

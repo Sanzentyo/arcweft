@@ -1,16 +1,17 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-25。照合したmainの実装公開は `8a4a62cf6ee5a901bea1127517dea7ecf84e6362`。
-AwaitManyの型関係・Result集約・消費前検査をCore 21 pathで変更し、
-実装基点 `71a01d7eb872193f8b3baf6665fa2766bc0e7a4c` から公開した。
-このcutのCore library単独検証は **1,989／1,989 PASS**、Clippyはall-target／all-featureで終了0・警告あり。
-6,038固定入力の差分は0。既存のtracked WIP 14件／untracked 6件は保持した。
-[このcutの範囲・途中の失敗・検証原本](acceptance-evidence/task-fanout-runtime-acceptance.json)。
-[公開commit・tree・全pathの照合](acceptance-evidence/task-fanout-runtime-checkpoint.verified.json)。
+確認日: 2026-10-25。今回の実装・検証基点はmain `954315205ecac131a62180f25cb56fe246e0051f`。
+Core 8 pathでNative childのpublication保持とAWBC Program suspension初期化を修復した。
+最新のCore library単独検証は **1,991／1,991 PASS**、Clippyはall-target／all-featureで終了0・警告あり。
+6,122固定入力の差分0、既存のtracked WIP 14件／untracked実ファイル6件の保持を確認した。
+[今回の範囲・途中の失敗・検証原本](acceptance-evidence/task-fanout-child-acceptance.json)。
+基本のResult集約・消費前検査は `8a4a62cf6ee5a901bea1127517dea7ecf84e6362` で公開済み。
+その1,989件と今回の1,991件は別入力の実績で、件数を加算しない。
+[前段の公開照合](acceptance-evidence/task-fanout-runtime-checkpoint.verified.json)。
 
 以下の横断runtime集計とworkspace gateは、ソース基点
 `dec74c879c651705e41d23cfcf9b6b0f8dc50f71` での結果を
-`06b4830260397da3c64ab72d79b9f76bb3072bc5` で公開したもの。このCore 21 pathの変更後は
+`06b4830260397da3c64ab72d79b9f76bb3072bc5` で公開したもの。後続のCore変更後は
 逆依存runtime／workspace gateを再実行しておらず、Core単独の件数を53 package構成へ再利用・加算しない。
 
 前回のCore全53逆依存package通常選択は、重複を除いて
@@ -63,7 +64,7 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | AWBC の独立 Thread scheduling | **実Source起動・結果／capture・nested join・各step公開保存復元は対象条件で検証・公開済み** | `StartProgram`、独立kernel、accepted handle、Task root、共有registryへの結果退役を実際に通過する。元Sourceと同じadmissionで値を復元し、VM awaitは消費前にNeed／Taskを型で検査する。ローカルProgram値をHost ACK待ちから切り離した修復後、全体／entry選択lowering×Bool false／true、1-op予算、各stepの公開save／restore、task／completion各1件がPASS。generic capture／nested joinも3 backendでPASSし、旧 `dec74…` 横断runtimeでは新規失敗がなかった。現cutのcancel／consumer runtimeと全資源境界の包括的な受入は未確認であり、以前の対象条件の受入と分ける。 |
 | Native AwaitMany の Source／operand admission | **起動経路を接続し、Core owner検証済み** | baseは元Source、完全なcapture群と評価済みsourceを検査してからcaptureを複製する。childも実際のitem／indexとcaptureを検査してから一時bindingを作る。TaskSpecのclass／priority／scope／policy／outcomeは元のtemplateが所有する。別lease・別endpoint・失敗済みbankの拒否をNative／AWBCのSource carrierで確認し、Core library全1,977件がPASS。未使用になった直接生成APIは削除した。実際のAWBC launch／restoreの切替と、全14 familyの最終受入はこの結果に含めない。[検証範囲と原本](acceptance-evidence/task-await-many-native-source-acceptance.json)。 |
 | AWBC AwaitMany の Source起動／save／checkpoint | **元Sourceへの接続を公開済み・owner／逆依存検証済み** | 公開 `dec74c879c651705e41d23cfcf9b6b0f8dc50f71`。base／childを元Sourceで認証し、実際のframeの型bindingとoperandからproducerを導出してからrequest kernelを実行する。digestだけで生成・照合する旧3 APIは削除した。live／inertの保持値を同じbankで検査し、元型とexpected-keyの照合でnodesを二重課金しない。公開saveとsession復元はadmitted ProductのSourceを保持し、private checkpointは同じexecutable Arcでも別Source leaseや型を保ったitem改変を拒否する。debug labelはcapture参照前に検査する。前cutの53 package選択でCore library 1,982／1,982 PASSを実行し、横断実行に新規失敗0、Core単独doctest 75／75 PASS。[初回owner検証](acceptance-evidence/task-await-many-awbc-source-acceptance.json)、[後続の横断・doctest検証](acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json)。全14 family・Tier2の最終受入は別。 |
-| AwaitManyのResult集約／消費前検査 | **Core owner検証済み・逆依存の後続確認は未実施** | 元のaggregate／child型からsequence保持とResult転置を選ぶ。子値・型binding・新しいheaderを同じbankで検査し、pattern／所有権の準備後にslotを消費する。NativeとAWBC通常／deferred完了処理を共通APIへ接続し、sequenceから元slotを再構成する失敗経路は削除した。R2821のCore libraryは1,989／1,989 PASS。Native／AWBC／各step公開save/restore付きAWBCで、空入力・全成功・逆順完了時の最初のsource位置のErrを確認。資源上限・拒否時のslot保持・payloadの非clone移動・両ownerのscoped Result bindingもPASS。R2819 Clippyは終了0・警告あり。独立したdeferred Program child内の新しいResult実行ケース、consumer53とworkspace gateは未確認。[検証範囲と原本](acceptance-evidence/task-fanout-runtime-acceptance.json)。 |
+| AwaitManyのResult集約／消費前検査 | **通常・独立Program childをCore ownerで検証済み・逆依存の後続確認は未実施** | 元のaggregate／child型からsequence保持とResult転置を選び、同じbankで型・資源・pattern／所有権を検査してからslotを消費する。Source位置によるErr選択、空入力、payload移動、scoped Resultのowner検査を維持した。今回、実際のProgram起動・子の結果binding／return・親のawaitをNative／AWBC／各step公開save/restore付きAWBCで実行した。Nativeのイベント消失とAWBCの初期化漏れは新しい具体的な再現から修復し、通常の集約受入やGeneric Matchを未実装に戻していない。Nativeのqueued progress／Readyはprivate rollback後も成立し、progressの再通知と未来cursorを拒否する。Core全件・Clippyの最新結果は冒頭参照。[失敗・修復・原本](acceptance-evidence/task-fanout-child-acceptance.json)。scoped genericの独立child、異なる親子generation、consumer53／workspaceは今回の統合fixtureでは未確認。 |
 | DSL `traverse(...).parallel(...)` | **意味解析・lowering・first-class Need構築は未接続** | [採用されたDSL契約](../01-language/traits-seq-ranges.md#traversable)に対し、現cutでも意味解析／lowering／lazy Needの入口は未実装。旧 `dec74…` CLI横断実行では未知の `traverse` で2件失敗したが、現cutでそのconsumer suiteを再実行していない。R2800型検査の8 PASS／1 FAIL、fixture訂正と後続のCore全件成功は[履歴](convergence-evidence-history.md#awaitmanyのresult集約と消費前検査--2026-10-25)に保持する。Core内のResult集約受入は、このDSL契約の実行受入を意味しない。 |
 | 公開 executor save | **バックエンドごとに異なる** | `crates/arcweft-core/src/executor.rs` の `snapshot_for_save` は Product AWBC を扱う一方、RuntimePlanVm／StructuredAot は `UnsupportedTier` を返す。Product の既存 save/restore の成功は保持し、Native 公開 save の未対応を別項目として扱う。 |
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、実際に受理されたProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗した。checkpointに元executable leaseを保持し、復元先は同じleaseのadmitted Productに限定する。元Sourceと同一admissionを値mapperへ渡し、Product・activation・codegenの呼出側を移行した。R2535の新規Coreケースでhandleを取り出して破棄した候補から元状態へ復元でき、同内容の別leaseは元fiberを変えず拒否する。private checkpointは非Serde、公開wire DTOのJSON／cleanup検証は維持し、R2531のcompile-fail 2件もPASS。既存のdetached Bool入力rollbackも通過している。private checkpointの受入と、公開saveの全資源境界の包括的な受入は分ける。 |
@@ -71,7 +72,7 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **前回 `dec74…` CLI選択は641 PASS／50 FAIL・新規失敗0** | 50件の識別子は前回CLI失敗と一致した。修復済みの4,096要素Array Map、低予算Native-AWBC parity、Compiler全617件も前回横断cutでPASS。[実行・旧失敗照合](acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json)、[package集計](acceptance-evidence/task-await-many-awbc-reverse-package-execution.json)。このcutのCLI／consumer runtimeは未実行。診断分類は下表に集約する。 |
 | Coreの全53逆依存runtime | **`dec74…` cutで全targetの通常選択を照合・既存CLI 50失敗を保持** | library 53、integration 161／bin 5 targetを揃え、他52 libraryと全integration／binのcase setは最終catalogと差分0。[target／case集合](acceptance-evidence/task-await-many-awbc-reverse-coverage.json)、[単独構成の再利用棄却](acceptance-evidence/task-await-many-awbc-core-reuse.json)、[終端・固定入力](acceptance-evidence/task-final-r2794-await-many-awbc-reverse-runtime.terminal-audit.json)。named caseなしのlibrary 4／bin 4 targetはbuildだけ。実行数は前回集計の上記記録を参照。現cutの逆依存runtimeは未実行。 |
-| Workspace gate／Tier 2／Native-Web capture parity | **前cutのworkspace gateはPASS・現cutは未実施、Tier 2とparityの包括受入は未実施** | R2788 workspace check／R2789 workspace Clippyは旧 `dec74…` sourceでall-target／all-feature／locked、終了0・警告あり。R2790 Clippyの変更行警告0、R2792／R2797 Core library 1,982／1,982 PASS、R2795 doctest 75／75 PASSも前cutの証拠。[前cutの共有gate](acceptance-evidence/task-await-many-awbc-source-acceptance.json)、[doctest照合](acceptance-evidence/task-final-r2795-await-many-awbc-core-doctest.terminal-audit.json)。現cutのCore ClippyはR2819終了0・警告あり、Core runtimeはR2821 1,989／1,989 PASS。このcutのworkspace／逆依存gateは未実行。前cutの39既存ignored、Tier 2とNative-Web capture parityの包括受入も未実行で、Generic Match等の受入済み境界の判定には影響しない。 |
+| Workspace gate／Tier 2／Native-Web capture parity | **前cutのworkspace gateはPASS・現cutは未実施、Tier 2とparityの包括受入は未実施** | R2788 workspace check／R2789 workspace Clippyは旧 `dec74…` sourceでall-target／all-feature／locked、終了0・警告あり。R2790 Clippyの変更行警告0、R2792／R2797 Core library 1,982／1,982 PASS、R2795 doctest 75／75 PASSも前cutの証拠。[前cutの共有gate](acceptance-evidence/task-await-many-awbc-source-acceptance.json)、[doctest照合](acceptance-evidence/task-final-r2795-await-many-awbc-core-doctest.terminal-audit.json)。今回のCore単独結果は冒頭参照。このcutのworkspace／逆依存gateは未実行。前cutの39既存ignored、Tier 2とNative-Web capture parityの包括受入も未実行で、Generic Match等の受入済み境界の判定には影響しない。 |
 
 ## CLIの具体的な観測
 

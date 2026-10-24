@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "954315205ecac131a62180f25cb56fe246e0051f",
+  "run": "task-final-r2833-fanout-program-callable-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.142s] 20 tests run: 19 passed, 1 failed, 1971 skipped",
+  "executed": 20,
+  "passed": 19,
+  "failed": 1,
+  "skipped": 1971,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 6122,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::program_child_result_fanout_binds_retires_and_survives_each_public_restore"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-24T19:23:25.6454174Z"
+}

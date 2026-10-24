@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "954315205ecac131a62180f25cb56fe246e0051f",
+  "name": "task-final-r2827-fanout-program-publication-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(fanout_) | test(await_many)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2827-fanout-program-publication-catalog.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T19:17:36.8481529Z",
+  "finishedAt": "2026-10-24T19:17:49.6271561Z"
+}

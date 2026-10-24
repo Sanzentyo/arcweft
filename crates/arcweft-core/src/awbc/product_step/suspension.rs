@@ -629,7 +629,20 @@ impl AwbcProductStepExecutor {
             suspension.reason = reason;
             return;
         };
-        let result = self.fill_await_many_state(&mut state, output, backend);
+        let binding = self
+            .fiber
+            .active_frame()
+            .map(|frame| frame.type_instantiation.clone());
+        let result = match binding {
+            Ok(binding) => self.fill_await_many_state(
+                &mut state,
+                binding.as_deref(),
+                self.runtime_generation,
+                output,
+                backend,
+            ),
+            Err(error) => Err(ProductStepError::Fiber(error)),
+        };
         if let Some(suspension) = self.fiber.suspension.as_mut() {
             suspension.reason = FiberSuspensionReason::AwaitMany(state);
         }
@@ -641,6 +654,8 @@ impl AwbcProductStepExecutor {
     fn fill_await_many_state(
         &mut self,
         state: &mut crate::awbc::fiber::FiberAwaitManyState,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        generation: crate::task::GenerationId,
         output: &mut RuntimeStepOutput,
         backend: &mut impl crate::pure::RuntimeCallBackend,
     ) -> Result<(), ProductStepError> {
@@ -707,7 +722,7 @@ impl AwbcProductStepExecutor {
                                 crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
                         },
                     },
-                    self.fiber.active_frame()?.type_instantiation.as_deref(),
+                    binding,
                     &mut admission,
                 )
                 .map_err(|error| ProductStepError::Input(error.to_string()))?;
@@ -720,7 +735,7 @@ impl AwbcProductStepExecutor {
             )?;
             let request = super::mapping::task_request(&self.program, state.plan, args)?;
             let spec = base_source
-                .template_task_spec(&checked, self.runtime_generation, request, &mut admission)
+                .template_task_spec(&checked, generation, request, &mut admission)
                 .map_err(|error| ProductStepError::Input(error.to_string()))?;
             let accepted = self
                 .need_producers
@@ -772,7 +787,7 @@ impl AwbcProductStepExecutor {
                         index,
                         item: RuntimeValueSource::Live(item),
                     },
-                    self.fiber.active_frame()?.type_instantiation.as_deref(),
+                    binding,
                     &mut admission,
                 )
                 .map_err(|error| ProductStepError::Input(error.to_string()))?;
@@ -785,7 +800,7 @@ impl AwbcProductStepExecutor {
             )?;
             let request = super::mapping::task_request(&self.program, child, args)?;
             let spec = child_source
-                .template_task_spec(&checked, self.runtime_generation, request, &mut admission)
+                .template_task_spec(&checked, generation, request, &mut admission)
                 .map_err(|error| ProductStepError::Input(error.to_string()))?;
             let accepted = self
                 .need_producers
@@ -1566,7 +1581,7 @@ impl AwbcProductStepExecutor {
             | DeferredSuspensionDispatch::BudgetYield => {}
             DeferredSuspensionDispatch::AwaitMany => {
                 let diagnostics = output.diagnostics.len();
-                self.fill_await_many_for_fiber(&mut child.fiber, output, pure_backend);
+                self.fill_await_many_for_child(child, output, pure_backend);
                 if output.diagnostics.len() > diagnostics {
                     return Err(ProductStepError::Internal(
                         output.diagnostics.last().map_or_else(
@@ -1675,7 +1690,7 @@ impl AwbcProductStepExecutor {
                     unreachable!("checked deferred AwaitMany dispatch retains its sole owner")
                 };
                 Ok(self.resume_deferred_await_many(
-                    &mut child.fiber,
+                    child,
                     state,
                     resume,
                     output,
@@ -2127,12 +2142,13 @@ impl AwbcProductStepExecutor {
         }
     }
 
-    fn fill_await_many_for_fiber(
+    fn fill_await_many_for_child(
         &mut self,
-        fiber: &mut FiberState,
+        child: &mut super::ProductChildFiber,
         output: &mut RuntimeStepOutput,
         backend: &mut impl crate::pure::RuntimeCallBackend,
     ) {
+        let fiber = &mut child.fiber;
         let Some(suspension) = fiber.suspension.as_mut() else {
             return;
         };
@@ -2141,7 +2157,19 @@ impl AwbcProductStepExecutor {
             suspension.reason = reason;
             return;
         };
-        let result = self.fill_await_many_state(&mut state, output, backend);
+        let binding = fiber
+            .active_frame()
+            .map(|frame| frame.type_instantiation.clone());
+        let result = match binding {
+            Ok(binding) => self.fill_await_many_state(
+                &mut state,
+                binding.as_deref(),
+                child.runtime_generation,
+                output,
+                backend,
+            ),
+            Err(error) => Err(ProductStepError::Fiber(error)),
+        };
         if let Some(suspension) = fiber.suspension.as_mut() {
             suspension.reason = FiberSuspensionReason::AwaitMany(state);
         }
@@ -2151,13 +2179,14 @@ impl AwbcProductStepExecutor {
     }
     fn resume_deferred_await_many(
         &mut self,
-        fiber: &mut FiberState,
+        child: &mut super::ProductChildFiber,
         mut state: crate::awbc::fiber::FiberAwaitManyState,
         resume: AwbcResumePointId,
         output: &mut RuntimeStepOutput,
         journal: &mut super::DeferredChildResumeJournal,
         pure_backend: &mut impl crate::pure::RuntimeCallBackend,
     ) -> bool {
+        let fiber = &mut child.fiber;
         if state.results.len() != state.items.len() {
             journal.record_default_drop_policy();
             mark_child_trapped(
@@ -2385,14 +2414,14 @@ impl AwbcProductStepExecutor {
         }
         let request_count = output.requests.tasks.len();
         let diagnostic_count = output.diagnostics.len();
-        self.fill_await_many_for_fiber(fiber, output, pure_backend);
-        if fiber.status == crate::awbc::fiber::FiberStatus::Trapped {
+        self.fill_await_many_for_child(child, output, pure_backend);
+        if child.fiber.status == crate::awbc::fiber::FiberStatus::Trapped {
             journal.record_default_drop_policy();
         }
         if output.diagnostics.len() > diagnostic_count {
             journal.record_default_drop_policy();
             mark_child_trapped(
-                fiber,
+                &mut child.fiber,
                 AwbcTrapCode::InternalInvariant,
                 output.diagnostics.last().map_or_else(
                     || "deferred await-many request failed".to_owned(),
