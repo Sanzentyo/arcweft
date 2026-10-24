@@ -10662,3 +10662,8 @@ testのためのproduction API公開は行っていない。警告0とは報告�
 このCore単独実行は53 package構成へ再利用しない。scoped genericの独立child、親子の
 異なるgenerationは今回の統合fixtureで別途実行していない。DSL、逆依存53／workspace、
 全14／最終C6、Native公開save、Tier2、Native-Web capture parityの残る範囲は現状一覧で区別する。
+
+上記87 pathは `b90d3948990e64aa727047efb9762a7717b4bf24` で通常commit／non-forced pushした。
+tree `5387bc4a5fde163210610525fe3c8d556911dec1`、fresh fetch／公開ref／全pathのblobと
+6,198入力のhashは差分0。元WIPのpatch hashを保ち、index空を確認した。
+[公開照合receipt](acceptance-evidence/task-fanout-child-checkpoint.verified.json)をbyte不変で保持する。

@@ -1,6 +1,8 @@
 # Arcweft 現状一覧
 
 確認日: 2026-10-25。今回の実装・検証基点はmain `954315205ecac131a62180f25cb56fe246e0051f`。
+実装公開は `b90d3948990e64aa727047efb9762a7717b4bf24`。
+[公開commit・tree・全pathの照合](acceptance-evidence/task-fanout-child-checkpoint.verified.json)。
 Core 8 pathでNative childのpublication保持とAWBC Program suspension初期化を修復した。
 最新のCore library単独検証は **1,991／1,991 PASS**、Clippyはall-target／all-featureで終了0・警告あり。
 6,122固定入力の差分0、既存のtracked WIP 14件／untracked実ファイル6件の保持を確認した。
