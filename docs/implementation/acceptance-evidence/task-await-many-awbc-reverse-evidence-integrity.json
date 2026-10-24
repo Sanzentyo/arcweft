@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "base": "dec74c879c651705e41d23cfcf9b6b0f8dc50f71",
+  "rawFiles": 26,
+  "rawBytes": 10548424.0,
+  "hashDrift": 0,
+  "artifactCopyMove": false,
+  "rows": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2793-await-many-awbc-reverse-catalog.json",
+      "bytes": 2659,
+      "sha256": "a90774bdfe72c5d6d1a16d698d2506ac8383e2719f21be70da88b6d3f1ea2d37",
+      "blob": "b32b4430614da4762921e55b877dc913cc6b04de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2793-await-many-awbc-reverse-catalog.log",
+      "bytes": 1008699,
+      "sha256": "24a91229b04f9ed4ba87354fb329d1c7da7f3a514aa887838ddd9b3b43f24d24",
+      "blob": "bdb43f6de59863eaf87d0530dcee412fe13d0a53"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2793-await-many-awbc-reverse-catalog.inventory.json",
+      "bytes": 1319926,
+      "sha256": "38bd25145c698547b3785b2dbaaa10ef613658cd62553a22cece4f17f23eaec5",
+      "blob": "379d98eb656448858eeb70dd355e8d224482f032"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2794-await-many-awbc-reverse-runtime.json",
+      "bytes": 2754,
+      "sha256": "999256b22fb13c12ad6f57bae92604f1a9dc73bbd365c008e257e8c866a3b3fc",
+      "blob": "89c4fe1b17f84176e31a73cc4657f3a8ae2a5d5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2794-await-many-awbc-reverse-runtime.log",
+      "bytes": 3952651,
+      "sha256": "a2a271a4210c463c29b804b591e3196b61e68acce237143f1d6fa8aa0a56fdd9",
+      "blob": "9c65188b854567dcda295d1f0e8b6c1feb0f5d46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2794-await-many-awbc-reverse-runtime.terminal-audit.json",
+      "bytes": 8964,
+      "sha256": "e2a39698844dd716ea48b741b4e41dbf13ee73af899a2bae06ca33b4bafb1013",
+      "blob": "b794fe0a7be45dc883496b16b995f0a95e8f61fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2795-await-many-awbc-core-doctest.json",
+      "bytes": 517,
+      "sha256": "e8261e25555cf1a65c39171433beeb885479b03de4ebe48b69cb64c4606506f0",
+      "blob": "179396a32311bb803f459a48685a54e43028f3f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2795-await-many-awbc-core-doctest.log",
+      "bytes": 74690,
+      "sha256": "e50eb9093daf4f36ead928db847541a7773ed0d79d8819e93b46fbbf0e2b1048",
+      "blob": "91568a2316f5c7c373b44f17fe6105e20d4bf879"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2795-await-many-awbc-core-doctest.terminal-audit.json",
+      "bytes": 10520,
+      "sha256": "561e5b8de17a4cbe844063938deee553dae962f4c13403738fa7cd015f1a93b1",
+      "blob": "0f05d2f15c326eab810baa02c389bed645194d37"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse.source-freeze.json",
+      "bytes": 1247588,
+      "sha256": "1372967aac62042a041e2c55e5bd804d9bbf02c812aef35d70e59d5366b9a01f",
+      "blob": "7fe91b273617036ff5970209ead761b1d3b3ac19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse.graph.json",
+      "bytes": 2876,
+      "sha256": "250bf083c60bf04ea29429cee52b2083aff9fe7412d94484b3a50d9ce23ca788",
+      "blob": "69543d690a5cb7ef728f641aa871a64bafb1a7a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse-coverage.json",
+      "bytes": 2244,
+      "sha256": "df80ed7a6ab25f06e3a5d33a13c2467ec288db17f4bd1ea95db3767d61f6fa87",
+      "blob": "d1633598509ba5bc28c52d2c6f23c8cca880224f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-core-reuse.json",
+      "bytes": 1110,
+      "sha256": "8d6c5ff28398e7a8f108d9dec5f6da60f051715be60a0043e963463af3deebe4",
+      "blob": "eece32f248305001cd36d1d68ed9d24bc057aec6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse.before-run.pins.json",
+      "bytes": 55783,
+      "sha256": "10f929bc7ab8d67750a24b6a0c901de2bd9d245a636dfce4ced1436aa790cd49",
+      "blob": "5db3c10411a38ef164b616e1267c6075180b1d98"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json",
+      "bytes": 63991,
+      "sha256": "7f4f5ac2d1a670a9add393e177b9f5be1a6f7515810130d152224a0db41fd544",
+      "blob": "21d0dcf980a42890cf05a70e548d24d00b820a99"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-reverse.executable-audit.json",
+      "bytes": 56957,
+      "sha256": "2c970f870756062776b332c2bd06ca029c84ef921fd1be85020d87675387ce2e",
+      "blob": "3206a09774dbc882190df0405e8bc458716bd2f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-checkpoint.verified.json",
+      "bytes": 31581,
+      "sha256": "a117dfd692ddceb64d6b2912b0b22a3063e2dbba85c8fc893d64d41209261ca0",
+      "blob": "fabc0d1b7460cfd655adf0e0ddc8e420ef49748f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2796-await-many-awbc-unified-core-catalog.json",
+      "bytes": 2641,
+      "sha256": "41c285b411a4f8c3915767e8e7cebe63085ee2b519b9186080e24db2f156b6e9",
+      "blob": "c8181e765ce8a4fd3e9077c8470791d625daa22c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2796-await-many-awbc-unified-core-catalog.log",
+      "bytes": 537773,
+      "sha256": "109061aa1cec590b4d72d62b14579925dafaade240c880e6e0c36fdf10f254ba",
+      "blob": "f82cee306848700ff160599c932eee29e11da9c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2796-await-many-awbc-unified-core-catalog.inventory.json",
+      "bytes": 502080,
+      "sha256": "fa3feab7dc622e244718727e1870f633149b32ba23a89e9dc439e4c841d0af9a",
+      "blob": "677be5064360d7ecef1f9aa0b489b7815971e4d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2797-await-many-awbc-unified-core-runtime.json",
+      "bytes": 2734,
+      "sha256": "4665a422e9468d69f7b8d4a8dc260d19b1fef790748daf628741c506d477207e",
+      "blob": "d0ad76b5cb2df8f0456088ff6a85e05f88ca84df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2797-await-many-awbc-unified-core-runtime.log",
+      "bytes": 398618,
+      "sha256": "80764a74681d3418852077e0d3985bd1512a8720ef5b68a0fbc6925bcfd4c727",
+      "blob": "827d1f43e5460ffdff795f6148327ded20cfd684"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2797-await-many-awbc-unified-core-runtime.terminal-audit.json",
+      "bytes": 2018,
+      "sha256": "8d0e30c4c2573dba7177d9f79b054eee14a98032884062090648837ff271a9b1",
+      "blob": "755035e192dd5226f63ffe38f0cad2e32f960a1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-unified-core.source-freeze.json",
+      "bytes": 1254002,
+      "sha256": "b5313de97c6fce0e40c8b09a1e36bd23a54aea04d7c97076eedc2399d4a4efa6",
+      "blob": "83d2a052bad2811903c8e3c2500dd4c5495be04c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-unified-core.graph.json",
+      "bytes": 4747,
+      "sha256": "c8051df6b2db1bc620f366bcefad173b17e3fbf24a798ecde602ed17496dc454",
+      "blob": "2ad2c261893145ff9598a1efc701b3385b168e63"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-await-many-awbc-unified-core.before-run.json",
+      "bytes": 301,
+      "sha256": "6e4c068bb1cf43144af29529ba9b8de7988c81b1a3e1ff72060a57e4993faa96",
+      "blob": "27ca0e3e4bba99a89cfb0e6c5c1449e3197cc290"
+    }
+  ],
+  "recordedAt": "2026-10-24T16:07:49.1013531Z"
+}

@@ -1,0 +1,437 @@
+{
+  "version": 1,
+  "base": "dec74c879c651705e41d23cfcf9b6b0f8dc50f71",
+  "executions": [
+    "task-final-r2794-await-many-awbc-reverse-runtime",
+    "task-final-r2797-await-many-awbc-unified-core-runtime"
+  ],
+  "ownerOnlyReuseRejected": true,
+  "duplicateCases": 0,
+  "packages": [
+    {
+      "package": "arcweft",
+      "freshExecuted": 0,
+      "executed": 0,
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-adapter-desktop",
+      "freshExecuted": 7,
+      "executed": 7,
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "freshExecuted": 13,
+      "executed": 13,
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "freshExecuted": 31,
+      "executed": 31,
+      "passed": 31,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-agent-mcp-client",
+      "freshExecuted": 2,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "freshExecuted": 14,
+      "executed": 14,
+      "passed": 14,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "freshExecuted": 54,
+      "executed": 54,
+      "passed": 54,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "freshExecuted": 37,
+      "executed": 37,
+      "passed": 37,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "freshExecuted": 69,
+      "executed": 69,
+      "passed": 69,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "freshExecuted": 6,
+      "executed": 6,
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-bundle",
+      "freshExecuted": 328,
+      "executed": 328,
+      "passed": 328,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-bundle-assets",
+      "freshExecuted": 0,
+      "executed": 0,
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-character-view",
+      "freshExecuted": 2,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-cli",
+      "freshExecuted": 691,
+      "executed": 691,
+      "passed": 641,
+      "failed": 50,
+      "ignored": 23
+    },
+    {
+      "package": "arcweft-compiler",
+      "freshExecuted": 617,
+      "executed": 617,
+      "passed": 617,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-core",
+      "freshExecuted": 2035,
+      "executed": 2035,
+      "passed": 2035,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-debug-model",
+      "freshExecuted": 2,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "freshExecuted": 22,
+      "executed": 22,
+      "passed": 22,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-dialogue",
+      "freshExecuted": 69,
+      "executed": 69,
+      "passed": 69,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-glyphon",
+      "freshExecuted": 24,
+      "executed": 24,
+      "passed": 24,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "freshExecuted": 10,
+      "executed": 10,
+      "passed": 10,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-lang-jit-cranelift",
+      "freshExecuted": 25,
+      "executed": 25,
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "freshExecuted": 1328,
+      "executed": 1328,
+      "passed": 1328,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-launch",
+      "freshExecuted": 45,
+      "executed": 45,
+      "passed": 45,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-lsp",
+      "freshExecuted": 223,
+      "executed": 223,
+      "passed": 223,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-player-native",
+      "freshExecuted": 63,
+      "executed": 63,
+      "passed": 63,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-player-scene",
+      "freshExecuted": 128,
+      "executed": 128,
+      "passed": 128,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "freshExecuted": 13,
+      "executed": 13,
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-player-web",
+      "freshExecuted": 36,
+      "executed": 36,
+      "passed": 36,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-project",
+      "freshExecuted": 42,
+      "executed": 42,
+      "passed": 42,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-project-loader",
+      "freshExecuted": 158,
+      "executed": 158,
+      "passed": 158,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-rag",
+      "freshExecuted": 2,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-render-text",
+      "freshExecuted": 20,
+      "executed": 20,
+      "passed": 20,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-render-web",
+      "freshExecuted": 0,
+      "executed": 0,
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "freshExecuted": 147,
+      "executed": 147,
+      "passed": 147,
+      "failed": 0,
+      "ignored": 16
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "freshExecuted": 20,
+      "executed": 20,
+      "passed": 20,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-resource-model",
+      "freshExecuted": 37,
+      "executed": 37,
+      "passed": 37,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "freshExecuted": 117,
+      "executed": 117,
+      "passed": 117,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "freshExecuted": 12,
+      "executed": 12,
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "freshExecuted": 177,
+      "executed": 177,
+      "passed": 177,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "freshExecuted": 72,
+      "executed": 72,
+      "passed": 72,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "freshExecuted": 158,
+      "executed": 158,
+      "passed": 158,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-runtime-scheduler",
+      "freshExecuted": 17,
+      "executed": 17,
+      "passed": 17,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-save",
+      "freshExecuted": 35,
+      "executed": 35,
+      "passed": 35,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-test",
+      "freshExecuted": 3,
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-text-layout",
+      "freshExecuted": 58,
+      "executed": 58,
+      "passed": 58,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-text-model",
+      "freshExecuted": 34,
+      "executed": 34,
+      "passed": 34,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-tooling",
+      "freshExecuted": 27,
+      "executed": 27,
+      "passed": 27,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-verify",
+      "freshExecuted": 8,
+      "executed": 8,
+      "passed": 8,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "freshExecuted": 14,
+      "executed": 14,
+      "passed": 14,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-verify-oxiz",
+      "freshExecuted": 5,
+      "executed": 5,
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-verify-z3",
+      "freshExecuted": 2,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "package": "arcweft-view",
+      "freshExecuted": 201,
+      "executed": 201,
+      "passed": 201,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "recordedAt": "2026-10-24T16:06:37.6078347Z"
+}

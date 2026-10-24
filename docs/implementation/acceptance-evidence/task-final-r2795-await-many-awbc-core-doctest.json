@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "dec74c879c651705e41d23cfcf9b6b0f8dc50f71",
+  "name": "task-final-r2795-await-many-awbc-core-doctest",
+  "command": [
+    "test",
+    "--doc",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2795-await-many-awbc-core-doctest.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T15:31:31.0591082Z",
+  "finishedAt": "2026-10-24T15:37:18.3272070Z"
+}

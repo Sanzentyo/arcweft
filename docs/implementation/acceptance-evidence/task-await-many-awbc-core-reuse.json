@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "decision": "RejectedOwnerOnlyReuse",
+  "reason": "The owner-only -p arcweft-core execution and the reverse53 selection produced different Core test executables. Unchanged source alone did not establish an equivalent Cargo configuration.",
+  "ownerRun": "task-final-r2792-await-many-awbc-core-published-runtime",
+  "ownerPassed": 1982,
+  "ownerResultPreserved": true,
+  "ownerBinary": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79469056,
+      "nonTest": false,
+      "sha256": "8070d8ea649c1154fb06be966949a3803187b6cee917465943981b7b4f22f63e"
+    }
+  ],
+  "unifiedCoreRun": "task-final-r2797-await-many-awbc-unified-core-runtime",
+  "unifiedCorePassed": 1982,
+  "unifiedBinary": {
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-fcbbac8dbd1281a5.exe",
+    "bytes": 79488000,
+    "sha256": "5cf60afa060fc080a46718269c6a58242ef665ccb55b725cdd231f387a679ebb",
+    "matchesBefore": true
+  },
+  "includedAsReusedExecution": false,
+  "recordedAt": "2026-10-24T16:06:31.1191746Z"
+}

@@ -10489,3 +10489,46 @@ preflightし、Nativeの個別preflightは重複のため削除した。上限�
 逆依存53 runtime、Generic Match 151件、Tier2、Native-Web画像／capture parityは今回再実行していない。
 以前の7,254／7,204 PASS／50 FAIL／39 ignoredは元の固定入力の履歴として維持し、
 新しいCore件数を加算しない。Generic Matchの受入・公開を未完了へ戻していない。
+
+## AwaitMany Source接続の逆依存・公開API・doctest検証 — 2026-10-25
+
+検証基点は既存mainの `dec74c879c651705e41d23cfcf9b6b0f8dc50f71`。
+AWBC実装公開は同commit、parentは `d741187573117bce556f453018593cb482f878ea`。
+Rust／Cargo／test／fixtureへの追加変更はなく、元の14 tracked WIPと6 untrackedを保持した。
+
+R2793は実際のCargo逆依存53 packageを明示選択し、Core libraryを除く通常選択を列挙した。
+library 53・integration 161・bin 5 targetが揃い、通常5,278件／既存ignored 39件。
+他52 libraryとintegration/binのcase set、および全166 integration/bin targetは前回の最終集合と一致した。
+最初の照合では、修正前のCLI catalogに残る旧Array Mapテスト名が1件差になった。
+前回の訂正後に実行したR2758最終catalogへ照合先を揃えると差分0。元の記録は削除していない。
+
+R2794はall-features／locked、同じ53 packageとfilterで、fail-fastを無効にして全5,278件を実行した。
+終端summaryは3,900.408秒、5,228 PASS（102 slow）／50 FAIL／39 skipped、実際の終了コード100。
+最終statusはcatalogと全件一致し、5,997固定入力のhash差分0。
+50失敗の識別子は以前のCLI 50件と完全一致し、追加・消失とも0だった。
+修復済みArray Map、公開APIのcompile-fail、IME生成物の決定性、Viewの上限・復元等を含む通常選択である。
+
+公開前の追加照合で、Core単独のR2792と53 package選択のCore実行ファイルのpath／hashが異なると分かった。
+ソース差分0だけではCargo構成の同等性を証明できないため、R2792を横断集計へ再利用する暫定案を棄却した。
+R2792の1,982／1,982 PASSはCore単独の有効な結果として保持する。これは新たな機能不具合による受入取消しではない。
+誤った再利用の集計はcommit／pushせず訂正した。[構成差と棄却理由](acceptance-evidence/task-await-many-awbc-core-reuse.json)。
+
+R2796は同じ53 package選択でCore library 1,982件を列挙し、R2793のCore実行ファイルと同じpath／hashを確認した。
+R2797はその統一構成を新規実行し、1,982／1,982 PASS、skip 0、終了0、summary 34.636秒。
+6,016固定入力とcatalog全件の差分0も照合した。R2794とR2797の入力差は文書2件の更新と証拠19件の追加のみで、
+製品・test・fixture・manifest／lockには差分0。最終の実行ファイル225件もR2794実行前からhash差分0だった。
+
+二つの非重複実行の合計は7,260実行／7,210 PASS／50 FAIL／39 ignored。Core単独の結果は再利用していない。
+Core package（library＋integration/bin）は2,035／2,035、Compilerは617／617、CLIは641 PASS／50 FAIL。
+以前の7,254／7,204 PASS等は元の入力の履歴として保持し、そこへ別ownerの件数を加算した集計ではない。
+Generic Matchの受入151件も151／151 PASS。受入 `850534b9e9bc8c8872f6528dd00050a5e6e7699e` と
+公開 `f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2` を維持する。
+
+R2795はCore単独のall-features／locked doctestを実行し、75／75 PASS、終了0、ignored／filtered 0。
+doctest終端75件と5,997固定入力の差分0を照合した。75件は上記runtime合計へ加算しない。
+原本・照合資料26件／10,548,424 bytesは元ファイルとSHA256／Git blobをbyte一致で保持した。
+[実行集計・失敗・Generic照合](acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json)、
+[package集計](acceptance-evidence/task-await-many-awbc-reverse-package-execution.json)、
+[資料保全](acceptance-evidence/task-await-many-awbc-reverse-evidence-integrity.json)。
+現状一覧は今回の結果へ更新し、古い集計の重複した現状説明は履歴と原本へ集約した。
+全14 familyの最終監査、Native公開save、既存CLI修復、Tier2、Native-Web画像／capture parityは別に残る。
