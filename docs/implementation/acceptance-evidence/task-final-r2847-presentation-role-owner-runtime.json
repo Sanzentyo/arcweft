@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "name": "task-final-r2847-presentation-role-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(presentation_schemas_retain_typed_argument_roles_for_every_callable) | test(unchecked_admission_commits_the_value_consumer) | test(unchecked_presentation_roles_cannot_alias_each_other_or_an_ordinary_value) | test(character_nominal_show_checker_signature_primary_and_schema_equal)",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail",
+    "--status-level",
+    "none",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2847-presentation-role-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T20:26:47.8094660Z",
+  "finishedAt": "2026-10-24T20:26:49.2801843Z"
+}

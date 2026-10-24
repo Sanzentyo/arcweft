@@ -5946,6 +5946,21 @@ fn character_nominal_show_checker_signature_primary_and_schema_equal() {
         panic!("Character presentation specialization must precede candidate preparation")
     };
     assert_eq!(owner.character().as_str(), "character.akane");
+    assert_eq!(
+        selected.schema().groups()[0]
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.consumer().clone())
+            .collect::<Vec<_>>(),
+        [
+            crate::callable::PresentationArgumentRole::Character,
+            crate::callable::PresentationArgumentRole::Look,
+            crate::callable::PresentationArgumentRole::TargetEntity,
+            crate::callable::PresentationArgumentRole::Slot,
+            crate::callable::PresentationArgumentRole::Scope,
+        ]
+        .map(crate::callable::CallableParameterConsumer::Presentation)
+    );
     let expected_look =
         TypeKind::character_look(CharacterId::try_new("character.akane").expect("Character ID"));
     let look = report

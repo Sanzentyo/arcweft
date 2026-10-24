@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "name": "task-final-r2845-presentation-role-sema-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2845-presentation-role-sema-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T20:23:55.5666237Z",
+  "finishedAt": "2026-10-24T20:24:19.5368481Z"
+}

@@ -194,7 +194,9 @@ pub(crate) use limits::{
 };
 pub(crate) use nominal_signature::associated_scope_for;
 pub(crate) use presentation::PresentationArgumentValuePolicy;
-pub use presentation::{PresentationCallableId, PresentationSchemaContext};
+pub use presentation::{
+    PresentationArgumentRole, PresentationCallableId, PresentationSchemaContext,
+};
 pub use projection::{
     EnvironmentPublicationProjectionDiagnostic, EnvironmentPublicationProjectionErrorKind,
     EnvironmentPublicationProjectionReport, EnvironmentPublicationRelatedLabel,

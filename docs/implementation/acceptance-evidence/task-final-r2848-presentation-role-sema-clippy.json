@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "name": "task-final-r2848-presentation-role-sema-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2848-presentation-role-sema-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T20:26:58.3333646Z",
+  "finishedAt": "2026-10-24T20:28:10.0192957Z"
+}

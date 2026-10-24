@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "name": "task-final-r2849-presentation-role-structure-gate",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-presentation-role-structure-report",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2849-presentation-role-structure-gate.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T20:28:47.4196407Z",
+  "finishedAt": "2026-10-24T20:28:51.5548462Z"
+}

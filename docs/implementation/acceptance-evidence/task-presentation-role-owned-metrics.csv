@@ -1,0 +1,8 @@
+"path","owner","bytes","physical_lines","code_lines","classification","is_rust","embedded_test_lines"
+"crates/arcweft-lang-sema/src/callable/digest.rs","arcweft-lang-sema","47102","1203","1120","production","true","351"
+"crates/arcweft-lang-sema/src/callable/presentation.rs","arcweft-lang-sema","13916","443","407","production","true","0"
+"crates/arcweft-lang-sema/src/callable/schema/families.rs","arcweft-lang-sema","114573","2951","2837","production","true","689"
+"crates/arcweft-lang-sema/src/callable/schema.rs","arcweft-lang-sema","175948","4782","4357","production","true","1201"
+"crates/arcweft-lang-sema/src/callable.rs","arcweft-lang-sema","15203","257","248","production","true","0"
+"crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs","arcweft-lang-sema","290562","7023","6635","production","true","546"
+"crates/arcweft-lang-sema/src/final_analysis/tests.rs","arcweft-lang-sema","385817","11004","10584","test","true","0"

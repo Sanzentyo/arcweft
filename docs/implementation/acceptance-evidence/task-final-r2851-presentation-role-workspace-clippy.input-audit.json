@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "run": "task-final-r2851-presentation-role-workspace-clippy",
+  "exitCode": 0,
+  "sourceInputs": 6224,
+  "sourceDrift": 0,
+  "configuration": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "at": "2026-10-24T20:31:42.8360811Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "name": "task-final-r2850-presentation-role-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2850-presentation-role-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T20:29:02.4151258Z",
+  "finishedAt": "2026-10-24T20:29:54.0477585Z"
+}

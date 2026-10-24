@@ -328,7 +328,10 @@ impl CanonicalEncoder {
                 self.semantic_admission(admission);
                 self.consumer(consumer);
             }
-            CallableParameterAdmission::UncheckedSupply => self.tag(1),
+            CallableParameterAdmission::UncheckedSupply => {
+                self.tag(1);
+                self.consumer(consumer);
+            }
         }
     }
 
@@ -389,6 +392,10 @@ impl CanonicalEncoder {
     fn consumer(&mut self, consumer: &CallableParameterConsumer) {
         match consumer {
             CallableParameterConsumer::Value => self.tag(0),
+            CallableParameterConsumer::Presentation(role) => {
+                self.tag(4);
+                self.tag(u16::from(role.semantic_tag()));
+            }
             CallableParameterConsumer::DialoguePatch(coordinate) => {
                 self.tag(1);
                 self.dialogue_field_coordinate(coordinate);
@@ -986,15 +993,33 @@ mod tests {
     }
 
     #[test]
-    fn unchecked_admission_golden_bytes_have_no_consumer_payload() {
-        let consumer =
-            CallableParameterConsumer::DialoguePatch(CharacterDialogueFieldCoordinate::Voice);
+    fn unchecked_admission_commits_the_value_consumer() {
+        let consumer = CallableParameterConsumer::Value;
         let mut encoder = CanonicalEncoder::default();
         encoder.admission(&CallableParameterAdmission::UncheckedSupply, &consumer);
         assert_eq!(
             encoder.into_bytes().expect("canonical fixture encoding"),
-            vec![1, 0]
+            vec![1, 0, 0, 0]
         );
+    }
+
+    #[test]
+    fn unchecked_presentation_roles_cannot_alias_each_other_or_an_ordinary_value() {
+        let encoded = |consumer| {
+            let mut encoder = CanonicalEncoder::default();
+            encoder.admission(&CallableParameterAdmission::UncheckedSupply, &consumer);
+            encoder.into_bytes().expect("canonical admission")
+        };
+        let source = encoded(CallableParameterConsumer::Presentation(
+            super::super::PresentationArgumentRole::Source,
+        ));
+        let lifetime = encoded(CallableParameterConsumer::Presentation(
+            super::super::PresentationArgumentRole::Lifetime,
+        ));
+        let value = encoded(CallableParameterConsumer::Value);
+        assert_ne!(source, lifetime);
+        assert_ne!(source, value);
+        assert_ne!(lifetime, value);
     }
 
     #[test]

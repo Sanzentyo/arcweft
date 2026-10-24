@@ -38,10 +38,10 @@ use crate::callable::{
     DialogueCallableId, DialogueCallableResultContext, DialogueCalleeIdentity,
     DialogueSchemaContext, DomainMethodId, FloatWidth, FxSourceConstructor, IntegerMethodId,
     LineContextMethodId, LineScheduleCallableId, MathCallableId, OptionConstructorKind,
-    PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy, PresentationCallableId,
-    PresentationHandleMethodId, ReductionConstructorKind, ResolvedCharacterOwner,
-    ResultConstructorKind, StageMethodId, StandardMapFamily, StdFloatCallableId, StdFloatOperation,
-    VectorDimensions,
+    PRODUCTION_CALLABLE_LIMITS, PresentationArgumentRole, PresentationArgumentValuePolicy,
+    PresentationCallableId, PresentationHandleMethodId, ReductionConstructorKind,
+    ResolvedCharacterOwner, ResultConstructorKind, StageMethodId, StandardMapFamily,
+    StdFloatCallableId, StdFloatOperation, VectorDimensions,
 };
 use crate::registration::{CompileTimeScalarTypeRoleId, RegisteredCompileTimeScalarTypes};
 use arcweft_presentation::fx::{
@@ -1746,7 +1746,10 @@ pub(in crate::callable) fn presentation_schema(
         | PresentationCallableId::Overlay => (view_parameters(id), open_named_supply()),
         PresentationCallableId::Background => (
             vec![
-                required_positional(0, "asset", TypeKind::entity_ref(EntityKind::Asset)),
+                required_positional(0, "asset", TypeKind::entity_ref(EntityKind::Asset))
+                    .with_consumer(CallableParameterConsumer::Presentation(
+                        PresentationArgumentRole::Asset,
+                    )),
                 optional_presentation_named(id, 1, "target"),
                 optional_presentation_named(id, 2, "slot"),
                 optional_presentation_named(id, 3, "scope"),
@@ -1811,12 +1814,13 @@ fn presentation_result(id: PresentationCallableId) -> TypeKind {
 fn image_parameters() -> Vec<CallableParameter> {
     let id = PresentationCallableId::Image;
     vec![
-        parameter(
+        parameter_with_consumer(
             0,
             Some("source"),
             CallableParameterAdmission::unchecked_supply(),
             CallableParameterPassing::PositionalOnly,
             CallableParameterPresence::Optional,
+            CallableParameterConsumer::Presentation(PresentationArgumentRole::Source),
         ),
         optional_presentation_named(id, 1, "asset"),
         optional_presentation_named(id, 2, "lifetime"),
@@ -1881,18 +1885,19 @@ fn character_parameters(
     include_look: bool,
 ) -> Vec<CallableParameter> {
     let character = include_look.then_some(character).flatten();
-    let mut parameters = vec![required(
-        0,
-        "character",
-        TypeKind::entity_ref(EntityKind::Character),
-    )];
+    let mut parameters = vec![
+        required(0, "character", TypeKind::entity_ref(EntityKind::Character)).with_consumer(
+            CallableParameterConsumer::Presentation(PresentationArgumentRole::Character),
+        ),
+    ];
     if let Some(character) = character {
-        parameters.push(parameter(
+        parameters.push(parameter_with_consumer(
             1,
             Some("look"),
             CallableParameterAdmission::checked(TypeKind::character_look(character.clone())),
             CallableParameterPassing::PositionalOrNamed,
             CallableParameterPresence::Optional,
+            CallableParameterConsumer::Presentation(PresentationArgumentRole::Look),
         ));
     }
     let offset = usize::from(character.is_some());
@@ -2123,12 +2128,16 @@ fn optional_presentation_named(
     index: usize,
     name: &str,
 ) -> CallableParameter {
-    parameter(
+    parameter_with_consumer(
         index,
         Some(name),
         presentation_parameter_type(id, name),
         CallableParameterPassing::NamedOnly,
         CallableParameterPresence::Optional,
+        CallableParameterConsumer::Presentation(
+            id.argument_role(name)
+                .expect("presentation parameter has its owner-issued role"),
+        ),
     )
 }
 
@@ -2137,12 +2146,16 @@ fn required_presentation(
     index: usize,
     name: &str,
 ) -> CallableParameter {
-    parameter(
+    parameter_with_consumer(
         index,
         Some(name),
         presentation_parameter_type(id, name),
         CallableParameterPassing::PositionalOrNamed,
         CallableParameterPresence::Required,
+        CallableParameterConsumer::Presentation(
+            id.argument_role(name)
+                .expect("presentation parameter has its owner-issued role"),
+        ),
     )
 }
 
@@ -2151,7 +2164,7 @@ fn presentation_parameter_type(
     name: &str,
 ) -> CallableParameterAdmission {
     let argument = id
-        .resolve_named_argument(name)
+        .argument_role(name)
         .expect("presentation schema parameter belongs to the callable argument catalog");
     match argument.value_policy() {
         PresentationArgumentValuePolicy::PublicIdReference(family, ty) => {
@@ -2306,6 +2319,63 @@ mod tests {
         );
         assert!(CallableEvaluatedEffect::EmitEvent.accepts_open_fields());
         assert!(!CallableEvaluatedEffect::Ensure.accepts_open_fields());
+    }
+
+    #[test]
+    fn presentation_schemas_retain_typed_argument_roles_for_every_callable() {
+        for id in [
+            PresentationCallableId::View,
+            PresentationCallableId::Menu,
+            PresentationCallableId::Overlay,
+            PresentationCallableId::Background,
+            PresentationCallableId::Image,
+            PresentationCallableId::PlayerViewport,
+            PresentationCallableId::Show,
+            PresentationCallableId::RefBackground,
+            PresentationCallableId::RefShow,
+            PresentationCallableId::ClearBackground,
+            PresentationCallableId::Hide,
+        ] {
+            let schema = presentation_schema(id, None, None).expect("presentation schema");
+            for parameter in schema.groups()[0].parameters() {
+                assert!(
+                    matches!(
+                        parameter.consumer(),
+                        CallableParameterConsumer::Presentation(_)
+                    ),
+                    "{id:?}: {parameter:?}"
+                );
+            }
+            let foreign = CallableSignatureSchema::try_new(
+                schema.groups().to_vec(),
+                TypeKind::Unit,
+                CallableEffectSchema::fixed(EffectRow::closed(EffectSet::new())),
+                open_named_supply(),
+                CallableValidator::Ordinary,
+                CallableGenericParameterIssuer::empty(),
+                &PRODUCTION_CALLABLE_LIMITS,
+            );
+            assert!(matches!(
+                foreign,
+                Err(CallableSchemaError::InvalidParameterConsumer { .. })
+            ));
+        }
+        assert_eq!(
+            PresentationCallableId::Background.argument_role("target"),
+            Some(PresentationArgumentRole::TargetEntity)
+        );
+        assert_eq!(
+            PresentationCallableId::Image.argument_role("target"),
+            Some(PresentationArgumentRole::TargetPublicId)
+        );
+        assert_eq!(
+            PresentationCallableId::Image.argument_role("param.role"),
+            Some(PresentationArgumentRole::Parameter)
+        );
+        assert_eq!(
+            PresentationCallableId::Image.argument_role("proxy.param.role"),
+            Some(PresentationArgumentRole::ProxyParameter)
+        );
     }
 
     #[test]

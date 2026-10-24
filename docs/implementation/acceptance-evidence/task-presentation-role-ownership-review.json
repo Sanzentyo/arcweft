@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "dirty": true,
+  "owned": [
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/digest.rs",
+      "owner": "arcweft-lang-sema",
+      "bytes": 47102,
+      "physicalLines": 1203,
+      "basePhysicalLines": 1178,
+      "growth": 25,
+      "embeddedTestLines": 351,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/presentation.rs",
+      "owner": "arcweft-lang-sema",
+      "bytes": 13916,
+      "physicalLines": 443,
+      "basePhysicalLines": 379,
+      "growth": 64,
+      "embeddedTestLines": 0,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+      "owner": "arcweft-lang-sema",
+      "bytes": 114573,
+      "physicalLines": 2951,
+      "basePhysicalLines": 2881,
+      "growth": 70,
+      "embeddedTestLines": 689,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/schema.rs",
+      "owner": "arcweft-lang-sema",
+      "bytes": 175948,
+      "physicalLines": 4782,
+      "basePhysicalLines": 4767,
+      "growth": 15,
+      "embeddedTestLines": 1201,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable.rs",
+      "owner": "arcweft-lang-sema",
+      "bytes": 15203,
+      "physicalLines": 257,
+      "basePhysicalLines": 255,
+      "growth": 2,
+      "embeddedTestLines": 0,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+      "owner": "arcweft-lang-sema",
+      "bytes": 290562,
+      "physicalLines": 7023,
+      "basePhysicalLines": 7021,
+      "growth": 2,
+      "embeddedTestLines": 546,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+      "owner": "arcweft-lang-sema",
+      "bytes": 385817,
+      "physicalLines": 11004,
+      "basePhysicalLines": 10989,
+      "growth": 15,
+      "embeddedTestLines": 0,
+      "classification": "test"
+    }
+  ],
+  "reversePackages": 22,
+  "dependenciesChanged": false,
+  "scannerRun": "task-final-r2849-presentation-role-structure-gate",
+  "blockingViolations": 0,
+  "disposition": "The existing Sema callable schema is the sole typed parameter authority. The former private Presentation argument algebra is exposed and retained on the accepted parameter consumer; no duplicate catalog, source traversal, dependency, I/O, or test-only API is added. Digest and analyzer constraint consumers are migrated at the same boundary. Existing large schema/analyzer modules remain cohesive around canonical schema admission and constraint preparation; facade exposes the actual role type consumed by its public enum. Runtime command ABI remains unimplemented and is not accepted by this source cut."
+}

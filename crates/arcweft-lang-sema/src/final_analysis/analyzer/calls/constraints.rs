@@ -4450,6 +4450,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
                         ),
                     )) => Some(*coordinate),
                     Some((_, crate::callable::CallableParameterConsumer::Value))
+                    | Some((_, crate::callable::CallableParameterConsumer::Presentation(_)))
                     | Some((_, crate::callable::CallableParameterConsumer::DialoguePatch(_)))
                     | None => None,
                 };
@@ -4467,6 +4468,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     Some((
                         _,
                         crate::callable::CallableParameterConsumer::Value
+                        | crate::callable::CallableParameterConsumer::Presentation(_)
                         | crate::callable::CallableParameterConsumer::DialogueApplicationMetadata(_),
                     ))
                     | None => None,

@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "date": "2026-10-25",
+  "intermediateCheckpoint": true,
+  "scope": "Sema Presentation argument schema authority and its canonical version-1 consumer transcript",
+  "sourcePaths": [
+    "crates/arcweft-lang-sema/src/callable.rs",
+    "crates/arcweft-lang-sema/src/callable/digest.rs",
+    "crates/arcweft-lang-sema/src/callable/presentation.rs",
+    "crates/arcweft-lang-sema/src/callable/schema.rs",
+    "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/tests.rs"
+  ],
+  "publication": null,
+  "preservedTrackedWip": 14,
+  "preservedUntrackedFiles": 6,
+  "schemaCallables": 11,
+  "argumentRoles": 51,
+  "sourceReflectionOrRuntimeStringFallbackAdded": false,
+  "runtimeCommandAbiImplemented": false,
+  "runtimeHandleProjectionImplemented": false,
+  "goalComplete": false,
+  "ownerExecution": {
+    "sourceDrift": 0,
+    "filtered": 1302,
+    "failed": 0,
+    "ignored": 0,
+    "catalog": "task-final-r2846-presentation-role-owner-catalog",
+    "run": "task-final-r2847-presentation-role-owner-runtime",
+    "executed": 4,
+    "passed": 4,
+    "sourceInputs": 6224
+  },
+  "gates": [
+    {
+      "exitCode": 0,
+      "run": "task-final-r2845-presentation-role-sema-check"
+    },
+    {
+      "warningsRemain": true,
+      "run": "task-final-r2848-presentation-role-sema-clippy",
+      "exitCode": 0
+    },
+    {
+      "run": "task-final-r2849-presentation-role-structure-gate",
+      "blockingViolations": 0,
+      "exitCode": 0
+    },
+    {
+      "run": "task-final-r2850-presentation-role-workspace-check",
+      "sourceDrift": 0,
+      "exitCode": 0
+    },
+    {
+      "warningsRemain": true,
+      "run": "task-final-r2851-presentation-role-workspace-clippy",
+      "sourceDrift": 0,
+      "exitCode": 0
+    }
+  ],
+  "initialFailure": {
+    "run": "task-final-r2844-presentation-role-sema-check",
+    "reason": "Two exhaustive consumer matches required the new Presentation value role; the new test also referred to a nonexistent pure effect-schema constructor. The constraints retain ordinary value admission and the test uses the existing fixed empty effect row.",
+    "exitCode": 101
+  },
+  "reverse": {
+    "genericSelected": 151,
+    "binaryPins": 115,
+    "ownerResultsNotReused": true,
+    "baselineFailuresSelected": 50,
+    "ignored": 23,
+    "catalog": "task-final-r2852-presentation-role-reverse-catalog",
+    "packages": 22,
+    "run": "task-final-r2853-presentation-role-reverse-runtime",
+    "status": "running; terminal result not yet accepted",
+    "selected": 3864,
+    "sourceInputs": 6224
+  },
+  "digestChange": "UncheckedSupply now commits its actual consumer, including Presentation argument roles, in the existing version-1 schema domain. The old golden that omitted the consumer was replaced; no compatibility reader or version bump was introduced.",
+  "ownershipReview": "task-presentation-role-ownership-review.json",
+  "evidenceManifest": "task-presentation-role-owner-evidence-integrity.json",
+  "evidenceFiles": 42,
+  "evidenceBytes": 18337200.0,
+  "at": "2026-10-24T20:45:29.7477636Z"
+}

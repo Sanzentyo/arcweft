@@ -1532,6 +1532,7 @@ impl CallableContentParameterConsumer {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallableParameterConsumer {
     Value,
+    Presentation(super::PresentationArgumentRole),
     DialoguePatch(CharacterDialogueFieldCoordinate),
     DialogueApplicationMetadata(DialogueApplicationMetadataCoordinate),
     Content(CallableContentParameterConsumer),
@@ -2431,6 +2432,16 @@ impl CallableSignatureSchema {
                 },
             )?;
             for parameter in group.parameters() {
+                if matches!(
+                    parameter.consumer(),
+                    CallableParameterConsumer::Presentation(_)
+                ) && !matches!(&validator, CallableValidator::Presentation(_))
+                {
+                    return Err(CallableSchemaError::InvalidParameterConsumer {
+                        group: group.index,
+                        parameter: parameter.index,
+                    });
+                }
                 match (parameter.semantic_binding(), parameter.consumer()) {
                     (
                         CallableParameterSemanticBinding::AcceptedProjectRecordField(binding),
@@ -2468,7 +2479,11 @@ impl CallableSignatureSchema {
                 }
                 match parameter.admission() {
                     CallableParameterAdmission::UncheckedSupply => {
-                        if !matches!(parameter.consumer(), CallableParameterConsumer::Value) {
+                        if !matches!(
+                            parameter.consumer(),
+                            CallableParameterConsumer::Value
+                                | CallableParameterConsumer::Presentation(_)
+                        ) {
                             return Err(CallableSchemaError::InvalidParameterConsumer {
                                 group: group.index,
                                 parameter: parameter.index,

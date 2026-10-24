@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "run": "task-final-r2850-presentation-role-workspace-check",
+  "exitCode": 0,
+  "sourceInputs": 6224,
+  "sourceDrift": 0,
+  "configuration": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "at": "2026-10-24T20:30:44.5932320Z"
+}

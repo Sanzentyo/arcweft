@@ -19,8 +19,10 @@ pub enum PresentationCallableId {
     Hide,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PresentationNamedArgument {
+/// Semantic destination of a presentation argument. The selected schema owns
+/// the role independently of a parameter's source label or ordinal.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PresentationArgumentRole {
     View,
     Asset,
     Lifetime,
@@ -70,6 +72,8 @@ pub(crate) enum PresentationNamedArgument {
     Parameter,
     ProxyParameter,
     Look,
+    Source,
+    Character,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -136,7 +140,7 @@ impl PresentationCallableId {
         }
     }
 
-    pub(crate) fn resolve_named_argument(self, name: &str) -> Option<PresentationNamedArgument> {
+    pub fn argument_role(self, name: &str) -> Option<PresentationArgumentRole> {
         match self {
             Self::View | Self::Menu | Self::Overlay => view_argument(name),
             Self::Background => background_argument(name),
@@ -166,13 +170,70 @@ impl PresentationCallableId {
     }
 }
 
-impl PresentationNamedArgument {
+impl PresentationArgumentRole {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::View => 0,
+            Self::Asset => 1,
+            Self::Lifetime => 2,
+            Self::TargetEntity => 3,
+            Self::TargetPublicId => 4,
+            Self::LayerPublicId => 5,
+            Self::Slot => 6,
+            Self::Scope => 7,
+            Self::Fade => 8,
+            Self::Fit => 9,
+            Self::Opacity => 10,
+            Self::Id => 11,
+            Self::Handle => 12,
+            Self::Key => 13,
+            Self::Mount => 14,
+            Self::Depth => 15,
+            Self::Enabled => 16,
+            Self::Visible => 17,
+            Self::Action => 18,
+            Self::Actions => 19,
+            Self::X => 20,
+            Self::Y => 21,
+            Self::Width => 22,
+            Self::Height => 23,
+            Self::Focus => 24,
+            Self::InputCapture => 25,
+            Self::Owner => 26,
+            Self::Drop => 27,
+            Self::AlignmentX => 28,
+            Self::AlignmentY => 29,
+            Self::PlaybackStart => 30,
+            Self::PlaybackPausedAt => 31,
+            Self::PlaybackLocalTime => 32,
+            Self::PlaybackRate => 33,
+            Self::TransformTx => 34,
+            Self::TransformTy => 35,
+            Self::TransformM11 => 36,
+            Self::TransformM12 => 37,
+            Self::TransformM21 => 38,
+            Self::TransformM22 => 39,
+            Self::ProxyId => 40,
+            Self::ProxyType => 41,
+            Self::ProxyRole => 42,
+            Self::ProxyLayer => 43,
+            Self::ProxyDepth => 44,
+            Self::ProxyHitTest => 45,
+            Self::Parameter => 46,
+            Self::ProxyParameter => 47,
+            Self::Look => 48,
+            Self::Source => 49,
+            Self::Character => 50,
+        }
+    }
+
     pub(crate) fn value_policy(self) -> PresentationArgumentValuePolicy {
         use PresentationArgumentValuePolicy::{Exact, MetadataScalar, TokenScalar, Unchecked};
 
         match self {
             Self::View => Exact(TypeKind::entity_ref(EntityKind::View)),
             Self::Asset => Exact(TypeKind::entity_ref(EntityKind::Asset)),
+            Self::Character => Exact(TypeKind::entity_ref(EntityKind::Character)),
             Self::TargetEntity => Exact(TypeKind::entity_ref(EntityKind::Target)),
             Self::TargetPublicId => PresentationArgumentValuePolicy::PublicIdReference(
                 arcweft_id::ProjectEntityReferenceFamily::Target,
@@ -201,7 +262,8 @@ impl PresentationNamedArgument {
             }
             Self::Width | Self::Height => TokenScalar(viewport_dimension()),
             Self::Parameter | Self::ProxyParameter => MetadataScalar,
-            Self::Lifetime
+            Self::Source
+            | Self::Lifetime
             | Self::Fade
             | Self::Fit
             | Self::Id
@@ -226,8 +288,8 @@ impl PresentationNamedArgument {
     }
 }
 
-fn view_argument(name: &str) -> Option<PresentationNamedArgument> {
-    use PresentationNamedArgument as Argument;
+fn view_argument(name: &str) -> Option<PresentationArgumentRole> {
+    use PresentationArgumentRole as Argument;
 
     Some(match name {
         "view" => Argument::View,
@@ -249,8 +311,8 @@ fn view_argument(name: &str) -> Option<PresentationNamedArgument> {
     })
 }
 
-fn background_argument(name: &str) -> Option<PresentationNamedArgument> {
-    use PresentationNamedArgument as Argument;
+fn background_argument(name: &str) -> Option<PresentationArgumentRole> {
+    use PresentationArgumentRole as Argument;
 
     Some(match name {
         "asset" => Argument::Asset,
@@ -270,10 +332,11 @@ fn background_argument(name: &str) -> Option<PresentationNamedArgument> {
     })
 }
 
-fn image_argument(name: &str) -> Option<PresentationNamedArgument> {
-    use PresentationNamedArgument as Argument;
+fn image_argument(name: &str) -> Option<PresentationArgumentRole> {
+    use PresentationArgumentRole as Argument;
 
     Some(match name {
+        "source" => Argument::Source,
         "asset" => Argument::Asset,
         "lifetime" => Argument::Lifetime,
         "target" => Argument::TargetPublicId,
@@ -318,8 +381,8 @@ fn image_argument(name: &str) -> Option<PresentationNamedArgument> {
     })
 }
 
-fn viewport_argument(name: &str) -> Option<PresentationNamedArgument> {
-    use PresentationNamedArgument as Argument;
+fn viewport_argument(name: &str) -> Option<PresentationArgumentRole> {
+    use PresentationArgumentRole as Argument;
 
     Some(match name {
         "width" => Argument::Width,
@@ -329,10 +392,11 @@ fn viewport_argument(name: &str) -> Option<PresentationNamedArgument> {
     })
 }
 
-fn character_argument(name: &str, include_look: bool) -> Option<PresentationNamedArgument> {
-    use PresentationNamedArgument as Argument;
+fn character_argument(name: &str, include_look: bool) -> Option<PresentationArgumentRole> {
+    use PresentationArgumentRole as Argument;
 
     Some(match name {
+        "character" => Argument::Character,
         "look" if include_look => Argument::Look,
         "target" => Argument::TargetEntity,
         "slot" => Argument::Slot,
@@ -341,8 +405,8 @@ fn character_argument(name: &str, include_look: bool) -> Option<PresentationName
     })
 }
 
-fn background_reference_argument(name: &str) -> Option<PresentationNamedArgument> {
-    use PresentationNamedArgument as Argument;
+fn background_reference_argument(name: &str) -> Option<PresentationArgumentRole> {
+    use PresentationArgumentRole as Argument;
 
     Some(match name {
         "target" => Argument::TargetEntity,

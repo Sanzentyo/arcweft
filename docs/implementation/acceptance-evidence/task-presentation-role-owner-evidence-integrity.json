@@ -1,0 +1,228 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "runtimeStillRunning": true,
+  "runtime": "task-final-r2853-presentation-role-reverse-runtime",
+  "files": [
+    {
+      "file": "task-final-r2844-presentation-role-sema-check.input-audit.json",
+      "bytes": 147,
+      "sha256": "6b8f35b9e77712e723dab604db6523b2d2ed0ec680277dfc8c9db69f4609b45c"
+    },
+    {
+      "file": "task-final-r2844-presentation-role-sema-check.json",
+      "bytes": 533,
+      "sha256": "3e65fba9b743e9c43251c37314d8f3199fbf0c9c1e0b813c4c01f6008f42f36c"
+    },
+    {
+      "file": "task-final-r2844-presentation-role-sema-check.log",
+      "bytes": 75507,
+      "sha256": "0e0f624c612b997975f59b0d15b0ece142e1430c2dbe44bf8051b277320ceb72"
+    },
+    {
+      "file": "task-final-r2845-presentation-role-sema-check.input-audit.json",
+      "bytes": 145,
+      "sha256": "8394bbbd087772d5e3fcc95f5b40724cbb703e52db39ccd620133a2f52a3c61a"
+    },
+    {
+      "file": "task-final-r2845-presentation-role-sema-check.json",
+      "bytes": 531,
+      "sha256": "1380ba30858accf8dc2d206c9636c008d93ecffbf52cf2b087854a053890a83e"
+    },
+    {
+      "file": "task-final-r2845-presentation-role-sema-check.log",
+      "bytes": 77710,
+      "sha256": "a89148cfb4e6e72ffd7bfb84b82448190b9bed3a7fd6b0ecf36f1af4152b73c6"
+    },
+    {
+      "file": "task-final-r2846-presentation-role-owner-catalog.inventory.json",
+      "bytes": 344703,
+      "sha256": "9a7592e1a078f6b7ef96d9158089d7449ad005dcf862ee23f065bab022e832d5"
+    },
+    {
+      "file": "task-final-r2846-presentation-role-owner-catalog.json",
+      "bytes": 886,
+      "sha256": "91a17076f9f3c038273eb47e32748a1a4b1dc001ffb33fbbd6b117cf07baa21e"
+    },
+    {
+      "file": "task-final-r2846-presentation-role-owner-catalog.log",
+      "bytes": 326036,
+      "sha256": "5934d0cefa4802f553c84de02dcf56f03521477a8789d6552e55a2bc4af5806a"
+    },
+    {
+      "file": "task-final-r2847-presentation-role-owner-runtime.json",
+      "bytes": 979,
+      "sha256": "e27a4818e037a73b926acb0375eaa63c84e2ec393c474f249ce10b69c408a4ec"
+    },
+    {
+      "file": "task-final-r2847-presentation-role-owner-runtime.log",
+      "bytes": 276567,
+      "sha256": "f1d242dc0612caaca32c9bbdb07e9082622f4e5c412d6aeb9a54092a865a06ba"
+    },
+    {
+      "file": "task-final-r2847-presentation-role-owner-runtime.terminal-audit.json",
+      "bytes": 573,
+      "sha256": "16254f2e554529ec6711398f401f75265bccd43880486b0ae25498dd67233a1a"
+    },
+    {
+      "file": "task-final-r2848-presentation-role-sema-clippy.input-audit.json",
+      "bytes": 173,
+      "sha256": "219c000014e01ae2aa7fe9967bf00bc68091bca0549c0974b63b3ae4ee856728"
+    },
+    {
+      "file": "task-final-r2848-presentation-role-sema-clippy.json",
+      "bytes": 534,
+      "sha256": "c5ec8960f3738f1bbdda8084f2bbe5d61ec1f0c8429541f1eab68a983364076d"
+    },
+    {
+      "file": "task-final-r2848-presentation-role-sema-clippy.log",
+      "bytes": 4738643,
+      "sha256": "e6de554c63765b4b38fbca523ccd37e68bf90a34a4571e8b856128d000bc54ef"
+    },
+    {
+      "file": "task-final-r2849-presentation-role-structure-gate.json",
+      "bytes": 684,
+      "sha256": "7eb53f738a6430907bf91d0514c4c982548d23b87284d217debe94babd0710f3"
+    },
+    {
+      "file": "task-final-r2849-presentation-role-structure-gate.log",
+      "bytes": 64222,
+      "sha256": "067f969c734ebb4610400590f84c600fa63c42cf62316acef106eb9b6e73aef0"
+    },
+    {
+      "file": "task-final-r2850-presentation-role-workspace-check.input-audit.json",
+      "bytes": 369,
+      "sha256": "b809724aa3d9cdb795122cd4c9274e7bd271e8013fd8ee629f88cacb7fe74b6b"
+    },
+    {
+      "file": "task-final-r2850-presentation-role-workspace-check.json",
+      "bytes": 524,
+      "sha256": "3a7d770192f4e2d301626b9eca849e075ade9cf87c8b5a89f651508d23ec1ec5"
+    },
+    {
+      "file": "task-final-r2850-presentation-role-workspace-check.log",
+      "bytes": 98902,
+      "sha256": "58e7ad49598062b264de4c27ae67c89f35733686cf8bdfbfd4a01a7f1435e128"
+    },
+    {
+      "file": "task-final-r2851-presentation-role-workspace-clippy.input-audit.json",
+      "bytes": 371,
+      "sha256": "452a5434467674b29c1c4a4275bbe02fbb9afee3e69e64725a3798e139cfb6aa"
+    },
+    {
+      "file": "task-final-r2851-presentation-role-workspace-clippy.json",
+      "bytes": 527,
+      "sha256": "9e357aed37e5bc8cc84deedd442d15358c79f131df1fcf12a4ee4f443a5d6308"
+    },
+    {
+      "file": "task-final-r2851-presentation-role-workspace-clippy.log",
+      "bytes": 7369486,
+      "sha256": "1fac61dfc89a81405f652157180bc619e67de1cec84966aa0fc2cd6b579547a8"
+    },
+    {
+      "file": "task-final-r2852-presentation-role-reverse-catalog.inventory.json",
+      "bytes": 974459,
+      "sha256": "8b026820526f8e3725db7ba09a013a6572f88bebbe577e1cb86e942c1db9eecf"
+    },
+    {
+      "file": "task-final-r2852-presentation-role-reverse-catalog.json",
+      "bytes": 1412,
+      "sha256": "f5b1dbe06bb7641bbec8a09386a183c679173644c251b0abd882e8a712feeb35"
+    },
+    {
+      "file": "task-final-r2852-presentation-role-reverse-catalog.log",
+      "bytes": 744027,
+      "sha256": "c0ea7fbc9c9a93bed6f283084f42ad918cd6dc19dc184cdbc5f89b776d2da356"
+    },
+    {
+      "file": "task-presentation-role-owned-metrics.csv",
+      "bytes": 966,
+      "sha256": "2070198b548019dc781b591f13c0195c0b252fc4bb91823ca0307996c9e6fa1f"
+    },
+    {
+      "file": "task-presentation-role-ownership-review.json",
+      "bytes": 3005,
+      "sha256": "d670334f8050f84ee8ac6c0ccbffcb84d445ec85b900f8a25ccacd469044bae5"
+    },
+    {
+      "file": "task-presentation-role-repaired-source.graph.json",
+      "bytes": 2317,
+      "sha256": "c326b87d4336345699216bcb7004a39311d823e16e834b717eae29178151284a"
+    },
+    {
+      "file": "task-presentation-role-repaired-source.source-freeze.json",
+      "bytes": 1300266,
+      "sha256": "6b9885c802cbbeab9fc78f78847800288b80a971ad51e0fd7fd57e3c2ee8ccff"
+    },
+    {
+      "file": "task-presentation-role-reverse-preflight.json",
+      "bytes": 36675,
+      "sha256": "d884771ffe5befff2cf74a855df129d81c6e0bbc9de46b2dc362525f1e882830"
+    },
+    {
+      "file": "task-presentation-role-reverse-run.ps1",
+      "bytes": 6263,
+      "sha256": "0ac8d8e920452f5549f4dc57002f718c306b6b957de5b908574a9bb5a403c3dd"
+    },
+    {
+      "file": "task-presentation-role-reverse-terminal.ps1",
+      "bytes": 7869,
+      "sha256": "1385fb97644546de1c87f6d7baf0b983e1d0ccabc95e01c2c9eea10506e7e47b"
+    },
+    {
+      "file": "task-presentation-role-reverse.before-run.pins.json",
+      "bytes": 28496,
+      "sha256": "a27170249b24d3530e28d6514befc88a687bdb14611d1753ef884be288d471ea"
+    },
+    {
+      "file": "task-presentation-role-shared-catalog.ps1",
+      "bytes": 3226,
+      "sha256": "a305c9357221434109ccce959179e92b748403e8569b7e223295488b60ac4864"
+    },
+    {
+      "file": "task-presentation-role-source.graph.json",
+      "bytes": 2235,
+      "sha256": "501df71a854a9ca2f680c905155a3c56836f2d8295a37b7ad3f88866383ca440"
+    },
+    {
+      "file": "task-presentation-role-source.source-freeze.json",
+      "bytes": 1300184,
+      "sha256": "e3c3c552e9a756f68f7f9ae8012f517097b6cbb25002741e451b7adef4a044c8"
+    },
+    {
+      "file": "task-presentation-role-structure-dependency_edges.csv",
+      "originalName": "dependency_edges.csv",
+      "bytes": 77451,
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "file": "task-presentation-role-structure-file_metrics.csv",
+      "originalName": "file_metrics.csv",
+      "bytes": 325239,
+      "sha256": "3a3cd07f676024d9d696e564bdb14b72cb8aa81ff92559185eae164a979591fa"
+    },
+    {
+      "file": "task-presentation-role-structure-findings.md",
+      "originalName": "findings.md",
+      "bytes": 120793,
+      "sha256": "f7aebcb1c3e2a4b019172e5dfcd25e80f2502d83385400d4a76f06dffd96740d"
+    },
+    {
+      "file": "task-presentation-role-structure-package_metrics.csv",
+      "originalName": "package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "file": "task-presentation-role-structure-public_type_duplicates.csv",
+      "originalName": "public_type_duplicates.csv",
+      "bytes": 17121,
+      "sha256": "32497020f9e20f80ee5b72bd2126e43aad95c84a5fd1e151cd375eed6b671a67"
+    }
+  ],
+  "fileCount": 42,
+  "bytes": 18337200.0,
+  "byteDrift": 0,
+  "buildArtifactsCopiedOrMoved": false,
+  "at": "2026-10-24T20:43:11.3917482Z"
+}
