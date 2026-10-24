@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "1f1c00210abb1a42389cc41b8fcc391e9d12d639",
+  "run": "task-final-r2840-fanout-child-workspace-check",
+  "exitCode": 0,
+  "sourceInputs": 6199,
+  "sourceDrift": 0,
+  "configuration": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "freezeSha256": "7a61397f9f27593e987c013ffd7a8f317e2020962032e58fcf08e41149202821",
+  "at": "2026-10-24T19:38:18.4286617Z"
+}

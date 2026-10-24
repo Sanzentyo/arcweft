@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "base": "1f1c00210abb1a42389cc41b8fcc391e9d12d639",
+  "files": [
+    {
+      "file": "task-fanout-child-reverse-acceptance.json",
+      "bytes": 48055,
+      "sha256": "9b1e6a45d5504b31beb46dbf5664f627dcba854a73c17ef165170969343bf1ce"
+    },
+    {
+      "file": "task-fanout-child-reverse-coverage.json",
+      "bytes": 80506,
+      "sha256": "83b655f7693caf986c8a7193996be7fdeaf1a540f2413f6de096d5bd848d1ea8"
+    },
+    {
+      "file": "task-fanout-child-reverse-preflight.json",
+      "bytes": 38765,
+      "sha256": "bdc4711d38ed241437aa69afa66ba4744baf0197d00c547822399897e71a88f8"
+    },
+    {
+      "file": "task-fanout-child-reverse-run.ps1",
+      "bytes": 4771,
+      "sha256": "bd0b269169110032a6352e6eb581762b90ab04af2e6bdf49be42e74cf796c5d2"
+    },
+    {
+      "file": "task-fanout-child-reverse-source.graph.json",
+      "bytes": 2739,
+      "sha256": "62f299dd2899c522d33f41ac9ba08cb1492626218e02811dbbc88dcf29f84e9a"
+    },
+    {
+      "file": "task-fanout-child-reverse-source.source-freeze.json",
+      "bytes": 1294088,
+      "sha256": "5e0825f49d0bf6b61a8d82fd594988c4cafadb90a01d4483438bc031045ca1f1"
+    },
+    {
+      "file": "task-fanout-child-reverse-terminal.ps1",
+      "bytes": 7738,
+      "sha256": "5f0da72c161d730701f95fca698a101e8b1c2975e366c9c4e833a1006121f451"
+    },
+    {
+      "file": "task-fanout-child-reverse.before-run.pins.json",
+      "bytes": 55780,
+      "sha256": "1a9edcdcd760065ed8452b65e333d26901acde3cf5347d61c32cc9dc9c068ea5"
+    },
+    {
+      "file": "task-fanout-child-reverse.executable-audit.json",
+      "bytes": 61672,
+      "sha256": "651fd10552d8c7bd59cabc82efe0fe79b729a8ba1c3bb9dbf8bc435577344bcf"
+    },
+    {
+      "file": "task-fanout-child-workspace-source.graph.json",
+      "bytes": 2739,
+      "sha256": "62f299dd2899c522d33f41ac9ba08cb1492626218e02811dbbc88dcf29f84e9a"
+    },
+    {
+      "file": "task-fanout-child-workspace-source.source-freeze.json",
+      "bytes": 1294088,
+      "sha256": "7a61397f9f27593e987c013ffd7a8f317e2020962032e58fcf08e41149202821"
+    },
+    {
+      "file": "task-final-r2840-fanout-child-workspace-check.input-audit.json",
+      "bytes": 451,
+      "sha256": "aa663e037f22f2f85fdf7cb3d1df6fe2c71c8fdba1fcf443e61b920b65f006e2"
+    },
+    {
+      "file": "task-final-r2840-fanout-child-workspace-check.json",
+      "bytes": 514,
+      "sha256": "63588c24b2cfac78f23490dc218ba10bd4cf475f7894122b550577ae90f061da"
+    },
+    {
+      "file": "task-final-r2840-fanout-child-workspace-check.log",
+      "bytes": 101598,
+      "sha256": "acc237dcf698ff83577aef143ea9fb4a965ef17f96af59b16d0407f7ebfcf324"
+    },
+    {
+      "file": "task-final-r2841-fanout-child-workspace-clippy.input-audit.json",
+      "bytes": 453,
+      "sha256": "60c4b5c1b052e4da26aa1edf25f90aa9ff48e2492c1c09d3909f840879f5e9d9"
+    },
+    {
+      "file": "task-final-r2841-fanout-child-workspace-clippy.json",
+      "bytes": 517,
+      "sha256": "ac7f7f56bdfe3fc9ff57937c891ecdbaf3b1c18545efd925fa260060ba8b956d"
+    },
+    {
+      "file": "task-final-r2841-fanout-child-workspace-clippy.log",
+      "bytes": 7372009,
+      "sha256": "5b2af7857e17518cd0e3bd5c313acffc834a2c53a6dbc6ebbdab5b38bf1571d0"
+    },
+    {
+      "file": "task-final-r2842-fanout-child-reverse-catalog.inventory.json",
+      "bytes": 1824170,
+      "sha256": "804db31f1f54117370da574ad6bd10f4752ab0c28a3cdf1c4aa77d1201fd5532"
+    },
+    {
+      "file": "task-final-r2842-fanout-child-reverse-catalog.json",
+      "bytes": 2599,
+      "sha256": "2d79c8b8837bb20d72c37e1c1785d15a247a2b11a08c000f4e013e897c82ffcd"
+    },
+    {
+      "file": "task-final-r2842-fanout-child-reverse-catalog.log",
+      "bytes": 1350180,
+      "sha256": "ce94a6458371381cc889f79ee43b5f5ab724168c5ef8a5f87773e837be8d3ea9"
+    },
+    {
+      "file": "task-final-r2843-fanout-child-reverse-runtime.json",
+      "bytes": 2694,
+      "sha256": "af2ef7541d5745f712edbb92cca32f5e2a9207eca9be9354e2107695f00834f4"
+    },
+    {
+      "file": "task-final-r2843-fanout-child-reverse-runtime.log",
+      "bytes": 4256288,
+      "sha256": "13d4f4de0cc91ae0d3c57e37c0eac47a31e757be89097bf6b676167d59dc9d54"
+    },
+    {
+      "file": "task-final-r2843-fanout-child-reverse-runtime.terminal-audit.json",
+      "bytes": 8960,
+      "sha256": "a5ddfc572aab33639a0562b0300dd1001aa6adf07ae63da9aba385c60d8417b9"
+    }
+  ],
+  "fileCount": 23,
+  "bytes": 17811374.0,
+  "byteDrift": 0,
+  "buildArtifactsCopiedOrMoved": false,
+  "recordedAt": "2026-10-24T20:13:24.3066930Z"
+}

@@ -10667,3 +10667,42 @@ testのためのproduction API公開は行っていない。警告0とは報告�
 tree `5387bc4a5fde163210610525fe3c8d556911dec1`、fresh fetch／公開ref／全pathのblobと
 6,198入力のhashは差分0。元WIPのpatch hashを保ち、index空を確認した。
 [公開照合receipt](acceptance-evidence/task-fanout-child-checkpoint.verified.json)をbyte不変で保持する。
+
+## Program child fanout後の全53逆依存・workspace検証 — 2026-10-25
+
+基点は既存main `1f1c00210abb1a42389cc41b8fcc391e9d12d639`。
+検証対象の実装公開は `b90d3948990e64aa727047efb9762a7717b4bf24`。
+R2840 workspace checkとR2841 workspace Clippyを、all-targets／all-features／lockedで
+新規実行し、どちらも終了0、警告あり。各6,199固定入力のhash差分0。
+Clippyの警告を0と報告せず、以前のCore単独gateへ今回のworkspace結果を付け替えていない。
+
+実際のCargo graphの推移的逆依存53 packageを選び、R2842のcatalogは全7,308件、
+通常選択7,269件、既存ignored 39件。前回の全case集合の不足0、追加9件はCore library。
+R2843はCore libraryを含めて一回の新規実行を行い、**7,269実行／7,219 PASS／50 FAIL／
+39 ignored**、終了100、1,010.127秒。全終端caseとcatalogが一致した。
+単独構成のCore検証や過去のconsumer結果を再利用・加算していない。
+実行中の16 panic識別子は途中観測にすぎず、最終失敗件数には使わなかった。
+
+最終50失敗は前回の `task-await-many-awbc-reverse-combined-execution.json` の
+binary／test識別子と完全一致し、新規失敗0、以前の失敗で今回PASSに変わったものも0。
+CLIは641 PASS／50 FAIL、Compilerは617／617、Coreのlibrary＋integration／binは
+2,044／2,044 PASS。Generic Matchの受入catalog 151件は全件が実際の終端PASSに一致した。
+新しいProgram childのResult集約、通常の集約／各step公開save/restore、Nativeの
+queued publicationと各step private rollbackの実行テストもPASSした。
+既存の受入を全体goalの未完了から取り消す根拠はない。
+
+catalogはlibrary 53、integration 161、bin 5 targetを含む。
+named caseなしのlibrary 4／bin 4 targetはbuildだけ、integration 6 targetは全件ignored。
+これらを実行成功に数えない。固定入力6,199件と、test 219／非test 6の実行ファイル225件を
+実行前後にhash照合し、差分0。ビルド生成物の移動・コピーは行っていない。
+全14 family／最終C6、DSL接続、Native公開save、Tier2、Native-Web capture parityの
+包括的な受入をこの実行から推定しない。項目別の現状は既存の一覧だけを更新した。
+
+[実行集計・全失敗・Generic照合](acceptance-evidence/task-fanout-child-reverse-acceptance.json)、
+[package／target範囲](acceptance-evidence/task-fanout-child-reverse-coverage.json)、
+[終端・固定入力](acceptance-evidence/task-final-r2843-fanout-child-reverse-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-fanout-child-reverse.executable-audit.json)、
+[check入力照合](acceptance-evidence/task-final-r2840-fanout-child-workspace-check.input-audit.json)、
+[Clippy入力照合](acceptance-evidence/task-final-r2841-fanout-child-workspace-clippy.input-audit.json)。
+原本と監査23件／17,811,374 bytesを元ファイルとbyte／SHA256一致で保全した。
+[保全manifest](acceptance-evidence/task-fanout-child-reverse-evidence-integrity.json)。

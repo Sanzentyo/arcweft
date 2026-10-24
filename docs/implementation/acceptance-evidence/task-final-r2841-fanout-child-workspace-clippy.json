@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "1f1c00210abb1a42389cc41b8fcc391e9d12d639",
+  "name": "task-final-r2841-fanout-child-workspace-clippy",
+  "command": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2841-fanout-child-workspace-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T19:38:18.4965763Z",
+  "finishedAt": "2026-10-24T19:40:07.6108601Z"
+}
