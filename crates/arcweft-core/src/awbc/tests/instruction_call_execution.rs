@@ -170,7 +170,10 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
         ));
         let snapshot = AwbcFiberStateSnapshot::from_live(
             &fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .unwrap();
         let encoded = serde_json::to_vec(&snapshot).unwrap();
@@ -185,7 +188,10 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
         restored.replenish_budget();
         let mut cancelled = AwbcFiberStateSnapshot::from_live(
             &restored,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .unwrap()
         .into_live_for_program(&owner)

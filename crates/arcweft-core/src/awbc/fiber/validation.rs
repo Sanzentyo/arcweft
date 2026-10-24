@@ -12,6 +12,42 @@ use crate::program_types::RuntimeFunctionEffectInstantiation;
 use std::{borrow::Borrow, collections::BTreeSet};
 
 impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuation<P, V>>> {
+    /// Source admission follows the complete value grammar on its same bank;
+    /// no copied aggregate or independent resource allowance is introduced.
+    pub(super) fn admit_task_source_templates(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        need: impl Fn(&N) -> crate::value::RuntimeNeedView<'_> + Copy,
+    ) -> super::AwbcSaveResult<()>
+    where
+        V: RuntimeStoredValue,
+        B: Borrow<RuntimeFunctionEffectInstantiation>,
+    {
+        let Some(super::FiberSuspension {
+            reason: super::FiberSuspensionReason::AwaitMany(state),
+            ..
+        }) = &self.suspension
+        else {
+            return Ok(());
+        };
+        admission.status()?;
+        let original = admission.task_source().cloned().ok_or_else(|| {
+            crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "AwaitMany admission requires its enclosing admitted original Source"
+                    .into(),
+            }
+        })?;
+        let frame = self.frames.last().ok_or(FiberStateError::MissingFrame)?;
+        state
+            .admit_original_source(
+                &original,
+                frame.type_instantiation.as_ref().map(Borrow::borrow),
+                need,
+                admission,
+            )
+            .inspect_err(|error| admission.retain_failure(error.clone()))
+    }
+
     /// A stopped caller resumes at its callee's authenticated return point;
     /// only the innermost frame uses the fiber's current cursor.
     pub(super) fn frame_resume_cursor(&self, index: usize) -> Result<FiberCursor, FiberStateError> {

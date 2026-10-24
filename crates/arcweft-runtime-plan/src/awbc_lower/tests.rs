@@ -2126,7 +2126,10 @@ fn while_let_reevaluates_its_mutating_scrutinee_until_exhausted() {
     );
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(report.program.clone())),
+        &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(report.program.clone())),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("mid-loop snapshot saves");
     let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(report.program.clone()));

@@ -159,21 +159,20 @@ flow main() {
     run_one_op(&awbc_observed, &mut |input, options| {
         let mut executor = awbc.take().expect("one owned AWBC executor");
         let result = executor.step_with_pure_backend(input, options, &mut awbc_backend);
-        let snapshot = match executor.snapshot().expect("save every OneOp boundary") {
-            ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) => {
-                let saved =
+        let snapshot =
+            match executor.snapshot().expect("save every OneOp boundary") {
+                ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) => {
+                    let saved =
                     arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
-                        &saved,
-                        &executor.program_owner(),
-                    )
+                        &saved, executor.admitted_product_awbc_program().unwrap())
                     .unwrap();
-                let bytes = serde_json::to_vec(&saved).unwrap();
-                let decoded = serde_json::from_slice(&bytes).unwrap();
-                ArcweftRuntimeExecutorSnapshot::AwbcProduct(
-                    executor.bind_product_save_snapshot(decoded).unwrap(),
-                )
-            }
-        };
+                    let bytes = serde_json::to_vec(&saved).unwrap();
+                    let decoded = serde_json::from_slice(&bytes).unwrap();
+                    ArcweftRuntimeExecutorSnapshot::AwbcProduct(
+                        executor.bind_product_save_snapshot(decoded).unwrap(),
+                    )
+                }
+            };
         let expected = snapshot.clone();
         let restored = executor
             .restore_snapshot(snapshot)

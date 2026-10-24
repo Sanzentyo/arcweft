@@ -7,10 +7,7 @@ use super::{
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::program_types::RuntimeProgramValueType;
 use crate::task::{RuntimeNeedHandle, RuntimeNeedHandleSaveSnapshot, RuntimeProgramOwner};
-use crate::value::{
-    AwbcRuntimeValueSnapshot, RuntimeNeedView, RuntimeScalarView, RuntimeTupleView, RuntimeValue,
-    RuntimeValueView,
-};
+use crate::value::{AwbcRuntimeValueSnapshot, RuntimeNeedView, RuntimeValue, RuntimeValueView};
 use serde::{Deserialize, Serialize};
 
 /// All launched, pending and completed item ownership for one occurrence.
@@ -301,50 +298,94 @@ impl<V, N> FiberAwaitManyState<V, N> {
                 ))
             })?;
         }
-        // Views compose the original template arguments; no live aggregate,
-        // request clone or speculative TaskSpec is constructed by validation.
-        let captured = self.captured.iter().map(view).collect::<Vec<_>>();
-        let items = self.items.iter().map(view).collect::<Vec<_>>();
-        // Template arguments use the existing producer key transcript limit;
-        // its virtual tuple headers are separate from retained-value bytes.
-        let max_bytes = 16 * 1024 * 1024;
         if let Some(base) = &self.base {
             let base = need(base);
             resources
                 .validate_view(RuntimeValueView::Need(base), 0, None)
                 .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-            let fields = [
-                RuntimeValueView::Tuple(RuntimeTupleView::Views(&captured)),
-                RuntimeValueView::Tuple(RuntimeTupleView::Views(&items)),
-            ];
-            plan.validate_template_handle(
-                program,
-                RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-                base,
-                max_bytes,
-            )
-            .map_err(|_| FiberStateError::InvalidFrame)?;
             for child in &self.in_flight {
                 let handle = need(&child.handle);
                 resources
                     .validate_view(RuntimeValueView::Need(handle), 0, None)
                     .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-                let fields = [
-                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&captured)),
-                    RuntimeValueView::Scalar(RuntimeScalarView::UInt(
-                        crate::value::RuntimeUInt::U32(child.index),
-                    )),
-                    items[child.index as usize],
-                ];
-                child_plan
-                    .validate_template_handle(
-                        program,
-                        RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-                        handle,
-                        max_bytes,
-                    )
-                    .map_err(|_| FiberStateError::InvalidFrame)?;
             }
+        }
+        Ok(())
+    }
+
+    /// The enclosing fiber first admits the complete retained inventory. This
+    /// second phase authenticates its base/child identities against the actual
+    /// Source, without charging the same retained roots for every child.
+    pub(super) fn admit_original_source(
+        &self,
+        original: &crate::plan::task_source::RuntimeTaskSourceProgram,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        need: impl Fn(&N) -> RuntimeNeedView<'_> + Copy,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> super::AwbcSaveResult<()>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        use crate::task::RuntimeTaskTemplateArguments;
+        use crate::value::{RuntimeSequenceView, RuntimeValueSource};
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let source = original
+            .awbc_template_source(self.plan, limits, &mut admission.task_source_meter(limits)?)
+            .map_err(
+                |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                },
+            )?;
+        admission.validate_metadata_collection(self.items.len())?;
+        let items: Vec<_> = self.items.iter().map(V::borrowed_view).collect();
+        let checked = source.template_producer_spec_after_value_admission(
+            original,
+            RuntimeTaskTemplateArguments::AwaitManyBase {
+                captures: &self.captured,
+                source: RuntimeValueSource::Borrowed {
+                    value: &RuntimeValueView::Sequence(RuntimeSequenceView::Views(&items)),
+                    origin: V::admission_origin(),
+                },
+            },
+            binding,
+            admission,
+        )?;
+        if let Some(base) = &self.base {
+            source.validate_template_handle(&checked, need(base), admission)?;
+        }
+        let RuntimeProgramOwner::Awbc(program) = original.program_owner() else {
+            return Err(FiberStateError::InvalidFrame.into());
+        };
+        let Some(crate::awbc::schema::AwbcHostTaskPlanKind::AwaitMany { child, .. }) = program
+            .task_plans
+            .get(self.plan.index())
+            .and_then(|plan| plan.host())
+            .map(|host| &host.kind)
+        else {
+            return Err(FiberStateError::InvalidFrame.into());
+        };
+        let child_source = original
+            .awbc_template_source(*child, limits, &mut admission.task_source_meter(limits)?)
+            .map_err(
+                |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                },
+            )?;
+        for child in &self.in_flight {
+            let checked = child_source.template_producer_spec_after_value_admission(
+                original,
+                RuntimeTaskTemplateArguments::AwaitManyChild {
+                    captures: &self.captured,
+                    index: child.index,
+                    item: RuntimeValueSource::Borrowed {
+                        value: &items[child.index as usize],
+                        origin: V::admission_origin(),
+                    },
+                },
+                binding,
+                admission,
+            )?;
+            child_source.validate_template_handle(&checked, need(&child.handle), admission)?;
         }
         Ok(())
     }

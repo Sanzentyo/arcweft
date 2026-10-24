@@ -835,6 +835,7 @@ pub struct FiberSafePoint {
 pub struct FiberCheckpoint {
     state: Box<AwbcFiberStateSnapshot>,
     owner: RuntimeProgramOwner,
+    task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
 }
 
 /// AWBC session-save projection of [`FiberState`].
@@ -1072,16 +1073,16 @@ impl AwbcFiberStateSnapshot {
         Ok(())
     }
 
-    pub fn from_live(state: &FiberState, owner: &RuntimeProgramOwner) -> AwbcSaveResult<Self> {
-        state.validate_retained(
-            owner,
-            &mut crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-                crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
-            ),
-            crate::value::RuntimeOpaqueValue::view,
-            crate::task::RuntimeNeedHandle::view,
-        )?;
+    pub fn from_live(
+        state: &FiberState,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> AwbcSaveResult<Self> {
+        state.admit_retained(admission)?;
+        let owner = admission.program_owner().ok_or_else(|| {
+            crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "fiber snapshot requires its original executable".into(),
+            }
+        })?;
         Self::from_admitted_live(state, owner)
     }
 
@@ -1125,15 +1126,11 @@ impl AwbcFiberStateSnapshot {
     }
 
     pub(crate) fn validate_for_program(&self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<()> {
-        self.validate_retained(
-            owner,
-            &mut crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-                crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-            ),
-            AwbcRuntimeValueSnapshot::view,
-            crate::task::RuntimeNeedHandleSaveSnapshot::view,
-        )
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_retained(&mut admission)
     }
 
     /// Admits this complete inert fiber before an enclosing owner constructs
@@ -1158,7 +1155,12 @@ impl AwbcFiberStateSnapshot {
                     crate::task::RuntimeNeedHandleSaveSnapshot::view,
                 )
             },
+        )?;
+        self.admit_task_source_templates(
+            admission,
+            crate::task::RuntimeNeedHandleSaveSnapshot::view,
         )
+        .inspect_err(|error| admission.retain_failure(error.clone()))
     }
 
     pub fn into_live_for_program(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberState> {
@@ -1730,7 +1732,9 @@ impl FiberState {
                     crate::task::RuntimeNeedHandle::view,
                 )
             },
-        )
+        )?;
+        self.admit_task_source_templates(admission, crate::task::RuntimeNeedHandle::view)
+            .inspect_err(|error| admission.retain_failure(error.clone()))
     }
 
     /// Completed root frames may retain Copy values and lexical metadata.
@@ -2511,11 +2515,16 @@ impl FiberState {
 
     pub fn checkpoint(
         &self,
-        owner: &RuntimeProgramOwner,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<FiberCheckpoint, FiberStateError> {
+        let state = AwbcFiberStateSnapshot::from_live(self, admission)?;
         Ok(FiberCheckpoint {
-            state: Box::new(AwbcFiberStateSnapshot::from_live(self, owner)?),
-            owner: owner.clone(),
+            state: Box::new(state),
+            owner: admission
+                .program_owner()
+                .ok_or(FiberStateError::InvalidFrame)?
+                .clone(),
+            task_source: admission.task_source().cloned(),
         })
     }
 
@@ -2525,7 +2534,12 @@ impl FiberState {
         program: &crate::awbc::product_step::AwbcProductProgram,
     ) -> Result<(), FiberStateError> {
         let owner = RuntimeProgramOwner::Awbc(program.program_arc());
-        if !checkpoint.owner.same_program(&owner) {
+        if !checkpoint.owner.same_program(&owner)
+            || checkpoint
+                .task_source
+                .as_ref()
+                .is_some_and(|source| program.original_task_source() != Some(source))
+        {
             return Err(FiberStateError::CheckpointProgramOwner);
         }
         let candidate = program.restore_fiber_snapshot(*checkpoint.state)?;
@@ -5572,14 +5586,28 @@ mod tests {
         fiber
             .bind_function_argument_values_owned(&program, vec![RuntimeValue::Unit])
             .unwrap();
-        let image = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        let image = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
         image
             .clone()
             .into_live_for_program(&owner)
             .unwrap()
             .validate_for_program(&program)
             .unwrap();
-        let before = fiber.checkpoint(&owner).unwrap();
+        let before = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
         for failure in [
             FiberStateError::UnknownFunction(99),
             FiberStateError::InvalidFrame,
@@ -5606,12 +5634,29 @@ mod tests {
                 expected
             );
             assert!(fiber.replace_from_snapshot(candidate, &owner).is_err());
-            assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
+            assert_eq!(
+                fiber
+                    .checkpoint(
+                        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                            (owner).clone(),
+                            crate::entry::RuntimeSchemaLimits::engine_default()
+                        )
+                    )
+                    .unwrap(),
+                before
+            );
         }
         let mut malformed_live = fiber;
         malformed_live.frames[0].function = AwbcFunctionId(99);
         assert_eq!(
-            AwbcFiberStateSnapshot::from_live(&malformed_live, &owner).unwrap_err(),
+            AwbcFiberStateSnapshot::from_live(
+                &malformed_live,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default()
+                )
+            )
+            .unwrap_err(),
             AwbcRuntimeValueSnapshotError::Message {
                 message: FiberStateError::UnknownFunction(99).to_string(),
             }
@@ -5638,7 +5683,16 @@ mod tests {
         let fibers = [make(), make()];
         let images: Vec<_> = fibers
             .iter()
-            .map(|fiber| AwbcFiberStateSnapshot::from_live(fiber, &owner).unwrap())
+            .map(|fiber| {
+                AwbcFiberStateSnapshot::from_live(
+                    fiber,
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default(),
+                    ),
+                )
+                .unwrap()
+            })
             .collect();
         let before = serde_json::to_vec(&images).unwrap();
         let mut live = RuntimeRetainedValueAdmission::for_program(
@@ -5710,7 +5764,14 @@ mod tests {
         fiber
             .bind_function_argument_values_owned(&program, vec![RuntimeValue::Unit])
             .unwrap();
-        let image = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        let image = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
         let before = serde_json::to_vec(&image).unwrap();
         let limits = crate::entry::RuntimeSchemaLimits {
             max_nodes: 1,
@@ -5767,7 +5828,14 @@ mod tests {
             )
             .unwrap();
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program));
-        let image = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        let image = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
         let limits = crate::entry::RuntimeSchemaLimits {
             max_nodes: 0,
             max_encoded_bytes: 0,
@@ -5826,7 +5894,14 @@ mod tests {
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
         fiber.mark_returned(Some(RuntimeValue::Bool(true))).unwrap();
-        let before = fiber.checkpoint(&owner).unwrap();
+        let before = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
         let mut forged = (*before.state).clone();
         forged.terminal = Some(FiberTerminalValue::Returned(Some(
             AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
@@ -5840,7 +5915,17 @@ mod tests {
             Err(AwbcRuntimeValueSnapshotError::ProgramType(_))
         ));
         assert!(fiber.replace_from_snapshot(forged.clone(), &owner).is_err());
-        assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
         forged.status = FiberStatus::Running;
         assert_eq!(
             forged.into_live_for_program(&owner).unwrap_err(),
@@ -5870,13 +5955,30 @@ mod tests {
             "original".into(),
         ))));
         fiber.return_summary = Some("original".into());
-        let before = fiber.checkpoint(&owner).unwrap();
+        let before = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
         let mut forged = (*before.state).clone();
         forged.return_summary = Some("forged".into());
         assert!(forged.validate_for_program(&owner).is_err());
         assert!(forged.clone().into_live_for_program(&owner).is_err());
         assert!(fiber.replace_from_snapshot(forged, &owner).is_err());
-        assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
     }
 
     fn stream_entry_program() -> AwbcProgram {
@@ -5912,13 +6014,27 @@ mod tests {
             .queue
             .push(RuntimeValue::String("cause".into()));
         fiber.streams[0].emitted_count = 1;
-        let before = fiber.checkpoint(&owner).unwrap();
+        let before = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
         let restored = (*before.state)
             .clone()
             .into_live_for_program(&owner)
             .unwrap();
         assert_eq!(
-            AwbcFiberStateSnapshot::from_live(&restored, &owner).unwrap(),
+            AwbcFiberStateSnapshot::from_live(
+                &restored,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default()
+                )
+            )
+            .unwrap(),
             *before.state
         );
         let mut forged = (*before.state).clone();
@@ -5932,10 +6048,26 @@ mod tests {
             Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
         ));
         assert!(fiber.replace_from_snapshot(forged, &owner).is_err());
-        assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
         fiber.streams[0].queue[0] = RuntimeValue::Bool(true);
         assert!(matches!(
-            AwbcFiberStateSnapshot::from_live(&fiber, &owner),
+            AwbcFiberStateSnapshot::from_live(
+                &fiber,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default()
+                )
+            ),
             Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
         ));
     }
@@ -6048,7 +6180,14 @@ mod tests {
         fiber
             .bind_function_argument_values_owned(&program, vec![RuntimeValue::Unit])
             .unwrap();
-        let before = fiber.checkpoint(&owner).unwrap();
+        let before = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
         let mut candidate = before.state.as_ref().clone();
         candidate.frames[0].registers[0] =
             AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
@@ -6066,10 +6205,26 @@ mod tests {
             if matches!(&*error, crate::awbc::value_admission::AwbcValueAdmissionError::Value { source: crate::entry::RuntimeSchemaError::Type { path, .. }, .. } if path == "frames[0].registers[0]"))
         );
         assert!(fiber.replace_from_snapshot(candidate, &owner).is_err());
-        assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
         fiber.frames[0].registers[0] = RuntimeValue::Bool(true).into();
         assert!(matches!(
-            AwbcFiberStateSnapshot::from_live(&fiber, &owner),
+            AwbcFiberStateSnapshot::from_live(
+                &fiber,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default()
+                )
+            ),
             Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
         ));
     }
@@ -6458,7 +6613,14 @@ mod tests {
         let mut fiber = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
         let checkpoint_owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
-        let before = fiber.checkpoint(&checkpoint_owner).unwrap();
+        let before = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (checkpoint_owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
 
         assert_eq!(
             fiber.bind_function_argument_values(&program, &[]),
@@ -6467,13 +6629,33 @@ mod tests {
                 actual: 0,
             })
         );
-        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (checkpoint_owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
 
         assert!(matches!(
             fiber.bind_function_argument_values(&program, &[RuntimeValue::Bool(true)]),
             Err(FiberStateError::ArgumentType { .. })
         ));
-        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (checkpoint_owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
     }
 
     #[test]
@@ -6585,7 +6767,14 @@ mod tests {
         );
         let checkpoint_owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
-        let missing_progress = fiber.checkpoint(&checkpoint_owner).unwrap();
+        let missing_progress = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (checkpoint_owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
         let mut live_request_count = 0;
         fiber
             .visit_runtime_values(|value| {
@@ -6614,7 +6803,14 @@ mod tests {
             Err(FiberStateError::InvalidRuntimeValue { .. })
         ));
         assert_eq!(
-            fiber.checkpoint(&checkpoint_owner).unwrap(),
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (checkpoint_owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
             missing_progress
         );
 
@@ -6639,7 +6835,16 @@ mod tests {
                 RuntimeValue::Progress(crate::value::Progress::new(0.5).unwrap()),
             )
             .unwrap();
-        assert!(fiber.checkpoint(&checkpoint_owner).is_err());
+        assert!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (checkpoint_owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .is_err()
+        );
         let occupied_cursor = fiber.cursor;
         let occupied_status = fiber.status;
         let occupied_budget = fiber.budget;
@@ -6739,13 +6944,30 @@ mod tests {
         };
         let checkpoint_owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
-        let before = fiber.checkpoint(&checkpoint_owner).unwrap();
+        let before = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (checkpoint_owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
 
         assert!(matches!(
             fiber.commit_yielded_instruction(stale),
             Err(FiberStateError::StaleCursor { .. })
         ));
-        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (checkpoint_owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
     }
 
     #[test]
@@ -6755,10 +6977,26 @@ mod tests {
         let valid_cursor = fiber.cursor;
         let checkpoint_owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
-        let before = fiber.checkpoint(&checkpoint_owner).unwrap();
+        let before = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (checkpoint_owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
         fiber.cursor.instruction_offset = u32::MAX;
         let observed = fiber.cursor;
-        assert!(fiber.checkpoint(&checkpoint_owner).is_err());
+        assert!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (checkpoint_owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .is_err()
+        );
 
         assert!(matches!(
             fiber.commit_yielded_instruction(observed),
@@ -6766,7 +7004,17 @@ mod tests {
         ));
         assert_eq!(fiber.cursor, observed);
         fiber.cursor = valid_cursor;
-        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (checkpoint_owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
     }
 
     #[test]
@@ -6811,7 +7059,10 @@ mod tests {
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
         let snapshot = AwbcFiberStateSnapshot::from_live(
             &fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .unwrap();
         let encoded = serde_json::to_vec(&snapshot).unwrap();
@@ -6894,7 +7145,10 @@ mod tests {
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
         let snapshot = AwbcFiberStateSnapshot::from_live(
             &fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .unwrap();
         let restored = snapshot.into_live_for_program(&owner).unwrap();
@@ -6962,13 +7216,30 @@ mod tests {
             });
         let checkpoint_owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
-        let before = fiber.checkpoint(&checkpoint_owner).unwrap();
+        let before = fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (checkpoint_owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
         assert!(
             !fiber
                 .recover_format_operand(&program, "failure".to_owned())
                 .unwrap()
         );
-        assert_eq!(fiber.checkpoint(&checkpoint_owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (checkpoint_owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
         let output = crate::awbc::vm::cancel_fiber(&program, &mut fiber).unwrap();
         assert!(output.observations.iter().any(|observation| matches!(
             observation,
@@ -7001,7 +7272,10 @@ mod tests {
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
         let mut wrong_ordinal = AwbcFiberStateSnapshot::from_live(
             &fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .unwrap();
         wrong_ordinal.frames[1]
@@ -7016,7 +7290,10 @@ mod tests {
 
         let mut wrong_site = AwbcFiberStateSnapshot::from_live(
             &fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .unwrap();
         wrong_site.frames[1]
@@ -7037,7 +7314,10 @@ mod tests {
 
         let mut wrong_function = AwbcFiberStateSnapshot::from_live(
             &fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .unwrap();
         wrong_function.frames[1].function = AwbcFunctionId(2);

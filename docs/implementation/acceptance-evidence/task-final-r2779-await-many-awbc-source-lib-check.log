@@ -1,0 +1,283 @@
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:21:43
+   |
+21 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+24 |     SystemInfoKind, SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
+   |                                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:67:33
+   |
+67 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeAwbcProgramSourceField`
+  --> crates\arcweft-core\src\plan\task_source\program.rs:25:62
+   |
+25 | pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:15:5
+   |
+15 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+16 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+17 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:56:32
+   |
+56 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+error[E0277]: `?` couldn't convert the error to `AwbcRuntimeValueSnapshotError`
+   --> crates\arcweft-core\src\awbc\fiber\await_many.rs:338:10
+    |
+334 |           let source = original.awbc_template_source(
+    |  _______________________________-
+335 | |             self.plan,
+336 | |             limits,
+337 | |             &mut admission.task_source_meter(limits)?,
+338 | |         )?;
+    | |         -^ the trait `From<RuntimeAwbcTemplateSourceError>` is not implemented for `AwbcRuntimeValueSnapshotError`
+    | |_________|
+    |           this can't be annotated with `?` because it has type `Result<_, RuntimeAwbcTemplateSourceError>`
+    |
+note: `AwbcRuntimeValueSnapshotError` needs to implement `From<RuntimeAwbcTemplateSourceError>`
+   --> crates\arcweft-core\src\value\awbc_save.rs:32:1
+    |
+ 32 | pub enum AwbcRuntimeValueSnapshotError {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+    = help: `AwbcRuntimeValueSnapshotError` implements trait `From<T>`:
+              From<FiberStateError>
+              From<RuntimeAgentConstructionError>
+              From<RuntimeCallableValueError>
+              From<RuntimeFunctionApplyError>
+              From<RuntimeProgramTypeError>
+              From<RuntimeTaskProducerSourceError>
+              From<RuntimeValueNestingError>
+              From<RuntimeValueOwnershipAdmissionError>
+            and 3 others
+
+error[E0277]: `?` couldn't convert the error to `AwbcRuntimeValueSnapshotError`
+   --> crates\arcweft-core\src\awbc\fiber\await_many.rs:371:10
+    |
+367 |           let child_source = original.awbc_template_source(
+    |  _____________________________________-
+368 | |             *child,
+369 | |             limits,
+370 | |             &mut admission.task_source_meter(limits)?,
+371 | |         )?;
+    | |         -^ the trait `From<RuntimeAwbcTemplateSourceError>` is not implemented for `AwbcRuntimeValueSnapshotError`
+    | |_________|
+    |           this can't be annotated with `?` because it has type `Result<_, RuntimeAwbcTemplateSourceError>`
+    |
+note: `AwbcRuntimeValueSnapshotError` needs to implement `From<RuntimeAwbcTemplateSourceError>`
+   --> crates\arcweft-core\src\value\awbc_save.rs:32:1
+    |
+ 32 | pub enum AwbcRuntimeValueSnapshotError {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+    = help: `AwbcRuntimeValueSnapshotError` implements trait `From<T>`:
+              From<FiberStateError>
+              From<RuntimeAgentConstructionError>
+              From<RuntimeCallableValueError>
+              From<RuntimeFunctionApplyError>
+              From<RuntimeProgramTypeError>
+              From<RuntimeTaskProducerSourceError>
+              From<RuntimeValueNestingError>
+              From<RuntimeValueOwnershipAdmissionError>
+            and 3 others
+
+error[E0004]: non-exhaustive patterns: `RuntimeSequenceView::Views(_)` not covered
+  --> crates\arcweft-core\src\value\awbc_save\source_codec\sequence.rs:34:15
+   |
+34 |         match value {
+   |               ^^^^^ pattern `RuntimeSequenceView::Views(_)` not covered
+   |
+note: `RuntimeSequenceView<'_>` defined here
+  --> crates\arcweft-core\src\value\view\sequence.rs:13:17
+   |
+13 | pub(crate) enum RuntimeSequenceView<'a> {
+   |                 ^^^^^^^^^^^^^^^^^^^
+14 |     Views(&'a [RuntimeValueView<'a>]),
+   |     ----- not covered
+   = note: the matched value is of type `RuntimeSequenceView<'_>`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+   |
+94 ~             },
+95 +             RuntimeSequenceView::Views(_) => todo!()
+   |
+
+error[E0004]: non-exhaustive patterns: `RuntimeSequenceView::Views(_)` not covered
+   --> crates\arcweft-core\src\value\awbc_save\projection.rs:127:15
+    |
+127 |         match value {
+    |               ^^^^^ pattern `RuntimeSequenceView::Views(_)` not covered
+    |
+note: `RuntimeSequenceView<'_>` defined here
+   --> crates\arcweft-core\src\value\view\sequence.rs:13:17
+    |
+ 13 | pub(crate) enum RuntimeSequenceView<'a> {
+    |                 ^^^^^^^^^^^^^^^^^^^
+ 14 |     Views(&'a [RuntimeValueView<'a>]),
+    |     ----- not covered
+    = note: the matched value is of type `RuntimeSequenceView<'_>`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+145 ~             RuntimeSequenceView::Snapshot(_) => Err(Self::inert_projection_error()),
+146 ~             RuntimeSequenceView::Views(_) => todo!(),
+    |
+
+error[E0004]: non-exhaustive patterns: `RuntimeSequenceView::Views(_)` not covered
+   --> crates\arcweft-core\src\value\ownership\resources.rs:175:15
+    |
+175 |         match self {
+    |               ^^^^ pattern `RuntimeSequenceView::Views(_)` not covered
+    |
+note: `RuntimeSequenceView<'_>` defined here
+   --> crates\arcweft-core\src\value\view\sequence.rs:13:17
+    |
+ 13 | pub(crate) enum RuntimeSequenceView<'a> {
+    |                 ^^^^^^^^^^^^^^^^^^^
+ 14 |     Views(&'a [RuntimeValueView<'a>]),
+    |     ----- not covered
+    = note: the matched value is of type `RuntimeSequenceView<'_>`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+225 ~             },
+226 +             RuntimeSequenceView::Views(_) => todo!()
+    |
+
+Some errors have detailed explanations: E0004, E0277.
+For more information about an error, try `rustc --explain E0004`.
+warning: `arcweft-core` (lib) generated 24 warnings
+error: could not compile `arcweft-core` (lib) due to 5 previous errors; 24 warnings emitted

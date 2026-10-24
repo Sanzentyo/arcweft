@@ -699,11 +699,37 @@ impl ArcweftRuntimeExecutor {
 
     /// Returns the canonical program that owns Product AWBC fiber values.
     pub fn product_awbc_program(&self) -> Option<&AwbcProgram> {
+        self.admitted_product_awbc_program()
+            .map(|program| &**program)
+    }
+
+    /// Borrows the admitted executable together with its actual original Source.
+    pub fn admitted_product_awbc_program(
+        &self,
+    ) -> Option<&crate::awbc::product_step::AwbcProductProgram> {
         match &self.inner {
-            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => Some(executor.vm.program()),
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                Some(executor.vm.admitted_program())
+            }
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_)
             | ArcweftRuntimeExecutorInner::Vacant => None,
+        }
+    }
+
+    /// Selects this executor's complete authority for one retained group.
+    /// Product values keep its admitted Source; Native values keep the exact
+    /// `RuntimePlan` owner. Neither path creates a second allowance for fields.
+    pub fn retained_value_admission(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> crate::value::RuntimeRetainedValueAdmission {
+        match self.admitted_product_awbc_program() {
+            Some(program) => program.retained_value_admission(limits),
+            None => crate::value::RuntimeRetainedValueAdmission::for_program(
+                self.program_owner(),
+                limits,
+            ),
         }
     }
 

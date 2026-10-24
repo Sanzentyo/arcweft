@@ -107,8 +107,22 @@ fn program_handle_private_fiber_checkpoint_restores_its_original_source() {
         .unwrap()
         .set_register(AwbcRegisterId(2), handle)
         .unwrap();
-    let before = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
-    let checkpoint = fiber.checkpoint(&owner).unwrap();
+    let before = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
+    let checkpoint = fiber
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
     let foreign = super::super::AwbcProductProgram::admit(
         Arc::new((**code).clone()),
         crate::awbc::verify::AwbcVerifyBudget::default(),
@@ -125,7 +139,14 @@ fn program_handle_private_fiber_checkpoint_restores_its_original_source() {
         Err(crate::awbc::fiber::FiberStateError::CheckpointProgramOwner)
     ));
     assert_eq!(
-        AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap(),
+        AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+        )
+        .unwrap(),
         before
     );
     assert!(matches!(
@@ -140,7 +161,14 @@ fn program_handle_private_fiber_checkpoint_restores_its_original_source() {
         .restore(checkpoint, &admitted)
         .expect("private rollback retains the actual original Program Source");
     assert_eq!(
-        AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap(),
+        AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+        )
+        .unwrap(),
         before
     );
 }

@@ -382,7 +382,8 @@ fn admitted_view_source_reaches_entry_flow_replacement_and_inert_restore() {
     .unwrap();
     let before = entry.snapshot().unwrap();
     let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&code));
-    let inert = AwbcProductExecutorSaveSnapshot::from_live(&before, &owner).unwrap();
+    let inert =
+        AwbcProductExecutorSaveSnapshot::from_live(&before, entry.admitted_program()).unwrap();
     let inert = serde_json::from_slice(&serde_json::to_vec(&inert).unwrap()).unwrap();
     entry = entry
         .restore_inert_snapshot_owned(inert)
@@ -404,11 +405,8 @@ fn admitted_view_source_reaches_entry_flow_replacement_and_inert_restore() {
     );
     assert!(Arc::ptr_eq(&entry.program_arc(), &replacement));
     assert_eq!(entry.snapshot().unwrap(), before);
-    let inert = AwbcProductExecutorSaveSnapshot::from_live(
-        &before,
-        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&replacement)),
-    )
-    .unwrap();
+    let inert =
+        AwbcProductExecutorSaveSnapshot::from_live(&before, entry.admitted_program()).unwrap();
     entry = entry
         .restore_inert_snapshot_owned(inert)
         .unwrap_or_else(|(_, error)| panic!("{error}"));

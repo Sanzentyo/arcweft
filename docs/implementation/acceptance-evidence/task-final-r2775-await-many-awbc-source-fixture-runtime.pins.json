@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2774-await-many-awbc-source-fixture-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79384576,
+      "nonTest": false,
+      "sha256": "dac33059e2419a90fff6885b53a1dd9f91cb37aa11617d18f2189d5b0491ae77"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T11:08:39.0701287Z"
+}

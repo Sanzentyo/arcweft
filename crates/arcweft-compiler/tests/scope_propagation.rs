@@ -253,7 +253,10 @@ fn scope_carrier_slots_restore_at_each_active_frame_instruction() {
             {
                 let snapshot = AwbcFiberStateSnapshot::from_live(
                     &fiber,
-                    &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+                    &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+                        arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+                        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                    ),
                 )
                 .unwrap();
                 fiber = snapshot.into_live_for_program(&owner).unwrap();

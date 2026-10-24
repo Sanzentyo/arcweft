@@ -168,13 +168,12 @@ impl Clone for BundleSessionSavePayload {
 impl BundleSessionSavePayload {
     pub(crate) fn from_snapshot(
         snapshot: &BundleSessionSnapshot,
-        program_owner: &RuntimeProgramOwner,
+        program: &arcweft_core::awbc::product_step::AwbcProductProgram,
         dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<Self, String> {
-        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
-            program_owner.clone(),
-            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let program_owner = &RuntimeProgramOwner::Awbc(program.program_arc());
+        let mut admission = program
+            .retained_value_admission(arcweft_core::entry::RuntimeSchemaLimits::engine_default());
         snapshot
             .runtime
             .admit_metadata(&mut admission)
@@ -199,7 +198,7 @@ impl BundleSessionSavePayload {
                 generation: snapshot.executor.generation,
                 state: AwbcProductExecutorSaveSnapshot::from_live(
                     &snapshot.executor.state,
-                    program_owner,
+                    program,
                 )
                 .map_err(|error| error.to_string())?,
             },

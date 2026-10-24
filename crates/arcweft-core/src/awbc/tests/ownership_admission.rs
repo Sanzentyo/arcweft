@@ -176,7 +176,14 @@ fn ownership_guard_rejects_an_affine_descendant_without_consuming_the_source() {
     let program = Arc::new(guarded_copy_program());
     let owner = RuntimeProgramOwner::Awbc(Arc::clone(&program));
     let mut fiber = owned_sequence(&program, true);
-    let before = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+    let before = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     let output = super::super::vm::step(
         &program,
         &mut fiber,
@@ -187,7 +194,14 @@ fn ownership_guard_rejects_an_affine_descendant_without_consuming_the_source() {
     .unwrap();
     assert!(matches!(output.exit, super::super::vm::VmExit::Trapped(_)));
     assert_eq!(fiber.cursor.instruction_offset, 0);
-    let after = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+    let after = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     assert_eq!(after.frames[0].registers, before.frames[0].registers);
     assert!(after.frames[0].registers[1].as_ref().is_none());
 }
@@ -197,7 +211,14 @@ fn restore_rechecks_original_cursor_ownership_before_atomic_replacement() {
     let program = Arc::new(guarded_copy_program());
     let owner = RuntimeProgramOwner::Awbc(Arc::clone(&program));
     let affine = owned_sequence(&program, true);
-    let affine_image = AwbcFiberStateSnapshot::from_live(&affine, &owner).unwrap();
+    let affine_image = AwbcFiberStateSnapshot::from_live(
+        &affine,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     affine_image.clone().into_live_for_program(&owner).unwrap();
     let mut valid = owned_sequence(&program, false);
     super::super::vm::step(
@@ -209,7 +230,14 @@ fn restore_rechecks_original_cursor_ownership_before_atomic_replacement() {
     )
     .unwrap();
     assert_eq!(valid.cursor.instruction_offset, 1);
-    let saved = AwbcFiberStateSnapshot::from_live(&valid, &owner).unwrap();
+    let saved = AwbcFiberStateSnapshot::from_live(
+        &valid,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     let encoded = serde_json::to_vec(&saved).unwrap();
     let decoded: AwbcFiberStateSnapshot = serde_json::from_slice(&encoded).unwrap();
     let mut restored = decoded.into_live_for_program(&owner).unwrap();
@@ -220,7 +248,14 @@ fn restore_rechecks_original_cursor_ownership_before_atomic_replacement() {
         .unwrap_err();
     assert!(error.to_string().contains("unrestricted"), "{error:?}");
     assert_eq!(
-        AwbcFiberStateSnapshot::from_live(&restored, &owner).unwrap(),
+        AwbcFiberStateSnapshot::from_live(
+            &restored,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+        )
+        .unwrap(),
         saved
     );
     super::super::vm::step(
@@ -268,8 +303,14 @@ fn ownership_and_resources_share_one_cumulative_live_and_inert_traversal() {
 fn inert_frame_counts_precede_original_ownership_dataflow() {
     let mut program = guarded_copy_program();
     let original = RuntimeProgramOwner::Awbc(Arc::new(program.clone()));
-    let saved =
-        AwbcFiberStateSnapshot::from_live(&owned_sequence(&program, false), &original).unwrap();
+    let saved = AwbcFiberStateSnapshot::from_live(
+        &owned_sequence(&program, false),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (original).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     program.instructions[0] = AwbcInstruction::Nop;
     let owner = RuntimeProgramOwner::Awbc(Arc::new(program));
     for (maximum, resource_first) in [(1, true), (2, false)] {
@@ -381,7 +422,14 @@ fn restore_checks_copy_subtrees_without_rejecting_affine_siblings() {
     )
     .unwrap();
     assert_eq!(fiber.cursor.instruction_offset, 2);
-    let saved = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+    let saved = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     let mut restored = saved.clone().into_live_for_program(&owner).unwrap();
     let mut tampered = saved.clone();
     let Some(AwbcRuntimeValueSnapshot::Tuple(items)) = tampered.frames[0].registers[2].as_mut()
@@ -399,7 +447,14 @@ fn restore_checks_copy_subtrees_without_rejecting_affine_siblings() {
         "{error:?}"
     );
     assert_eq!(
-        AwbcFiberStateSnapshot::from_live(&restored, &owner).unwrap(),
+        AwbcFiberStateSnapshot::from_live(
+            &restored,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+        )
+        .unwrap(),
         saved
     );
     super::super::vm::step(
@@ -419,8 +474,14 @@ fn restore_checks_copy_subtrees_without_rejecting_affine_siblings() {
     items[0] = RuntimeValue::Seq(RuntimeSeq::values(vec![
         distinct.frames[0].registers[0].take().unwrap(),
     ]));
-    let error = AwbcFiberStateSnapshot::from_live(&fiber, &owner)
-        .expect_err("live capture must check the same original subtree proof before copying");
+    let error = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .expect_err("live capture must check the same original subtree proof before copying");
     assert!(
         error
             .to_string()
@@ -618,7 +679,14 @@ fn restore_checks_surviving_copy_children_in_a_partially_moved_record() {
     .unwrap();
     assert_eq!(fiber.cursor.instruction_offset, 3);
     assert!(fiber.frames[0].registers[2].record_parts().unwrap().1[1].is_vacant());
-    let saved = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+    let saved = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     let mut restored = saved.clone().into_live_for_program(&owner).unwrap();
     let mut distinct = mixed_copy_fiber(&program, "partial.distinct.child");
     let forged = RuntimeValue::Seq(RuntimeSeq::values(vec![
@@ -644,7 +712,14 @@ fn restore_checks_surviving_copy_children_in_a_partially_moved_record() {
         "{error:?}"
     );
     assert_eq!(
-        AwbcFiberStateSnapshot::from_live(&restored, &owner).unwrap(),
+        AwbcFiberStateSnapshot::from_live(
+            &restored,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+        )
+        .unwrap(),
         saved
     );
     super::super::vm::step(

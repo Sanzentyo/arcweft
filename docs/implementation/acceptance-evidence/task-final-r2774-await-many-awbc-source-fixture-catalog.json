@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "18e95147d3b83e19e0e93313a12a5e75c1bb98dc",
+  "name": "task-final-r2774-await-many-awbc-source-fixture-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "--all-features",
+    "--locked",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "-E",
+    "test(await_many)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2774-await-many-awbc-source-fixture-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T11:01:43.4210340Z",
+  "finishedAt": "2026-10-24T11:02:29.6039002Z"
+}

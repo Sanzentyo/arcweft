@@ -184,7 +184,14 @@ fn dialogue_callback_projects_retained_parameter_into_body_argument_and_executes
     ));
     assert_eq!(fiber.status, FiberStatus::Suspended);
     let owner = RuntimeProgramOwner::Awbc(Arc::clone(&program));
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     let bytes = serde_json::to_vec(&snapshot).unwrap();
     let restored: AwbcFiberStateSnapshot = serde_json::from_slice(&bytes).unwrap();
     let mut fiber = restored.into_live_for_program(&owner).unwrap();

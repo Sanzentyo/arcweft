@@ -207,6 +207,7 @@ impl RuntimeSequenceView<'_> {
                 Ok(())
             }
             Self::Live(RuntimeSeq::Values(_))
+            | Self::Views(_)
             | Self::Snapshot(AwbcRuntimeSeqSnapshot::Values(_))
             | Self::DialogueBindings(_)
             | Self::DialogueEffects(_) => {

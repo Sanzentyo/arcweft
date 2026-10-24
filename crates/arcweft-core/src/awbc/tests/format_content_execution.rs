@@ -1359,7 +1359,10 @@ fn flow_format_attempt_catches_nested_recoverable_call_restores_and_runs_later_o
 
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("in-flight Flow operand attempt snapshots");
     let bytes = serde_json::to_vec(&snapshot).expect("attempt snapshot serializes");
@@ -1562,7 +1565,10 @@ fn nested_flow_format_attempts_keep_independent_frame_owned_state_across_restore
 
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("nested Flow format attempts snapshot");
     let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
@@ -1633,7 +1639,10 @@ fn formatter_snapshot_keeps_start_locale_across_ambient_change() {
     );
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let bytes = serde_json::to_vec(&snapshot).unwrap();
@@ -1702,7 +1711,10 @@ fn format_content_vm_evaluates_style_after_recoverable_value_failure_and_resumes
     ));
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("recoverable formatter state snapshots");
     let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
@@ -1790,7 +1802,10 @@ fn formatter_recovers_nested_helper_and_trait_errors_after_a_saved_budget_yield(
         ));
         let snapshot = AwbcFiberStateSnapshot::from_live(
             &fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .expect("nested call snapshots");
         let encoded = serde_json::to_vec(&snapshot).expect("nested call snapshot serializes");
@@ -1924,7 +1939,10 @@ fn project_display_text_runs_in_the_caller_fiber_and_restores_its_result_continu
 
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("in-flight project formatter state snapshots");
     let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
@@ -1983,7 +2001,10 @@ fn flow_attempt_project_display_uses_staged_context_and_restores_method_call() {
 
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("project attempt method continuation snapshots");
     let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");

@@ -1208,7 +1208,11 @@ impl super::AwbcProductStepExecutor {
         let effect_site = before.cursor;
         let effect_frame = before.active_frame()?.instance;
         let mut effect_checkpoint =
-            Some(before.checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))?);
+            Some(
+                before.checkpoint(&mut self.program.retained_value_admission(
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ))?,
+            );
         let phase = std::mem::replace(&mut frame.phase, ProductDialoguePhase::Transitioning);
         let ProductDialoguePhase::Activating {
             fiber,

@@ -1,8 +1,8 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-24。照合基点は main `18e95147d3b83e19e0e93313a12a5e75c1bb98dc`。
-照合開始時の作業ツリーは tracked 変更18件／untracked 6件。
-現在ソースや未コミット変更から、新しい全件実行結果を推定しない。
+確認日: 2026-10-24。今回の実装・検証の基点は main `d741187573117bce556f453018593cb482f878ea`。
+既存のtracked WIP 14件とuntracked 6件を保持し、変更入力を固定して検証した。
+後続cutのowner実行を、以前の逆依存横断集計へ加算しない。
 
 Array Map収束時の、Core全53逆依存packageの横断集計は
 **7,254実行／7,204 PASS／50 FAIL／39既存ignored**。
@@ -16,7 +16,7 @@ library 5,474件とintegration／bin 1,780件を重複なく集約し、
 最終失敗は下表の既存CLI 50件で、追加失敗0。修復済みの4,096要素Array MapもPASS。
 初回の追加失敗と訂正理由は履歴へ保持し、上限や受入条件を緩めていない。
 
-後続のNative AwaitMany Source接続は別cutとして扱い、上記の横断件数へ加算しない。
+後続のNative／AWBC AwaitMany Source接続は別cutとして扱う。
 その検証範囲、共有gate、結果の再利用範囲、未実行の受入は下表に記す。
 
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
@@ -54,13 +54,14 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | Thread の返り値／返却 handle | **結果受渡し・generic capture／nested joinは対象条件で検証・公開済み** | `dd7ce52715d3beda046ad465063623ece4ea5092` の結果型・Return／Try境界、`a74957e455597a0d3160af11c914e2e93f58d144` のNative CPS／accepted receipt束縛を維持する。型付きresult pattern、起動前の拒否／panic rollback、Host NeedとProgram ThreadHandleおよびpayload型の取り違え拒否も保持する。generic `T=bool`の複数回capture使用と、親return後のattached子孫joinを3 backend×false／trueで確認した。横断JSONのpackage集計では `arcweft-core`（library＋integration/bin）2,029／2,029、`arcweft-compiler` 617／617がPASS。[横断集計](acceptance-evidence/task-array-map-reverse-combined-execution.json)。Core library-onlyのfresh runと後続Native Source cutは別項目に示す。公開Native saveの対応は別項目。 |
 | AWBC の独立 Thread scheduling | **実Source起動・結果／capture・nested join・各step公開保存復元は対象条件で検証・公開済み** | `StartProgram`、独立kernel、accepted handle、Task root、共有registryへの結果退役を実際に通過する。元Sourceと同じadmissionで値を復元し、VM awaitは消費前にNeed／Taskを型で検査する。ローカルProgram値をHost ACK待ちから切り離した修復後、全体／entry選択lowering×Bool false／true、1-op予算、各stepの公開save／restore、task／completion各1件がPASS。generic capture／nested joinも3 backendでPASSし、同横断集計の逆依存通常選択で新規失敗はない。cancelと全資源境界の包括的な受入は未確認であり、上記の受入条件とは分ける。 |
 | Native AwaitMany の Source／operand admission | **起動経路を接続し、Core owner検証済み** | baseは元Source、完全なcapture群と評価済みsourceを検査してからcaptureを複製する。childも実際のitem／indexとcaptureを検査してから一時bindingを作る。TaskSpecのclass／priority／scope／policy／outcomeは元のtemplateが所有する。別lease・別endpoint・失敗済みbankの拒否をNative／AWBCのSource carrierで確認し、Core library全1,977件がPASS。未使用になった直接生成APIは削除した。実際のAWBC launch／restoreの切替と、全14 familyの最終受入はこの結果に含めない。[検証範囲と原本](acceptance-evidence/task-await-many-native-source-acceptance.json)。 |
+| AWBC AwaitMany の Source起動／save／checkpoint | **起動・保持handle・保存復元を元Sourceへ接続し、Core owner検証済み** | base／childを元Sourceで認証し、実際のframeの型bindingとoperandからproducerを導出してからrequest kernelを実行する。行のdigestだけで生成・照合する旧3 APIは削除した。live／inertの保持値を同じbankで検査し、元型とexpected-keyの照合で値のnodesを二重課金しない。公開saveはadmitted Productを受け取り、sessionの保存・復元も同じSourceを保持するbankを使う。private checkpointは同じexecutable Arcでも別Source leaseを拒否し、型を保ったitem改変も拒否する。debug labelの上限はcapture参照前に共通APIで検査する。最終Core libraryは1,982／1,982 PASS、skip 0。逆依存53のruntime全体・Generic Match 151件・Tier2の新規実行はこのcutに含めない。[検証範囲と原本](acceptance-evidence/task-await-many-awbc-source-acceptance.json)。 |
 | 公開 executor save | **バックエンドごとに異なる** | `crates/arcweft-core/src/executor.rs` の `snapshot_for_save` は Product AWBC を扱う一方、RuntimePlanVm／StructuredAot は `UnsupportedTier` を返す。Product の既存 save/restore の成功は保持し、Native 公開 save の未対応を別項目として扱う。 |
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、実際に受理されたProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗した。checkpointに元executable leaseを保持し、復元先は同じleaseのadmitted Productに限定する。元Sourceと同一admissionを値mapperへ渡し、Product・activation・codegenの呼出側を移行した。R2535の新規Coreケースでhandleを取り出して破棄した候補から元状態へ復元でき、同内容の別leaseは元fiberを変えず拒否する。private checkpointは非Serde、公開wire DTOのJSON／cleanup検証は維持し、R2531のcompile-fail 2件もPASS。既存のdetached Bool入力rollbackも通過している。private checkpointの受入と、公開saveの全資源境界の包括的な受入は分ける。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **前回の横断通常選択は641 PASS／50 FAIL・新規失敗0** | 全失敗が既存CLI識別子と一致する。旧51件中の4,096要素Array MapはPASSし、残る50件を今回再現した。旧Compiler失敗もPASS、Compiler全617件はPASS。[実行・旧失敗との照合](acceptance-evidence/task-array-map-reverse-combined-execution.json)。診断の分類は下表に一度だけ記載する。 |
 | Coreの全53逆依存runtime | **Array Map cutの全target照合を保持・直近Core libraryは全PASS** | library 53 targetとintegration 161／bin 5 targetを確認。libraryはCore library-only 1,976件の再実行と、byte hash差分0の他52バイナリ3,498件の成功を再利用した。[libraryの再利用範囲](acceptance-evidence/task-array-map-reverse-library.final-summary.json)、[integrationの終端・target照合](acceptance-evidence/task-array-map-reverse-integration-summary.json)。Array構築4件を追加し、旧展開前提の1件をconstant-inventory／exact Array長の検証へ置換した。他のcase setは差分0。named caseなしのlibrary 4／bin 4 targetはbuildだけとして扱う。 |
-| 最終 workspace／Tier 2／Native-Web capture parity | **直近workspace check／Core ClippyはPASS・横断runtimeにCLI失敗履歴あり・Tier2は未実行** | 直近R2772 workspace check／R2771 Core全target Clippyは終了0、警告あり。workspace全体のClippyはArray Map cutのR2662の実績を保持する。R2661／R2662 all-target／all-feature／locked workspace check／Clippyは終了0、警告あり。訂正したCLI test targetのR2760 Clippyも終了0、警告あり。R2663構造gateはblocking 0。R2531非Serde doctest 2件等の実績は履歴に保持する。39既存ignored、Tier2とNative-Web capture parityの包括的な受入は未実行。この未実行を、受入済みのGeneric Matchや個別runtime境界の未実装へ読み替えない。 |
+| 最終 workspace／Tier 2／Native-Web capture parity | **直近workspace check／ClippyはPASS・横断runtimeにCLI失敗履歴あり・Tier2は未実行** | R2788 workspace check／R2789 workspace Clippyはall-target／all-feature／lockedで終了0、警告あり。後続のCore限定のpanic・記法・fixture整理はR2790全target Clippy終了0・変更行警告0、R2792 library 1,982／1,982 PASS。workspace gate後にconsumer APIや非Coreソースは変更していない。[今回の範囲](acceptance-evidence/task-await-many-awbc-source-acceptance.json)。R2771／R2772、R2661／R2662、R2760、R2663構造gate blocking 0、R2531非Serde doctest 2件等の実績は履歴に保持する。39既存ignored、Tier2とNative-Web capture parityの包括的な受入は未実行。この未実行を、受入済みのGeneric Matchや個別runtime境界の未実装へ読み替えない。 |
 
 ## CLIの具体的な観測
 

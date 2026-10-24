@@ -524,8 +524,9 @@ fn admitted_program_context_proof_survives_pure_invocation_and_owned_restore() {
         )
         .unwrap();
         let before = executor.snapshot().unwrap();
-        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
-        let inert = AwbcProductExecutorSaveSnapshot::from_live(&before, &owner).unwrap();
+        let inert =
+            AwbcProductExecutorSaveSnapshot::from_live(&before, executor.admitted_program())
+                .unwrap();
         let inert = serde_json::from_slice(&serde_json::to_vec(&inert).unwrap()).unwrap();
         executor = executor
             .restore_inert_snapshot_owned(inert)
@@ -628,7 +629,10 @@ fn round_trip_context_fiber(fixture: &ContextFixture, fiber: &FiberState) -> Fib
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
     let snapshot = AwbcFiberStateSnapshot::from_live(
         fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let encoded = serde_json::to_vec(&snapshot).unwrap();
@@ -671,7 +675,14 @@ fn context_cause_type_is_checked_before_capture_or_construction_in_both_stages()
         if !stages.insert(default_stage) {
             continue;
         }
-        let snapshot = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        let snapshot = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
         for value in [
             Value::Bool(true),
             Value::Callable(AwbcRuntimeCallableSnapshot {
@@ -713,11 +724,24 @@ fn context_cause_type_is_checked_before_capture_or_construction_in_both_stages()
         };
         *pending = Pending::ResultErr(RuntimeValue::Bool(true));
         assert!(matches!(
-            AwbcFiberStateSnapshot::from_live(&invalid_live, &owner),
+            AwbcFiberStateSnapshot::from_live(
+                &invalid_live,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default()
+                )
+            ),
             Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
         ));
         assert_eq!(
-            AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap(),
+            AwbcFiberStateSnapshot::from_live(
+                &fiber,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default()
+                )
+            )
+            .unwrap(),
             snapshot
         );
         if stages.len() == 2 {
@@ -737,7 +761,14 @@ fn context_source_retains_the_original_payload_row_in_an_unsealed_duplicate_inve
     );
     context_step(&fixture, &mut fiber, true);
     let original_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
-    let mut saved = AwbcFiberStateSnapshot::from_live(&fiber, &original_owner).unwrap();
+    let mut saved = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (original_owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     let mut program = (*fixture.program).clone();
     let original_string = program.runtime_types[0].semantic_identity();
     let different = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
@@ -796,7 +827,10 @@ fn verified_defaulted_context_callback_restores_both_stages_and_writes_result_on
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let mut forged = snapshot.clone();
@@ -1354,7 +1388,10 @@ fn verified_lazy_context_callback_survives_budget_snapshot_without_replay() {
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let encoded = serde_json::to_vec(&snapshot).unwrap();

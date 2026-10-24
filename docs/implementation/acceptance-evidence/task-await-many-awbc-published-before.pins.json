@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2791-await-many-awbc-core-published-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 79469056,
+      "nonTest": false,
+      "sha256": "8070d8ea649c1154fb06be966949a3803187b6cee917465943981b7b4f22f63e"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T13:34:25.5637215Z"
+}

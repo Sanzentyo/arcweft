@@ -1214,9 +1214,6 @@ impl Engine {
                     &mut admission,
                 )
                 .map_err(|error| error.to_string())?;
-            admission
-                .validate_metadata_string(&target.base.definition.debug_label)
-                .map_err(|error| error.to_string())?;
             let captured = values.into_iter().cloned().collect::<Vec<_>>();
             Ok::<_, String>((source, checked, captured))
         })();
@@ -1516,9 +1513,6 @@ impl Engine {
                     self.fiber.frame.env.function_instantiation(),
                     &mut admission,
                 )
-                .map_err(|error| error.to_string())?;
-            admission
-                .validate_metadata_string(&target.child.definition.debug_label)
                 .map_err(|error| error.to_string())?;
             Ok::<_, String>((source, checked))
         })();

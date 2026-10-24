@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d741187573117bce556f453018593cb482f878ea",
+  "name": "task-final-r2779-await-many-awbc-source-lib-check",
+  "command": [
+    "check",
+    "--package",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2779-await-many-awbc-source-lib-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T12:09:45.6351174Z",
+  "finishedAt": "2026-10-24T12:12:46.6989171Z"
+}

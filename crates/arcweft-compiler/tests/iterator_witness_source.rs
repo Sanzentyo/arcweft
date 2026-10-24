@@ -262,9 +262,7 @@ fn run_and_restore_awbc_witness_plan(
         },
         engine::{FlowExit, FlowFiberStatus},
         step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
-        task::RuntimeProgramOwner,
     };
-    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
     let mut executor =
         AwbcProductStepExecutor::for_entry_arc(program, AwbcEntryId(0), 4096).unwrap();
     let next_function = executor
@@ -283,7 +281,9 @@ fn run_and_restore_awbc_witness_plan(
     for _ in 0..2048 {
         if !restored && executor.compact_fiber().cursor.function == next_function {
             let snapshot = executor.snapshot_for_save().unwrap();
-            let image = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &owner).unwrap();
+            let image =
+                AwbcProductExecutorSaveSnapshot::from_live(&snapshot, executor.admitted_program())
+                    .unwrap();
             let bytes = serde_json::to_vec(&image).unwrap();
             let decoded: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
             executor = executor

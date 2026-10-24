@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "18e95147d3b83e19e0e93313a12a5e75c1bb98dc",
+  "name": "task-final-r2775-await-many-awbc-source-fixture-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--all-features",
+    "--locked",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "-E",
+    "test(await_many)",
+    "--no-fail-fast",
+    "--status-level",
+    "none",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2775-await-many-awbc-source-fixture-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T11:08:39.1350158Z",
+  "finishedAt": "2026-10-24T11:08:41.3662641Z"
+}

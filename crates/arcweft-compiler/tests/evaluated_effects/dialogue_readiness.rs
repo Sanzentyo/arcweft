@@ -472,11 +472,8 @@ fn decoded_awbc_activation_quantum_and_portable_restore_resume_once_at_the_next_
         })
         .expect("actual activation quantum yields within a fixed bound");
     let snapshot = original.snapshot().expect("preempted owner snapshots");
-    let inert = AwbcProductExecutorSaveSnapshot::from_live(
-        &snapshot,
-        &arcweft_core::task::RuntimeProgramOwner::Awbc(original.program_arc()),
-    )
-    .expect("portable activation");
+    let inert = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, original.admitted_program())
+        .expect("portable activation");
     let bytes = serde_json::to_vec(&inert).expect("version1 save DTO serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_slice(&bytes).expect("save DTO decodes");

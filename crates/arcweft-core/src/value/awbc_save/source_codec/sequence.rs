@@ -33,6 +33,7 @@ impl Writer<'_> {
         self.node(depth)?;
         match value {
             value @ (RuntimeSequenceView::Live(RuntimeSeq::Values(_))
+            | RuntimeSequenceView::Views(_)
             | RuntimeSequenceView::Snapshot(Sequence::Values(_))
             | RuntimeSequenceView::DialogueBindings(_)
             | RuntimeSequenceView::DialogueEffects(_)) => {

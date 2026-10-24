@@ -2706,10 +2706,11 @@ impl AwbcProductStepExecutor {
                     return 1;
                 }
             };
-        let checkpoint = match self
-            .fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
-        {
+        let checkpoint = match self.fiber.checkpoint(
+            &mut self
+                .program
+                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
+        ) {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(error.into(), output);
@@ -3101,10 +3102,11 @@ impl AwbcProductStepExecutor {
             }
             return false;
         }
-        let checkpoint = match front
-            .fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
-        {
+        let checkpoint = match front.fiber.checkpoint(
+            &mut self
+                .program
+                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
+        ) {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 if let crate::awbc::fiber::AwbcFiberRoot::RootReducer(entry) = front.fiber.root {

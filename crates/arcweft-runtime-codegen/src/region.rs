@@ -10,7 +10,6 @@ use arcweft_core::awbc::schema::{
     AwbcRegisterId, AwbcResumePointId, AwbcSafePointKind, AwbcSourceMapId, AwbcTrapCode,
     AwbcTypeId,
 };
-use arcweft_core::task::RuntimeProgramOwner;
 use arcweft_core::value::{RuntimeFormatContext, RuntimeValue};
 use std::fmt;
 
@@ -191,8 +190,10 @@ pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
     validate_metadata(region.metadata(), identity, program, fiber)?;
     let available = instruction_budget.min(fiber.budget.remaining);
     let entry_budget = fiber.budget;
-    let owner = RuntimeProgramOwner::Awbc(program.program_arc());
-    let checkpoint = fiber.checkpoint(&owner)?;
+    let checkpoint = fiber.checkpoint(
+        &mut program
+            .retained_value_admission(arcweft_core::entry::RuntimeSchemaLimits::engine_default()),
+    )?;
     let result = region.step(CompiledRegionInput {
         program,
         format_context,

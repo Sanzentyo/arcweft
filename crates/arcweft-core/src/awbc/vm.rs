@@ -3065,9 +3065,12 @@ fn execute_terminator(
             binding,
             resume,
         } => {
+            let admitted = context
+                .ok_or(VmError::MissingExecutionContext)?
+                .admitted_program(program)?;
             let (captured, sequence) = fiber
                 .active_frame_mut()?
-                .take_await_many_inputs(program, *plan, *source)?;
+                .take_await_many_inputs(admitted, *plan, *source)?;
             let items = sequence.into_values();
             let results = vec![None; items.len()];
             suspend(

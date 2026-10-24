@@ -149,10 +149,9 @@ impl BundleSession {
     }
 
     pub fn snapshot_session(&self) -> Result<BundleSessionSnapshot, BundleSessionSaveError> {
-        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
-            self.executor.program_owner(),
-            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let mut admission = self
+            .executor
+            .retained_value_admission(arcweft_core::entry::RuntimeSchemaLimits::engine_default());
         admission
             .validate_metadata_string(&self.source_label)
             .map_err(|error| BundleSessionSaveError::Encode {
@@ -331,7 +330,11 @@ impl BundleSession {
         let snapshot = self.snapshot_session()?;
         let payload = BundleSessionSavePayload::from_snapshot(
             &snapshot,
-            &self.executor.program_owner(),
+            self.executor
+                .admitted_product_awbc_program()
+                .ok_or_else(|| BundleSessionSaveError::Encode {
+                    message: "the session snapshot has no admitted Product executable".into(),
+                })?,
             self.runtime_images
                 .images()
                 .filter_map(|image| image.runtime().character_dialogue_schema.as_deref())
@@ -416,8 +419,7 @@ impl BundleSession {
         let payload = payload.bind_executor(&self.executor)?;
         payload.admit_retained(
             &program_owner,
-            &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
-                program_owner.clone(),
+            &mut self.executor.retained_value_admission(
                 arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
             ),
             dialogue_schema,
@@ -467,10 +469,9 @@ impl BundleSession {
         snapshot: &BundleSessionSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
         let owner = self.executor.program_owner();
-        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let mut admission = self
+            .executor
+            .retained_value_admission(arcweft_core::entry::RuntimeSchemaLimits::engine_default());
         snapshot
             .runtime
             .admit_metadata(&mut admission)

@@ -1018,12 +1018,12 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
             let first = snapshot.mounts[0].runtime_parameters.iter().find(|binding| binding.name == "first").unwrap().value.clone();
             let executor = AwbcProductStepExecutor::for_program_invocation(Arc::clone(&awbc), program, vec![first], arcweft_core::task::GenerationId::new(0), 64).unwrap();
             let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
-            let image = AwbcFiberStateSnapshot::from_live(executor.compact_fiber(), &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc))).unwrap();
+            let image = AwbcFiberStateSnapshot::from_live(executor.compact_fiber(), &mut executor.admitted_program().retained_value_admission(arcweft_core::entry::RuntimeSchemaLimits::engine_default())).unwrap();
             let encoded = serde_json::to_vec(&image).unwrap();
             let decoded: AwbcFiberStateSnapshot = serde_json::from_slice(&encoded).unwrap();
             let mut restored = decoded.into_live_for_program(&owner).unwrap();
             restored.validate_for_program(&awbc).unwrap();
-            let checkpoint = restored.checkpoint(&arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc))).unwrap();
+            let checkpoint = restored.checkpoint(&mut executor.admitted_program().retained_value_admission(arcweft_core::entry::RuntimeSchemaLimits::engine_default())).unwrap();
             restored.active_frame_mut().unwrap().clear_register(arcweft_core::awbc::schema::AwbcRegisterId(0)).unwrap();
             restored.restore(checkpoint, executor.admitted_program()).unwrap();
             let mut missing = image.clone();
@@ -1036,7 +1036,7 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
             let returned = restored.frames[0].registers.iter().find_map(|storage| storage.as_ref()).unwrap().clone();
             restored.mark_returned(Some(returned)).unwrap();
             restored.validate_for_program(&awbc).unwrap();
-            let mut frameless = AwbcFiberStateSnapshot::from_live(&restored, &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc))).unwrap();
+            let mut frameless = AwbcFiberStateSnapshot::from_live(&restored, &mut executor.admitted_program().retained_value_admission(arcweft_core::entry::RuntimeSchemaLimits::engine_default())).unwrap();
             frameless.frames.clear();
             let rejected = frameless.into_live_for_program(&owner);
             assert!(matches!(&rejected, Err(arcweft_core::value::AwbcRuntimeValueSnapshotError::ProgramType(error))

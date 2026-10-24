@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "d741187573117bce556f453018593cb482f878ea",
+  "name": "task-final-r2781-await-many-awbc-source-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "--all-features",
+    "--locked",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "-E",
+    "test(await_many) | test(retained_additional_type_obligations)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2781-await-many-awbc-source-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T12:32:48.2835331Z",
+  "finishedAt": "2026-10-24T12:35:21.2391015Z"
+}

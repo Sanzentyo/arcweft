@@ -2145,8 +2145,7 @@ entry cli @entry.main { goto @flow.main }
                     let arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) =
                         snapshot;
                     let saved = arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
-                        &saved, &current.program_owner(),
-                    ).expect("project the cancellation boundary to its save grammar");
+                        &saved, current.admitted_product_awbc_program().unwrap()).expect("project the cancellation boundary to its save grammar");
                     let bytes = serde_json::to_vec(&saved).expect("encode cancellation save DTO");
                     let decoded = serde_json::from_slice::<
                         arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot,

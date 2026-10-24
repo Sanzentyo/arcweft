@@ -645,9 +645,25 @@ impl AwbcProductStepExecutor {
         backend: &mut impl crate::pure::RuntimeCallBackend,
     ) -> Result<(), ProductStepError> {
         use crate::awbc::schema::AwbcHostTaskPlanKind;
-        use crate::value::{RuntimeTupleView, RuntimeValueView};
-        let record = self
-            .program
+        use crate::task::RuntimeTaskTemplateArguments;
+        use crate::value::{RuntimeSequenceView, RuntimeValueSource, RuntimeValueView};
+        let admitted = self.program.clone();
+        let original = admitted.original_task_source().ok_or_else(|| {
+            ProductStepError::Input("AwaitMany requires its admitted original Source".into())
+        })?;
+        let mut admission =
+            admitted.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let base_source = original
+            .awbc_template_source(
+                state.plan,
+                limits,
+                &mut admission
+                    .task_source_meter(limits)
+                    .map_err(|error| ProductStepError::Input(error.to_string()))?,
+            )
+            .map_err(|error| ProductStepError::Input(error.to_string()))?;
+        let record = admitted
             .task_plans
             .get(state.plan.index())
             .ok_or_else(|| ProductStepError::Internal("AwaitMany plan is absent".into()))?;
@@ -676,6 +692,25 @@ impl AwbcProductStepExecutor {
             ));
         }
         if state.base.is_none() {
+            admission
+                .validate_metadata_collection(state.items.len())
+                .map_err(|error| ProductStepError::Input(error.to_string()))?;
+            let items: Vec<_> = state.items.iter().map(RuntimeValue::view).collect();
+            let checked = base_source
+                .template_producer_spec(
+                    original,
+                    RuntimeTaskTemplateArguments::AwaitManyBase {
+                        captures: &state.captured,
+                        source: RuntimeValueSource::Borrowed {
+                            value: &RuntimeValueView::Sequence(RuntimeSequenceView::Views(&items)),
+                            origin:
+                                crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+                        },
+                    },
+                    self.fiber.active_frame()?.type_instantiation.as_deref(),
+                    &mut admission,
+                )
+                .map_err(|error| ProductStepError::Input(error.to_string()))?;
             let args = self.evaluate_task_request(
                 state.plan,
                 request_function,
@@ -684,19 +719,9 @@ impl AwbcProductStepExecutor {
                 backend,
             )?;
             let request = super::mapping::task_request(&self.program, state.plan, args)?;
-            let fields = [
-                RuntimeValueView::Tuple(RuntimeTupleView::Values(&state.captured)),
-                RuntimeValueView::Tuple(RuntimeTupleView::Values(&state.items)),
-            ];
-            let spec = self.program.task_plans[state.plan.index()]
-                .instantiate_template(
-                    &self.program,
-                    self.runtime_generation,
-                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-                    request,
-                    16 * 1024 * 1024,
-                )
-                .map_err(ProductStepError::Input)?;
+            let spec = base_source
+                .template_task_spec(&checked, self.runtime_generation, request, &mut admission)
+                .map_err(|error| ProductStepError::Input(error.to_string()))?;
             let accepted = self
                 .need_producers
                 .ensure_task(spec)
@@ -707,7 +732,16 @@ impl AwbcProductStepExecutor {
                     .map_err(|error| ProductStepError::Input(error.to_string()))?,
             );
         }
-        let child_record = self.program.task_plans.get(child.index()).ok_or_else(|| {
+        let child_source = original
+            .awbc_template_source(
+                child,
+                limits,
+                &mut admission
+                    .task_source_meter(limits)
+                    .map_err(|error| ProductStepError::Input(error.to_string()))?,
+            )
+            .map_err(|error| ProductStepError::Input(error.to_string()))?;
+        let child_record = admitted.task_plans.get(child.index()).ok_or_else(|| {
             ProductStepError::Internal("AwaitMany child template is absent".into())
         })?;
         let child_host = child_record.host().ok_or_else(|| {
@@ -730,6 +764,18 @@ impl AwbcProductStepExecutor {
                 .checked_add(1)
                 .ok_or_else(|| ProductStepError::Input("AwaitMany index exceeds u32".into()))?;
             let item = &state.items[index as usize];
+            let checked = child_source
+                .template_producer_spec(
+                    original,
+                    RuntimeTaskTemplateArguments::AwaitManyChild {
+                        captures: &state.captured,
+                        index,
+                        item: RuntimeValueSource::Live(item),
+                    },
+                    self.fiber.active_frame()?.type_instantiation.as_deref(),
+                    &mut admission,
+                )
+                .map_err(|error| ProductStepError::Input(error.to_string()))?;
             let args = self.evaluate_task_request(
                 child,
                 request_function,
@@ -738,21 +784,9 @@ impl AwbcProductStepExecutor {
                 backend,
             )?;
             let request = super::mapping::task_request(&self.program, child, args)?;
-            let index_value = RuntimeValue::u32(index);
-            let fields = [
-                RuntimeValueView::Tuple(RuntimeTupleView::Values(&state.captured)),
-                index_value.view(),
-                item.view(),
-            ];
-            let spec = self.program.task_plans[child.index()]
-                .instantiate_template(
-                    &self.program,
-                    self.runtime_generation,
-                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-                    request,
-                    16 * 1024 * 1024,
-                )
-                .map_err(ProductStepError::Input)?;
+            let spec = child_source
+                .template_task_spec(&checked, self.runtime_generation, request, &mut admission)
+                .map_err(|error| ProductStepError::Input(error.to_string()))?;
             let accepted = self
                 .need_producers
                 .ensure_task(spec)
@@ -2547,10 +2581,11 @@ impl AwbcProductStepExecutor {
             );
             return;
         }
-        let checkpoint = match self
-            .fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
-        {
+        let checkpoint = match self.fiber.checkpoint(
+            &mut self
+                .program
+                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
+        ) {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(ProductStepError::Fiber(error), output);
@@ -2632,10 +2667,11 @@ impl AwbcProductStepExecutor {
             );
             return;
         }
-        let checkpoint = match self.child_fibers[index]
-            .fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
-        {
+        let checkpoint = match self.child_fibers[index].fiber.checkpoint(
+            &mut self
+                .program
+                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
+        ) {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(ProductStepError::Fiber(error), output);

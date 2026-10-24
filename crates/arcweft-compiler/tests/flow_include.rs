@@ -119,8 +119,11 @@ fn returns(source: &str, expected: &str) {
 
 fn restore_product(executor: ArcweftRuntimeExecutor) -> ArcweftRuntimeExecutor {
     let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = executor.snapshot().unwrap();
-    let saved =
-        AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &executor.program_owner()).unwrap();
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &snapshot,
+        executor.admitted_product_awbc_program().unwrap(),
+    )
+    .unwrap();
     let bytes = serde_json::to_vec(&saved).unwrap();
     let decoded: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(decoded, saved);
@@ -452,9 +455,11 @@ fn forged_program_child_save_rejects_without_losing_the_original_handle_or_resul
             let ArcweftRuntimeExecutorSnapshot::AwbcProduct(before) = runtime.snapshot().unwrap();
             assert_eq!(before.child_fibers.len(), 1);
             for case in 0..3 {
-                let mut saved =
-                    AwbcProductExecutorSaveSnapshot::from_live(&before, &runtime.program_owner())
-                        .unwrap();
+                let mut saved = AwbcProductExecutorSaveSnapshot::from_live(
+                    &before,
+                    runtime.admitted_product_awbc_program().unwrap(),
+                )
+                .unwrap();
                 match case {
                     0 => {
                         let child = &mut saved.child_fibers[0];

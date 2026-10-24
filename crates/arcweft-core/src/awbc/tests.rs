@@ -1181,7 +1181,10 @@ fn sequence_pop_front_roundtrips_verifies_moves_rows_and_survives_restore() {
 
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("snapshot mutated Vec");
     let serialized = serde_json::to_vec(&snapshot).expect("serialize mutated Vec snapshot");
@@ -1476,7 +1479,10 @@ fn nominal_field_sequence_pop_front_roundtrips_verifies_mutates_and_survives_res
 
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("snapshot mutated record");
     let serialized = serde_json::to_vec(&snapshot).expect("serialize mutated record snapshot");
@@ -1661,7 +1667,10 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
         .expect("terminal validates");
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("snapshot selector terminal");
     let serialized = serde_json::to_vec(&snapshot).expect("serialize selector terminal");
@@ -1749,7 +1758,10 @@ fn named_scope_layout_roundtrip_and_snapshot_admission_preserve_static_identity(
     fiber.validate_for_program(&decoded).unwrap();
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let serialized = serde_json::to_vec(&snapshot).unwrap();
@@ -1761,13 +1773,23 @@ fn named_scope_layout_roundtrip_and_snapshot_admission_preserve_static_identity(
     assert_eq!(
         AwbcFiberStateSnapshot::from_live(
             &restored,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone()))
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
         )
         .unwrap(),
         snapshot
     );
 
-    let checkpoint = restored.checkpoint(&owner).unwrap();
+    let checkpoint = restored
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
     restored.frames[0].scopes[1].id = AwbcScopeId(2);
     assert!(restored.validate_for_program(&decoded).is_err());
     restored
@@ -3362,7 +3384,10 @@ fn project_call_retained_callable_survives_snapshot_and_rejoins_next_group() {
 
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("snapshot retained callable");
     let serialized = serde_json::to_vec(&snapshot).expect("serialize retained callable snapshot");
@@ -4101,7 +4126,10 @@ fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
         .expect("default stage validates");
     let default_snapshot = AwbcFiberStateSnapshot::from_live(
         &default_fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("snapshot");
     let default_restored = default_snapshot
@@ -4128,7 +4156,10 @@ fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
         .expect("target stage validates");
     let target_snapshot = AwbcFiberStateSnapshot::from_live(
         &target_fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("snapshot");
     let mut target_restored = target_snapshot
@@ -4279,7 +4310,14 @@ fn directly_launched_flow_goto_keeps_its_origin_through_live_and_inert_validatio
             )
             .unwrap();
             fiber.validate_for_program(&program).unwrap();
-            let saved = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+            let saved = AwbcFiberStateSnapshot::from_live(
+                &fiber,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .unwrap();
             let bytes = serde_json::to_vec(&saved).unwrap();
             let saved: AwbcFiberStateSnapshot = serde_json::from_slice(&bytes).unwrap();
             fiber = saved.into_live_for_program(&owner).unwrap();
@@ -4295,7 +4333,14 @@ fn directly_launched_flow_goto_keeps_its_origin_through_live_and_inert_validatio
 
         // An ordinary function origin cannot authenticate a different Flow's
         // retained frame or returned result.
-        let mut forged = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        let mut forged = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
         forged.root = AwbcFiberRoot::Function(AwbcFunctionId(1));
         assert!(forged.into_live_for_program(&owner).is_err());
     }
@@ -4612,7 +4657,10 @@ fn project_call_target_snapshot_rejoins_verified_site_and_rejects_tampering() {
     let encoded = serde_json::to_vec(
         &AwbcFiberStateSnapshot::from_live(
             &fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .expect("snapshot"),
     )
@@ -7190,7 +7238,10 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
         .expect("write opaque register");
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("fiber snapshot projects");
     let encoded = serde_json::to_vec(&snapshot).expect("fiber snapshot serializes");
@@ -7205,7 +7256,12 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
         .validate_for_program(&program)
         .expect("restored opaque register validates");
     let checkpoint = restored
-        .checkpoint(&owner)
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
         .expect("checkpoint valid opaque fiber");
 
     let foreign = RuntimeOpaqueTypeOwner::exact(
@@ -7438,13 +7494,25 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         .expect("cleanup state belongs to its admitted program");
 
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
     let encoded = serde_json::to_string(&snapshot).expect("inert fiber image serializes");
     let decoded: AwbcFiberStateSnapshot = serde_json::from_str(&encoded)
         .expect("inert fiber image deserializes without execution authority");
     fiber = decoded.into_live_for_program(&owner).unwrap();
     let checkpoint = fiber
-        .checkpoint(&owner)
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
         .expect("checkpoint retains the original executable");
 
     fiber
@@ -7944,9 +8012,12 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
         .validate_for_program(&program)
         .expect("suspended dynamic call snapshot validates");
     let checkpoint = fiber
-        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::clone(&program),
-        ))
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
         .expect("snapshot dynamic call fiber");
     fiber
         .restore(
@@ -8371,9 +8442,12 @@ fn budget_preemption_inside_dynamic_callee_resumes_at_the_exact_cursor() {
         .validate_for_program(&program)
         .expect("preempted dynamic call snapshot validates");
     let checkpoint = fiber
-        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::clone(&program),
-        ))
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
         .expect("snapshot budgeted dynamic call fiber");
     fiber
         .restore(
@@ -8757,7 +8831,10 @@ fn awbc_field_inspection_preserves_owner_across_budget_snapshot_and_later_move()
     );
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &hot,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let mut cold = snapshot

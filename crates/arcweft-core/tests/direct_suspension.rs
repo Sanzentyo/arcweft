@@ -119,7 +119,10 @@ fn nested_direct_await_snapshot_round_trips_and_resumes_exactly() {
 
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+        &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("nested suspended stack has a typed save representation");
     let encoded = serde_json::to_string(&snapshot).expect("nested suspended stack serializes");
@@ -297,7 +300,10 @@ fn cancellation_unwinds_nested_frames_and_scopes_once_in_lifo_order() {
 
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+        &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("cancelled stack has a typed save representation");
     let encoded = serde_json::to_string(&snapshot).expect("cancelled stack serializes");

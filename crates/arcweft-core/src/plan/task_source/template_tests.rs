@@ -268,6 +268,51 @@ struct Observed<'a> {
     reads: &'a Cell<usize>,
     value: &'a RuntimeValue,
 }
+
+#[test]
+fn template_sources_bound_debug_metadata_before_borrowing_captures() {
+    for program in [native(), compiled()] {
+        let base = source(&program, false);
+        let reads = Cell::new(0);
+        let values = values();
+        let captures = values
+            .iter()
+            .map(|value| Observed {
+                reads: &reads,
+                value,
+            })
+            .collect::<Vec<_>>();
+        let source_value = input();
+        let mut admission = bank(
+            &program,
+            RuntimeSchemaLimits {
+                max_string_bytes: 10,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        let Err(RuntimeTaskProducerSourceError::Admission(error)) = base.template_producer_spec(
+            &program,
+            RuntimeTaskTemplateArguments::AwaitManyBase {
+                captures: &captures,
+                source: RuntimeValueSource::Live(&source_value),
+            },
+            None,
+            &mut admission,
+        ) else {
+            panic!("original debug metadata must be bounded before issuing the producer");
+        };
+        assert_eq!(
+            error,
+            AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "string_bytes"
+                },
+            )
+        );
+        assert_eq!(reads.get(), 0);
+        assert_eq!(admission.status(), Err(error));
+    }
+}
 impl RuntimeStoredValue for Observed<'_> {
     fn borrowed_view(&self) -> crate::value::RuntimeValueView<'_> {
         self.reads.set(self.reads.get() + 1);

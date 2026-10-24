@@ -35,6 +35,7 @@ enum RetainedTypeObligation<'binding> {
 /// relation-work allowance. The first failure remains final for this context.
 pub struct RuntimeRetainedValueAdmission {
     owner: Option<RuntimeProgramOwner>,
+    task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
     resources: ValueResourceAdmission,
     failure: Option<AwbcRuntimeValueSnapshotError>,
 }
@@ -42,11 +43,13 @@ pub struct RuntimeRetainedValueAdmission {
 struct RetainedProgramOwnerScope<'a> {
     admission: &'a mut RuntimeRetainedValueAdmission,
     previous: Option<RuntimeProgramOwner>,
+    previous_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
 }
 
 impl Drop for RetainedProgramOwnerScope<'_> {
     fn drop(&mut self) {
         self.admission.owner = self.previous.take();
+        self.admission.task_source = self.previous_source.take();
     }
 }
 
@@ -54,6 +57,7 @@ impl Drop for RetainedProgramOwnerScope<'_> {
 /// It has no Clone or decoder and cannot issue a second allowance.
 pub(crate) struct RuntimeRetainedValueAdmissionState {
     owner: Option<RuntimeProgramOwner>,
+    task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
     resources: ValueResourceAdmissionState,
     failure: Option<AwbcRuntimeValueSnapshotError>,
 }
@@ -62,6 +66,7 @@ impl RuntimeRetainedValueAdmissionState {
     pub(crate) fn resume(self) -> RuntimeRetainedValueAdmission {
         RuntimeRetainedValueAdmission {
             owner: self.owner,
+            task_source: self.task_source,
             resources: self.resources.resume(),
             failure: self.failure,
         }
@@ -79,9 +84,11 @@ impl RuntimeRetainedValueAdmission {
     ) -> Result<T, AwbcRuntimeValueSnapshotError> {
         self.status()?;
         let previous = self.owner.replace(owner);
+        let previous_source = self.task_source.take();
         let scope = RetainedProgramOwnerScope {
             admission: self,
             previous,
+            previous_source,
         };
         let result = admit(&mut *scope.admission);
         if let Err(error) = &result {
@@ -107,17 +114,20 @@ impl RuntimeRetainedValueAdmission {
     pub(crate) fn try_into_state(self) -> Result<RuntimeRetainedValueAdmissionState, Self> {
         let Self {
             owner,
+            task_source,
             resources,
             failure,
         } = self;
         match resources.try_into_state() {
             Ok(resources) => Ok(RuntimeRetainedValueAdmissionState {
                 owner,
+                task_source,
                 resources,
                 failure,
             }),
             Err(resources) => Err(Self {
                 owner,
+                task_source,
                 resources,
                 failure,
             }),
@@ -130,6 +140,23 @@ impl RuntimeRetainedValueAdmission {
         Self::new(Some(owner), limits)
     }
 
+    /// Keeps the admitted Source and its exact executable with the same bank.
+    /// Digest-equivalent programs cannot provide this retained Source lease.
+    pub(crate) fn for_task_source(
+        source: &crate::plan::task_source::RuntimeTaskSourceProgram,
+        limits: RuntimeSchemaLimits,
+    ) -> Self {
+        let mut admission = Self::for_program(source.program_owner(), limits);
+        admission.task_source = Some(source.clone());
+        admission
+    }
+
+    pub(crate) fn task_source(
+        &self,
+    ) -> Option<&crate::plan::task_source::RuntimeTaskSourceProgram> {
+        self.task_source.as_ref()
+    }
+
     /// Admits context-free data; program-owned descendants cannot acquire a
     /// guessed executable lease.
     #[must_use]
@@ -140,6 +167,7 @@ impl RuntimeRetainedValueAdmission {
     fn new(owner: Option<RuntimeProgramOwner>, limits: RuntimeSchemaLimits) -> Self {
         Self {
             owner,
+            task_source: None,
             resources: ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::Live),
             failure: None,
         }
@@ -196,6 +224,36 @@ impl RuntimeRetainedValueAdmission {
             value.origin,
             Some(RetainedTypeObligation::Invocation { expected, binding }),
         )
+    }
+
+    /// Rechecks an already admitted retained field against an additional
+    /// original type. Its owning grammar has charged nodes and established
+    /// custody; relation work and storage obligations still use this bank.
+    pub(crate) fn validate_admitted_typed_borrowed_in_invocation(
+        &mut self,
+        value: crate::value::RuntimeBorrowedValue<'_>,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        self.resources.set_origin(value.origin);
+        let result = (|| {
+            let owner = self
+                .owner
+                .as_ref()
+                .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected })?;
+            owner.types().value_type(expected)?.validate_admitted_view(
+                value.value,
+                binding,
+                &self.resources,
+            )?;
+            AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                value.value,
+                Some(owner),
+                &self.resources,
+            )
+        })();
+        result.inspect_err(|error| self.retain_failure(error.clone()))
     }
 
     /// An enclosing owning field may retain affine custody as inert data.

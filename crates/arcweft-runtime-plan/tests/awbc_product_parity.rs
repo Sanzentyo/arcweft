@@ -459,11 +459,8 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     .unwrap();
     assert_eq!(executor.compact_fiber().root, AwbcFiberRoot::Program(id));
     let saved = executor.inert_rollback_image().unwrap();
-    let wire = AwbcProductExecutorSaveSnapshot::from_live(
-        &saved,
-        &arcweft_core::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
-    )
-    .unwrap();
+    let wire =
+        AwbcProductExecutorSaveSnapshot::from_live(&saved, executor.admitted_program()).unwrap();
     let bytes = serde_json::to_vec(&wire).unwrap();
     let saved: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
     let mut forged = saved.clone();
@@ -493,11 +490,8 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
         Some((id, RuntimeValue::NeedHandle(retained.clone())))
     );
     assert_eq!(executor.take_program_result().unwrap(), None);
-    let wire = AwbcProductExecutorSaveSnapshot::from_live(
-        &saved,
-        &arcweft_core::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
-    )
-    .unwrap();
+    let wire =
+        AwbcProductExecutorSaveSnapshot::from_live(&saved, executor.admitted_program()).unwrap();
     let bytes = serde_json::to_vec(&wire).unwrap();
     let saved: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
     let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
@@ -1101,7 +1095,7 @@ fn dense_constants_preserve_exact_bits_in_native_decoded_awbc_and_saved_results(
         assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
         let save = AwbcProductExecutorSaveSnapshot::from_live(
             &executor.snapshot().unwrap(),
-            &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+            executor.admitted_program(),
         )
         .unwrap();
         let bytes = serde_json::to_vec(&save).unwrap();

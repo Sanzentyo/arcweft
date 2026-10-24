@@ -60,7 +60,10 @@ fn copyable_fixture_fiber(executor: &AwbcProductStepExecutor) -> FiberState {
     let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
     AwbcFiberStateSnapshot::from_live(
         &executor.fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .expect("copyable fixture fiber has an inert snapshot")
     .into_live_for_program(&owner)
@@ -1412,11 +1415,8 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     let host_id = host_output.requests.host_calls[0].id.clone();
 
     let snapshot = product_snapshot(&executor);
-    let save = AwbcProductExecutorSaveSnapshot::from_live(
-        &snapshot,
-        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
-    )
-    .expect("suspended activation host call is saveable");
+    let save = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, executor.admitted_program())
+        .expect("suspended activation host call is saveable");
     let restored_snapshot = save
         .into_live_for_program(executor.admitted_program())
         .expect("suspended activation host call decodes");
@@ -1509,7 +1509,7 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
 
     let save = AwbcProductExecutorSaveSnapshot::from_live(
         &product_snapshot(&executor),
-        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+        executor.admitted_program(),
     )
     .expect("reached lexical defer packet is saveable");
     let restored_snapshot = save
@@ -1805,7 +1805,7 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
 
         let save = AwbcProductExecutorSaveSnapshot::from_live(
             &product_snapshot(executor),
-            &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+            executor.admitted_program(),
         )
         .expect("inflight defer saves with its child packet");
         let restored_snapshot = save
@@ -2128,7 +2128,7 @@ fn save_snapshot_preserves_queued_progress_publications() {
 
     let saved = AwbcProductExecutorSaveSnapshot::from_live(
         &product_snapshot(&executor),
-        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+        executor.admitted_program(),
     )
     .expect("queued Progress snapshots");
     let restored = saved
@@ -2170,9 +2170,11 @@ fn queued_ready_restore_requires_the_exact_admitted_outcome_and_correlation() {
     let mut output = crate::step::RuntimeStepOutput::default();
     executor.latch_task_events(vec![event], &mut output);
     assert!(output.diagnostics.is_empty());
-    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(&executor), &owner)
-        .expect("queued Ready snapshots");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &product_snapshot(&executor),
+        executor.admitted_program(),
+    )
+    .expect("queued Ready snapshots");
     let before = serde_json::to_vec(&saved).unwrap();
     assert_eq!(
         serde_json::from_slice::<AwbcProductExecutorSaveSnapshot>(&before).unwrap(),
@@ -2224,8 +2226,11 @@ fn queued_ready_restore_requires_the_exact_admitted_outcome_and_correlation() {
         );
         assert_eq!(
             serde_json::to_vec(
-                &AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(&executor), &owner)
-                    .unwrap()
+                &AwbcProductExecutorSaveSnapshot::from_live(
+                    &product_snapshot(&executor),
+                    executor.admitted_program()
+                )
+                .unwrap()
             )
             .unwrap(),
             before,
@@ -2245,7 +2250,11 @@ fn inert_save_binding_defers_frame_admission_to_owned_restore() {
         .snapshot()
         .expect("the original executor snapshots");
     let ArcweftRuntimeExecutorSnapshot::AwbcProduct(image) = &before;
-    let mut saved = AwbcProductExecutorSaveSnapshot::from_live(image, &owner).unwrap();
+    let mut saved = AwbcProductExecutorSaveSnapshot::from_live(
+        image,
+        executor.admitted_product_awbc_program().unwrap(),
+    )
+    .unwrap();
     saved.fiber.frames[0].function = AwbcFunctionId(u32::MAX);
 
     let bound = executor
@@ -3233,7 +3242,6 @@ fn dialogue_frame_joins_the_original_bank_before_capture_or_restore() {
 #[test]
 fn dialogue_frame_cannot_replace_the_original_registry_activation() {
     let (executor, activation) = initial_actor_dialogue_executor();
-    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
     let mut snapshot = executor.snapshot().unwrap();
     let mut encoded = serde_json::to_value(&snapshot.dialogues).unwrap();
     let replacement = crate::runtime_id::DialogueActivationId::new(
@@ -3248,7 +3256,8 @@ fn dialogue_frame_cannot_replace_the_original_registry_activation() {
         serde_json::to_value(replacement).unwrap();
     snapshot.dialogues = serde_json::from_value(encoded).unwrap();
     let before = serde_json::to_vec(&snapshot.dialogues).unwrap();
-    let error = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &owner).unwrap_err();
+    let error = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, executor.admitted_program())
+        .unwrap_err();
     assert!(
         matches!(error, super::snapshot::AwbcProductSaveError::InvalidSnapshot { message } if message.contains("phase/result authority is not isomorphic"))
     );
@@ -3275,7 +3284,8 @@ fn dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy()
         serde_json::to_value(&snapshot.fiber).unwrap();
     snapshot.dialogues = serde_json::from_value(encoded).unwrap();
     let before = serde_json::to_vec(&snapshot.dialogues).unwrap();
-    let error = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &owner).unwrap_err();
+    let error = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, executor.admitted_program())
+        .unwrap_err();
     assert!(
         matches!(error, super::snapshot::AwbcProductSaveError::InvalidSnapshot { message } if message.contains("activation fiber root differs"))
     );
@@ -4671,11 +4681,8 @@ fn need_await_snapshot_retains_and_validates_selected_item_type() {
     let (executor, _) = executor.restore_snapshot_owned(tampered).unwrap_err();
 
     let snapshot = product_snapshot(&executor);
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(
-        &snapshot,
-        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
-    )
-    .expect("typed Need suspension saves");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, executor.admitted_program())
+        .expect("typed Need suspension saves");
     let encoded = serde_json::to_string(&saved).expect("typed Need suspension serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("typed Need suspension restores");
@@ -4818,11 +4825,8 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
     let live = executor
         .snapshot_for_save()
         .expect("Restartable in-flight Need can be saved");
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(
-        &live,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
-    )
-    .expect("Restartable Need snapshot serializes");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live, executor.admitted_program())
+        .expect("Restartable Need snapshot serializes");
     let mut wrong_source = live.clone();
     let source_key = wrong_source
         .need_publications
@@ -5073,6 +5077,82 @@ fn ready_need_producer_payload_is_checked_before_publication_and_on_restore() {
 }
 
 #[test]
+fn await_many_input_take_requires_genuine_source_and_preserves_the_frame_on_rejection() {
+    let mut raw = await_many_product_program();
+    raw.original_source = None;
+    let mut executor = await_many_executor(&raw, await_many_items(), GenerationId::new(7));
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program.program_arc());
+    let before = AwbcFiberStateSnapshot::from_live(
+        &executor.fiber,
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            (owner).clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
+    let program = executor.program.clone();
+    assert!(
+        executor
+            .fiber
+            .active_frame_mut()
+            .unwrap()
+            .take_await_many_inputs(
+                &program,
+                crate::awbc::schema::AwbcTaskPlanId(0),
+                AwbcRegisterId(0),
+            )
+            .is_err()
+    );
+    assert_eq!(
+        AwbcFiberStateSnapshot::from_live(
+            &executor.fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+        )
+        .unwrap(),
+        before
+    );
+    let output = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    assert!(matches!(output.fiber_status, FlowFiberStatus::Failed(_)));
+    assert_eq!(output.output.requests.tasks, []);
+}
+
+#[test]
+fn await_many_product_templates_resolve_their_genuine_original_source() {
+    let program = await_many_product_program();
+    let executor = await_many_executor(&program, await_many_items(), GenerationId::new(7));
+    let original = executor
+        .program
+        .task_source
+        .as_ref()
+        .expect("genuine Source is retained");
+    for index in 0..2 {
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            original.program_owner(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let mut meter = admission.task_source_meter(limits).unwrap();
+        let source = original
+            .awbc_template_source(
+                crate::awbc::schema::AwbcTaskPlanId(index),
+                limits,
+                &mut meter,
+            )
+            .unwrap();
+        assert_eq!(
+            source.task_plan().definition().family(),
+            if index == 0 {
+                crate::task::NeedProducerFamily::AwaitManyBase
+            } else {
+                crate::task::NeedProducerFamily::AwaitManyChild
+            }
+        );
+    }
+}
+#[test]
 fn await_many_admission_frontier_survives_product_save_restore_and_rebind() {
     let generation = GenerationId::new(7);
     let program = std::sync::Arc::new(await_many_product_program());
@@ -5106,11 +5186,8 @@ fn await_many_admission_frontier_survives_product_save_restore_and_rebind() {
         _ => panic!("AwaitMany continuation"),
     };
     let live = executor.snapshot_for_save().expect("fanout is saveable");
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(
-        &live,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
-    )
-    .expect("inert snapshot");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live, executor.admitted_program())
+        .expect("inert snapshot");
     let encoded = serde_json::to_string(&saved).expect("snapshot serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("snapshot decodes");
@@ -5162,12 +5239,112 @@ fn await_many_admission_frontier_survives_product_save_restore_and_rebind() {
         .fiber
         .validate_for_program(&restored.program)
         .unwrap();
-    let owner = crate::task::RuntimeProgramOwner::Awbc(restored.program_arc());
-    let before =
-        crate::awbc::fiber::AwbcFiberStateSnapshot::from_live(&restored.fiber, &owner).unwrap();
-    let rehydrated = before.clone().into_live_for_program(&owner).unwrap();
+    let before = crate::awbc::fiber::AwbcFiberStateSnapshot::from_live(
+        &restored.fiber,
+        &mut restored
+            .program
+            .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
+    )
+    .unwrap();
+    let rehydrated = restored
+        .program
+        .restore_fiber_snapshot(before.clone())
+        .unwrap();
     assert_eq!(
-        crate::awbc::fiber::AwbcFiberStateSnapshot::from_live(&rehydrated, &owner).unwrap(),
+        crate::awbc::fiber::AwbcFiberStateSnapshot::from_live(
+            &rehydrated,
+            &mut restored
+                .program
+                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default())
+        )
+        .unwrap(),
+        before
+    );
+}
+
+#[test]
+fn await_many_checkpoint_requires_the_original_source_lease_and_rejects_changed_operands() {
+    use crate::awbc::fiber::{AwbcFiberStateSnapshot, FiberStateError, FiberSuspensionReason};
+    let mut executor = await_many_executor(
+        &await_many_product_program(),
+        await_many_items(),
+        GenerationId::new(7),
+    );
+    let step = executor.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 1,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    assert_eq!(
+        step.output.requests.tasks.len(),
+        1,
+        "{:?}",
+        step.output.diagnostics
+    );
+    let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    assert!(
+        executor
+            .fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(owner, limits),
+            )
+            .is_err(),
+        "an executable alone cannot authenticate retained template operands"
+    );
+    let before = AwbcFiberStateSnapshot::from_live(
+        &executor.fiber,
+        &mut executor.program.retained_value_admission(limits),
+    )
+    .unwrap();
+    let checkpoint = executor
+        .fiber
+        .checkpoint(&mut executor.program.retained_value_admission(limits))
+        .unwrap();
+    let foreign = super::AwbcProductProgram::admit(
+        executor.program_arc(),
+        crate::awbc::verify::AwbcVerifyBudget::default(),
+        crate::awbc::verify::AwbcVerifyContext::default(),
+        crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        &foreign.program_arc(),
+        &executor.program_arc()
+    ));
+    assert!(matches!(
+        executor.fiber.restore(checkpoint.clone(), &foreign),
+        Err(FiberStateError::CheckpointProgramOwner)
+    ));
+    let mut altered = before.clone();
+    let FiberSuspensionReason::AwaitMany(state) = &mut altered.suspension.as_mut().unwrap().reason
+    else {
+        panic!("AwaitMany suspension");
+    };
+    state.items[0] =
+        crate::value::AwbcRuntimeValueSnapshot::String("changed but well typed".into());
+    assert!(executor.program.restore_fiber_snapshot(altered).is_err());
+    assert_eq!(
+        AwbcFiberStateSnapshot::from_live(
+            &executor.fiber,
+            &mut executor.program.retained_value_admission(limits),
+        )
+        .unwrap(),
+        before
+    );
+    executor
+        .fiber
+        .restore(checkpoint, &executor.program)
+        .unwrap();
+    assert_eq!(
+        AwbcFiberStateSnapshot::from_live(
+            &executor.fiber,
+            &mut executor.program.retained_value_admission(limits),
+        )
+        .unwrap(),
         before
     );
 }
@@ -5222,11 +5399,8 @@ fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
     let live = executor
         .snapshot_for_save()
         .expect("partial AwaitMany continuation is saveable");
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(
-        &live,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
-    )
-    .expect("partial AwaitMany Product state serializes");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live, executor.admitted_program())
+        .expect("partial AwaitMany Product state serializes");
     let encoded = serde_json::to_string(&saved).expect("Product save serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("Product save decodes");
@@ -5300,7 +5474,13 @@ fn await_many_inert_input_and_site_failures_precede_construction_and_preserve_fi
         },
     );
     let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
-    let before = AwbcFiberStateSnapshot::from_live(&executor.fiber, &owner).unwrap();
+    let before = AwbcFiberStateSnapshot::from_live(
+        &executor.fiber,
+        &mut executor
+            .program
+            .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
+    )
+    .unwrap();
     for case in 0..4 {
         let mut forged = before.clone();
         let suspension = forged.suspension.as_mut().unwrap();
@@ -5320,7 +5500,10 @@ fn await_many_inert_input_and_site_failures_precede_construction_and_preserve_fi
             2 => state.plan = crate::awbc::schema::AwbcTaskPlanId(1),
             _ => suspension.resume = FiberResumeTarget::Exact(forged.cursor),
         }
-        let error = forged.clone().into_live_for_program(&owner).unwrap_err();
+        let error = executor
+            .program
+            .restore_fiber_snapshot(forged.clone())
+            .unwrap_err();
         if case == 0 {
             assert!(matches!(
                 error,
@@ -5334,7 +5517,13 @@ fn await_many_inert_input_and_site_failures_precede_construction_and_preserve_fi
                 .is_err()
         );
         assert_eq!(
-            AwbcFiberStateSnapshot::from_live(&executor.fiber, &owner).unwrap(),
+            AwbcFiberStateSnapshot::from_live(
+                &executor.fiber,
+                &mut executor
+                    .program
+                    .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default())
+            )
+            .unwrap(),
             before
         );
     }
@@ -6415,7 +6604,156 @@ fn await_many_executor(
     .expect("AwaitMany Product executor starts")
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one genuine Source fixture owns the complete original input, capture, request and fanout contract"
+)]
+fn await_many_original_program() -> crate::plan::RuntimePlan {
+    use crate::plan::*;
+    use crate::task::{
+        CancelScopeId, HostCapabilityId, NeedProducerContractDigest, NeedProducerDefinition,
+        NeedProducerFamily, NeedProducerSiteDigest, RuntimeHostArgumentTemplate,
+        RuntimeRequestRoleIdentity, TaskClass, TaskPolicy, TaskPriority,
+    };
+    use crate::value::RuntimeLocalReadMode;
+    let unit = RuntimeSemanticTypeId::from_bytes([0x90; 32]);
+    let string = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
+    let sequence = RuntimeSemanticTypeId::from_bytes([0x92; 32]);
+    let parameter = manual_awbc_formal_identity(
+        "arcweft-core.src.awbc.product_step.tests.await_many_product_program.input-a",
+    );
+    let mut builder = RuntimePlanBuilder::new();
+    let admitted = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(string, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(
+                    sequence,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: string,
+                    },
+                ),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(
+                    RuntimeLocalDeclarationSource::Parameter(parameter),
+                    sequence,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    RuntimeLocalDeclarationSource::Binding {
+                        identity: [0xa2; 32],
+                        declaration: RuntimeLocalBindingDeclaration::new(
+                            RuntimeLocalBindingKind::PatternBinding,
+                            false,
+                            RuntimeLocalBindingStorage::Derived,
+                        ),
+                    },
+                    string,
+                ),
+            ],
+        )
+        .unwrap();
+    let source = admitted.local_ids()[0].clone();
+    let item = admitted.local_ids()[1].clone();
+    let base = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
+    let child = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
+    let template = |coordinate, family, function, site, payload: RuntimeSemanticTypeId, args| {
+        RuntimeNeedProducerTemplateSeed {
+            definition: NeedProducerDefinition {
+                function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([function; 32]),
+                family,
+                contract: NeedProducerContractDigest::from_bytes([0x95; 32]),
+                plan: coordinate,
+                producer_site: NeedProducerSiteDigest::from_bytes([site; 32]),
+                payload_type: crate::task::RuntimeTypeSemanticDigest::from_bytes(
+                    *payload.as_bytes(),
+                ),
+                class: TaskClass::Io,
+                priority: TaskPriority(0),
+                cancel_scope: CancelScopeId("flow".into()),
+                policy: TaskPolicy::JoinSameKey,
+                debug_label: "product-await-many".into(),
+            },
+            request: RuntimeHostTaskRequestTemplateSeed {
+                capability: HostCapabilityId("probe".into()),
+                operation: "read".into(),
+                args,
+            },
+        }
+    };
+    let flow = FlowRuntimeId::canonical("main").unwrap();
+    builder
+        .push_flow_schema(crate::entry::RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: vec![crate::entry::RuntimeFlowExecutableParameter {
+                identity: parameter,
+                coordinate: crate::entry::FlowParameterCoordinate::from_position(0),
+                name: "items".into(),
+                mode: crate::entry::RuntimeFlowParameterMode::Owned,
+                passing: RuntimeFunctionParameterPassing::Affine,
+                semantic_identity: sequence,
+            }],
+        })
+        .unwrap();
+    builder.push_flow_seed(RuntimeFlowSeed::new(
+        flow,
+        RuntimeFunctionSiteDeclarationSeed::flow(
+            RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.await_many_product_program.definition.0.v1\0").as_bytes()),
+            None,
+            Box::new([RuntimeFunctionInputBindingSeed {
+                transfer: RuntimeFunctionInputTransfer::Formal,
+                origin: RuntimeFunctionInputOrigin::Parameter(parameter),
+                source: RuntimeFunctionInputSource::Parameter { position: 0, passing: RuntimeFunctionParameterPassing::Affine },
+                input_local: source.clone(),
+                pattern: RuntimePatternSeed::new(sequence, RuntimePatternSeedKind::Bind { local: source.clone(), mutable: false }),
+                ownership: crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
+                unrestricted_bindings: Box::new([]),
+            }]),
+            unit,
+            RuntimeEffectSet::empty(),
+        ),
+        RuntimeExecutableBodySeed {
+            effects: RuntimeEffectSet::empty(),
+            ops: Box::new([RuntimeFlowOpSeed::AwaitMany {
+                binding: None,
+                target: RuntimeAwaitManyTargetSeed {
+                    source: RuntimeExprSeed::new(sequence, RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(source, RuntimeLocalReadMode::Move))),
+                    item_binding: item.clone(),
+                    limit: 3,
+                    base: template(base, NeedProducerFamily::AwaitManyBase, 0xa0, 0x96, sequence, vec![]),
+                    child: template(child, NeedProducerFamily::AwaitManyChild, 0xa1, 0x98, string, vec![RuntimeHostArgumentTemplate::positional(
+                        RuntimeRequestRoleIdentity::from_accepted_identity([0xa3; 32]),
+                        RuntimeExprSeed::new(string, RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(item, RuntimeLocalReadMode::Copy))),
+                    )]),
+                },
+                pending: vec![],
+            }]),
+        },
+    )).unwrap();
+    builder.finish().unwrap()
+}
 fn await_many_product_program() -> AwbcProgram {
+    let original = await_many_original_program();
+    let crate::plan::FlowOp::AwaitMany { target, .. } = &original
+        .function_sites()
+        .iter()
+        .next()
+        .unwrap()
+        .body()
+        .executable()
+        .unwrap()
+        .ops()[0]
+    else {
+        unreachable!()
+    };
     let item_ty = AwbcTypeId(1);
     let sequence_ty = AwbcTypeId(2);
     let mut program = AwbcProgram {
@@ -6550,13 +6888,13 @@ fn await_many_product_program() -> AwbcProgram {
                     },
                             arguments: vec![],
                             kind: AwbcHostTaskPlanKind::AwaitMany {
-                        contract: crate::task::NeedProducerContractDigest::from_bytes([0x95; 32]),
-                        site: crate::task::NeedProducerSiteDigest::from_bytes([0x96; 32]),
-                        plan: crate::task::TaskPlanSemanticDigest::from_bytes([0x97; 32]),
+                        contract: target.base.definition.contract,
+                        site: target.base.definition.producer_site,
+                        plan: original.task_plan(&target.base.definition.plan).unwrap().key(),
                         child: crate::awbc::schema::AwbcTaskPlanId(1),
                         captures: vec![],
                         request_function: AwbcFunctionId(1),
-                        item_binding: AwbcRegisterId(0),
+                        item_binding: AwbcRegisterId(target.item_binding.get().get()),
                         limit: 3,
                     },
                         },
@@ -6596,9 +6934,12 @@ fn await_many_product_program() -> AwbcProgram {
                 }],
                 kind: AwbcHostTaskPlanKind::Template {
                     family: crate::task::NeedProducerFamily::AwaitManyChild,
-                    contract: crate::task::NeedProducerContractDigest::from_bytes([0x95; 32]),
-                    site: crate::task::NeedProducerSiteDigest::from_bytes([0x96; 32]),
-                    plan: crate::task::TaskPlanSemanticDigest::from_bytes([0x97; 32]),
+                    contract: target.child.definition.contract,
+                    site: target.child.definition.producer_site,
+                    plan: original
+                        .task_plan(&target.child.definition.plan)
+                        .unwrap()
+                        .key(),
                     request_function: AwbcFunctionId(2),
                 },
             },
@@ -6685,6 +7026,32 @@ fn await_many_product_program() -> AwbcProgram {
             entry_block: block,
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         });
+    }
+    program.original_source = Some(
+        original
+            .task_source_artifact(crate::plan::RuntimeTaskSourceArtifactLimits::default())
+            .unwrap(),
+    );
+    program.functions[0].semantic_role = crate::plan::RuntimeFunctionSemanticRole::Flow;
+    for (index, producer) in [&target.base, &target.child].into_iter().enumerate() {
+        let function = &mut program.functions[index + 1];
+        function.definition = producer
+            .definition
+            .function
+            .generated_child(crate::plan::RuntimeGeneratedFunctionRole::TaskRequest);
+        function.input_ownership = if index == 0 {
+            vec![]
+        } else {
+            vec![AwbcFunctionInputOwnership::capture(
+                original
+                    .local_declarations()
+                    .get(target.item_binding)
+                    .unwrap()
+                    .origin(),
+                0,
+                crate::plan::RuntimeFunctionCaptureMode::Copy,
+            )]
+        };
     }
     program.canonicalize_string_table();
     program
@@ -6879,11 +7246,8 @@ fn product_observation_inert_rollback_retains_typed_signal_and_metric_values() {
     let image = executor
         .inert_rollback_image()
         .expect("complete inert Product image");
-    let wire = AwbcProductExecutorSaveSnapshot::from_live(
-        &image,
-        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
-    )
-    .unwrap();
+    let wire =
+        AwbcProductExecutorSaveSnapshot::from_live(&image, executor.admitted_program()).unwrap();
     let bytes = serde_json::to_vec(&wire).expect("observation save is inert JSON");
     let saved: AwbcProductExecutorSaveSnapshot =
         serde_json::from_slice(&bytes).expect("typed Product save decodes without live values");
@@ -7013,11 +7377,8 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
     assert!(executor.has_internal_work());
 
     let live = product_snapshot(&executor);
-    let save = AwbcProductExecutorSaveSnapshot::from_live(
-        &live,
-        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
-    )
-    .expect("paired queue saves");
+    let save = AwbcProductExecutorSaveSnapshot::from_live(&live, executor.admitted_program())
+        .expect("paired queue saves");
     let encoded = serde_json::to_string(&save).expect("version-one inert queue serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("version-one inert queue decodes");

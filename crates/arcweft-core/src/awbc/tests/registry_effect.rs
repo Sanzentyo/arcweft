@@ -308,10 +308,26 @@ fn registry_static_cleanup_rejects_the_same_source_in_live_and_inert_phases() {
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
     fiber.cursor.instruction_offset = 2;
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program));
-    assert!(fiber.checkpoint(&owner).is_ok());
+    assert!(
+        fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default()
+                )
+            )
+            .is_ok()
+    );
     fiber.active_frame_mut().unwrap().root_cleanups.push(live);
     assert!(
-        fiber.checkpoint(&owner).is_err(),
+        fiber
+            .checkpoint(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    (owner).clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default()
+                )
+            )
+            .is_err(),
         "an untrusted cleanup cannot enter an inert fiber image"
     );
     assert_eq!(fiber.active_frame().unwrap().root_cleanups.len(), 1);

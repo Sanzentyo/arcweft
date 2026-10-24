@@ -11,6 +11,7 @@ use crate::entry::{
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimeSequenceView<'a> {
+    Views(&'a [RuntimeValueView<'a>]),
     Bytes(&'a [u8]),
     DialogueBindings(&'a [super::super::RuntimeDialogueContentBinding]),
     DialogueEffects(&'a [super::super::RuntimeDialogueContentEffectBinding]),
@@ -26,6 +27,7 @@ impl<'a> RuntimeSequenceView<'a> {
             Self::Live(RuntimeSeq::Dense(value))
             | Self::Snapshot(AwbcRuntimeSeqSnapshot::Dense(value)) => value.kind(),
             Self::Live(RuntimeSeq::Values(_))
+            | Self::Views(_)
             | Self::Snapshot(AwbcRuntimeSeqSnapshot::Values(_))
             | Self::DialogueBindings(_)
             | Self::DialogueEffects(_) => return "values",
@@ -87,6 +89,7 @@ impl<'a> RuntimeSequenceView<'a> {
     }
     pub(crate) fn len(self) -> Result<usize, RuntimeSchemaError> {
         match self {
+            Self::Views(value) => Ok(value.len()),
             Self::Bytes(value) => Ok(value.len()),
             Self::DialogueBindings(value) => Ok(value.len()),
             Self::DialogueEffects(value) => Ok(value.len()),
@@ -106,6 +109,7 @@ impl<'a> RuntimeSequenceView<'a> {
             return None;
         }
         Some(match self {
+            Self::Views(value) => *value.get(index)?,
             Self::Bytes(value) => RuntimeValueView::Scalar(super::RuntimeScalarView::UInt(
                 super::super::RuntimeUInt::U8(*value.get(index)?),
             )),
@@ -145,6 +149,7 @@ impl<'a> RuntimeSequenceView<'a> {
         match self {
             Self::Live(v) => Some(v),
             Self::Snapshot(_)
+            | Self::Views(_)
             | Self::Bytes(_)
             | Self::DialogueBindings(_)
             | Self::DialogueEffects(_) => None,

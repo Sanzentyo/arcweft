@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "base": "d741187573117bce556f453018593cb482f878ea",
+  "run": "task-final-r2790-await-many-awbc-source-core-clippy",
+  "exitCode": 0,
+  "changedLineWarnings": []
+}

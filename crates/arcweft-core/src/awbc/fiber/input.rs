@@ -147,19 +147,33 @@ impl super::FiberFrame {
     /// any capture copy or consuming the original sequence register.
     pub(in crate::awbc) fn take_await_many_inputs(
         &mut self,
-        program: &AwbcProgram,
+        program: &crate::awbc::product_step::AwbcProductProgram,
         plan: super::AwbcTaskPlanId,
         source: super::AwbcRegisterId,
     ) -> Result<(Vec<RuntimeValue>, crate::value::RuntimeSeq), FiberStateError> {
-        let mut resources =
-            ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits::engine_default());
+        let original = program
+            .original_task_source()
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            original.program_owner(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let mut meter = admission.task_source_meter(limits)?;
+        let producer_source = original
+            .awbc_template_source(plan, limits, &mut meter)
+            .map_err(|error| {
+                FiberStateError::Snapshot(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                })
+            })?;
         let layout = super::validate_frame_layout(
             program,
             self.function,
             self.layout,
             self.type_instantiation.as_deref(),
             self.registers.len(),
-            &resources.work(),
+            &admission.work(),
         )?;
         let plan = program
             .task_plans
@@ -174,10 +188,7 @@ impl super::FiberFrame {
         else {
             return Err(FiberStateError::InvalidFrame);
         };
-        resources
-            .work()
-            .collection(captures.len())
-            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        admission.validate_metadata_collection(captures.len())?;
         let signature = program
             .functions
             .get(request_function.index())
@@ -186,52 +197,55 @@ impl super::FiberFrame {
         if captures.len() != signature.params.len() {
             return Err(FiberStateError::InvalidFrame);
         }
-        for (register, expected) in captures.iter().zip(&signature.params) {
-            let value = self.register(*register)?.view();
-            value.admit_ownership(
-                crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
-                &mut resources,
-                0,
-            )?;
-            for ty in [
-                layout
-                    .slots
-                    .get(register.index())
-                    .ok_or(FiberStateError::InvalidFrame)?
-                    .ty,
-                *expected,
-            ] {
-                crate::program_types::RuntimeProgramValueType::Awbc { program, ty }
-                    .validate_admitted_view(value, self.type_instantiation.as_deref(), &resources)
-                    .map_err(|error| {
-                        FiberStateError::Snapshot(
-                            crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(
-                                error,
-                            )),
-                        )
-                    })?;
-            }
-        }
+        let values = captures
+            .iter()
+            .map(|register| self.register(*register))
+            .collect::<Result<Vec<_>, _>>()?;
         let value = self.register(source)?;
-        value.view().admit_ownership(
-            crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
-            &mut resources,
-            0,
-        )?;
-        crate::program_types::RuntimeProgramValueType::Awbc {
-            program,
-            ty: layout
-                .slots
-                .get(source.index())
-                .ok_or(FiberStateError::InvalidFrame)?
-                .ty,
+        producer_source
+            .template_producer_spec(
+                original,
+                crate::task::RuntimeTaskTemplateArguments::AwaitManyBase {
+                    captures: &values,
+                    source: crate::value::RuntimeValueSource::Live(value),
+                },
+                self.type_instantiation.as_deref(),
+                &mut admission,
+            )
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        if !value.ownership().permits_copy() {
+            return Err(FiberStateError::InvalidFrame);
         }
-        .validate_admitted_view(value.view(), self.type_instantiation.as_deref(), &resources)
-        .map_err(|error| {
-            FiberStateError::Snapshot(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(
-                Box::new(error),
-            ))
-        })?;
+        admission.admit_composite(
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            |_, resources| {
+                for ((register, expected), value) in
+                    captures.iter().zip(&signature.params).zip(&values)
+                {
+                    for ty in [layout.slots[register.index()].ty, *expected] {
+                        crate::program_types::RuntimeProgramValueType::Awbc { program, ty }
+                            .validate_admitted_view(
+                                value.view(),
+                                self.type_instantiation.as_deref(),
+                                resources,
+                            )
+                            .map_err(|error| {
+                                crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(
+                                    error,
+                                ))
+                            })?;
+                    }
+                }
+                crate::program_types::RuntimeProgramValueType::Awbc {
+                    program,
+                    ty: layout.slots[source.index()].ty,
+                }
+                .validate_admitted_view(value.view(), self.type_instantiation.as_deref(), resources)
+                .map_err(|error| {
+                    crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
+                })
+            },
+        )?;
         let RuntimeValue::Seq(sequence) = value else {
             return Err(FiberStateError::InvalidFrame);
         };

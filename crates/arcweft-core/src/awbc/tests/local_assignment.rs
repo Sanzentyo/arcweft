@@ -168,7 +168,10 @@ fn partial_record_move_survives_codec_snapshot_and_restore_then_reinitializes() 
     assert_eq!(fiber.frames[0].registers[0].values().count(), 1);
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let bytes = serde_json::to_vec(&snapshot).unwrap();
@@ -176,7 +179,14 @@ fn partial_record_move_survives_codec_snapshot_and_restore_then_reinitializes() 
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
     let mut restored = snapshot.into_live_for_program(&owner).unwrap();
     restored.validate_for_program(&program).unwrap();
-    let checkpoint = restored.checkpoint(&owner).unwrap();
+    let checkpoint = restored
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
     for _ in 0..2 {
         let result = super::super::vm::step(
             &program,
@@ -393,11 +403,21 @@ fn corrupt_partial_header_or_child_is_rejected_without_replacing_the_live_fiber(
         },
     )
     .unwrap();
-    let before = fiber.checkpoint(&owner).unwrap();
+    let before = fiber
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
     let encoded = serde_json::to_value(
         AwbcFiberStateSnapshot::from_live(
             &fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )
         .unwrap(),
     )
@@ -411,7 +431,17 @@ fn corrupt_partial_header_or_child_is_rejected_without_replacing_the_live_fiber(
     for malformed in [wrong_header, wrong_child] {
         let snapshot: AwbcFiberStateSnapshot = serde_json::from_value(malformed).unwrap();
         assert!(fiber.replace_from_snapshot(snapshot, &owner).is_err());
-        assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
+        assert_eq!(
+            fiber
+                .checkpoint(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        (owner).clone(),
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                )
+                .unwrap(),
+            before
+        );
         fiber.validate_for_program(&program).unwrap();
     }
 }
@@ -444,7 +474,10 @@ fn live_outer_local_survives_codec_snapshot_and_checkpoint_then_replaces() {
     );
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let bytes = serde_json::to_vec(&snapshot).unwrap();
@@ -452,7 +485,14 @@ fn live_outer_local_survives_codec_snapshot_and_checkpoint_then_replaces() {
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
     let mut restored = snapshot.into_live_for_program(&owner).unwrap();
     restored.validate_for_program(&program).unwrap();
-    let checkpoint = restored.checkpoint(&owner).unwrap();
+    let checkpoint = restored
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
     for _ in 0..2 {
         let result = super::super::vm::step(
             &program,
@@ -553,7 +593,10 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
     assert_eq!(fiber.cursor.instruction_offset, 4);
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let bytes = serde_json::to_vec(&snapshot).unwrap();
@@ -561,7 +604,14 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
     let mut restored = snapshot.into_live_for_program(&owner).unwrap();
     restored.validate_for_program(&program).unwrap();
-    let checkpoint = restored.checkpoint(&owner).unwrap();
+    let checkpoint = restored
+        .checkpoint(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                (owner).clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
     for _ in 0..2 {
         let result = super::super::vm::step(
             &program,

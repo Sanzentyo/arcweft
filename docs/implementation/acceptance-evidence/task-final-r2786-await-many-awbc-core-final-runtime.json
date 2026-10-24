@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "d741187573117bce556f453018593cb482f878ea",
+  "name": "task-final-r2786-await-many-awbc-core-final-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--all-features",
+    "--locked",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "-E",
+    "all()",
+    "--no-tests",
+    "fail",
+    "--status-level",
+    "none",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2786-await-many-awbc-core-final-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T13:05:45.5253722Z",
+  "finishedAt": "2026-10-24T13:06:10.2659123Z"
+}

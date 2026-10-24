@@ -1,4 +1,43 @@
 use super::*;
+use crate::value::RuntimeStoredValue;
+
+#[test]
+fn retained_additional_type_obligations_do_not_refresh_or_recharge_value_nodes() {
+    let value = RuntimeValue::Bool(true);
+    let boolean = RuntimeSemanticTypeId::from_bytes([2; 32]);
+    let limits = RuntimeSchemaLimits {
+        max_nodes: 1,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    for owner in crate::value::awbc_save::tests::owners() {
+        let mut bank = RuntimeRetainedValueAdmission::for_program(owner, limits);
+        bank.validate_typed_borrowed(value.borrowed_value(), boolean)
+            .unwrap();
+        for _ in 0..3 {
+            bank.validate_admitted_typed_borrowed_in_invocation(
+                value.borrowed_value(),
+                boolean,
+                None,
+            )
+            .unwrap();
+        }
+        let error = bank.validate(&value).unwrap_err();
+        assert_eq!(
+            error,
+            AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded { budget: "nodes" },
+            )
+        );
+        assert_eq!(
+            bank.validate_admitted_typed_borrowed_in_invocation(
+                value.borrowed_value(),
+                boolean,
+                None,
+            ),
+            Err(error)
+        );
+    }
+}
 
 #[test]
 fn retained_capture_batch_spends_one_allowance_and_preserves_the_first_failure() {

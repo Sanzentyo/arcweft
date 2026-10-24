@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "d741187573117bce556f453018593cb482f878ea",
+  "recordedAt": "2026-10-24T13:41:18.5649835Z",
+  "sourceCodeFiles": 51,
+  "sourceCodeDrift": 0,
+  "rawFiles": 76,
+  "rawByteDrift": 0,
+  "rawGitBlobDrift": 0,
+  "coreBinaryDrift": 0,
+  "heldTracked": 14,
+  "heldTrackedDrift": 0,
+  "heldUntracked": 6,
+  "heldUntrackedDrift": 0,
+  "changedLinks": 24,
+  "brokenLinks": 0,
+  "finalCore": {
+    "run": "task-final-r2792-await-many-awbc-core-published-runtime",
+    "executed": 1982,
+    "passed": 1982,
+    "failed": 0,
+    "skipped": 0
+  },
+  "scope": "AWBC AwaitMany original-Source operand/launch/retained-handle admission, exact Source checkpoint lease, and admitted Product/session save context; reverse53 runtime acceptance remains separate"
+}

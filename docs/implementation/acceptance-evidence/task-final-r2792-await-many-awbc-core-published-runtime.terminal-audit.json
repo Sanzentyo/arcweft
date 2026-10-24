@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "d741187573117bce556f453018593cb482f878ea",
+  "run": "task-final-r2792-await-many-awbc-core-published-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  51.740s] 1982 tests run: 1982 passed, 0 skipped",
+  "executed": 1982,
+  "passed": 1982,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 5919,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T13:35:38.7641499Z"
+}

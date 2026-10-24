@@ -109,7 +109,10 @@ flow done() -> String { return "done" }
     assert_eq!(names, ["rain", "window"]);
     let snapshot = AwbcFiberStateSnapshot::from_live(
         &fiber,
-        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(program.clone())),
+        &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(program.clone())),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        ),
     )
     .unwrap();
     let restored = snapshot

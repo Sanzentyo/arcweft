@@ -2874,12 +2874,11 @@ impl AwbcProductExecutorSaveSnapshot {
 
     pub fn from_live(
         snapshot: &AwbcProductExecutorSnapshot,
-        owner: &crate::task::RuntimeProgramOwner,
+        program: &super::AwbcProductProgram,
     ) -> Result<Self, AwbcProductSaveError> {
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let owner = &crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
+        let mut admission =
+            program.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
         snapshot
             .admit_retained(owner, &mut admission)
             .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
@@ -2995,10 +2994,8 @@ impl AwbcProductExecutorSaveSnapshot {
                 })
             })
             .transpose()?;
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let mut admission =
+            program.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
         admission
             .validate_metadata_collection(self.queued_task_events.len())
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
@@ -3587,10 +3584,9 @@ impl AwbcProductStepExecutor {
                 message: error.to_string(),
             })?;
         let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let mut admission = self
+            .program
+            .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
         if let Some(root) = &self.root {
             root.admit_retained(&mut admission).map_err(|error| {
                 AwbcProductSaveError::InvalidSnapshot {
@@ -4009,10 +4005,9 @@ impl AwbcProductStepExecutor {
             }
         }
         let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let mut admission = self
+            .program
+            .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
         snapshot.admit_retained(&owner, &mut admission)?;
         Ok(admission)
     }

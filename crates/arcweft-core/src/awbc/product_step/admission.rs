@@ -85,6 +85,27 @@ impl AwbcProductProgram {
         Arc::clone(&self.program)
     }
 
+    pub(in crate::awbc) fn original_task_source(&self) -> Option<&RuntimeTaskSourceProgram> {
+        self.task_source.as_ref()
+    }
+
+    /// A complete retained group keeps the actual admitted Source alongside
+    /// its executable, sharing one value, metadata and relation-work bank.
+    pub fn retained_value_admission(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> crate::value::RuntimeRetainedValueAdmission {
+        match &self.task_source {
+            Some(source) => {
+                crate::value::RuntimeRetainedValueAdmission::for_task_source(source, limits)
+            }
+            None => crate::value::RuntimeRetainedValueAdmission::for_program(
+                crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                limits,
+            ),
+        }
+    }
+
     /// One private fiber rollback group uses the actual enclosing Source and
     /// the same admission for preflight and value materialization.
     pub(crate) fn restore_fiber_snapshot(
@@ -92,10 +113,8 @@ impl AwbcProductProgram {
         snapshot: crate::awbc::fiber::AwbcFiberStateSnapshot,
     ) -> Result<crate::awbc::fiber::FiberState, crate::value::AwbcRuntimeValueSnapshotError> {
         let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let mut admission =
+            self.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
         snapshot.admit_retained(&mut admission)?;
         let context = crate::value::RuntimeValueRestoreContext::new(
             &owner,

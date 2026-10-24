@@ -98,7 +98,7 @@ fn environment_tensor_value_preserves_elements_and_one_op_restoration() {
             let wire =
                 arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
                     &snapshot,
-                    &arcweft_core::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+                    executor.admitted_program(),
                 )
                 .unwrap();
             let bytes = serde_json::to_vec(&wire).unwrap();

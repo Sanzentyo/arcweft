@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "d741187573117bce556f453018593cb482f878ea",
+  "name": "task-final-r2788-await-many-awbc-source-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2788-await-many-awbc-source-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T13:15:39.5488527Z",
+  "finishedAt": "2026-10-24T13:16:37.1050233Z"
+}

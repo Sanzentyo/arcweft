@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d741187573117bce556f453018593cb482f878ea",
+  "name": "task-final-r2780-await-many-awbc-api-core-check",
+  "command": [
+    "check",
+    "--package",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2780-await-many-awbc-api-core-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T12:18:21.7519628Z",
+  "finishedAt": "2026-10-24T12:21:03.1439597Z"
+}

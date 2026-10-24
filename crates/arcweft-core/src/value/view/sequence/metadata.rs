@@ -80,6 +80,7 @@ impl<'a> RuntimeSequenceView<'a> {
                 Some(Columns::SnapshotRecords(fields))
             }
             Self::Bytes(_)
+            | Self::Views(_)
             | Self::DialogueBindings(_)
             | Self::DialogueEffects(_)
             | Self::Live(RuntimeSeq::Values(_) | RuntimeSeq::Dense(_))

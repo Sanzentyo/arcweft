@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "d741187573117bce556f453018593cb482f878ea",
+  "run": "task-final-r2789-await-many-awbc-source-workspace-clippy",
+  "exitCode": 0,
+  "changedLineWarnings": [
+    {
+      "warning": "warning: docs for function which may panic missing `# Panics` section",
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "line": 2523
+    },
+    {
+      "warning": "warning: item in documentation is missing backticks",
+      "path": "crates/arcweft-core/src/executor.rs",
+      "line": 722
+    },
+    {
+      "warning": "warning: item in documentation is missing backticks",
+      "path": "crates/arcweft-core/src/task/producer/source/template.rs",
+      "line": 78
+    },
+    {
+      "warning": "warning: this function has too many lines (130/100)",
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "line": 6607
+    },
+    {
+      "warning": "warning: useless conversion to the same type: `u32`",
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "line": 6893
+    }
+  ]
+}

@@ -98,8 +98,14 @@ fn save_snapshot_fiber(
     fiber: &FiberState,
     owner: &RuntimeProgramOwner,
 ) {
-    snapshot.executor.state.fiber = AwbcFiberStateSnapshot::from_live(fiber, owner)
-        .expect("live fiber projects to its inert snapshot");
+    snapshot.executor.state.fiber = AwbcFiberStateSnapshot::from_live(
+        fiber,
+        &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .expect("live fiber projects to its inert snapshot");
 }
 
 fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {

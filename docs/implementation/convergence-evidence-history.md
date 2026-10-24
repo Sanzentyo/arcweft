@@ -10444,3 +10444,48 @@ Generic Match151件は固定された過去入力の実績として維持し、�
 parent `1022a12a9d28cfba1149aa6dd8c16d2dd19b7268`、tree `fa8522f06c5c0c45697483bd399de4b3dec97249`。
 15 paths／削除2、5,883入力、元の14 tracked・6 untracked WIPと空indexを照合した。
 [公開原本](acceptance-evidence/task-documentation-final-checkpoint.verified.json)。
+
+## AWBC AwaitManyの元Source起動・保存復元 — 2026-10-24
+
+先行するNative AwaitMany cutは `18e95147d3b83e19e0e93313a12a5e75c1bb98dc` へ公開済み。
+基点は既存mainの `d741187573117bce556f453018593cb482f878ea`。
+前のgoal turnは資料整理を同commitへ公開した進捗である。Rust実装を再開し、
+元の14 tracked WIPと6 untrackedを保持した5,919固定入力で検証した。
+実際のCargo graphはCoreを含む逆依存53 package、manifest／lock入力99件で差分0。
+
+AWBC AwaitManyのbase／childを元Sourceへ照合し、actual frameの型bindingとoperandで
+共通producerを導出してからrequest kernelを実行するよう移行した。行のdigestだけで
+生成・照合していた3 APIは削除した。test fixtureも実際のRuntimePlan Sourceと、
+そのgenerated request definition／capture originを持つものへ置換した。
+
+保持値はframe／suspensionの完全なgrammarで先に検査し、同じbankで元Sourceの型と
+expected-keyを追加照合する。追加照合は保持値のnodesを再課金せず、relation work・
+metadata・storage provenance・first failureを共有する。bankとincremental stateは
+実際のSource leaseを保持し、別programのfieldを検査するscopeでは一時退避・復帰する。
+仮のowner、値aggregateの複製、別のnode allowanceは導入していない。
+
+private checkpointは同じexecutable Arcでも別のadmitted Source leaseを拒否する。
+公開saveはadmitted Productを受け取り、sessionの保存・読込み・snapshot復元も
+そのSourceを持つ共有bankを使う。借用sequence viewは元のlive／inert originを保持し、
+live save projectionの権限を与えない。debug labelは共通Source APIでcapture参照前に
+preflightし、Nativeの個別preflightは重複のため削除した。上限や実行条件は緩めていない。
+
+- R2773はfixtureのimport漏れで失敗。修正後R2775は6／6、VM入力取出しを接続した
+  R2777は7／7 PASS。これらは後続の完全なAWBC切替の受入と区別する。
+- R2778は型参照と借用carrierの再帰型、R2779はエラー変換とsequence viewのconsumer漏れ、
+  R2780／R2783／R2787は保存APIの呼出側の移行漏れで失敗した。全失敗を原本のまま保持する。
+- R2782は起動・quota・保存復元・同じexecutableの別Source lease・型を保ったitem改変・
+  追加型照合でのnodes共有を含む9／9 PASS。1,972件のskipはこのfilterによる除外で、ignoredではない。
+- debug metadataのpreflight回帰を追加したR2786はCore library全1,982／1,982 PASS、skip 0。
+- R2788 workspace checkとR2789 workspace Clippyはall-target／all-feature／lockedで終了0。
+  警告あり。変更行の5警告を整理し、R2790 Core全target Clippyは終了0、変更行警告0。
+  整理は到達不能なexpectのtyped error化、doc記法、fixtureのlint理由と不要な数値変換であり、
+  public API signature・非Coreソースはworkspace gate後に変更していない。
+- 公開対象の最終コードでR2792もCore全1,982／1,982 PASS、skip 0。
+  catalog全件・最終status・固定入力と実行binaryを照合した。
+
+76原本・28,211,505 bytesをSHA256／Git blobとbyte一致で保持した。
+[固定入力・実行・gate・原本対応](acceptance-evidence/task-await-many-awbc-source-acceptance.json)。
+逆依存53 runtime、Generic Match 151件、Tier2、Native-Web画像／capture parityは今回再実行していない。
+以前の7,254／7,204 PASS／50 FAIL／39 ignoredは元の固定入力の履歴として維持し、
+新しいCore件数を加算しない。Generic Matchの受入・公開を未完了へ戻していない。

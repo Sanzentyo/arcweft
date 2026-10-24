@@ -142,7 +142,9 @@ impl AwbcRuntimeValueSnapshot {
                     })
                     .collect::<Result<_, _>>()?,
             )),
-            RuntimeSequenceView::Snapshot(_) => Err(Self::inert_projection_error()),
+            RuntimeSequenceView::Snapshot(_) | RuntimeSequenceView::Views(_) => {
+                Err(Self::inert_projection_error())
+            }
         }
     }
 

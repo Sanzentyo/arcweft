@@ -618,9 +618,11 @@ mod tests {
         ));
         assert!(executor.root.as_ref().unwrap().failure().is_some());
         let before = executor.snapshot().unwrap();
-        let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
-        let saved =
-            super::super::AwbcProductExecutorSaveSnapshot::from_live(&before, &owner).unwrap();
+        let saved = super::super::AwbcProductExecutorSaveSnapshot::from_live(
+            &before,
+            executor.admitted_program(),
+        )
+        .unwrap();
         let bytes = serde_json::to_vec(&saved).unwrap();
         let decoded: super::super::AwbcProductExecutorSaveSnapshot =
             serde_json::from_slice(&bytes).unwrap();

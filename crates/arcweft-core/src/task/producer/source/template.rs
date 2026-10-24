@@ -74,6 +74,40 @@ impl<'value, V: RuntimeStoredValue> RuntimeTaskTemplateArguments<'value, V> {
 }
 
 impl RuntimeTaskSourceRef<'_> {
+    /// Checks a retained handle against the original template and admitted
+    /// operand identity without cloning a request or constructing a `TaskSpec`.
+    pub(crate) fn validate_template_handle(
+        &self,
+        checked: &NeedProducerSpec<RuntimeTaskSource>,
+        handle: crate::value::RuntimeNeedView<'_>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), RuntimeTaskProducerSourceError> {
+        admission.status()?;
+        let Some(owner) = admission.program_owner() else {
+            return Err(RuntimeTaskProducerSourceError::OriginalProgram);
+        };
+        if !checked.source().program().owns_source_for(self, owner)
+            || self.task_plan() != checked.source().task_plan()
+        {
+            return Err(RuntimeTaskProducerSourceError::OriginalProgram);
+        }
+        let Some(RuntimeBodyTaskSource::Producer(template)) = self.request_endpoint().task_source()
+        else {
+            return Err(RuntimeTaskProducerSourceError::RequestKind);
+        };
+        let definition = &template.definition;
+        if handle.producer() != &crate::task::NeedProducerInstance::try_from(checked)?
+            || handle.class() != &definition.class
+            || handle.priority() != definition.priority
+            || handle.cancel_scope() != &definition.cancel_scope
+            || handle.policy() != definition.policy
+            || handle.outcome() != &definition.outcome()
+        {
+            return Err(RuntimeTaskProducerSourceError::Specification);
+        }
+        Ok(())
+    }
+
     /// Materializes only the original template's scheduling metadata after its
     /// complete operand admission. An equal digest from another lease cannot
     /// supply either the source endpoint or a caller-selected task policy.
@@ -117,16 +151,40 @@ impl RuntimeTaskSourceRef<'_> {
     /// Validates the complete capture grammar and actual source/item types on
     /// the caller's existing bank. Borrowed views hash the existing tuple ABI;
     /// no argument value, request definition or lease is copied before success.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one closed Thread/AwaitMany input algebra preserves preflight, ownership, type and canonical argument order"
-    )]
     pub(crate) fn template_producer_spec<V: RuntimeStoredValue>(
         &self,
         program: &RuntimeTaskSourceProgram,
         arguments: RuntimeTaskTemplateArguments<'_, V>,
         binding: Option<&RuntimeFunctionEffectInstantiation>,
         admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<NeedProducerSpec<RuntimeTaskSource>, RuntimeTaskProducerSourceError> {
+        self.template_producer_spec_with_admission(program, arguments, binding, admission, false)
+    }
+
+    /// The enclosing retained grammar has already charged each value and
+    /// checked its custody. Original type relations, metadata, binding and
+    /// Source identity still run on the very same allowance.
+    pub(crate) fn template_producer_spec_after_value_admission<V: RuntimeStoredValue>(
+        &self,
+        program: &RuntimeTaskSourceProgram,
+        arguments: RuntimeTaskTemplateArguments<'_, V>,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<NeedProducerSpec<RuntimeTaskSource>, RuntimeTaskProducerSourceError> {
+        self.template_producer_spec_with_admission(program, arguments, binding, admission, true)
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one closed Thread/AwaitMany input algebra preserves preflight, ownership, type and canonical argument order"
+    )]
+    fn template_producer_spec_with_admission<V: RuntimeStoredValue>(
+        &self,
+        program: &RuntimeTaskSourceProgram,
+        arguments: RuntimeTaskTemplateArguments<'_, V>,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        admission: &mut RuntimeRetainedValueAdmission,
+        values_admitted: bool,
     ) -> Result<NeedProducerSpec<RuntimeTaskSource>, RuntimeTaskProducerSourceError> {
         admission.status()?;
         let captures = arguments.captures();
@@ -185,8 +243,11 @@ impl RuntimeTaskSourceRef<'_> {
             producer.policy,
         ))?;
         if let RuntimeBodyTaskSource::Producer(template) = task_source {
-            admission
-                .validate_metadata(&(&template.request.capability, &template.request.operation))?;
+            admission.validate_metadata(&(
+                &template.request.capability,
+                &template.request.operation,
+                &template.definition.debug_label,
+            ))?;
         }
         // Inspect only the source container header before any capture value is
         // projected. Children stay borrowed until its complete role preflight.
@@ -224,11 +285,19 @@ impl RuntimeTaskSourceRef<'_> {
                 .expect("the common seal admitted the capture type")
                 .semantic_identity();
             // Captures enter both thread frames and request kernels by Copy.
-            admission.validate_typed_borrowed_in_invocation(
-                value.borrowed_value(),
-                identity,
-                binding,
-            )?;
+            if values_admitted {
+                admission.validate_admitted_typed_borrowed_in_invocation(
+                    value.borrowed_value(),
+                    identity,
+                    binding,
+                )?;
+            } else {
+                admission.validate_typed_borrowed_in_invocation(
+                    value.borrowed_value(),
+                    identity,
+                    binding,
+                )?;
+            }
         }
         let captured: Vec<_> = captures.iter().map(V::borrowed_view).collect();
         let captured = RuntimeValueView::Tuple(RuntimeTupleView::Views(&captured));
@@ -250,11 +319,19 @@ impl RuntimeTaskSourceRef<'_> {
                     .expect("the common seal admitted the original source container")
                     .semantic_identity();
                 // Fanout takes custody of its evaluated source; this grants no Copy.
-                admission.validate_owned_typed_borrowed_in_invocation(
-                    source.borrowed_value(),
-                    ty,
-                    binding,
-                )?;
+                if values_admitted {
+                    admission.validate_admitted_typed_borrowed_in_invocation(
+                        source.borrowed_value(),
+                        ty,
+                        binding,
+                    )?;
+                } else {
+                    admission.validate_owned_typed_borrowed_in_invocation(
+                        source.borrowed_value(),
+                        ty,
+                        binding,
+                    )?;
+                }
                 let source: Vec<_> = match view {
                     RuntimeValueView::Tuple(items) => items.iter().collect(),
                     RuntimeValueView::Sequence(items) => (0..count)
@@ -293,11 +370,19 @@ impl RuntimeTaskSourceRef<'_> {
                     .get(ty)
                     .expect("the common seal admitted the original item type")
                     .semantic_identity();
-                admission.validate_owned_typed_borrowed_in_invocation(
-                    item.borrowed_value(),
-                    identity,
-                    binding,
-                )?;
+                if values_admitted {
+                    admission.validate_admitted_typed_borrowed_in_invocation(
+                        item.borrowed_value(),
+                        identity,
+                        binding,
+                    )?;
+                } else {
+                    admission.validate_owned_typed_borrowed_in_invocation(
+                        item.borrowed_value(),
+                        identity,
+                        binding,
+                    )?;
+                }
                 let index = RuntimeValueView::Scalar(crate::value::RuntimeScalarView::UInt(
                     crate::value::RuntimeUInt::U32(index),
                 ));

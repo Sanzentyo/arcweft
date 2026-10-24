@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "parent": "18e95147d3b83e19e0e93313a12a5e75c1bb98dc",
+  "publication": "d741187573117bce556f453018593cb482f878ea",
+  "publishedTree": "e4a65758ae060d128ca7a6d71834e890a5eec0e7",
+  "updated": [
+    {
+      "path": "docs/03-presentation/layers.md",
+      "before": "13d68ce17dc411ca325c3d8f6d3db9ecf762940068ab244d4ec6840ded33b022",
+      "after": "3eaa8bfadaaafa6e839860689553f8fca5ead018daff77cc894f7b45441520fa"
+    },
+    {
+      "path": "docs/03-presentation/README.md",
+      "before": "7e2b5f23e9154abe5dfbdeaf585f3671bafa0d390d413a6089956374c2936352",
+      "after": "31319d0a546c041ded7cd08cccf0311be2314cccafbbe2a5683b86e93b0551b1"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "before": "757644c8d54d4c3eace90c8572fcf9c8205f3ae18bd4996a1c32fac2a66adc24",
+      "after": "39e7f08f3e2f1855061189fbf8f349e639f5bd7ece2671d028af6d879bb6acd7"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "before": "fe1297d5fab0508055c3bd2433aff19586762016013baa76e59c34e6bc62c81a",
+      "after": "eea7309c67da2451427bf8b34a19a9e759011f9bc056865dce59a35c4fe0bc93"
+    }
+  ],
+  "sourceCodeBaselineChanges": 0,
+  "held": 14
+}
