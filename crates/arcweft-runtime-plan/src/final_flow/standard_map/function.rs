@@ -49,10 +49,7 @@ pub(in crate::flow) fn admit_prefix_functions(
             .maps
             .get(owner)
             .ok_or_else(|| error("Map body local inventory is absent"))?;
-        let callable = body_locals
-            .callable
-            .clone()
-            .ok_or_else(|| error("Map callback capture local is absent"))?;
+        let callable = body_locals.callable.clone();
         let definition = facts
             .expression_coordinate(*owner)
             .ok_or_else(|| error("Map prefix has no accepted coordinate"))?
@@ -107,7 +104,7 @@ pub(in crate::flow) fn admit_prefix_functions(
             .ok_or_else(|| error("Map prefix family disagrees with its closed signature"))?;
         let body = lower_standard_map_body(
             map.family(),
-            map.iteration(),
+            map.collection(),
             MapFlowInput {
                 receiver,
                 result,

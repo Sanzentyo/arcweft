@@ -510,10 +510,15 @@ Loops are CFG, not one-off opcodes. A loop header is a block entry marked
 `continue` lower to jumps selected from an explicit lowering-time loop stack.
 Match, scoped bindings, dynamic targets, return, traps, and budget yielding are
 therefore covered without embedding structured AST nodes into instructions.
-For standard Vec, Seq, and Slice map helpers, `SequenceNext` moves each item into
-the callback and branches to the result only when the source is empty. Array map
-helpers destructure the fixed-length source once. Each call duplicates the
-callback only when its value has unrestricted copy proof.
+Standard Array, Vec, Seq, and Slice maps use ordinary iterator CFG. Each
+successful next step moves one item into the callback; the loop finishes only
+when the iterator returns None. Array Map accumulates owned outputs in a Vec,
+then `ArrayFromVec` checks the exact Array result under the active type context
+before publication. Its locals and callback body do not grow with the source
+length. Each call duplicates the callback only when its value has unrestricted
+copy proof. A fused reduction may elide Array construction only after proving
+the output item identity and complete length, in addition to the existing
+budget, totality, copy, capture, and later-observer conditions.
 
 `NeedTimeout` constructs a derived unary Need and never suspends by itself.
 The later `Await` observes that Need through the ordinary single Await

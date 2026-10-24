@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "run": "task-final-r2656-array-map-cli-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  73.623s] 16 tests run: 16 passed (1 slow), 464 skipped",
+  "executed": 16,
+  "passed": 16,
+  "failed": 0,
+  "skipped": 464,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 5248,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T06:03:33.3734407Z"
+}

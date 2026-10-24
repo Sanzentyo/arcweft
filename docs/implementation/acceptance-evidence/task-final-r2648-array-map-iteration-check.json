@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "name": "task-final-r2648-array-map-iteration-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2648-array-map-iteration-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T05:40:29.6834574Z",
+  "finishedAt": "2026-10-24T05:41:54.7805620Z"
+}

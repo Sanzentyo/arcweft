@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "run": "task-final-r2653-array-map-cli-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   2.317s] 16 tests run: 13 passed, 3 failed, 464 skipped",
+  "executed": 16,
+  "passed": 13,
+  "failed": 3,
+  "skipped": 464,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 5248,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_copy_sum_elision_declines_later_reuse_and_capture"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_repeated_i64_sum_uses_core_wrapping_reduction"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_array_map_original_low_and_one_op_budgets_keep_native_awbc_parity"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-24T05:56:44.7625573Z"
+}

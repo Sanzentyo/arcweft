@@ -236,11 +236,12 @@ use arcweft_runtime_plan::{
         RuntimeResolvedPlace, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
         RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
         RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
-        RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-        RuntimeStandardMapPrefix, RuntimeTraitIdentity, RuntimeTraitMethodFact,
-        RuntimeTraitMethodInstanceKey, RuntimeTraitMethodInstanceUse, RuntimeTraitMethodUseScope,
-        RuntimeTriggerAdmission, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
-        RuntimeTypeProjectionPath, RuntimeTypeProjectionStep, RuntimeTypeShape,
+        RuntimeStandardMapCall, RuntimeStandardMapCollection, RuntimeStandardMapFamily,
+        RuntimeStandardMapOperandOrder, RuntimeStandardMapPrefix, RuntimeTraitIdentity,
+        RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey, RuntimeTraitMethodInstanceUse,
+        RuntimeTraitMethodUseScope, RuntimeTriggerAdmission, RuntimeTryBoundaryOwner,
+        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
+        RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
 use arcweft_source::ProductSourceRef;
@@ -9323,10 +9324,11 @@ fn runtime_standard_map_target(
             });
         }
     };
-    let iteration = match family {
+    let collection = match family {
         RuntimeStandardMapFamily::Vec
         | RuntimeStandardMapFamily::Seq
-        | RuntimeStandardMapFamily::Slice => {
+        | RuntimeStandardMapFamily::Slice
+        | RuntimeStandardMapFamily::Array => {
             let operand = application
                 .core()
                 .runtime_operands()
@@ -9341,7 +9343,12 @@ fn runtime_standard_map_target(
                     owner,
                     reason: "standard map has no checked callback operand".to_owned(),
                 })?;
-            let TypeKind::Function { params, .. } = operand.inferred() else {
+            let TypeKind::Function {
+                params,
+                return_type,
+                ..
+            } = operand.inferred()
+            else {
                 return Err(RuntimeSemanticProjectionError::Call {
                     owner,
                     reason: "standard map callback is not a checked function".to_owned(),
@@ -9364,6 +9371,10 @@ fn runtime_standard_map_target(
                     RuntimeBuiltinIteratorFamily::Slice,
                     IteratorStateKind::Slice,
                 ),
+                RuntimeStandardMapFamily::Array => (
+                    RuntimeBuiltinIteratorFamily::Array,
+                    IteratorStateKind::Array,
+                ),
                 _ => unreachable!("sequence map family selected above"),
             };
             let iterator = TypeKind::IteratorState {
@@ -9372,24 +9383,30 @@ fn runtime_standard_map_target(
             };
             let next_value = TypeKind::Option(Box::new(item.clone()));
             let step = TypeKind::Tuple(vec![iterator.clone(), next_value.clone()]);
-            Some(RuntimeBuiltinIteratorFact::new(
+            let iteration = RuntimeBuiltinIteratorFact::new(
                 runtime_family,
                 lexical.runtime_type(item, symbols, world, analysis)?,
                 lexical.runtime_type(&iterator, symbols, world, analysis)?,
                 lexical.runtime_type(&next_value, symbols, world, analysis)?,
                 lexical.runtime_type(&step, symbols, world, analysis)?,
+            );
+            let accumulator = match family {
+                RuntimeStandardMapFamily::Seq => TypeKind::Seq(return_type.clone()),
+                _ => TypeKind::Vec(return_type.clone()),
+            };
+            Some(RuntimeStandardMapCollection::new(
+                iteration,
+                lexical.runtime_type(&accumulator, symbols, world, analysis)?,
             ))
         }
-        RuntimeStandardMapFamily::Array
-        | RuntimeStandardMapFamily::Option
-        | RuntimeStandardMapFamily::Result => None,
+        RuntimeStandardMapFamily::Option | RuntimeStandardMapFamily::Result => None,
     };
     if matches!(
         application.result(),
         arcweft_lang_sema::callable::CheckedCallResult::Continuation(_)
     ) {
         return Ok(RuntimeResolvedStaticCallTarget::StandardMapPrefix(
-            RuntimeStandardMapPrefix::new(family, mapping, iteration),
+            RuntimeStandardMapPrefix::new(family, mapping, collection),
         ));
     }
     let (receiver, order) = match application.core().execution().receiver() {
@@ -9410,7 +9427,7 @@ fn runtime_standard_map_target(
         }
     };
     Ok(RuntimeResolvedStaticCallTarget::StandardMap(
-        RuntimeStandardMapCall::new(family, mapping, receiver, order, iteration),
+        RuntimeStandardMapCall::new(family, mapping, receiver, order, collection),
     ))
 }
 

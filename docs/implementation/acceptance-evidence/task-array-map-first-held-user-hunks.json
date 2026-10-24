@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "expectedPatchSha256": "e0eb55633fd17a5af5c72130ac3adc6ca58f69fd52c140d3b2940ca776d77150",
+  "actualPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "files": 14,
+  "hunkDrift": 0,
+  "metadataOnlyChanged": [
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs"
+  ],
+  "reason": "Owned CLI test migration changes only its index blob identifiers; all original user hunks and other 13 patch blocks remain identical",
+  "recordedAt": "2026-10-24T06:20:58.9032481Z"
+}

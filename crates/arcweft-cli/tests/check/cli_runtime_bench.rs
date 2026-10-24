@@ -8072,12 +8072,11 @@ mod source_map_batch_owner_tests {
     // A test completion bound, independent of numeric physical admission. It
     // borrows the accepted bytecode call/CFG inventory: every reachable call
     // has a closed typed target, callbacks are acyclic, and the root's single
-    // owning iterator decreases once per source row (Array is already unrolled).
+    // owning iterator decreases once per source row for Array and sequence alike.
     struct AwbcFiniteMapSchedule<'a> {
         product: &'a arcweft_core::awbc::schema::AwbcProgram,
         root: arcweft_core::awbc::schema::AwbcFunctionId,
         root_visits: usize,
-        root_is_sequence: bool,
         visiting: std::collections::BTreeSet<arcweft_core::awbc::schema::AwbcFunctionId>,
         bounds: std::collections::BTreeMap<arcweft_core::awbc::schema::AwbcFunctionId, usize>,
     }
@@ -8264,7 +8263,7 @@ mod source_map_batch_owner_tests {
                 // Validate every emitted successor, including dead table blocks.
                 self.successors(&block.terminator);
             }
-            let iterator_gate = if function == self.root && self.root_is_sequence {
+            let iterator_gate = if function == self.root {
                 let [gate] = gates.as_slice() else {
                     panic!("one decreasing root iterator gate: {gates:?}")
                 };
@@ -8272,7 +8271,7 @@ mod source_map_batch_owner_tests {
             } else {
                 assert!(
                     gates.is_empty(),
-                    "Array/callback body has no variable iterator loop"
+                    "callback body has no independently scheduled iterator loop"
                 );
                 None
             };
@@ -8345,7 +8344,7 @@ mod source_map_batch_owner_tests {
             .get(first.input_local())
             .unwrap()
             .ty();
-        let (root_visits, root_is_sequence) = match selected
+        let into_iterator = match selected
             .plan()
             .type_table()
             .get(input_ty)
@@ -8354,15 +8353,27 @@ mod source_map_batch_owner_tests {
         {
             arcweft_core::plan::RuntimePlanTypeProjection::Array { length, .. } => {
                 assert_eq!(length.constant(), Some(rows as u64));
-                (1, false)
+                arcweft_core::value::RuntimeIntrinsic::CoreArrayIntoIter
             }
-            arcweft_core::plan::RuntimePlanTypeProjection::Sequence { .. } => {
-                (rows.checked_add(1).unwrap(), true)
-            }
+            arcweft_core::plan::RuntimePlanTypeProjection::Sequence { kind, .. } => match kind {
+                arcweft_core::plan::RuntimePlanSequenceKind::Vec => {
+                    arcweft_core::value::RuntimeIntrinsic::CoreVecIntoIter
+                }
+                arcweft_core::plan::RuntimePlanSequenceKind::Seq => {
+                    arcweft_core::value::RuntimeIntrinsic::CoreSeqIntoIter
+                }
+                arcweft_core::plan::RuntimePlanSequenceKind::Slice => {
+                    arcweft_core::value::RuntimeIntrinsic::CoreSliceIntoIter
+                }
+                arcweft_core::plan::RuntimePlanSequenceKind::Array => {
+                    panic!("Array input must retain its exact length projection")
+                }
+            },
             _ => panic!("finite Array/Vec Map input authority"),
         };
+        let root_visits = rows.checked_add(1).unwrap();
         let root_function = product.pure_program_function(selected.program()).unwrap();
-        if root_is_sequence {
+        {
             use arcweft_core::pattern::RuntimePatternKind;
             use arcweft_core::plan::FlowOp;
             use arcweft_core::value::{RuntimeExprKind, RuntimeIntrinsic, RuntimeLocalReadMode};
@@ -8457,10 +8468,7 @@ mod source_map_batch_owner_tests {
                 let RuntimeExprKind::Call { callee, args } = expr.kind() else {
                     panic!("collection into iterator")
                 };
-                assert!(matches!(
-                    callee.as_intrinsic(),
-                    Some(RuntimeIntrinsic::CoreVecIntoIter | RuntimeIntrinsic::CoreSeqIntoIter)
-                ));
+                assert_eq!(callee.as_intrinsic(), Some(into_iterator));
                 let [argument] = args.as_slice() else {
                     panic!("one source sequence")
                 };
@@ -8481,7 +8489,6 @@ mod source_map_batch_owner_tests {
             product: &product,
             root: root_function,
             root_visits,
-            root_is_sequence,
             visiting: Default::default(),
             bounds: Default::default(),
         }
@@ -8621,7 +8628,7 @@ mod source_map_batch_owner_tests {
         use arcweft_core::plan::FlowOp;
         use arcweft_core::value::RuntimeExprKind;
         let selected = authored(&array_source(3, false));
-        fn at_apply(
+        fn at_iteration(
             selected: &arcweft_compiler::lower::CompiledDeterministicProgram,
             backend: &mut RuntimePureAccelerator,
         ) -> Engine {
@@ -8634,7 +8641,7 @@ mod source_map_batch_owner_tests {
             for _ in 0..64 {
                 if matches!(
                     engine.active_flow_operations().next(),
-                    Some(FlowOp::ApplyGroup { .. })
+                    Some(FlowOp::WhileLet { .. })
                 ) {
                     return engine;
                 }
@@ -8650,14 +8657,14 @@ mod source_map_batch_owner_tests {
                 assert_eq!(step.stats.executed_ops, 1);
                 assert!(matches!(step.fiber_status, FlowFiberStatus::Running));
             }
-            panic!("Array Map must expose its accepted ApplyGroup owner");
+            panic!("Array Map must expose its accepted iteration owner");
         }
         let at_aggregate = |engine: &Engine| {
             matches!(engine.active_flow_operations().next(),
-            Some(FlowOp::Let { expr, .. }) if matches!(expr.kind(), RuntimeExprKind::BracketSeq(_)))
+            Some(FlowOp::Let { expr, .. }) if matches!(expr.kind(), RuntimeExprKind::ArrayFromVec { .. }))
         };
         let mut ordinary = accelerator(RuntimePureBackendMode::Aot, selected.plan());
-        let mut reference = at_apply(&selected, &mut ordinary);
+        let mut reference = at_iteration(&selected, &mut ordinary);
         let mut actual_cost = 0;
         for _ in 0..128 {
             if at_aggregate(&reference) {
@@ -8679,7 +8686,7 @@ mod source_map_batch_owner_tests {
         assert!(actual_cost > 3, "actual forwarding control must be charged");
         assert_eq!(ordinary.stats().batch_calls, 0);
         let mut physical = accelerator(RuntimePureBackendMode::Aot, selected.plan());
-        let mut admitted = at_apply(&selected, &mut physical);
+        let mut admitted = at_iteration(&selected, &mut physical);
         let step = admitted.step_with_pure_backend(
             Default::default(),
             RuntimeStepOptions {
@@ -8696,7 +8703,7 @@ mod source_map_batch_owner_tests {
         assert_eq!(physical.stats().batch_calls, 1);
         assert!(admitted.take_program_result().unwrap().is_none());
         let mut limited = accelerator(RuntimePureBackendMode::Aot, selected.plan());
-        let mut declined = at_apply(&selected, &mut limited);
+        let mut declined = at_iteration(&selected, &mut limited);
         let step = declined.step_with_pure_backend(
             Default::default(),
             RuntimeStepOptions {

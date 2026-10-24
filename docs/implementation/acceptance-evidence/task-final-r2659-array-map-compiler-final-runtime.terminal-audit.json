@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "run": "task-final-r2659-array-map-compiler-final-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   6.047s] 26 tests run: 26 passed, 164 skipped",
+  "executed": 26,
+  "passed": 26,
+  "failed": 0,
+  "skipped": 164,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noNamedTestsOnHost": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 5248,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-24T06:09:04.6734525Z"
+}

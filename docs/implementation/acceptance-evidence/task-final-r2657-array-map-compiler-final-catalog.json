@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "name": "task-final-r2657-array-map-compiler-final-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--test",
+    "generic_continuation_snapshot",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(standard_map)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2657-array-map-compiler-final-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T06:02:33.2608756Z",
+  "finishedAt": "2026-10-24T06:05:34.1641017Z"
+}

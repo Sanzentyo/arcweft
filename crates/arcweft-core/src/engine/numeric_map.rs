@@ -618,9 +618,11 @@ impl Engine {
             if let CommitSource::Array { results, .. } = &source {
                 elided.extend(results.iter().filter_map(binder));
             }
-            sum.aliases
-                .iter()
-                .all(|local| self.fiber.frame.env.get(*local).is_none())
+            sum.admits_array_construction(&owner, output_ty, rows)
+                && sum
+                    .aliases
+                    .iter()
+                    .all(|local| self.fiber.frame.env.get(*local).is_none())
                 && match sum.target {
                     SumTarget::Bind(pattern) => binder(pattern)
                         .is_some_and(|local| self.fiber.frame.env.get(local).is_none()),

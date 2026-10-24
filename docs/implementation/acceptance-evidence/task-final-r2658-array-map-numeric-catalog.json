@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "name": "task-final-r2658-array-map-numeric-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-cli",
+    "--test",
+    "check",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(closed_source_map_) | test(source_map_dense_u32_program_keeps_typed_callbacks_under_the_default_budget) | test(wide_source_map_sum_uses_complete_input_bounds_before_materialization)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2658-array-map-numeric-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T06:05:16.0922684Z",
+  "finishedAt": "2026-10-24T06:05:33.6553735Z"
+}

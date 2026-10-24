@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "name": "task-final-r2655-array-map-cli-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-cli",
+    "--test",
+    "check",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(bench_json_measures_checked_in_large_map_pure_batch_fixture) | test(source_map_batch_owner_tests)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2655-array-map-cli-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T05:59:58.4570958Z",
+  "finishedAt": "2026-10-24T06:00:49.5473456Z"
+}

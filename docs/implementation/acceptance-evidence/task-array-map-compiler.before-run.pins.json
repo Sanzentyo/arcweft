@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2650-array-map-compiler-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-6f0f9fd90f0abf3c.exe",
+      "bytes": 120320000,
+      "nonTest": false,
+      "sha256": "5e26f8dc0357152b0c9dab4b8600c9cafb9ac3f7195e67f88a5cec7583bbba19"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\generic_continuation_snapshot-b9d07783a860445b.exe",
+      "bytes": 173958144,
+      "nonTest": false,
+      "sha256": "21aa9e8398231a4a91d02936a6781eb6cef5e796cf0209e548a851c598f0dcbb"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T05:47:35.0559792Z"
+}

@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "workingTree": "13 owned Rust paths (CLI path also contains retained user WIP), 4 current documents, original 14 tracked and 6 untracked WIP retained",
+  "rows": [
+    {
+      "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+      "owner": "arcweft-cli",
+      "bytes": 307554,
+      "physicalLoc": 9043,
+      "basePhysicalLoc": 9036,
+      "classification": "test"
+    },
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "owner": "arcweft-compiler",
+      "bytes": 432251,
+      "physicalLoc": 10162,
+      "basePhysicalLoc": 10145,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/callable_cases/standard_map_program.rs",
+      "owner": "arcweft-compiler",
+      "bytes": 18819,
+      "physicalLoc": 525,
+      "basePhysicalLoc": 518,
+      "classification": "test"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/numeric_map.rs",
+      "owner": "arcweft-core",
+      "bytes": 31018,
+      "physicalLoc": 786,
+      "basePhysicalLoc": 784,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/numeric_map/control.rs",
+      "owner": "arcweft-core",
+      "bytes": 11342,
+      "physicalLoc": 277,
+      "basePhysicalLoc": 272,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/sequence_sum.rs",
+      "owner": "arcweft-core",
+      "bytes": 4657,
+      "physicalLoc": 122,
+      "basePhysicalLoc": 94,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/semantic_coordinate.rs",
+      "owner": "arcweft-lang-sema",
+      "bytes": 104223,
+      "physicalLoc": 2946,
+      "basePhysicalLoc": 2944,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow/control_locals.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 23497,
+      "physicalLoc": 624,
+      "basePhysicalLoc": 630,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow/standard_map.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 14732,
+      "physicalLoc": 388,
+      "basePhysicalLoc": 449,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow/standard_map/function.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 7019,
+      "physicalLoc": 148,
+      "basePhysicalLoc": 151,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow/statistics.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 5222,
+      "physicalLoc": 115,
+      "basePhysicalLoc": 115,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 583617,
+      "physicalLoc": 14931,
+      "basePhysicalLoc": 14896,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 14766,
+      "physicalLoc": 417,
+      "basePhysicalLoc": 413,
+      "classification": "production"
+    }
+  ],
+  "cargoEdgesChanged": false,
+  "manifestLockDrift": 0,
+  "reverseWorkspacePackages": 53,
+  "disposition": [
+    "Compiler translates the accepted callback input/result into one typed collection ABI. runtime-plan owns its iterator/accumulator dependencies and admits the complete local inventory before allocation. Array item/result temporaries no longer scale with N.",
+    "Core retains the original ordinary Map body. Numeric control proves its actual loop and exact Array construction; RuntimeSequenceSum projects aliases and the checked refinement from the same operations and refuses unsafe length/item elision. Capture, totality, copy, later-observer and complete operation-budget guards remain.",
+    "The new Sema generated-local purpose identifies the accumulator without using runtime values, HIR allocation IDs, normalized types or debug strings as authored identity. No new I/O boundary, unsafe code, Cargo edge, facade or independent catalog was introduced.",
+    "Existing large compiler, semantic-fact and interpreter modules keep their current cohesive owner responsibilities; this cut changes one Map family contract and its consumers rather than adding an unrelated state cluster. Source-family execution, snapshot and admission tests remain under their existing owners.",
+    "CLI finite-schedule evidence now derives Array iteration from the supplied input length and actual owned iterator CFG. Callback recursion/loops and extra scheduled work still reject; production budgets and execution volume assertions were preserved. The original steps 8-to-32 user hunk is excluded from staging."
+  ],
+  "recordedAt": "2026-10-24T06:19:32.1460599Z"
+}

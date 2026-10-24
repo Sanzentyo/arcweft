@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "name": "task-final-r2653-array-map-cli-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-cli",
+    "--test",
+    "check",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(bench_json_measures_checked_in_large_map_pure_batch_fixture) | test(source_map_batch_owner_tests)",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all",
+    "--no-fail-fast"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2653-array-map-cli-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-24T05:55:46.4864017Z",
+  "finishedAt": "2026-10-24T05:55:56.7213748Z"
+}

@@ -4373,6 +4373,31 @@ impl From<RuntimeStandardMapFamily> for arcweft_core::value::RuntimeStandardMapF
     }
 }
 
+/// Iterator state and owned accumulation type issued for a collection Map.
+/// Array accumulates into Vec and seals its exact result only after iteration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeStandardMapCollection {
+    iteration: RuntimeBuiltinIteratorFact,
+    accumulator: RuntimeNormalizedType,
+}
+
+impl RuntimeStandardMapCollection {
+    pub fn new(iteration: RuntimeBuiltinIteratorFact, accumulator: RuntimeNormalizedType) -> Self {
+        Self {
+            iteration,
+            accumulator,
+        }
+    }
+
+    pub const fn iteration(&self) -> &RuntimeBuiltinIteratorFact {
+        &self.iteration
+    }
+
+    pub const fn accumulator(&self) -> &RuntimeNormalizedType {
+        &self.accumulator
+    }
+}
+
 /// Exact final-HIR operands of one fully applied standard `map` call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeStandardMapCall {
@@ -4380,26 +4405,26 @@ pub struct RuntimeStandardMapCall {
     mapping: ExprId,
     receiver: ExprId,
     order: RuntimeStandardMapOperandOrder,
-    iteration: Option<Box<RuntimeBuiltinIteratorFact>>,
+    collection: Option<Box<RuntimeStandardMapCollection>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeStandardMapPrefix {
     family: RuntimeStandardMapFamily,
     mapping: ExprId,
-    iteration: Option<Box<RuntimeBuiltinIteratorFact>>,
+    collection: Option<Box<RuntimeStandardMapCollection>>,
 }
 
 impl RuntimeStandardMapPrefix {
     pub fn new(
         family: RuntimeStandardMapFamily,
         mapping: ExprId,
-        iteration: Option<RuntimeBuiltinIteratorFact>,
+        collection: Option<RuntimeStandardMapCollection>,
     ) -> Self {
         Self {
             family,
             mapping,
-            iteration: iteration.map(Box::new),
+            collection: collection.map(Box::new),
         }
     }
     pub const fn family(&self) -> RuntimeStandardMapFamily {
@@ -4408,8 +4433,8 @@ impl RuntimeStandardMapPrefix {
     pub const fn mapping(&self) -> ExprId {
         self.mapping
     }
-    pub fn iteration(&self) -> Option<&RuntimeBuiltinIteratorFact> {
-        self.iteration.as_deref()
+    pub fn collection(&self) -> Option<&RuntimeStandardMapCollection> {
+        self.collection.as_deref()
     }
 }
 
@@ -4425,14 +4450,14 @@ impl RuntimeStandardMapCall {
         mapping: ExprId,
         receiver: ExprId,
         order: RuntimeStandardMapOperandOrder,
-        iteration: Option<RuntimeBuiltinIteratorFact>,
+        collection: Option<RuntimeStandardMapCollection>,
     ) -> Self {
         Self {
             family,
             mapping,
             receiver,
             order,
-            iteration: iteration.map(Box::new),
+            collection: collection.map(Box::new),
         }
     }
 
@@ -4452,8 +4477,8 @@ impl RuntimeStandardMapCall {
         self.order
     }
 
-    pub fn iteration(&self) -> Option<&RuntimeBuiltinIteratorFact> {
-        self.iteration.as_deref()
+    pub fn collection(&self) -> Option<&RuntimeStandardMapCollection> {
+        self.collection.as_deref()
     }
 }
 
@@ -12508,7 +12533,7 @@ fn runtime_standard_map_matches_operands(
     };
     runtime_standard_map_types_match(
         map.family(),
-        map.iteration(),
+        map.collection(),
         mapping.ty(),
         receiver.ty(),
         result,
@@ -12546,7 +12571,7 @@ fn runtime_standard_map_prefix_matches_operands(
     };
     runtime_standard_map_types_match(
         map.family(),
-        map.iteration(),
+        map.collection(),
         mapping.ty(),
         receiver,
         result,
@@ -12555,7 +12580,7 @@ fn runtime_standard_map_prefix_matches_operands(
 
 fn runtime_standard_map_types_match(
     family: RuntimeStandardMapFamily,
-    iteration: Option<&RuntimeBuiltinIteratorFact>,
+    collection: Option<&RuntimeStandardMapCollection>,
     mapping: &RuntimeNormalizedType,
     receiver: &RuntimeNormalizedType,
     result: &RuntimeNormalizedType,
@@ -12577,8 +12602,17 @@ fn runtime_standard_map_types_match(
     let iteration_matches = match family {
         RuntimeStandardMapFamily::Vec
         | RuntimeStandardMapFamily::Seq
-        | RuntimeStandardMapFamily::Slice => iteration.is_some_and(|iteration| {
-            iteration.item() == receiver_input
+        | RuntimeStandardMapFamily::Slice
+        | RuntimeStandardMapFamily::Array => collection.is_some_and(|collection| {
+            let iteration = collection.iteration();
+            let accumulator_matches = match family {
+                RuntimeStandardMapFamily::Array => matches!(collection.accumulator().shape(),
+                    RuntimeTypeShape::Sequence { kind: RuntimeSequenceKind::Vec, item }
+                        if item.as_ref() == result_output),
+                _ => collection.accumulator() == result,
+            };
+            accumulator_matches
+                && iteration.item() == receiver_input
                 && matches!(
                     (family, iteration.family()),
                     (
@@ -12590,12 +12624,13 @@ fn runtime_standard_map_types_match(
                     ) | (
                         RuntimeStandardMapFamily::Slice,
                         arcweft_core::plan::RuntimeBuiltinIteratorFamily::Slice
+                    ) | (
+                        RuntimeStandardMapFamily::Array,
+                        arcweft_core::plan::RuntimeBuiltinIteratorFamily::Array
                     )
                 )
         }),
-        RuntimeStandardMapFamily::Array
-        | RuntimeStandardMapFamily::Option
-        | RuntimeStandardMapFamily::Result => iteration.is_none(),
+        RuntimeStandardMapFamily::Option | RuntimeStandardMapFamily::Result => collection.is_none(),
     };
     mapping_input == receiver_input && mapping_result.as_ref() == result_output && iteration_matches
 }

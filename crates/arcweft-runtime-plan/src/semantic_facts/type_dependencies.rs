@@ -15,7 +15,8 @@ use super::{
     RuntimeProjectFunctionTypeProjection, RuntimeRecordExpressionFact, RuntimeRecordPatternFact,
     RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
     RuntimeResolvedCallOperand, RuntimeResolvedHostCallOwner, RuntimeResolvedNominalRecordField,
-    RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeTryFact,
+    RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeStandardMapCollection,
+    RuntimeTryFact,
 };
 
 impl RuntimeDialogueApplication {
@@ -113,23 +114,13 @@ impl RuntimeResolvedStaticCallTarget {
     fn append_normalized_types<'a>(&'a self, roots: &mut Vec<&'a RuntimeNormalizedType>) {
         match self {
             Self::StandardMapPrefix(map) => {
-                if let Some(iteration) = map.iteration() {
-                    roots.extend([
-                        iteration.item(),
-                        iteration.iterator(),
-                        iteration.next_value(),
-                        iteration.step(),
-                    ]);
+                if let Some(collection) = map.collection() {
+                    collection.append_normalized_types(roots);
                 }
             }
             Self::StandardMap(map) => {
-                if let Some(iteration) = map.iteration() {
-                    roots.extend([
-                        iteration.item(),
-                        iteration.iterator(),
-                        iteration.next_value(),
-                        iteration.step(),
-                    ]);
+                if let Some(collection) = map.collection() {
+                    collection.append_normalized_types(roots);
                 }
             }
             Self::Declaration(callable) => callable.append_normalized_types(roots),
@@ -154,6 +145,19 @@ impl RuntimeResolvedStaticCallTarget {
             | Self::Line(_)
             | Self::Registered(_) => {}
         }
+    }
+}
+
+impl RuntimeStandardMapCollection {
+    fn append_normalized_types<'a>(&'a self, roots: &mut Vec<&'a RuntimeNormalizedType>) {
+        let iteration = self.iteration();
+        roots.extend([
+            iteration.item(),
+            iteration.iterator(),
+            iteration.next_value(),
+            iteration.step(),
+            self.accumulator(),
+        ]);
     }
 }
 

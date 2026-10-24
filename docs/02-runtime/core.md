@@ -91,11 +91,13 @@ runtime values, and debug labels do not enter that coordinate. Distinct generic
 instantiations retain the same authored origin while their runtime types differ.
 
 Generated declarations are first described by one borrowed inventory for the
-complete executable view. Array Map row multiplicities remain symbolic while
-that inventory counts locals in a fixed-width domain and rejects duplicate
+complete executable view. Collection Map uses one item/result pair and iterator
+state, independently of the source length. Array Map additionally owns a Vec
+accumulator and consumes it into the exact Array result after iteration.
+The inventory counts locals in a fixed-width domain and rejects duplicate
 semantic roles. Allocation sizes are derived only after admission. The Core
-construction issuer checks the remaining local namespace before repeated
-declarations are materialized. Expression and lexical Scope requests then enter
+construction issuer checks the remaining local namespace before declarations
+are materialized. Expression and lexical Scope requests then enter
 one atomic type/local admission; an invalid suffix cannot publish a prefix.
 The capacity query does not reserve identities, and final admission rechecks the
 same issuer. Local namespace capacity, per-function frame limits, and executable

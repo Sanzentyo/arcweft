@@ -27,6 +27,13 @@ fn every_map_family_uses_a_control_program_with_exact_values_and_callback_count(
         ("Vec<i64>", "Vec<i64>", sequence(), mapped(), 3),
         ("Seq<i64>", "Seq<i64>", sequence(), mapped(), 3),
         ("Array<i64, 3>", "Array<i64, 3>", sequence(), mapped(), 3),
+        (
+            "Array<i64, 0>",
+            "Array<i64, 0>",
+            arcweft_core::value::runtime_sequence_values(vec![]),
+            arcweft_core::value::runtime_sequence_values(vec![]),
+            0,
+        ),
         ("Slice<i64>", "Vec<i64>", sequence(), mapped(), 3),
         (
             "Option<i64>",

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "name": "task-final-r2661-array-map-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2661-array-map-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T06:09:15.7323050Z",
+  "finishedAt": "2026-10-24T06:11:02.5699294Z"
+}

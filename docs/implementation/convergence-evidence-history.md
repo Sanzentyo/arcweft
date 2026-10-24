@@ -10223,3 +10223,61 @@ R2647構造gateは97 workspace packages／3,209 files、blocking 0。
 全体goalの未達をGeneric Matchその他の既存受入へ戻さない。
 42原本をbyte・SHA256一致で保存し、バイナリ生成物はarchiveせずpath／hashだけを記録した。
 [原本整合](acceptance-evidence/task-array-constructor.evidence-integrity.json)。
+
+この構築cutは `39333e656863928105707c9dea89e11b9a40efc5` として公開した。
+parentは `5913440a59d6376ed2670a5ae4e97d9645e2c247`、treeは
+`96353c117edfe9523ffb58ff70efc3f3d03cc03b`、raw patch SHA256は
+`97b842ab66778d02afba09cd6f4971a716b22da9de0b3dc92f563463df8cbefb`。
+70 paths／5,248 working inputsと公開blob、fresh origin／advertised ref、空index、
+保持した14 tracked WIPの差分0を照合した。
+
+## Array Map反復化の検証 — 2026-10-24
+
+基点は `39333e656863928105707c9dea89e11b9a40efc5`、同じmain checkout。
+前節cut時点の「Map反復化は未切替」を、この追加実装と実行結果で置換する。
+Mapの追加localsとcallback本体を要素数Nに依存しない形に変更した。
+compiler発行のcollection契約がiteratorと蓄積値型を保持し、完全な型・local inventoryへ
+登録してから構築する。ArrayはVecへ順に出力を移し、最後にexact Arrayへ消費する。
+元のordinary bodyをSourceとして維持し、古い要素数分のlocal／callback展開を除いた。
+direct呼出しと保持したprefixは同じbodyを使う。契約versionは1のまま。
+
+numeric batchの証明も、この実際のiterator bodyとArray構築へ移行した。
+sum融合がArray構築を省略する場合は、出力要素type identityと完成する長さを追加で検査する。
+未確定の長さは通常のchecked構築を実行し、元のbudget／totality／copy／capture／
+後続observer条件は維持する。要素数4,096、callback実行量、製品資源上限、
+benchのsteps／max-ops、batch／fusion／コピー量のassertionは下げていない。
+
+最終の対象は重複なし **46／46 PASS**。
+R2656のCLI 16件は、変更していない4,096要素fixture、4096 callback／1 batch、
+exact budgetと1不足、Native-AWBCの低予算／OneOp、wrapping sum、後続reuse／captureを含む。
+R2659のCompiler 26件は全Map familyの直接／prefix呼出し、空Arrayのcallback 0回、
+effectとSource order、captured callback／retained prefixの途中保存復元を含む。
+R2660のCLI 4件はclosed Map control、後続observer、u32、wide整数の入力範囲を検査した。
+各catalog・5,248固定入力・実行バイナリは差分0。終端監査は
+[CLI 16件](acceptance-evidence/task-final-r2656-array-map-cli-runtime.terminal-audit.json)、
+[Compiler 26件](acceptance-evidence/task-final-r2659-array-map-compiler-final-runtime.terminal-audit.json)、
+[整数境界4件](acceptance-evidence/task-final-r2660-array-map-numeric-runtime.terminal-audit.json)。
+この後のRust差分は、統計ownerの旧「Array展開」というコメント2行の訂正だけ。
+
+途中のR2651 Compiler 26件もPASSしたが、最終46件へ重複加算しない。
+R2653は13 PASS／3 FAILで、4,096要素benchmark自体はこの時点でPASSした。
+3件は共通のAWBC試験補助が「Arrayは展開済みでiteratorを持たない」と拒否したもの。
+全collectionについて実際のinput長と減少するiteratorを証明する形へ更新し、
+callbackの追加ループ・再帰・独立したworkの拒否は維持した。
+Arrayのiterator gateの有限な訪問回数をN+1で導出し、各stepの製品budgetは変更していない。
+R2648のcollection import漏れとR2654の試験補助enum match漏れも修正した。
+実際の失敗log／receiptを原文のまま保持し、成功へ書き換えていない。
+
+R2661 workspace check／R2662 workspace Clippyはall-target／all-feature／lockedで終了0、
+警告あり。R2663構造gateは97 packages／3,209 files、blocking 0。
+公開Rust境界と完全なCargo reverse graphは引き続きCore起点53 packagesであり、
+このcutでは全体runtime matrix、39既存ignored／Tier2、Native-Web capture parityを再実行していない。
+この検証範囲を、既存受入の取消しやGeneric Matchの再開理由とはしない。
+現状と残る旧CLI失敗の観測は [現状一覧](current-status.md) だけで管理する。
+
+13 Rust pathsの物理LOCと所有境界を [owner記録](acceptance-evidence/task-array-map-owner-review.json) に残した。
+67原本／17,420,169 bytesをSHA256一致で保存し、生成バイナリは保存せずpath／hashだけを記録した。
+[原本整合](acceptance-evidence/task-array-map-evidence-integrity.json)。既存14 tracked WIPはhunk差分0。
+CLIの所有する試験修正により同ファイルのindex blob識別子だけが変わるため、
+raw patch hashの変化とhunk不変を [分離監査](acceptance-evidence/task-array-map-first-held-user-hunks.json) で区別した。
+既存6 untracked WIPも保持し、CLIの既存 `--steps` 8→32の変更は公開差分へ含めない。

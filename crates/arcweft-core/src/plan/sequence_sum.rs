@@ -18,16 +18,18 @@ pub(crate) struct RuntimeSequenceSum<'a> {
     pub(crate) target: RuntimeSequenceSumTarget<'a>,
     pub(crate) elided: Vec<RuntimeLocalDeclarationId>,
     pub(crate) result_type: RuntimePlanTypeId,
+    array_construction: Option<RuntimePlanTypeId>,
 }
 
 impl<'a> RuntimeSequenceSum<'a> {
     pub(crate) fn project(
         accumulator: RuntimeLocalDeclarationId,
-        sequence_type: RuntimePlanTypeId,
+        mut sequence_type: RuntimePlanTypeId,
         operations: impl IntoIterator<Item = &'a FlowOp>,
     ) -> Option<Self> {
         let mut source = accumulator;
         let mut aliases = Vec::new();
+        let mut array_construction = None;
         let mut seen = std::collections::BTreeSet::from([accumulator]);
         for (index, operation) in operations.into_iter().enumerate() {
             let (pattern, expression) = match operation {
@@ -53,12 +55,21 @@ impl<'a> RuntimeSequenceSum<'a> {
                         RuntimeSequenceSumTarget::Bind,
                     ),
                     result_type: expression.ty(),
+                    array_construction,
                 });
             }
             let pattern = pattern?;
-            if read_local(expression) != Some(source)
-                || expression.ty() != sequence_type
-                || pattern.ty() != sequence_type
+            let input = if let RuntimeExprKind::ArrayFromVec { value } = expression.kind() {
+                if array_construction.replace(expression.ty()).is_some() {
+                    return None;
+                }
+                value.as_ref()
+            } else {
+                expression
+            };
+            if read_local(input) != Some(source)
+                || input.ty() != sequence_type
+                || pattern.ty() != expression.ty()
             {
                 return None;
             }
@@ -68,8 +79,25 @@ impl<'a> RuntimeSequenceSum<'a> {
             }
             aliases.push(next);
             source = next;
+            sequence_type = expression.ty();
         }
         None
+    }
+
+    /// A fused reduction may elide exact Array construction only when its
+    /// complete numeric output has the same item identity and closed length.
+    /// Open extents retain their ordinary checked construction operation.
+    pub(crate) fn admits_array_construction(
+        &self,
+        plan: &super::RuntimePlan,
+        item_type: RuntimePlanTypeId,
+        items: usize,
+    ) -> bool {
+        self.array_construction.is_none_or(|ty| {
+            matches!(plan.type_table().get(ty).map(|row| row.projection()),
+                Some(super::RuntimePlanTypeProjection::Array { item, length })
+                    if *item == item_type && length.constant() == u64::try_from(items).ok())
+        })
     }
 }
 

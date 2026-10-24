@@ -2,7 +2,6 @@
 //! The original ordinary body remains authoritative and is checked in full.
 
 use super::*;
-use crate::pattern::RuntimePatternRest;
 use crate::plan::RuntimeStandardMapControl;
 use crate::value::RuntimeStandardMapFamily as Family;
 
@@ -10,87 +9,91 @@ fn project_body<'a>(
     plan: &RuntimePlan,
     control: &'a RuntimeStandardMapControl,
 ) -> Option<&'a RuntimePattern> {
+    let intrinsic = match control.family() {
+        Family::Array => RuntimeIntrinsic::CoreArrayIntoIter,
+        Family::Vec => RuntimeIntrinsic::CoreVecIntoIter,
+        Family::Seq => RuntimeIntrinsic::CoreSeqIntoIter,
+        Family::Slice => RuntimeIntrinsic::CoreSliceIntoIter,
+        Family::Option | Family::Result => return None,
+    };
+    let [
+        FlowOp::Let {
+            pattern: accumulator,
+            expr: empty,
+        },
+        FlowOp::Let {
+            pattern: iterator,
+            expr: into,
+        },
+        gate,
+        rest @ ..,
+    ] = control.mapping_body()
+    else {
+        return None;
+    };
+    let RuntimeExprKind::BracketSeq(items) = empty.kind() else {
+        return None;
+    };
+    let RuntimeExprKind::Call { callee, args } = into.kind() else {
+        return None;
+    };
+    let [argument] = args.as_slice() else {
+        return None;
+    };
+    let selected = project_loop(plan, gate)?;
+    if !items.is_empty()
+        || binder(accumulator) != Some(selected.result.local())
+        || empty.ty() != accumulator.ty()
+        || selected.callable != control.mapping()
+        || binder(iterator) != Some(selected.iterator)
+        || iterator.ty() != into.ty()
+        || callee.as_intrinsic() != Some(intrinsic)
+        || argument.mode() != RuntimeCallArgumentMode::Value
+        || argument.abi_position() != 0
+        || local(argument.value(), RuntimeLocalReadMode::Move) != Some(control.source())
+    {
+        return None;
+    }
     match control.family() {
         Family::Array => {
-            let [FlowOp::Let { pattern, expr }, rest @ ..] = control.mapping_body() else {
+            let [FlowOp::Let { pattern, expr }] = rest else {
                 return None;
             };
-            let RuntimePatternKind::Sequence {
-                items,
-                rest: RuntimePatternRest::Exact,
-            } = pattern.kind()
+            let RuntimeExprKind::ArrayFromVec { value } = expr.kind() else {
+                return None;
+            };
+            let RuntimePlanTypeProjection::Array {
+                item: input,
+                length: source_length,
+            } = plan.type_table().get(argument.value().ty())?.projection()
             else {
                 return None;
             };
-            if local(expr, RuntimeLocalReadMode::Move) != Some(control.source())
+            let RuntimePlanTypeProjection::Array {
+                item: output,
+                length: result_length,
+            } = plan.type_table().get(pattern.ty())?.projection()
+            else {
+                return None;
+            };
+            if binder(pattern) != Some(control.result())
+                || local(value, RuntimeLocalReadMode::Move) != Some(selected.result.local())
+                || value.ty() != accumulator.ty()
                 || expr.ty() != pattern.ty()
-            {
-                return None;
-            }
-            let selected = project_array(plan, &rest.iter().collect::<Vec<_>>())?;
-            if rest.len() != selected.items.len().checked_add(1)?
-                || items.len() != selected.items.len()
-                || selected.callable != control.mapping()
-                || selected.aggregate != Some(control.result())
-                || items.iter().zip(&selected.items).any(|(pattern, local)| {
-                    binder(pattern) != Some(*local) || pattern.ty() != selected.item_ty
-                })
-            {
-                return None;
-            }
-            let FlowOp::Let { pattern, .. } = rest.last()? else {
-                return None;
-            };
-            Some(pattern)
-        }
-        Family::Vec | Family::Seq | Family::Slice => {
-            let [
-                FlowOp::Let {
-                    pattern,
-                    expr: empty,
-                },
-                FlowOp::Let {
-                    pattern: iterator,
-                    expr: into,
-                },
-                gate,
-            ] = control.mapping_body()
-            else {
-                return None;
-            };
-            let RuntimeExprKind::BracketSeq(items) = empty.kind() else {
-                return None;
-            };
-            let RuntimeExprKind::Call { callee, args } = into.kind() else {
-                return None;
-            };
-            let [argument] = args.as_slice() else {
-                return None;
-            };
-            let intrinsic = match control.family() {
-                Family::Vec => RuntimeIntrinsic::CoreVecIntoIter,
-                Family::Seq => RuntimeIntrinsic::CoreSeqIntoIter,
-                Family::Slice => RuntimeIntrinsic::CoreSliceIntoIter,
-                _ => unreachable!("selected sequence family"),
-            };
-            let selected = project_loop(plan, gate)?;
-            if !items.is_empty()
-                || binder(pattern) != Some(control.result())
-                || empty.ty() != pattern.ty()
-                || selected.result.local() != control.result()
-                || selected.callable != control.mapping()
-                || binder(iterator) != Some(selected.iterator)
-                || iterator.ty() != into.ty()
-                || callee.as_intrinsic() != Some(intrinsic)
-                || argument.mode() != RuntimeCallArgumentMode::Value
-                || argument.abi_position() != 0
-                || local(argument.value(), RuntimeLocalReadMode::Move) != Some(control.source())
+                || *input != selected.item_ty
+                || *output != selected.output_ty
+                || source_length != result_length
             {
                 return None;
             }
             Some(pattern)
         }
-        Family::Option | Family::Result => None,
+        Family::Vec | Family::Seq | Family::Slice
+            if rest.is_empty() && binder(accumulator) == Some(control.result()) =>
+        {
+            Some(accumulator)
+        }
+        _ => None,
     }
 }
 
@@ -162,9 +165,11 @@ impl Engine {
             .flatten()
             .collect::<Vec<_>>();
         let sum = project_numeric_sum(&owner, &consuming_ops, control.result()).filter(|sum| {
-            sum.aliases
-                .iter()
-                .all(|local| self.fiber.frame.env.get(*local).is_none())
+            sum.admits_array_construction(&owner, output_type, items.len())
+                && sum
+                    .aliases
+                    .iter()
+                    .all(|local| self.fiber.frame.env.get(*local).is_none())
                 && match sum.target {
                     SumTarget::Bind(pattern) => binder(pattern)
                         .is_some_and(|local| self.fiber.frame.env.get(local).is_none()),

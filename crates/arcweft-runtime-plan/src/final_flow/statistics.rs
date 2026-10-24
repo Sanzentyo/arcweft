@@ -58,8 +58,8 @@ impl RuntimePlanLowerStats {
                             self.pure_call_exprs +=
                                 usize::from(pure_function_type(plan, mapping.ty()));
                         }
-                        // Mapping is one logical invocation site. Its Array
-                        // expansion can contain many physical applications.
+                        // Mapping is one logical invocation site. Its ordinary
+                        // iterator body can apply the callback many times.
                         if let Some(continuation) = control.consuming_body() {
                             pending.push(continuation);
                         }

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2658-array-map-numeric-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292155904,
+      "nonTest": true,
+      "sha256": "bdbd6d3c9e3b672e90f673af9be1ed14130c8d59eaeeb08121c08f3eaf3e455c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\check-ec297a2953b4cba4.exe",
+      "bytes": 304348672,
+      "nonTest": false,
+      "sha256": "4c72b644c1c58f355345d5911aa9435e8823ddec70554f4b70983604abed52f2"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-24T06:06:58.4927542Z"
+}

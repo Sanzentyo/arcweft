@@ -6,11 +6,10 @@ use super::*;
 #[path = "standard_map/function.rs"]
 mod function;
 use crate::semantic_facts::{
-    RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+    RuntimeStandardMapCall, RuntimeStandardMapCollection, RuntimeStandardMapFamily,
+    RuntimeStandardMapOperandOrder,
 };
-use arcweft_core::plan::{
-    RuntimeAssignmentSeed, RuntimeCallArgumentSeed, RuntimeMutablePlaceSeed, RuntimePatternRestSeed,
-};
+use arcweft_core::plan::{RuntimeAssignmentSeed, RuntimeCallArgumentSeed, RuntimeMutablePlaceSeed};
 use arcweft_core::value::{
     RuntimeCallTarget, RuntimePlaceDisplacement, RuntimePlaceInitialization,
 };
@@ -80,10 +79,7 @@ impl FinalFlowLowerer<'_> {
         let locals = self.control.maps.get(&owner).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new("Map has no admitted invocation temporaries")
         })?;
-        let callable = locals
-            .callable
-            .clone()
-            .ok_or_else(|| RuntimePlanLowerError::new("Map callback local is absent"))?;
+        let callable = locals.callable.clone();
         let mapping_value = overrides
             .get(&map.mapping())
             .cloned()
@@ -136,7 +132,7 @@ impl FinalFlowLowerer<'_> {
             source: local_seed(&receiver, source_local.clone(), RuntimeLocalReadMode::Move),
         };
         let body =
-            lower_standard_map_body(map.family(), map.iteration(), input, result_local.clone())?;
+            lower_standard_map_body(map.family(), map.collection(), input, result_local.clone())?;
         ops.push(RuntimeFlowOpSeed::StandardMap(
             arcweft_core::plan::RuntimeStandardMapControlSeed::collection(
                 map.family().into(),
@@ -156,15 +152,15 @@ impl FinalFlowLowerer<'_> {
 
 pub(super) fn lower_standard_map_body(
     family: RuntimeStandardMapFamily,
-    iteration: Option<&crate::semantic_facts::RuntimeBuiltinIteratorFact>,
+    collection: Option<&RuntimeStandardMapCollection>,
     input: MapFlowInput<'_>,
     result: RuntimeLocalSeedId,
 ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
     match family {
         RuntimeStandardMapFamily::Vec
         | RuntimeStandardMapFamily::Seq
-        | RuntimeStandardMapFamily::Slice => lower_sequence_map_value(iteration, input, result),
-        RuntimeStandardMapFamily::Array => lower_array_map_value(input, result),
+        | RuntimeStandardMapFamily::Slice
+        | RuntimeStandardMapFamily::Array => lower_sequence_map_value(collection, input, result),
         RuntimeStandardMapFamily::Option | RuntimeStandardMapFamily::Result => {
             lower_variant_map_value(input, result)
         }
@@ -172,9 +168,9 @@ pub(super) fn lower_standard_map_body(
 }
 
 fn lower_sequence_map_value(
-    iteration: Option<&crate::semantic_facts::RuntimeBuiltinIteratorFact>,
+    collection: Option<&RuntimeStandardMapCollection>,
     input: MapFlowInput<'_>,
-    accumulator: RuntimeLocalSeedId,
+    result_local: RuntimeLocalSeedId,
 ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
     let MapFlowInput {
         result,
@@ -183,9 +179,15 @@ fn lower_sequence_map_value(
         ..
     } = input;
     let mut ops = Vec::new();
-    let iteration = iteration.ok_or_else(|| {
+    let collection = collection.ok_or_else(|| {
         RuntimePlanLowerError::new("sequence Map has no admitted iterator contract")
     })?;
+    let iteration = collection.iteration();
+    let accumulator_type = collection.accumulator();
+    let accumulator = locals
+        .accumulator
+        .clone()
+        .unwrap_or_else(|| result_local.clone());
     let iterator = locals
         .iterator
         .clone()
@@ -194,27 +196,19 @@ fn lower_sequence_map_value(
         .next_iterator
         .clone()
         .ok_or_else(|| RuntimePlanLowerError::new("Map next iterator local is absent"))?;
-    let item = locals
-        .items
-        .first()
-        .cloned()
-        .ok_or_else(|| RuntimePlanLowerError::new("Map item local is absent"))?;
-    let mapped = locals
-        .results
-        .first()
-        .cloned()
-        .ok_or_else(|| RuntimePlanLowerError::new("Map result item local is absent"))?;
+    let item = locals.item.clone();
+    let mapped = locals.mapped.clone();
     ops.extend([
         RuntimeFlowOpSeed::Let {
             pattern: RuntimePatternSeed::new(
-                result.identity(),
+                accumulator_type.identity(),
                 RuntimePatternSeedKind::Bind {
                     local: accumulator.clone(),
                     mutable: true,
                 },
             ),
             expr: RuntimeExprSeed::new(
-                result.identity(),
+                accumulator_type.identity(),
                 RuntimeExprSeedKind::BracketSeq(Box::new([])),
             ),
         },
@@ -282,68 +276,21 @@ fn lower_sequence_map_value(
             },
         ],
     });
-    Ok(ops)
-}
-
-fn lower_array_map_value(
-    input: MapFlowInput<'_>,
-    result_local: RuntimeLocalSeedId,
-) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-    let MapFlowInput {
-        receiver,
-        result,
-        output,
-        ref locals,
-        ..
-    } = input;
-    let mut ops = Vec::new();
-    let RuntimeTypeShape::Array { length, .. } = receiver.shape() else {
-        return Err(RuntimePlanLowerError::new(
-            "Array Map source is not an Array",
-        ));
-    };
-    let length = length
-        .constant()
-        .and_then(|length| usize::try_from(length).ok())
-        .ok_or_else(|| RuntimePlanLowerError::new("Array Map length is not closed"))?;
-    if locals.items.len() != length || locals.results.len() != length {
-        return Err(RuntimePlanLowerError::new(
-            "Array Map local inventory does not retain its exact length",
-        ));
+    if locals.accumulator.is_some() {
+        ops.push(RuntimeFlowOpSeed::Let {
+            pattern: bind_seed(result, result_local),
+            expr: RuntimeExprSeed::new(
+                result.identity(),
+                RuntimeExprSeedKind::ArrayFromVec {
+                    value: Box::new(local_seed(
+                        accumulator_type,
+                        accumulator,
+                        RuntimeLocalReadMode::Move,
+                    )),
+                },
+            ),
+        });
     }
-    ops.push(RuntimeFlowOpSeed::Let {
-        pattern: RuntimePatternSeed::new(
-            receiver.identity(),
-            RuntimePatternSeedKind::Sequence {
-                items: locals
-                    .items
-                    .iter()
-                    .cloned()
-                    .map(|item| bind_seed(input.input, item))
-                    .collect(),
-                rest: RuntimePatternRestSeed::Exact,
-            },
-        ),
-        expr: input.source.clone(),
-    });
-    for (item, mapped) in locals.items.iter().zip(&locals.results) {
-        ops.push(input.callback(item.clone(), mapped.clone()));
-    }
-    let value = RuntimeExprSeed::new(
-        result.identity(),
-        RuntimeExprSeedKind::BracketSeq(
-            locals
-                .results
-                .iter()
-                .cloned()
-                .map(|mapped| local_seed(output, mapped, RuntimeLocalReadMode::Move))
-                .collect(),
-        ),
-    );
-    ops.push(RuntimeFlowOpSeed::Let {
-        pattern: bind_seed(result, result_local),
-        expr: value,
-    });
     Ok(ops)
 }
 
@@ -359,16 +306,8 @@ fn lower_variant_map_value(
         ..
     } = input;
     let mut ops = Vec::new();
-    let item = locals
-        .items
-        .first()
-        .cloned()
-        .ok_or_else(|| RuntimePlanLowerError::new("variant Map item local is absent"))?;
-    let mapped = locals
-        .results
-        .first()
-        .cloned()
-        .ok_or_else(|| RuntimePlanLowerError::new("variant Map result local is absent"))?;
+    let item = locals.item.clone();
+    let mapped = locals.mapped.clone();
     let mut success = vec![input.callback(item.clone(), mapped.clone())];
     let value = normalized_variant_expression_seed(
         result,

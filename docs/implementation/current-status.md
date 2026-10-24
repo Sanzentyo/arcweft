@@ -1,8 +1,8 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-24。公開 `f87b9616d627eccb598d0b80800edfa2a7f2d1e0` を基点とし、
+確認日: 2026-10-24。直近の全体実行は公開 `f87b9616d627eccb598d0b80800edfa2a7f2d1e0` を基点とし、
 既存14 tracked WIPを保持した4,713固定入力でCoreの全53逆依存packageを検証した。
-通常選択は **7,250実行／7,199 PASS／51 FAIL／39既存ignored**。
+その通常選択は **7,250実行／7,199 PASS／51 FAIL／39既存ignored**。
 library 5,470件とintegration／bin 1,780件を重複なく集計し、50 packageにnamed caseがある。
 51失敗はすべて以前と同じCLIケースで、新規失敗0。旧Compiler失敗ケースは今回PASSした。
 Core 2,025件、Compiler 617件は全PASS。Generic Matchも既存151ケースすべてPASSで、受入・公開済みを維持する。
@@ -10,6 +10,12 @@ Core 2,025件、Compiler 617件は全PASS。Generic Matchも既存151ケース�
 case set・固定入力・各実行バイナリの差分0を確認した。詳細は
 [今回の集計](acceptance-evidence/task-program-reverse-combined-execution.json) と
 [検証履歴](convergence-evidence-history.md) に置く。
+
+その後、`39333e656863928105707c9dea89e11b9a40efc5` を基点にArray Mapを反復化し、
+対象46件がすべてPASSした。旧51失敗中の4,096要素benchmarkは、製品既定上限のまま通過した。
+残る旧50件を今回再現したとは扱わず、修復後の全53逆依存matrixはまだ再実行していない。
+workspace check／ClippyはR2661／R2662で終了0、R2663構造gateはblocking 0。
+本表の全体実行件数と、後続の対象条件の検証を混同しない。
 
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
 [仕様索引](../README.md)、過去の実行結果・公開 SHA は
@@ -52,13 +58,14 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、実際に受理されたProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗した。checkpointに元executable leaseを保持し、復元先は同じleaseのadmitted Productに限定する。元Sourceと同一admissionを値mapperへ渡し、Product・activation・codegenの呼出側を移行した。R2535の新規Coreケースでhandleを取り出して破棄した候補から元状態へ復元でき、同内容の別leaseは元fiberを変えず拒否する。private checkpointは非Serde、公開wire DTOのJSON／cleanup検証は維持し、R2531のcompile-fail 2件もPASS。既存のdetached Bool入力rollbackも通過している。private checkpointの受入と、公開saveの全資源境界の包括的な受入は分ける。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
-| CLI・全 consumer の統合受入 | **通常選択を実行済み・CLI既存51件がFAIL、他はPASS** | CLIは640 PASS／51 FAIL。51識別子はR2469と完全一致し、新規失敗0。旧Compilerの `include_in_a_function_owned_thread_joins_before_its_flow_caller_returns` は今回PASSし、Compiler全617件もPASS。[実行・旧失敗との照合](acceptance-evidence/task-program-reverse-combined-execution.json)。51件の具体的な観測は下表に一度だけ記載し、未実行のTier2等と混同しない。 |
-| Coreの全53逆依存runtime | **通常選択は7,199 PASS／CLI既存51 FAIL** | library 53 targetとintegration 161／bin 5 targetを確認した。library 5,470件は全PASS、integration／binは1,780実行／1,729 PASS／51 FAIL。4つのlibraryと4つのbinにnamed caseがなく、build実績をruntime PASSへ加算しない。44組のtarget／case setと各実行時のbinary・4,713入力の差分0。[target別照合](acceptance-evidence/task-program-reverse-integration-summary.json)。libraryの4,681入力との違いは文書2件と証拠32件だけで、runtime入力差分0。 |
-| 最終 workspace／Tier 2／Native-Web capture parity | **通常runtimeは上記の結果・workspace check／ClippyはPASS・残る最終matrixは未確認** | 最後のRust変更に対するR2531非Serde doctest 2件、R2532 all-target／all-feature／locked workspace Clippy、R2536同check、R2537構造gate blocking 0の実績を保持する。Clippyは警告あり。今回の通常runtimeは全53逆依存を実行済みで、39既存ignored、Tier2とNative-Web capture parityの包括的な受入は未実行。これらを受入済みのGeneric Matchや個別のruntime境界の未実装へ読み替えない。 |
+| CLI・全 consumer の統合受入 | **直近全体実行の旧51 FAIL中、Source1件は修復検証済み** | 全体実行のCLIは640 PASS／51 FAIL。51識別子はR2469と完全一致し、新規失敗0だった。旧Compilerの `include_in_a_function_owned_thread_joins_before_its_flow_caller_returns` も同実行でPASSし、Compiler全617件はPASS。[全体実行・旧失敗との照合](acceptance-evidence/task-program-reverse-combined-execution.json)。後続のArray Map修復ではCLI対象20件／Compiler対象26件がPASS。残る旧50件と修復済み1件の観測は下表に一度だけ記載する。全体再集計と未実行のTier2等は別に扱う。 |
+| Coreの全53逆依存runtime | **直近全体実行は7,199 PASS／CLI既存51 FAIL・修復後matrixは未実行** | library 53 targetとintegration 161／bin 5 targetを確認した。library 5,470件は全PASS、integration／binは1,780実行／1,729 PASS／51 FAIL。4つのlibraryと4つのbinにnamed caseがなく、build実績をruntime PASSへ加算しない。44組のtarget／case setと各実行時のbinary・4,713入力の差分0。[target別照合](acceptance-evidence/task-program-reverse-integration-summary.json)。libraryの4,681入力との違いは文書2件と証拠32件だけで、runtime入力差分0。後続のArray Map修復46件の成功を、この全体実行の再実行結果に加算しない。 |
+| 最終 workspace／Tier 2／Native-Web capture parity | **workspace check／ClippyはPASS・修復後の全体runtime／Tier2は未実行** | Array Map反復化後のR2661／R2662 all-target／all-feature／locked workspace check／Clippyは終了0、警告あり。R2663構造gateはblocking 0。以前のR2531非Serde doctest 2件等の実績も履歴に保持する。直近の全53逆依存通常runtime結果は上記のとおりで、反復化後の全体matrix、39既存ignored、Tier2とNative-Web capture parityの包括的な受入は未実行。これらを受入済みのGeneric Matchや個別のruntime境界の未実装へ読み替えない。 |
 
 ## CLIの具体的な観測
 
-今回の51件を診断／期待値の種類で分類した。根本原因や修復方針の確定ではなく、
+直近の全体実行の51件を診断／期待値の種類で分類した。Sourceの1件は後続検証で修復済み。
+残る旧50件を今回再現したという意味ではない。根本原因や修復方針の確定ではなく、
 fixtureの現行契約との整合も含めて調べる。全識別子と診断は
 [分類](acceptance-evidence/task-program-reverse-cli-current-failure-classification.json) と
 [原診断への対応](acceptance-evidence/task-final-r2559-program-reverse-slice8-runtime.failure-recon.json) に保持する。
@@ -69,7 +76,7 @@ fixtureの現行契約との整合も含めて調べる。全識別子と診断�
 | JLREQ geometry／raw crop | 8 | 後続本文が左へ進まない、hyphen後のcolumnが1169／1127に分かれるという診断を再現する。 |
 | View文法／観測 | 6 | typed View grammar／action名の拒否、rich-text object／run／depthの期待値不一致。 |
 | 意味解析の入口 | 7 | HIR recovery 2件、未知の `traverse` 2件、final semantic analysis 3件。 |
-| SourceのSemanticWork上限 | 1 | 4,096要素のArray.map benchmarkが、実行前の元Sourceエンコードで拒否される。8,206 localsを作る要素数比例の展開を確認した。反復化に必要なVec→Array構築は追加・対象16件PASSだが、Mapの反復化と当該benchmarkの再検証はまだ行っていない。[診断と検証履歴](convergence-evidence-history.md#array-map-source資源診断と型付き配列構築--2026-10-24)。 |
+| SourceのSemanticWork上限 | **0（旧1件は修復検証済み）** | 要素数分のlocals／命令展開をiteratorとVec蓄積値へ置換し、exact Arrayを構築する。4,096要素fixtureは製品既定上限のままPASSし、4096 callback／1 batch等の条件を維持した。低予算Native-AWBC parity、融合・copy・capture、途中保存復元を含む対象46件がPASS。[修復と実行証拠](convergence-evidence-history.md#array-map反復化の検証--2026-10-24)。 |
 | verify出力の期待値 | 6 | solver／proof／promotion／thread-join／dependency／deferのreport期待値と一致しない。 |
 | bench／profile／plan／scenario等の期待値 | 14 | 計測counter、task graph、scenario/assertion、unsafe一覧等が期待値と一致しない。 |
 

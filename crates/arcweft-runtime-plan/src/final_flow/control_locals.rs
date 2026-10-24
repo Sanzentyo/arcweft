@@ -1,10 +1,10 @@
-//! Generated locals for one closed executable view. Repeated Map rows remain
-//! borrowed requests until their complete inventory passes the Core issuer.
+//! Generated locals for one closed executable view. Map iteration temporaries
+//! remain borrowed requests until their complete inventory passes the Core issuer.
 use super::{AwaitLocalSeeds, ScopeLocalSeeds, TryLocalSeeds};
 use crate::errors::RuntimePlanLowerError;
 use crate::semantic_facts::{
-    RuntimeBuiltinIteratorFact, RuntimeExecutableSemanticFactView, RuntimeNormalizedType,
-    RuntimeScopeOwner,
+    RuntimeExecutableSemanticFactView, RuntimeNormalizedType, RuntimeScopeOwner,
+    RuntimeStandardMapCollection,
 };
 use arcweft_core::plan::{RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePlanBuilder};
 use arcweft_lang_hir::identity::ExprId;
@@ -31,13 +31,14 @@ pub(super) struct MapFrameLocalSeeds {
     pub(super) source: RuntimeLocalSeedId,
     pub(super) result: RuntimeLocalSeedId,
 }
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(super) struct MapLocalSeeds {
-    pub(super) callable: Option<RuntimeLocalSeedId>,
-    pub(super) items: Vec<RuntimeLocalSeedId>,
-    pub(super) results: Vec<RuntimeLocalSeedId>,
+    pub(super) callable: RuntimeLocalSeedId,
+    pub(super) item: RuntimeLocalSeedId,
+    pub(super) mapped: RuntimeLocalSeedId,
     pub(super) iterator: Option<RuntimeLocalSeedId>,
     pub(super) next_iterator: Option<RuntimeLocalSeedId>,
+    pub(super) accumulator: Option<RuntimeLocalSeedId>,
     pub(super) residual: Option<RuntimeLocalSeedId>,
 }
 #[derive(Clone, Copy)]
@@ -80,8 +81,8 @@ enum RequestKind<'a> {
         callable: &'a RuntimeNormalizedType,
         input: &'a RuntimeNormalizedType,
         output: &'a RuntimeNormalizedType,
-        rows: u32,
         iterator: Option<&'a RuntimeNormalizedType>,
+        accumulator: Option<&'a RuntimeNormalizedType>,
         residual: Option<&'a RuntimeNormalizedType>,
     },
     Scope {
@@ -121,13 +122,13 @@ impl LocalRequest<'_> {
             RequestKind::Try { residual, .. } => 1 + u64::from(residual.is_some()),
             RequestKind::Scope { residual, .. } => 2 + u64::from(residual.is_some()),
             RequestKind::Map {
-                rows,
                 iterator,
+                accumulator,
                 residual,
                 ..
             } => {
-                1 + u64::from(*rows) * 2
-                    + 2 * u64::from(iterator.is_some())
+                3 + 2 * u64::from(iterator.is_some())
+                    + u64::from(accumulator.is_some())
                     + u64::from(residual.is_some())
             }
         }
@@ -187,19 +188,20 @@ impl LocalRequest<'_> {
                 callable,
                 input,
                 output,
-                rows,
                 iterator,
+                accumulator,
                 residual,
                 ..
             } => {
                 visit(callable, Role::MapCallable)?;
-                for ordinal in 0..*rows {
-                    visit(input, Role::MapItem { ordinal })?;
-                    visit(output, Role::MapResult { ordinal })?;
-                }
+                visit(input, Role::MapItem { ordinal: 0 })?;
+                visit(output, Role::MapResult { ordinal: 0 })?;
                 if let Some(ty) = iterator {
                     visit(ty, Role::MapIterator)?;
                     visit(ty, Role::MapNextIterator)?;
+                }
+                if let Some(ty) = accumulator {
+                    visit(ty, Role::MapAccumulator)?;
                 }
                 if let Some(ty) = residual {
                     visit(ty, Role::MapResidual)?;
@@ -275,24 +277,20 @@ impl LocalRequest<'_> {
             }
             RequestKind::Map {
                 owner,
-                rows,
                 iterator,
+                accumulator,
                 residual,
                 ..
             } => {
-                let mut map = MapLocalSeeds {
-                    callable: Some(next()?),
-                    ..MapLocalSeeds::default()
+                let map = MapLocalSeeds {
+                    callable: next()?,
+                    item: next()?,
+                    mapped: next()?,
+                    iterator: iterator.is_some().then(&mut next).transpose()?,
+                    next_iterator: iterator.is_some().then(&mut next).transpose()?,
+                    accumulator: accumulator.is_some().then(&mut next).transpose()?,
+                    residual: residual.is_some().then(&mut next).transpose()?,
                 };
-                for _ in 0..*rows {
-                    map.items.push(next()?);
-                    map.results.push(next()?);
-                }
-                if iterator.is_some() {
-                    map.iterator = Some(next()?);
-                    map.next_iterator = Some(next()?);
-                }
-                map.residual = residual.is_some().then(&mut next).transpose()?;
                 result.maps.insert(*owner, map);
             }
             RequestKind::Scope {
@@ -486,7 +484,7 @@ impl<'a> ControlLocalInventory<'a> {
                 callable,
                 receiver,
                 result,
-                map.iteration(),
+                map.collection(),
             )?;
         }
         if let Some(call) = facts.call(owner)
@@ -507,7 +505,7 @@ impl<'a> ControlLocalInventory<'a> {
                 callable,
                 receiver,
                 source,
-                map.iteration(),
+                map.collection(),
             )?;
         }
         Ok(())
@@ -520,24 +518,20 @@ impl<'a> ControlLocalInventory<'a> {
         callable: &'a RuntimeNormalizedType,
         receiver: &'a RuntimeNormalizedType,
         result: &'a RuntimeNormalizedType,
-        iteration: Option<&'a RuntimeBuiltinIteratorFact>,
+        collection: Option<&'a RuntimeStandardMapCollection>,
     ) -> Result<(), RuntimePlanLowerError> {
         let (input, output) = family.item_types(receiver, result).ok_or_else(|| {
             RuntimePlanLowerError::new("Map family has inconsistent checked types")
         })?;
-        let rows = if let crate::semantic_facts::RuntimeTypeShape::Array { length, .. } =
-            receiver.shape()
-        {
-            length
-                .constant()
-                .and_then(|length| u32::try_from(length).ok())
-                .ok_or_else(|| {
-                    RuntimePlanLowerError::new(
-                        "Map Array length does not fit its generated local inventory",
-                    )
-                })?
-        } else {
-            1
+        let accumulator = match family {
+            crate::semantic_facts::RuntimeStandardMapFamily::Array => Some(
+                collection
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new("Array Map collection contract is absent")
+                    })?
+                    .accumulator(),
+            ),
+            _ => None,
         };
         let residual = match receiver.shape() {
             crate::semantic_facts::RuntimeTypeShape::Result { error, .. } => Some(error.as_ref()),
@@ -550,8 +544,8 @@ impl<'a> ControlLocalInventory<'a> {
                 callable,
                 input,
                 output,
-                rows,
-                iterator: iteration.map(RuntimeBuiltinIteratorFact::iterator),
+                iterator: collection.map(|collection| collection.iteration().iterator()),
+                accumulator,
                 residual,
             },
         });

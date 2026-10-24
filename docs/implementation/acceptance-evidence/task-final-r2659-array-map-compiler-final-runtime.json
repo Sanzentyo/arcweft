@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "39333e656863928105707c9dea89e11b9a40efc5",
+  "name": "task-final-r2659-array-map-compiler-final-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--test",
+    "generic_continuation_snapshot",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(standard_map)",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all",
+    "--no-fail-fast"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2659-array-map-compiler-final-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-24T06:06:59.3646677Z",
+  "finishedAt": "2026-10-24T06:07:09.3555888Z"
+}
