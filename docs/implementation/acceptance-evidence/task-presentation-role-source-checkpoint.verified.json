@@ -1,0 +1,271 @@
+{
+  "version": 1,
+  "commit": "0b5ac5491d245a5386ca1b44547091e50bcb1955",
+  "parent": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "tree": "5055986fa157de21207efde3bf1a6da3c4ba8d07",
+  "remote": "0b5ac5491d245a5386ca1b44547091e50bcb1955",
+  "advertised": "0b5ac5491d245a5386ca1b44547091e50bcb1955",
+  "paths": [
+    {
+      "path": "crates/arcweft-lang-sema/src/callable.rs",
+      "blob": "8b5e7e2efadd4accac69ca48c44e9a09f4dfd536",
+      "workingBlob": "8b5e7e2efadd4accac69ca48c44e9a09f4dfd536"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/digest.rs",
+      "blob": "ab674d0ee5cee24dffa927ef98b3ae31547bea2d",
+      "workingBlob": "ab674d0ee5cee24dffa927ef98b3ae31547bea2d"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/presentation.rs",
+      "blob": "f862fb0a540b40e41995cf46f48b29b7ab626f8f",
+      "workingBlob": "f862fb0a540b40e41995cf46f48b29b7ab626f8f"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/schema.rs",
+      "blob": "f059cfe12e4674998b24a9f795611d65189cdbfb",
+      "workingBlob": "f059cfe12e4674998b24a9f795611d65189cdbfb"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+      "blob": "a9d56915018b5385920fab5984c2f6ed422516ad",
+      "workingBlob": "a9d56915018b5385920fab5984c2f6ed422516ad"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+      "blob": "95f09aedbdefffaba4e8f95242fb66545c7bd9cc",
+      "workingBlob": "95f09aedbdefffaba4e8f95242fb66545c7bd9cc"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+      "blob": "8c1b0af26b696cea4c5df08ee3f438a8e262c389",
+      "workingBlob": "8c1b0af26b696cea4c5df08ee3f438a8e262c389"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2844-presentation-role-sema-check.input-audit.json",
+      "blob": "dfe7e06392ace47f814182b56485c26929e079dc",
+      "workingBlob": "dfe7e06392ace47f814182b56485c26929e079dc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2844-presentation-role-sema-check.json",
+      "blob": "2bd5555db2c5f7d31a98f81a7469e4d65cd7c944",
+      "workingBlob": "2bd5555db2c5f7d31a98f81a7469e4d65cd7c944"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2844-presentation-role-sema-check.log",
+      "blob": "913ad1be9d36f9c337357cf23dea0d7fbb329817",
+      "workingBlob": "913ad1be9d36f9c337357cf23dea0d7fbb329817"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2845-presentation-role-sema-check.input-audit.json",
+      "blob": "9d3aa3da77a85a98054b28d292be574d504738e7",
+      "workingBlob": "9d3aa3da77a85a98054b28d292be574d504738e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2845-presentation-role-sema-check.json",
+      "blob": "73534f852e97e6e5c3a849a83e1d796a5f7399f5",
+      "workingBlob": "73534f852e97e6e5c3a849a83e1d796a5f7399f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2845-presentation-role-sema-check.log",
+      "blob": "89a63f4ce184824272102b329f9da308d8a81244",
+      "workingBlob": "89a63f4ce184824272102b329f9da308d8a81244"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2846-presentation-role-owner-catalog.inventory.json",
+      "blob": "66624692d273686a4bafe9df443c8bfa9d955ea0",
+      "workingBlob": "66624692d273686a4bafe9df443c8bfa9d955ea0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2846-presentation-role-owner-catalog.json",
+      "blob": "395c492af1ed4814682da53ab9b9580c800a0941",
+      "workingBlob": "395c492af1ed4814682da53ab9b9580c800a0941"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2846-presentation-role-owner-catalog.log",
+      "blob": "60287532634812e322b6a6455eaf9205a4b92c61",
+      "workingBlob": "60287532634812e322b6a6455eaf9205a4b92c61"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2847-presentation-role-owner-runtime.json",
+      "blob": "9654df2d753e04fca66d8afe1f3e0c8c5cc3b811",
+      "workingBlob": "9654df2d753e04fca66d8afe1f3e0c8c5cc3b811"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2847-presentation-role-owner-runtime.log",
+      "blob": "e5250bf3200859a57d03adb2504268a136ea9bfc",
+      "workingBlob": "e5250bf3200859a57d03adb2504268a136ea9bfc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2847-presentation-role-owner-runtime.terminal-audit.json",
+      "blob": "2b6dd91d942d1b87b15f221f23c5bd994b558b57",
+      "workingBlob": "2b6dd91d942d1b87b15f221f23c5bd994b558b57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2848-presentation-role-sema-clippy.input-audit.json",
+      "blob": "f0a19c3b0179f6ecdf43ee93d3393a5413a1f70d",
+      "workingBlob": "f0a19c3b0179f6ecdf43ee93d3393a5413a1f70d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2848-presentation-role-sema-clippy.json",
+      "blob": "f112d420d6e78e3ec75b99fb40ad01c2f555ca44",
+      "workingBlob": "f112d420d6e78e3ec75b99fb40ad01c2f555ca44"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2848-presentation-role-sema-clippy.log",
+      "blob": "95e4a84deeca29548bfaf3c1115ea2d50e7c86ec",
+      "workingBlob": "95e4a84deeca29548bfaf3c1115ea2d50e7c86ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2849-presentation-role-structure-gate.json",
+      "blob": "24f59684d479031497ec2db98ec42e97d30fa428",
+      "workingBlob": "24f59684d479031497ec2db98ec42e97d30fa428"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2849-presentation-role-structure-gate.log",
+      "blob": "fd41633dfbf3edc6d2f2a8ffa688fa37ec66dfc8",
+      "workingBlob": "fd41633dfbf3edc6d2f2a8ffa688fa37ec66dfc8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2850-presentation-role-workspace-check.input-audit.json",
+      "blob": "ea0930ad2fde7adfc71b638bfa46de79293ead0b",
+      "workingBlob": "ea0930ad2fde7adfc71b638bfa46de79293ead0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2850-presentation-role-workspace-check.json",
+      "blob": "43519cfe1f93b79b75c3f118d613934abc24bca0",
+      "workingBlob": "43519cfe1f93b79b75c3f118d613934abc24bca0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2850-presentation-role-workspace-check.log",
+      "blob": "bcfa895bb8e6fe52653cb0f882a4a673dd63076f",
+      "workingBlob": "bcfa895bb8e6fe52653cb0f882a4a673dd63076f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2851-presentation-role-workspace-clippy.input-audit.json",
+      "blob": "0a9e65ac1f3abd255d5b052a614a663be34a2f5c",
+      "workingBlob": "0a9e65ac1f3abd255d5b052a614a663be34a2f5c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2851-presentation-role-workspace-clippy.json",
+      "blob": "0c211649c4f5a5ac8c5a27e188df355021b4fc3a",
+      "workingBlob": "0c211649c4f5a5ac8c5a27e188df355021b4fc3a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2851-presentation-role-workspace-clippy.log",
+      "blob": "6af47fd95ab034379a373ee1038acf0176cb0b24",
+      "workingBlob": "6af47fd95ab034379a373ee1038acf0176cb0b24"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2852-presentation-role-reverse-catalog.inventory.json",
+      "blob": "9b6cae527531486dead30890375772cef72d1c6d",
+      "workingBlob": "9b6cae527531486dead30890375772cef72d1c6d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2852-presentation-role-reverse-catalog.json",
+      "blob": "8a72d4c9a16527a38ac9503e11f2486af5e05448",
+      "workingBlob": "8a72d4c9a16527a38ac9503e11f2486af5e05448"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2852-presentation-role-reverse-catalog.log",
+      "blob": "81f952f17cd4b972dad5a8afd994ed54204c3f57",
+      "workingBlob": "81f952f17cd4b972dad5a8afd994ed54204c3f57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-owned-metrics.csv",
+      "blob": "3848957ea550a35c82e45365a57d4ee8d0141a0f",
+      "workingBlob": "3848957ea550a35c82e45365a57d4ee8d0141a0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-owner-acceptance.json",
+      "blob": "dc70b12cd5f448000ead4a2006cba2b36c7b5aa1",
+      "workingBlob": "dc70b12cd5f448000ead4a2006cba2b36c7b5aa1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-owner-evidence-integrity.json",
+      "blob": "d14cecfa548cec43aaf524a031954f280d96faf6",
+      "workingBlob": "d14cecfa548cec43aaf524a031954f280d96faf6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-ownership-review.json",
+      "blob": "b15e63e36485d230deb147fffe252f063c9b69f5",
+      "workingBlob": "b15e63e36485d230deb147fffe252f063c9b69f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-repaired-source.graph.json",
+      "blob": "e1bcfbf8951a1381daa873cfb06d92d125a1e70a",
+      "workingBlob": "e1bcfbf8951a1381daa873cfb06d92d125a1e70a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-repaired-source.source-freeze.json",
+      "blob": "01e4c0d59045be67b898bef1e83dd512f9695257",
+      "workingBlob": "01e4c0d59045be67b898bef1e83dd512f9695257"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-reverse-preflight.json",
+      "blob": "5142e45b7caa5e35904f54280ea86a2ecd30dfeb",
+      "workingBlob": "5142e45b7caa5e35904f54280ea86a2ecd30dfeb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-reverse-run.ps1",
+      "blob": "e8047ade7530e69e1695e22412e9ece380230499",
+      "workingBlob": "e8047ade7530e69e1695e22412e9ece380230499"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-reverse-terminal.ps1",
+      "blob": "51efbd92721d970916a1a69d06a8a33da45f7e03",
+      "workingBlob": "51efbd92721d970916a1a69d06a8a33da45f7e03"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-reverse.before-run.pins.json",
+      "blob": "861c0e1bfa2602ee396a159a942074456e731167",
+      "workingBlob": "861c0e1bfa2602ee396a159a942074456e731167"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-shared-catalog.ps1",
+      "blob": "164eb25337a2479b282bedbe27214b0f6bd89c21",
+      "workingBlob": "164eb25337a2479b282bedbe27214b0f6bd89c21"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-source.graph.json",
+      "blob": "1a74d934ef4f3b3be8819dfa7248a85efa63fe78",
+      "workingBlob": "1a74d934ef4f3b3be8819dfa7248a85efa63fe78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-source.source-freeze.json",
+      "blob": "2efa68487827eabf4a630ad0aa20400acb430c83",
+      "workingBlob": "2efa68487827eabf4a630ad0aa20400acb430c83"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-structure-dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110",
+      "workingBlob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-structure-file_metrics.csv",
+      "blob": "2c09f044ab8f9a114613209ce2e51188ecb9d531",
+      "workingBlob": "2c09f044ab8f9a114613209ce2e51188ecb9d531"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-structure-findings.md",
+      "blob": "cfee5ea2cbf75f90d1af88c4e8e9928801643ea9",
+      "workingBlob": "cfee5ea2cbf75f90d1af88c4e8e9928801643ea9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-structure-package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7",
+      "workingBlob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-role-structure-public_type_duplicates.csv",
+      "blob": "b872ab15e2daa1a46d39095282b5cc68f27db7e1",
+      "workingBlob": "b872ab15e2daa1a46d39095282b5cc68f27db7e1"
+    }
+  ],
+  "sourceCount": 6268,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "b1d68d58e70e07c954a1bfd7e69b8744214ffb06222a50464164bd5510068434",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T20:46:45.3097400Z"
+}

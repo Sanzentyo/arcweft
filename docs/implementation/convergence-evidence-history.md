@@ -10712,3 +10712,54 @@ parentは検証基点、treeは `4cd256ab824127e016322db3da2e2ff731457aa9`。
 fresh fetch／公開ref／全pathのblob、6,223入力と元14 tracked WIPのpatchは差分0、index空。
 資料の変更リンク40件、fence／JSON／whitespaceと原本23件のbyte一致も確認した。
 [公開照合receipt](acceptance-evidence/task-fanout-child-reverse-checkpoint.verified.json)をbyte不変で保持する。
+
+## Presentation引数role・consumer transcriptの型付き保持 — 2026-10-25
+
+基点は既存main `d389887e3a27ff01855006b8247bd9a05e57283a`。Semaの7 pathを変更した。
+以前のprivate Presentation引数algebraを公開roleとして使い、宣言済みparameterのconsumerへ
+保持した。全11 callable、Source／Characterを含む51 roleを同じownerが定義する。
+Character固有lookの型を維持し、異なるtarget／metadata roleを区別する。
+Presentation consumerは別validatorのschemaでは拒否する。引数型を検査しない
+UncheckedSupplyも、consumerとroleを既存version 1 transcriptへ含める。
+旧private名のaliasや、引数roleの別catalogは追加していない。
+
+R2844 all-targets／all-features／locked Sema checkは終了101。
+新しいconsumerを加えた2か所のexhaustive matchと、テストが使った未定義のpure constructorが
+原因だった。既存の制約経路をPresentation valueへ移行し、テストは既存のfixed empty effect rowを使う。
+修正後のR2845 checkは終了0。R2846は全1,306件から対象4件を選択し、R2847は4／4 PASS、
+1,302件はfilterによる非選択。ignoredや実行成功へ数えていない。6,224固定入力の差分0。
+R2848 Sema Clippy、R2850 workspace check、R2851 workspace Clippyは
+all-targets／all-features／lockedで終了0・警告あり。R2849構造gateはblocking 0、終了0。
+7 pathの実測と既存schema／constraint ownerの責務を確認し、LOCだけの分割は行っていない。
+[ownerの範囲・失敗とgate](acceptance-evidence/task-presentation-role-owner-acceptance.json)、
+[所有境界・実測](acceptance-evidence/task-presentation-role-ownership-review.json)。
+
+ユーザーの中間commit指示に従い、逆依存runtimeを継続したまま、ソース7 pathと証拠44 pathを
+`0b5ac5491d245a5386ca1b44547091e50bcb1955` で通常commit／non-forced pushした。
+tree `5055986fa157de21207efde3bf1a6da3c4ba8d07`。fresh fetch／公開ref／全blob、6,268入力と
+元WIPのpatchは差分0、index空。元14 tracked WIP／6 untracked実ファイルも保持した。
+終了前のruntimeを成功とは扱わず、owner原本42件／18,337,200 bytesと当時のpending記録を
+byte不変で保持した。[公開照合](acceptance-evidence/task-presentation-role-source-checkpoint.verified.json)、
+[owner原本manifest](acceptance-evidence/task-presentation-role-owner-evidence-integrity.json)。
+
+実際のCargo graphからSemaの全22逆依存packageを選び、R2852 catalogは3,887件、
+通常選択3,864件、ignored 23件。旧「uncheckedはconsumerを記録しない」golden 1件を
+置換し、追加のcollision／schemaテスト2件を加えた。これ以外の前回caseの不足0。
+Generic Matchの151件と既存CLI失敗50件は全件を選択した。
+R2853は一回の新規実行で**3,864実行／3,814 PASS／50 FAIL／23 ignored**、終了100、568.646秒。
+catalogと全終端case集合が一致し、50失敗のbinary／test識別子は前回と完全一致、新規失敗0。
+Semaはlibrary 1,306件を含む全target 1,330／1,330、Compiler 617／617、CLI 641 PASS／50 FAIL。
+Generic Match 151／151とPresentation対象4／4も実際の終端PASSに一致した。
+先行する対象4件やCore全53結果を、この件数へ再利用・加算していない。
+
+library 22／integration 84／bin 4の110 test targetを含み、named caseなしのbin 3 targetはbuildだけ。
+6,224固定入力とtest 110／非test 5の実行ファイル115件のhash差分0。
+実行開始時の未公開Sema 7 pathは公開commitと同じbytesで、保持14 WIPを含む入力を継続した。
+ビルド生成物の移動・コピーは行っていない。実行原本と照合6件／3,878,203 bytesもbyte一致で保持した。
+[横断集計・Generic／失敗照合](acceptance-evidence/task-presentation-role-reverse-acceptance.json)、
+[package／target範囲](acceptance-evidence/task-presentation-role-reverse-coverage.json)、
+[終端・固定入力](acceptance-evidence/task-final-r2853-presentation-role-reverse-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-presentation-role-reverse.executable-audit.json)、
+[runtime原本manifest](acceptance-evidence/task-presentation-role-reverse-evidence-integrity.json)。
+CompilerのPresentation command拒否と一般Handle型のruntime投影未対応は残る。
+引数schemaの受入を実行ABI全体の完了とはせず、現状一覧の当該境界を分けた。

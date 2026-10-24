@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "base": "d389887e3a27ff01855006b8247bd9a05e57283a",
+  "sourcePublication": "0b5ac5491d245a5386ca1b44547091e50bcb1955",
+  "files": [
+    {
+      "file": "task-final-r2853-presentation-role-reverse-runtime.json",
+      "bytes": 1507,
+      "sha256": "b69a42c92ca3c8a87ba65620c48ed4fa17502296ecd83d5b3d5e52c8ad503a4e"
+    },
+    {
+      "file": "task-final-r2853-presentation-role-reverse-runtime.log",
+      "bytes": 3748206,
+      "sha256": "953ca1ca268068e5e21096c8408088d713ac38ea9b7f29a2a5e6a78b4988ee25"
+    },
+    {
+      "file": "task-final-r2853-presentation-role-reverse-runtime.terminal-audit.json",
+      "bytes": 8889,
+      "sha256": "8dc8c82e40ac275cdc57d4dec93d6d5ea9f019893405bcdb92bc952ce57746bb"
+    },
+    {
+      "file": "task-presentation-role-reverse-acceptance.json",
+      "bytes": 48386,
+      "sha256": "14a23dffffd16671ecbce479e435a719e966593fbc84b533d0ff391b7cb54b84"
+    },
+    {
+      "file": "task-presentation-role-reverse-coverage.json",
+      "bytes": 39682,
+      "sha256": "bb1fbab862efeb2350bd58a67987d40f3b6dc53ec4a36b4778b631ab108998a9"
+    },
+    {
+      "file": "task-presentation-role-reverse.executable-audit.json",
+      "bytes": 31533,
+      "sha256": "12099006a9961ca653e2cae4ba94958e80e5cefcf158657dceba7f8e891b1a5a"
+    }
+  ],
+  "fileCount": 6,
+  "bytes": 3878203.0,
+  "byteDrift": 0,
+  "buildArtifactsCopiedOrMoved": false,
+  "at": "2026-10-24T20:50:34.9073199Z"
+}
