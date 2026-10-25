@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "df897b47c06934940c09842bbd18a0512e217249",
+  "publishedInput": "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+  "run": "task-final-r2951-traversal-runtime-owner-runtime",
+  "actualExitCode": 100,
+  "executed": 2406,
+  "passed": 2403,
+  "failed": 3,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "binaries": 34,
+  "binaryDrift": 0,
+  "packages": {
+    "arcweft-core": {
+      "executed": 2077,
+      "passed": 2074,
+      "failed": 3
+    },
+    "arcweft-bundle": {
+      "executed": 329,
+      "passed": 329,
+      "failed": 0
+    }
+  },
+  "originalWip": 14,
+  "artifactCopyMove": false
+}

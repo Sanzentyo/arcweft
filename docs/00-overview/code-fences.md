@@ -44,11 +44,9 @@ WGSL 単体の shader body は `wgsl` を使う。ただし、`shader @shader...
 
 - `.arcw` source と Rust 実装を明確に分ける。
 - LLM / RAG が Arcweft DSL と Rust API を誤認しにくくする。
-- 将来の syntax highlighter / tree-sitter grammar / docs renderer が `arcw` fence を手がかりにできるようにする。
 
 ## Validation
 
 コメント構文の受理・拒否は parser の挙動テストで検証する。文書や sample の
 表記はレビューと formatter で整えるものとし、リポジトリ内の文字列を走査する
 source gate は正しさの根拠にしない。
-

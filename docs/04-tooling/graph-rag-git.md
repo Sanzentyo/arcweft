@@ -2,150 +2,66 @@
 
 ## Source of truth
 
-- `.arcw` source and `.arcweft/entities.toml` / `.arcweft/links.toml` are
-  versioned in Git.
-- The full Git commit object ID is the repository revision authority.
-- Graph databases, RAG indexes, entity-history indexes, and GraphPatch operation
-  indexes are rebuildable derived caches.
+- Arcweft source and project inputs are versioned in Git.
+- Git commit object IDs identify repository revisions.
+- Project hashes, source-content hashes, semantic hashes, and graph-row IDs
+  identify indexed Arcweft data; none replaces the Git revision.
+- Graph, history, and RAG records in the Agent debug store are rebuildable
+  indexes derived from accepted project inputs.
 
-```text
-game/**/*.arcw
-  ↓ parse/lower
-Typed Narrative Graph
-  ↓
-GraphPatch / RAG / Git history / Visual editor
-```
+The CLI owns source/project indexing and debug-store queries. See
+[CLI](cli.md) and [Agent Debug Bus / MCP / CLI](agent-debug-mcp-cli.md) for
+current commands and MCP access.
 
 ## Graph nodes
 
-```rust
-pub enum NodeKind {
-    Module,
-    StateType,
-    StateField,
-    EventType,
-    Reducer,
-    Flow,
-    Say,
-    Choice,
-    ChoiceOption,
-    Await,
-    Command,
-    AssetRef,
-    ShaderRef,
-    ActivityCall,
-    ViewPanel,
-    AudioCue,
-    Bgm,
-    Invariant,
-    TestCase,
-    DocumentNote,
-}
-```
+The Agent debug store indexes project symbols as rebuildable graph rows. The
+current row types and their field ownership are defined by
+[`arcweft-debug-model::graph`](../../crates/arcweft-debug-model/src/graph.rs).
+Source indexing derives symbols from the accepted project semantic index and
+records their source path, source-content hash, byte span, semantic hash, and
+summary when available. `kind` is an index value, not a closed node enum in
+this store contract.
 
 ## Edges
 
-```rust
-pub enum EdgeKind {
-    Contains,
-    Next,
-    Branch,
-    Goto,
-    ReadsState,
-    WritesState,
-    EmitsEvent,
-    UsesAsset,
-    UsesShader,
-    CallsActivity,
-    OpensView,
-    PlaysAudio,
-    UsesBgm,
-    Requires,
-    Ensures,
-    Mentions,
-    Foreshadows,
-    SimilarTo,
-}
-```
+Directed graph rows refer to indexed symbol IDs and carry an edge kind, weight,
+and metadata. The row contract is owned by
+[`arcweft-debug-model::graph`](../../crates/arcweft-debug-model/src/graph.rs).
+The source index derives current relationships from accepted project entities
+and actions. Privacy filtering applies before graph results are limited and
+ranked.
 
 ## GraphPatch
 
-An LLM returns a typed GraphPatch rather than an unstructured source rewrite.
-The base revision uses the full Git commit object ID. A patch operation ID is a
-GraphPatch identity and is not a second version-control revision.
-
-```json
-{
-  "base": {
-    "program_hash": "b3:...",
-    "git_commit": "70e24164373e7898ff9ef83f56f4c48523ce108e"
-  },
-  "ops": [
-    {
-      "id": "patch-op.1",
-      "op": "InsertAfter",
-      "after": "say.opening.001",
-      "node": {
-        "kind": "Say",
-        "id_policy": "auto",
-        "payload": {
-          "speaker": "alice",
-          "text": "でも、夢の中では君もそこにいた。"
-        }
-      }
-    }
-  ]
-}
-```
+The language contract includes `GraphPatch` as a structured
+`PrecompileOutput` variant. Its owner is
+[Precompile output](../01-language/macros-precompile.md#出力); this chapter does
+not duplicate its operation schema. A patch operation ID is scoped to the patch
+and is not a repository revision.
 
 ## Git and entity history
 
-The tooling exposes three related but distinct histories:
+Git remains the authority for repository revision history. For example,
+`70e24164373e7898ff9ef83f56f4c48523ce108e` is a full 40-character Git commit
+object ID.
 
-- repository revision history from `git log`;
-- entity history derived from semantic-hash changes between Git commits; and
-- GraphPatch operation history retained in the rebuildable debug index.
-
-```rust
-pub struct EntityHistoryEntry {
-    pub node_id: NodeId,
-    pub git_commit: String,
-    pub patch_operation_id: Option<String>,
-    pub author_timestamp: DateTimeUtc,
-    pub semantic_hash_before: Option<SemanticHash>,
-    pub semantic_hash_after: SemanticHash,
-    pub summary: String,
-}
-```
-
-Git is the only version-control identity. The operation ID may locate one
-operation inside a GraphPatch, but it must never be accepted as a repository
-revision or used to require a second VCS checkout.
+The debug store's current history row is owned by
+[`arcweft-debug-model::history`](../../crates/arcweft-debug-model/src/history.rs).
+It indexes a change ID, optional operation ID, before/after semantic hashes,
+summary, and metadata. These rebuildable rows support history search; they are
+not a replacement for `git log`.
 
 ## RAG
 
-Hybrid retrieval combines:
+RAG combines exact-entity, lexical, vector, graph, history, diagnostic, trace,
+and summary candidates. Privacy filtering occurs before rank limiting and
+context-byte trimming. Source/project indexing and query options are documented
+in [CLI](cli.md); MCP tools are documented in
+[Agent Debug Bus / MCP / CLI](agent-debug-mcp-cli.md).
 
-```text
-lexical search
-vector search
-graph traversal
-Git/entity history search
-diagnostics/test search
-summary/community retrieval
-```
-
-```rust
-pub struct RagContextPack {
-    pub task: AgentTask,
-    pub repo: RepoContext,
-    pub graph_slice: GraphSlice,
-    pub source_spans: Vec<SourceSpanText>,
-    pub summaries: Vec<ContextSummary>,
-    pub histories: Vec<EntityHistoryEntry>,
-    pub diagnostics: Vec<Diagnostic>,
-    pub tests: Vec<TestReference>,
-    pub constraints: Vec<Constraint>,
-    pub patch_schema: JsonSchema,
-}
-```
+The current query and result types are owned by
+[`arcweft-debug-model::rag`](../../crates/arcweft-debug-model/src/rag.rs).
+A version-1 `RagContextPack` contains the query, selected context items, and a
+truncation flag. Each item carries its source kind, title and body, fused score,
+contributing channels, entity IDs, and optional source anchor.

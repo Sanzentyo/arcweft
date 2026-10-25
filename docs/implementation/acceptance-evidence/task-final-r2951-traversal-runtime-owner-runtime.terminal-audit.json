@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "base": "df897b47c06934940c09842bbd18a0512e217249",
+  "run": "task-final-r2951-traversal-runtime-owner-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [1027.489s] 2406 tests run: 2403 passed (2 slow), 3 failed, 0 skipped",
+  "executed": 2406,
+  "passed": 2403,
+  "failed": 3,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::types::tests::original_awbc_type_relation_accepts_the_complete_algebra_in_a_different_row_order"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::types::tests::original_awbc_type_relation_shares_exact_work_and_keeps_a_short_limit_failure"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::types::tests::traversal_type_survives_awbc_wire_round_trip_and_rejects_foreign_shape_edges"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T06:29:31.6860688Z"
+}

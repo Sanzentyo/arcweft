@@ -9,76 +9,32 @@
 - Shader parameter/resource contract
 - Rust export manifest
 
-## Proof IR
+## Proof IR and backend
 
-```arcw
-pub enum ProofExpr {
-    Bool(bool),
-    Int(i64),
-    Var(Symbol),
-    And(Vec<ProofExpr>),
-    Or(Vec<ProofExpr>),
-    Not(Box<ProofExpr>),
-    Eq(Box<ProofExpr>, Box<ProofExpr>),
-    Le(Box<ProofExpr>, Box<ProofExpr>),
-    Forall(Vec<ProofVar>, Box<ProofExpr>),
-    Exists(Vec<ProofVar>, Box<ProofExpr>),
-    App(Symbol, Vec<ProofExpr>),
-}
-```
+`arcweft-verify` owns the solver-neutral proof-expression grammar, typed SMT
+problem construction, deterministic SMT-LIB emission, and `SmtBackend` boundary.
+A backend receives an `SmtProblem` and returns a typed check result. The exact
+expression constructors and result types are owned by
+[`arcweft-verify::smt`](../../crates/arcweft-verify/src/smt.rs).
 
-## Backend
+The verifier core remains Sans I/O. Current solver integrations live in adapter
+crates:
 
-```arcw
-pub trait SmtBackend {
-    fn assert(&mut self, expr: ProofExpr) -> Result<()>;
-    fn check(&mut self) -> Result<SmtResult>;
-    fn model(&mut self) -> Option<Model>;
-    fn unsat_core(&mut self) -> Option<UnsatCore>;
-}
-```
+- `arcweft-verify-oxiz` provides the pure Rust OxiZ adapter.
+- `arcweft-verify-z3` provides the external Z3 process adapter.
+- `emit` writes the report and SMT-LIB without solving.
 
-Backends:
-
-- Z3
-- OxiZ
-- SMT-LIB external
-- Kani harness for Rust code
-- Creusot/Verus bridge for selected Rust code
-- runtime contract checks
-- property test generator
-
-The verifier core remains Sans I/O. Concrete solver integrations live in
-adapter crates:
-
-```text
-arcweft-verify       Proof IR, obligations, policies, diagnostics, SMT problem
-arcweft-verify-z3    external Z3 process adapter
-arcweft-verify-oxiz  pure Rust OxiZ adapter
-```
-
-CLI and build tooling choose an adapter. `arcweft-core`, parser, HIR, and the
-verifier core must not spawn processes or depend on native solver libraries.
+CLI and build tooling select an adapter. `arcweft-core`, parser, HIR, and the
+verifier core do not spawn solver processes or depend on native solver libraries.
 
 ## CLI
 
 ```bash
-arcw verify game/main.arcw --solver z3
-arcw verify game/main.arcw --solver oxiz
-arcw verify game/main.arcw --cross-check z3,oxiz
-arcw verify game/main.arcw --emit-smt out/proofs
-arcw verify activity mini_games/truck --kani
-arcw verify game/main.arcw --emit-obligations out/proofs
-```
-
-Current implementation supports:
-
-```bash
 arcw verify game/main.arcw --backend emit --json
-arcw verify game/main.arcw --backend oxiz
-arcw verify game/main.arcw --backend z3 --solver-command z3
-arcw verify game/main.arcw --emit-obligations obligations.json
-arcw verify game/main.arcw --emit-smt out/proofs
+arcw verify game/main.arcw --backend oxiz --json
+arcw verify game/main.arcw --backend z3 --z3-command z3 --json
+arcw verify game/main.arcw --backend emit --emit-obligations obligations.json
+arcw verify game/main.arcw --backend emit --emit-smt out/proofs
 arcw unsafe game/main.arcw --json
 ```
 
@@ -182,4 +138,3 @@ variants remain stable across serde implementations:
   "suggestion": "Clamp affection after addition"
 }
 ```
-

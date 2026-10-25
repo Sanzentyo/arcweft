@@ -131,78 +131,23 @@ for a required `session_id`, returning cell source, stable source hash, status,
 display JSON, diagnostics, and effectfulness. It mirrors
 `arcw debug db repl-cells`.
 
-```arcw
-pub trait AgentDebugBus {
-    fn observe(&mut self, req: ObserveRequest) -> Result<Observation, AgentError>;
-    fn act(&mut self, action: AgentAction) -> Result<ActionResult, AgentError>;
-    fn resource(&mut self, id: AgentResourceId) -> Result<AgentResource, AgentError>;
-    fn subscribe(&mut self, filter: EventFilter) -> AgentEventStream;
-}
-```
 
 ## Observation
 
-```arcw
-pub struct Observation {
-    pub session_id: SessionId,
-    pub tick: TickId,
-    pub frame_id: FrameId,
-    pub state_hash: StateHash,
-    pub render_hash: RenderHash,
-    pub viewport: ViewportInfo,
-    pub images: Vec<ImageResource>,
-    pub layers: Vec<ObservedLayer>,
-    pub objects: Vec<ObservedObject>,
-    pub actions: Vec<ActionTarget>,
-    pub view_tree: Option<ViewTree>,
-    pub scene_graph: Option<SceneGraphSlice>,
-    pub audio_state: Option<AudioObservation>,
-    pub logs: Vec<DecodedLog>,
-    pub signals: Vec<SignalSnapshot>,
-    pub diagnostics: Vec<Diagnostic>,
-}
-
-pub struct ObservedLayer {
-    pub id: LayerId,
-    pub bbox: BBox,
-    pub object_count: u32,
-    pub capture_refs: Vec<ImageResource>,
-}
-```
+The typed observation and capture shape, scope, URI families, raw RGBA, and
+coordinate-space contract is owned by
+[Agent Observe and Capture Contract](agent-observe-capture-contract.md).
 
 ## Image / bbox / polygon / mask
 
-- color screenshot
-- overlay screenshot
-- object-id image
-- layer/object crop image
-- bbox
-- polygon
-- segmentation mask: RLE / PNG alpha / raw bitmap
+Image kinds, geometry, capture references, and binary resource metadata are
+specified by [Agent Observe and Capture Contract](agent-observe-capture-contract.md).
 
 ## Action
 
-Physical:
-
-```arcw
-PointerClick { x, y, space, button }
-PointerDrag { from, to, duration_ms }
-KeyDown / KeyUp
-TypeText
-```
-
-Semantic:
-
-```arcw
-Invoke { target, action, args }
-SelectChoice { choice }
-AdvanceText
-OpenMenu { menu }
-SetSlider { target, value }
-AudioSetBus { bus, gain }
-```
-
-Semantic action を優先し、座標 click は fallback。
+MCP actions use enabled observed targets or the direct semantic kinds described
+above. Pointer-click synthesis is not supported by the current MCP action
+surface.
 
 ## CLI
 
@@ -375,29 +320,8 @@ Observation-derived state, signal, and log readback accepts `max_privacy`
 `max_privacy=public` blocks cached observation debug data rather than returning
 project-private payloads.
 
-## Product flags
+## Product security
 
-```text
---agent=off
---agent=observe
---agent=control
---agent=debug
-```
-
-Capabilities:
-
-```arcw
-pub struct AgentPermissions {
-    pub observe_image: bool,
-    pub observe_state: bool,
-    pub observe_audio: bool,
-    pub control_input: bool,
-    pub semantic_actions: bool,
-    pub mutate_state: bool,
-    pub hot_reload: bool,
-}
-```
-
-Product mode は token、audit log、debug indicator、redaction 必須。
-
-
+Product and HTTP Agent access, local-token requirements, auditing, capability
+tiers, and developer-tool restrictions are owned by
+[Security and sandbox](../05-build-and-security/security.md).

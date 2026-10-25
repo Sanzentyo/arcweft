@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "df897b47c06934940c09842bbd18a0512e217249",
+  "name": "task-final-r2951-traversal-runtime-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-bundle",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2951-traversal-runtime-owner-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T06:11:40.7238099Z",
+  "finishedAt": "2026-10-25T06:28:57.1536256Z"
+}

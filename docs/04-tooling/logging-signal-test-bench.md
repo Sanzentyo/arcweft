@@ -1,28 +1,5 @@
 # logging / signal / assert / test / bench
 
-## Deferred structured logging
-
-defmt 風に、format string を compile-time intern し、実行時は template id と typed args だけを送る。
-
-```arcw
-log.info("selected choice {choice:?}", choice = selected.id)
-```
-
-LogFrame:
-
-```arcw
-pub struct LogFrame {
-    pub tick: TickId,
-    pub monotonic_ns: u64,
-    pub level: LogLevel,
-    pub template_id: LogTemplateId,
-    pub module: ModuleId,
-    pub entity: Option<EntityId>,
-    pub span: Option<SpanId>,
-    pub args: PackedArgs,
-}
-```
-
 ## Signal
 
 ```arcw
@@ -139,40 +116,3 @@ bench @bench.bgm_mix_120s {
     report { cpu_time, peak_buffer_bytes, loudness }
 }
 ```
-
-
-
-## Dispatch and subsystem-cache observation
-
-Tooling observes owner-local routed events and subsystem-specific cache metrics.
-
-CLI:
-
-```bash
-arcw trace input --target choice.opening.listen
-arcw cache stats --owner view
-```
-
-Test:
-
-```arcw
-test @test.choice_action_routes scenario {
-    goto @flow.opening
-    wait.object(@choice.opening.listen, state=.visible)
-    act.click(@choice.opening.listen)
-    expect.action(@action.choice.select, target=@choice.opening.listen)
-}
-```
-
-Bench:
-
-```arcw
-bench @bench.view_cache_hit_rate {
-    measure iterations = 10000 {
-        opening_choices().map(choice_to_view(state)).collect<Vec<ChoiceView>>()
-    }
-    assert(metric.value(@metric.view_cache_hit_rate) >= 0.95)
-}
-```
-
-

@@ -440,3 +440,33 @@ R2946の終端後は、現状一覧の実行中表示を1,339／1,339 PASSへ更
 R2938／R2947／R2948の実際の失敗とfull SHAは履歴・原本に保持する。
 型・codecとIR product構築の実装を、SourceのNeed構築・実行受入と区別した。
 新しいCore入力へ先行Sema／横断runの成功を転用せず、Generic Matchの受入は維持した。
+
+## 現行ツール章の旧API案と現状説明の重複を整理 — 2026-10-25
+
+基点は公開main `7e0092db58d578b249abd7ec669cd3b97d4e722c`。GPT-6 Luna／maxへ
+`00-overview`／`04-tooling`の削除・縮約判断を委ね、7文書の編集案を親が適用して
+現ownerと差分を照合した。既に削除した旧資料3,088 pathを復活させず、残存する旧APIの
+複製と実装前の計画を対象にした。現行規範にあるGraphPatchのPrecompileOutput契約は保持した。
+
+- `verification.md`: 現在のProofExpr／SmtBackendと異なる擬似API、Kani／bridge等の旧backend案、
+  非対応のCLI例を削除。Sans-I/Oと既存emit／OxiZ／Z3の境界を保持し、CLI引数宣言へ照合した。
+- `graph-rag-git.md`: 存在しない索引入力、旧NodeKind／EdgeKind／history／RAG DTO例を除き、
+  現在のdebug-model所有型とCLIのaccepted project索引へ集約した。Gitの単一revision authorityを
+  保持し、元JSON例のfull ID `70e24164373e7898ff9ef83f56f4c48523ce108e` も残した。
+- `agent-debug-mcp-cli.md`: 未実装のAgentDebugBus／Observation／action／permission sketchと
+  旧product flagsを削除。現行の観測契約・security章へ案内を統一し、MCPの実際のsemantic action境界を保持した。
+- `logging-signal-test-bench.md`: 旧LogFrame案と、実装されていないtrace／cache／actionの例を削除。
+  現行のSignal／assert／test／bench契約は保持した。
+- `lsp.md`: 実handlerのないcustom request一覧を現行replCommand境界へ置換し、過去の削除経緯を
+  取り除いた。accepted typed project、source identity、workspace edit／source injectionの制限を保持した。
+- `cli.md`／`code-fences.md`: 実用性のない将来のeditor／player／lowering案を削り、現在の操作・
+  profile／host実装の責任とfenceの用途を残した。
+
+現状一覧の冒頭に重複していた成功数・進捗は項目表へ集約した。全体goalを理由に完了項目を
+未完了へ戻さず、Generic Matchの受入115／24／5／7件と受入・公開full SHAは原本で再照合した。
+実検証結果・失敗・公開SHAを含む履歴と原本は削除していない。この資料整理のために
+Cargo／runtimeを追加実行しておらず、並行するTraversalの実検証は収束履歴へ記す。
+
+親の最終確認は10 Markdownの相対link 59件、未閉鎖fence 0、削除部分のfull Git ID欠落0。
+[資料照合](acceptance-evidence/task-documentation-prune-final.audit.json)。元の非文書WIPは保持し、
+後続の型関係修復は資料整理のcommitへ混ぜない。

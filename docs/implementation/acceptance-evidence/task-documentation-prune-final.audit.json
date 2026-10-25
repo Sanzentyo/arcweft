@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "base": "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+  "model": "gpt-6-luna",
+  "reasoningEffort": "max",
+  "delegatedFiles": [
+    "docs/00-overview/code-fences.md",
+    "docs/04-tooling/verification.md",
+    "docs/04-tooling/graph-rag-git.md",
+    "docs/04-tooling/logging-signal-test-bench.md",
+    "docs/04-tooling/lsp.md",
+    "docs/04-tooling/cli.md",
+    "docs/04-tooling/agent-debug-mcp-cli.md"
+  ],
+  "reviewedFiles": [
+    "docs/00-overview/code-fences.md",
+    "docs/04-tooling/verification.md",
+    "docs/04-tooling/graph-rag-git.md",
+    "docs/04-tooling/logging-signal-test-bench.md",
+    "docs/04-tooling/lsp.md",
+    "docs/04-tooling/cli.md",
+    "docs/04-tooling/agent-debug-mcp-cli.md",
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/documentation-cleanup.md"
+  ],
+  "relativeLinks": 59,
+  "unclosedFences": 0,
+  "removedFullIdsRetained": [
+    "70e24164373e7898ff9ef83f56f4c48523ce108e",
+    "df897b47c06934940c09842bbd18a0512e217249",
+    "f7841d517c0bf5fe7a6ca8e667072dff2e701219"
+  ],
+  "missingFullIds": [],
+  "genericAcceptedHead": "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+  "genericPublishedHead": "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+  "genericAcceptedGroups": {
+    "transcript": {
+      "count": 115,
+      "allPass": true
+    },
+    "coverage": {
+      "count": 24,
+      "allPass": true
+    },
+    "query": {
+      "count": 5,
+      "allPass": true
+    },
+    "native_awbc": {
+      "count": 7,
+      "allPass": true
+    }
+  },
+  "runtimeValidation": "Documentation review only; independent Rust results are retained in the convergence history",
+  "at": "2026-10-25T06:38:45.722Z"
+}

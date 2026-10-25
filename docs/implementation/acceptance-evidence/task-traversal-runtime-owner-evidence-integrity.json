@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "base": "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+  "scope": "Completed R2951 failures, original executable/input audit, prior publication and later repair input; no repaired runtime acceptance claimed",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2951-traversal-runtime-owner-runtime.log",
+      "bytes": 808233,
+      "sha256": "7c839847f2e80ad0d7e8e5a4bca2926ce4aa7c8f2447aed776f3d6945a18bf81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2951-traversal-runtime-owner-runtime.json",
+      "bytes": 713,
+      "sha256": "9a848fc1c3eec067403e5d537538b05a84fabb2e2837129065eb4417834c403c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2951-traversal-runtime-owner-runtime.terminal-audit.json",
+      "bytes": 1237,
+      "sha256": "aca5e096b80d6d3cb6216793f38bc0d5dc650ce3a7530df9fe950ab57e8d361e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-owner-executables-after.json",
+      "bytes": 8725,
+      "sha256": "597e877e9e3b0b76b650f4e7906f42e1c6975068e52c4f64ea31acbc22e7f506"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-owner-runtime.audit.json",
+      "bytes": 614,
+      "sha256": "22700a5e2e12e21e5d2d4aa8117cb356b0f87cc5602408b8be49a672752f1881"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-checkpoint.verified.json",
+      "bytes": 10029,
+      "sha256": "279a6c685a48601972e27f8fe6d3d6451d1769294f84314b3c925bba618fdfa7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-repair.source-freeze.json",
+      "bytes": 778126,
+      "sha256": "109d188f1d3a55455719b791554596d86b3d4bb82acc09276e045ba2b4f6ed8e"
+    }
+  ]
+}

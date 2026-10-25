@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "commit": "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+  "parent": "df897b47c06934940c09842bbd18a0512e217249",
+  "tree": "138f88345698be589454932233a136caf1c92721",
+  "remote": "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+  "advertised": "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+  "paths": [
+    {
+      "path": "crates/arcweft-bundle/src/resource_codec/runtime.rs",
+      "blob": "5799d045336dc8998a8a2fb16f9ade15f1a0f7dc",
+      "workingBlob": "5799d045336dc8998a8a2fb16f9ade15f1a0f7dc"
+    },
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "blob": "6923ed5a05988d5c6006de2c02cd918a0a32f406",
+      "workingBlob": "6923ed5a05988d5c6006de2c02cd918a0a32f406"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/types.rs",
+      "blob": "5fe35ec48e64ac4a2baa0e4f55246c6479fd1926",
+      "workingBlob": "5fe35ec48e64ac4a2baa0e4f55246c6479fd1926"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "blob": "ee7ccce4ce36ec6451515ab889252701a575ab60",
+      "workingBlob": "ee7ccce4ce36ec6451515ab889252701a575ab60"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/type_projection.rs",
+      "blob": "a7691b31e36d4838c9d7da71e9e3525a3397a3c9",
+      "workingBlob": "a7691b31e36d4838c9d7da71e9e3525a3397a3c9"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/value_admission.rs",
+      "blob": "4013924ede88fdb95fe844265d569d9398285a48",
+      "workingBlob": "4013924ede88fdb95fe844265d569d9398285a48"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/callable_specialization.rs",
+      "blob": "213ee236b43dee27974f18d643db7184a5dc7f8e",
+      "workingBlob": "213ee236b43dee27974f18d643db7184a5dc7f8e"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+      "blob": "d1cfb742bc787ecf9f7d5079914c4333289653b2",
+      "workingBlob": "d1cfb742bc787ecf9f7d5079914c4333289653b2"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+      "blob": "ff0195d1b76240d4d33ffb8f4091f92b3777cd1c",
+      "workingBlob": "ff0195d1b76240d4d33ffb8f4091f92b3777cd1c"
+    },
+    {
+      "path": "crates/arcweft-core/src/pattern.rs",
+      "blob": "1fb4819e46429190ad95aed6fb5ce0ec22cefcbb",
+      "workingBlob": "1fb4819e46429190ad95aed6fb5ce0ec22cefcbb"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "blob": "7d34b0a03ea72b4b3424424575d51359948314a4",
+      "workingBlob": "7d34b0a03ea72b4b3424424575d51359948314a4"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/inventory.rs",
+      "blob": "27a5bb0460e6958f6737cf988c69cf31775e5a91",
+      "workingBlob": "27a5bb0460e6958f6737cf988c69cf31775e5a91"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/types/tests.rs",
+      "blob": "dcda218d799cf1a3aac2b4ecef2cab5c6aaa941f",
+      "workingBlob": "dcda218d799cf1a3aac2b4ecef2cab5c6aaa941f"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/type_kind.rs",
+      "blob": "4d2b807af80c1665b735b83cad1d86945a61d16f",
+      "workingBlob": "4d2b807af80c1665b735b83cad1d86945a61d16f"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/type_kind/semantic.rs",
+      "blob": "5278cff058b34861935cfce67c3470394d28c215",
+      "workingBlob": "5278cff058b34861935cfce67c3470394d28c215"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/type_table.rs",
+      "blob": "e1c9e1843723d102d2cc523302b974ff0b1a8ee1",
+      "workingBlob": "e1c9e1843723d102d2cc523302b974ff0b1a8ee1"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/type_table/source_codec/projection.rs",
+      "blob": "8e8f0eed000eeaa5d436513652dada79f81077fd",
+      "workingBlob": "8e8f0eed000eeaa5d436513652dada79f81077fd"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/type_table/source_codec/tests.rs",
+      "blob": "e1eecf9ae947beae4f67b5be4931ef20cbc77e0e",
+      "workingBlob": "e1eecf9ae947beae4f67b5be4931ef20cbc77e0e"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/value_admission.rs",
+      "blob": "d79cc24656b86e08aaafdc3f51914d33fb5d14a8",
+      "workingBlob": "d79cc24656b86e08aaafdc3f51914d33fb5d14a8"
+    },
+    {
+      "path": "crates/arcweft-core/src/program_types/function_contract/authority.rs",
+      "blob": "942b67d73373332383fa13b36dd11e54e775aebe",
+      "workingBlob": "942b67d73373332383fa13b36dd11e54e775aebe"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+      "blob": "bb6a0740d327597ad02d2f9330f740dceef7c98b",
+      "workingBlob": "bb6a0740d327597ad02d2f9330f740dceef7c98b"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/pattern.rs",
+      "blob": "beb706ba80fe9f9a03de3aa76f3ebb93ee3de0c5",
+      "workingBlob": "beb706ba80fe9f9a03de3aa76f3ebb93ee3de0c5"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "blob": "77a94397c3fca7028cf6d17176781c8c776d8ef8",
+      "workingBlob": "77a94397c3fca7028cf6d17176781c8c776d8ef8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2947-traversal-runtime-type-core-check.json",
+      "blob": "a087f739c839d6783cf4c6d98f4f345957109c57",
+      "workingBlob": "a087f739c839d6783cf4c6d98f4f345957109c57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2947-traversal-runtime-type-core-check.log",
+      "blob": "426b484403c6951d218ff11b94b419b9ca744700",
+      "workingBlob": "426b484403c6951d218ff11b94b419b9ca744700"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2948-traversal-runtime-type-consumer-check.json",
+      "blob": "d9b66c5ebdba8a9e0c9e6c081e43255f73c9fc32",
+      "workingBlob": "d9b66c5ebdba8a9e0c9e6c081e43255f73c9fc32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2948-traversal-runtime-type-consumer-check.log",
+      "blob": "a322f3518cb6ec618972f7372ea51d9f536617b2",
+      "workingBlob": "a322f3518cb6ec618972f7372ea51d9f536617b2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2949-traversal-runtime-type-workspace-check.json",
+      "blob": "4ea34c02b0b4ebfe2249f6ad32f07b575946ab0f",
+      "workingBlob": "4ea34c02b0b4ebfe2249f6ad32f07b575946ab0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2949-traversal-runtime-type-workspace-check.log",
+      "blob": "ddf96915d1a66967a85e3d94ba4dd5d328b5e638",
+      "workingBlob": "ddf96915d1a66967a85e3d94ba4dd5d328b5e638"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2950-traversal-runtime-owner-catalog.inventory.json",
+      "blob": "9655ce7e930716cee7213677ba28c5724161be1c",
+      "workingBlob": "9655ce7e930716cee7213677ba28c5724161be1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2950-traversal-runtime-owner-catalog.json",
+      "blob": "3d94b7949196387b40e88066ace902cece1af61d",
+      "workingBlob": "3d94b7949196387b40e88066ace902cece1af61d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2950-traversal-runtime-owner-catalog.log",
+      "blob": "c833c084026dd1d13cdb110addfb4f3a510239d1",
+      "workingBlob": "c833c084026dd1d13cdb110addfb4f3a510239d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-owner-executables-before.json",
+      "blob": "cd9ac6796a43dbf23cb5f1a4cc659935f4ab737b",
+      "workingBlob": "cd9ac6796a43dbf23cb5f1a4cc659935f4ab737b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-evidence-integrity.json",
+      "blob": "b6d7e363b8f76b8f919432c13920a0c85d30a1f8",
+      "workingBlob": "b6d7e363b8f76b8f919432c13920a0c85d30a1f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-final.graph.json",
+      "blob": "173901d8837e5c23e7847d14b219f033f2646003",
+      "workingBlob": "173901d8837e5c23e7847d14b219f033f2646003"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-final.source-freeze.json",
+      "blob": "fb4734bd2936a1759073d5445f8634603dd71c09",
+      "workingBlob": "fb4734bd2936a1759073d5445f8634603dd71c09"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-workspace.graph.json",
+      "blob": "f258cfa5fa713da92eb7b26cbb7ccbbff11e8dd4",
+      "workingBlob": "f258cfa5fa713da92eb7b26cbb7ccbbff11e8dd4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-workspace.source-freeze.json",
+      "blob": "ba7488f6b6bd34f61ca296e8481bc0b85f0cdae3",
+      "workingBlob": "ba7488f6b6bd34f61ca296e8481bc0b85f0cdae3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-workspace-check.audit.json",
+      "blob": "98d31a6ef93f3f871ce0503d4c2f13f2a3ec950e",
+      "workingBlob": "98d31a6ef93f3f871ce0503d4c2f13f2a3ec950e"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "f10238dc17f3f81946bd490ad808c9bd54ab70bc",
+      "workingBlob": "f10238dc17f3f81946bd490ad808c9bd54ab70bc"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "bb071e5c56cc178beb6f460d74c2878274eda6e1",
+      "workingBlob": "bb071e5c56cc178beb6f460d74c2878274eda6e1"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "831fc0b793659eb1f2f740f3943726290870e77d",
+      "workingBlob": "831fc0b793659eb1f2f740f3943726290870e77d"
+    }
+  ],
+  "sourceCount": 6668,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "aa6c6124830bfbdf856b96e7f602d272d9b463a44f377742e91bfe6170c7057d",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-25T06:18:16.6248200Z"
+}

@@ -161,7 +161,7 @@ oxiz  use the pure Rust OxiZ adapter
 z3    use the external Z3 process adapter
 ```
 
-Accepted verification JSON is shared with LSP and future Agent tooling. If
+Accepted verification JSON is shared with LSP and Agent tooling. If
 project compilation rejects the source before verification, `--json` publishes
 a version1 compiler rejection report (`status: "denied"`, original `stage`,
 canonical `diagnostics`) and exits unsuccessfully. Its source spans retain exact
@@ -547,17 +547,17 @@ observation path as `arcw agent observe`; `:actions` reports the enabled
 semantic action targets from the latest REPL observation. `:capture
 [viewport|layer ID|object ID]` reuses the native Agent image capture path and
 returns Agent image/resource metadata. `:complete SOURCE_BEFORE_CURSOR` exposes
-the same Sans I/O completion candidates intended for the future terminal editor,
+the shared Sans I/O completion candidates,
 including Agent Prelude functions, named parameters, live bindings, observed
 action targets, layer IDs, object IDs, effect capability names, and
 kind-filtered entity IDs such as `choose(@...)` returning only choice options.
-`:highlight SOURCE` exposes Sans I/O byte-range highlight tokens for the same
-future terminal editor, including meta commands, keywords, Prelude calls, entity
+`:highlight SOURCE` exposes Sans I/O byte-range highlight tokens for editor
+clients, including meta commands, keywords, Prelude calls, entity
 IDs, effect capability selectors, literals, comments, punctuation, and lexical
 errors such as unterminated strings. `:classify SOURCE` exposes the shared Agent
-fragment parser's cell completeness report and selected fragment family so the
-future terminal editor does not reimplement bracket, string, or item/statement
-boundary rules. Incomplete cells return explicit expected boundary tokens such
+fragment parser's cell completeness report and selected fragment family so
+editor clients share bracket, string, and item/statement boundary rules.
+Incomplete cells return explicit expected boundary tokens such
 as `)`, `]`, `}`, or `"` for multiline continuation.
 This REPL remains an Agent/runtime interaction frontend rather than a general
 Arcweft language REPL. Ordinary `use` stays name introduction, while compiler
@@ -925,9 +925,8 @@ These roots are visible authoring inputs. Mutable `save`, `temp`, and `export`
 files remain under the project-local `.arcweft/` state directory. See
 [Authored resource and local state storage](../05-build-and-security/authored-resource-storage.md).
 
-Release-mode project verification rejects dynamic `goto` targets. Release
-tree shaking therefore requires static flow references or a future finite,
-manifest-backed dynamic set instead of an unbounded runtime flow lookup.
+Release-mode project verification rejects dynamic `goto` targets, so release
+builds require statically referenced flows.
 
 `arcw build --watch` keeps the same build outputs current, watches the selected
 project source, manifest/profile inputs, and the manifest-selected authored
@@ -1069,8 +1068,8 @@ may select another complete Entry already present in the bundle; bundle
 execution does not rewrite an Entry into a Flow target or inject ambient Flow
 parameters. The current implementation supports the standard CLI native file,
 system-info, and internal scheduler adapters; custom profile adapter
-implementations still need an embedding runner or future player adapter to
-provide concrete host code. Embedding runners use
+implementations require an embedding runner to provide concrete host code.
+Embedding runners use
 `arcweft_runtime_host::run_bundle_file_with_native_adapters` or
 `arcweft_runtime_host::run_bundle_with_native_adapters` with concrete
 `HostAdapter` registrars. The bundle supplies the manifest host-call surface and
@@ -1312,8 +1311,9 @@ Cranelift pure-helper adapter against the VM reference backend. The current
 executable subset covers deterministic `i64` arithmetic, integer comparisons,
 value-producing `if`, lexical `let` bindings, and selected local bindings
 passed as runtime `i64` inputs. The native call boundary currently supports 0
-to 4 runtime integer inputs. It is meant as the first conformance and timing
-gate for future wider pure helper lowering:
+to 4 runtime integer inputs. This bounded subset defines the current
+conformance and timing surface for
+pure-helper lowering:
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
@@ -1472,5 +1472,3 @@ as a side effect of editing.
 Relative IDs remain author-facing source syntax and are not expanded by default.
 The CLI exposes no ID-materialization command. `arcw fmt` remains a dry run by
 default and writes only with `--write`.
-
-

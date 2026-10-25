@@ -25,9 +25,6 @@
 ## DSL固有
 
 - Ref resolution
-- RichText has no migration or canonicalization code action. The server
-  consumes only current typed content applications and point actions; ordinary
-  grammar diagnostics handle invalid input without a removed-spelling route.
 - Identity navigation and rename consume accepted typed project and source-site
   identities. They do not reconstruct declaration or dialogue identity from raw
   source. Formatting preserves authored `@.suffix` / `@..suffix` / `@...suffix`
@@ -91,9 +88,6 @@ LSP features use that shared index:
   the contributing dialogue Style
 - go to active profile selection jumps to the manifest or build profile that
   selected the dialogue View and Style
-- the old line/SpeakerPreset/character extraction actions are not offered;
-  final extraction must consume the typed `CharacterDialogue` application and
-  accepted presentation owners after the Dialogue authority switch
 
 Generated or fully elaborated source is also surfaced through diagnostics.
 Domain lint names are used in user-authored attributes, while stable numeric
@@ -119,18 +113,9 @@ surface.
 
 ## Custom requests
 
-```text
-arcweft/getNodeAtPosition
-arcweft/getGraphSlice
-arcweft/getNodeHistory
-arcweft/previewGraphPatch
-arcweft/applyGraphPatch
-arcweft/getRagContext
-arcweft/renderRouteMap
-arcweft/parseInput
-arcweft/shaderPreview
-arcweft/audioCuePreview
-```
+The current stdio session dispatches `arcweft/replCommand` through an optional
+`LspReplCommandExecutor`. Other custom method names are not exposed as active
+request handlers.
 
 ## Agent-oriented JSON
 
@@ -167,11 +152,7 @@ dispatch outside the verifier helper. Document sync is
 
 The verifier helper returns `lsp-types` data only; opening documents, applying
 workspace edits, watching files, and
-resolving editor capabilities remain transport-adapter responsibilities. The
-old RichText source action, relative-ID materialization action, and inferred-ID
-inlay path are not part of the current server: they rebuilt source or identity
-outside its typed owner and were deleted rather than retained as migration
-paths.
+resolving editor capabilities remain transport-adapter responsibilities.
 
 Actual LSP ranges must not treat byte offsets as `Position.character` values.
 `arcweft-verify-lsp` exposes `LspPositionMapper`, while `arcweft-lsp` owns a
@@ -180,11 +161,11 @@ encoding. UTF-16 remains the default, and UTF-8 is selected only when the client
 advertises it through initialize capabilities.
 
 Source-level code actions return `WorkspaceEdit` values when the server can map
-the current document snapshot. The server has no RichText source-rewrite
-action; the deleted semantic-sugar command transport has no generic
-`workspace/executeCommand` replacement. Verifier host commands remain typed
-action payloads for an owning client integration; the server does not advertise
-or reinterpret them as arbitrary source-edit injection.
+the current document snapshot. The server does not offer RichText source
+rewrites or generic workspace
+commands. Verifier host commands remain typed action payloads for an owning
+client integration; the server does not reinterpret them as arbitrary
+source-edit injection.
 
 Adapter completions, hover, and signature help are also Sans I/O. The LSP helper
 consumes an already-resolved adapter manifest containing standard adapter facts,

@@ -11312,3 +11312,35 @@ Sourceのtraverse／parallel call lowering、first-class aggregate Needの実構
 実capability callbackの実行と保存復元はこのcutで受入済みとはしない。
 先行Generic Match、Sema全1,339件と既存AwaitManyの受入は取り消していない。
 元tracked WIP 14件とuntracked実ファイル6件を保持した。
+
+### 型・codecの公開とowner全件の終端
+
+型・codecの23 Rust pathと当時の検証原本は `7e0092db58d578b249abd7ec669cd3b97d4e722c`
+でcommit／non-forced pushした。parentは `df897b47c06934940c09842bbd18a0512e217249`、
+treeは `138f88345698be589454932233a136caf1c92721`、full patchのSHA256は
+`aa6c6124830bfbdf856b96e7f602d272d9b463a44f377742e91bfe6170c7057d`。
+42 pathの公開blobと6,668保持入力の差分0、元14件のWIP patch不変、index空を確認した。
+[公開照合](acceptance-evidence/task-traversal-runtime-type-checkpoint.verified.json)。
+
+上記のR2951実行中表示は記録時点の観測で、終端は**2,406実行／2,403 PASS／3 FAIL**、
+終了100、1,027.489秒、2 slow、非選択0だった。Coreは2,077実行／2,074 PASS／3 FAIL、
+Bundleは329／329 PASS。catalogと終端case集合が一致し、3,981非文書入力・34実行ファイルの
+前後hash差分0を確認した。観測上の遅延を理由に停止や再起動はしていない。
+[終端照合](acceptance-evidence/task-final-r2951-traversal-runtime-owner-runtime.terminal-audit.json)、
+[入力と実行ファイル](acceptance-evidence/task-traversal-runtime-owner-runtime.audit.json)。
+
+失敗したのは `plan::task_source::program::types::tests` の次の3件である。
+
+- `original_awbc_type_relation_accepts_the_complete_algebra_in_a_different_row_order`
+- `original_awbc_type_relation_shares_exact_work_and_keeps_a_short_limit_failure`
+- `traversal_type_survives_awbc_wire_round_trip_and_rejects_foreign_shape_edges`
+
+元Source／AWBC型関係の既存visitorにTraversalの照合分岐がなく、正しい新型まで拒否していた。
+同じownerへsource／mappingのordered child照合を追加し、既存のcount／work／sticky failureを
+通す形へ修復した。型をTupleへ読み替えたり、元programとの照合を省略したりしていない。
+R2952 catalog／R2953では、このownerの既存6件と新規1件の計7件を再検証する。
+この記録時点ではcatalogを構築中で、修復後のruntime成功とは記していない。
+新入力の全53逆依存runtime／Clippy／構造gateは別途未実行であり、R2951を全件成功へ書き換えない。
+Generic Matchと先行する個別受入の再開根拠にはしていない。
+
+[owner全件の原本保全一覧](acceptance-evidence/task-traversal-runtime-owner-evidence-integrity.json)。
