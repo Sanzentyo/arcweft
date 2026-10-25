@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-26。照合基点は公開main `11f79c7d482c8146f4b86c458224b0a112d4f1da`。今回はcarrier型契約の53 Rust pathをworkspace checkまで確認した中間checkpoint。
+確認日: 2026-10-26。照合基点は公開main `529dc24116788e639ec08d54b84a9f013ed0502a`。carrier型契約の移行後、workspace checkと正規構造scannerまで確認した。
 既存checkoutの元tracked WIP 14件／untracked実ファイル6件を保持している。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
@@ -47,7 +47,7 @@
 | CLI・全 consumer の統合受入 | **最新CLIは641 PASS／50 FAIL** | R3095でR2987の50失敗識別子が再現し、新規追加0。traverse run／benchはSema拒否からCompilerのruntime intrinsic拒否へ進んだ。[package・失敗集合・終端照合](acceptance-evidence/task-sema-local-use-reverse-acceptance.json)。今回の原診断を下表へ集約し、識別子一致から同一原因とは断定しない。 |
 | HIRの全23逆依存runtime（Sema全22を含む） | **R3095終端：4,856実行／4,806 PASS／50 FAIL／31 ignored** | 解決済みCargo graphの全23 package、全target／全feature／locked、終了100。全23にnamed caseがあり、115 test binaries・5 non-test binariesを構築。catalogと終端case集合、3,986非文書入力・99 manifest／lock・120 executableのhash差分0。Generic 151件とowner／Source必須17件は全PASS。[範囲・package集計](acceptance-evidence/task-sema-local-use-reverse-acceptance.json)、[終端照合](acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.terminal-audit.json)。 |
 | Coreの全53逆依存runtime | **R2929終端：7,314実行／7,264 PASS／50 FAIL／39 ignored** | Cargo逆依存53 packageの全target／全feature／locked、終了100、2,158.248秒。221 test binariesと6 non-test binariesを構築し、named caseは50 packageで選択、`arcweft`／`arcweft-bundle-assets`／`arcweft-render-web` はbuildのみ。catalogと終端case集合が一致し、3,981非文書入力・227実行ファイルのhash差分0。前段R2908の52失敗はすべて選択され、2件がPASS、残る50識別子がFAIL、新規失敗識別子0。[終端照合](acceptance-evidence/task-final-r2929-presentation-custody-reverse-runtime.terminal-audit.json)、[範囲・package集計・Generic 151件](acceptance-evidence/task-presentation-custody-reverse-acceptance.json)。識別子一致を同一の根本原因の証明には使わない。 |
-| Workspace gate／Tier 2／Native-Web capture parity | **今回R3108 workspace checkは終了0。新型のruntime／Clippy／構造gateは未終端・未実行** | 全target・全feature・locked、警告あり。3,987非文書入力の前後hash差分0。前cutのR3096 check・R3097 Clippy・R3098構造gateの成功は当時の入力に対する履歴であり、今回の包括成功とはしない。[今回check](acceptance-evidence/task-final-r3108-handle-execution-workspace-check.json)、[入力照合](acceptance-evidence/task-final-r3108-handle-execution-workspace-check.input-audit.json)、[ownerレビュー](acceptance-evidence/task-handle-carrier-structure-review.json)。Tier 2／Native-Web capture parityは未再実行。 |
+| Workspace gate／Tier 2／Native-Web capture parity | **R3108 workspace check・R3115正規構造scannerは終了0。runtime／Clippy／doctestは未確認** | 全target・全feature・lockedのcheckは警告あり。構造scannerは `--fail-on-blocking` で終了0。両者3,987非文書入力の前後hash差分0。53 ownerのbyte・physical LOC・embedded test LOCは正規CSVとレビューで一致した。[check](acceptance-evidence/task-final-r3108-handle-execution-workspace-check.json)、[構造gate](acceptance-evidence/task-final-r3115-handle-runtime-structure.json)、[ownerレビュー](acceptance-evidence/task-handle-runtime-structure-review.json)。過去のClippy成功は当時の入力に対する履歴として保持し、今回の成功へ転用しない。Tier 2／Native-Web capture parityは未再実行。 |
 
 ## CLIの具体的な観測
 

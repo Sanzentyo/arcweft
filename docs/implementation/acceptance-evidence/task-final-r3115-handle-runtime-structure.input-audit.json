@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3115-handle-runtime-structure",
+  "actualExitCode": 0,
+  "scope": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-handle-runtime-structure-report"
+  ],
+  "sourceInputs": 3987,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T16:54:39.2203441Z"
+}

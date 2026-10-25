@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "529dc24116788e639ec08d54b84a9f013ed0502a",
+  "name": "task-final-r3115-handle-runtime-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-handle-runtime-structure-report"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3115-handle-runtime-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T16:54:09.4574276Z",
+  "finishedAt": "2026-10-25T16:54:19.3360283Z"
+}

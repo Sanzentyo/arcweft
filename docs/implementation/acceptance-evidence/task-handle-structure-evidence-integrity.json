@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "base": "529dc24116788e639ec08d54b84a9f013ed0502a",
+  "purpose": "Canonical structure gate and exact source/owner/dependency metrics; no runtime acceptance is claimed.",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3115-handle-runtime-structure.json",
+      "bytes": 672,
+      "sha256": "f9f65b72d9d28a1a171bbaec9c3cdf1dd6e6e159de8f70c2d46b12726a2d9ee3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3115-handle-runtime-structure.log",
+      "bytes": 64611,
+      "sha256": "3fb9be80da8b8d3702148b8d3a8bfb15ac2f92e7e6b2c39c47e05365b5297898"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3115-handle-runtime-structure.input-audit.json",
+      "bytes": 484,
+      "sha256": "cef7740bf2a790f38b0c8f4ff0efd2f5d3be2ee2165ba54ee4c348385d138cf0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-review.json",
+      "bytes": 24777,
+      "sha256": "a5dc46343b8ba055201d6a361390762b5a1e8ace5750106f00afcccce341ff2c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime.graph.json",
+      "bytes": 5548,
+      "sha256": "a4a6058d25eeb5b18eb4686074e9a05ccf0266594671127451a9ebd96b1a478c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime.source-freeze.json",
+      "bytes": 782489,
+      "sha256": "a325fd65e8edbb59f9991a06999b97d84288686a91618ab8306b33977541762e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-freeze.ps1",
+      "bytes": 2003,
+      "sha256": "8e7e25d165c62bb58ac90678bddf5cfbdc217c16516a2c4929c640c5cfc71d04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-checkpoint.verified.json",
+      "bytes": 13386,
+      "sha256": "a9b86ec45294a02624c214d5f6fe561bdca7a6b1f0643a98731f22df57117784"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-public-evidence-audit.json",
+      "bytes": 135,
+      "sha256": "431c29097679f109e2408a07ad0ed6bf91ee7ba79e8268305ee64fc608abcd47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/dependency_edges.csv",
+      "bytes": 77451,
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/file_metrics.csv",
+      "bytes": 326596,
+      "sha256": "35eefe7026a9180d717db8e640a0edcee082ac1e8e8eb989a2224172c8073088"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/findings.md",
+      "bytes": 121534,
+      "sha256": "16186c6c66e77ba79dbde46102207c45d8186f8dcbca9c15b38582fe207662bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/public_type_duplicates.csv",
+      "bytes": 17121,
+      "sha256": "a75431ecd096a8760a437c4a5b889427a045c99a2589daa4f9232ed569d7d5d6"
+    }
+  ],
+  "totalBytes": 1443251,
+  "artifactCopyMove": false
+}

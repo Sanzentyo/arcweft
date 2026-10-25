@@ -11827,3 +11827,24 @@ runtime・Clippy・正規構造gate・doctestの成功はまだ記録してい�
 [修正後check](acceptance-evidence/task-final-r3108-handle-execution-workspace-check.json)、
 [中間範囲](acceptance-evidence/task-handle-carrier-checkpoint.json)、
 [owner実測・disposition](acceptance-evidence/task-handle-carrier-structure-review.json)。
+
+## carrier移行後の正規構造検証 — 2026-10-26
+
+公開main `529dc24116788e639ec08d54b84a9f013ed0502a` はparent
+`11f79c7d482c8146f4b86c458224b0a112d4f1da`、tree
+`7878e2a650e2978dca1e00bec64d204874273923`、full patch SHA256
+`6f9afca1c6c0289ea5539561f0c1e0a1157f668fbee2e4fed92141a1e3add05d`。
+全84公開blob・原本等27件の公開byte hashは差分0。index空、元WIP 14 pathを保持した。
+Native hostは今回のAPI hunkだけを公開し、元のimport hunkは未stageのまま保持した。
+[公開照合](acceptance-evidence/task-handle-carrier-checkpoint.verified.json)、
+[原本の公開byte照合](acceptance-evidence/task-handle-carrier-public-evidence-audit.json)。
+
+R3115は正規 `tools/structure-audit.rs` を `--fail-on-blocking` と `--write` で実行し終了0。
+3,987非文書入力の前後hash差分0。変更53 ownerのbytes、physical LOC、embedded test LOCは
+正規CSVと中間レビューの実測で全件一致した。classificationはproduction 30、test 21、facade 2。
+既存の大きいownerは元の責任・state・依存・test境界を保ち、数値だけの分割や、分割のための公開API拡張はしていない。
+これはruntime・Clippy・doctest・Source parallelの実行受入を示さない。
+[正規gate](acceptance-evidence/task-final-r3115-handle-runtime-structure.json)、
+[実測とdisposition](acceptance-evidence/task-handle-runtime-structure-review.json)、
+[正規report](acceptance-evidence/task-handle-runtime-structure-report/findings.md)。
+原本等14件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-handle-structure-evidence-integrity.json)。
