@@ -419,3 +419,31 @@ pub enum RuntimeCommandQueueError {
     #[error("dialogue command sequence overflowed")]
     SequenceOverflow,
 }
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimePresentationError {
+    #[error("presentation operation belongs to another executable lease")]
+    Program,
+    #[error("presentation handle belongs to another execution or artifact")]
+    Execution,
+    #[error("presentation handle has no exact live issuing record")]
+    UnknownHandle,
+    #[error("presentation handle is not owned by the selected dynamic scope")]
+    Owner,
+    #[error("presentation operation has no active lexical frame")]
+    MissingScope,
+    #[error("presentation target/slot is outside its public identity family")]
+    InvalidAddress,
+    #[error("presentation live handle limit is exhausted")]
+    Capacity,
+    #[error("presentation active scope grant limit is exhausted")]
+    ScopeCapacity,
+    #[error(transparent)]
+    Identity(#[from] crate::runtime_id::RuntimeIdExhausted),
+    #[error("presentation execution requires the original artifact binding")]
+    MissingArtifact,
+    #[error("pending presentation retirements exceed the selected limit")]
+    RetirementCapacity,
+    #[error("presentation resource state violates its issuing ledger")]
+    InvalidState,
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+  "name": "task-final-r2896-presentation-owner-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2896-presentation-owner-core-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-24T23:47:09.2926420Z",
+  "finishedAt": "2026-10-24T23:47:45.7507576Z"
+}

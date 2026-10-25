@@ -1630,6 +1630,7 @@ impl Engine {
         let request = self.with_temp_bindings(bindings, |this| {
             this.with_temp_binding_ref(target.item_binding, item, |this| {
                 this.evaluate_host_task_request_template(&target.child.request, pure_backend)
+                    .map_err(|message| RuntimeEvalError::HostTaskRequest { message })
             })
         });
         let request = match request {

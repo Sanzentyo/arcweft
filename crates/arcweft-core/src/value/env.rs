@@ -204,6 +204,28 @@ impl RuntimeEnvRollbackImage {
 }
 
 impl<V> RuntimeEnv<V> {
+    pub(crate) fn validate_presentation_context(
+        &self,
+        program: &RuntimeProgramOwner,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        fiber: crate::runtime_id::RuntimePersistentFiberId,
+    ) -> Result<(), crate::presentation::RuntimePresentationError> {
+        if self
+            .presentation_scope_bindings()
+            .any(|binding| !binding.matches_context(program, execution, fiber))
+        {
+            return Err(crate::presentation::RuntimePresentationError::Owner);
+        }
+        Ok(())
+    }
+    pub(crate) fn presentation_scope_bindings(
+        &self,
+    ) -> impl Iterator<Item = &crate::presentation::resources::PresentationScopeBinding> {
+        self.scopes
+            .iter()
+            .filter_map(|scope| scope.presentation_scope.as_ref())
+    }
+
     pub(crate) fn presentation_scope_binding(
         &self,
     ) -> Option<&crate::presentation::resources::PresentationScopeBinding> {
@@ -214,13 +236,13 @@ impl<V> RuntimeEnv<V> {
 
     pub(crate) fn bind_presentation_scope(
         &mut self,
-        install: crate::presentation::resources::PresentationScopeInstall,
-    ) -> Result<(), crate::presentation::resources::PresentationLedgerError> {
+        install: crate::presentation::resources::PresentationScopeMutation,
+    ) -> Result<(), crate::presentation::RuntimePresentationError> {
         let scope = self
             .scopes
             .last_mut()
-            .ok_or(crate::presentation::resources::PresentationLedgerError::MissingScope)?;
-        scope.presentation_scope = Some(install.into_binding());
+            .ok_or(crate::presentation::RuntimePresentationError::MissingScope)?;
+        scope.presentation_scope = install.into_binding();
         Ok(())
     }
 

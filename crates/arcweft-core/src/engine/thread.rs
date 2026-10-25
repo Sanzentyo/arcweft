@@ -70,7 +70,10 @@ impl Engine {
         self.fiber.frame.await_observer = None;
         self.fiber.frame.invocation_result =
             Some((super::NativeInvocationRoot::Task(launch), value));
-        self.unwind_control_stack(output, backend);
+        if let Err(error) = self.unwind_control_stack(output, backend) {
+            self.fail_eval(error, output);
+            return;
+        }
         if matches!(self.fiber.frame.status, super::FlowFiberStatus::Failed(_)) {
             return;
         }

@@ -489,7 +489,10 @@ impl Engine {
                         self.fiber.frame.selected_dialogue_result = Some(selected);
                         *drop_policy = Some(crate::effect::RuntimeDropPolicy::Default);
                         self.fiber.frame.pending_ops.clear();
-                        self.unwind_control_stack(output, pure_backend);
+                        if let Err(error) = self.unwind_control_stack(output, pure_backend) {
+                            self.fail_eval(error, output);
+                            return;
+                        }
                         self.fiber.frame.status = FlowFiberStatus::Done(super::FlowExit::Done);
                     }
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
@@ -989,7 +992,18 @@ impl Engine {
                 };
                 let mut value = Some(value);
                 let mut handled = self.break_nearest_loop(&mut value, output, pure_backend);
-                while !handled && self.abandon_format_attempt_for_transfer() {
+                while !handled {
+                    if matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)) {
+                        return;
+                    }
+                    match self.abandon_format_attempt_for_transfer() {
+                        Ok(true) => {}
+                        Ok(false) => break,
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return;
+                        }
+                    }
                     handled = self.break_nearest_loop(&mut value, output, pure_backend);
                 }
                 if handled {
@@ -1000,7 +1014,18 @@ impl Engine {
             }
             FlowOp::Continue => {
                 let mut handled = self.continue_nearest_loop(output, pure_backend);
-                while !handled && self.abandon_format_attempt_for_transfer() {
+                while !handled {
+                    if matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)) {
+                        return;
+                    }
+                    match self.abandon_format_attempt_for_transfer() {
+                        Ok(true) => {}
+                        Ok(false) => break,
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return;
+                        }
+                    }
                     handled = self.continue_nearest_loop(output, pure_backend);
                 }
                 if handled {
@@ -1455,11 +1480,13 @@ impl Engine {
         &mut self,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
-    ) -> Result<(), crate::scope::RuntimeScopeExitError> {
+    ) -> Result<(), RuntimeEvalError> {
         let exit = crate::scope::RuntimeScopeExitTarget::EmittedLexical
             .resolve(self.active_scope_targets())?;
         for _ in exit.targets() {
-            self.pop_scope_frame(output, backend);
+            if !self.pop_scope_frame(output, backend)? {
+                return Err(crate::scope::RuntimeScopeExitError::ScheduledTargetMismatch.into());
+            }
         }
         Ok(())
     }
@@ -1713,15 +1740,16 @@ impl Engine {
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) {
+    ) -> Result<bool, RuntimeEvalError> {
         if !matches!(
             self.fiber.frame.control_stack.last(),
             Some(FlowControlStackEntry {
                 kind: FlowControlStackEntryKind::Scope { .. }
             })
         ) {
-            return;
+            return Ok(false);
         }
+        self.pop_runtime_scope()?;
         let Some(FlowControlStackEntry {
             kind:
                 FlowControlStackEntryKind::Scope {
@@ -1729,26 +1757,29 @@ impl Engine {
                 },
         }) = self.fiber.frame.control_stack.pop()
         else {
-            return;
+            return Ok(false);
         };
         self.cancel_scheduled_scope_close(origin);
-        self.fiber.frame.env.pop_scope();
         self.emit_scope_cleanups(cleanups, output, pure_backend);
+        Ok(true)
     }
 
     pub(super) fn pop_scope_frames_until_loop(
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) {
+    ) -> Result<(), RuntimeEvalError> {
         while matches!(
             self.fiber.frame.control_stack.last(),
             Some(FlowControlStackEntry {
                 kind: FlowControlStackEntryKind::Scope { .. }
             })
         ) {
-            self.pop_scope_frame(output, pure_backend);
+            if !self.pop_scope_frame(output, pure_backend)? {
+                break;
+            }
         }
+        Ok(())
     }
 
     pub(super) fn pop_loop_frame(
@@ -1756,7 +1787,10 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<FlowControlStackEntryKind> {
-        self.pop_scope_frames_until_loop(output, pure_backend);
+        if let Err(error) = self.pop_scope_frames_until_loop(output, pure_backend) {
+            self.fail_eval(error, output);
+            return None;
+        }
         let is_loop = self.fiber.frame.control_stack.last().is_some_and(|entry| {
             matches!(
                 entry.kind,
@@ -1831,7 +1865,10 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        self.pop_scope_frames_until_loop(output, pure_backend);
+        if let Err(error) = self.pop_scope_frames_until_loop(output, pure_backend) {
+            self.fail_eval(error, output);
+            return false;
+        }
         self.discard_pending_until_loop_next();
         let Some(kind) = self
             .fiber
@@ -1889,9 +1926,11 @@ impl Engine {
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) {
+    ) -> Result<(), RuntimeEvalError> {
+        self.retire_current_presentation_scope()?;
         let cleanups = std::mem::take(&mut self.fiber.frame.root_cleanups);
         self.emit_scope_cleanups(cleanups, output, pure_backend);
+        Ok(())
     }
 
     pub(super) fn emit_scope_cleanups(

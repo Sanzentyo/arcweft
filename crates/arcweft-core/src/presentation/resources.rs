@@ -4,6 +4,7 @@
 //! bodies move to their caller; an outstanding old handle keeps only its release
 //! obligation and cannot clear the next occupant. There is no second slot index.
 
+use super::RuntimePresentationError;
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::runtime_id::{
     ExecutionInstanceId, RuntimeIdCursor, RuntimeIdExhausted, RuntimeIdNamespace,
@@ -14,11 +15,13 @@ use arcweft_id::PublicId;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
-use thiserror::Error;
+mod storage;
+pub(crate) use storage::{PresentationBody, PresentationScopeAdmission};
 
 /// Dynamic owner, never a scope name or a reusable static instruction coordinate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct PresentationScopeOwner {
+    execution: ExecutionInstanceId,
     fiber: RuntimePersistentFiberId,
     scope: RuntimeScopeInstanceId,
 }
@@ -28,16 +31,15 @@ pub(crate) struct PresentationScopeOwner {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PresentationScopeBinding {
     program: RuntimeProgramOwner,
-    execution: ExecutionInstanceId,
     owner: PresentationScopeOwner,
 }
 
 /// One installation authorized by the issuing ledger. Inert scope references
 /// can be copied, but cannot construct or duplicate this installation proof.
-pub(crate) struct PresentationScopeInstall(PresentationScopeBinding);
+pub(crate) struct PresentationScopeMutation(Option<PresentationScopeBinding>);
 
-impl PresentationScopeInstall {
-    pub(crate) fn into_binding(self) -> PresentationScopeBinding {
+impl PresentationScopeMutation {
+    pub(crate) fn into_binding(self) -> Option<PresentationScopeBinding> {
         self.0
     }
 }
@@ -55,20 +57,12 @@ impl PresentationScopeBinding {
                 message: "presentation scope requires its original executable lease".into(),
             });
         }
-        admission.validate_metadata(&(self.execution, self.owner.fiber, self.owner.scope))?;
-        // A program lease admits the inert header, not the live resource grant.
-        // Existing standalone environment rollback carries no owning ledger.
-        Err(
-            crate::value::AwbcRuntimeValueSnapshotError::PresentationScopeCustodyRequired {
-                execution: self.execution,
-                fiber: self.owner.fiber,
-                scope: self.owner.scope,
-            },
-        )
+        admission.validate_metadata(&(self.owner.execution, self.owner.fiber, self.owner.scope))?;
+        admission.validate_presentation_scope(self)
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct PresentationSlotAddress {
     target: PublicId,
     slot: PublicId,
@@ -80,9 +74,9 @@ impl PresentationSlotAddress {
         target: PublicId,
         slot: PublicId,
         resource: PresentationResourceKind,
-    ) -> Result<Self, PresentationLedgerError> {
+    ) -> Result<Self, RuntimePresentationError> {
         if !target.as_str().starts_with("target.") || !slot.as_str().starts_with("slot.") {
-            return Err(PresentationLedgerError::InvalidAddress);
+            return Err(RuntimePresentationError::InvalidAddress);
         }
         Ok(Self {
             target,
@@ -118,6 +112,18 @@ struct PresentationLease<V> {
     body: Option<V>,
 }
 
+#[derive(Debug, PartialEq)]
+pub(crate) struct PresentationRetirement<V> {
+    pub token: RuntimePresentationHandleToken,
+    pub body: V,
+}
+
+impl<V> PresentationRetirement<V> {
+    pub(crate) fn into_body(self) -> V {
+        self.body
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct PresentationLedgerLimits {
     pub handles: usize,
@@ -130,54 +136,64 @@ pub(crate) struct PresentationLedgerLimits {
 pub(crate) struct PresentationLedger<V> {
     program: RuntimeProgramOwner,
     artifact: RuntimeArtifactFingerprint,
-    execution: ExecutionInstanceId,
     next: RuntimeIdCursor,
     next_scope: RuntimeIdCursor,
-    scopes: BTreeMap<RuntimeScopeInstanceId, RuntimePersistentFiberId>,
+    scopes: BTreeMap<RuntimeScopeInstanceId, (ExecutionInstanceId, RuntimePersistentFiberId)>,
     limits: PresentationLedgerLimits,
     leases: BTreeMap<NonZeroU64, PresentationLease<V>>,
 }
 
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub(crate) enum PresentationLedgerError {
-    #[error("presentation operation belongs to another executable lease")]
-    Program,
-    #[error("presentation handle belongs to another execution or artifact")]
-    Execution,
-    #[error("presentation handle has no exact live issuing record")]
-    UnknownHandle,
-    #[error("presentation handle is not owned by the selected dynamic scope")]
-    Owner,
-    #[error("presentation operation has no active lexical frame")]
-    MissingScope,
-    #[error("presentation target/slot is outside its public identity family")]
-    InvalidAddress,
-    #[error("presentation live handle limit is exhausted")]
-    Capacity,
-    #[error("presentation active scope grant limit is exhausted")]
-    ScopeCapacity,
-    #[error(transparent)]
-    Identity(#[from] RuntimeIdExhausted),
-}
-
 /// A rejected registration returns the untouched owned body to its caller.
 #[derive(Debug, PartialEq)]
-pub(crate) struct PresentationRegisterError<V> {
-    pub cause: PresentationLedgerError,
+pub(crate) struct PresentationRegisterError<V, E = RuntimePresentationError> {
+    pub cause: E,
     pub body: V,
 }
 
 impl<V> PresentationLedger<V> {
+    pub(crate) fn validate_retirement(
+        &self,
+        token: &RuntimePresentationHandleToken,
+    ) -> Result<(), RuntimePresentationError> {
+        if token.artifact() != &self.artifact
+            || self.leases.contains_key(&token.issuance())
+            || self
+                .next
+                .last_issued()
+                .is_none_or(|last| token.issuance() > last)
+        {
+            return Err(RuntimePresentationError::InvalidState);
+        }
+        Ok(())
+    }
+    pub(crate) fn preflight_register(
+        &self,
+        program: &RuntimeProgramOwner,
+    ) -> Result<(), RuntimePresentationError> {
+        self.validate_program(program)?;
+        if self.leases.len() >= self.limits.handles {
+            return Err(RuntimePresentationError::Capacity);
+        }
+        let mut next = self.next;
+        next.take_next(RuntimeIdNamespace::AffineOwner)?;
+        Ok(())
+    }
+    pub(crate) fn bound_scope_body_count<VS>(&self, env: &crate::value::RuntimeEnv<VS>) -> usize {
+        env.presentation_scope_binding().map_or(0, |binding| {
+            self.leases
+                .values()
+                .filter(|lease| lease.owner == Some(binding.owner) && lease.body.is_some())
+                .count()
+        })
+    }
     pub(crate) fn new(
         program: RuntimeProgramOwner,
         artifact: RuntimeArtifactFingerprint,
-        execution: ExecutionInstanceId,
         limits: PresentationLedgerLimits,
     ) -> Self {
         Self {
             program,
             artifact,
-            execution,
             next: RuntimeIdCursor::initial(),
             next_scope: RuntimeIdCursor::initial(),
             scopes: BTreeMap::new(),
@@ -194,42 +210,45 @@ impl<V> PresentationLedger<V> {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
         env: &mut crate::value::RuntimeEnv<VS>,
-    ) -> Result<PresentationScopeOwner, PresentationLedgerError> {
+    ) -> Result<PresentationScopeOwner, RuntimePresentationError> {
         self.validate_program(program)?;
-        if execution != self.execution {
-            return Err(PresentationLedgerError::Execution);
-        }
         if let Some(binding) = env.presentation_scope_binding() {
             if !binding.program.same_program(program)
-                || binding.execution != self.execution
+                || binding.owner.execution != execution
                 || binding.owner.fiber != fiber
             {
-                return Err(PresentationLedgerError::Owner);
+                return Err(RuntimePresentationError::Owner);
             }
             self.validate_scope(binding.owner)?;
             return Ok(binding.owner);
         }
         if self.scopes.len() >= self.limits.scopes {
-            return Err(PresentationLedgerError::ScopeCapacity);
+            return Err(RuntimePresentationError::ScopeCapacity);
         }
         let mut next = self.next_scope;
         let scope = RuntimeScopeInstanceId::from_allocated(
             next.take_next(RuntimeIdNamespace::ScopeInstance)?,
         );
-        let owner = PresentationScopeOwner { fiber, scope };
-        env.bind_presentation_scope(PresentationScopeInstall(PresentationScopeBinding {
+        let owner = PresentationScopeOwner {
+            execution,
+            fiber,
+            scope,
+        };
+        env.bind_presentation_scope(PresentationScopeMutation(Some(PresentationScopeBinding {
             program: self.program.clone(),
-            execution: self.execution,
             owner,
-        }))?;
-        self.scopes.insert(scope, fiber);
+        })))?;
+        self.scopes.insert(scope, (execution, fiber));
         self.next_scope = next;
         Ok(owner)
     }
 
-    fn validate_scope(&self, owner: PresentationScopeOwner) -> Result<(), PresentationLedgerError> {
-        if self.scopes.get(&owner.scope) != Some(&owner.fiber) {
-            return Err(PresentationLedgerError::Owner);
+    fn validate_scope(
+        &self,
+        owner: PresentationScopeOwner,
+    ) -> Result<(), RuntimePresentationError> {
+        if self.scopes.get(&owner.scope) != Some(&(owner.execution, owner.fiber)) {
+            return Err(RuntimePresentationError::Owner);
         }
         Ok(())
     }
@@ -239,30 +258,30 @@ impl<V> PresentationLedger<V> {
         program: &RuntimeProgramOwner,
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
-        env: &crate::value::RuntimeEnv<VS>,
-    ) -> Result<Vec<V>, PresentationLedgerError> {
+        env: &mut crate::value::RuntimeEnv<VS>,
+    ) -> Result<Vec<PresentationRetirement<V>>, RuntimePresentationError> {
         self.validate_program(program)?;
-        if execution != self.execution {
-            return Err(PresentationLedgerError::Execution);
-        }
         let Some(binding) = env.presentation_scope_binding() else {
             return Ok(Vec::new());
         };
         if !binding.program.same_program(program)
-            || binding.execution != execution
+            || binding.owner.execution != execution
             || binding.owner.fiber != fiber
         {
-            return Err(PresentationLedgerError::Owner);
+            return Err(RuntimePresentationError::Owner);
         }
-        self.exit_scope(program, binding.owner)
+        let owner = binding.owner;
+        let retired = self.exit_scope(program, owner)?;
+        env.bind_presentation_scope(PresentationScopeMutation(None))?;
+        Ok(retired)
     }
 
     fn validate_program(
         &self,
         program: &RuntimeProgramOwner,
-    ) -> Result<(), PresentationLedgerError> {
+    ) -> Result<(), RuntimePresentationError> {
         if !self.program.same_program(program) {
-            return Err(PresentationLedgerError::Program);
+            return Err(RuntimePresentationError::Program);
         }
         Ok(())
     }
@@ -272,19 +291,22 @@ impl<V> PresentationLedger<V> {
         program: &RuntimeProgramOwner,
         token: &RuntimePresentationHandleToken,
         owner: Option<PresentationScopeOwner>,
-    ) -> Result<NonZeroU64, PresentationLedgerError> {
+    ) -> Result<NonZeroU64, RuntimePresentationError> {
         self.validate_program(program)?;
-        if token.execution() != self.execution || token.artifact() != &self.artifact {
-            return Err(PresentationLedgerError::Execution);
+        if token.artifact() != &self.artifact {
+            return Err(RuntimePresentationError::Execution);
         }
         let Some(lease) = self.leases.get(&token.issuance()) else {
-            return Err(PresentationLedgerError::UnknownHandle);
+            return Err(RuntimePresentationError::UnknownHandle);
         };
+        if lease.token.execution() != token.execution() {
+            return Err(RuntimePresentationError::Execution);
+        }
         if lease.token != *token {
-            return Err(PresentationLedgerError::UnknownHandle);
+            return Err(RuntimePresentationError::UnknownHandle);
         }
         if lease.owner != owner {
-            return Err(PresentationLedgerError::Owner);
+            return Err(RuntimePresentationError::Owner);
         }
         if let Some(owner) = owner {
             self.validate_scope(owner)?;
@@ -305,7 +327,7 @@ impl<V> PresentationLedger<V> {
             self.validate_program(program)?;
             self.validate_scope(owner)?;
             if self.leases.len() >= self.limits.handles {
-                return Err(PresentationLedgerError::Capacity);
+                return Err(RuntimePresentationError::Capacity);
             }
             let mut next = self.next;
             let issuance = next.take_next(RuntimeIdNamespace::AffineOwner)?;
@@ -322,7 +344,7 @@ impl<V> PresentationLedger<V> {
         let token = RuntimePresentationHandleToken::from_issued(
             self.artifact,
             site.resource(),
-            self.execution,
+            owner.execution,
             owner.fiber,
             issuance,
         );
@@ -343,7 +365,7 @@ impl<V> PresentationLedger<V> {
         &mut self,
         program: &RuntimeProgramOwner,
         address: &PresentationSlotAddress,
-    ) -> Result<Option<V>, PresentationLedgerError> {
+    ) -> Result<Option<V>, RuntimePresentationError> {
         self.validate_program(program)?;
         Ok(self.take_slot_body(address))
     }
@@ -365,7 +387,7 @@ impl<V> PresentationLedger<V> {
         token: &RuntimePresentationHandleToken,
         current: PresentationScopeOwner,
         destination: Option<PresentationScopeOwner>,
-    ) -> Result<(), PresentationLedgerError> {
+    ) -> Result<(), RuntimePresentationError> {
         let issuance = self.validate_handle(program, token, Some(current))?;
         if let Some(destination) = destination {
             self.validate_scope(destination)?;
@@ -382,7 +404,7 @@ impl<V> PresentationLedger<V> {
         program: &RuntimeProgramOwner,
         token: &RuntimePresentationHandleToken,
         owner: Option<PresentationScopeOwner>,
-    ) -> Result<Option<V>, PresentationLedgerError> {
+    ) -> Result<Option<V>, RuntimePresentationError> {
         let issuance = self.validate_handle(program, token, owner)?;
         Ok(self
             .leases
@@ -396,7 +418,7 @@ impl<V> PresentationLedger<V> {
         &mut self,
         program: &RuntimeProgramOwner,
         owner: PresentationScopeOwner,
-    ) -> Result<Vec<V>, PresentationLedgerError> {
+    ) -> Result<Vec<PresentationRetirement<V>>, RuntimePresentationError> {
         self.validate_program(program)?;
         self.validate_scope(owner)?;
         let mut bodies = Vec::new();
@@ -404,11 +426,38 @@ impl<V> PresentationLedger<V> {
             if lease.owner != Some(owner) {
                 return true;
             }
-            bodies.extend(lease.body.take());
+            if let Some(body) = lease.body.take() {
+                bodies.push(PresentationRetirement {
+                    token: lease.token.clone(),
+                    body,
+                });
+            }
             false
         });
         self.scopes.remove(&owner.scope);
         Ok(bodies)
+    }
+}
+
+impl PresentationScopeBinding {
+    pub(crate) fn matches_context(
+        &self,
+        program: &RuntimeProgramOwner,
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+    ) -> bool {
+        self.program.same_program(program)
+            && self.owner.execution == execution
+            && self.owner.fiber == fiber
+    }
+    pub(crate) fn scope_key(
+        &self,
+    ) -> (
+        ExecutionInstanceId,
+        RuntimePersistentFiberId,
+        RuntimeScopeInstanceId,
+    ) {
+        (self.owner.execution, self.owner.fiber, self.owner.scope)
     }
 }
 

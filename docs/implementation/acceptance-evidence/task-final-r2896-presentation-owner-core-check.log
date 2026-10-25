@@ -1,0 +1,351 @@
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `runtime_sequence_values`
+  --> crates\arcweft-core\src\awbc\product_step.rs:86:5
+   |
+86 |     runtime_sequence_values, runtime_value_label,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:21:43
+   |
+21 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+24 |     SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
+   |                                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:67:33
+   |
+67 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeAwbcProgramSourceField`
+  --> crates\arcweft-core\src\plan\task_source\program.rs:25:62
+   |
+25 | pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:15:5
+   |
+15 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+16 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+17 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIdExhausted`
+  --> crates\arcweft-core\src\presentation\resources.rs:10:43
+   |
+10 |     ExecutionInstanceId, RuntimeIdCursor, RuntimeIdExhausted, RuntimeIdNamespace,
+   |                                           ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:56:32
+   |
+56 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+warning: unused imports: `TaskId` and `TaskPublicationRevision`
+  --> crates\arcweft-core\src\awbc\product_step\tests.rs:31:85
+   |
+31 |     GenerationId, LogicalEpoch, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId,
+   |                                                                                     ^^^^^^
+32 |     TaskPublicationRevision, TaskSequence,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+  --> crates\arcweft-core\src\engine\flow\iterator_tests.rs:10:5
+   |
+10 | use crate::task::NeedId;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+    --> crates\arcweft-core\src\engine\flow.rs:1923:9
+     |
+1923 |     use crate::task::NeedId;
+     |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::num::NonZeroU32`
+    --> crates\arcweft-core\src\engine.rs:4896:9
+     |
+4896 |     use std::num::NonZeroU32;
+     |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AwbcRuntimeValueSnapshotError`
+  --> crates\arcweft-core\src\plan\task_source\program\tests.rs:12:5
+   |
+12 |     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue, RuntimeValue,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:16:5
+   |
+16 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+17 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+   --> crates\arcweft-core\src\pure\program\tests.rs:161:9
+    |
+161 |     use crate::task::NeedId;
+    |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskClass`, `TaskId`, `TaskKey`, `TaskPolicy`, `TaskPriority`, and `TaskSpec`
+  --> crates\arcweft-core\src\task\outcome\tests.rs:16:9
+   |
+16 |         CancelScopeId, FileReadTextRequest, HostTaskRequest, TaskClass, TaskId, TaskKey,
+   |         ^^^^^^^^^^^^^                                        ^^^^^^^^^  ^^^^^^  ^^^^^^^
+17 |         TaskOutcomeContract, TaskPolicy, TaskPriority, TaskSpec,
+   |                              ^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `task::NeedId`
+ --> crates\arcweft-core\src\tests\affine_intrinsics.rs:4:5
+  |
+4 |     task::NeedId,
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `RuntimeNeedState`
+  --> crates\arcweft-core\src\tests\flow.rs:31:26
+   |
+31 |     task::{LogicalEpoch, NeedId, RuntimeNeedState, TaskSequence},
+   |                          ^^^^^^  ^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound `PublicId: serde::Serialize` is not satisfied
+   --> crates\arcweft-core\src\presentation\resources\storage.rs:142:49
+    |
+142 |                     admission.validate_metadata(&(&address.target, &address.slot))?;
+    |                               ----------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `effect::_::_serde::Serialize` is not implemented for `PublicId`
+    |                               |
+    |                               required by a bound introduced by this call
+    |
+    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `PublicId` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `effect::_::_serde::Serialize`:
+              &'a T
+              &'a mut T
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+              (T0, T1, T2, T3)
+              (T0, T1, T2, T3, T4)
+            and 943 others
+    = note: required for `&PublicId` to implement `effect::_::_serde::Serialize`
+    = note: 1 redundant requirement hidden
+    = note: required for `(&PublicId, &PublicId)` to implement `effect::_::_serde::Serialize`
+note: required by a bound in `retained_admission::metadata::<impl retained_admission::RuntimeRetainedValueAdmission>::validate_metadata`
+   --> crates\arcweft-core\src\value\awbc_save\retained_admission\metadata.rs:15:42
+    |
+ 15 |     pub fn validate_metadata<T: ?Sized + Serialize>(
+    |                                          ^^^^^^^^^ required by this bound in `retained_admission::metadata::<impl RuntimeRetainedValueAdmission>::validate_metadata`
+
+error[E0282]: type annotations needed
+   --> crates\arcweft-core\src\presentation\resources\storage.rs:221:33
+    |
+221 | ...                   Ok(PresentationBody {
+    |                       ^^ cannot infer type of the type parameter `E` declared on the enum `Result`
+    |
+help: consider specifying the generic arguments
+    |
+221 |                                 Ok::<PresentationBody<awbc_save::AwbcRuntimeValueSnapshot>, E>(PresentationBody {
+    |                                   ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+error[E0282]: type annotations needed
+   --> crates\arcweft-core\src\presentation\resources\storage.rs:264:33
+    |
+264 | ...                   Ok(PresentationBody {
+    |                       ^^ cannot infer type of the type parameter `E` declared on the enum `Result`
+    |
+help: consider specifying the generic arguments
+    |
+264 |                                 Ok::<PresentationBody<value::RuntimePayload>, E>(PresentationBody {
+    |                                   ++++++++++++++++++++++++++++++++++++++++++++++
+
+error[E0282]: type annotations needed
+   --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:119:17
+    |
+119 |             let error = crate::presentation::RuntimePresentationError::InvalidState.into();
+    |                 ^^^^^
+120 |             self.retain_failure(error.clone());
+    |                                 ----- type must be known at this point
+    |
+help: consider giving `error` an explicit type
+    |
+119 |             let error: /* Type */ = crate::presentation::RuntimePresentationError::InvalidState.into();
+    |                      ++++++++++++
+
+error[E0277]: the trait bound `arcweft_id::PublicId: serde::Serialize` is not satisfied
+   --> crates\arcweft-core\src\presentation\resources\storage.rs:142:49
+    |
+142 |                     admission.validate_metadata(&(&address.target, &address.slot))?;
+    |                               ----------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `effect::_::_serde::Serialize` is not implemented for `arcweft_id::PublicId`
+    |                               |
+    |                               required by a bound introduced by this call
+    |
+    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `arcweft_id::PublicId` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `effect::_::_serde::Serialize`:
+              &'a T
+              &'a mut T
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+              (T0, T1, T2, T3)
+              (T0, T1, T2, T3, T4)
+            and 943 others
+    = note: required for `&arcweft_id::PublicId` to implement `effect::_::_serde::Serialize`
+    = note: 1 redundant requirement hidden
+    = note: required for `(&arcweft_id::PublicId, &arcweft_id::PublicId)` to implement `effect::_::_serde::Serialize`
+note: required by a bound in `retained_admission::metadata::<impl retained_admission::RuntimeRetainedValueAdmission>::validate_metadata`
+   --> crates\arcweft-core\src\value\awbc_save\retained_admission\metadata.rs:15:42
+    |
+ 15 |     pub fn validate_metadata<T: ?Sized + Serialize>(
+    |                                          ^^^^^^^^^ required by this bound in `retained_admission::metadata::<impl RuntimeRetainedValueAdmission>::validate_metadata`
+
+warning: unused variable: `type_instantiation`
+   --> crates\arcweft-core\src\awbc\value_admission\tests.rs:849:13
+    |
+849 |             type_instantiation,
+    |             ^^^^^^^^^^^^^^^^^^ help: try ignoring the field: `type_instantiation: _`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `group`
+    --> crates\arcweft-core\src\engine\dialogue.rs:2964:13
+     |
+2964 |         let group = LineTaskGroup::new(
+     |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_group`
+
+Some errors have detailed explanations: E0277, E0282.
+For more information about an error, try `rustc --explain E0277`.
+warning: `arcweft-core` (lib) generated 26 warnings
+error: could not compile `arcweft-core` (lib) due to 4 previous errors; 26 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `arcweft-core` (lib test) generated 33 warnings (21 duplicates)
+error: could not compile `arcweft-core` (lib test) due to 4 previous errors; 33 warnings emitted

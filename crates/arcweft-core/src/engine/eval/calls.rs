@@ -361,7 +361,7 @@ impl Engine {
         } else {
             None
         };
-        self.fiber.frame.env.pop_scope();
+        self.pop_runtime_scope()?;
 
         let value = value?;
         if receiver_mode == RuntimeReceiverMode::MutRef && updated_receiver.is_none() {

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+  "name": "task-final-r2900-presentation-owner-tests",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(engine::presentation_tests) | test(presentation::resources::tests)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2900-presentation-owner-tests.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T00:05:07.2515577Z",
+  "finishedAt": "2026-10-25T00:09:35.0780287Z"
+}

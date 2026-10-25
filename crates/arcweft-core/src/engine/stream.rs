@@ -157,14 +157,21 @@ impl Engine {
             ) {
                 Ok(Some(bindings)) => {
                     let should_continue = self.with_temp_bindings(bindings, |this| {
-                        this.execute_stream_ops(
+                        Ok(this.execute_stream_ops(
                             args.stream,
                             args.body,
                             budget,
                             output,
                             pure_backend,
-                        )
+                        ))
                     });
+                    let should_continue = match should_continue {
+                        Ok(value) => value,
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return false;
+                        }
+                    };
                     if !should_continue {
                         return false;
                     }
@@ -269,9 +276,15 @@ impl Engine {
                 )
                 .expect("checked stream match remains valid")
                 .expect("checked stream match remains selected");
-                return self.with_temp_bindings(bindings, |this| {
-                    this.execute_stream_ops(stream, &arm.ops, budget, output, pure_backend)
-                });
+                return match self.with_temp_bindings(bindings, |this| {
+                    Ok(this.execute_stream_ops(stream, &arm.ops, budget, output, pure_backend))
+                }) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        false
+                    }
+                };
             }
             if let Err(error) = guard_matches {
                 Self::diagnose_runtime_error(error, output);

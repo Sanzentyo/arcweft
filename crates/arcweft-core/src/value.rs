@@ -2710,6 +2710,10 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
+    #[error("native task request evaluation failed: {message}")]
+    HostTaskRequest { message: String },
+    #[error(transparent)]
+    Presentation(#[from] crate::presentation::RuntimePresentationError),
     #[error(transparent)]
     Scope(#[from] crate::scope::RuntimeScopeExitError),
     #[error("native work admission failed: {source}")]

@@ -4,7 +4,7 @@
 
 2026-10-23 の資料整理で旧 `2026-09-08-convergence-goal-plan.md` を置換した。元資料は main `7b1f8f5deb64db1274632c6ec2a7b8af69147420`、blob `bb015293d1bf7a3f9043eb2e188f5e1fc933b5f6` に保持される。旧計画、設計案、実行指示、繰り返された全体 goal の説明を削除し、実行結果・失敗・再利用の限界と40桁 Git 識別子を履歴として残した。各見出しは元資料の区分、抜粋中の現在形はその区分を記録した時点を指す。
 
-Generic Match は `850534b9e9bc8c8872f6528dd00050a5e6e7699e` で受入・公開済み。後続メモが全体 goal の未完了から同機能まで再び未完了と列挙したのは誤りであり、その列挙は削除した。新しい具体的な失敗・未達条件による再開判断ではなかった。151件の受入監査と公開 receipt は [受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json) と [公開記録](acceptance-evidence/accepted-generic-phase-note-publication.json) を原文のまま保持する。過去の受入結果を現在 HEAD に対する再実行と解釈しない。
+Generic Match は `850534b9e9bc8c8872f6528dd00050a5e6e7699e` で受入、`f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2` で公開済み。後続メモが全体 goal の未完了から同機能まで再び未完了と列挙したのは誤りであり、その列挙は削除した。新しい具体的な失敗・未達条件による再開判断ではなかった。151件の受入監査と公開 receipt は [受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json) と [公開記録](acceptance-evidence/accepted-generic-phase-note-publication.json) を原文のまま保持する。過去の受入結果を現在 HEAD に対する再実行と解釈しない。
 
 結果を含む原文から必要な文を抜粋した。SHAだけを含む設計・作業指示の段落は繰り返さず、末尾の識別子索引に出典区分とともに残す。実行していない計画や構造の存在をテスト成功へ読み替えない。
 
@@ -155,7 +155,7 @@ core lib 615/615、 sema lib 920/920、RuntimePlan lib 81/81、compiler lib 112/
 
 通常 `for` の検証は Syntax lib 685/685、HIR lib 912/912（既存 ignored 8）、 Sema lib 920/920、024 CLI check、workspace fmt check、cached diff check が終了コード0。
 
-CLI `current_check_fixtures_pass` は次の 025 で停止する。  30件の current-pass check fixture の直接棚卸しでは 27件が通過し、025 のほか 027 の dialogue line plan が syntax/HIR で失敗する。  026 は上記修正で通過済み。 CLI `spec_should_pass_check` は 042 の `bail` 呼出しに checked call fact がなく RuntimePlan lower で停止し、044 は 未定義型を補っても pattern の最終型付けで失敗する。 次は goal 本体の Content/Fx・call と取消継続の owner 接続を優先し、最終 gate の前に 025/027/042/044 を個別の契約として処理する。
+CLI `current_check_fixtures_pass` は次の 025 で停止する。  30件の current-pass check fixture の直接棚卸しでは 27件が通過し、025 のほか 027 の dialogue line plan が syntax/HIR で失敗する。  026 は上記修正で通過済み。 CLI `spec_should_pass_check` は 042 の `bail` 呼出しに checked call fact がなく RuntimePlan lower で停止し、044 は 未定義型を補っても pattern の最終型付けで失敗する。
 
 CLI spec check は 042 を 通過し、次の 044 の未定義 `GameEvent` で停止する。  042 単独 CLI check は終了コード0。
 
@@ -9819,7 +9819,7 @@ Bundle View codec 2,459 LOCの変更はcontext投影1箇所。新しいI/O、Car
 ユーザーの途中commit方針に従い、残る2 FAILを明示してこの区切りを公開する。
 Threadの最終受入、generic capture、nested child／cancel、step内rollback／不正save拒否、
 全53逆依存、workspace check／Clippy、doctest／ignored／Tier2、Native-Web capture parityは
-この結果で完了とはしない。次は子fiberの進行とawaitの通知を実行状態から確認する。
+この結果で完了とはしない。
 69原本、16,362,314 bytesをbyte・SHA256・Git blob一致で保持し、現状一覧は
 `current-status.md`の一か所に維持する。
 
@@ -10906,8 +10906,7 @@ Cargo graphのCore逆依存は53、manifest／lock 99入力の差分0。今回�
 [原本保全](acceptance-evidence/task-presentation-ledger-evidence-integrity.json)。
 
 このledgerのowner検証を、実Source発行、実Native／AWBCのscope終了、typed command、
-driverやresource-aware restoreの受入へ広げない。次は実際のframeのdynamic ownerと
-Source admissionを同じledgerへ接続する。元14 tracked WIP／6 untracked実ファイルを保持し、
+driverやresource-aware restoreの受入へ広げない。元14 tracked WIP／6 untracked実ファイルを保持し、
 Generic Match等の先行受入と全体goalが未完了であることを分けている。
 
 上記private ledgerは `da080ab0d3181dcf51c27019649b4d3ce89455ec` で通常commit／
@@ -10969,3 +10968,59 @@ lockedで終了0・警告あり、6,428入力の差分0。R2895構造gateは3,21
 lowering／driverへの接続と全53逆依存runtimeは未完了。grant参照だけで復元を受理しない
 境界を保持したまま、ledgerの実行側所有と通常のcleanupを接続する。
 元14 tracked WIP／6 untracked実ファイルを保持し、Generic Match等の先行受入は取り消さない。
+
+## Scope grant cutの公開照合とEngine所有への接続 — 2026-10-25
+
+Scope grant cutは `9038c82a7a0aff5650bc635d74ff21f7e7cba69e` で通常commit／
+non-forced pushした。parentは `da080ab0d3181dcf51c27019649b4d3ce89455ec`、
+treeは `ef2b11bdfdb6623f1b408072bed72c1a0a11354c`。
+55 pathの公開blob、6,446保持入力、元14 tracked WIPのpatch、空indexを照合した。
+[公開照合原本](acceptance-evidence/task-presentation-scope-checkpoint.verified.json)。
+
+同公開基点の後続変更では、Engineがledger・型付きbody・回収待ちbodyを所有し、
+同じretained admissionで照合してからinert rollbackへ写す経路を実装した。
+別execution間の同slot置換も単一ledgerで扱い、scope参照の欠落／重複を検査する。
+通常Nativeのscope終了・関数／formatter・flow終了・子fiber closeの失敗伝播を移行した。
+Dialogue activationの独立bankとAWBC、Source producer、command ABI／driverは
+この実装で接続済みとしない。
+
+R2896／R2897／R2898のCore checkは終了101。metadataのSerialize境界、型推論、
+mutable環境の引渡し、Resultを返す一時binding closureとhost errorの型を修正した。
+R2899のall-targets／all-features／locked checkは終了0・警告あり。
+各実行のraw log／exit receiptを保持し、失敗を後続成功で上書きしていない。
+[最初の失敗](acceptance-evidence/task-final-r2896-presentation-owner-core-check.json)、
+[修正後のcheck](acceptance-evidence/task-final-r2899-presentation-owner-core-check.json)。
+
+R2900のnextest owner選択は **19／19 PASS**、13 binaries、2,050 filter非選択、
+終了0、実行0.271秒（build 4分20秒）。このrun中に後続のbody所有検査・function binding保持・
+子fiber終了処理と追加テストを編集したため、最終source固定の全件成功とは扱わない。
+[実行原本](acceptance-evidence/task-final-r2900-presentation-owner-tests.log)、
+[コマンド・終了receipt](acceptance-evidence/task-final-r2900-presentation-owner-tests.json)。
+
+履歴中に残っていた将来の作業順序3箇所を削除した。現在の残作業表と誤読しうる重複であり、
+実行結果・失敗・入力識別子は削除していない。冒頭のGeneric Matchは受入SHAと公開SHAを
+区別する表現へ訂正した。受入の取消しや機能全体の再開判断ではない。
+R2901の最終catalogは、追加したorphan-grant負例でlive `RuntimeEnv` をinert環境へ
+直接代入したfixtureの型不一致により終了101だった。空環境を正規のinert mapperで写して修正した。
+R2902 catalogは全target 2,070件を構築し、R2903は **2,070／2,070 PASS**、
+終了0、166.337秒、非選択0。slow 1件は既存のcompile-fail境界検査だった。
+Engine所有rollbackの値保持／通常scope終了／再入時cursor、body型・artifact不正の事前拒否、
+ledger欠落／orphan grant／重複retirement／別program拒否、flow完了・子fiber closeの回収順序、
+executionをまたぐslot置換を確認した。最終sourceはbodyをOwnedとして検査し、
+元関数のtype bindingも保持する。Source schemaで認証されたView／Image命令の受入ではない。
+[全件終端照合](acceptance-evidence/task-final-r2903-presentation-owner-core-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-presentation-owner-runtime.audit.json)。
+
+文書・証拠を除く3,980固定入力と実行ファイル13件のhash差分は0。
+Core逆依存はCargo metadata上53 package、manifest／lock 99入力は不変だった。
+Core変更24 source pathのうち、新しい所有責務の2 fileは176行と283行。
+[所有境界・実測](acceptance-evidence/task-presentation-owner-ownership-review.json)。
+R2906構造gateは3,218 files／3,088 Rust files／97 packages、review trigger 378、
+blocking 0。R2904 workspace checkは実行中であり、Clippyと全53逆依存runtimeは
+この記録時点で未完了。先行R2864の151件・CLI 50失敗をこの新入力の実行結果へ転用しない。
+R2904 workspace check／R2905 workspace Clippyはall-targets／all-features／lockedで
+いずれも終了0・警告ありだった。上記3,980非文書入力の差分0を確認した。
+原本・catalog・照合29件／10,335,585 bytesを保持する。
+[gate・範囲の集計](acceptance-evidence/task-presentation-owner-acceptance.json)、
+[byte／SHA256保全](acceptance-evidence/task-presentation-owner-evidence-integrity.json)。
+全53逆依存のR2907 catalog構築を開始した。終了済みruntimeとして加算していない。

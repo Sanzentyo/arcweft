@@ -1,0 +1,291 @@
+{
+  "version": 1,
+  "commit": "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+  "parent": "da080ab0d3181dcf51c27019649b4d3ce89455ec",
+  "tree": "ef2b11bdfdb6623f1b408072bed72c1a0a11354c",
+  "remote": "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+  "advertised": "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "blob": "1e74977d4039db86890fd2f76a316b65e0f631db",
+      "workingBlob": "1e74977d4039db86890fd2f76a316b65e0f631db"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+      "blob": "e5a65d373d3ae09816fc1670137a6508eeb68137",
+      "workingBlob": "e5a65d373d3ae09816fc1670137a6508eeb68137"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "a8fc9bb3e3dd21d1cc817d9e7700a009b30943dd",
+      "workingBlob": "a8fc9bb3e3dd21d1cc817d9e7700a009b30943dd"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "blob": "31b068c4078997b474166400d3c36a80e51f2178",
+      "workingBlob": "31b068c4078997b474166400d3c36a80e51f2178"
+    },
+    {
+      "path": "crates/arcweft-core/src/runtime_id.rs",
+      "blob": "bcf98600e1ca1abae755e917fe28515c020ce2d0",
+      "workingBlob": "bcf98600e1ca1abae755e917fe28515c020ce2d0"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "blob": "e819561256b6f915adb5e0353d01e9175ae96a5e",
+      "workingBlob": "e819561256b6f915adb5e0353d01e9175ae96a5e"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save.rs",
+      "blob": "ccc2909da347fda4d1f03e83fe48a94cd4bbca8b",
+      "workingBlob": "ccc2909da347fda4d1f03e83fe48a94cd4bbca8b"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/env.rs",
+      "blob": "9723b308ed02a0760d74ff324747d4d4d07339e3",
+      "workingBlob": "9723b308ed02a0760d74ff324747d4d4d07339e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2884-presentation-scope-core-check.json",
+      "blob": "acaaa7759906d00cefe4f09ba5cffd56df0a6e83",
+      "workingBlob": "acaaa7759906d00cefe4f09ba5cffd56df0a6e83"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2884-presentation-scope-core-check.log",
+      "blob": "42266ea46ece46d03da414bddfefce3e7c1477fe",
+      "workingBlob": "42266ea46ece46d03da414bddfefce3e7c1477fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2885-presentation-scope-workspace-check.json",
+      "blob": "dcd1fd9ab98c23eca7f20e08b732f1b8b97ad540",
+      "workingBlob": "dcd1fd9ab98c23eca7f20e08b732f1b8b97ad540"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2885-presentation-scope-workspace-check.log",
+      "blob": "04d65411bd98e622519aad7781e6c2e9afd07963",
+      "workingBlob": "04d65411bd98e622519aad7781e6c2e9afd07963"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2886-presentation-scope-core-catalog.json",
+      "blob": "88c4dab986844a0a385048c67a1c39a7bbcd3026",
+      "workingBlob": "88c4dab986844a0a385048c67a1c39a7bbcd3026"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2886-presentation-scope-core-catalog.log",
+      "blob": "eb1356c1656fa1e028afcbbb6a3a310d265ec770",
+      "workingBlob": "eb1356c1656fa1e028afcbbb6a3a310d265ec770"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.json",
+      "blob": "4fa816458648aad36fdd6c987889983322c362eb",
+      "workingBlob": "4fa816458648aad36fdd6c987889983322c362eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.log",
+      "blob": "b781d89d70fe92f4b44f086b00c6bb229c7ce4ba",
+      "workingBlob": "b781d89d70fe92f4b44f086b00c6bb229c7ce4ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2887-presentation-scope-core-runtime.terminal-audit.json",
+      "blob": "97a1d6e6f658d48ec4bf595a27e1705bb4cc91d7",
+      "workingBlob": "97a1d6e6f658d48ec4bf595a27e1705bb4cc91d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2888-presentation-scope-workspace-check.input-audit.json",
+      "blob": "cdfa58249b50e85f07288872a25afcb165869ccb",
+      "workingBlob": "cdfa58249b50e85f07288872a25afcb165869ccb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2888-presentation-scope-workspace-check.json",
+      "blob": "322b79f3eb53c8c56b69cba27180d9d9be8d69ec",
+      "workingBlob": "322b79f3eb53c8c56b69cba27180d9d9be8d69ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2888-presentation-scope-workspace-check.log",
+      "blob": "34e4b355a98363889a57bed81dca77aa26ae9b63",
+      "workingBlob": "34e4b355a98363889a57bed81dca77aa26ae9b63"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2889-presentation-scope-workspace-clippy.input-audit.json",
+      "blob": "02dae461b4115ab5fae388b3cd551c0289753b23",
+      "workingBlob": "02dae461b4115ab5fae388b3cd551c0289753b23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2889-presentation-scope-workspace-clippy.json",
+      "blob": "3063908d2febc363df6783fd02ce3777298a7967",
+      "workingBlob": "3063908d2febc363df6783fd02ce3777298a7967"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2889-presentation-scope-workspace-clippy.log",
+      "blob": "07fcffaea4b4290b0ca9d6925883f54997757626",
+      "workingBlob": "07fcffaea4b4290b0ca9d6925883f54997757626"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2890-presentation-scope-structure-gate.input-audit.json",
+      "blob": "f16e9878a4c6474c93a7b44bde15104af73d7a92",
+      "workingBlob": "f16e9878a4c6474c93a7b44bde15104af73d7a92"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2890-presentation-scope-structure-gate.json",
+      "blob": "66ef113e425c70457dbf8c1511b6bf789a5ee1bc",
+      "workingBlob": "66ef113e425c70457dbf8c1511b6bf789a5ee1bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2890-presentation-scope-structure-gate.log",
+      "blob": "6a0dffafd7dc85e69626f160173baf004f73ed80",
+      "workingBlob": "6a0dffafd7dc85e69626f160173baf004f73ed80"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2891-presentation-scope-install-catalog.json",
+      "blob": "6ed6dd9e68cb5f7f90a0434b65b9dc516b115b4b",
+      "workingBlob": "6ed6dd9e68cb5f7f90a0434b65b9dc516b115b4b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2891-presentation-scope-install-catalog.log",
+      "blob": "94a0cddb4bedc9d7177e650951b9a59748f5a194",
+      "workingBlob": "94a0cddb4bedc9d7177e650951b9a59748f5a194"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.json",
+      "blob": "d04113f97c11dd5cbe9c86cb575f19adeecc2dcf",
+      "workingBlob": "d04113f97c11dd5cbe9c86cb575f19adeecc2dcf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.log",
+      "blob": "138396a14934d96df567c6d27720873a86e4133e",
+      "workingBlob": "138396a14934d96df567c6d27720873a86e4133e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2892-presentation-scope-install-runtime.terminal-audit.json",
+      "blob": "bd757eba8a3b9ac09f480704a539f280760853cf",
+      "workingBlob": "bd757eba8a3b9ac09f480704a539f280760853cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.input-audit.json",
+      "blob": "a7f67cde6455f91df9e61429d8dd750eca7885e9",
+      "workingBlob": "a7f67cde6455f91df9e61429d8dd750eca7885e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.json",
+      "blob": "db6f461ccd54db0ca13bf0a5e4a52a343fc8cd65",
+      "workingBlob": "db6f461ccd54db0ca13bf0a5e4a52a343fc8cd65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2893-presentation-scope-install-workspace-check.log",
+      "blob": "6670fdbea74f34b6365b9b29f1aa0eeecdb05fd2",
+      "workingBlob": "6670fdbea74f34b6365b9b29f1aa0eeecdb05fd2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.input-audit.json",
+      "blob": "65e117e2e06bfeffd0507a076c410061c5049fe7",
+      "workingBlob": "65e117e2e06bfeffd0507a076c410061c5049fe7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.json",
+      "blob": "5da2f1ad741248403eebca53ad28a9c06764bcde",
+      "workingBlob": "5da2f1ad741248403eebca53ad28a9c06764bcde"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2894-presentation-scope-install-workspace-clippy.log",
+      "blob": "28dababd99bb013336a7cd49215f20c8fab4a6e9",
+      "workingBlob": "28dababd99bb013336a7cd49215f20c8fab4a6e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2895-presentation-scope-install-structure-gate.input-audit.json",
+      "blob": "11fbd7e05eff3d890de995dcc086195b1c1f377e",
+      "workingBlob": "11fbd7e05eff3d890de995dcc086195b1c1f377e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2895-presentation-scope-install-structure-gate.json",
+      "blob": "9a3b6b5795a5bdceac6ef54651f786665d18cf90",
+      "workingBlob": "9a3b6b5795a5bdceac6ef54651f786665d18cf90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2895-presentation-scope-install-structure-gate.log",
+      "blob": "6d16075404d4cfd3e08a8347b57dc8facdc7bc3b",
+      "workingBlob": "6d16075404d4cfd3e08a8347b57dc8facdc7bc3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-ledger-checkpoint.verified.json",
+      "blob": "6b74e774c3c701838a5cee19ee5c0bd8897f88de",
+      "workingBlob": "6b74e774c3c701838a5cee19ee5c0bd8897f88de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-acceptance.json",
+      "blob": "5c99609086e1ca40fb6aa86f41629c63548ad925",
+      "workingBlob": "5c99609086e1ca40fb6aa86f41629c63548ad925"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-doc-audit.json",
+      "blob": "8d48b78073babc72361b91b66a0454b0924b9a36",
+      "workingBlob": "8d48b78073babc72361b91b66a0454b0924b9a36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-evidence-integrity.json",
+      "blob": "6bd2fcd2abc8825c2d53209336db65de166c06e2",
+      "workingBlob": "6bd2fcd2abc8825c2d53209336db65de166c06e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-install-runtime.audit.json",
+      "blob": "8bdb98d0f163024160cb7d2caa3618f3d00360c4",
+      "workingBlob": "8bdb98d0f163024160cb7d2caa3618f3d00360c4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-install-source.graph.json",
+      "blob": "0ff26f31b428d49f51f369d4f97b4231e77b5814",
+      "workingBlob": "0ff26f31b428d49f51f369d4f97b4231e77b5814"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-install-source.source-freeze.json",
+      "blob": "c4b0a4c79695ad7edfeb59f5bdb3155289a06b80",
+      "workingBlob": "c4b0a4c79695ad7edfeb59f5bdb3155289a06b80"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-install.before.pins.json",
+      "blob": "52f609d2a3ceeabc965fa9ef9427a6952152dcb9",
+      "workingBlob": "52f609d2a3ceeabc965fa9ef9427a6952152dcb9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-ownership-review.json",
+      "blob": "a0a5bdbda56c9d5eaa2df4238adfaaca33d5a56c",
+      "workingBlob": "a0a5bdbda56c9d5eaa2df4238adfaaca33d5a56c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-runtime.audit.json",
+      "blob": "5bdab35113d0eb87a619ff79aead3902f26b57a3",
+      "workingBlob": "5bdab35113d0eb87a619ff79aead3902f26b57a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-source.graph.json",
+      "blob": "b6d4e967c04819a7fb5aa7d4f199c7ba7fe1859f",
+      "workingBlob": "b6d4e967c04819a7fb5aa7d4f199c7ba7fe1859f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-source.source-freeze.json",
+      "blob": "3f9ff33c23ec145b6143e54f4e7547f0f5acac72",
+      "workingBlob": "3f9ff33c23ec145b6143e54f4e7547f0f5acac72"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope.before.pins.json",
+      "blob": "c22e9d06d6fee9ee94e68fb0e44af5873495a1c5",
+      "workingBlob": "c22e9d06d6fee9ee94e68fb0e44af5873495a1c5"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "0b2b8ee4b257874f5916dfae97b14bcdb4a57ad1",
+      "workingBlob": "0b2b8ee4b257874f5916dfae97b14bcdb4a57ad1"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "fff96850ca245511ea8fd6bde644f3f890923889",
+      "workingBlob": "fff96850ca245511ea8fd6bde644f3f890923889"
+    }
+  ],
+  "sourceCount": 6446,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "27f0afcb5ad424399da7d25a30690bb656722689731b35ae26353943d1e561a9",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-24T23:31:52.4994194Z"
+}

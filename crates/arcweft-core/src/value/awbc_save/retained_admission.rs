@@ -39,6 +39,7 @@ pub struct RuntimeRetainedValueAdmission {
     task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
     resources: ValueResourceAdmission,
     failure: Option<AwbcRuntimeValueSnapshotError>,
+    presentation_scopes: Option<crate::presentation::resources::PresentationScopeAdmission>,
 }
 
 struct RetainedProgramOwnerScope<'a> {
@@ -61,6 +62,7 @@ pub(crate) struct RuntimeRetainedValueAdmissionState {
     task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
     resources: ValueResourceAdmissionState,
     failure: Option<AwbcRuntimeValueSnapshotError>,
+    presentation_scopes: Option<crate::presentation::resources::PresentationScopeAdmission>,
 }
 
 impl RuntimeRetainedValueAdmissionState {
@@ -70,11 +72,58 @@ impl RuntimeRetainedValueAdmissionState {
             task_source: self.task_source,
             resources: self.resources.resume(),
             failure: self.failure,
+            presentation_scopes: self.presentation_scopes,
         }
     }
 }
 
 impl RuntimeRetainedValueAdmission {
+    pub(crate) fn bind_presentation_scopes(
+        &mut self,
+        proof: crate::presentation::resources::PresentationScopeAdmission,
+    ) {
+        self.presentation_scopes = Some(proof);
+    }
+
+    pub(crate) fn validate_presentation_scope(
+        &mut self,
+        binding: &crate::presentation::resources::PresentationScopeBinding,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        if self
+            .presentation_scopes
+            .as_mut()
+            .is_some_and(|proof| proof.accepts(binding))
+        {
+            return Ok(());
+        }
+        let (execution, fiber, scope) = binding.scope_key();
+        let error = AwbcRuntimeValueSnapshotError::PresentationScopeCustodyRequired {
+            execution,
+            fiber,
+            scope,
+        };
+        self.retain_failure(error.clone());
+        Err(error)
+    }
+
+    pub(crate) fn finish_presentation_scopes(
+        &mut self,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        if self
+            .presentation_scopes
+            .as_ref()
+            .is_some_and(|proof| !proof.complete())
+        {
+            let error: AwbcRuntimeValueSnapshotError =
+                crate::presentation::RuntimePresentationError::InvalidState.into();
+            self.retain_failure(error.clone());
+            return Err(error);
+        }
+        Ok(())
+    }
+
     /// A retained Source supplies its genuine original lease, including across
     /// program replacement. Only the type authority changes for this field;
     /// counters, limits, storage provenance and the first failure stay shared.
@@ -118,6 +167,7 @@ impl RuntimeRetainedValueAdmission {
             task_source,
             resources,
             failure,
+            presentation_scopes,
         } = self;
         match resources.try_into_state() {
             Ok(resources) => Ok(RuntimeRetainedValueAdmissionState {
@@ -125,12 +175,14 @@ impl RuntimeRetainedValueAdmission {
                 task_source,
                 resources,
                 failure,
+                presentation_scopes,
             }),
             Err(resources) => Err(Self {
                 owner,
                 task_source,
                 resources,
                 failure,
+                presentation_scopes,
             }),
         }
     }
@@ -171,6 +223,7 @@ impl RuntimeRetainedValueAdmission {
             task_source: None,
             resources: ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::Live),
             failure: None,
+            presentation_scopes: None,
         }
     }
 

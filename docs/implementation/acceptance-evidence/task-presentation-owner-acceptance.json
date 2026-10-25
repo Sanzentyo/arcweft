@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "base": "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+  "sourcePaths": [
+    "crates/arcweft-core/src/engine.rs",
+    "crates/arcweft-core/src/engine/eval.rs",
+    "crates/arcweft-core/src/engine/eval/callable.rs",
+    "crates/arcweft-core/src/engine/eval/calls.rs",
+    "crates/arcweft-core/src/engine/flow.rs",
+    "crates/arcweft-core/src/engine/flow/format_attempt.rs",
+    "crates/arcweft-core/src/engine/flow/function_call.rs",
+    "crates/arcweft-core/src/engine/flow/match_guard.rs",
+    "crates/arcweft-core/src/engine/flow/resume.rs",
+    "crates/arcweft-core/src/engine/line.rs",
+    "crates/arcweft-core/src/engine/presentation_tests.rs",
+    "crates/arcweft-core/src/engine/presentation.rs",
+    "crates/arcweft-core/src/engine/rollback.rs",
+    "crates/arcweft-core/src/engine/stream.rs",
+    "crates/arcweft-core/src/engine/suspend.rs",
+    "crates/arcweft-core/src/engine/thread.rs",
+    "crates/arcweft-core/src/presentation.rs",
+    "crates/arcweft-core/src/presentation/resources.rs",
+    "crates/arcweft-core/src/presentation/resources/storage.rs",
+    "crates/arcweft-core/src/presentation/resources/tests.rs",
+    "crates/arcweft-core/src/value.rs",
+    "crates/arcweft-core/src/value/awbc_save.rs",
+    "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+    "crates/arcweft-core/src/value/env.rs"
+  ],
+  "originalTrackedWip": 14,
+  "originalUntrackedFiles": 6,
+  "validationScope": "Engine-owned Presentation ledger, typed private body admission, ordinary Native cleanup and private rollback; no Source/command/AWBC/driver acceptance",
+  "finalCore": {
+    "version": 1,
+    "base": "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+    "run": "task-final-r2903-presentation-owner-core-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [ 166.337s] 2070 tests run: 2070 passed (1 slow), 0 skipped",
+    "executed": 2070,
+    "passed": 2070,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3980,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-25T00:17:10.500571Z"
+  },
+  "finalGates": [
+    {
+      "name": "task-final-r2904-presentation-owner-workspace-check",
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-25T00:15:25.9763848Z",
+      "finishedAt": "2026-10-25T00:19:12.8956274Z",
+      "warningsPresent": true
+    },
+    {
+      "name": "task-final-r2905-presentation-owner-workspace-clippy",
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-25T00:19:46.3857994Z",
+      "finishedAt": "2026-10-25T00:25:18.1832186Z",
+      "warningsPresent": true
+    },
+    {
+      "name": "task-final-r2906-presentation-owner-structure",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-25T00:18:24.7161202Z",
+      "finishedAt": "2026-10-25T00:18:31.2316306Z",
+      "warningsPresent": false
+    }
+  ],
+  "sourceInputs": 3980,
+  "sourceDrift": 0,
+  "manifestLockInputs": 99,
+  "manifestLockDrift": 0,
+  "reverseGraphPackages": 53,
+  "reverseRuntimeRerun": false,
+  "reverseCatalog": "task-final-r2907-presentation-owner-reverse-catalog",
+  "intermediate": [
+    "R2896/2897/2898 Core check failed; corrected; raw receipts preserved",
+    "R2899 check passed with warnings before later changes",
+    "R2900 19/19 passed while later source edits were being made; not final frozen evidence",
+    "R2901 catalog failed on a live/inert test-fixture type mismatch; corrected"
+  ],
+  "genericMatch": "Accepted/published; no new regression grounds; earlier full 151/151 remains evidence for its original input",
+  "currentStatus": "docs/implementation/current-status.md",
+  "at": "2026-10-25T00:26:26.5070623Z"
+}

@@ -30,6 +30,8 @@ pub(super) mod tests;
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum AwbcRuntimeValueSnapshotError {
+    #[error(transparent)]
+    Presentation(#[from] crate::presentation::RuntimePresentationError),
     #[error("original AWBC resume ownership verification failed: {0}")]
     ResumeOwnership(Box<crate::awbc::verify::AwbcVerifyError>),
     #[error("{message}")]

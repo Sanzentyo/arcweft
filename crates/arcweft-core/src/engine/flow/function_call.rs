@@ -246,7 +246,7 @@ impl Engine {
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Option<FunctionCallFrame> {
+    ) -> Result<Option<FunctionCallFrame>, RuntimeEvalError> {
         if !self
             .fiber
             .frame
@@ -254,46 +254,54 @@ impl Engine {
             .iter()
             .any(|entry| matches!(entry.kind, FlowControlStackEntryKind::FunctionCall(_)))
         {
-            return None;
+            return Ok(None);
         }
-        while let Some(entry) = self.fiber.frame.control_stack.pop() {
+        while let Some(entry) = self.fiber.frame.control_stack.last() {
+            let owns_scope = match &entry.kind {
+                FlowControlStackEntryKind::Scope { .. } => true,
+                FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
+                FlowControlStackEntryKind::FormatAttempt(frame) => frame.active.is_some(),
+                _ => false,
+            };
+            if owns_scope {
+                self.pop_runtime_scope()?;
+            }
+            let entry = self
+                .fiber
+                .frame
+                .control_stack
+                .pop()
+                .expect("inspected function owner");
             match entry.kind {
                 FlowControlStackEntryKind::Scope {
                     origin, cleanups, ..
                 } => {
                     self.cancel_scheduled_scope_close(origin);
-                    self.fiber.frame.env.pop_scope();
                     self.emit_scope_cleanups(cleanups, output, pure_backend);
                 }
                 FlowControlStackEntryKind::FunctionCall(mut frame) => {
-                    if frame.function_scope {
-                        self.fiber.frame.env.pop_scope();
-                    }
-                    // Retire code and environment together before checking the
-                    // result, including a rejected return or fallthrough.
                     self.fiber.frame.pending_ops = std::mem::take(&mut frame.caller_pending_ops);
-                    return Some(frame);
+                    return Ok(Some(frame));
                 }
-                FlowControlStackEntryKind::Loop { .. }
-                | FlowControlStackEntryKind::While { .. }
-                | FlowControlStackEntryKind::WhileLet { .. } => {}
-                FlowControlStackEntryKind::FormatAttempt(frame) => {
-                    if frame.active.is_some() {
-                        self.fiber.frame.env.pop_scope();
-                    }
-                }
+                _ => {}
             }
         }
-        unreachable!("the selected function frame remains present while unwinding its child scopes")
+        unreachable!("the selected function frame remains while unwinding its child scopes")
     }
-
     pub(in crate::engine) fn return_typed_value(
         &mut self,
         value: RuntimeValue,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<RuntimeValue> {
-        if let Some(frame) = self.take_function_call_frame(output, pure_backend) {
+        let frame = match self.take_function_call_frame(output, pure_backend) {
+            Ok(frame) => frame,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return None;
+            }
+        };
+        if let Some(frame) = frame {
             self.complete_function_call_return(frame, value, output, pure_backend);
             return None;
         }
@@ -312,7 +320,14 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let Some(frame) = self.take_function_call_frame(output, pure_backend) else {
+        let frame = match self.take_function_call_frame(output, pure_backend) {
+            Ok(frame) => frame,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let Some(frame) = frame else {
             unreachable!("fallthrough is dispatched only with an active function frame")
         };
         let completes_unit = self

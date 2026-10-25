@@ -326,3 +326,16 @@ Generic Matchの受入・公開済み状態を維持し、新規不具合のな�
 通常の `git diff --cached --check` は、byte不変で取り込んだCRLFのJSON原本等を
 trailing whitespaceと判定して終了1だった。原本を改行変換せず、既述の
 `core.whitespace=trailing-space,space-before-tab,cr-at-eol` を指定した検査で確認する。
+
+## 検証基点の更新と履歴に残った作業指示の除去 — 2026-10-25
+
+公開基点 `9038c82a7a0aff5650bc635d74ff21f7e7cba69e` を照合した。
+現状一覧のPresentation行は、公開済みscope grantと、その後のEngine所有・通常Native終了・
+private rollbackのowner検証を区別する記述へ更新した。新しい実装を、未接続のSource／AWBC／
+Dialogue activation／driver ABIまでの受入としていない。Generic Matchの受入・公開を維持した。
+
+収束履歴に残る将来の作業順序3箇所を削除した。後続で解決済みの内容まで現在の残作業と
+誤読させる重複であり、過去の数値・失敗・入力・full SHAは保持した。
+冒頭のGeneric Matchは受入SHAと公開SHAを別々に記すよう訂正した。
+以前のLuna／maxによる旧資料削除と現行仕様への統合は維持し、削除済み資料を復活させていない。
+この文書整理そのものは新しいRust受入の証拠ではなく、同時進行のRust検証は収束履歴へ分けた。

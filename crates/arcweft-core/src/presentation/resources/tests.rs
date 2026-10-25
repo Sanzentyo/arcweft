@@ -6,8 +6,20 @@ fn new_program() -> RuntimeProgramOwner {
     RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()))
 }
 
+fn execution() -> ExecutionInstanceId {
+    ExecutionInstanceId::from_allocated(NonZeroU64::MIN)
+}
+
+fn bodies<V>(retired: Vec<PresentationRetirement<V>>) -> Vec<V> {
+    retired
+        .into_iter()
+        .map(PresentationRetirement::into_body)
+        .collect()
+}
+
 fn scope(fiber: u64, scope: u64) -> PresentationScopeOwner {
     PresentationScopeOwner {
+        execution: execution(),
         fiber: RuntimePersistentFiberId::from_allocated(fiber),
         scope: RuntimeScopeInstanceId::from_allocated(NonZeroU64::new(scope).unwrap()),
     }
@@ -21,7 +33,7 @@ fn new_scope<V>(
     ledger
         .bind_scope(
             program,
-            ledger.execution,
+            execution(),
             RuntimePersistentFiberId::from_allocated(fiber),
             &mut crate::value::RuntimeEnv::default(),
         )
@@ -41,7 +53,6 @@ fn new_ledger<V>(program: RuntimeProgramOwner, capacity: usize) -> PresentationL
     PresentationLedger::new(
         program,
         RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap(),
-        ExecutionInstanceId::from_allocated(NonZeroU64::MIN),
         PresentationLedgerLimits {
             handles: capacity,
             scopes: capacity,
@@ -89,10 +100,10 @@ fn replacement_and_clear_move_non_clone_bodies_without_old_handle_clearing_new_s
         )
         .unwrap();
     assert!(previous.is_none());
-    assert_eq!(ledger.exit_scope(&program, inner).unwrap(), []);
+    assert_eq!(bodies(ledger.exit_scope(&program, inner).unwrap()), []);
     assert_eq!(
         ledger.release(&program, &second, Some(inner)),
-        Err(PresentationLedgerError::UnknownHandle)
+        Err(RuntimePresentationError::UnknownHandle)
     );
     assert_eq!(
         ledger.release(&program, &third, Some(outer)).unwrap(),
@@ -126,19 +137,19 @@ fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
             new_program(),
             token.clone(),
             Some(owner),
-            PresentationLedgerError::Program,
+            RuntimePresentationError::Program,
         ),
         (
             program.clone(),
             foreign,
             Some(owner),
-            PresentationLedgerError::UnknownHandle,
+            RuntimePresentationError::UnknownHandle,
         ),
         (
             program.clone(),
             token.clone(),
             Some(scope(1, 1)),
-            PresentationLedgerError::Owner,
+            RuntimePresentationError::Owner,
         ),
     ];
     for (selected, token, selected_owner, expected) in checks {
@@ -150,11 +161,16 @@ fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
     }
     let decoded =
         RuntimePresentationHandleToken::try_decode_payload(&token.encode_payload()).unwrap();
-    let mut other_execution = new_ledger::<i32>(program.clone(), 3);
-    other_execution.execution = ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap());
+    let foreign_execution = RuntimePresentationHandleToken::from_issued(
+        *decoded.artifact(),
+        decoded.resource(),
+        ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap()),
+        decoded.fiber(),
+        decoded.issuance(),
+    );
     assert_eq!(
-        other_execution.release(&program, &decoded, Some(owner)),
-        Err(PresentationLedgerError::Execution)
+        ledger.release(&program, &foreign_execution, Some(owner)),
+        Err(RuntimePresentationError::Execution)
     );
     assert_eq!(
         ledger.release(&program, &decoded, Some(owner)).unwrap(),
@@ -162,7 +178,7 @@ fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
     );
     assert_eq!(
         ledger.release(&program, &decoded, Some(owner)),
-        Err(PresentationLedgerError::UnknownHandle)
+        Err(RuntimePresentationError::UnknownHandle)
     );
 }
 
@@ -196,13 +212,16 @@ fn moved_and_detached_leases_survive_only_their_former_scope_cleanup() {
         .unwrap();
     assert_eq!(
         ledger.transfer(&program, &moved, original, None),
-        Err(PresentationLedgerError::Owner)
+        Err(RuntimePresentationError::Owner)
     );
     assert_eq!(
-        ledger.exit_scope(&program, original).unwrap(),
+        bodies(ledger.exit_scope(&program, original).unwrap()),
         Vec::<i32>::new()
     );
-    assert_eq!(ledger.exit_scope(&program, destination).unwrap(), [1]);
+    assert_eq!(
+        bodies(ledger.exit_scope(&program, destination).unwrap()),
+        [1]
+    );
     assert_eq!(ledger.release(&program, &detached, None).unwrap(), Some(2));
 }
 
@@ -228,7 +247,7 @@ fn capacity_and_cursor_exhaustion_return_body_and_preserve_prior_slot_and_cursor
             2
         ),
         Err(PresentationRegisterError {
-            cause: PresentationLedgerError::Capacity,
+            cause: RuntimePresentationError::Capacity,
             body: 2
         })
     );
@@ -246,7 +265,7 @@ fn capacity_and_cursor_exhaustion_return_body_and_preserve_prior_slot_and_cursor
             3,
         )
         .unwrap_err();
-    assert!(matches!(error.cause, PresentationLedgerError::Identity(_)));
+    assert!(matches!(error.cause, RuntimePresentationError::Identity(_)));
     assert_eq!(error.body, 3);
     assert_eq!(ledger.next, RuntimeIdCursor::Exhausted);
     assert!(ledger.leases.is_empty());
@@ -267,10 +286,13 @@ fn scope_cleanup_is_issuance_ordered_and_address_families_are_checked() {
             )
             .unwrap();
     }
-    assert_eq!(ledger.exit_scope(&program, owner).unwrap(), [3, 2, 1]);
+    assert_eq!(
+        bodies(ledger.exit_scope(&program, owner).unwrap()),
+        [3, 2, 1]
+    );
     assert_eq!(
         ledger.exit_scope(&program, owner),
-        Err(PresentationLedgerError::Owner)
+        Err(RuntimePresentationError::Owner)
     );
     assert_eq!(
         PresentationSlotAddress::try_new(
@@ -278,7 +300,7 @@ fn scope_cleanup_is_issuance_ordered_and_address_families_are_checked() {
             PublicId::try_new("slot.background.default").unwrap(),
             PresentationResourceKind::Background,
         ),
-        Err(PresentationLedgerError::InvalidAddress)
+        Err(RuntimePresentationError::InvalidAddress)
     );
 }
 
@@ -302,7 +324,7 @@ fn independent_resources_of_every_family_never_replace_each_other() {
         }
     }
     assert_eq!(
-        ledger.exit_scope(&program, owner).unwrap(),
+        bodies(ledger.exit_scope(&program, owner).unwrap()),
         [10, 20].repeat(8)
     );
 }
@@ -321,7 +343,7 @@ fn last_identity_is_issued_once_and_foreign_registration_does_not_consume_it() {
             12,
         ),
         Err(PresentationRegisterError {
-            cause: PresentationLedgerError::Program,
+            cause: RuntimePresentationError::Program,
             body: 12
         })
     );
@@ -345,7 +367,7 @@ fn last_identity_is_issued_once_and_foreign_registration_does_not_consume_it() {
         .unwrap_err();
     assert!(matches!(
         rejected.cause,
-        PresentationLedgerError::Identity(_)
+        RuntimePresentationError::Identity(_)
     ));
     assert_eq!(rejected.body, 16);
     assert_eq!(
@@ -361,19 +383,19 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
     let fiber = RuntimePersistentFiberId::from_allocated(3);
     let mut env = crate::value::RuntimeEnv::default();
     let owner = ledger
-        .bind_scope(&program, ledger.execution, fiber, &mut env)
+        .bind_scope(&program, execution(), fiber, &mut env)
         .unwrap();
     ledger.next_scope = RuntimeIdCursor::Exhausted;
     assert_eq!(
         ledger
-            .bind_scope(&program, ledger.execution, fiber, &mut env)
+            .bind_scope(&program, execution(), fiber, &mut env)
             .unwrap(),
         owner
     );
     env.push_scope();
     assert!(matches!(
-        ledger.bind_scope(&program, ledger.execution, fiber, &mut env),
-        Err(PresentationLedgerError::Identity(_))
+        ledger.bind_scope(&program, execution(), fiber, &mut env),
+        Err(RuntimePresentationError::Identity(_))
     ));
     assert!(env.presentation_scope_binding().is_none());
     assert_eq!(ledger.scopes.len(), 1);
@@ -381,17 +403,18 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
     env.pop_scope();
     assert_eq!(
         ledger
-            .bind_scope(&program, ledger.execution, fiber, &mut env)
+            .bind_scope(&program, execution(), fiber, &mut env)
             .unwrap(),
         owner
     );
     ledger
-        .exit_bound_scope(&program, ledger.execution, fiber, &env)
+        .exit_bound_scope(&program, execution(), fiber, &mut env)
         .unwrap();
-    assert_eq!(
-        ledger.bind_scope(&program, ledger.execution, fiber, &mut env),
-        Err(PresentationLedgerError::Owner)
-    );
+    assert!(env.presentation_scope_binding().is_none());
+    assert!(matches!(
+        ledger.bind_scope(&program, execution(), fiber, &mut env),
+        Err(RuntimePresentationError::Identity(_))
+    ));
 }
 
 #[test]
@@ -401,25 +424,25 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
     let fiber = RuntimePersistentFiberId::from_allocated(3);
     let mut env = crate::value::RuntimeEnv::default();
     let owner = ledger
-        .bind_scope(&program, ledger.execution, fiber, &mut env)
+        .bind_scope(&program, execution(), fiber, &mut env)
         .unwrap();
     assert_eq!(
-        ledger.bind_scope(&new_program(), ledger.execution, fiber, &mut env),
-        Err(PresentationLedgerError::Program)
+        ledger.bind_scope(&new_program(), execution(), fiber, &mut env),
+        Err(RuntimePresentationError::Program)
     );
     assert_eq!(
         ledger.bind_scope(
             &program,
-            ledger.execution,
+            execution(),
             RuntimePersistentFiberId::from_allocated(4),
             &mut env
         ),
-        Err(PresentationLedgerError::Owner)
+        Err(RuntimePresentationError::Owner)
     );
     let execution = ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap());
     assert_eq!(
         ledger.bind_scope(&program, execution, fiber, &mut env),
-        Err(PresentationLedgerError::Execution)
+        Err(RuntimePresentationError::Owner)
     );
     assert_eq!(env.presentation_scope_binding().unwrap().owner, owner);
     assert_eq!(ledger.scopes.len(), 1);
@@ -433,13 +456,13 @@ fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
     let fiber = RuntimePersistentFiberId::from_allocated(3);
     let mut env = crate::value::RuntimeEnv::default();
     let owner = ledger
-        .bind_scope(&program, ledger.execution, fiber, &mut env)
+        .bind_scope(&program, execution(), fiber, &mut env)
         .unwrap();
     let before = ledger.next_scope;
     env.push_scope();
     assert_eq!(
-        ledger.bind_scope(&program, ledger.execution, fiber, &mut env),
-        Err(PresentationLedgerError::ScopeCapacity)
+        ledger.bind_scope(&program, execution(), fiber, &mut env),
+        Err(RuntimePresentationError::ScopeCapacity)
     );
     assert!(env.presentation_scope_binding().is_none());
     assert_eq!(ledger.scopes.len(), 1);
@@ -447,8 +470,57 @@ fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
     env.pop_scope();
     assert_eq!(
         ledger
-            .bind_scope(&program, ledger.execution, fiber, &mut env)
+            .bind_scope(&program, execution(), fiber, &mut env)
             .unwrap(),
         owner
+    );
+}
+
+#[test]
+fn one_program_slot_replaces_across_real_execution_owners() {
+    let program = new_program();
+    let mut ledger = new_ledger(program.clone(), 4);
+    let mut first_env = crate::value::RuntimeEnv::default();
+    let mut second_env = crate::value::RuntimeEnv::default();
+    let first = ledger
+        .bind_scope(
+            &program,
+            execution(),
+            RuntimePersistentFiberId::from_allocated(1),
+            &mut first_env,
+        )
+        .unwrap();
+    let second_execution = ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap());
+    let second = ledger
+        .bind_scope(
+            &program,
+            second_execution,
+            RuntimePersistentFiberId::from_allocated(2),
+            &mut second_env,
+        )
+        .unwrap();
+    let (old, _) = ledger
+        .register(
+            &program,
+            first,
+            PresentationRegistrationSite::Slot(address("shared")),
+            10,
+        )
+        .unwrap();
+    let (new, previous) = ledger
+        .register(
+            &program,
+            second,
+            PresentationRegistrationSite::Slot(address("shared")),
+            20,
+        )
+        .unwrap();
+    assert_eq!(previous, Some(10));
+    assert_eq!(old.execution(), execution());
+    assert_eq!(new.execution(), second_execution);
+    assert_eq!(ledger.release(&program, &old, Some(first)).unwrap(), None);
+    assert_eq!(
+        ledger.release(&program, &new, Some(second)).unwrap(),
+        Some(20)
     );
 }

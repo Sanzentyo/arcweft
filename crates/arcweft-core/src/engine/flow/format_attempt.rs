@@ -19,13 +19,17 @@ pub(in crate::engine) struct NativeFormatAttemptValues {
 impl Engine {
     /// Drops the current operand transaction when source control transfer
     /// deliberately exits the formatter before its completion marker.
-    pub(super) fn abandon_format_attempt_for_transfer(&mut self) -> bool {
+    pub(super) fn abandon_format_attempt_for_transfer(&mut self) -> Result<bool, RuntimeEvalError> {
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FormatAttempt(_),
         }) = self.fiber.frame.control_stack.last()
         else {
-            return false;
+            return Ok(false);
         };
+        let has_scope = matches!(self.fiber.frame.control_stack.last(), Some(FlowControlStackEntry { kind: FlowControlStackEntryKind::FormatAttempt(frame) }) if frame.active.is_some());
+        if has_scope {
+            self.pop_runtime_scope()?;
+        }
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FormatAttempt(mut frame),
         }) = self.fiber.frame.control_stack.pop()
@@ -33,10 +37,9 @@ impl Engine {
             unreachable!("format attempt frame was checked before removal")
         };
         if let Some(active) = frame.active.take() {
-            self.fiber.frame.env.pop_scope();
             self.fiber.frame.pending_ops = active.caller_pending_ops;
         }
-        true
+        Ok(true)
     }
 
     pub(in crate::engine) fn fail_format_aware_eval(
@@ -195,10 +198,16 @@ impl Engine {
                 "format completion does not match its active operand".to_owned(),
             ));
         }
+        self.pop_runtime_scope()?;
+        let Some(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::FormatAttempt(frame),
+        }) = self.fiber.frame.control_stack.last_mut()
+        else {
+            unreachable!("checked format owner");
+        };
         let active = frame.active.take().expect("checked active format operand");
         frame.values[ordinal] = Some(evaluated);
         frame.next_operand = ordinal + 1;
-        self.fiber.frame.env.pop_scope();
         self.fiber.frame.pending_ops = active.caller_pending_ops;
         Ok(())
     }
@@ -215,6 +224,21 @@ impl Engine {
             return false;
         };
         while self.fiber.frame.control_stack.len() > index + 1 {
+            let owns_scope = match &self
+                .fiber
+                .frame
+                .control_stack
+                .last()
+                .expect("bounded format unwind")
+                .kind
+            {
+                FlowControlStackEntryKind::Scope { .. } => true,
+                FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
+                _ => false,
+            };
+            if owns_scope && !self.pop_runtime_scope_for_output(output) {
+                return true;
+            }
             let entry = self
                 .fiber
                 .frame
@@ -226,12 +250,9 @@ impl Engine {
                     origin, cleanups, ..
                 } => {
                     self.cancel_scheduled_scope_close(origin);
-                    self.fiber.frame.env.pop_scope();
                     self.emit_scope_cleanups(cleanups, output, pure_backend);
                 }
-                FlowControlStackEntryKind::FunctionCall(frame) if frame.function_scope => {
-                    self.fiber.frame.env.pop_scope();
-                }
+                FlowControlStackEntryKind::FunctionCall(frame) if frame.function_scope => {}
                 FlowControlStackEntryKind::FunctionCall(_)
                 | FlowControlStackEntryKind::Loop { .. }
                 | FlowControlStackEntryKind::While { .. }
@@ -240,6 +261,9 @@ impl Engine {
                     unreachable!("innermost active format attempt owns this failure")
                 }
             }
+        }
+        if !self.pop_runtime_scope_for_output(output) {
+            return true;
         }
         let FlowControlStackEntryKind::FormatAttempt(frame) =
             &mut self.fiber.frame.control_stack[index].kind
@@ -255,7 +279,6 @@ impl Engine {
         if frame.first_recoverable.is_none() {
             frame.first_recoverable = Some(failure.to_owned());
         }
-        self.fiber.frame.env.pop_scope();
         self.fiber.frame.pending_ops = active.caller_pending_ops;
         self.fiber.frame.status = FlowFiberStatus::Running;
         true

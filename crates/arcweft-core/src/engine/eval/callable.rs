@@ -248,7 +248,7 @@ impl Engine {
                 ))
             }
         });
-        self.fiber.frame.env.pop_scope();
+        self.pop_runtime_scope()?;
         value
     }
 

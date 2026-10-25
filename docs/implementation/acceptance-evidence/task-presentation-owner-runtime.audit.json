@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "run": "task-final-r2903-presentation-owner-core-runtime",
+  "executed": 2070,
+  "passed": 2070,
+  "failed": 0,
+  "sourceInputs": 3980,
+  "sourceDrift": 0,
+  "binaryCount": 13,
+  "binaryDrift": 0,
+  "artifactCopyMove": false,
+  "at": "2026-10-25T00:17:11.5067967Z"
+}

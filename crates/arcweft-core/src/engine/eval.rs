@@ -164,7 +164,7 @@ impl Engine {
                     .env
                     .push_scope_with_identity(identity.clone());
                 let result = self.evaluate_expr_with_backend(body, pure_backend);
-                self.fiber.frame.env.pop_scope();
+                self.pop_runtime_scope()?;
                 result
             }
             RuntimeExprKind::Tuple(_)
@@ -1164,7 +1164,7 @@ impl Engine {
         self.fiber.frame.env.push_scope_with_capacity(1);
         self.fiber.frame.env.set(binding, value);
         let result = self.evaluate_expr_with_backend(body, pure_backend);
-        self.fiber.frame.env.pop_scope();
+        self.pop_runtime_scope()?;
         result
     }
 
@@ -1306,8 +1306,8 @@ impl Engine {
     pub(super) fn with_temp_bindings<I, T>(
         &mut self,
         bindings: I,
-        f: impl FnOnce(&mut Self) -> T,
-    ) -> T
+        f: impl FnOnce(&mut Self) -> Result<T, RuntimeEvalError>,
+    ) -> Result<T, RuntimeEvalError>
     where
         I: IntoIterator<Item = RuntimeLocalBinding>,
         I::IntoIter: ExactSizeIterator,
@@ -1319,7 +1319,7 @@ impl Engine {
             .push_scope_with_capacity(bindings.len());
         self.fiber.frame.env.bind_all(bindings);
         let result = f(self);
-        self.fiber.frame.env.pop_scope();
+        self.pop_runtime_scope()?;
         result
     }
 
@@ -1327,12 +1327,12 @@ impl Engine {
         &mut self,
         local: RuntimeLocalDeclarationId,
         value: &RuntimeValue,
-        f: impl FnOnce(&mut Self) -> T,
-    ) -> T {
+        f: impl FnOnce(&mut Self) -> Result<T, RuntimeEvalError>,
+    ) -> Result<T, RuntimeEvalError> {
         self.fiber.frame.env.push_scope_with_capacity(1);
         self.fiber.frame.env.set_ref(local, value);
         let result = f(self);
-        self.fiber.frame.env.pop_scope();
+        self.pop_runtime_scope()?;
         result
     }
 

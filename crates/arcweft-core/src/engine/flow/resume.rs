@@ -131,7 +131,9 @@ impl Engine {
                     return;
                 }
                 if !self.complete_match_guard(output, backend) {
-                    self.pop_scope_frame(output, backend);
+                    if let Err(error) = self.pop_scope_frame(output, backend) {
+                        self.fail_eval(error, output);
+                    }
                 }
             }
             Resume::CompleteAwaitObserver => {

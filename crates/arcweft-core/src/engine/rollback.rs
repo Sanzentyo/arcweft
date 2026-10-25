@@ -1054,6 +1054,8 @@ impl NativeEngineRollbackImage {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
+        self.admit_presentation_state(&mut admission)
+            .map_err(|error| error.to_string())?;
         self.admit_metadata(&mut admission)
             .map_err(|error| error.to_string())?;
         self.need_producers
@@ -1071,6 +1073,15 @@ impl NativeEngineRollbackImage {
             fiber
                 .frame
                 .admit_owned_values(&mut admission)
+                .map_err(|error| error.to_string())?;
+            fiber
+                .frame
+                .env
+                .validate_presentation_context(
+                    &fiber.frame.program,
+                    fiber.execution,
+                    fiber.persistent_id,
+                )
                 .map_err(|error| error.to_string())?;
             if let FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Native(state)) =
                 &fiber.frame.status
@@ -1103,6 +1114,9 @@ impl NativeEngineRollbackImage {
                 .active_line(activation)
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
         })?;
+        admission
+            .finish_presentation_scopes()
+            .map_err(|error| error.to_string())?;
         Ok(expected_deferred_children)
     }
 }

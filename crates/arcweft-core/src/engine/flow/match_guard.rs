@@ -189,7 +189,10 @@ impl Engine {
             .env
             .take(guard.candidate)
             .ok_or(RuntimeEvalError::UninitializedLocal(guard.candidate));
-        self.pop_scope_frame(output, backend);
+        if let Err(error) = self.pop_scope_frame(output, backend) {
+            self.fail_eval(error, output);
+            return true;
+        }
         let result = value.and_then(|value| {
             if selected {
                 let Some(FlowOp::Match { arms, .. }) = continuation.source.operation(&plan) else {

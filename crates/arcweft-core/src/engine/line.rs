@@ -68,7 +68,10 @@ impl Engine {
         };
         self.fiber.frame.pending_ops.clear();
         self.fiber.frame.await_observer = None;
-        self.unwind_control_stack(output, pure_backend);
+        if let Err(error) = self.unwind_control_stack(output, pure_backend) {
+            self.fail_eval(error, output);
+            return;
+        }
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
         });
@@ -99,7 +102,10 @@ impl Engine {
         };
         self.fiber.frame.pending_ops.clear();
         self.fiber.frame.await_observer = None;
-        self.unwind_control_stack(output, pure_backend);
+        if let Err(error) = self.unwind_control_stack(output, pure_backend) {
+            self.fail_eval(error, output);
+            return;
+        }
         output.flow_events.push(FlowEvent::Return {
             value: value.clone(),
         });
@@ -110,31 +116,29 @@ impl Engine {
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) {
-        while let Some(entry) = self.fiber.frame.control_stack.pop() {
-            match entry.kind {
-                FlowControlStackEntryKind::Scope { cleanups, .. } => {
-                    self.fiber.frame.env.pop_scope();
-                    self.emit_scope_cleanups(cleanups, output, pure_backend);
-                }
-                FlowControlStackEntryKind::FunctionCall(frame) => {
-                    if frame.function_scope {
-                        self.fiber.frame.env.pop_scope();
-                    }
-                }
-                FlowControlStackEntryKind::FormatAttempt(frame) => {
-                    if frame.active.is_some() {
-                        self.fiber.frame.env.pop_scope();
-                    }
-                }
-                FlowControlStackEntryKind::Loop { .. }
-                | FlowControlStackEntryKind::While { .. }
-                | FlowControlStackEntryKind::WhileLet { .. } => {}
+    ) -> Result<(), crate::value::RuntimeEvalError> {
+        while let Some(entry) = self.fiber.frame.control_stack.last() {
+            let owns_scope = match &entry.kind {
+                FlowControlStackEntryKind::Scope { .. } => true,
+                FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
+                FlowControlStackEntryKind::FormatAttempt(frame) => frame.active.is_some(),
+                _ => false,
+            };
+            if owns_scope {
+                self.pop_runtime_scope()?;
+            }
+            let entry = self
+                .fiber
+                .frame
+                .control_stack
+                .pop()
+                .expect("inspected control owner");
+            if let FlowControlStackEntryKind::Scope { cleanups, .. } = entry.kind {
+                self.emit_scope_cleanups(cleanups, output, pure_backend);
             }
         }
-        self.drain_root_cleanups(output, pure_backend);
+        self.drain_root_cleanups(output, pure_backend)
     }
-
     pub(super) fn finish(
         &mut self,
         output: &mut RuntimeStepOutput,
@@ -152,7 +156,10 @@ impl Engine {
             return;
         }
         self.fiber.frame.pending_ops.clear();
-        self.drain_root_cleanups(output, pure_backend);
+        if let Err(error) = self.unwind_control_stack(output, pure_backend) {
+            self.fail_eval(error, output);
+            return;
+        }
         output.flow_events.push(FlowEvent::Done);
         self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
     }

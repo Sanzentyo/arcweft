@@ -53,6 +53,7 @@ pub mod dialogue;
 pub mod eval;
 mod frame_progress;
 mod numeric_map;
+mod presentation;
 #[cfg(test)]
 mod presentation_tests;
 mod rollback;
@@ -119,6 +120,16 @@ pub struct Engine<
     format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
     need_producers: N,
+    presentation: Option<
+        crate::presentation::resources::PresentationLedger<
+            crate::presentation::resources::PresentationBody<P>,
+        >,
+    >,
+    presentation_retirements: Vec<
+        crate::presentation::resources::PresentationRetirement<
+            crate::presentation::resources::PresentationBody<P>,
+        >,
+    >,
     task_request_quota_remaining: usize,
     scalar_step_charge: Option<NativeScalarStepCharge>,
     need_publications: BTreeMap<crate::task::TaskCorrelation, VecDeque<RuntimeNeedPublication<P>>>,
@@ -169,6 +180,8 @@ impl Clone for NativeEngineRollbackImage {
             format_context: self.format_context.clone(),
             generation: self.generation,
             need_producers: self.need_producers.clone(),
+            presentation: self.presentation.clone(),
+            presentation_retirements: self.presentation_retirements.clone(),
             task_request_quota_remaining: self.task_request_quota_remaining,
             scalar_step_charge: self.scalar_step_charge,
             need_publications: self.need_publications.clone(),
@@ -254,8 +267,11 @@ impl FlowFiber {
         ledger: &mut crate::presentation::resources::PresentationLedger<V>,
     ) -> Result<
         crate::presentation::resources::PresentationScopeOwner,
-        crate::presentation::resources::PresentationLedgerError,
+        crate::presentation::RuntimePresentationError,
     > {
+        if self.execution.get().get() != self.persistent_id.get() {
+            return Err(crate::presentation::RuntimePresentationError::Execution);
+        }
         ledger.bind_scope(
             &self.frame.program,
             self.execution,
@@ -265,14 +281,17 @@ impl FlowFiber {
     }
 
     pub(crate) fn release_presentation_scope<V>(
-        &self,
+        &mut self,
         ledger: &mut crate::presentation::resources::PresentationLedger<V>,
-    ) -> Result<Vec<V>, crate::presentation::resources::PresentationLedgerError> {
+    ) -> Result<
+        Vec<crate::presentation::resources::PresentationRetirement<V>>,
+        crate::presentation::RuntimePresentationError,
+    > {
         ledger.exit_bound_scope(
             &self.frame.program,
             self.execution,
             self.persistent_id,
-            &self.frame.env,
+            &mut self.frame.env,
         )
     }
 }
@@ -1946,6 +1965,8 @@ impl Engine {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
+        self.admit_presentation_state(&mut admission)
+            .map_err(|error| error.to_string())?;
         self.admit_metadata(&mut admission)
             .map_err(|error| error.to_string())?;
         self.need_producers
@@ -1964,6 +1985,15 @@ impl Engine {
                 .frame
                 .admit_owned_values(&mut admission)
                 .map_err(|error| error.to_string())?;
+            fiber
+                .frame
+                .env
+                .validate_presentation_context(
+                    &fiber.frame.program,
+                    fiber.execution,
+                    fiber.persistent_id,
+                )
+                .map_err(|error| error.to_string())?;
         }
         self.expected_deferred_children(|activation| {
             self.dialogue_activations
@@ -1972,6 +2002,9 @@ impl Engine {
         })?;
         let publication_image =
             |publication: &RuntimeNeedPublication| publication.snapshot_admitted(&owner);
+        admission
+            .finish_presentation_scopes()
+            .map_err(|error| error.to_string())?;
         Ok(NativeEngineRollbackImage {
             evaluation_stats: self.evaluation_stats.clone(),
             plan: Arc::clone(&self.plan),
@@ -1980,6 +2013,23 @@ impl Engine {
             need_producers: self
                 .need_producers
                 .snapshot_admitted(&owner)
+                .map_err(|error| error.to_string())?,
+            presentation: self
+                .presentation
+                .as_ref()
+                .map(|ledger| ledger.snapshot_admitted())
+                .transpose()
+                .map_err(|error| error.to_string())?,
+            presentation_retirements: self
+                .presentation_retirements
+                .iter()
+                .map(|retired| {
+                    Ok(crate::presentation::resources::PresentationRetirement {
+                        token: retired.token.clone(),
+                        body: retired.body.snapshot_admitted(&owner)?,
+                    })
+                })
+                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()
                 .map_err(|error| error.to_string())?,
             task_request_quota_remaining: self.task_request_quota_remaining,
             scalar_step_charge: self.scalar_step_charge,
@@ -2050,6 +2100,22 @@ impl Engine {
                 image.need_producers,
                 owner,
             )?,
+            presentation: image
+                .presentation
+                .map(|ledger| ledger.into_admitted_live())
+                .transpose()
+                .map_err(|error| error.to_string())?,
+            presentation_retirements: image
+                .presentation_retirements
+                .into_iter()
+                .map(|retired| {
+                    Ok(crate::presentation::resources::PresentationRetirement {
+                        token: retired.token,
+                        body: retired.body.into_admitted_live(owner)?,
+                    })
+                })
+                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()
+                .map_err(|error| error.to_string())?,
             task_request_quota_remaining: image.task_request_quota_remaining,
             scalar_step_charge: image.scalar_step_charge,
             need_publications: image
@@ -2194,6 +2260,8 @@ impl Engine {
             format_context: crate::value::RuntimeFormatContext::default(),
             generation,
             need_producers: NeedProducerRegistry::default(),
+            presentation: None,
+            presentation_retirements: Vec::new(),
             task_request_quota_remaining: usize::MAX,
             scalar_step_charge: None,
             need_publications: BTreeMap::new(),
@@ -4586,13 +4654,10 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let frames = std::mem::take(&mut self.fiber.frame.control_stack);
-        for frame in frames.into_iter().rev() {
-            if let FlowControlStackEntryKind::Scope { cleanups, .. } = frame.kind {
-                self.emit_scope_cleanups(cleanups, output, pure_backend);
-            }
+        if let Err(error) = self.unwind_control_stack(output, pure_backend) {
+            self.fail_eval(error, output);
+            return;
         }
-        self.drain_root_cleanups(output, pure_backend);
         self.fiber.frame.pending_ops.clear();
         self.fiber.frame.await_observer = None;
         self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
@@ -4611,6 +4676,10 @@ impl Engine {
             if matches!(&self.fiber.launch, FlowFiberLaunch::Program(_)) {
                 self.finish(output, pure_backend);
             } else {
+                if let Err(error) = self.unwind_control_stack(output, pure_backend) {
+                    self.fail_eval(error, output);
+                    return;
+                }
                 self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
             }
         }

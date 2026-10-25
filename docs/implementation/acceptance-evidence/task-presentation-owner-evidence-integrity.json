@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "base": "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+  "records": [
+    {
+      "file": "task-final-r2896-presentation-owner-core-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2896-presentation-owner-core-check.json",
+      "bytes": 530,
+      "sha256": "8a3d1f95767d4bb0593d283b6c2b763d77647ef336bb57f81c1a70ae02502bb0"
+    },
+    {
+      "file": "task-final-r2896-presentation-owner-core-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2896-presentation-owner-core-check.log",
+      "bytes": 17425,
+      "sha256": "e86051e87425e1af779d8f2c60574b987ba8fa5d87b144e4bb3c5d31118d6696"
+    },
+    {
+      "file": "task-final-r2897-presentation-owner-core-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2897-presentation-owner-core-check.json",
+      "bytes": 530,
+      "sha256": "5c674df18340a4fc986aadc4f38fcb1445846e554511edf9ec49575f1cc1e11d"
+    },
+    {
+      "file": "task-final-r2897-presentation-owner-core-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2897-presentation-owner-core-check.log",
+      "bytes": 14494,
+      "sha256": "1fe82a6035d4626977596bf6ce262f5c4749cb116fd2cc6edc0fb72dd086e893"
+    },
+    {
+      "file": "task-final-r2898-presentation-owner-core-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2898-presentation-owner-core-check.json",
+      "bytes": 530,
+      "sha256": "8d77a06716b3bc490c394fa9ada624b603ba4347dc859bf1705581a0a88c41ba"
+    },
+    {
+      "file": "task-final-r2898-presentation-owner-core-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2898-presentation-owner-core-check.log",
+      "bytes": 14574,
+      "sha256": "54514b4499829fbaa48380bf0d520c0e0ad56c51644007d1d53aacff4a4a3b62"
+    },
+    {
+      "file": "task-final-r2899-presentation-owner-core-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2899-presentation-owner-core-check.json",
+      "bytes": 528,
+      "sha256": "9b6cbf4534ba7ff83f01d7914f7e00667d3dc862af01b4f4d817e5625b4c8b23"
+    },
+    {
+      "file": "task-final-r2899-presentation-owner-core-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2899-presentation-owner-core-check.log",
+      "bytes": 81818,
+      "sha256": "5508256ddc0b1af4e91fef806a2948c7f72d40392d9d4975015e2c328a97ce8b"
+    },
+    {
+      "file": "task-final-r2900-presentation-owner-tests.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2900-presentation-owner-tests.json",
+      "bytes": 623,
+      "sha256": "1966a046093d5eb04de48c0d4f9b622679157bba4d7ae4ab2727b7c8c419b215"
+    },
+    {
+      "file": "task-final-r2900-presentation-owner-tests.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2900-presentation-owner-tests.log",
+      "bytes": 83225,
+      "sha256": "d579c552004bb67d6d5efd1378d6efb7f6667c6f8f4df172b0d794108946fb73"
+    },
+    {
+      "file": "task-final-r2901-presentation-owner-core-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2901-presentation-owner-core-catalog.json",
+      "bytes": 587,
+      "sha256": "87af7bf9bff5f5f1f107681082398e3a709c74a182c6fa3ed7f9df9062a1d02c"
+    },
+    {
+      "file": "task-final-r2901-presentation-owner-core-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2901-presentation-owner-core-catalog.log",
+      "bytes": 74140,
+      "sha256": "5e4b0360cc58bbca28db2b098c8e5ec867bc2f544f8f8d3b5206332c4b50c74a"
+    },
+    {
+      "file": "task-final-r2902-presentation-owner-core-catalog.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2902-presentation-owner-core-catalog.json",
+      "bytes": 585,
+      "sha256": "06db85ef1468e2cad82b9f94d3ef61322c25ee2020f1b6d3153cb7509e875064"
+    },
+    {
+      "file": "task-final-r2902-presentation-owner-core-catalog.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2902-presentation-owner-core-catalog.log",
+      "bytes": 438376,
+      "sha256": "5856e9f9f26a9f4ce82e9e4d9de14455ec81ba1fbebe1c97035c5199c249afac"
+    },
+    {
+      "file": "task-final-r2903-presentation-owner-core-runtime.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2903-presentation-owner-core-runtime.json",
+      "bytes": 622,
+      "sha256": "463fc4f1e287925810d69adaa3f5d80d77287555ebd9da9fdb8539855f24d297"
+    },
+    {
+      "file": "task-final-r2903-presentation-owner-core-runtime.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2903-presentation-owner-core-runtime.log",
+      "bytes": 708567,
+      "sha256": "224e3b98a1b0a39cc37cd10fe8c74f156fca9613894cedb573fa031437498ceb"
+    },
+    {
+      "file": "task-final-r2904-presentation-owner-workspace-check.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2904-presentation-owner-workspace-check.json",
+      "bytes": 526,
+      "sha256": "274a7db1f5bd529324175eba24013a6e04453dec632d26d0a3de68912b8ab168"
+    },
+    {
+      "file": "task-final-r2904-presentation-owner-workspace-check.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2904-presentation-owner-workspace-check.log",
+      "bytes": 105548,
+      "sha256": "19fcead97d7a65f0cccac03263a9ffc8b45718cec90b876d0f16c2b823202b40"
+    },
+    {
+      "file": "task-final-r2905-presentation-owner-workspace-clippy.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2905-presentation-owner-workspace-clippy.json",
+      "bytes": 529,
+      "sha256": "6044b9ce184ce756ed0e6ab4119e1b4314f4d2a597f09aae9e6b03ac47fe4ee2"
+    },
+    {
+      "file": "task-final-r2905-presentation-owner-workspace-clippy.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2905-presentation-owner-workspace-clippy.log",
+      "bytes": 7401900,
+      "sha256": "d3516db47039e142e75bd536a1d04f8a2760018e608c1b63d086454036a9f1b9"
+    },
+    {
+      "file": "task-final-r2906-presentation-owner-structure.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2906-presentation-owner-structure.json",
+      "bytes": 537,
+      "sha256": "d363067a36bd315d41ac2a693f940f72bde3f62e865d3ff3c97cbb543ea15107"
+    },
+    {
+      "file": "task-final-r2906-presentation-owner-structure.log",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2906-presentation-owner-structure.log",
+      "bytes": 64139,
+      "sha256": "a27cb933ec7304f4cdc4c45cf50239d1f504ba3088c664d231a174f55dbeaf19"
+    },
+    {
+      "file": "task-final-r2902-presentation-owner-core-catalog.inventory.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2902-presentation-owner-core-catalog.inventory.json",
+      "bytes": 523471,
+      "sha256": "63471f1b318a289a1cf9a3ad00896e5e909d37d9947c75e2f05e244a44fcc007"
+    },
+    {
+      "file": "task-final-r2903-presentation-owner-core-runtime.terminal-audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2903-presentation-owner-core-runtime.terminal-audit.json",
+      "bytes": 588,
+      "sha256": "d8a228ff09e6112ba31085fc41a11105858dc04d282a6cb9ff205c92645b62e4"
+    },
+    {
+      "file": "task-presentation-owner.source-freeze.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-owner.source-freeze.json",
+      "bytes": 779301,
+      "sha256": "163a9e1f1ee99c23b2768bf9f6597c0b2ce5c40f351df4fe0a82c709d9aec62c"
+    },
+    {
+      "file": "task-presentation-owner.graph.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-owner.graph.json",
+      "bytes": 4088,
+      "sha256": "925bb4a9e8bbebcdc056a7663a1fb3d0a4f1448f6d718581f1b891f7e407722a"
+    },
+    {
+      "file": "task-presentation-owner.executables.before.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-owner.executables.before.json",
+      "bytes": 3446,
+      "sha256": "577e6d28cb1f8a9c6ae569c7a44211ba4002ae21323560fc0241c689c309d933"
+    },
+    {
+      "file": "task-presentation-owner-runtime.audit.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-owner-runtime.audit.json",
+      "bytes": 300,
+      "sha256": "48bfcbf90da39e8c77a4eea2d65e2deb4cb82f43d526568633ba58d9762880b6"
+    },
+    {
+      "file": "task-presentation-scope-checkpoint.verified.json",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-presentation-scope-checkpoint.verified.json",
+      "bytes": 14058,
+      "sha256": "9a741b6897184c803df7445386e858a7ba3113f9678ab43309cca55967af5ef1"
+    }
+  ],
+  "recordCount": 29,
+  "bytes": 10335585.0,
+  "byteSha256Drift": 0,
+  "artifactCopyMove": false,
+  "at": "2026-10-25T00:26:26.4708642Z"
+}

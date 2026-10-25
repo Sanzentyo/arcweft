@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+  "name": "task-final-r2903-presentation-owner-core-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2903-presentation-owner-core-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T00:13:40.8519165Z",
+  "finishedAt": "2026-10-25T00:16:29.6980053Z"
+}
