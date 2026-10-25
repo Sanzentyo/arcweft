@@ -1,0 +1,1346 @@
+{
+  "version": 1,
+  "name": "task-final-r2911-presentation-stdio-readiness-catalog",
+  "all": 191,
+  "matched": 1,
+  "excluded": 190,
+  "rows": [
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::mcp_stdio::tests::stderr_publication_preserves_bounded_data_and_reports_eof_or_read_failure",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::mcp_stdio::tests::stdio_transport_roundtrips_agent_session_calls_through_fake_child",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::mcp_stdio::tests::stdio_transport_shutdown_requests_protocol_exit_before_kill",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::mcp_stdio::tests::stdio_transport_times_out_and_retains_bounded_stderr_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::mcp_protocol::latest_capture_tests::session_info_reuses_the_published_latest_capture",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::mcp_protocol::tests::mcp_repl_command_omits_cli_local_diagnostics_when_requested",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::mcp_protocol::tests::mcp_repl_command_rejects_cli_local_mutation_in_read_only_trace",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::mcp_protocol::tests::mcp_repl_command_returns_cli_local_protocol_json",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::capture_binding_rejects_other_owner_mount_parent_and_sample",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::cleared_ruby_and_body_selection_bind_the_actual_context_and_prepared_ordinals",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::distinct_dialogue_content_targets_share_context_while_duplicate_prepared_ownership_rejects",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::issued_capture_uri_keeps_its_context_and_rejects_another_retained_sample",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::mixed_dialogue_owners_resolve_each_child_and_capture_target_for_every_prepared_order",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::native_capture_cluster_ordinal_keeps_atomic_source_siblings_outside_crop",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::native_capture_foreign_cluster_cannot_contribute_or_relabel_current_owner",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::native_capture_multiglyph_word_retains_its_physical_members_and_issued_cell",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::native_capture_ruby_base_keeps_actual_body_partitions_and_annotation_order",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::transported_equal_context_does_not_admit_a_prepared_frame",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::fx_diagnostic_projection_coalesces_duplicates_and_retains_distinct_evidence",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::hidden_image_object_capture_scope_reports_missing_scope_diagnostic",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::missing_requested_capture_scopes_report_structured_diagnostics",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::native_agent_runtime_assertion_projection_uses_compiled_session_capability",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::player_image_object_observation_skips_hidden_source_and_frame",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::player_image_object_observation_uses_scroll_clipped_visible_quad",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::player_semantic_actions_become_agent_action_targets",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::player_semantic_objects_preserve_runtime_view_parent",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::released_image_object_capture_scope_reports_missing_scope_diagnostic",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::prepared_text_observation::owner::tests::dialogue_owner_identity_distinguishes_speaker_content_entry_mount_and_text_target",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::prepared_text_observation::view::tests::prepared_view_text_root_identity_encodes_semantic_ids_injectively",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::prepared_text_observation::view::tests::prepared_view_text_root_identity_includes_mount_occurrence",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::dispatch::tests::repl_cli_inspection_read_only_trace_permits_inspection_cli_commands",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::dispatch::tests::repl_cli_inspection_read_only_trace_rejects_mutating_cli_commands",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::dispatch::tests::successful_cli_report_without_result_evidence_is_a_typed_error",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::format::tests::repl_cli_inspection_cli_formatter_preserves_trace_json_without_formatted_text",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::format::tests::repl_cli_inspection_cli_formatter_reports_read_only_rejection",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_capture_target_is_structured",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_cli_parser_does_not_overlap_shared_command_names",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_connect_profile_manifest_is_structured",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_malformed_cli_command_reports_cli_diagnostic",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_parser_selects_cli_command_second",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_parser_selects_shared_repl_command_first",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_unknown_command_reports_after_both_parser_stages",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::protocol::tests::repl_cli_protocol_json_can_omit_diagnostics",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::protocol::tests::repl_cli_protocol_json_is_typed_without_formatted_text",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::protocol::tests::repl_cli_protocol_rejects_mutating_command_in_read_only_trace",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::protocol::tests::repl_cli_protocol_reports_unavailable_for_read_only_cli_command",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_bridge::parse_diagnostic_tests::agent_repl_parse_failure_json_preserves_typed_diagnostics",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_bridge::tests::repl_command_bridge_reports_two_stage_unknown_command",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_bridge::tests::repl_command_bridge_routes_cli_command_to_typed_json",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_format::tests::repl_command_formatter_formats_background_warm_queue",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_format::tests::repl_command_formatter_formats_help_with_typed_evidence",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_format::tests::repl_command_formatter_preserves_task_json",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_format::tests::repl_command_formatter_reports_read_only_rejection_diagnostic",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::runtime_observation::scroll_observation_tests::authored_scroll_is_one_action_target_with_internal_parts_metadata",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::runtime_observation::scroll_observation_tests::virtual_list_observation_keeps_off_window_stable_targets",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_hit_test_reports_generic_image_object_bbox_hit",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_hit_test_uses_image_object_polygon_inside_bbox",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_allowed_trace_keeps_canonical_uri_across_list_and_read",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_close_stale_sessions_abandons_running_sessions",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_graph_inventory_reads_program_symbols_and_edges",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_read_tools_enforce_max_privacy",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_read_tools_return_cached_observation_data",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_repl_cells_reads_persisted_cells",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_script_runs_enforces_max_privacy",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_source_files_reads_program_inventory",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_local_dev_mode_allows_color_capture_and_scrubs_metadata",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_local_dev_mode_still_withholds_auxiliary_captures",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_context_pack_deduplicates_semantic_hashes",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_explain_and_context_read_use_cached_pack",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_explain_and_context_read_use_persisted_audit",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_enforces_max_privacy",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_persists_observation_context_to_debug_store",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_reads_debug_store_graph_and_history_channels",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_reads_preindexed_debug_store_chunks",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_records_local_embedding_fallback_diagnostic",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_returns_explainable_context_pack",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_uses_local_embedding_debug_store_channel",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_resource_read_enforces_capture_privacy",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_script_run_options_accept_native_runtime_arguments",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_script_run_rejects_unknown_arguments",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_scroll_action_uses_observed_region_and_checked_i32_deltas",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_session_context_resource_is_available_for_trace_only_session",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_session_context_resource_redacts_source_and_enforces_privacy",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_strict_mode_withholds_color_capture_without_visual_classifier",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_trace_resource_read_audits_allowed_and_sensitive_denied",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_observe_layout_scene_graph_records_raw_content_rect",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_observe_output_extension_must_match_image_mime",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_parse_stdio_connection_preserves_program_and_args",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_parse_stdio_connection_rejects_shell_syntax",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_project_hash_change_preserves_only_literal_bindings",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_project_hash_unchanged_keeps_bindings_without_decisions",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_reedline_completer_uses_tooling_candidates",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_reedline_validator_uses_fragment_completion",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_stdio_connect_reports_project_hash_binding_policy",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::mcp_capture_time_prefers_explicit_time_then_capture_step_then_report_time",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_agent_invoke_requires_enabled_semantic_action",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_assignment_predicates_preserve_kinds_and_metric_probes",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_observation_envelope_preserves_typed_assignments_and_metrics",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_observation_envelope_rejects_duplicate_assignment_identities",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_observation_payload_rejects_serialization_failure",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_wait_json_preserves_signal_and_metric_value_kinds",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::observed_views_drop_hidden_only_parent_scope",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::observed_views_group_visible_objects_by_parent_id",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::raster_capture_requires_retained_prepared_frame_attachments",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_capture_mask_filters_a_view_to_its_member_objects",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_capture_object_id_preserves_supplied_painter_order",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_capture_scoped_color_uses_the_object_id_attachment_as_its_mask",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_capture_viewport_color_is_the_exact_retained_frame",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_layer_object_id_uses_direct_object_identity_for_descendant_coverage",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::uri_capture_request_preserves_report_capture_time",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::view_uri_capture_request_parses_scope_and_kind",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::script::registered_environment_reuse_tests::native_registered_environment_republishes_exact_ingress_for_agent_controller_compilation",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::script::removed_role_tests::awfagent_compiler_consumer_rejects_removed_role_declarations",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::script::removed_role_tests::decoded_agent_bundle_projects_persisted_runtime_assertion_without_changing_status",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::tests::agent_rag_context_pack_deduplicates_overlapping_source_spans",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::tests::agent_rag_context_pack_deduplicates_semantic_hashes",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::bundle_host_inventory_includes_nested_ordinary_function_body",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::bundle_hydrates_default_view_localization_from_matching_content_text_key",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::collect_bundle_image_assets_decodes_static_and_animated_webp_metadata",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::collect_bundle_image_assets_rejects_invalid_stable_identity_components",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::collect_bundle_image_assets_rejects_normalized_identity_collisions",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::launch_profile_compiles_without_enumerating_default_source_root",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::profile_bundle_carries_external_character_package_and_generation",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::project_bundle_uses_schema_one_asset_root_and_project_local_state",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::view_part_recovery::ordinary_view_recovery_cannot_create_exported_part_facts",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::view_scroll_rejects_both_axis_authoring",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::view_style_rule_rejects_interactive_overflow_on_non_scroll_element",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::explain_accepts_persistent_query_key_digest",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::explain_rejects_invalid_digest_query",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::fetch_external_populates_cache_from_file_awfr_archive",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::fetch_external_rejects_invalid_descriptor_id",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::fetch_populates_cache_from_file_release_manifest",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::fetch_rejects_invalid_content_root_digest",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::missing_cache_root_has_empty_stats_and_verifies_ok",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::prune_missing_cache_root_is_empty_dry_run",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::debug::tests::checked_blob_file_path_rejects_paths_outside_blob_dir",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::debug::tests::delete_blob_files_removes_only_safe_existing_files",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::debug::tests::parse_debug_retention_duration_accepts_explicit_units",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_consumes_shared_runtime_assertion_diagnostic",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_includes_code_label_and_patch",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_includes_verifier_proof_stub_patch_preview",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_includes_verifier_unsafe_audit_patch_preview",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_preserves_typed_parser_code_without_injecting_kind_label",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::tests::adapter_parity_keeps_the_concrete_edit_in_a_separate_typed_test_fixture",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::tests::adapter_parity_omits_or_rejects_stale_diagnostic_and_edit_spans",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::tests::cli_diagnostics_render_exact_revision_spans",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::import::tests::clap_accepts_the_psd_character_surface",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::inspect::tests::inspect_command_rejects_non_awfb_input",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::inspect::tests::inspect_report_describes_awfb_sections",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::progress::tests::progress_duration_format_is_compact",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::progress::tests::progress_status_label_uses_cargo_style",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project::tests::direct_source_entry_is_required_and_canonical",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project::tests::direct_source_inside_project_uses_manifest_owned_resource_roots",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project::tests::launch_kind_maps_to_the_compiler_entry_selection_without_string_dispatch",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::cache_build_writes_persistent_query_evidence_and_preserves_awfb_root",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::cache_clean_build_records_corrupt_object_rebuild_reason",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::cache_watch_in_memory_hits_take_precedence_over_corrupt_disk_records",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::compile_emit_owns_output_path_policy",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::project_report_counts_flows_across_modules",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::release_project_diagnostics_reject_dynamic_goto",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::runtime_plan_cache_envelope_rejects_wrong_schema_and_fingerprint",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::release::tests::publish_artifact_parser_accepts_windows_absolute_source_path",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::release::tests::publish_artifact_spec_requires_source_and_destination",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::release_sign::tests::sign_awfb_bytes_appends_verifiable_release_signature",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::remote_embedding::tests::remote_command_provider_normalizes_fixture_vectors",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::remote_embedding::tests::remote_command_provider_rejects_missing_chunk_vectors",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::executor::tests::runtime_executor_product_flow_and_repeated_bench_preserve_original_program_and_inputs",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::executor::tests::runtime_executor_product_never_falls_back_for_missing_executable_or_foreign_flow_schema",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::executor::tests::runtime_executor_selection_starts_the_actual_tier_and_original_product_entry",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::expectations::tests::nested_script_scope_keeps_the_goto_and_rejects_unhandled_commands",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_file_state_tracks_size_changes",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_inputs_detect_authored_file_additions",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_inputs_detect_modules_added_by_an_explicit_project_reload",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_inputs_include_authored_asset_and_content_files",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_inputs_include_project_manifest_and_modules",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_patch_transport_action_restarts_only_for_non_live_compatibility",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_patch_transport_envelope_writes_restart_fallback_action",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_patch_transport_output_path_replaces_awfb_extension",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::web_entry_query_uses_rfc3986_component_encoding",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::source::tests::source_headless_run_resolves_bundled_png_with_view_source_in_both_tiers",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::verify::tests::z3_bin_env_accepts_direct_executable_path",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::verify::tests::z3_bin_env_points_to_platform_executable",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "output::denied_analysis_tests::diagnostic_json_preserves_complete_graph_and_exact_source_revision",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "server_adapter::tests::native_http_adapter_reports_runtime_assertion_without_changing_flow_status",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "server_adapter::tests::native_http_adapter_requires_respond_host_call_manifest",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "server_adapter::tests::native_http_adapter_routes_request_to_flow",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::arcweft_bench_report_summarizes_measured_samples_only",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::arcweft_bench_sample_extracts_path_free_runtime_counters",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::count_lines_does_not_allocate_utf8_strings",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::math_bench_report_summarizes_backend_timings",
+      "ignored": false,
+      "status": "mismatch"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::math_bench_sample_extracts_backend_counters",
+      "ignored": false,
+      "status": "mismatch"
+    }
+  ]
+}

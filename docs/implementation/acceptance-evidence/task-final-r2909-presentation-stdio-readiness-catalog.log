@@ -1,0 +1,8 @@
+  error: operator didn't match any binary names
+   ╭────
+ 1 │ binary(=arcweft-cli) & test(=app::agent::mcp_stdio::tests::stdio_transport_times_out_and_retains_bounded_stderr_tail)
+   ·        ──────┬─────
+   ·              ╰── no binary names matched this
+   ╰────
+
+error: failed to parse filterset

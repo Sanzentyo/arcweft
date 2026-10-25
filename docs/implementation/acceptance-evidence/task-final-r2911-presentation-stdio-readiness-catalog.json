@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "name": "task-final-r2911-presentation-stdio-readiness-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-presentation-owner-cli-retry-binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "test(=app::agent::mcp_stdio::tests::stdio_transport_times_out_and_retains_bounded_stderr_tail)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2911-presentation-stdio-readiness-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T01:35:59.9703170Z",
+  "finishedAt": "2026-10-25T01:36:00.3650911Z"
+}

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "run": "task-final-r2912-presentation-stdio-readiness-runtime",
+  "actualExitCode": 0,
+  "originalRun": "task-final-r2908-presentation-owner-reverse-runtime",
+  "binary": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_cli-a6fe9b122dd4b8b5.exe",
+  "binarySha256": "a07d135efa0febd689043d29bcbd133113c8a6f76c4e5b3ea52fab3dd3c76153",
+  "newBuild": false,
+  "changedInputs": false,
+  "readyDeadlineSeconds": 2,
+  "requestTimeoutMilliseconds": 250,
+  "stderrTailBytes": 32,
+  "scope": "Single unchanged-case recheck after the full selection; preserves the original full-run failure and does not establish its cause",
+  "at": "2026-10-25T01:36:06.6694890Z"
+}

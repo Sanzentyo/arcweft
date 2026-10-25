@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "base": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "metadataSource": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "manifestLockDrift": 0,
+  "changed": [
+    "arcweft-compiler"
+  ],
+  "reverseWorkspace": [
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-repl",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-web",
+    "arcweft-runtime-host",
+    "arcweft-verify-lsp"
+  ],
+  "packageCount": 10,
+  "owned": [
+    "crates/arcweft-compiler/tests/ui/runtime_capability_policy_absent.stderr"
+  ],
+  "held": [
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+    "crates/arcweft-runtime-host/src/native_task.rs",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+    "samples/agent-script/native-choice-dispatch.arcw",
+    "samples/agent-script/native-project-graph-relations.arcw",
+    "samples/agent-script/native-visual-regression.arcw",
+    "samples/image-animation.arcw",
+    "samples/rich-text-full-grammar.arcw",
+    "samples/rich-text-windows-fonts.arcw"
+  ]
+}

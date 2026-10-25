@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "name": "task-final-r2913-presentation-diagnostic-catalog",
+  "all": 1,
+  "matched": 1,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::api_compile",
+      "test": "removed_compiler_apis_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

@@ -1,0 +1,145 @@
+{
+  "rust-build-meta": {
+    "target-directory": "D:\\git\\arcweft\\target",
+    "build-directory": "D:\\git\\arcweft\\target",
+    "base-output-directories": [
+      "debug"
+    ],
+    "non-test-binaries": {
+      "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0": [
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_browser_bench.dll",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_browser_bench.dll.exp",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_browser_bench.dll.lib",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_browser_bench.pdb",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_browser_bench",
+          "kind": "dylib",
+          "path": "debug/deps/libarcweft_browser_bench.rlib",
+          "build-platform": "target"
+        }
+      ],
+      "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0": [
+        {
+          "name": "arcw",
+          "kind": "bin-exe",
+          "path": "debug/arcw.exe",
+          "build-platform": "target"
+        }
+      ],
+      "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0": [
+        {
+          "name": "arcweft-lsp",
+          "kind": "bin-exe",
+          "path": "debug/arcweft-lsp.exe",
+          "build-platform": "target"
+        }
+      ],
+      "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0": [
+        {
+          "name": "arcweft-player-native",
+          "kind": "bin-exe",
+          "path": "debug/arcweft-player-native.exe",
+          "build-platform": "target"
+        },
+        {
+          "name": "windows-tsf-ime-sample",
+          "kind": "bin-exe",
+          "path": "debug/windows-tsf-ime-sample.exe",
+          "build-platform": "target"
+        }
+      ],
+      "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0": [
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_player_web.dll",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_player_web.dll.exp",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_player_web.dll.lib",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/arcweft_player_web.pdb",
+          "build-platform": "target"
+        },
+        {
+          "name": "arcweft_player_web",
+          "kind": "dylib",
+          "path": "debug/deps/libarcweft_player_web.rlib",
+          "build-platform": "target"
+        }
+      ]
+    },
+    "build-script-out-dirs": {
+      "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0": "debug/build/arcweft-cli-86702cfd0bcaa78b/out"
+    },
+    "build-script-info": {},
+    "linked-paths": [
+      "debug/build/blake3-10d058e1ab0beac6/out",
+      "debug/build/libsqlite3-sys-030d8f36b1d9d297/out",
+      "debug/build/ring-0e92a9ace67bbdc4/out",
+      "debug/build/zstd-sys-6cceb1064e6d7a37/out"
+    ],
+    "platforms": {
+      "host": {
+        "platform": {
+          "triple": "x86_64-pc-windows-msvc",
+          "target-features": "unknown"
+        },
+        "libdir": {
+          "status": "available",
+          "path": "C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib"
+        }
+      },
+      "targets": []
+    },
+    "target-platforms": [
+      {
+        "triple": "x86_64-pc-windows-msvc",
+        "target-features": "unknown"
+      }
+    ],
+    "target-platform": null
+  },
+  "rust-binaries": {
+    "arcweft-cli": {
+      "binary-id": "arcweft-cli",
+      "binary-name": "arcweft_cli",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_cli-a6fe9b122dd4b8b5.exe",
+      "build-platform": "target"
+    }
+  }
+}

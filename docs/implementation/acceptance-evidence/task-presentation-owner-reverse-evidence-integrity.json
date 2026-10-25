@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "base": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "records": 33,
+  "bytes": 10485924.0,
+  "artifactCopyMove": false,
+  "scope": "Raw logs, exit receipts, catalogs, source hashes and audits only; no build binaries copied",
+  "files": [
+    {
+      "file": "task-final-r2907-presentation-owner-reverse-catalog.json",
+      "bytes": 2593,
+      "sha256": "1c7acb0d48e2d24bff741d20a1c9056afdec2c21ce68e652e94499c01a49cb5b",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2907-presentation-owner-reverse-catalog.log",
+      "bytes": 1362660,
+      "sha256": "2a02c84b1bc4a18f34399f0a180c918c4ef3119db414ad29e8911407cbf6a869",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2907-presentation-owner-reverse-catalog.inventory.json",
+      "bytes": 1834738,
+      "sha256": "071bdf2eb858ebdaab0c321f35191964fc32ed63b612c25f55e75ebe69138ff9",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2908-presentation-owner-reverse-runtime.json",
+      "bytes": 2655,
+      "sha256": "28418872c50061c52cab810e56cf298b3a8f2b51e5bdbf8ed93c8aca5862dfab",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2908-presentation-owner-reverse-runtime.log",
+      "bytes": 5394742,
+      "sha256": "14d91ed1bab3f467aa497f9cd247c263a4eda844b4b119f181c45d7fc010b4a2",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2908-presentation-owner-reverse-runtime.terminal-audit.json",
+      "bytes": 9288,
+      "sha256": "f55b6fd8e99ed6491a0eb1ec47bff4cb639114acb00437949460971a062fed3c",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-owner-reverse-acceptance.json",
+      "bytes": 56546,
+      "sha256": "cb0a2379254b37893c3d21d1f891d2e219db65388d8758c9ddb5d54129fc0d09",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-owner-reverse-generic-selection.json",
+      "bytes": 38750,
+      "sha256": "bccfbc49c95afee513ce1ea13ff800ac2a464bd187652b7ab97166d287c71701",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-owner-reverse.executables.before.json",
+      "bytes": 56291,
+      "sha256": "17af12f2b522e73810cc54bd85c5f30df52614a87e75f941803689255fe69a1f",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-owner.graph.json",
+      "bytes": 4088,
+      "sha256": "925bb4a9e8bbebcdc056a7663a1fb3d0a4f1448f6d718581f1b891f7e407722a",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-owner.source-freeze.json",
+      "bytes": 779301,
+      "sha256": "163a9e1f1ee99c23b2768bf9f6597c0b2ce5c40f351df4fe0a82c709d9aec62c",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2909-presentation-stdio-readiness-catalog.json",
+      "bytes": 937,
+      "sha256": "38b51a6d1201cc01d6b46ac15efb1d0901fa6b9599b4459524223345209fe6c2",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2909-presentation-stdio-readiness-catalog.log",
+      "bytes": 361,
+      "sha256": "8b262f3fb1b8d58f802997bd0ddc3433fd24e6dbc70b63a5c6bfa6aec8ca8c08",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2911-presentation-stdio-readiness-catalog.json",
+      "bytes": 913,
+      "sha256": "294caadeeeab61203da0e9f893e3f2802e1ac9e1ee20111651e2890a9b0780ee",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2911-presentation-stdio-readiness-catalog.log",
+      "bytes": 38626,
+      "sha256": "7f64ad4af0efe40b3d972477a703965863a93e152b8d0f98f919275b5f80a348",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2911-presentation-stdio-readiness-catalog.inventory.json",
+      "bytes": 46671,
+      "sha256": "41d857b0d948ec49ef10cce3dad82907338206f3039afefb2e3bd00c8d5ad4e8",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2912-presentation-stdio-readiness-runtime.json",
+      "bytes": 982,
+      "sha256": "da38e2bcedc350d3ec5d1bbf8d7df76ce91c361e2b1f02d64e9edf91b666ad69",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2912-presentation-stdio-readiness-runtime.log",
+      "bytes": 54707,
+      "sha256": "44ab71620be13aef0bef7824fbca9a028fef114a3df6080836a2b3b2642d8884",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2912-presentation-stdio-readiness-runtime.terminal-audit.json",
+      "bytes": 575,
+      "sha256": "9bef45cf459b8498017dbe06a3f2f777d176dbce638eb92aef5a1e2690d2dd59",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-owner-stdio-readiness-recheck.json",
+      "bytes": 689,
+      "sha256": "e0a1cf589111a21622afcd2f8282d73615201c927a8e2d6c7839a875b2325fc8",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-owner-cli-retry-binaries.json",
+      "bytes": 4586,
+      "sha256": "7c0cb9f469ad1af7f3decc61a501a412b0c9ee0d1d8508a81fe87a0240f1fae4",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2913-presentation-diagnostic-catalog.json",
+      "bytes": 848,
+      "sha256": "4f3bd8af41d6bd857452ae259cc2401c9f0d09bc7a4afe07d761b2203ed47fdb",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2913-presentation-diagnostic-catalog.log",
+      "bytes": 3373,
+      "sha256": "061c00e202dd961e160b25ac3f2dc3243311cd779cd033272d41cc57287f7210",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2913-presentation-diagnostic-catalog.inventory.json",
+      "bytes": 362,
+      "sha256": "0331910aa93bdae2c2bb6464170409c0678404d87805507a7e1dd85aea8685f7",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2914-presentation-diagnostic-runtime.json",
+      "bytes": 917,
+      "sha256": "d4ae5b332dae5b075501b3346c1a396e635cae6835df277b344df3266ed14bf9",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2914-presentation-diagnostic-runtime.log",
+      "bytes": 455,
+      "sha256": "dbf16fc4d0dfec3a6e05f0ce08a12c8caa9024ef5c47f9e94297cb26a5b31225",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2914-presentation-diagnostic-runtime.terminal-audit.json",
+      "bytes": 566,
+      "sha256": "4d8379cbc023edc79067d4a16601e1f2226116b299ef4890afc2874f96bb0401",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-diagnostic-binaries.json",
+      "bytes": 4628,
+      "sha256": "64f39aafe230d3bbf9fe858038eeaeb5569ffd3bc2cba0af1d0478832222de3a",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-diagnostic.graph.json",
+      "bytes": 1640,
+      "sha256": "2b03694561d9da96cb4a3beaad4b410b0fcbbff9036b28432eca4d94376f5ced",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-diagnostic.source-freeze.json",
+      "bytes": 778018,
+      "sha256": "f65750106850eb4caeefd1a3a56e9eea8a15277f8136560d739db6a28024e9aa",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-diagnostic-recheck.json",
+      "bytes": 1349,
+      "sha256": "e12030ffa4219b62e5d5fd51396f5de38f857ef83aa9111ba423eea2da8d70d0",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-owner-publication.verified.json",
+      "bytes": 1792,
+      "sha256": "7ce080a27e53f4fb15169ea24e0504414c1ad6b5c69ab5fa06aafd38e2c80695",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-source-contract-checkpoint.verified.json",
+      "bytes": 1277,
+      "sha256": "937efb07fbd05298872ea9a5c546564ab894f8e9883a48704081064aa3e99cec",
+      "byteIdentical": true
+    }
+  ],
+  "at": "2026-10-25T01:42:30.8386862Z"
+}

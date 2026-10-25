@@ -11033,3 +11033,74 @@ parentは `9038c82a7a0aff5650bc635d74ff21f7e7cba69e`、treeは
 公開ref／全60 pathのblob／6,481保持入力、元14 tracked WIPのpatch、空indexを照合した。
 [公開照合原本](acceptance-evidence/task-presentation-owner-checkpoint.verified.json)。
 この公開後の文書更新ではCargo／runtimeを再実行せず、検証済みsourceと公開sourceの一致を使った。
+
+## Engine所有変更の全53逆依存・失敗の切り分け — 2026-10-25
+
+観測mainは `3f719081009c1b7159c46c58bca10031731c1f90`、検証したCore変更は
+`4a626c6fd1ef3c43a400b983fc118623d689b18f`。途中の文書公開
+`2d1ce741898668793248d3d0dffd29698e0d6ba3` はparentが同Core公開、treeは
+`1b9d1fb5bf0ac25f6388a69ee4f331e476076cda`、patch SHA256は
+`7bd6e38d18aacd56bd3b21fcd0ad35478e1ed2e33ffdc5652a596dba10c34ef1`。
+画像契約の表現訂正を含む `3f719081009c1b7159c46c58bca10031731c1f90` のtreeは
+`9aec0568f76f2d42e30b225c4e14139df133430f`、patch SHA256は
+`432d2a88a868e9e62488a381d9eb1ba4422d0bfe9f52898f06a2da6e325b2797`。
+いずれも通常commit／non-forced push後、公開ref・全pathのblob・保持WIP・空indexを照合した。
+[文書公開の照合](acceptance-evidence/task-presentation-owner-publication.verified.json)、
+[画像契約訂正の公開照合](acceptance-evidence/task-presentation-source-contract-checkpoint.verified.json)。
+
+R2907はUTC 00:21:29から01:02:57まで全target／全feature／lockedのcatalogを構築した。
+build表示は38分25秒。実際のCargo Core逆依存53 packageから、全7,349 caseのうち
+7,310件を選択し、39件は既存ignored。221 test binariesと6 non-test binariesを構築した。
+50 packageにnamed caseがあり、`arcweft`／`arcweft-bundle-assets`／`arcweft-render-web` は
+buildのみで、実行したnamed caseはない。
+[catalog原本](acceptance-evidence/task-final-r2907-presentation-owner-reverse-catalog.log)、
+[コマンドと終了0](acceptance-evidence/task-final-r2907-presentation-owner-reverse-catalog.json)。
+
+R2908はUTC 01:03:28から01:34:30まで実行し、終端は
+**7,310実行／7,258 PASS／52 FAIL／39 ignored**、終了100、1,836.569秒、slow 68件。
+catalogと全終端case集合が一致し、実行前後で3,980非文書入力と227実行ファイルのhash差分0。
+Core 2,070／2,070、Sema 1,334／1,334、runtime-driver 177／177がPASS。
+Compilerは616 PASS／1 FAIL、CLIは640 PASS／51 FAILだった。
+[全package・失敗集合・適用範囲](acceptance-evidence/task-presentation-owner-reverse-acceptance.json)、
+[厳密な終端照合](acceptance-evidence/task-final-r2908-presentation-owner-reverse-runtime.terminal-audit.json)、
+[原ログ](acceptance-evidence/task-final-r2908-presentation-owner-reverse-runtime.log)。
+
+Generic Matchの受入151件は全件を選択し、**151／151 PASS**。
+内訳は115 transcript／24 coverage／5公開query／7 Native-AWBCで、受入の再開根拠はない。
+Array Mapの4,096要素を含むSource parity、retained Viewのbudget失敗後restore、
+IMEの実際のnightly generator fixture、REPLのprivate API拒否検査も通常選択で実行した。
+workload・assertion・budgetを弱めず、実行時間の長いケースも除外していない。
+これはEngine所有・通常Native cleanup・private rollbackの横断検証であり、
+Source／command ABI／AWBC Presentation／driverや全体goalの包括的受入ではない。
+
+前段の共有型公開 `fb04fd878622fac57a22db7e2c005ee6daa829ea` に対するR2864は
+別の全62逆依存で、9,179実行／9,129 PASS／50 FAIL／47 ignored、終了100、976.019秒だった。
+library 62／integration 179／bin 5 target、252実行ファイルと6,314入力のhash差分0。
+この過去結果を現状一覧の最新実行欄から移し、[当時の範囲](acceptance-evidence/task-presentation-handle-reverse-coverage.json)
+と[終端照合](acceptance-evidence/task-final-r2864-presentation-handle-reverse-runtime.terminal-audit.json)は保持した。
+R2908ではその失敗50識別子がすべて選択され再び失敗し、追加識別子は次の2件だった。
+50件について確認したのは識別子集合の一致であり、すべての根本原因が同一との断定ではない。
+
+- CLI `stdio_transport_times_out_and_retains_bounded_stderr_tail` は、request送信前の
+  READY待ち2秒で失敗した。子processは未終了でstderrは空だった。
+  R2909の最初の単独catalogはbinary-nameの指定が一致せず終了94、テスト未実行。
+  R2910は開始していない。正しいexact test filterのR2911は191件中1件選択、190件非選択。
+  R2912は**1／1 PASS**、1.406秒、終了0。元の実行ファイルhashと3,980入力の差分0、
+  READY 2秒／request timeout 250ms／stderr tail 32byteを変更していない。
+  一度の同条件再確認で再現しなかった事実を保持し、原因や既存不具合とは断定しない。
+  [再確認の条件](acceptance-evidence/task-presentation-owner-stdio-readiness-recheck.json)、
+  [失敗した選択receipt](acceptance-evidence/task-final-r2909-presentation-stdio-readiness-catalog.json)。
+- Compiler `removed_compiler_apis_are_unavailable` は8例中1例の期待診断で、
+  `HostTaskRequest<_>::Custom` が完全修飾表記になったため不一致だった。
+  `.stderr` の2行だけを実際の表記へ訂正し、`.rs` fixtureと欠落policyに対する
+  E0560／E0559を保持した。R2913は対象1件を選択し、R2914は**1／1 PASS**、
+  2.646秒、終了0。同じCompiler実行ファイルでcompile-fail 8例を実行し、新buildはない。
+  変更後の3,980非文書入力を別freezeで照合した。
+  [変更範囲と実行ファイル照合](acceptance-evidence/task-presentation-diagnostic-recheck.json)、
+  [再確認の終端](acceptance-evidence/task-final-r2914-presentation-diagnostic-runtime.terminal-audit.json)。
+
+後続の2件の単独成功をR2908の全体成功へ読み替えず、52 FAILの原結果は変更していない。
+原ログ・exit receipt・catalog・入力hash・公開照合等33件／10,485,924 bytesをbyte／SHA256一致で保全した。
+build生成物の移動・コピーはしていない。
+[原本保全一覧](acceptance-evidence/task-presentation-owner-reverse-evidence-integrity.json)。
+元のtracked WIP 14件とuntracked実ファイル6件を保持した。

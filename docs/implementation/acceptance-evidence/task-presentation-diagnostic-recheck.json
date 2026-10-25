@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "observedHead": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "originalRun": "task-final-r2908-presentation-owner-reverse-runtime",
+  "run": "task-final-r2914-presentation-diagnostic-runtime",
+  "actualExitCode": 0,
+  "changedPath": "crates/arcweft-compiler/tests/ui/runtime_capability_policy_absent.stderr",
+  "changedLines": 2,
+  "change": "Qualify HostTaskRequest variant spelling in expected E0559 diagnostics; preserve both missing-policy-field errors and fixture source",
+  "selectedTests": 1,
+  "compileFailFixtures": [
+    "tests/ui/compile_project_with_env_removed.rs",
+    "tests/ui/agent_effects_module_removed.rs",
+    "tests/ui/removed_zero_consumer_compiler_facades.rs",
+    "tests/ui/lower_source_tree_removed.rs",
+    "tests/ui/lower_source_document_removed.rs",
+    "tests/ui/parse_source_text_removed.rs",
+    "tests/ui/runtime_capability_policy_absent.rs",
+    "tests/ui/no_linked_hir.rs"
+  ],
+  "binary": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-5634c01cc95f5cca.exe",
+  "binarySha256": "9625edb58f3ea1342ec48faa5178bc39172a424df0c1f38bec30946ba0aa6563",
+  "binaryDrift": 0,
+  "newBuild": false,
+  "scope": "Focused golden repair validation only. The original full selection remains 7258 passed / 52 failed / 39 ignored.",
+  "recordedAt": "2026-10-25T01:42:15.4510810Z"
+}

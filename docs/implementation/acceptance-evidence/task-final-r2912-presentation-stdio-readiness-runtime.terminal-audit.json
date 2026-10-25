@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "run": "task-final-r2912-presentation-stdio-readiness-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   1.406s] 1 test run: 1 passed, 190 skipped",
+  "executed": 1,
+  "passed": 1,
+  "failed": 0,
+  "skipped": 190,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3980,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T01:36:05.8752811Z"
+}

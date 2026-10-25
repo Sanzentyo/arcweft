@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "commit": "2d1ce741898668793248d3d0dffd29698e0d6ba3",
+  "parent": "4a626c6fd1ef3c43a400b983fc118623d689b18f",
+  "tree": "1b9d1fb5bf0ac25f6388a69ee4f331e476076cda",
+  "remote": "2d1ce741898668793248d3d0dffd29698e0d6ba3",
+  "advertised": "2d1ce741898668793248d3d0dffd29698e0d6ba3",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-checkpoint.verified.json",
+      "blob": "1ff3cdd30121f025ac811347199ff335d862a386",
+      "sha256": "5649dba2742e9995f82fac06143dcd8a232efa13492518bf9863e7557f3a5253"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-publication-doc-audit.json",
+      "blob": "f981ee883cfdb3eb27506ea9a202068b8622e869",
+      "sha256": "eee28e1cf3e2403b151e75d23a62b9e31690f2a1763118cc2f9f58b8ec823a21"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "44e658181938f6abf58f79b86d2e85f91665d27f",
+      "sha256": "242111e049310d36f2b8db9259fc2415bc8eb6c8bdf65c55fac5add7e4a23362"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "aa4e87ac08074613be19d4f84ad03f11ac6e68e2",
+      "sha256": "28ffe34bad0346e2299b4cb577551c019d3cb629a60114578e980c8ff39c9287"
+    }
+  ],
+  "patchSha256": "7bd6e38d18aacd56bd3b21fcd0ad35478e1ed2e33ffdc5652a596dba10c34ef1",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "sourceValidation": "Git tree differs only in these four documents; complete unstaged patch equals the original 14 tracked WIP; original six untracked files byte-hashed unchanged. Unchanged source hashes retained from prior verified checkpoint.",
+  "indexEmpty": true,
+  "at": "2026-10-25T00:35:20.9454656Z"
+}

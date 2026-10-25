@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "name": "task-final-r2914-presentation-diagnostic-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-presentation-diagnostic-binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "-E",
+    "test(=removed_compiler_apis_are_unavailable)",
+    "--no-tests",
+    "fail",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2914-presentation-diagnostic-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T01:38:05.2184317Z",
+  "finishedAt": "2026-10-25T01:38:08.0672620Z"
+}

@@ -1,0 +1,7 @@
+────────────
+ Nextest run ID 92b23e2d-b7ff-4ff1-8b1b-efb9a6e93832 with nextest profile: default
+    Starting 1 test across 1 binary
+        PASS [   2.645s] (1/1) arcweft-compiler::api_compile removed_compiler_apis_are_unavailable
+────────────
+     Summary [   2.646s] 1 test run: 1 passed, 0 skipped
+        PASS [   2.645s] (1/1) arcweft-compiler::api_compile removed_compiler_apis_are_unavailable

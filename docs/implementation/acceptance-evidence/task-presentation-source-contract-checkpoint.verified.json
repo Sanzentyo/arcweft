@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "commit": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "parent": "2d1ce741898668793248d3d0dffd29698e0d6ba3",
+  "tree": "9aec0568f76f2d42e30b225c4e14139df133430f",
+  "remote": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "advertised": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "paths": [
+    {
+      "path": "docs/03-presentation/image-presentation-objects.md",
+      "blob": "d73f69422024e7b10ad5646425d6073a4e219c50",
+      "workingBlob": "d73f69422024e7b10ad5646425d6073a4e219c50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-source-contract-doc-audit.json",
+      "blob": "4760cedb4c3461e1991ca6032c19418576fa9e35",
+      "workingBlob": "4760cedb4c3461e1991ca6032c19418576fa9e35"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "bde0f03056deb515c046b2d33ebb1b527d8107ea",
+      "workingBlob": "bde0f03056deb515c046b2d33ebb1b527d8107ea"
+    }
+  ],
+  "sourceCount": 6484,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "432d2a88a868e9e62488a381d9eb1ba4422d0bfe9f52898f06a2da6e325b2797",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-25T00:48:42.6735579Z"
+}
