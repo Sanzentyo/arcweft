@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "base": "0a5a31b33392b6e4ddb8afb7473cd0a05e6f0527",
+  "purpose": "LSP private stamp-fixture input-staging repair with 223-case runtime, unchanged deadline/guards and explicit independent HIR scope.",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3128-signature-stamp-staging-catalog.log",
+      "bytes": 239574,
+      "sha256": "f6c52c8a2f88fe2b3f70d4cc2062c73c637b2fb999fdf2a0ab21aec5da66eb95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3128-signature-stamp-staging-catalog.json",
+      "bytes": 2628,
+      "sha256": "b3bf99fd4ab4c0c23c30a515b0dbcdf03be404fa158eff1d76766c9d44638ac4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3128-signature-stamp-staging-catalog.inventory.json",
+      "bytes": 53048,
+      "sha256": "82ab6ab3b11df87e034d0a3ec15c1157952427686e484fb14b1bdff06b219294"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3129-signature-stamp-staging-runtime.log",
+      "bytes": 162285,
+      "sha256": "078e14908f7087d0834db33927f2ea9b9f8b608bc84574fafde3b7045be36834"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3129-signature-stamp-staging-runtime.json",
+      "bytes": 2720,
+      "sha256": "0fc9b6395bed083bca730f55c0c5e10316abde2585898f1345438ed4e45bc472"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3129-signature-stamp-staging-runtime.terminal-audit.json",
+      "bytes": 2010,
+      "sha256": "fc5f9536608b27d246dbef4fcaecd152d86da9efdca4f562f2a3ca7398a343f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3130-signature-stamp-staging-clippy.log",
+      "bytes": 4978065,
+      "sha256": "3aa9e02964202c2778a3b014b4680207408f665f7de18eaedfc485503697971a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3130-signature-stamp-staging-clippy.json",
+      "bytes": 530,
+      "sha256": "299d63947d4f5df075886679776c3fd43508f58d5ad698df6817a9f7a5ec95e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3130-signature-stamp-staging-clippy.input-audit.json",
+      "bytes": 336,
+      "sha256": "1fa9fc5270b1c1d08225deb43845b2bcac5a1074ffaf096e1d4e1391fff37266"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-signature-stamp-staging-executables-before.json",
+      "bytes": 56288,
+      "sha256": "83052dedd911a9e102d95e2fe4f0b17dab9a3614d9c61a9ff685185a6ba99c3e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-signature-stamp-staging-executables-after.json",
+      "bytes": 56287,
+      "sha256": "952f64f105ae6ea9b6b784db0062aca51e1dd3d3913759af91a502636a22d44b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-signature-stamp-staging.graph.json",
+      "bytes": 2215,
+      "sha256": "538f151dcf820d31a037791e692403a0bf86e78442aeb70e4ea168f1d85705e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-signature-stamp-staging.source-freeze.json",
+      "bytes": 779404,
+      "sha256": "1d08250200a6fdf1fb900530c3b588698234d96ad957fd45e05cd79585fc7914"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-signature-stamp-staging-freeze.ps1",
+      "bytes": 2021,
+      "sha256": "8f456ee3660323974b2571336a4225c4e02d066cc56bcf7221720af2ea0405d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-signature-stamp-staging-driver.ps1",
+      "bytes": 2750,
+      "sha256": "21cdf015555fd2d0649c7e07b363c0e034ad1e4b9c39f35e2179a33c371dfb9a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-signature-stamp-staging-acceptance.json",
+      "bytes": 5073,
+      "sha256": "c7f37fa3912a8f5c694ba9c8139c00839f3a596967ea419000a601bd1d8e55fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-reverse.verified.json",
+      "bytes": 2468,
+      "sha256": "94d8a574b23061e824c54b0472199107cf0ab23ac2c187aa3c975ab8274c403c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-reverse-public-evidence-audit.json",
+      "bytes": 134,
+      "sha256": "990473979a074c6cdd4a9b80229b88f2e57c485a2fb636132836c92e32d30746"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current.source-freeze.json",
+      "bytes": 255972,
+      "sha256": "955be8640185901dc21453c0760a14b84c5fb4cf407040fb507760f8dd14457a"
+    }
+  ],
+  "totalBytes": 6603808,
+  "artifactCopyMove": false
+}

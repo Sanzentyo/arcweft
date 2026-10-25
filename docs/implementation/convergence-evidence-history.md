@@ -11992,3 +11992,36 @@ R3121のCLI 50失敗はR3095と識別子が一致した。最新の[全原診断
 | bench／profile／plan／scenario等の期待値 | 14 | 計測counter、task graph、scenario/assertion、unsafe一覧等が期待値と一致しない。 |
 
 過去の52 FAILや単独再確認の条件は[履歴](convergence-evidence-history.md)と原本に保持し、後続の成功で書き換えない。
+
+## LSP stamp fixtureの入力準備とrequest lifetimeの分離 — 2026-10-26
+
+公開 `0a5a31b33392b6e4ddb8afb7473cd0a05e6f0527` はparent
+`197c80372c737d0e8a4cbbf81e32c5635d5f1f19`、tree
+`06e5ad76c377f52cd212cf7be11d79fdc408d000`、full patch SHA256
+`c17087b57e8c43d76b000f7f8c1d3952e0bcf779493f9822e2bba8b369665c1a`。
+全11公開blob・原本等8件の公開byte hash差分0。元WIP 14件を保持した。
+
+R3121の新規LSP失敗は、environment変異を準備するdisk読込・再構築がrequest admission後にあり、
+その間も10秒deadlineが進んだため、baseline cache hitでDeadlineExceededとなった。
+同じStampMutation代数をunit selector／準備済みArc payloadで表し、disk-backed入力6種を
+request前に構築する。request中は準備済みauthorityを差し替える。productionコード、deadline値、
+19変異×cache-hit／post-computeの全38組と正確なstale／cache不変／publication拒否のassertionは維持した。
+
+R3128はLSP全223件を選択・除外0。R3121と同じ53 packageのfeature統合条件を使用するが、
+実行対象はLSPだけである。R3129は223／223 PASS、24.514秒、終了0。対象matrixもPASS。
+3,987非文書入力と227実行ファイルの前後hash差分0。R3130のLSP Clippyは全target・全feature・locked、
+警告あり・終了0で同じ入力差分0。R3121からのsource差分はprivate cfg(test) 1ファイルだけ、
+実行ファイル差分もLSP unit binary 1件だけで、他226件は一致する。CLIは逆依存だがproduction/library
+コードを変更していないため、このprivate fixture修復でCLI全件を重複実行していない。
+[owner検証・再利用範囲・構造実測](acceptance-evidence/task-signature-stamp-staging-acceptance.json)。
+
+変更ownerはLSPのtest 41,542 bytes／1,060 physical LOC、基点から+41 LOC。
+同じstamp/cache/publication責任を保ち、公開API・依存・feature・I/O所有境界を増やしていない。
+過去の全53 runの7,298 PASS／51 FAILを後続成功で書き換えず、別入力のowner修復として区別する。
+原本等19件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-signature-stamp-staging-evidence-integrity.json)。
+
+並行するHIR Tier 2は、開始前に照合済みの依存8 workspace package／関連global 1,322入力を
+LSP変更の直前にも照合し差分0。これをHIR専用freezeとして明記し、独立するLSP test変更を進めた。
+初期supervisorは3,987入力の広いguardを使うため、無関係なLSP差分も検出する。
+その広いguardの成功を主張せず、終端時は元の診断を残し、事前記録済みHIR依存入力と実バイナリで監査する。
+[HIRのscope記録](acceptance-evidence/task-hir-tier2-current.source-freeze.json)。

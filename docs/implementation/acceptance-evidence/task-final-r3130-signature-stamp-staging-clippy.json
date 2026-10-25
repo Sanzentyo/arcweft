@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "0a5a31b33392b6e4ddb8afb7473cd0a05e6f0527",
+  "name": "task-final-r3130-signature-stamp-staging-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-lsp",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3130-signature-stamp-staging-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T19:29:11.2582086Z",
+  "finishedAt": "2026-10-25T19:32:57.1501284Z"
+}

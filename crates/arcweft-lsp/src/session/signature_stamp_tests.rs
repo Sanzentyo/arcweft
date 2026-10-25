@@ -330,20 +330,20 @@ impl ValidationPoint {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum StampMutation {
+enum StampMutation<Alternate = ()> {
     ProfileRemappedOther,
     ProfileRemappedNone,
     ProfileState,
     AcceptedAllocation,
     Generation,
     WorldAllocation,
-    WorldIdentity,
-    SymbolRevision,
-    CharacterDigest,
-    CharacterRevision,
-    EnvironmentDigest,
+    WorldIdentity { alternate: Alternate },
+    SymbolRevision { alternate: Alternate },
+    CharacterDigest { alternate: Alternate },
+    CharacterRevision { alternate: Alternate },
+    EnvironmentDigest { alternate: Alternate },
     ProjectAllocation,
-    HirAllocation,
+    HirAllocation { alternate: Alternate },
     DocumentIdentity,
     DocumentVersion,
     UriMapping,
@@ -359,13 +359,13 @@ const STAMP_MUTATIONS: [StampMutation; 19] = [
     StampMutation::AcceptedAllocation,
     StampMutation::Generation,
     StampMutation::WorldAllocation,
-    StampMutation::WorldIdentity,
-    StampMutation::SymbolRevision,
-    StampMutation::CharacterDigest,
-    StampMutation::CharacterRevision,
-    StampMutation::EnvironmentDigest,
+    StampMutation::WorldIdentity { alternate: () },
+    StampMutation::SymbolRevision { alternate: () },
+    StampMutation::CharacterDigest { alternate: () },
+    StampMutation::CharacterRevision { alternate: () },
+    StampMutation::EnvironmentDigest { alternate: () },
     StampMutation::ProjectAllocation,
-    StampMutation::HirAllocation,
+    StampMutation::HirAllocation { alternate: () },
     StampMutation::DocumentIdentity,
     StampMutation::DocumentVersion,
     StampMutation::UriMapping,
@@ -383,13 +383,13 @@ impl StampMutation {
             Self::AcceptedAllocation => "accepted-arc",
             Self::Generation => "generation",
             Self::WorldAllocation => "world-arc",
-            Self::WorldIdentity => "world-id",
-            Self::SymbolRevision => "symbol-revision",
-            Self::CharacterDigest => "character-digest",
-            Self::CharacterRevision => "character-revision",
-            Self::EnvironmentDigest => "environment-digest",
+            Self::WorldIdentity { .. } => "world-id",
+            Self::SymbolRevision { .. } => "symbol-revision",
+            Self::CharacterDigest { .. } => "character-digest",
+            Self::CharacterRevision { .. } => "character-revision",
+            Self::EnvironmentDigest { .. } => "environment-digest",
             Self::ProjectAllocation => "project-arc",
-            Self::HirAllocation => "hir-arc",
+            Self::HirAllocation { .. } => "hir-arc",
             Self::DocumentIdentity => "document-identity",
             Self::DocumentVersion => "document-version",
             Self::UriMapping => "uri-mapping",
@@ -408,13 +408,13 @@ impl StampMutation {
             Self::AcceptedAllocation => "aw.signature.stale.accepted_replaced",
             Self::Generation => "aw.signature.stale.generation_changed",
             Self::WorldAllocation => "aw.signature.stale.world_arc_changed",
-            Self::WorldIdentity => "aw.signature.stale.world_identity_changed",
-            Self::SymbolRevision => "aw.signature.stale.symbol_revision_changed",
-            Self::CharacterDigest => "aw.signature.stale.character_digest_changed",
-            Self::CharacterRevision => "aw.signature.stale.character_revision_changed",
-            Self::EnvironmentDigest => "aw.signature.stale.environment_digest_changed",
+            Self::WorldIdentity { .. } => "aw.signature.stale.world_identity_changed",
+            Self::SymbolRevision { .. } => "aw.signature.stale.symbol_revision_changed",
+            Self::CharacterDigest { .. } => "aw.signature.stale.character_digest_changed",
+            Self::CharacterRevision { .. } => "aw.signature.stale.character_revision_changed",
+            Self::EnvironmentDigest { .. } => "aw.signature.stale.environment_digest_changed",
             Self::ProjectAllocation => "aw.signature.stale.project_arc_changed",
-            Self::HirAllocation => "aw.signature.stale.hir_changed",
+            Self::HirAllocation { .. } => "aw.signature.stale.hir_changed",
             Self::DocumentIdentity => "aw.signature.stale.document_changed",
             Self::DocumentVersion => "aw.signature.stale.document_version_changed",
             Self::UriMapping => "aw.signature.stale.uri_remapped",
@@ -424,6 +424,47 @@ impl StampMutation {
         }
     }
 
+    fn prepare(
+        self,
+        fixture: &StampMatrixFixture,
+    ) -> StampMutation<Arc<AcceptedProfileEnvironment>> {
+        match self {
+            Self::ProfileRemappedOther => StampMutation::ProfileRemappedOther,
+            Self::ProfileRemappedNone => StampMutation::ProfileRemappedNone,
+            Self::ProfileState => StampMutation::ProfileState,
+            Self::AcceptedAllocation => StampMutation::AcceptedAllocation,
+            Self::Generation => StampMutation::Generation,
+            Self::WorldAllocation => StampMutation::WorldAllocation,
+            Self::ProjectAllocation => StampMutation::ProjectAllocation,
+            Self::DocumentIdentity => StampMutation::DocumentIdentity,
+            Self::DocumentVersion => StampMutation::DocumentVersion,
+            Self::UriMapping => StampMutation::UriMapping,
+            Self::AcceptedDocumentAllocation => StampMutation::AcceptedDocumentAllocation,
+            Self::ModuleMapping => StampMutation::ModuleMapping,
+            Self::ProfileKey => StampMutation::ProfileKey,
+            Self::WorldIdentity { .. } => StampMutation::WorldIdentity {
+                alternate: fixture.accepted_from_disk("alt", SOURCE, CHARACTER_A),
+            },
+            Self::SymbolRevision { .. } => StampMutation::SymbolRevision {
+                alternate: fixture.accepted_from_disk("dev", CHANGED_SOURCE, CHARACTER_A),
+            },
+            Self::CharacterDigest { .. } => StampMutation::CharacterDigest {
+                alternate: fixture.accepted_from_disk("dev", SOURCE, &character_b()),
+            },
+            Self::CharacterRevision { .. } => StampMutation::CharacterRevision {
+                alternate: fixture.advanced_character_revision(),
+            },
+            Self::EnvironmentDigest { .. } => StampMutation::EnvironmentDigest {
+                alternate: fixture.accepted_with_adapter_from_disk("inference-tensor"),
+            },
+            Self::HirAllocation { .. } => StampMutation::HirAllocation {
+                alternate: fixture.accepted_from_disk("dev", SOURCE, CHARACTER_A),
+            },
+        }
+    }
+}
+
+impl StampMutation<Arc<AcceptedProfileEnvironment>> {
     #[allow(
         clippy::too_many_lines,
         reason = "the typed mutation table keeps every contract and later cache authority visibly exhaustive"
@@ -484,8 +525,7 @@ impl StampMutation {
                     prepared.stamp().world().as_ref().clone(),
                 )),
             )),
-            Self::WorldIdentity => {
-                let alternate = fixture.accepted_from_disk("alt", SOURCE, CHARACTER_A);
+            Self::WorldIdentity { alternate } => {
                 assert_ne!(
                     prepared.stamp().world_id(),
                     accepted_world(&alternate).symbols().world()
@@ -495,8 +535,7 @@ impl StampMutation {
                     AcceptedEnvironmentStampMutation::World(accepted_world(&alternate)),
                 ))
             }
-            Self::SymbolRevision => {
-                let alternate = fixture.accepted_from_disk("dev", CHANGED_SOURCE, CHARACTER_A);
+            Self::SymbolRevision { alternate } => {
                 assert_eq!(
                     prepared.stamp().world_id(),
                     accepted_world(&alternate).symbols().world()
@@ -510,8 +549,7 @@ impl StampMutation {
                     AcceptedEnvironmentStampMutation::World(accepted_world(&alternate)),
                 ))
             }
-            Self::CharacterDigest => {
-                let alternate = fixture.accepted_from_disk("dev", SOURCE, &character_b());
+            Self::CharacterDigest { alternate } => {
                 assert_eq!(
                     prepared.stamp().world_id(),
                     accepted_world(&alternate).symbols().world()
@@ -528,8 +566,7 @@ impl StampMutation {
                     AcceptedEnvironmentStampMutation::World(accepted_world(&alternate)),
                 ))
             }
-            Self::CharacterRevision => {
-                let alternate = fixture.advanced_character_revision();
+            Self::CharacterRevision { alternate } => {
                 assert_world_and_revision(prepared, &accepted_world(&alternate));
                 assert_eq!(
                     prepared.stamp().character_digest(),
@@ -546,8 +583,7 @@ impl StampMutation {
                     AcceptedEnvironmentStampMutation::World(accepted_world(&alternate)),
                 ))
             }
-            Self::EnvironmentDigest => {
-                let alternate = fixture.accepted_with_adapter_from_disk("inference-tensor");
+            Self::EnvironmentDigest { alternate } => {
                 assert_eq!(
                     prepared.stamp().world_id(),
                     accepted_world(&alternate).symbols().world()
@@ -598,8 +634,7 @@ impl StampMutation {
                 prepared,
                 rebuilt_project(prepared, ProjectRebuild::Allocation),
             )),
-            Self::HirAllocation => {
-                let alternate = fixture.accepted_from_disk("dev", SOURCE, CHARACTER_A);
+            Self::HirAllocation { alternate } => {
                 assert!(!Arc::ptr_eq(
                     prepared.stamp().hir_project(),
                     alternate.project().hir_project()
@@ -700,7 +735,9 @@ impl StampMutation {
             )),
         }
     }
+}
 
+impl StampMutation {
     #[allow(
         clippy::too_many_lines,
         reason = "the exact stale-variant table mirrors every mutation without string decoding"
@@ -730,13 +767,13 @@ impl StampMutation {
             | (Self::AcceptedAllocation, SignatureRequestStale::AcceptedReplaced)
             | (Self::WorldAllocation, SignatureRequestStale::WorldArcChanged)
             | (Self::ProjectAllocation, SignatureRequestStale::ProjectArcChanged)
-            | (Self::HirAllocation, SignatureRequestStale::HirChanged { .. }) => {}
+            | (Self::HirAllocation { .. }, SignatureRequestStale::HirChanged { .. }) => {}
             (Self::Generation, SignatureRequestStale::GenerationChanged { expected, actual }) => {
                 assert_eq!(*expected, prepared.stamp().generation());
                 assert_eq!(actual.get(), expected.get() + 1);
             }
             (
-                Self::WorldIdentity,
+                Self::WorldIdentity { .. },
                 SignatureRequestStale::WorldIdentityChanged { expected, actual },
             ) => {
                 assert_eq!(expected, prepared.stamp().world_id());
@@ -748,7 +785,7 @@ impl StampMutation {
                 );
             }
             (
-                Self::SymbolRevision,
+                Self::SymbolRevision { .. },
                 SignatureRequestStale::SymbolRevisionChanged { expected, actual },
             ) => {
                 assert_eq!(*expected, prepared.stamp().symbol_revision());
@@ -760,7 +797,7 @@ impl StampMutation {
                 );
             }
             (
-                Self::CharacterDigest,
+                Self::CharacterDigest { .. },
                 SignatureRequestStale::CharacterDigestChanged { expected, actual },
             ) => {
                 assert_eq!(*expected, prepared.stamp().character_digest());
@@ -772,7 +809,7 @@ impl StampMutation {
                 );
             }
             (
-                Self::CharacterRevision,
+                Self::CharacterRevision { .. },
                 SignatureRequestStale::CharacterRevisionChanged { expected, actual },
             ) => {
                 assert_eq!(*expected, prepared.stamp().character_revision());
@@ -784,7 +821,7 @@ impl StampMutation {
                 );
             }
             (
-                Self::EnvironmentDigest,
+                Self::EnvironmentDigest { .. },
                 SignatureRequestStale::EnvironmentDigestChanged { expected, actual },
             ) => {
                 assert_eq!(*expected, prepared.stamp().environment_digest());
@@ -968,6 +1005,10 @@ fn run_stamp_case(mutation: StampMutation, point: ValidationPoint) {
         mutation.label(),
         point.label()
     ));
+    // Disk-backed alternate environments are fixture inputs, constructed before
+    // admitting a deadline-bound request. Applying the mutation only swaps the
+    // already prepared authority and retains every production freshness guard.
+    let prepared_mutation = mutation.prepare(&fixture);
     if matches!(point, ValidationPoint::CacheHit) {
         prime_signature_cache(&fixture);
     }
@@ -975,7 +1016,7 @@ fn run_stamp_case(mutation: StampMutation, point: ValidationPoint) {
     let mut prepared = fixture.prepare(2);
     let computed = matches!(point, ValidationPoint::PostCompute)
         .then(|| fixture.execute(&prepared).expect("post-compute result"));
-    let next = mutation.apply(&fixture, &mut prepared, point);
+    let next = prepared_mutation.apply(&fixture, &mut prepared, point);
     let before = accepted.signature_cache_snapshot_for_test();
     assert_eq!(
         before.entries,

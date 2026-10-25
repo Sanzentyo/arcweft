@@ -1,12 +1,12 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-26。照合基点は公開main `197c80372c737d0e8a4cbbf81e32c5635d5f1f19`。carrier修復後のCore全53逆依存runtimeとworkspace gateの終端を確認した。
+確認日: 2026-10-26。照合基点は公開main `0a5a31b33392b6e4ddb8afb7473cd0a05e6f0527`。後続のprivate LSP fixture 1変更を含む入力でLSP全223件の修復を確認した。
 既存checkoutの元tracked WIP 14件／untracked実ファイル6件を保持している。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画や、保持したuntrackedの2026-10-09 CLI修復メモを、そのまま現在の残作業へ転記しない。
 
-各行の検証は記載した入力と対象範囲に限る。R3121は7,349件中7,298 PASS／51 FAIL／39 ignored。Core 2,080件、Generic 151件、Sema／Source必須17件は全PASS。CLIの50失敗と新規LSP 1失敗を区別する。[最新の終端・package・失敗集合照合](acceptance-evidence/task-handle-codec-reverse-acceptance.json)。
+各行の検証は記載した入力と対象範囲に限る。R3121の統合終端は7,298 PASS／51 FAIL。その新規LSP 1失敗は後続R3129の223／223 PASSで修復確認し、元の51失敗記録も保持する。CLIの50失敗は未修復。[統合終端](acceptance-evidence/task-handle-codec-reverse-acceptance.json)、[後続LSP修復](acceptance-evidence/task-signature-stamp-staging-acceptance.json)。
 
 ## 判定
 
@@ -44,8 +44,8 @@
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、受理済みProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗。checkpointに元executable leaseを保持させ、復元先を同leaseのadmitted Productに限定し、Product／activation／codegenの呼出側も同じadmissionへ移行。R2535の新規Core caseはhandleを取り出して破棄した候補から復元でき、同内容の別leaseは元fiberを保って拒否。private checkpointは非Serde。公開wire DTOのJSON／cleanup検証とR2531 compile-fail 2件PASS、detached Bool入力rollbackを維持。公開saveの全資源境界の包括受入は別。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
-| CLI・全 consumer の統合受入 | **R3121のCLIは641 PASS／50 FAIL、LSPは222 PASS／1 FAIL** | CLIの50識別子はR3095と一致し、CLIでの新規識別子0。別packageのLSPではstamp変異前のbaseline queryがdeadlineで取消され、新規1失敗を観測した。全consumer成功とはしない。[最新のpackage・失敗集合照合](acceptance-evidence/task-handle-codec-reverse-acceptance.json)、[全原診断](acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.failure-recon.json)。識別子一致から同一原因とは断定しない。 |
-| LSP signature stampのcache／publication拒否 | **R3121で新規1失敗。fixture準備順の修正候補は未適用・未検証** | `every_stamp_authority_is_fail_closed_on_hit_and_after_compute` は、environment差し替え用のdisk読込・再構築中にprepared requestの10秒deadlineが進み、baseline cache hitで `DeadlineExceeded` となった。stamp guard自体の違反と断定しない。準備をrequest admissionより前へ移す候補を作成し、19 mutation×2地点のassertionとdeadline値を維持する。[原診断と範囲](acceptance-evidence/task-handle-codec-reverse-acceptance.json)。 |
+| CLI・全 consumer の統合受入 | **R3121統合は51 FAIL。LSP 1件は後続ownerで修復確認、CLI 50件は未修復** | CLIは641 PASS／50 FAILで、50識別子はR3095と一致。R3121のLSPは222 PASS／1 FAIL、その1件はR3129で修復確認した。[統合の原記録](acceptance-evidence/task-handle-codec-reverse-acceptance.json)、[後続ownerの範囲](acceptance-evidence/task-signature-stamp-staging-acceptance.json)。新しい全7,349件runを実施したとはしない。 |
+| LSP signature stampのcache／publication拒否 | **fixture準備順を修復・LSP全223件PASS** | disk-backed alternate environment 6種をrequest admissionより前へ構築する。prepared mutationを同じ型付き代数で保持し、request中はauthority差し替えと検査を行う。19 mutation×cache-hit／post-computeの38組、正確なstale型／cache不変／publication拒否のassertionと10秒deadlineを維持。R3129は223／223 PASS、R3130 Clippyは警告あり・終了0、各3,987入力の前後差分0。[修復と限定影響](acceptance-evidence/task-signature-stamp-staging-acceptance.json)。 |
 | HIRの全23逆依存runtime（Sema全22を含む） | **R3095終端：4,856実行／4,806 PASS／50 FAIL／31 ignored** | 解決済みCargo graphの全23 package、全target／全feature／locked、終了100。全23にnamed caseがあり、115 test binaries・5 non-test binariesを構築。catalogと終端case集合、3,986非文書入力・99 manifest／lock・120 executableのhash差分0。Generic 151件とowner／Source必須17件は全PASS。[範囲・package集計](acceptance-evidence/task-sema-local-use-reverse-acceptance.json)、[終端照合](acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.terminal-audit.json)。 |
 | Coreの全53逆依存runtime | **R3121終端：7,349実行／7,298 PASS／51 FAIL／39 ignored** | 全53 package、全target／全feature／locked、終了100、2,454.113秒。221 test binaries・6 non-test binaries、named caseは50 package、buildのみ3 package。全catalog集合、3,987非文書入力、227実行ファイルの前後hash差分0。統合Coreは2,080／2,080、Compiler 622／622、Sema 1,357／1,357、Generic 151／151、必須owner／Source 17／17 PASS。[終端照合](acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.terminal-audit.json)、[全package・必須ケース・前段比較](acceptance-evidence/task-handle-codec-reverse-acceptance.json)。 |
 | Workspace gate／Tier 2／Native-Web capture parity | **修復後のworkspace check／Clippy・正規構造scannerは終了0、Core doctestは75 PASS** | R3122 check／R3123 Clippyは全target・全feature・locked、警告あり・終了0。R3125 doctestは75／75 PASS。各3,987非文書入力の前後hash差分0。[gate原本と範囲](acceptance-evidence/task-handle-codec-gates.json)。R3124構造scannerと4 ownerの責任境界も[確認済み](acceptance-evidence/task-handle-codec-repair-structure-review.json)。HIRのTier 2 production境界8件はR3127で逐次実行中・未終端。他のTier 2／Native-Web capture parityは未再実行。 |

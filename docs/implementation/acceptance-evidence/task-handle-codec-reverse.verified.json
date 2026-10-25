@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "commit": "0a5a31b33392b6e4ddb8afb7473cd0a05e6f0527",
+  "parent": "197c80372c737d0e8a4cbbf81e32c5635d5f1f19",
+  "tree": "06e5ad76c377f52cd212cf7be11d79fdc408d000",
+  "remote": "0a5a31b33392b6e4ddb8afb7473cd0a05e6f0527",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.failure-recon.json",
+      "blob": "05dc5f1f75c1619b0952baeb9e37fa09dd27be01"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.json",
+      "blob": "8d7e38e7954a263c2f2a847feb917276b289b1f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.log",
+      "blob": "50e08e09d4776746fee4fc9ad63ea6703930b771"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.terminal-audit.json",
+      "blob": "f6604a55cdf93882f2d45bd4d409408ae26f9a80"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-gates-public-evidence-audit.json",
+      "blob": "3b1b6403b5e6f5800cc474d3362b4a707c3d72c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-gates.verified.json",
+      "blob": "dde9ae62f4397cdbe59a276b8860d44c69de5e85"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-reverse-acceptance.json",
+      "blob": "807c11645e73a1e0d507416dd1da9a8ae28cdd51"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-reverse-evidence-integrity.json",
+      "blob": "91562662cb70f691bbba13639bc0d83c43344b16"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-reverse-executables-after.json",
+      "blob": "dfaa7b7f97ea36ca04c85eec3571f3359f52b8bf"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "e0575ba9fd8b74a916911de4d87630b03b7827c9"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "ff0e3cd360fdbeaebf281bb924e0a75931f5da65"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "c17087b57e8c43d76b000f7f8c1d3952e0bcf779493f9822e2bba8b369665c1a",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T19:23:33.5111671Z"
+}

@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "base": "0a5a31b33392b6e4ddb8afb7473cd0a05e6f0527",
+  "sourcePath": "crates/arcweft-lsp/src/session/signature_stamp_tests.rs",
+  "sourceChanges": [
+    "crates/arcweft-lsp/src/session/signature_stamp_tests.rs"
+  ],
+  "scope": "Private cfg(test) signature-stamp fixture only. Production/library source and CLI executable remain unchanged.",
+  "correction": "Prepare six disk-backed alternate-environment inputs before request admission, using the same typed mutation algebra with unit selector and prepared Arc payload phases. Apply only the prepared mutation during the request.",
+  "deadline": "SIGNATURE_REQUEST_DEADLINE.max(Duration::from_secs(10)) unchanged",
+  "matrix": {
+    "mutations": 19,
+    "validationPoints": [
+      "cache-hit",
+      "post-compute"
+    ],
+    "combinations": 38,
+    "allAssertionsRetained": true,
+    "case": {
+      "status": "PASS",
+      "binary": "arcweft-lsp",
+      "test": "session::signature_stamp_tests::every_stamp_authority_is_fail_closed_on_hit_and_after_compute"
+    }
+  },
+  "runtime": {
+    "version": 1,
+    "base": "0a5a31b33392b6e4ddb8afb7473cd0a05e6f0527",
+    "run": "task-final-r3129-signature-stamp-staging-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  24.514s] 223 tests run: 223 passed, 0 skipped",
+    "executed": 223,
+    "passed": 223,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 53,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [
+      "arcweft",
+      "arcweft-adapter-desktop",
+      "arcweft-adapter-sema",
+      "arcweft-agent-mcp",
+      "arcweft-agent-mcp-client",
+      "arcweft-agent-policy",
+      "arcweft-agent-protocol",
+      "arcweft-agent-repl",
+      "arcweft-agent-runner",
+      "arcweft-browser-bench",
+      "arcweft-bundle",
+      "arcweft-bundle-assets",
+      "arcweft-character-view",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-core",
+      "arcweft-debug-model",
+      "arcweft-debug-sqlite",
+      "arcweft-dialogue",
+      "arcweft-glyphon",
+      "arcweft-host-adapter",
+      "arcweft-lang-jit-cranelift",
+      "arcweft-lang-sema",
+      "arcweft-launch",
+      "arcweft-player-native",
+      "arcweft-player-scene",
+      "arcweft-player-text-input",
+      "arcweft-player-web",
+      "arcweft-project",
+      "arcweft-project-loader",
+      "arcweft-rag",
+      "arcweft-render-text",
+      "arcweft-render-web",
+      "arcweft-render-wgpu",
+      "arcweft-resource-manifest",
+      "arcweft-resource-model",
+      "arcweft-runtime-accelerator",
+      "arcweft-runtime-codegen",
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-runtime-plan",
+      "arcweft-runtime-scheduler",
+      "arcweft-save",
+      "arcweft-test",
+      "arcweft-text-layout",
+      "arcweft-text-model",
+      "arcweft-tooling",
+      "arcweft-verify",
+      "arcweft-verify-lsp",
+      "arcweft-verify-oxiz",
+      "arcweft-verify-z3",
+      "arcweft-view"
+    ],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3987,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-25T19:33:32.4484441Z"
+  },
+  "clippy": {
+    "run": "task-final-r3130-signature-stamp-staging-clippy",
+    "exitCode": 0,
+    "warnings": true
+  },
+  "executableHashes": 227,
+  "executableDriftDuringValidation": 0,
+  "comparisonWithR3121": {
+    "changedBinaries": [
+      "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lsp-5e23c55215b82a44.exe"
+    ],
+    "unchangedBinaries": 226,
+    "changedSourceInputs": [
+      "crates/arcweft-lsp/src/session/signature_stamp_tests.rs"
+    ],
+    "meaning": "Reuse unchanged non-LSP runtime evidence as prior evidence; this 223-case owner run is not a new full 7349-case run."
+  },
+  "metadata": {
+    "manifestsAndLock": 99,
+    "drift": 0,
+    "reverseWorkspace": [
+      "arcweft-cli",
+      "arcweft-lsp"
+    ],
+    "buildFeatureSelectionPackages": 53,
+    "skippedCliRerunReason": "Only a cfg(test) fixture changed; the production LSP library and CLI binary/consumer sources did not change."
+  },
+  "structure": {
+    "classification": "test",
+    "owner": "arcweft-lsp",
+    "bytes": 41542,
+    "physicalLines": 1060,
+    "baseBytes": 39080,
+    "basePhysicalLines": 1019,
+    "growth": 41,
+    "disposition": "Same exhaustive stamp mutation/cache/publication responsibility; no production API, dependency, feature, I/O ownership or unrelated state change. Private fixture input preparation is staged before deadline-bound request ownership."
+  },
+  "hirConcurrentScope": {
+    "file": "task-hir-tier2-current.source-freeze.json",
+    "sourceInputs": 1322,
+    "sourceDriftAtTransition": 0,
+    "dependencyPackages": 8,
+    "originalSupervisor": "Uses broad 3987-source guard; retain its unrelated-source mismatch rather than claiming that guard passed. Terminal HIR audit uses the dependency-derived scope verified before this edit."
+  },
+  "priorFailureRetained": "R3121 remains 7298 PASS/51 FAIL; its LSP failure is retained as actual history and repaired by this later owner run.",
+  "artifactCopyMove": false
+}
