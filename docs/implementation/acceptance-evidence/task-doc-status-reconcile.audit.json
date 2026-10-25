@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "base": "4fca97715601992ecb2400c1a895cc82241cc189",
+  "observedAt": "2026-10-25T19:51:26.3149846Z",
+  "scope": "Documentation-only correction; current status remains one authority; no acceptance reopened",
+  "model": "gpt-6-luna",
+  "reasoningEffort": "max",
+  "delegatedScope": "Historical review/design document pruning and evidence integrity re-audit",
+  "deletedThisCut": 0,
+  "reason": "Obsolete archives were already removed; remaining indexed records are actual validation evidence",
+  "reviewEvidence": {
+    "index": "docs/reviews/evidence-history.md",
+    "indexSha256": "a7cfe58b0bdde390fa036d8170741cca00e3ce0ce28dea37ecf0784ffaf30512",
+    "files": 84,
+    "verifiedPathHashManifestSha256": "0a286a30d218fb04e148f31cf23eea67585c17a56657ceda49c784b1a5f2ed20",
+    "outcome": "All 84 indexed originals exist and match recorded hashes; no originals changed"
+  },
+  "reviewHashDrift": 0,
+  "currentStatusLinks": 35,
+  "missingLinks": [],
+  "oldCurrentStatusFullGitIdentities": 25,
+  "lostFullGitIdentities": [],
+  "diagnostics": {
+    "run": "task-final-r3121-handle-codec-consumer-runtime",
+    "jlreqFailures": 8,
+    "parallelFailures": 2,
+    "parallelDiagnosisConfirmed": true
+  },
+  "generic": "Accepted and published; original audits retained; R3121 has all 151 accepted cases PASS",
+  "observedTrackedWip": 30,
+  "observedUntrackedFiles": 6,
+  "heldFileHashesChecked": 36,
+  "heldFileDrift": [],
+  "rustOrCargoRunForThisCut": false,
+  "sourceEditedForThisCut": false,
+  "hirTier2": "Existing R3127 remains running; no terminal pass claimed",
+  "changedPaths": [
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/documentation-cleanup.md",
+    "docs/implementation/acceptance-evidence/task-doc-status-reconcile.audit.json"
+  ]
+}

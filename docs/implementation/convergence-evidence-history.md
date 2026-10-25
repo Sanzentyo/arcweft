@@ -12025,3 +12025,19 @@ LSP変更の直前にも照合し差分0。これをHIR専用freezeとして明�
 初期supervisorは3,987入力の広いguardを使うため、無関係なLSP差分も検出する。
 その広いguardの成功を主張せず、終端時は元の診断を残し、事前記録済みHIR依存入力と実バイナリで監査する。
 [HIRのscope記録](acceptance-evidence/task-hir-tier2-current.source-freeze.json)。
+
+## LSP fixture修復の公開と資料の再照合 — 2026-10-26
+
+公開commitは `4fca97715601992ecb2400c1a895cc82241cc189`、parent
+`0a5a31b33392b6e4ddb8afb7473cd0a05e6f0527`、tree
+`3f2f273e0edb090bab80df586b2e2c878b0e0b13`、full patch SHA256
+`451de510462f14897a2c8a90eead2588789d83310076466a9f1b6c7798dce386`。
+全23公開blobと原本等19件の公開byte hash差分0。R3129のLSP 223／223 PASSと
+R3130 Clippy終了0は前節の入力・範囲に限り、R3121の7,298 PASS／51 FAILを改変しない。
+
+この公開基点で現状一覧・完了監査・現在のsourceを照合した。新たなruntime実行は行っていない。
+R3121のJLREQ 8失敗とSource parallel 2失敗の原診断を確認し、現状一覧の古い実行回と消えた診断表への案内を訂正した。
+元の失敗集合・診断引用とGeneric Matchの受入／公開full SHAは保持した。
+GPT-6 Luna／maxは旧レビューarchiveが既に削除済みであることと、残存検証原本84件のhash一致を確認した。
+現在の未コミットAWBC carrier移行16ファイルは未検証であり、公開済み入力の受入をそのまま移行途中へ適用しない。
+この照合は個別の完了境界を再開する根拠ではなく、現在のsourceと過去の検証入力を区別するための訂正である。
