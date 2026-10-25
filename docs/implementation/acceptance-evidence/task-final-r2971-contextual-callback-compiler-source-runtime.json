@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "name": "task-final-r2971-contextual-callback-compiler-source-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(traversal::)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2971-contextual-callback-compiler-source-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T08:28:20.4773219Z",
+  "finishedAt": "2026-10-25T08:28:22.3834809Z"
+}

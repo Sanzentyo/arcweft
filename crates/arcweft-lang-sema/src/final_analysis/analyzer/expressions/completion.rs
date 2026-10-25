@@ -83,6 +83,28 @@ struct CompletionQuery<'a> {
     current_expression: Option<(ExprId, &'a PreparedExpressionFact)>,
 }
 impl Analyzer<'_, '_, '_> {
+    pub(super) fn prepared_body_expression_edges(
+        &self,
+        owner: ExprId,
+        current: (ExprId, &PreparedExpressionFact),
+    ) -> Result<Box<[HirExpressionEvaluationEdge]>, FinalSemanticAnalysisError> {
+        let module = self.module(owner.module())?;
+        let expression = module
+            .resolve_expr(owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        self.completion_expression_edges(
+            module,
+            owner,
+            expression.kind(),
+            CompletionQuery {
+                purpose: CompletionQueryPurpose::CheckedResults,
+                callable: None,
+                current_expression: Some(current),
+            },
+        )
+        .map_err(|error| error.into_public(owner))
+    }
+
     pub(super) fn thread_body_completion(
         &self,
         module: &HirModule,

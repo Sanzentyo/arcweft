@@ -293,24 +293,11 @@ impl EnclosingGenericParameterScope {
         C: IntoIterator<Item = GenericConstReference>,
         E: IntoIterator<Item = crate::types::GenericEffectReference>,
     {
-        let mut types = types.into_iter().collect::<BTreeSet<_>>();
-        let mut consts = consts.into_iter().collect::<BTreeSet<_>>();
-        let mut effects = effects.into_iter().collect::<BTreeSet<_>>();
-        if let Some(imported) = imported {
-            for parameter in imported.parameters() {
-                match parameter {
-                    crate::types::constraints::ConstraintGenericParameterId::Type(parameter) => {
-                        types.insert(parameter.clone());
-                    }
-                    crate::types::constraints::ConstraintGenericParameterId::Const(parameter) => {
-                        consts.insert(parameter.clone());
-                    }
-                    crate::types::constraints::ConstraintGenericParameterId::Effect(parameter) => {
-                        effects.insert(parameter.clone());
-                    }
-                }
-            }
-        }
+        // Imported variables retain their real owner's lease. They are not
+        // declaration-authored rigid parameters of this independent call.
+        let types = types.into_iter().collect::<BTreeSet<_>>();
+        let consts = consts.into_iter().collect::<BTreeSet<_>>();
+        let effects = effects.into_iter().collect::<BTreeSet<_>>();
         Self::sealed_references(types, consts, effects, imported.cloned())
     }
 

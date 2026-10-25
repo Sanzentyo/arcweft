@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r2973-contextual-callback-sema-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T08:35:05.9649144Z"
+}

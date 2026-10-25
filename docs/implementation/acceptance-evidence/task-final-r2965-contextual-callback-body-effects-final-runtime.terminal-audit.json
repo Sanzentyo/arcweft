@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "run": "task-final-r2965-contextual-callback-body-effects-final-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.251s] 14 tests run: 12 passed, 2 failed, 1310 skipped",
+  "executed": 14,
+  "passed": 12,
+  "failed": 2,
+  "skipped": 1310,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "types::constraints::application::tests::imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_parent"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::generic_calls::contextual_callback_rejects_effectful_return_against_a_pure_function_type"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T08:23:24.9268302Z"
+}

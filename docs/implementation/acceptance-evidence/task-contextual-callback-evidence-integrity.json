@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "files": [
+    {
+      "path": "task-contextual-callback-body-effects-checked-executables-after.json",
+      "bytes": 504,
+      "sha256": "aac9adcb1f77d10382e3d45857b2fd502337f5bf62625819885b022e48135b05"
+    },
+    {
+      "path": "task-contextual-callback-body-effects-checked-executables-before.json",
+      "bytes": 505,
+      "sha256": "c081cb572383f4fd311342e058bb2656082e0c3273619d9625b92b7a4e26f6b9"
+    },
+    {
+      "path": "task-contextual-callback-body-effects-checked.graph.json",
+      "bytes": 1743,
+      "sha256": "1eeb72f5c3c70220e05b123cbae07017419ddaceee12257205987d5669b27a14"
+    },
+    {
+      "path": "task-contextual-callback-body-effects-checked.source-freeze.json",
+      "bytes": 779230,
+      "sha256": "0d63a8a1344c5f35e2b8379d9778d68a342fbb24b629e1b28e369de6e2ed0e9a"
+    },
+    {
+      "path": "task-contextual-callback-body-effects-final-executables-after.json",
+      "bytes": 502,
+      "sha256": "7c518d40e4f66d241afb6cf66a4eda1caa80316d1a5511132dae44ea41f0a938"
+    },
+    {
+      "path": "task-contextual-callback-body-effects-final-executables-before.json",
+      "bytes": 503,
+      "sha256": "8747f961c02ec6dd2a1611985e08c99a2604cd4a33307f1cf30163f469138d0b"
+    },
+    {
+      "path": "task-contextual-callback-compiler-source-executables-after.json",
+      "bytes": 501,
+      "sha256": "b9dedf78ea06a864e9c8973a9b7da38b4bc9e8096623c72709d237cf34427297"
+    },
+    {
+      "path": "task-contextual-callback-compiler-source-executables-before.json",
+      "bytes": 502,
+      "sha256": "b825ed6a3ae4cd62b2b7734b0856fd227b731638748cc78e9a893f8643a3f664"
+    },
+    {
+      "path": "task-contextual-callback-executable-audit.json",
+      "bytes": 1022,
+      "sha256": "c128e83a5cb8f963e11d867ac391c9d9bbb23029db67ebb7a7a4e56268bc0b0a"
+    },
+    {
+      "path": "task-contextual-callback-inference-executables-after.json",
+      "bytes": 493,
+      "sha256": "99ca68d285ab003a47512d6a2a56371c3b05763a997ffe14823cac62f94d6825"
+    },
+    {
+      "path": "task-contextual-callback-inference-executables-before.json",
+      "bytes": 494,
+      "sha256": "a2588db40feb098b7ac7e1ca15558ac5dcf0d772e1dfe6859b4f21b0e2c74a08"
+    },
+    {
+      "path": "task-contextual-callback-owner-measurements.json",
+      "bytes": 2762,
+      "sha256": "b5ed297de28dc0de72993ae65d50b1b5075b5c65ba48e4f8702fd493d05e780f"
+    },
+    {
+      "path": "task-contextual-callback-sema-acceptance.json",
+      "bytes": 4697,
+      "sha256": "f9e08ec2ff4ad8d8f0d9114c6c2e9db02a42792e9bb2cec218d8f9a52300283a"
+    },
+    {
+      "path": "task-contextual-callback-sema-full-executables-after.json",
+      "bytes": 1494,
+      "sha256": "0770da75b420962bc443d596ee51d614a86c0aa5dfbd0b95deb69ad57c73e312"
+    },
+    {
+      "path": "task-contextual-callback-sema-full-executables-before.json",
+      "bytes": 1495,
+      "sha256": "b62e0321c5865e78d8c08de1061afb543bb98776bafb5ce6b2f2e4483207ee58"
+    },
+    {
+      "path": "task-final-r2958-traversal-callback-diagnostic-catalog.inventory.json",
+      "bytes": 347598,
+      "sha256": "df571b1fc7799488c790d2a98249ab86c505ede7c34610c75e551e59fde82327"
+    },
+    {
+      "path": "task-final-r2958-traversal-callback-diagnostic-catalog.json",
+      "bytes": 668,
+      "sha256": "caa315b2664de99c3dd50eae0313d0df9ac051fe17e7cbb43f5185a3a8cbdc27"
+    },
+    {
+      "path": "task-final-r2958-traversal-callback-diagnostic-catalog.log",
+      "bytes": 332039,
+      "sha256": "6bd1869b9f3d361ce218e9273fdb2491600aa0c7571c9575f72a3fb628325c7f"
+    },
+    {
+      "path": "task-final-r2959-traversal-callback-diagnostic-runtime.json",
+      "bytes": 762,
+      "sha256": "102116ba5a6080631f21f61d8ada18fca4bb7009e92c3814bb13fc7762a972fd"
+    },
+    {
+      "path": "task-final-r2959-traversal-callback-diagnostic-runtime.log",
+      "bytes": 495949,
+      "sha256": "666110e2cf91311e31666be2276a536cd970f48ab2a5c91747a6aa1159b2299a"
+    },
+    {
+      "path": "task-final-r2959-traversal-callback-diagnostic-runtime.terminal-audit.json",
+      "bytes": 965,
+      "sha256": "50064022b66800d895672f536cdea33657e2a16b572b9688ce632152560e17b8"
+    },
+    {
+      "path": "task-final-r2960-contextual-callback-inference-catalog.inventory.json",
+      "bytes": 348670,
+      "sha256": "4cf35146295c8197e10d014127e448c7f528ed29397f476609a8200583806c49"
+    },
+    {
+      "path": "task-final-r2960-contextual-callback-inference-catalog.json",
+      "bytes": 799,
+      "sha256": "72770f8b43fa2fc4797d7de68daed14b96366fe4a5e16059818836ab35c127c2"
+    },
+    {
+      "path": "task-final-r2960-contextual-callback-inference-catalog.log",
+      "bytes": 332430,
+      "sha256": "499057454c0221de3fc57d32df275d38c258c040d5341c24d39936023fdd094b"
+    },
+    {
+      "path": "task-final-r2961-contextual-callback-inference-runtime.json",
+      "bytes": 893,
+      "sha256": "4c2e9156f6c31525c27afbe7040ed921f41934af615acd3d1def71e49714525a"
+    },
+    {
+      "path": "task-final-r2961-contextual-callback-inference-runtime.log",
+      "bytes": 508637,
+      "sha256": "d3a196cda657ff74f40b5ed0103c879268c3ba89ec7b90a4e83e224debfb8519"
+    },
+    {
+      "path": "task-final-r2961-contextual-callback-inference-runtime.terminal-audit.json",
+      "bytes": 997,
+      "sha256": "b5aec98297229104c71394280566c728611a76c786195ed79cddf1f7327664fb"
+    },
+    {
+      "path": "task-final-r2962-contextual-callback-body-effects-catalog.input-audit.json",
+      "bytes": 559,
+      "sha256": "3ba46cd32d060fb6a0fb79a57eceaf68a63d091d27f73440dddc1780d93a0785"
+    },
+    {
+      "path": "task-final-r2962-contextual-callback-body-effects-catalog.json",
+      "bytes": 763,
+      "sha256": "f9398d6bd621beb8de5db832a88c5da40e2708b52b776f31356987dab4b14bed"
+    },
+    {
+      "path": "task-final-r2962-contextual-callback-body-effects-catalog.log",
+      "bytes": 77694,
+      "sha256": "53331dd07d11453c021f723820c9a694275b3773fcb9c9534899959c1b57b628"
+    },
+    {
+      "path": "task-final-r2964-contextual-callback-body-effects-final-catalog.inventory.json",
+      "bytes": 349475,
+      "sha256": "bdc20c222cbabdaf023dc73ee1b178664f13e2b470fe9f3244fef80368076001"
+    },
+    {
+      "path": "task-final-r2964-contextual-callback-body-effects-final-catalog.json",
+      "bytes": 773,
+      "sha256": "9d86d5e26452d2e6750808c516f0f44d90656ae830c3a2f3edb7afc7b04efc2a"
+    },
+    {
+      "path": "task-final-r2964-contextual-callback-body-effects-final-catalog.log",
+      "bytes": 332950,
+      "sha256": "2f3cedebf086126e8cbcfc5ab167fbc105f8eb14aa2a56314dc456b3f61c931f"
+    },
+    {
+      "path": "task-final-r2965-contextual-callback-body-effects-final-runtime.json",
+      "bytes": 867,
+      "sha256": "89b3d1bd629c3a0486347d1e82daba6026e46d72cee4388829267d756cb96cad"
+    },
+    {
+      "path": "task-final-r2965-contextual-callback-body-effects-final-runtime.log",
+      "bytes": 508497,
+      "sha256": "02b2345dfbf97b425ab9851ed56f2a09a74a3a79d5e04f3c6fdc36846f46765d"
+    },
+    {
+      "path": "task-final-r2965-contextual-callback-body-effects-final-runtime.terminal-audit.json",
+      "bytes": 1034,
+      "sha256": "757d8ac34bf2696a5a8e72aea486574817864304f0a01540beec224a6de29dcc"
+    },
+    {
+      "path": "task-final-r2966-contextual-callback-body-effects-checked-catalog.inventory.json",
+      "bytes": 349477,
+      "sha256": "d80c9e68d927d798447a72d2cba58927029d3be5bd25a49016d030147ce535f5"
+    },
+    {
+      "path": "task-final-r2966-contextual-callback-body-effects-checked-catalog.json",
+      "bytes": 777,
+      "sha256": "d7aa3c9be437eeea320dbab972b532a85f03d3b496508a73814d892feda9e2db"
+    },
+    {
+      "path": "task-final-r2966-contextual-callback-body-effects-checked-catalog.log",
+      "bytes": 332950,
+      "sha256": "bfe22cee9f377dcc33460cef4abcf3132d1643e38295b40a2f24be8b85c1163c"
+    },
+    {
+      "path": "task-final-r2967-contextual-callback-body-effects-checked-runtime.json",
+      "bytes": 869,
+      "sha256": "4e02362f1db8fae07000974fc8433f8e7126f5fe5344ace5e192c1a832d00757"
+    },
+    {
+      "path": "task-final-r2967-contextual-callback-body-effects-checked-runtime.log",
+      "bytes": 506640,
+      "sha256": "abcaf6ba0cbfa78aca6bb00f83f4787eb7b97f228d576e6e6c2b77e9c7fe4c86"
+    },
+    {
+      "path": "task-final-r2967-contextual-callback-body-effects-checked-runtime.terminal-audit.json",
+      "bytes": 594,
+      "sha256": "718e759571743995657a93a4dcf32145bf9dc093bd88abb6f7f985ceee40ebf4"
+    },
+    {
+      "path": "task-final-r2968-contextual-callback-sema-full-catalog.inventory.json",
+      "bytes": 353869,
+      "sha256": "05799b6bdab80096e6321cbcb2e6c024a5b4cb560b2389a9b032ddc41073459c"
+    },
+    {
+      "path": "task-final-r2968-contextual-callback-sema-full-catalog.json",
+      "bytes": 602,
+      "sha256": "dbf7992c90375a98d08c26542c3edc376c9334c12deaacbf1643c46141b5a413"
+    },
+    {
+      "path": "task-final-r2968-contextual-callback-sema-full-catalog.log",
+      "bytes": 313923,
+      "sha256": "b862f98e7e79ed043b35ba945671ac127088adb2faceee0d014646e921aaa730"
+    },
+    {
+      "path": "task-final-r2969-contextual-callback-sema-full-runtime.json",
+      "bytes": 694,
+      "sha256": "f4fe783fdbcb8a798b8b624e5de3800bc071ffa22baffc238f0c4409e67e691f"
+    },
+    {
+      "path": "task-final-r2969-contextual-callback-sema-full-runtime.log",
+      "bytes": 504040,
+      "sha256": "553e32a50de99414f9c724eb41bd9308d6d66c9f9a20ce36df092b516874ec84"
+    },
+    {
+      "path": "task-final-r2969-contextual-callback-sema-full-runtime.terminal-audit.json",
+      "bytes": 594,
+      "sha256": "b4b3205c9a705a7fd48acdaaf410594e6693b7b1c574186960588f1763b8fd01"
+    },
+    {
+      "path": "task-final-r2970-contextual-callback-compiler-source-catalog.inventory.json",
+      "bytes": 43136,
+      "sha256": "25745c45a9148f9a9d7744f740839ab2e84716bde6fc91c0926212deaf734615"
+    },
+    {
+      "path": "task-final-r2970-contextual-callback-compiler-source-catalog.json",
+      "bytes": 670,
+      "sha256": "d476533fa431289b238e0cc85f549860214ba4307064d8e4b12a20ee6eef866c"
+    },
+    {
+      "path": "task-final-r2970-contextual-callback-compiler-source-catalog.log",
+      "bytes": 110538,
+      "sha256": "da524db7d17a9f6d3c32e7d3e701f87999b59606c0bf26cc48cd3003e5339b6d"
+    },
+    {
+      "path": "task-final-r2971-contextual-callback-compiler-source-runtime.json",
+      "bytes": 764,
+      "sha256": "b35f31808326c321ebbb50e1960601656d9ff5a2901ba0bfcf1bf3879a112c24"
+    },
+    {
+      "path": "task-final-r2971-contextual-callback-compiler-source-runtime.log",
+      "bytes": 131659,
+      "sha256": "b404f9f2924952acb2f9849cfbf8350afb633a812ff344a150d6a0ff490bb4d0"
+    },
+    {
+      "path": "task-final-r2971-contextual-callback-compiler-source-runtime.terminal-audit.json",
+      "bytes": 993,
+      "sha256": "8f6464c16e95a82b6c78cbe24314e6b3208aa614d313ebef92b7e4da406c49d6"
+    },
+    {
+      "path": "task-final-r2972-contextual-callback-structure-gate.input-audit.json",
+      "bytes": 274,
+      "sha256": "aaa3b19505a915e4f0284af9d3631f1a0937ce5e5e4c83b1606df397d78917c9"
+    },
+    {
+      "path": "task-final-r2972-contextual-callback-structure-gate.json",
+      "bytes": 472,
+      "sha256": "9753a903f117e03c76a2ef66f66aff442bc9f588a9a20c536db8680ed766eb43"
+    },
+    {
+      "path": "task-final-r2972-contextual-callback-structure-gate.log",
+      "bytes": 64488,
+      "sha256": "dbda727a0913749f1e56c90e3d1d6e4f77a8aa3b9fd0a30e1865ed2b88216db6"
+    },
+    {
+      "path": "task-final-r2973-contextual-callback-sema-clippy.input-audit.json",
+      "bytes": 343,
+      "sha256": "127c4f6612d5d34cf733de15e73be3652c9c111977c286f3d052a2155a2f5270"
+    },
+    {
+      "path": "task-final-r2973-contextual-callback-sema-clippy.json",
+      "bytes": 538,
+      "sha256": "086fe117363d812e4e8ce2b0abd1366b4fd3b46f524da28bc52f91533c0bb2d8"
+    },
+    {
+      "path": "task-final-r2973-contextual-callback-sema-clippy.log",
+      "bytes": 4783663,
+      "sha256": "0a3e60247c4c42b7c4028c87ac50440a42f3b9facb75056d44061449ee604ea0"
+    },
+    {
+      "path": "task-traversal-callback-diagnostic-audit.json",
+      "bytes": 602,
+      "sha256": "67d0c7300e6c833db229d47f479bf4db0df8837078ae8ca9a0f343d48adc9a6f"
+    },
+    {
+      "path": "task-traversal-callback-diagnostic-executables-after.json",
+      "bytes": 493,
+      "sha256": "48f92572dda5be6aaa31068c76caca39c906225e8201f39dd087b79383cd52fd"
+    },
+    {
+      "path": "task-traversal-callback-diagnostic-executables-before.json",
+      "bytes": 494,
+      "sha256": "af740127d32c28222edd09d39c8d246ed6eec022a2e0eb236218ebbe9cb58d06"
+    },
+    {
+      "path": "task-traversal-source-construction-checkpoint.verified.json",
+      "bytes": 5878,
+      "sha256": "65818ee216984e3b5a7faa3beda232654d863cd7ce44846d8ffe8e4ac3f2697a"
+    }
+  ],
+  "byteDrift": 0,
+  "recordedAt": "2026-10-25T08:36:54.004Z"
+}

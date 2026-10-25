@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "run": "task-final-r2972-contextual-callback-structure-gate",
+  "actualExitCode": 0,
+  "scope": [
+    "just",
+    "structure-audit-gate"
+  ],
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T08:28:32.4477609Z"
+}

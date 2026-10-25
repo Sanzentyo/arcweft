@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "name": "task-final-r2969-contextual-callback-sema-full-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2969-contextual-callback-sema-full-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T08:26:33.4179156Z",
+  "finishedAt": "2026-10-25T08:31:23.1666371Z"
+}

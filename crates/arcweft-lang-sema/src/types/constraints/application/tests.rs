@@ -106,6 +106,219 @@ fn context(cancellation: &AtomicBool, nodes: u64) -> Context<'_> {
     ))
 }
 
+#[test]
+fn imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_parent() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation, 4096);
+    let parent = scope(0);
+    let parent_array = array(&parent);
+    let parent_effect = effect(&parent);
+    let expected = TypeKind::function_with_effects(
+        [],
+        parent_array.clone(),
+        EffectRow::open(EffectSet::new(), parent_effect.clone()),
+    );
+    let parent = context.start_path(parent).unwrap();
+    let parent_effects = parent.effects.clone();
+    let TypeKind::Array { item, len } = &parent_array else {
+        unreachable!()
+    };
+    let TypeKind::GenericParam(ty) = item.as_ref() else {
+        unreachable!()
+    };
+    let ArrayLength::Generic(length) = len else {
+        unreachable!()
+    };
+    let parameters = [
+        super::super::ConstraintGenericParameterId::Type(ty.clone()),
+        super::super::ConstraintGenericParameterId::Const(length.clone()),
+        super::super::ConstraintGenericParameterId::Effect(parent_effect.clone()),
+    ];
+    let imported = parent.applications.import_parameters(&parameters).unwrap();
+    assert!(
+        parameters
+            .iter()
+            .all(|parameter| imported.permits_local_inference(parameter))
+    );
+    let child = ConstraintApplicationScope::new(1, TypeConstraintParameterScope::empty());
+    let child_id = child.id();
+    let child = context
+        .start_path_with_imported(child, Some(imported))
+        .unwrap();
+    let actual = TypeKind::function_with_effects(
+        [],
+        TypeKind::Array {
+            item: Box::new(TypeKind::String),
+            len: ArrayLength::Const(3),
+        },
+        EffectRow::closed(EffectSet::from_labels(&["fs.read"]).unwrap()),
+    );
+    let child = relation(child, &expected, &actual, &mut context);
+    let child = seal_path(child, &mut context).unwrap();
+    let projected = crate::types::constraints::seal_type(
+        &expected,
+        child.projection_view(),
+        &mut BTreeSet::new(),
+        &mut context,
+    )
+    .unwrap();
+    let (
+        TypeKind::Function {
+            return_type: projected_result,
+            ..
+        },
+        TypeKind::Function {
+            return_type: actual_result,
+            effects: actual_effects,
+            ..
+        },
+    ) = (&projected, &actual)
+    else {
+        unreachable!()
+    };
+    assert_eq!(projected_result, actual_result);
+    assert_eq!(
+        child.effects.bindings(&mut context).unwrap(),
+        vec![(parent_effect, actual_effects.clone())]
+    );
+    let solution = TypeConstraintSolution::complete_application(&child, child_id, &mut context)
+        .expect("local inference is not a child declaration argument");
+    assert_eq!(solution.bindings().count(), 0);
+    assert_eq!(solution.const_bindings().count(), 0);
+    assert_eq!(solution.effect_bindings().count(), 0);
+    assert!(parent.bindings.is_empty());
+    assert!(parent.const_bindings.is_empty());
+    assert_eq!(parent.effects, parent_effects);
+    assert_eq!(
+        crate::types::constraints::seal_type(
+            &parent_array,
+            parent.projection_view(),
+            &mut BTreeSet::new(),
+            &mut context,
+        )
+        .unwrap(),
+        parent_array,
+    );
+}
+
+#[test]
+fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
+    for future in [false, true] {
+        let cancellation = AtomicBool::new(false);
+        let mut context = context(&cancellation, 4096);
+        let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(90_200));
+        let ty: GenericTypeReference = GenericTypeParameterId::new(owner.clone(), 0).into();
+        let length: GenericConstReference = GenericConstParameterId::new(owner.clone(), 0).into();
+        let effect: GenericEffectReference = GenericEffectParameterId::new(owner, 0).into();
+        let scope = TypeConstraintParameterScope::seal_call_scope(
+            GenericBinder::EMPTY,
+            [TypeConstraintTypeParameterScopeRow::new(
+                ty.clone(),
+                if future {
+                    TypeConstraintParameterEligibility::FutureEligible
+                } else {
+                    TypeConstraintParameterEligibility::Rigid
+                },
+            )],
+            [TypeConstraintConstParameterScopeRow::new(
+                length.clone(),
+                if future {
+                    TypeConstraintConstEligibility::FutureEligible
+                } else {
+                    TypeConstraintConstEligibility::Rigid
+                },
+            )],
+            TypeConstraintEffectScope::seal_call_scope(
+                [EffectConstraintVariable::new(
+                    effect.clone(),
+                    if future {
+                        EffectConstraintEligibility::FutureEligible
+                    } else {
+                        EffectConstraintEligibility::Rigid
+                    },
+                )],
+                [],
+            )
+            .unwrap(),
+            [],
+            [],
+        )
+        .unwrap();
+        let ty = scope.type_reference(&ty).unwrap_or(ty);
+        let length = scope.const_reference(&length).unwrap_or(length);
+        let effect = scope.effect_reference(&effect).unwrap_or(effect);
+        let parent = context
+            .start_path(ConstraintApplicationScope::new(0, scope))
+            .unwrap();
+        let parameters = [
+            super::super::ConstraintGenericParameterId::Type(ty.clone()),
+            super::super::ConstraintGenericParameterId::Const(length.clone()),
+            super::super::ConstraintGenericParameterId::Effect(effect.clone()),
+        ];
+        let imported = parent.applications.import_parameters(&parameters).unwrap();
+        assert!(
+            parameters
+                .iter()
+                .all(|parameter| !imported.permits_local_inference(parameter))
+        );
+        let child = context
+            .start_path_with_imported(
+                ConstraintApplicationScope::new(1, TypeConstraintParameterScope::empty()),
+                Some(imported),
+            )
+            .unwrap();
+        assert_eq!(
+            context.parameter_eligibility(&ty, child.projection_view()),
+            Some(TypeConstraintParameterEligibility::Rigid)
+        );
+        assert_eq!(
+            context.const_parameter_eligibility(&length, child.projection_view()),
+            Some(TypeConstraintConstEligibility::Rigid)
+        );
+        assert_eq!(
+            context.effect_eligibility(&effect, child.projection_view()),
+            Some(EffectConstraintEligibility::Rigid)
+        );
+        for (expected, actual) in [
+            (TypeKind::GenericParam(ty), TypeKind::String),
+            (
+                TypeKind::Array {
+                    item: Box::new(TypeKind::String),
+                    len: ArrayLength::Generic(length),
+                },
+                TypeKind::Array {
+                    item: Box::new(TypeKind::String),
+                    len: ArrayLength::Const(3),
+                },
+            ),
+            (
+                TypeKind::function_with_effects(
+                    [],
+                    TypeKind::Unit,
+                    EffectRow::open(EffectSet::new(), effect),
+                ),
+                TypeKind::function_with_effects(
+                    [],
+                    TypeKind::Unit,
+                    EffectRow::closed(EffectSet::from_labels(&["fs.read"]).unwrap()),
+                ),
+            ),
+        ] {
+            assert!(
+                relate_selected_call(
+                    &expected,
+                    &actual,
+                    context.fork_path(&child).unwrap(),
+                    &mut context,
+                    ConstraintAcceptance::ActualAcceptsPattern
+                )
+                .unwrap()
+                .is_empty()
+            );
+        }
+    }
+}
+
 fn array(scope: &ConstraintApplicationScope<Domain>) -> TypeKind {
     TypeKind::Array {
         item: Box::new(TypeKind::GenericParam(

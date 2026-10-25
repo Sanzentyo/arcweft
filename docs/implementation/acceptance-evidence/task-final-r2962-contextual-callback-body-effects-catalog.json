@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "name": "task-final-r2962-contextual-callback-body-effects-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(final_analysis::tests::generic_calls::traversal_) | test(contextual_callback_) | test(types::constraints::application::tests::imported_)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2962-contextual-callback-body-effects-catalog.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-25T08:21:10.0993956Z",
+  "finishedAt": "2026-10-25T08:21:45.6869676Z"
+}

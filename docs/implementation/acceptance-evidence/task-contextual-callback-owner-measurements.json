@@ -1,0 +1,102 @@
+[
+  {
+    "path": "crates/arcweft-lang-sema/src/callable/continuation.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "production",
+    "bytes": 106829,
+    "physicalLoc": 2743,
+    "basePhysicalLoc": 2756,
+    "growth": -13,
+    "embeddedTestLoc": 27
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/types/constraints/application.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "production",
+    "bytes": 23671,
+    "physicalLoc": 626,
+    "basePhysicalLoc": 579,
+    "growth": 47,
+    "embeddedTestLoc": 0
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/types/constraints/application/tests.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "test",
+    "bytes": 34892,
+    "physicalLoc": 980,
+    "basePhysicalLoc": 767,
+    "growth": 213,
+    "embeddedTestLoc": 0
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/types/constraints/context.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "production",
+    "bytes": 73270,
+    "physicalLoc": 1975,
+    "basePhysicalLoc": 1958,
+    "growth": 17,
+    "embeddedTestLoc": 0
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/tests/generic_calls.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "test",
+    "bytes": 34888,
+    "physicalLoc": 1031,
+    "basePhysicalLoc": 868,
+    "growth": 163,
+    "embeddedTestLoc": 0
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "production",
+    "bytes": 240531,
+    "physicalLoc": 5544,
+    "basePhysicalLoc": 5543,
+    "growth": 1,
+    "embeddedTestLoc": 88
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/source_effects.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "production",
+    "bytes": 2824,
+    "physicalLoc": 81,
+    "basePhysicalLoc": 0,
+    "growth": 81,
+    "embeddedTestLoc": 0
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "production",
+    "bytes": 39098,
+    "physicalLoc": 898,
+    "basePhysicalLoc": 876,
+    "growth": 22,
+    "embeddedTestLoc": 0
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/statements.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "production",
+    "bytes": 39098,
+    "physicalLoc": 980,
+    "basePhysicalLoc": 980,
+    "growth": 0,
+    "embeddedTestLoc": 0
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "production",
+    "bytes": 69974,
+    "physicalLoc": 1783,
+    "basePhysicalLoc": 1712,
+    "growth": 71,
+    "embeddedTestLoc": 0
+  }
+]

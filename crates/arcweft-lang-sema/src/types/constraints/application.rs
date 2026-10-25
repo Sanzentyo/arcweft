@@ -21,6 +21,7 @@ use crate::{
 trait ImportedApplicationScopeAuthority {
     fn id(&self) -> ConstraintApplicationId;
     fn admits(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
+    fn permits_local_inference(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
 }
 
 /// One exact application owner and the parameters that owner admitted.
@@ -98,6 +99,19 @@ impl std::fmt::Debug for ImportedGenericParameterScopeLease {
 impl ImportedGenericParameterScopeLease {
     pub(crate) fn parameters(&self) -> &[super::ConstraintGenericParameterId] {
         &self.parameters
+    }
+
+    /// A child may solve a currently bindable parent variable in its own
+    /// path. The lease never lends the parent's bindings or mutable frontier.
+    /// The parent still checks the whole source and replays materialization
+    /// with its final substitution before publishing the selected call.
+    pub(crate) fn permits_local_inference(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+    ) -> bool {
+        self.applications.iter().any(|owner| {
+            owner.contains(parameter) && owner.owner.permits_local_inference(parameter)
+        })
     }
 }
 
@@ -179,6 +193,23 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
             }
             super::ConstraintGenericParameterId::Effect(parameter) => {
                 self.parameters.effect_eligibility(parameter).is_some()
+            }
+        }
+    }
+
+    fn permits_local_inference(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
+        match parameter {
+            super::ConstraintGenericParameterId::Type(parameter) => {
+                self.parameters.eligibility(parameter)
+                    == Some(TypeConstraintParameterEligibility::Bindable)
+            }
+            super::ConstraintGenericParameterId::Const(parameter) => {
+                self.parameters.const_eligibility(parameter)
+                    == Some(TypeConstraintConstEligibility::Bindable)
+            }
+            super::ConstraintGenericParameterId::Effect(parameter) => {
+                self.parameters.effect_eligibility(parameter)
+                    == Some(EffectConstraintEligibility::Bindable)
             }
         }
     }
@@ -283,14 +314,16 @@ impl<D: ConstraintDomain> ConstraintApplicationScopes<D> {
                 .application(ConstraintApplicationId(parameter.issuer()))
                 .and_then(|application| application.parameters().eligibility(reference))
                 .or_else(|| {
-                    self.imported
-                        .iter()
-                        .any(|owner| {
-                            owner.contains(&super::ConstraintGenericParameterId::Type(
-                                reference.clone(),
-                            ))
-                        })
-                        .then_some(TypeConstraintParameterEligibility::Rigid)
+                    self.imported_parameter_binding(&super::ConstraintGenericParameterId::Type(
+                        reference.clone(),
+                    ))
+                    .map(|bindable| {
+                        if bindable {
+                            TypeConstraintParameterEligibility::Bindable
+                        } else {
+                            TypeConstraintParameterEligibility::Rigid
+                        }
+                    })
                 }),
             // Free references keep their declaration identity across captures.
             // Inference variables resolve through their exact application or
@@ -306,6 +339,16 @@ impl<D: ConstraintDomain> ConstraintApplicationScopes<D> {
             .then_some(TypeConstraintParameterEligibility::Rigid),
             GenericTypeReference::Bound(_) => None,
         }
+    }
+
+    fn imported_parameter_binding(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+    ) -> Option<bool> {
+        self.imported
+            .iter()
+            .find(|owner| owner.contains(parameter))
+            .map(|owner| owner.owner.permits_local_inference(parameter))
     }
 
     pub(super) fn import_parameters(
@@ -517,14 +560,16 @@ impl<D: ConstraintDomain> ConstraintApplicationScopes<D> {
                 .application(ConstraintApplicationId(parameter.issuer()))
                 .and_then(|application| application.parameters().const_eligibility(reference))
                 .or_else(|| {
-                    self.imported
-                        .iter()
-                        .any(|owner| {
-                            owner.contains(&super::ConstraintGenericParameterId::Const(
-                                reference.clone(),
-                            ))
-                        })
-                        .then_some(TypeConstraintConstEligibility::Rigid)
+                    self.imported_parameter_binding(&super::ConstraintGenericParameterId::Const(
+                        reference.clone(),
+                    ))
+                    .map(|bindable| {
+                        if bindable {
+                            TypeConstraintConstEligibility::Bindable
+                        } else {
+                            TypeConstraintConstEligibility::Rigid
+                        }
+                    })
                 }),
             GenericConstReference::Free(_) => (self.applications().any(|application| {
                 application.parameters().const_eligibility(reference)
@@ -548,14 +593,16 @@ impl<D: ConstraintDomain> ConstraintApplicationScopes<D> {
                 .application(ConstraintApplicationId(parameter.issuer()))
                 .and_then(|application| application.parameters().effect_eligibility(reference))
                 .or_else(|| {
-                    self.imported
-                        .iter()
-                        .any(|owner| {
-                            owner.contains(&super::ConstraintGenericParameterId::Effect(
-                                reference.clone(),
-                            ))
-                        })
-                        .then_some(EffectConstraintEligibility::Rigid)
+                    self.imported_parameter_binding(&super::ConstraintGenericParameterId::Effect(
+                        reference.clone(),
+                    ))
+                    .map(|bindable| {
+                        if bindable {
+                            EffectConstraintEligibility::Bindable
+                        } else {
+                            EffectConstraintEligibility::Rigid
+                        }
+                    })
                 }),
             GenericEffectReference::Free(_) => (self.applications().any(|application| {
                 application.parameters().effect_eligibility(reference)

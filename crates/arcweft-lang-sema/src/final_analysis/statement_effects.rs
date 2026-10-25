@@ -441,24 +441,75 @@ pub(crate) fn prepare_declaration_execution_effects(
     .seal_declaration(&declaration)
 }
 
+/// A checked expression body may need its complete row while its enclosing
+/// callable value is still being inferred. The source lends existing facts
+/// and HIR-selected edges; the execution fold below remains the authority.
+pub(crate) trait PreparedExpressionEffectSource {
+    fn expression(&self, owner: ExprId) -> Option<&PreparedExpressionFact>;
+    fn expression_edges(
+        &self,
+        owner: ExprId,
+    ) -> Result<Box<[HirExpressionEvaluationEdge]>, FinalSemanticAnalysisError>;
+    fn statement(
+        &self,
+        owner: StmtId,
+    ) -> Result<PreparedStatementPayload, FinalSemanticAnalysisError>;
+}
+
+pub(crate) fn prepare_expression_body_effects<'a>(
+    modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
+    topology: &'a HirProjectEvaluationTopology,
+    source: &'a dyn PreparedExpressionEffectSource,
+    call_effects: &'a BTreeMap<ExprId, PreparedCallExecutionRow>,
+    owner: ExprId,
+    control: FinalSemanticAnalysisControl<'a>,
+) -> Result<EffectRow, FinalSemanticAnalysisError> {
+    PreparedExecutionEffectSealer::from_facts(
+        modules,
+        topology,
+        PreparedEffectSelection::ExpressionBody(source),
+        call_effects,
+        &[],
+        &[],
+        control,
+    )?
+    .seal_expression(owner)
+    .map(|row| row.effects)
+}
+
 #[derive(Clone, Copy)]
 enum PreparedEffectSelection<'a> {
     Project(&'a CheckedSelectedExpressionGraph),
     Declaration(&'a arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph),
+    // A body query owns no declaration/catalog publication. Its reached facts
+    // and selected edges are borrowed lazily from the active checker.
+    ExpressionBody(&'a dyn PreparedExpressionEffectSource),
 }
 
-impl PreparedEffectSelection<'_> {
+impl<'a> PreparedEffectSelection<'a> {
     fn owners(&self) -> Box<dyn Iterator<Item = ExprId> + '_> {
         match self {
             Self::Project(graph) => Box::new(graph.owners()),
             Self::Declaration(graph) => Box::new(graph.expression_owners()),
+            Self::ExpressionBody(_) => Box::new(std::iter::empty()),
         }
     }
 
-    fn expression_edges(&self, owner: ExprId) -> &[HirExpressionEvaluationEdge] {
+    fn expression_edges(
+        &self,
+        owner: ExprId,
+    ) -> Result<Box<[HirExpressionEvaluationEdge]>, FinalSemanticAnalysisError> {
         match self {
-            Self::Project(graph) => graph.expression_edges(owner),
-            Self::Declaration(graph) => graph.expression_edges(owner),
+            Self::Project(graph) => Ok(graph.expression_edges(owner).into()),
+            Self::Declaration(graph) => Ok(graph.expression_edges(owner).into()),
+            Self::ExpressionBody(source) => source.expression_edges(owner),
+        }
+    }
+
+    fn expression_source(&self) -> Option<&'a dyn PreparedExpressionEffectSource> {
+        match self {
+            Self::ExpressionBody(source) => Some(*source),
+            Self::Project(_) | Self::Declaration(_) => None,
         }
     }
 
@@ -480,6 +531,7 @@ impl PreparedEffectSelection<'_> {
             (Self::Declaration(graph), HirBodyChild::Statement(owner)) => {
                 graph.contains_statement(owner)
             }
+            (Self::ExpressionBody(_), _) => false,
         }
     }
 }
@@ -767,6 +819,8 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         let fact = self
             .expression_facts
             .get(&owner)
+            .copied()
+            .or_else(|| self.selected.expression_source()?.expression(owner))
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
         let module = self.module(owner.module())?;
         let kind = module
@@ -802,6 +856,14 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             row.effects = EffectRow::closed(EffectSet::new());
             row.direct_suspension = false;
             row.requires_flow = false;
+            if self.selected.expression_source().is_some() {
+                // This query observes creation, which does not execute a
+                // nested callable's body. Full catalog sealing records that
+                // body's independent row later through the same fold.
+                self.active_expressions.remove(&owner);
+                self.expression_rows.insert(owner, row.clone());
+                return Ok(row);
+            }
         }
         let direct_field_place = fact
             .field_root(|child| {
@@ -850,7 +912,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 row.union_with(&receiver_row, self.control)?;
             }
         }
-        for edge in self.selected.expression_edges(owner).to_vec() {
+        for edge in self.selected.expression_edges(owner)? {
             let HirExpressionEvaluationEdge::Expression {
                 role,
                 ownership: HirExpressionChildOwnership::Owning,
@@ -1070,11 +1132,20 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 row.union_with(&body_row, self.control)?;
             }
         }
-        match self.statement_facts.get(&owner).copied().ok_or(
-            FinalSemanticAnalysisError::MissingFact {
-                family: super::SemanticFactFamily::Statement,
-            },
-        )? {
+        let source_payload = self
+            .selected
+            .expression_source()
+            .map(|source| source.statement(owner))
+            .transpose()?;
+        let payload = match &source_payload {
+            Some(payload) => payload,
+            None => self.statement_facts.get(&owner).copied().ok_or(
+                FinalSemanticAnalysisError::MissingFact {
+                    family: super::SemanticFactFamily::Statement,
+                },
+            )?,
+        };
+        match payload {
             PreparedStatementPayload::RegistryWrite(write) => {
                 let mut effects = EffectSet::new();
                 effects.insert(write.address.effect().clone());

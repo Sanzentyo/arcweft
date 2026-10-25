@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "metadataSource": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "changed": [
+    "arcweft-lang-sema"
+  ],
+  "reverseWorkspace": [
+    "arcweft-adapter-sema",
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-lang-sema",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-web",
+    "arcweft-project-loader",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-test",
+    "arcweft-tooling",
+    "arcweft-verify",
+    "arcweft-verify-lsp",
+    "arcweft-verify-oxiz",
+    "arcweft-verify-z3"
+  ],
+  "packageCount": 22,
+  "owned": [
+    "crates/arcweft-lang-sema/src/callable/continuation.rs",
+    "crates/arcweft-lang-sema/src/types/constraints/application.rs",
+    "crates/arcweft-lang-sema/src/types/constraints/application/tests.rs",
+    "crates/arcweft-lang-sema/src/types/constraints/context.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/tests/generic_calls.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/source_effects.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/analyzer/statements.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs"
+  ],
+  "temporaryDiagnostics": false
+}

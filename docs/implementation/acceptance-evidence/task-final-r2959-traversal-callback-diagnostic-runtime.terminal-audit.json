@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "run": "task-final-r2959-traversal-callback-diagnostic-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.264s] 7 tests run: 5 passed, 2 failed, 1310 skipped",
+  "executed": 7,
+  "passed": 5,
+  "failed": 2,
+  "skipped": 1310,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3982,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::generic_calls::traversal_accepts_computed_collection_and_block_callback"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::generic_calls::traversal_accepts_captured_need_result_closure"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T07:37:04.0019190Z"
+}

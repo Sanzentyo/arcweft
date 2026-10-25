@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "run": "task-final-r2959-traversal-callback-diagnostic-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.264s] 7 tests run: 5 passed, 2 failed, 1310 skipped",
+  "sourceInputs": 3982,
+  "sourceDrift": 0,
+  "executables": 1,
+  "executableDrift": 0,
+  "temporaryDiagnostics": true,
+  "conclusion": "The callback input is contextually String. Nested request result rejects parent-owned unbound Result type references imported as rigid. Existing five Traversal cases pass.",
+  "recordedAt": "2026-10-25T08:05:16.131Z"
+}

@@ -241,7 +241,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(selected)
     }
 
-    fn checked_statement_fact(
+    pub(super) fn checked_statement_fact(
         &self,
         module: &HirModule,
         owner: super::StmtId,

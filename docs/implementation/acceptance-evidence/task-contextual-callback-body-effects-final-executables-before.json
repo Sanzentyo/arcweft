@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2964-contextual-callback-body-effects-final-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83838976,
+      "nonTest": false,
+      "sha256": "d93572aa24c711723370d758e6f3777d29a2edc9f174c20a70c0538edf0e5a4f"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T08:22:51.3123342Z"
+}

@@ -866,3 +866,166 @@ fn assert_selected_calls(analysis: &FinalSemanticAnalysis, expected_count: usize
         );
     }
 }
+
+#[test]
+fn traversal_accepts_captured_need_result_closure() {
+    assert_traversal_callback_source("values.traverse(|path| request(prefix, path))", 3);
+}
+
+#[test]
+fn traversal_accepts_computed_collection_and_block_callback() {
+    assert_traversal_callback_source(
+        "paths(values).traverse({ let retained = prefix; |path| request(retained, path) })",
+        4,
+    );
+}
+
+#[test]
+fn contextual_callback_preserves_known_parts_of_a_parametric_result() {
+    let world = fixture(
+        r#"
+fn empty<T>() -> Option<T> { None }
+fn pair<A, B>(left: A, right: B) -> (A, B) { (left, right) }
+fn apply<T>(callback: i64 -> (Option<bool>, T) effects {}) -> (Option<bool>, T) {
+    callback(0i64)
+}
+fn root() -> (Option<bool>, String) {
+    apply(|value| pair(empty(), "retained"))
+}
+"#,
+        None,
+    );
+    let analysis =
+        analyze(&world).expect("known contextual structure still guides a nested generic call");
+    assert_selected_calls(&analysis, 4);
+}
+
+#[test]
+fn traversal_accepts_callback_with_explicit_return() {
+    assert_traversal_callback_source(
+        "values.traverse(|path| { return request(prefix, path) })",
+        3,
+    );
+}
+
+#[test]
+fn traversal_accepts_callback_with_a_statement_before_its_tail() {
+    assert_traversal_callback_source(
+        "values.traverse(|path| { let pending = request(prefix, path); pending })",
+        3,
+    );
+}
+
+#[test]
+fn contextual_callback_creation_keeps_nested_body_effects_latent() {
+    let world = fixture(
+        r#"
+fn root(read: String -> String effects { fs.read }) -> bool -> String effects {} {
+    |flag| { let retained = |path: String| read(path); "ready" }
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&world).expect("creating a nested callback does not execute it");
+    assert_selected_calls(&analysis, 1);
+    let mut closures = 0;
+    for (_, expression) in analysis.expressions() {
+        if !matches!(
+            expression.resolution(),
+            CheckedExpressionResolution::Closure(_)
+        ) {
+            continue;
+        }
+        let Some(TypeKind::Function {
+            params, effects, ..
+        }) = expression.value_type()
+        else {
+            panic!("checked closure has its complete function type")
+        };
+        let expected = if params == &[TypeKind::String] {
+            crate::effects::EffectSet::from_labels(&["fs.read"]).unwrap()
+        } else {
+            assert_eq!(params, &[TypeKind::Bool]);
+            crate::effects::EffectSet::new()
+        };
+        assert_eq!(effects, &crate::effect_row::EffectRow::closed(expected));
+        closures += 1;
+    }
+    assert_eq!(closures, 2);
+}
+
+#[test]
+fn contextual_callback_rejects_effectful_return_against_a_pure_function_type() {
+    let world = fixture(
+        r#"
+fn apply(callback: String -> String effects {}) -> String { callback("ready") }
+fn root(read: String -> String effects { fs.read }) -> String {
+    apply(|path| { return read(path) })
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&world).expect("the rejected callback retains its call diagnostic");
+    let rejected = analysis
+        .calls()
+        .filter(|(_, call)| call.selected_application().is_none())
+        .collect::<Vec<_>>();
+    let [(_, call)] = rejected.as_slice() else {
+        panic!("one rejected pure callback application")
+    };
+    let [diagnostic] = call.diagnostics() else {
+        panic!("one retained callback effect diagnostic")
+    };
+    assert_eq!(
+        diagnostic.code(),
+        crate::callable::CallableDiagnosticCode::NoViableSignature
+    );
+}
+
+fn assert_traversal_callback_source(expression: &str, calls: usize) {
+    let source = format!(
+        r#"
+extern capability fs {{
+    fn read_text(path: String) -> Need<Result<String, String>> effects {{ fs.read }}
+}}
+fn request(prefix: String, path: String) -> Need<Result<String, String>> effects {{ fs.read }} {{
+    fs.read_text(prefix + path)
+}}
+fn paths(values: Vec<String>) -> Vec<String> {{ values }}
+fn root(values: Vec<String>, prefix: String) -> Traversal<Vec<String>, String -> Need<Result<String, String>> effects {{ fs.read }}> effects {{}} {{
+    {expression}
+}}
+"#
+    );
+    let world = fixture(&source, None);
+    let analysis = analyze(&world).expect("contextual callback retains its checked call facts");
+    assert_selected_calls(&analysis, calls);
+    let closures = analysis
+        .expressions()
+        .filter(|(_, fact)| matches!(fact.resolution(), CheckedExpressionResolution::Closure(_)))
+        .collect::<Vec<_>>();
+    assert_eq!(closures.len(), 1);
+    let Some(TypeKind::Function {
+        params,
+        return_type,
+        effects,
+        ..
+    }) = closures[0].1.value_type()
+    else {
+        panic!("callback retains its full function type")
+    };
+    assert_eq!(params, &[TypeKind::String]);
+    assert_eq!(
+        return_type.as_ref(),
+        &TypeKind::Need(Box::new(TypeKind::Result {
+            ok: Box::new(TypeKind::String),
+            error: Box::new(TypeKind::String),
+        }))
+    );
+    assert_eq!(
+        effects,
+        &crate::effect_row::EffectRow::closed(
+            crate::effects::EffectSet::from_labels(&["fs.read"]).unwrap()
+        )
+    );
+}

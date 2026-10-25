@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "run": "task-final-r2971-contextual-callback-compiler-source-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.159s] 2 tests run: 0 passed, 2 failed, 179 skipped",
+  "executed": 2,
+  "passed": 0,
+  "failed": 2,
+  "skipped": 179,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "traversal::source_traversal_keeps_owned_collections_and_callbacks_without_starting_children"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "traversal::source_traversal_retains_computed_source_and_callback_operands"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T08:31:01.4197235Z"
+}

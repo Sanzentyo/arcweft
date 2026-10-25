@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "documents": [
+    {
+      "path": "docs/01-language/functions-and-pipeline.md",
+      "scope": "full maintained chapter/current list",
+      "relativeLinks": 0,
+      "missingLinks": 0,
+      "unclosedFence": 0
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "scope": "full maintained chapter/current list",
+      "relativeLinks": 35,
+      "missingLinks": 0,
+      "unclosedFence": 0
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "scope": "added dated history",
+      "relativeLinks": 5,
+      "missingLinks": 0,
+      "unclosedFence": 0
+    }
+  ],
+  "recordedAt": "2026-10-25T08:39:17.090Z"
+}

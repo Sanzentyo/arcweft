@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "run": "task-final-r2961-contextual-callback-inference-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.304s] 11 tests run: 9 passed, 2 failed, 1310 skipped",
+  "executed": 11,
+  "passed": 9,
+  "failed": 2,
+  "skipped": 1310,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3982,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "types::constraints::application::tests::imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_parent"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::generic_calls::traversal_accepts_callback_with_explicit_return"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T08:10:52.4373941Z"
+}

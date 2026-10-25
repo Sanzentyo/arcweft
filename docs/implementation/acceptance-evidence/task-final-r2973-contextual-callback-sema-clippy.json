@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "name": "task-final-r2973-contextual-callback-sema-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2973-contextual-callback-sema-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T08:31:22.5477825Z",
+  "finishedAt": "2026-10-25T08:34:20.0095638Z"
+}

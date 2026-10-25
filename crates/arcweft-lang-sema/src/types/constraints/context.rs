@@ -1455,9 +1455,26 @@ where
         imported: Option<super::ImportedGenericParameterScopeLease>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         self.charge_counter(1, Counter::Branches)?;
+        let mut variables = application.parameters().opened_effect_variables();
+        if let Some(imported) = &imported {
+            for parameter in imported.parameters() {
+                self.enter_node()?;
+                if let super::ConstraintGenericParameterId::Effect(reference) = parameter {
+                    variables.push(EffectConstraintVariable::new(
+                        reference.clone(),
+                        if imported.permits_local_inference(parameter) {
+                            EffectConstraintEligibility::Bindable
+                        } else {
+                            EffectConstraintEligibility::Rigid
+                        },
+                    ));
+                }
+            }
+            variables.sort_by(|left, right| left.variable().cmp(right.variable()));
+            variables.dedup();
+        }
         let mut effects =
-            EffectConstraintEnvironment::new(&application.parameters().opened_effect_variables())
-                .map_err(TypeConstraintError::from)?;
+            EffectConstraintEnvironment::new(&variables).map_err(TypeConstraintError::from)?;
         if !application.effects().predicate.is_unconstrained() {
             let predicate = application.parameters().opened_effect_predicate(self)?;
             effects.restore_predicate(&predicate, self)?;

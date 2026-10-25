@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "branch": "main",
+  "dirty": {
+    "ownedRust": 10,
+    "originalTrackedWip": 14,
+    "originalUntrackedFiles": 6
+  },
+  "scope": "Callback contextual inference and explicit/implicit function-value body effects in Sema",
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "manifestLockInputs": 99,
+  "manifestLockDrift": 0,
+  "metadataSource": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "dependencyGraph": {
+    "reversePackages": 22,
+    "reverseWorkspace": [
+      "arcweft-adapter-sema",
+      "arcweft-agent-mcp",
+      "arcweft-agent-mcp-client",
+      "arcweft-agent-repl",
+      "arcweft-agent-runner",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-lang-sema",
+      "arcweft-lsp",
+      "arcweft-player-native",
+      "arcweft-player-scene",
+      "arcweft-player-web",
+      "arcweft-project-loader",
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-runtime-plan",
+      "arcweft-test",
+      "arcweft-tooling",
+      "arcweft-verify",
+      "arcweft-verify-lsp",
+      "arcweft-verify-oxiz",
+      "arcweft-verify-z3"
+    ],
+    "directConsumers": [
+      "arcweft-adapter-sema",
+      "arcweft-agent-mcp",
+      "arcweft-agent-repl",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-lsp",
+      "arcweft-player-web",
+      "arcweft-project-loader",
+      "arcweft-runtime-plan",
+      "arcweft-tooling",
+      "arcweft-verify",
+      "arcweft-verify-lsp"
+    ],
+    "directDependencies": [
+      "arcweft-character",
+      "arcweft-core",
+      "arcweft-data",
+      "arcweft-dialogue",
+      "arcweft-id",
+      "arcweft-interaction-model",
+      "arcweft-lang-hir",
+      "arcweft-lang-syntax",
+      "arcweft-manifest-model",
+      "arcweft-presentation",
+      "arcweft-rich-text-schema",
+      "arcweft-rust-abi",
+      "arcweft-source",
+      "arcweft-view",
+      "blake3",
+      "serde",
+      "thiserror",
+      "trybuild"
+    ]
+  },
+  "ownerResult": {
+    "run": "task-final-r2967-contextual-callback-body-effects-checked-runtime",
+    "executed": 14,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 1310,
+    "seconds": 0.298,
+    "executableDrift": 0
+  },
+  "fullSemaResult": {
+    "run": "task-final-r2969-contextual-callback-sema-full-runtime",
+    "executed": 1348,
+    "passed": 1348,
+    "failed": 0,
+    "skipped": 0,
+    "slow": 1,
+    "seconds": 287.742,
+    "testBinaries": 5,
+    "executableDrift": 0
+  },
+  "compilerSourceResult": {
+    "run": "task-final-r2971-contextual-callback-compiler-source-runtime",
+    "executed": 2,
+    "passed": 0,
+    "failed": 2,
+    "skipped": 179,
+    "seconds": 0.159,
+    "executableDrift": 0,
+    "phase": "runtime projection",
+    "diagnosis": "Both pass Sema and reject the authored extern capability call because the fixture uses compile_source without manifest-owned host-call registration. Native/AWBC not reached; remaining collection families not reached."
+  },
+  "clippy": {
+    "run": "task-final-r2973-contextual-callback-sema-clippy",
+    "exitCode": 0,
+    "warnings": true,
+    "scope": "arcweft-lang-sema all-targets all-features locked"
+  },
+  "structuralGate": {
+    "run": "task-final-r2972-contextual-callback-structure-gate",
+    "exitCode": 0,
+    "files": 3221,
+    "rustFiles": 3091,
+    "workspacePackages": 97,
+    "reviewTriggers": 380,
+    "blocking": 0
+  },
+  "ownershipReview": {
+    "measurements": "task-contextual-callback-owner-measurements.json",
+    "maximumSingleFileGrowth": 213,
+    "disposition": "Keep the cohesive owners. continuation issues real declaration scopes and original scope leases; application owns imported inference eligibility; context owns path-local effects and work. The shared statement/expression execution fold remains the sole effect algebra. The new source adapter borrows checked facts and HIR-selected edges and a prerequisite iteration inventory; no new AST walk, external authority, I/O, or crate dependency. expressions remains family dispatch; completion reuses the exact HIR edge projection. Statement fact visibility is private to the analyzer for the actual new effect-query consumer, not a file-splitting facade."
+  },
+  "notRun": [
+    "current Sema reverse22 runtime acceptance",
+    "current workspace check and workspace Clippy",
+    "Source Traverse Native and decoded AWBC construction acceptance",
+    "Source Parallel aggregate Need execution and save/restore acceptance"
+  ],
+  "acceptedGenericMatchUnchanged": true,
+  "recordedAt": "2026-10-25T08:36:25.619Z"
+}

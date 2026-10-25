@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2958-traversal-callback-diagnostic-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83624960,
+      "nonTest": false,
+      "sha256": "2b44b03207ce5f9a00f43ef0322a3942ef6099b0a151f408585f49afbb3cecc5"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T07:28:57.1635199Z"
+}

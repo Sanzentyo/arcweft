@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2960-contextual-callback-inference-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83820544,
+      "nonTest": false,
+      "sha256": "39e3259cb7641cf09d49d3bc1f8b3efae6bf37af5f5f7d46fac65fb02f8e956a"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T08:10:24.1841721Z"
+}

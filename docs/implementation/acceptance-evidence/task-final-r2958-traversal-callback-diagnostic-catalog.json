@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "name": "task-final-r2958-traversal-callback-diagnostic-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(final_analysis::tests::generic_calls::traversal_)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2958-traversal-callback-diagnostic-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T07:25:41.5155767Z",
+  "finishedAt": "2026-10-25T07:28:56.1857068Z"
+}

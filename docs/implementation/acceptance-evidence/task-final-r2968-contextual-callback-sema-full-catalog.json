@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "name": "task-final-r2968-contextual-callback-sema-full-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2968-contextual-callback-sema-full-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T08:25:48.6581852Z",
+  "finishedAt": "2026-10-25T08:26:32.8183119Z"
+}

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "runs": [
+    {
+      "before": "task-traversal-callback-diagnostic-executables-before.json",
+      "after": "task-traversal-callback-diagnostic-executables-after.json",
+      "binaries": 1,
+      "drift": 0
+    },
+    {
+      "before": "task-contextual-callback-inference-executables-before.json",
+      "after": "task-contextual-callback-inference-executables-after.json",
+      "binaries": 1,
+      "drift": 0
+    },
+    {
+      "before": "task-contextual-callback-body-effects-final-executables-before.json",
+      "after": "task-contextual-callback-body-effects-final-executables-after.json",
+      "binaries": 1,
+      "drift": 0
+    },
+    {
+      "before": "task-contextual-callback-body-effects-checked-executables-before.json",
+      "after": "task-contextual-callback-body-effects-checked-executables-after.json",
+      "binaries": 1,
+      "drift": 0
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T08:29:42.223Z"
+}

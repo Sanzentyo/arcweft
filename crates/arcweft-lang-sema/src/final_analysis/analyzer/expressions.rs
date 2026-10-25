@@ -6,6 +6,8 @@ mod completion;
 pub(super) mod dialogue_line_plan;
 #[path = "expressions/records.rs"]
 mod records;
+#[path = "expressions/source_effects.rs"]
+mod source_effects;
 
 use std::{rc::Rc, sync::Arc};
 
@@ -926,7 +928,7 @@ impl Analyzer<'_, '_, '_> {
                     PreparedOwnerBoundResolution::implicit_parameter(owner, parameter.clone()),
                 )),
                 parameter.clone(),
-                EffectSet::new(),
+                crate::effect_row::EffectRow::closed(EffectSet::new()),
             )
         } else {
             self.implicit_callable_stack
@@ -1005,7 +1007,9 @@ impl Analyzer<'_, '_, '_> {
                     context.result.as_ref(),
                 )?
             };
-            let effects = body.effects().clone();
+            let effects = self
+                .prepared_expression_body_effects(owner, &body)
+                .map_err(AnalyzerExpressionError::fatal)?;
             let body = match body {
                 PreparedExpressionFact::Complete(body) => {
                     PreparedImplicitCallableBody::Complete(body)
@@ -1023,11 +1027,7 @@ impl Analyzer<'_, '_, '_> {
             };
             (body, result, effects)
         };
-        let ty = TypeKind::function_with_effects(
-            [parameter.clone()],
-            result.clone(),
-            crate::effect_row::EffectRow::closed(body_effects),
-        );
+        let ty = TypeKind::function_with_effects([parameter.clone()], result.clone(), body_effects);
         if expectation
             .complete_type()
             .is_some_and(|expected| !expected.accepts(&ty))
@@ -3138,7 +3138,8 @@ impl Analyzer<'_, '_, '_> {
                 let ty = TypeKind::function_with_effects(
                     parameters,
                     result,
-                    crate::effect_row::EffectRow::closed(body.effects().clone()),
+                    self.prepared_expression_body_effects(closure.body(), &body)
+                        .map_err(AnalyzerExpressionError::fatal)?,
                 );
                 if expectation
                     .complete_type()

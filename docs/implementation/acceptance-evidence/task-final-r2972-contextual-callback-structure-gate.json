@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "task-final-r2972-contextual-callback-structure-gate",
+  "command": [
+    "just",
+    "structure-audit-gate"
+  ],
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "startedAt": "2026-10-25T08:28:10.1385814Z",
+  "finishedAt": "2026-10-25T08:28:18.7086346Z",
+  "exitCode": 0,
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2972-contextual-callback-structure-gate.log"
+}

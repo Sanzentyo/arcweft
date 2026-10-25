@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "commit": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "parent": "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+  "tree": "c5ed6a0696c37213ea6a05e8f6e9083fd1f8da16",
+  "remote": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "blob": "f09b05dc63590e9d4a69c04e0e6b7b60c2f4fac0"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+      "blob": "26ffc3ae30bf7bb58c750e8270dcf5edbc9b30f1"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+      "blob": "1c33d5ed85d6550bd7ff2efee599d6b5dec5a485"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+      "blob": "159c891b4ec9518bf69312b4aebc119e645a0bb0"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "blob": "3101d2658311b7bad3ba7b8c236b188d0c5915bc"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+      "blob": "9c517a8ec6916a8b07e59163da215a0c4b85471a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2954-traversal-source-construction-workspace-check.input-audit.json",
+      "blob": "876c38fc8d00e40ef3903ce84c34f79f15e47cac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2954-traversal-source-construction-workspace-check.json",
+      "blob": "b4c14166c4b18c16b4ebeed1769998d488af04f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2954-traversal-source-construction-workspace-check.log",
+      "blob": "997e3dab8a4d91ec1b362cb7710d60f81934cbb7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2955-traversal-source-construction-workspace-check.input-audit.json",
+      "blob": "8e5bf66548f6c6feae4e61800786dae9136e0b5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2955-traversal-source-construction-workspace-check.json",
+      "blob": "76a4554f316afa216de341bf80c1a6241e08bd8e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2955-traversal-source-construction-workspace-check.log",
+      "blob": "6ffdf11a46f3a93442335f1e1611d218c2ee3d4d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2956-traversal-source-construction-catalog.inventory.json",
+      "blob": "13c169d967895cd30a50b08211587a8434a1c9fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2956-traversal-source-construction-catalog.json",
+      "blob": "1b0518003fe5388a58354248d2068687efec81a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2956-traversal-source-construction-catalog.log",
+      "blob": "0c935413b426007ed063a979732759c004cbff16"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2957-traversal-source-construction-runtime.json",
+      "blob": "a61adb7a71aaa6fc52e37815e4f91b04d7356488"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2957-traversal-source-construction-runtime.log",
+      "blob": "d5f81f9074673e249ae7acf6b7aac9efaf325e61"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2957-traversal-source-construction-runtime.terminal-audit.json",
+      "blob": "cdf56922f04d46b99eab78d2b3529a0fa2050ec4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-evidence-integrity.json",
+      "blob": "71304054485bd471e5e883e7165a0666fde3597f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-executables-after.json",
+      "blob": "b07478ed7bfc74b4a2bb4fee412175e3ca96d308"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-executables-before.json",
+      "blob": "8d298de7f8fb50583550f6085a89473d483ae300"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-final.graph.json",
+      "blob": "c9de685e9d46f65944eb0d20caea46d4497ecb6f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-final.source-freeze.json",
+      "blob": "511d97513e0954819d83585fd10911d0d3e2640b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-runtime.audit.json",
+      "blob": "9bbebc52a89b42804f36853eb68c05280a0d705a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction.graph.json",
+      "blob": "9e0e1a9312b95a958deb4960784d5bfa43ba25d4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction.source-freeze.json",
+      "blob": "aab069e7f26c5746e7d619d803bf913c3736f8d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-checkpoint.verified.json",
+      "blob": "dfe6b627c104b1bb54545a1f430b7a6eb103d1e2"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "577e4f6e074ed253a5c5a966d90cf988ef1efc74"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "53de72ac10ae255386a7f6d32e6857c5a8f1062b"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "76c066a6101dd2c65a18c35947be3ef779d3a148"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "bb2798291e3c8f34b808a1a83cb06bda8b9b700d24d2850032e47f597dba1dee",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T07:18:47.6668739Z"
+}

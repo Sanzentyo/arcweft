@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "run": "task-final-r2962-contextual-callback-body-effects-catalog",
+  "actualExitCode": 101,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(final_analysis::tests::generic_calls::traversal_) | test(contextual_callback_) | test(types::constraints::application::tests::imported_)",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T08:22:01.0003520Z"
+}

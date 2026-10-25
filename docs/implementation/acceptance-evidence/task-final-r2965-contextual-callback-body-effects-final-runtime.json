@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "name": "task-final-r2965-contextual-callback-body-effects-final-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(final_analysis::tests::generic_calls::traversal_) | test(contextual_callback_) | test(types::constraints::application::tests::imported_)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2965-contextual-callback-body-effects-final-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T08:22:51.3771026Z",
+  "finishedAt": "2026-10-25T08:22:53.2941927Z"
+}

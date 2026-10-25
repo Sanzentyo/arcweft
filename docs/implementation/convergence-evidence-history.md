@@ -11406,3 +11406,61 @@ computed collection／block callbackは `MissingCheckedExpressionCoordinate` で
 既存のGeneric Match、Semaの以前の5対象／全1,339件、型・codec／元Source型関係7件の
 結果は保持する。新しい2失敗の修復と、parallelによるfirst-class aggregate Needの構築・
 開始・await／保存復元を別の未達として扱い、全体goalの未完了から個別受入を取り消さない。
+
+## Callbackの親scope推論とclosure本体効果の修復 — 2026-10-25
+
+照合基点は公開main `1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f`。この前段Source構築公開は
+parent `b1e89daf80a30d73806326f5daef1cde7b0751d4`、tree `c5ed6a0696c37213ea6a05e8f6e9083fd1f8da16`、
+full patch SHA256 `bb2798291e3c8f34b808a1a83cb06bda8b9b700d24d2850032e47f597dba1dee`。
+30公開blob差分0、元tracked WIP 14件不変、index空を確認した。
+[前段の公開照合](acceptance-evidence/task-traversal-source-construction-checkpoint.verified.json)。
+
+R2958／R2959はSema libraryの1,317件中7件を選び、**5 PASS／2 FAIL**、終了100、0.264秒だった。
+追加した直接lambdaとcomputed collection／block callbackが失敗し、既存5件はPASS。
+一時診断でcallback入力のStringと完全な関数形は渡っていることを確認した。戻り値中の親の未解決型変数が、
+独立したbody callでは一律rigidとして取り込まれるために具体的なNeed<Result<String,String>>と不一致になっていた。
+この診断を「関数形のヒントがない」とは扱わない。一時出力は修復前のログだけに保持し、ソースから削除した。
+
+親の実scope leaseが元々Bindableとして所有するtype／const／effectだけを子の独立した制約経路で解決可能とした。
+親のmutable frontierやbindingsを貸さず、親の変数を子の宣言引数へ追加しない。rigidとFutureEligibleは固定のまま。
+callable側で親の推論変数をrigid宣言へコピーする経路を削除し、effect環境も同じleaseから初期化する。
+callback全体の親側の制約と最終置換によるmaterialization検証を維持する。
+
+R2960／R2961は11実行／9 PASS／2 FAIL、終了100、0.304秒。1件は効果環境の解決を型の投影だけで
+比較していたテストの誤りで、もう1件は明示returnの返却式のfs.readがclosure型から落ちる実際の不具合だった。
+後者は末尾式の直接効果だけでFn型を作っていたためで、明示／暗黙closureの本体を既存のexecution-effect foldへ接続した。
+checked factとHIRの選択済みedgeを借りる入口を追加し、別のAST走査や効果algebraを作っていない。
+iteration inventoryは既存の前提検証と同様の借用snapshotで、最終statement sealの元affine値は消費しない。
+
+R2962のcatalog構築はaffineなPreparedStatementPayloadをCowで扱おうとして4コンパイルエラー、終了101。
+Cloneを追加せず、queryが所有する一時payloadと既存の借用payloadをそのまま参照する形へ直した。
+R2963 runtimeは開始していない。R2964／R2965は14実行／12 PASS／2 FAIL、終了100、0.251秒。
+この2件はテストの前提を訂正した。seal_typeは未解決親変数を保持できるため、拒否ではなく元の未解決型との一致を検査する。
+また、関数宣言の末尾effectsを返却Fn型のpure指定として使っていたため、明示的にpureを要求するcallback parameterで拒否を検査した。
+過去の失敗ログを後続成功で書き換えていない。
+
+訂正後R2966／R2967はlibrary 1,324件中**14／14 PASS**、終了0、0.298秒、1,310非選択。
+元の5件、新しい2 callback、既知の部分型によるnested generic推論、return／statementの効果、nested closureの遅延、
+pure callbackへのeffect漏れ拒否、親のtype／const／effectの隔離と非公開、rigid／futureの拒否を確認した。
+R2968／R2969は全target／全feature／lockedで**1,348／1,348 PASS**、終了0、287.742秒、slow 1・除外0。
+catalogと終端case集合は一致し、3,983非文書入力と全5実行ファイルの前後hash差分0。
+[全Semaの終端](acceptance-evidence/task-final-r2969-contextual-callback-sema-full-runtime.terminal-audit.json)。
+
+R2970／R2971はCompiler callable_executionの181件中2件を選び、**0 PASS／2 FAIL**、終了100、0.159秒。
+Semaは通過したが、fixtureがmanifest登録なしのcompile_sourceを使っているため、元のextern capability callを
+「manifest-owned host-call contractがない」とruntime projectionで拒否した。Native／decoded AWBCや、
+最初のVecより後のcollection familyに到達した証拠ではない。
+[Sourceの実際の失敗](acceptance-evidence/task-final-r2971-contextual-callback-compiler-source-runtime.terminal-audit.json)。
+
+R2972のcanonical構造gateは97 package／Rust 3,091 fileでblocking 0、review trigger 380、終了0。
+R2973のSema全target／全feature／locked Clippyも終了0・警告あり、Cargo表示2m57s。
+両者の3,983入力は前後hash差分0。変更ownerの最大単一file増加は213 LOC。既存の上限超過ownerは
+declaration／scope lease、path-local制約環境、expression dispatch、単一execution-effect foldという責任を維持する。
+新しいsource adapterは既存fact／selected edgeと前提iteration inventoryを借り、I/O・crate依存・公開facadeを追加しない。
+checked_statement_factの可視性拡大はanalyzer内の実際のquery consumerに限定する。
+[owner測定・依存graph・dispositionと検証範囲](acceptance-evidence/task-contextual-callback-sema-acceptance.json)。
+
+これらはSema ownerと全Semaの結果であり、全22逆依存runtimeや新入力のworkspace check／workspace Clippy、
+Source構築のNative／AWBC、parallelによるfirst-class aggregate Needの受入ではない。
+Generic Matchの既存151件の受入と公開full SHAは維持する。
+[原本の保全一覧](acceptance-evidence/task-contextual-callback-evidence-integrity.json)。

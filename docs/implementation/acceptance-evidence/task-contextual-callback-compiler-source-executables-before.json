@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2970-contextual-callback-compiler-source-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-6f0f9fd90f0abf3c.exe",
+      "bytes": 121135616,
+      "nonTest": false,
+      "sha256": "a2469757874f947987e180433779f07ccf6ed348078bdab70ebf84d438c72b33"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T08:28:20.3597660Z"
+}
