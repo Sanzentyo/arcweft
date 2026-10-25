@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "base": "a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117",
+  "rawOriginals": 10,
+  "byteDrift": 0,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3132-awbc-task-carrier-owner-catalog.json",
+      "sha256": "338e0ded4af57f5d989aa64546a6e121fe64c866cc4dbdd8194c091a16e9a19d",
+      "bytes": 625
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3132-awbc-task-carrier-owner-catalog.log",
+      "sha256": "856ac0ee7ea7f306b227cc32d6083d6b8b95259629fd7047d0d7fffe3945f685",
+      "bytes": 480441
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3132-awbc-task-carrier-owner-catalog.inventory.json",
+      "sha256": "44fbaa50099f7a98bba8c3202540a9f5177fa31d63cdcab21d5837531ca7848a",
+      "bytes": 567771
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-owner-executables-before.json",
+      "sha256": "8a7afd24fdf5f14691915a888da7bb53d39e23f7c81f6c5a1517a9c0b0cecda0",
+      "bytes": 4680
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-owner-progress.json",
+      "sha256": "616a42e1dddeaaf984834e1de56d933958d5881755d40bbbdc83460278ffc232",
+      "bytes": 1070
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3135-awbc-task-carrier-workspace-check.json",
+      "sha256": "f64d5a137fee69b3ce1f54ab7080f8205a9462f1bfa37849ea266833507d3ed4",
+      "bytes": 524
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3135-awbc-task-carrier-workspace-check.log",
+      "sha256": "559e9f5ca5301e9e46f55a79d94efcdf637e4fce473eecf3d8c40011ea7fd728",
+      "bytes": 106154
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3135-awbc-task-carrier-workspace-check.input-audit.json",
+      "sha256": "8a02f7c9ab5b5828fe7a2e6d5661655b5b13cf88ccde7508dbe47d5cab067c53",
+      "bytes": 327
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier.verified.json",
+      "sha256": "7fd612d12b8764e5376eeb37f07b2a1cb6dd2c235d994bd801d624dccbc5e622",
+      "bytes": 6679
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-public-evidence-audit.json",
+      "sha256": "3d0feb89fa5901b1641a5d27e744eea91498c4cd7662e0643ee69858d0690b65",
+      "bytes": 135
+    }
+  ]
+}

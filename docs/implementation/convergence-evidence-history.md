@@ -12068,3 +12068,26 @@ R3132 catalogは2,243件を選択し、R3133 nextestは同じdriverで実行中�
 最後のattached Threadを実行中。HIR依存8 packageのソースと上限・assertionは変更せず、同じrunを継続した。
 Generic Matchの受入・公開と過去の151 PASSを維持する。新入力の再実行結果へ読み替えず、受入を戻す根拠にもしていない。
 原本等16件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-awbc-task-carrier-evidence-integrity.json)。
+
+## AWBC carrier checkpointの公開・owner進行とworkspace check終端 — 2026-10-26
+
+公開 `a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117`、parent
+`b979046ec831fae67fa8ff5e08dc35f952abdfed`、tree
+`3831b14243275bd58c3eeadb3a2af492f50b0bd5`、full patch SHA256
+`cd5cd163e0d2b5fd923d4952f8c07c29dcf9fc6acc79d571858057bb5175583d`。
+全38公開blobと原本等16件の公開byte hash差分0、元WIP 14件を保持しindexは空。
+[公開照合](acceptance-evidence/task-awbc-task-carrier.verified.json)。
+
+R3132はCore／runtime-planの2,243件・18 test binaries・除外0をcatalog化した。
+R3133は2,240件のterminal caseをPASSとして観測し、Coreの2,085件はcatalog集合との差分0。
+追加5件と、元Thread SourceをNeedへ変更した行を拒否する既存caseの拡張もPASS。
+runtime-planの公開API compile-fail 3件は実行中で、全体のsummary／実際の終了コードは未確認。
+これは終端前の観測であり、owner全体の合格としない。[観測原本](acceptance-evidence/task-awbc-task-carrier-owner-progress.json)。
+
+R3135 workspace checkは全target・全feature・locked、警告あり・終了0、4分00秒。
+開始前freezeの3,988入力との差分0。R3136 Clippyは同じsession 1303で実行中。
+同driverは後続のCore doctest、全53逆依存catalogと実際のrdeps filterを使うnextestへ進む。
+R3133のsession 71350とR3127 HIR Tier 2のsession 17793もliveとして確認した。
+HIRは7／8 PASSで、最後のattached Threadを継続中。バイナリ・上限・assertionを変更していない。
+元の広いsource guardとHIR専用freezeの区別は前段の記録どおり維持する。
+原本等10件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-awbc-task-carrier-gates-evidence-integrity.json)。

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "b979046ec831fae67fa8ff5e08dc35f952abdfed",
+  "name": "task-final-r3132-awbc-task-carrier-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3132-awbc-task-carrier-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T20:00:42.7326112Z",
+  "finishedAt": "2026-10-25T20:09:49.7032374Z"
+}

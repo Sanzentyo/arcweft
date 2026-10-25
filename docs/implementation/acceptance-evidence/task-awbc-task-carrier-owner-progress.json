@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117",
+  "observedAt": "2026-10-25T20:18:24.2619328Z",
+  "run": "task-final-r3133-awbc-task-carrier-owner-runtime",
+  "catalog": "task-final-r3132-awbc-task-carrier-owner-catalog",
+  "selected": 2243,
+  "observedTerminalCases": 2240,
+  "observedFailures": [],
+  "core": {
+    "expected": 2085,
+    "observed": 2085,
+    "passed": 2085,
+    "catalogCaseDrift": 0
+  },
+  "pending": [
+    {
+      "binary": "arcweft-runtime-plan::api_compile",
+      "test": "removed_runtime_mark_handler_authority_is_unavailable"
+    },
+    {
+      "binary": "arcweft-runtime-plan::api_compile",
+      "test": "removed_runtime_plan_apis_are_unavailable"
+    },
+    {
+      "binary": "arcweft-runtime-plan::api_compile",
+      "test": "runtime_trigger_admission_has_no_external_constructor"
+    }
+  ],
+  "terminalSummaryObserved": false,
+  "actualExitCode": null,
+  "scope": "Live per-case observation; not the terminal nextest result. Original runtime log will be retained at completion."
+}
