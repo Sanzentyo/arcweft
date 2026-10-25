@@ -402,7 +402,9 @@ pub(crate) fn awbc_handle_program(
         priority: 4,
         cancel_scope: AwbcStringId(1),
         policy: AwbcTaskPolicy::JoinSameKey,
-        payload_type: AwbcTypeId(0),
+        handle_type: crate::task::TaskHandleType::Need {
+            payload: AwbcTypeId(0),
+        },
         execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
             crate::awbc::schema::AwbcHostTaskPlan {
                 signature: AwbcSignatureId(1),

@@ -2172,7 +2172,7 @@ fn apply_instruction(
             else {
                 return invalid_type(&at, "Need<T> producer destination");
             };
-            if *item != task.payload_type {
+            if *item != task.payload_type() {
                 return invalid_type(&at, "Need<T> matching producer payload type");
             }
             write_register(verifier, function, block, *dst, state)?;
@@ -2196,13 +2196,22 @@ fn apply_instruction(
                 &format!("Program task {}", plan.0),
             )?;
             let destination = register_type(verifier, function, block, *dst)?;
-            let AwbcRuntimeTypeShape::Task(item) =
-                program.runtime_types[destination.index()].shape()
-            else {
-                return invalid_type(&at, "ThreadHandle<T> Program destination");
+            let matches = match (
+                task.handle_type,
+                program.runtime_types[destination.index()].shape(),
+            ) {
+                (
+                    crate::task::TaskHandleType::Need { payload },
+                    AwbcRuntimeTypeShape::Need(item),
+                )
+                | (
+                    crate::task::TaskHandleType::ThreadHandle { payload },
+                    AwbcRuntimeTypeShape::Task(item),
+                ) => payload == *item,
+                _ => false,
             };
-            if *item != task.payload_type {
-                return invalid_type(&at, "ThreadHandle<T> matching Program payload type");
+            if !matches {
+                return invalid_type(&at, "Program destination matching task carrier and payload");
             }
             write_register(verifier, function, block, *dst, state)?;
         }
@@ -3780,7 +3789,7 @@ fn apply_terminator(
                     function,
                     block,
                     *pattern,
-                    task.payload_type,
+                    task.payload_type(),
                     Some(AwbcBindMode::Declare),
                     &mut next,
                     0,

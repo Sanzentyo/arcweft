@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "base": "b979046ec831fae67fa8ff5e08dc35f952abdfed",
+  "rawOriginals": 16,
+  "byteDrift": 0,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier.graph.json",
+      "sha256": "dcd941e1a214f4aadc63b29661e361c687d596f3cb6536610497c5ce569c61ab",
+      "bytes": 3493
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier.source-freeze.json",
+      "sha256": "7cc6c473ebdd28ab297105f20ae1ae99b57da1e619cf403e54c4ea321c16605f",
+      "bytes": 780672
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-structure-review.json",
+      "sha256": "c7bd7c1b34165ea599a0be5025f834e26012f9cd7ad104c326d216a227e949db",
+      "bytes": 8089
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-checkpoint.json",
+      "sha256": "1e26c1740bdc2fcdcb5ae765f60f13e4037503db30955a65e0266927d5f3c214",
+      "bytes": 3703
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3131-awbc-task-carrier-owner-check.json",
+      "sha256": "71b31fdc97134ea3cc8a194d38e7e2480974e462b016b69a14f1ed5eb0c8559b",
+      "bytes": 568
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3131-awbc-task-carrier-owner-check.log",
+      "sha256": "9fe5284f46bb17b9a59f841acc5cad9095a436193d03e1de9997c724238c0820",
+      "bytes": 92288
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3131-awbc-task-carrier-owner-check.input-audit.json",
+      "sha256": "6f7ad850fe112ca6e99e383d092c78d2aa0b61d6c3cc705a659048555e3c73bb",
+      "bytes": 375
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3134-awbc-task-carrier-structure.json",
+      "sha256": "8844727ca9431ab20d239262715be2250ab325935fa8f060fbd9fab29dc83e16",
+      "bytes": 674
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3134-awbc-task-carrier-structure.log",
+      "sha256": "480c2b1d840c9d5c01d0b30355f2b77c0272bbc50aa3e8e5c1fdef0846047dfe",
+      "bytes": 64614
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3134-awbc-task-carrier-structure.input-audit.json",
+      "sha256": "8bbc175f4ec0da7d3c03d793aa133063730dce71c875ed55a67f07dd382b1a12",
+      "bytes": 483
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-driver.ps1",
+      "sha256": "8f2cb9bc15af6523d9a66e0f6b6ce298a76a07c3ba9396ef15bfc6eee532bf53",
+      "bytes": 5676
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-structure-report/dependency_edges.csv",
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f",
+      "bytes": 77451
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-structure-report/file_metrics.csv",
+      "sha256": "2ecd4fada86d8ceb2bf5a9c0c5b5af8520bc3b94475c49e8e13b2ed6c8b3bf8f",
+      "bytes": 326690
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-structure-report/findings.md",
+      "sha256": "dd1becd388e69960f6a4ace7de8d46d817180504925d8bb1b2b896f953138187",
+      "bytes": 121534
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-structure-report/package_metrics.csv",
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82",
+      "bytes": 6444
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-structure-report/public_type_duplicates.csv",
+      "sha256": "a75431ecd096a8760a437c4a5b889427a045c99a2589daa4f9232ed569d7d5d6",
+      "bytes": 17121
+    }
+  ]
+}

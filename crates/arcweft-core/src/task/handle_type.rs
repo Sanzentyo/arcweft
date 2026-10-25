@@ -16,6 +16,22 @@ pub enum TaskHandleType<Payload = RuntimeTypeSemanticDigest> {
     ThreadHandle { payload: Payload },
 }
 
+impl<Payload> TaskHandleType<Payload> {
+    /// Projects the payload through its owning type context without changing
+    /// the language carrier or deriving it from the execution backend.
+    #[must_use]
+    pub fn map_payload<T>(self, map: impl FnOnce(Payload) -> T) -> TaskHandleType<T> {
+        match self {
+            Self::Need { payload } => TaskHandleType::Need {
+                payload: map(payload),
+            },
+            Self::ThreadHandle { payload } => TaskHandleType::ThreadHandle {
+                payload: map(payload),
+            },
+        }
+    }
+}
+
 impl<Payload: Copy> TaskHandleType<Payload> {
     #[must_use]
     pub const fn payload_type(self) -> Payload {

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "b979046ec831fae67fa8ff5e08dc35f952abdfed",
+  "name": "task-final-r3134-awbc-task-carrier-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-awbc-task-carrier-structure-report"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3134-awbc-task-carrier-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T20:02:18.3188386Z",
+  "finishedAt": "2026-10-25T20:02:23.5167725Z"
+}

@@ -1722,7 +1722,7 @@ impl AwbcInventory {
             priority: producer.priority.0,
             cancel_scope: self.intern_string(&producer.cancel_scope.0),
             policy: awbc_task_policy(producer.policy),
-            payload_type,
+            handle_type: producer.handle_type.map_payload(|_| payload_type),
             execution: arcweft_core::awbc::schema::AwbcTaskPlanExecution::Program(
                 arcweft_core::awbc::schema::AwbcProgramTaskPlan {
                     source: key.into(),
@@ -1829,7 +1829,10 @@ impl AwbcInventory {
             priority: template.definition.priority.0,
             cancel_scope: self.intern_string(&template.definition.cancel_scope.0),
             policy: awbc_task_policy(template.definition.policy),
-            payload_type,
+            handle_type: template
+                .definition
+                .handle_type
+                .map_payload(|_| payload_type),
             execution: arcweft_core::awbc::schema::AwbcTaskPlanExecution::Host(
                 arcweft_core::awbc::schema::AwbcHostTaskPlan {
                     signature,
@@ -1937,7 +1940,9 @@ impl AwbcInventory {
             priority: plan.priority().0,
             cancel_scope: self.intern_string(&plan.cancel_scope().0),
             policy: awbc_task_policy(plan.policy()),
-            payload_type,
+            handle_type: arcweft_core::task::TaskHandleType::Need {
+                payload: payload_type,
+            },
             execution: arcweft_core::awbc::schema::AwbcTaskPlanExecution::Host(
                 arcweft_core::awbc::schema::AwbcHostTaskPlan {
                     signature,

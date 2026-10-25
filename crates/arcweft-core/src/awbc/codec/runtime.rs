@@ -26,6 +26,8 @@ use std::num::NonZeroU32;
 
 #[cfg(test)]
 mod effect_tests;
+#[cfg(test)]
+mod task_tests;
 
 impl Wire for AwbcIntrinsic {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -158,7 +160,7 @@ impl Wire for AwbcTaskPlan {
         self.priority.write_wire(writer)?;
         self.cancel_scope.write_wire(writer)?;
         self.policy.write_wire(writer)?;
-        self.payload_type.write_wire(writer)?;
+        self.handle_type.write_wire(writer)?;
         self.execution.write_wire(writer)
     }
 
@@ -168,9 +170,30 @@ impl Wire for AwbcTaskPlan {
             priority: i32::read_wire(reader)?,
             cancel_scope: AwbcStringId::read_wire(reader)?,
             policy: AwbcTaskPolicy::read_wire(reader)?,
-            payload_type: AwbcTypeId::read_wire(reader)?,
+            handle_type: crate::task::TaskHandleType::read_wire(reader)?,
             execution: AwbcTaskPlanExecution::read_wire(reader)?,
         })
+    }
+}
+
+impl Wire for crate::task::TaskHandleType<AwbcTypeId> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        self.payload_type().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        let carrier = crate::task::TaskHandleType::from_semantic_tag(tag, ()).ok_or(
+            AwbcCodecError::UnknownTag {
+                kind: "task handle type",
+                tag,
+                offset,
+            },
+        )?;
+        let payload = AwbcTypeId::read_wire(reader)?;
+        Ok(carrier.map_payload(|()| payload))
     }
 }
 

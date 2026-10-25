@@ -119,7 +119,7 @@ fn executable_from(original: RuntimeTaskSourceProgram) -> AwbcProgram {
             priority: producer.priority.0,
             cancel_scope: AwbcStringId(0),
             policy: AwbcTaskPolicy::AlwaysStart,
-            payload_type: AwbcTypeId(0),
+            handle_type: producer.handle_type.map_payload(|_| AwbcTypeId(0)),
             execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
                 source: row.key().into(),
                 kernel: AwbcFunctionId(0),
@@ -138,6 +138,83 @@ fn admit(code: AwbcProgram) -> RuntimeTaskSourceProgram {
         None,
     )
     .unwrap()
+}
+
+#[test]
+fn program_destination_verifier_checks_the_row_carrier_and_payload() {
+    use crate::task::TaskHandleType;
+    let mut code = executable();
+    let mut caller = code.functions[0].clone();
+    caller.definition =
+        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x63; 32]);
+    caller.kind = AwbcFunctionKind::Ordinary;
+    caller.signature = AwbcSignatureId(1);
+    caller.frame_layout = AwbcFrameLayoutId(1);
+    caller.blocks = AwbcTableRange::new(1, 1);
+    caller.entry_block = AwbcBlockId(1);
+    code.functions.push(caller);
+    let mut signature = code.signatures[0].clone();
+    signature.result = None;
+    code.signatures.push(signature);
+    let mut frame = code.frame_layouts[0].clone();
+    frame.slots[1].ty = AwbcTypeId(2);
+    code.frame_layouts.push(frame);
+    code.instructions.push(AwbcInstruction::StartProgram {
+        dst: AwbcRegisterId(1),
+        plan: AwbcTaskPlanId(0),
+        args: vec![AwbcRegisterId(0)],
+    });
+    code.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(1, 1),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    code.runtime_types.push(AwbcRuntimeType::new(
+        crate::pattern::RuntimeSemanticTypeId::from_bytes([0x64; 32]),
+        AwbcRuntimeTypeShape::Task(AwbcTypeId(0)),
+    ));
+    for handle_type in [
+        TaskHandleType::Need {
+            payload: AwbcTypeId(0),
+        },
+        TaskHandleType::ThreadHandle {
+            payload: AwbcTypeId(0),
+        },
+    ] {
+        code.task_plans[0].handle_type = handle_type;
+        for (destination, expected) in [
+            (
+                AwbcRuntimeTypeShape::Need(AwbcTypeId(0)),
+                matches!(handle_type, TaskHandleType::Need { .. }),
+            ),
+            (
+                AwbcRuntimeTypeShape::Task(AwbcTypeId(0)),
+                matches!(handle_type, TaskHandleType::ThreadHandle { .. }),
+            ),
+            (AwbcRuntimeTypeShape::Need(AwbcTypeId(1)), false),
+            (AwbcRuntimeTypeShape::Task(AwbcTypeId(1)), false),
+        ] {
+            code.runtime_types[2] = AwbcRuntimeType::new(
+                crate::pattern::RuntimeSemanticTypeId::from_bytes([0x64; 32]),
+                destination,
+            );
+            let result = code.verify(AwbcVerifyBudget::default(), context());
+            if expected {
+                result.unwrap();
+            } else {
+                assert!(
+                    matches!(
+                        result.as_ref(),
+                        Err(crate::awbc::verify::AwbcVerifyError::InvalidInvariant { message, .. })
+                            if message == "Program destination matching task carrier and payload"
+                    ),
+                    "{handle_type:?}: {result:?}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -190,6 +267,7 @@ fn program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drif
         Field::Priority,
         Field::CancelScope,
         Field::Policy,
+        Field::HandleType,
         Field::Definition,
         Field::Capture { index: 0 },
     ] {
@@ -199,6 +277,11 @@ fn program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drif
             Field::Priority => code.task_plans[0].priority += 1,
             Field::CancelScope => code.task_plans[0].cancel_scope = AwbcStringId(1),
             Field::Policy => code.task_plans[0].policy = AwbcTaskPolicy::JoinSameKey,
+            Field::HandleType => {
+                code.task_plans[0].handle_type = crate::task::TaskHandleType::Need {
+                    payload: code.task_plans[0].payload_type(),
+                };
+            }
             Field::Definition => {
                 code.functions[0].definition =
                     crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
@@ -234,7 +317,9 @@ fn program_kernel_source_checks_payload_and_capture_types_against_the_original()
         let mut code = executable();
         match field {
             Field::Payload => {
-                code.task_plans[0].payload_type = AwbcTypeId(1);
+                code.task_plans[0].handle_type = code.task_plans[0]
+                    .handle_type
+                    .map_payload(|_| AwbcTypeId(1));
                 code.signatures[0].result = Some(AwbcTypeId(1));
                 code.frame_layouts[0].slots[1].ty = AwbcTypeId(1);
                 code.constants[0] = AwbcConstant::Bool(true);

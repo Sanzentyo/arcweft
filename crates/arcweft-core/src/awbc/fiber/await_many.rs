@@ -289,7 +289,7 @@ impl<V, N> FiberAwaitManyState<V, N> {
         for value in self.results.iter().flatten() {
             RuntimeProgramValueType::Awbc {
                 program,
-                ty: child_plan.payload_type,
+                ty: child_plan.payload_type(),
             }
             .validate_view(view(value), frame.binding, resources)
             .map_err(|error| {

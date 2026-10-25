@@ -334,7 +334,7 @@ impl RuntimeTaskSourceProgram {
             .id_for_semantic(metadata.payload_type())
             .expect("the common seal admitted the original selected payload");
         let mut types = RuntimeAwbcSourceTypeRelation::new(original, executable, limits, meter);
-        types.admit(payload, row.payload_type).map_err(|source| {
+        types.admit(payload, row.payload_type()).map_err(|source| {
             RuntimeAwbcSelectedSourceError::type_relation(task, Field::Payload, source)
         })?;
         for (index, (expected, actual)) in args.iter().zip(&signature.params).enumerate() {

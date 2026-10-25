@@ -41,15 +41,18 @@ The common Q definition records each Program capture's original type, source
 order and local/capture/Need provenance through capture roles. It checks the
 complete role allowance before constructing those metadata rows.
 
-AWBC task plans keep scheduling and the payload type in one common row.
+AWBC task plans keep scheduling and `TaskHandleType<AwbcTypeId>` in one common
+row. This retains both the language carrier and its exact Ready payload type;
+execution kind does not determine the carrier. Host rows require `Need<T>`.
 `AwbcTaskPlanExecution::Host` owns the Host request projection, signature,
 arguments and closed Host plan kind. `Program` owns only the original expected
 task-plan key and its `ProgramTask` kernel. The version-one wire grammar encodes
 this distinction directly; a Program row has no synthetic Host argument packet.
 Its Source admission resolves the key in the retained original executable and
 checks the Thread operation, generated task-body definition, scheduling,
-payload, and complete capture type relation. Capture metadata must preserve the
-original local, source order and `ExternalBinding` transfer; owned kernel input
+carrier, payload, and complete capture type relation. The carrier must match
+before capture types are traversed or an original Source lease is returned.
+Capture metadata must preserve the original local, source order and `ExternalBinding` transfer; owned kernel input
 does not grant a language Copy or Move operation. One caller-owned semantic
 meter bounds this work before a Source lease is copied. An assertion or decoded
 row alone grants no execution authority, and ordinary function roots and calls
@@ -67,8 +70,10 @@ original capture ABI. Ordinary callables use `Signature`; these contexts are
 not interchangeable. The original Source checks both the lexical owner and
 the complete invocation effect set.
 
-`StartProgram` names the admitted task-plan row and a typed `ThreadHandle<T>`
-destination. Captures stay in the parent and require unrestricted Copy custody.
+`StartProgram` names the admitted task-plan row and a typed destination whose
+carrier and payload match that row. A Thread Source declares `ThreadHandle<T>`;
+changing only the AWBC row to `Need<T>` fails original Source admission.
+Thread captures stay in the parent and require unrestricted Copy custody.
 The product executor prepares the child, authenticates the original Source and
 captures, and admits the actual launch receipt before committing the parent
 write, child queue, quota and identity cursors. Program kernels require a Task

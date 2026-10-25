@@ -399,7 +399,7 @@ impl<'program> TemplateAdmission<'program, '_> {
             .id_for_semantic(payload)
             .expect("the original common seal admitted the producer payload");
         self.types
-            .push((task, Field::Payload, payload, row.payload_type));
+            .push((task, Field::Payload, payload, row.payload_type()));
         let args = template.request.args.as_slice();
         self.roles(
             task,

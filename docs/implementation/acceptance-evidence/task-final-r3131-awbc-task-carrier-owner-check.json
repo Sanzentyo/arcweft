@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "b979046ec831fae67fa8ff5e08dc35f952abdfed",
+  "name": "task-final-r3131-awbc-task-carrier-owner-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3131-awbc-task-carrier-owner-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T19:57:42.2063128Z",
+  "finishedAt": "2026-10-25T20:00:26.1489092Z"
+}

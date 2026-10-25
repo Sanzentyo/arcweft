@@ -6522,7 +6522,7 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
             priority: 0,
             cancel_scope: AwbcStringId(3),
             policy: AwbcTaskPolicy::JoinSameKey,
-            payload_type: item_ty,
+            handle_type: crate::task::TaskHandleType::Need { payload: item_ty },
             execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
                 crate::awbc::schema::AwbcHostTaskPlan {
                     signature: AwbcSignatureId(1),
@@ -7414,7 +7414,7 @@ fn await_many_product_program_with_thread(
             priority: 0,
             cancel_scope: AwbcStringId(3),
             policy: AwbcTaskPolicy::JoinSameKey,
-            payload_type: if output == AwaitManyFixtureOutput::Result { AwbcTypeId(7) } else { sequence_ty },
+            handle_type: crate::task::TaskHandleType::Need { payload: if output == AwaitManyFixtureOutput::Result { AwbcTypeId(7) } else { sequence_ty } },
             execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
                 crate::awbc::schema::AwbcHostTaskPlan {
                     signature: AwbcSignatureId(2),
@@ -7456,10 +7456,12 @@ fn await_many_product_program_with_thread(
         priority: 0,
         cancel_scope: AwbcStringId(3),
         policy: AwbcTaskPolicy::JoinSameKey,
-        payload_type: if output == AwaitManyFixtureOutput::Result {
-            AwbcTypeId(6)
-        } else {
-            item_ty
+        handle_type: crate::task::TaskHandleType::Need {
+            payload: if output == AwaitManyFixtureOutput::Result {
+                AwbcTypeId(6)
+            } else {
+                item_ty
+            },
         },
         execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
             crate::awbc::schema::AwbcHostTaskPlan {
@@ -7676,7 +7678,7 @@ fn await_many_product_program_with_thread(
             priority: producer.priority.0,
             cancel_scope: AwbcStringId(3),
             policy: AwbcTaskPolicy::AlwaysStart,
-            payload_type: AwbcTypeId(7),
+            handle_type: producer.handle_type.map_payload(|_| AwbcTypeId(7)),
             execution: crate::awbc::schema::AwbcTaskPlanExecution::Program(
                 crate::awbc::schema::AwbcProgramTaskPlan {
                     source: original.task_plan(&producer.plan).unwrap().key().into(),

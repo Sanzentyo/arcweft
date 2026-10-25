@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "base": "b979046ec831fae67fa8ff5e08dc35f952abdfed",
+  "workingTree": "main; original fourteen tracked WIP held; eighteen Rust migration files plus scheduler contract changed",
+  "scannerRun": "task-final-r3134-awbc-task-carrier-structure",
+  "scannerExitCode": 0,
+  "files": [
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+      "owner": "arcweft-core",
+      "bytes": 54768,
+      "physicalLoc": 1549,
+      "basePhysicalLoc": 1526,
+      "growth": 23,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime/task_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 3164,
+      "physicalLoc": 93,
+      "basePhysicalLoc": 0,
+      "growth": 93,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/await_many.rs",
+      "owner": "arcweft-core",
+      "bytes": 17829,
+      "physicalLoc": 473,
+      "basePhysicalLoc": 473,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "owner": "arcweft-core",
+      "bytes": 120395,
+      "physicalLoc": 2919,
+      "basePhysicalLoc": 2917,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 321742,
+      "physicalLoc": 8166,
+      "basePhysicalLoc": 8164,
+      "growth": 2,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "owner": "arcweft-core",
+      "bytes": 119922,
+      "physicalLoc": 3742,
+      "basePhysicalLoc": 3735,
+      "growth": 7,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+      "owner": "arcweft-core",
+      "bytes": 254705,
+      "physicalLoc": 6546,
+      "basePhysicalLoc": 6537,
+      "growth": 9,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+      "owner": "arcweft-core",
+      "bytes": 157674,
+      "physicalLoc": 3923,
+      "basePhysicalLoc": 3915,
+      "growth": 8,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 11622,
+      "physicalLoc": 306,
+      "basePhysicalLoc": 300,
+      "growth": 6,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 18263,
+      "physicalLoc": 508,
+      "basePhysicalLoc": 423,
+      "growth": 85,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/selected.rs",
+      "owner": "arcweft-core",
+      "bytes": 12699,
+      "physicalLoc": 353,
+      "basePhysicalLoc": 353,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/selected/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 19625,
+      "physicalLoc": 554,
+      "basePhysicalLoc": 534,
+      "growth": 20,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/template.rs",
+      "owner": "arcweft-core",
+      "bytes": 20926,
+      "physicalLoc": 575,
+      "basePhysicalLoc": 575,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/template/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 35133,
+      "physicalLoc": 953,
+      "basePhysicalLoc": 951,
+      "growth": 2,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 45660,
+      "physicalLoc": 1280,
+      "basePhysicalLoc": 1278,
+      "growth": 2,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/task/handle_type.rs",
+      "owner": "arcweft-core",
+      "bytes": 2009,
+      "physicalLoc": 57,
+      "basePhysicalLoc": 41,
+      "growth": 16,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/tests/program_custody.rs",
+      "owner": "arcweft-core",
+      "bytes": 25423,
+      "physicalLoc": 687,
+      "basePhysicalLoc": 685,
+      "growth": 2,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 103508,
+      "physicalLoc": 2490,
+      "basePhysicalLoc": 2485,
+      "growth": 5,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    }
+  ],
+  "packages": [
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+      "workspace_fan_in": "5",
+      "workspace_fan_out": "10",
+      "development_workspace_fan_in": "5",
+      "development_workspace_fan_out": "0"
+    }
+  ],
+  "dispositions": [
+    {
+      "owner": "Core task/handle_type.rs",
+      "responsibility": "Closed carrier and payload algebra shared by producer identity, Source and AWBC; map_payload projects only through the owning type context",
+      "decision": "Keep cohesive grammar; no parallel carrier owner or new dependency"
+    },
+    {
+      "owner": "Core AWBC schema/codec/verify",
+      "responsibility": "Version-one executable table grammar, canonical bytes and typed dataflow admission",
+      "decision": "Keep schema/table verifiers cohesive; migrate field and all consumers directly, reject unknown/obsolete forms, use existing private codec test boundary"
+    },
+    {
+      "owner": "Core plan/task_source/program",
+      "responsibility": "Original Source authentication and bounded type/capture relation",
+      "decision": "Check row carrier before traversing capture types or returning lease; retain whole role-count preflight and failed-meter poisoning; no execution state or I/O added"
+    },
+    {
+      "owner": "RuntimePlan awbc_lower/inventory.rs",
+      "responsibility": "Project accepted semantic task types into AWBC table coordinates",
+      "decision": "Reuse Core carrier algebra and preserve original carrier; no backend inference, fallback authority or additional public facade"
+    },
+    {
+      "owner": "Existing AWBC runtime consumer and fixture modules",
+      "responsibility": "Payload projection from admitted row for value/result/save checks; existing genuine Source fixtures",
+      "decision": "Derived accessor preserves sole authority; tests remain with codec, Source or product owner; no unrelated state clusters or arbitrary file splitting"
+    }
+  ],
+  "limitsAndAssertions": "Production limits, batching/fusion/copy/capture conditions and existing assertions retained",
+  "dependencies": "No manifests/features/dependencies/unsafe changed; Core remains Sans-I/O",
+  "scope": "Current ownership review only for changed owners; unrelated size warnings are not acceptance failures"
+}

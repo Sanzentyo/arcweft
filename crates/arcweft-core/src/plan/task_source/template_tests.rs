@@ -1075,7 +1075,9 @@ fn awbc_host_request_kernel_cannot_claim_an_original_thread_source() {
         plan: row.key(),
         request_function,
     };
-    code.task_plans[0].payload_type = AwbcTypeId(u32::try_from(code.runtime_types.len()).unwrap());
+    code.task_plans[0].handle_type = code.task_plans[0]
+        .handle_type
+        .map_payload(|_| AwbcTypeId(u32::try_from(code.runtime_types.len()).unwrap()));
     code.runtime_types.push(AwbcRuntimeType::new(
         crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
         AwbcRuntimeTypeShape::Unit,

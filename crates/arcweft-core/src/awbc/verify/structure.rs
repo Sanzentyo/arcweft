@@ -1179,12 +1179,20 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
         check_string(program, task.cancel_scope, &at)?;
         check_index(
             program.runtime_types.len(),
-            task.payload_type.0,
+            task.payload_type().0,
             "runtime_types",
             &at,
         )?;
         let host = match &task.execution {
-            crate::awbc::schema::AwbcTaskPlanExecution::Host(host) => host,
+            crate::awbc::schema::AwbcTaskPlanExecution::Host(host) => {
+                if !matches!(task.handle_type, crate::task::TaskHandleType::Need { .. }) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "Host task must issue Need<T>".into(),
+                    });
+                }
+                host
+            }
             crate::awbc::schema::AwbcTaskPlanExecution::Program(program_task) => {
                 if program.original_source.is_none() {
                     return Err(AwbcVerifyError::InvalidInvariant {
@@ -1207,7 +1215,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 )?;
                 if kernel.kind != AwbcFunctionKind::ProgramTask
                     || program.signatures[kernel.signature.index()].result
-                        != Some(task.payload_type)
+                        != Some(task.payload_type())
                 {
                     return Err(AwbcVerifyError::InvalidInvariant {
                         at,
@@ -1360,8 +1368,8 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                     || child_inputs[..base_inputs.len()] != *base_inputs
                     || crate::program_types::RuntimeProgramTypes::Awbc(program)
                         .fanout_output_kind(
-                            program.runtime_types[task.payload_type.index()].semantic_identity(),
-                            program.runtime_types[child_plan.payload_type.index()]
+                            program.runtime_types[task.payload_type().index()].semantic_identity(),
+                            program.runtime_types[child_plan.payload_type().index()]
                                 .semantic_identity(),
                         )
                         .is_err()

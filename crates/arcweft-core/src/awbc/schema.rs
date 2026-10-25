@@ -2835,13 +2835,15 @@ awbc_u8_enum! {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwbcTaskPlan {
     pub class: AwbcTaskClass,
     pub priority: i32,
     pub cancel_scope: AwbcStringId,
     pub policy: AwbcTaskPolicy,
-    /// Checked type of the unary temporal Ready payload.
-    pub payload_type: AwbcTypeId,
+    /// Complete language carrier and checked Ready payload, independently of
+    /// whether Host or original Program code performs the work.
+    pub handle_type: crate::task::TaskHandleType<AwbcTypeId>,
     pub execution: AwbcTaskPlanExecution,
 }
 
@@ -2925,6 +2927,11 @@ pub enum AwbcHostTaskPlanKind {
 }
 
 impl AwbcTaskPlan {
+    #[must_use]
+    pub const fn payload_type(&self) -> AwbcTypeId {
+        self.handle_type.payload_type()
+    }
+
     #[must_use]
     pub fn host(&self) -> Option<&AwbcHostTaskPlan> {
         match &self.execution {

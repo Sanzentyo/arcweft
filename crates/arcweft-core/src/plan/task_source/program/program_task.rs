@@ -30,6 +30,7 @@ pub(crate) enum RuntimeAwbcProgramSourceField {
     CancelScope,
     Policy,
     Payload,
+    HandleType,
     CaptureCount,
     Capture { index: usize },
     CaptureType { index: usize },
@@ -153,6 +154,11 @@ impl RuntimeTaskSourceProgram {
             if equal { Ok(()) } else { Err(mismatch(field)) }
         };
         check(
+            Field::HandleType,
+            row.handle_type.map_payload(|_| ()) == producer.handle_type.map_payload(|_| ()),
+            meter,
+        )?;
+        check(
             Field::Kernel,
             kernel.kind == AwbcFunctionKind::ProgramTask,
             meter,
@@ -186,7 +192,7 @@ impl RuntimeTaskSourceProgram {
         check(Field::Policy, policy == producer.policy, meter)?;
         check(
             Field::Payload,
-            signature.result == Some(row.payload_type),
+            signature.result == Some(row.payload_type()),
             meter,
         )?;
         let enclosing = original
@@ -270,7 +276,7 @@ impl RuntimeTaskSourceProgram {
                 })?;
         }
         types
-            .admit(payload, row.payload_type)
+            .admit(payload, row.payload_type())
             .map_err(|source| match source {
                 RuntimeAwbcSourceTypeError::Encoding(error) => Error::Encoding(error),
                 source => Error::Type {

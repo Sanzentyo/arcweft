@@ -351,7 +351,9 @@ pub(in crate::plan::task_source) fn executable() -> AwbcProgram {
             priority: -3,
             cancel_scope: string("元scope"),
             policy: AwbcTaskPolicy::AlwaysStart,
-            payload_type: AwbcTypeId(if index == 0 { 1 } else { 0 }),
+            handle_type: crate::task::TaskHandleType::Need {
+                payload: AwbcTypeId(if index == 0 { 1 } else { 0 }),
+            },
             execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
                 crate::awbc::schema::AwbcHostTaskPlan {
                     signature: AwbcSignatureId(0),

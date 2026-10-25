@@ -12041,3 +12041,30 @@ R3121のJLREQ 8失敗とSource parallel 2失敗の原診断を確認し、現状
 GPT-6 Luna／maxは旧レビューarchiveが既に削除済みであることと、残存検証原本84件のhash一致を確認した。
 現在の未コミットAWBC carrier移行16ファイルは未検証であり、公開済み入力の受入をそのまま移行途中へ適用しない。
 この照合は個別の完了境界を再開する根拠ではなく、現在のsourceと過去の検証入力を区別するための訂正である。
+
+## AWBC TaskPlanのcarrier／payload共有型への移行checkpoint — 2026-10-26
+
+基点は公開main `b979046ec831fae67fa8ff5e08dc35f952abdfed`。元tracked WIP 14件と
+untracked実ファイル6件を保持し、Core／runtime-planの18 Rustファイルとscheduler契約を移行した。
+`AwbcTaskPlan`のpayload-only fieldを共通`TaskHandleType<AwbcTypeId>`へ置換する。
+carrierは元producerから型付きで投影し、Host／Programの実行方式から推測しない。
+canonical codecとSerdeもversion 1の形をその場で変更し、旧fieldや互換readerを残さない。
+HostはNeedのみ、Programは元Sourceのcarrierとの一致を要求し、destinationもcarrierとpayloadを検査する。
+Sourceのrole-count preflight、capture ABI、失敗時のmeter拒否、leaseを返す前の認証を維持した。
+
+R3131のCore／runtime-plan全target・全feature・locked checkは警告あり・終了0、2分43秒。
+source freezeはこのcheckの実行中に記録したため、開始前hashの証明とはしない。終端後は3,988入力との差分0。
+R3134は正規構造scanner終了0。同じ3,988入力の前後差分0で、変更ownerのbytes／physical LOC／責任境界も記録した。
+99 manifest／lockは既存all-feature Cargo metadataから不変で、変更2 packageの推移的逆依存は53 package。
+[グラフ](acceptance-evidence/task-awbc-task-carrier.graph.json)、[構造・所有境界](acceptance-evidence/task-awbc-task-carrier-structure-review.json)。
+
+R3132 catalogは2,243件を選択し、R3133 nextestは同じdriverで実行中。追加5テストと既存Source認証caseの拡張を含む
+全選択の終端をまだ確認していない。workspace check／Clippy、Core doctest、全53逆依存nextestのdriverは準備済み・未実行。
+ユーザーの「dirtyを溜めず区切りでcommit／pushし、途中commitでの正常動作確認は必須としない」という指示により、
+この実装を中間checkpointとして公開する。runtime受入・全14 family・Source parallelの完了とはしない。
+[checkpointの実行状態と範囲](acceptance-evidence/task-awbc-task-carrier-checkpoint.json)。
+
+並行するR3127 HIR Tier 2は7／8 PASS。attached Flowのexact／one-overは3,258.161秒でPASSし、
+最後のattached Threadを実行中。HIR依存8 packageのソースと上限・assertionは変更せず、同じrunを継続した。
+Generic Matchの受入・公開と過去の151 PASSを維持する。新入力の再実行結果へ読み替えず、受入を戻す根拠にもしていない。
+原本等16件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-awbc-task-carrier-evidence-integrity.json)。

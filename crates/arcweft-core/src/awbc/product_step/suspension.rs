@@ -595,7 +595,7 @@ impl AwbcProductStepExecutor {
             .is_some_and(|record| {
                 self.program
                     .validate_live_value(
-                        record.payload_type,
+                        record.payload_type(),
                         value,
                         crate::entry::RuntimeSchemaLimits::engine_default(),
                     )
@@ -1054,11 +1054,12 @@ impl AwbcProductStepExecutor {
             };
             let aggregate = match admission.prepare_fanout(
                 self.program.runtime_types[self.program.task_plans[state.plan.index()]
-                    .payload_type
+                    .payload_type()
                     .index()]
                 .semantic_identity(),
-                self.program.runtime_types
-                    [self.program.task_plans[child.index()].payload_type.index()]
+                self.program.runtime_types[self.program.task_plans[child.index()]
+                    .payload_type()
+                    .index()]
                 .semantic_identity(),
                 binding.as_deref(),
                 &mut state.results,
@@ -2337,11 +2338,12 @@ impl AwbcProductStepExecutor {
                 .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
             let aggregate = match admission.prepare_fanout(
                 self.program.runtime_types[self.program.task_plans[state.plan.index()]
-                    .payload_type
+                    .payload_type()
                     .index()]
                 .semantic_identity(),
-                self.program.runtime_types
-                    [self.program.task_plans[child.index()].payload_type.index()]
+                self.program.runtime_types[self.program.task_plans[child.index()]
+                    .payload_type()
+                    .index()]
                 .semantic_identity(),
                 invocation.as_deref(),
                 &mut state.results,

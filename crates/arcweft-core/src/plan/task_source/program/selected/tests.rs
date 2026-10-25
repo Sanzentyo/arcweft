@@ -10,6 +10,24 @@ use crate::value::{RuntimeRetainedValueAdmission, RuntimeStoredValue};
 use std::cell::Cell;
 use std::sync::Arc;
 
+#[test]
+fn host_row_rejects_thread_handle_even_with_the_same_ready_payload() {
+    let mut code = executable(0);
+    let context = AwbcVerifyContext {
+        require_entrypoint: false,
+        ..AwbcVerifyContext::default()
+    };
+    code.verify(AwbcVerifyBudget::default(), context).unwrap();
+    code.task_plans[0].handle_type = TaskHandleType::ThreadHandle {
+        payload: code.task_plans[0].payload_type(),
+    };
+    assert!(matches!(
+        code.verify(AwbcVerifyBudget::default(), context),
+        Err(crate::awbc::verify::AwbcVerifyError::InvalidInvariant { message, .. })
+            if message == "Host task must issue Need<T>"
+    ));
+}
+
 pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
     let original = selected_producers::tests::fixture(
         request,
@@ -89,7 +107,9 @@ pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
         priority: metadata.priority().0,
         cancel_scope: string(&metadata.cancel_scope().0),
         policy: AwbcTaskPolicy::JoinSameKey,
-        payload_type: AwbcTypeId(0),
+        handle_type: crate::task::TaskHandleType::Need {
+            payload: AwbcTypeId(0),
+        },
         execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
             crate::awbc::schema::AwbcHostTaskPlan {
                 signature: AwbcSignatureId(0),
