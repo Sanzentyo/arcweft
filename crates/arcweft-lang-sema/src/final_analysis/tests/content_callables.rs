@@ -1717,12 +1717,7 @@ fn typed_sampler() -> Fx {
     );
     assert!(matches!(
         analyze(&fixture),
-        Err(
-            crate::final_analysis::FinalSemanticAnalysisError::FxDefinition {
-                cause: crate::final_analysis::CheckedFxDefinitionSealError::InvalidBody,
-                ..
-            }
-        )
+        Err(crate::final_analysis::FinalSemanticAnalysisError::FxDefinition { cause, .. }) if matches!(cause.as_ref(), crate::final_analysis::CheckedFxDefinitionSealError::InvalidBody)
     ));
 }
 
@@ -1817,12 +1812,7 @@ fn moving(speed: Length = 1px) -> Fx {
     );
     assert!(matches!(
         analyze(&fixture),
-        Err(
-            crate::final_analysis::FinalSemanticAnalysisError::FxDefinition {
-                cause: crate::final_analysis::CheckedFxDefinitionSealError::InvalidBody,
-                ..
-            }
-        )
+        Err(crate::final_analysis::FinalSemanticAnalysisError::FxDefinition { cause, .. }) if matches!(cause.as_ref(), crate::final_analysis::CheckedFxDefinitionSealError::InvalidBody)
     ));
 }
 
@@ -1843,12 +1833,7 @@ fn moving() -> Fx {
     );
     assert!(matches!(
         analyze(&fixture),
-        Err(
-            crate::final_analysis::FinalSemanticAnalysisError::FxDefinition {
-                cause: crate::final_analysis::CheckedFxDefinitionSealError::InvalidBody,
-                ..
-            }
-        )
+        Err(crate::final_analysis::FinalSemanticAnalysisError::FxDefinition { cause, .. }) if matches!(cause.as_ref(), crate::final_analysis::CheckedFxDefinitionSealError::InvalidBody)
     ));
 }
 
@@ -1940,11 +1925,6 @@ fn parameterized_wave(amplitude: Length) -> Fx {
     );
     assert!(matches!(
         analyze(&fixture),
-        Err(crate::final_analysis::FinalSemanticAnalysisError::FxDefinition {
-            cause: crate::final_analysis::CheckedFxDefinitionSealError::UnprovableBuiltinConstraint {
-                parameter: BuiltinFxParameterId::Amplitude,
-            },
-            ..
-        })
+        Err(crate::final_analysis::FinalSemanticAnalysisError::FxDefinition { cause, .. }) if matches!(cause.as_ref(), crate::final_analysis::CheckedFxDefinitionSealError::UnprovableBuiltinConstraint { parameter: BuiltinFxParameterId::Amplitude })
     ));
 }

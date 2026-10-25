@@ -1,0 +1,58 @@
+warning: method `source` is never used
+   --> crates\arcweft-lang-sema\src\types\constraints\transaction.rs:197:19
+    |
+196 | impl<D: ConstraintDomain> ConstraintSourceReceipt<D> {
+    | ---------------------------------------------------- method in this implementation
+197 |     pub(crate) fn source(&self) -> ConstraintSourceId<D::Source> {
+    |                   ^^^^^^
+
+warning: `arcweft-lang-sema` (lib test) generated 12 warnings (run `cargo fix --lib -p arcweft-lang-sema --tests` to apply 4 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 37.59s
+{"name":"task-final-r3090-hir-control-stack-catalog","all":1333,"matched":1,"excluded":1332,"required":["deeply_nested_unannotated_diverging_branches_keep_the_never_result"]}
+{"catalog":"task-final-r3090-hir-control-stack-catalog","phase":"before-run","inventoryOnly":false,"testBinaries":1,"nonTestBinaries":0,"total":1}
+        SKIP [         ] (───) arcweft-lang-sema types::semantic_tests::standard_field_semantic_tags_are_unique
+        SKIP [         ] (───) arcweft-lang-sema types::substitution::tests::bound_application_preserves_a_rigid_outer_parameter_without_admitting_a_hole
+        SKIP [         ] (───) arcweft-lang-sema types::substitution::tests::conflicting_observation_does_not_commit_partial_bindings
+        SKIP [         ] (───) arcweft-lang-sema types::substitution::tests::observation_specializes_a_nested_result_error
+        SKIP [         ] (───) arcweft-lang-sema types::substitution::tests::presentation_items_participate_in_inference_without_losing_handle_ownership
+        SKIP [         ] (───) arcweft-lang-sema types::substitution::tests::resolved_application_only_exposes_concrete_expected_types
+        SKIP [         ] (───) arcweft-lang-sema types::substitution::tests::structural_effect_substitution_preserves_unknown_rows
+        SKIP [         ] (───) arcweft-lang-sema types::substitution::tests::typed_identity_controls_recursive_substitution
+        SKIP [         ] (───) arcweft-lang-sema types::variant_payload::tests::owner_case_shape_ordinal_and_field_type_all_change_payload_identity
+        SKIP [         ] (───) arcweft-lang-sema types::variant_payload::tests::project_newtype_tuple_and_environment_tuple_variant_keep_exact_arity
+        SKIP [         ] (───) arcweft-lang-sema types::variant_payload::tests::record_diagnostic_renames_do_not_change_payload_semantic_identity
+        SKIP [         ] (───) arcweft-lang-sema types::variant_payload::tests::record_payload_duplicate_names_fail_typed_for_same_or_different_types
+        SKIP [         ] (───) arcweft-lang-sema types::variant_payload::tests::unit_empty_tuple_and_empty_record_are_distinct_payload_shapes
+       ABORT [   7.134s] (1/1) arcweft-lang-sema final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result
+           - with code 0xc00000fd: 再帰が深すぎます。スタックがオーバーフローしました。 (os error 1001)
+error: test run failed
+actual exit code: 100
+{"catalog":"task-final-r3090-hir-control-stack-catalog","phase":"after-run","inventoryOnly":false,"testBinaries":1,"nonTestBinaries":0,"total":1}
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "run": "task-final-r3091-hir-control-stack-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   7.167s] 1 test run: 0 passed, 1 failed, 1332 skipped",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 1332,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "ABORT",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T14:34:34.4090870Z"
+}
+

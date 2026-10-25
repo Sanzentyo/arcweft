@@ -1,0 +1,303 @@
+171 | pub(super) fn assert_awbc_return(source: &str, expected: RuntimeValue) {
+    |               ^^^^^^^^^^^^^^^^^^
+
+warning: `arcweft-runtime-host` (lib test) generated 5 warnings (1 duplicate) (run `cargo fix --lib -p arcweft-runtime-host --tests` to apply 4 suggestions)
+warning: `arcweft-compiler` (lib test) generated 1 warning (run `cargo fix --lib -p arcweft-compiler --tests` to apply 1 suggestion)
+warning: `arcweft-compiler` (test "agent_enum_execution") generated 3 warnings (3 duplicates)
+warning: `arcweft-compiler` (test "inline_failure_policy") generated 3 warnings
+warning: `arcweft-lang-sema` (lib test) generated 12 warnings (10 duplicates)
+warning: `arcweft-cli` (lib test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19m 10s
+{"name":"task-final-r3094-traversal-sema-reverse-catalog","all":4887,"matched":4856,"excluded":31,"required":["deeply_nested_unannotated_diverging_branches_keep_the_never_result","inferred_control_result_preserves_polymorphic_prefix_schemes","e29_named_block_preserves_valid_and_invalid_present_name_but_normalizes_omission","source_traversal_keeps_owned_collections_and_callbacks_without_starting_children","source_traversal_retains_computed_source_and_callback_operands","source_traversal_does_not_enter_the_callback_body","imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_parent","imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child"]}
+{"catalog":"task-final-r3094-traversal-sema-reverse-catalog","phase":"before-run","inventoryOnly":false,"testBinaries":115,"nonTestBinaries":5,"total":120}
+        FAIL [   0.809s] ( 710/4856) arcweft-cli::check profile_json_runs_native_file_tasks_without_absolute_source
+        FAIL [   0.637s] ( 729/4856) arcweft-cli::check run_json_executes_scope_and_loop_value_bindings
+        FAIL [   0.619s] ( 731/4856) arcweft-cli::check run_json_executes_traverse_parallel_file_tasks
+        FAIL [   0.800s] ( 737/4856) arcweft-cli::check run_json_observes_line_child_tasks_through_scheduler
+        FAIL [   1.221s] ( 741/4856) arcweft-cli::check run_json_steps_runtime_plan
+        FAIL [   1.522s] ( 776/4856) arcweft-cli::check spec_valid_run_edge_fixture_now_executes
+        FAIL [   2.053s] ( 780/4856) arcweft-cli::check spec_rejected_edge_fixtures_fail_with_diagnostics
+        FAIL [   1.472s] ( 784/4856) arcweft-cli::check test_json_executes_headless_scenario_expectations
+        FAIL [   1.442s] ( 789/4856) arcweft-cli::check unsafe_json_lists_audit_regions
+        FAIL [   1.136s] ( 792/4856) arcweft-cli::check verify_json_records_required_solver_checks
+        FAIL [   1.245s] ( 794/4856) arcweft-cli::check verify_json_reports_invalid_proof_body
+        FAIL [   1.371s] ( 795/4856) arcweft-cli::check verify_json_reports_missing_promotion_proof
+        FAIL [   1.367s] ( 797/4856) arcweft-cli::check verify_json_reports_semantic_thread_join_conflict
+        FAIL [   1.319s] ( 798/4856) arcweft-cli::check verify_json_reports_unknown_proof_dependency
+        FAIL [   1.182s] ( 799/4856) arcweft-cli::check verify_json_respects_semantic_defer_cancel_discharge
+error: test run failed
+actual exit code: 100
+{"catalog":"task-final-r3094-traversal-sema-reverse-catalog","phase":"after-run","inventoryOnly":false,"testBinaries":115,"nonTestBinaries":5,"total":120}
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "run": "task-final-r3095-traversal-sema-reverse-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [1672.748s] 4856 tests run: 4806 passed (86 slow), 50 failed, 31 skipped",
+  "executed": 4856,
+  "passed": 4806,
+  "failed": 50,
+  "skipped": 31,
+  "selectedPackages": 23,
+  "matchedPackages": 23,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_indexes_multiple_sources"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_checks_runtime_assert_sections"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_headless_runtime_sections"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_traverse_parallel_file_tasks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_skips_adapter_only_script_benches"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_validates_headless_script_benches"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "plan_json_lists_runtime_task_graph"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_check_rejects_ambient_route_params"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_runs_native_file_tasks_without_absolute_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_scope_and_loop_value_bindings"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_traverse_parallel_file_tasks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_observes_line_child_tasks_through_scheduler"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_steps_runtime_plan"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "spec_valid_run_edge_fixture_now_executes"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "test_json_executes_headless_scenario_expectations"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "unsafe_json_lists_audit_regions"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_records_required_solver_checks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_invalid_proof_body"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_missing_promotion_proof"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_semantic_thread_join_conflict"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_unknown_proof_dependency"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_respects_semantic_defer_cancel_discharge"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T15:40:40.9999552Z"
+}
+

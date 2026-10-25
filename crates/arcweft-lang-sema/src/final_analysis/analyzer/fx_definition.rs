@@ -173,7 +173,7 @@ impl Analyzer<'_, '_, '_> {
                 .prepare_project_fx_definition(declaration)
                 .map_err(|cause| FinalSemanticAnalysisError::FxDefinition {
                     declaration: declaration.clone(),
-                    cause,
+                    cause: Box::new(cause),
                 })?;
             if by_id
                 .insert(definition.definition.clone(), declaration.clone())
@@ -182,7 +182,7 @@ impl Analyzer<'_, '_, '_> {
             {
                 return Err(FinalSemanticAnalysisError::FxDefinition {
                     declaration: declaration.clone(),
-                    cause: CheckedFxDefinitionSealError::InvalidSchema,
+                    cause: Box::new(CheckedFxDefinitionSealError::InvalidSchema),
                 });
             }
         }
@@ -199,7 +199,10 @@ impl Analyzer<'_, '_, '_> {
                     .first()
                     .cloned()
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                return Err(FinalSemanticAnalysisError::FxDefinition { declaration, cause });
+                return Err(FinalSemanticAnalysisError::FxDefinition {
+                    declaration,
+                    cause: Box::new(cause),
+                });
             }
         };
         let mut sealer = FxDefinitionSealer {
@@ -214,7 +217,7 @@ impl Analyzer<'_, '_, '_> {
             sealer.seal_project(declaration).map_err(|cause| {
                 FinalSemanticAnalysisError::FxDefinition {
                     declaration: declaration.clone(),
-                    cause,
+                    cause: Box::new(cause),
                 }
             })?;
         }

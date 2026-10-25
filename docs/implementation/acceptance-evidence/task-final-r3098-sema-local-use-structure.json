@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "name": "task-final-r3098-sema-local-use-structure",
+  "command": [
+    "just",
+    "structure-audit-gate"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3098-sema-local-use-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T15:23:49.0783840Z",
+  "finishedAt": "2026-10-25T15:24:10.8176965Z"
+}

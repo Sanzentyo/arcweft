@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "runs": [
+    {
+      "name": "task-final-r3080-hir-control-stack-catalog",
+      "exitCode": 0,
+      "cases": 0,
+      "aborts": 0,
+      "startedAt": "2026-10-25T14:09:45.7186963Z",
+      "finishedAt": "2026-10-25T14:12:18.9898805Z"
+    },
+    {
+      "name": "task-final-r3081-hir-control-stack-runtime",
+      "exitCode": 100,
+      "summary": "Summary [  18.987s] 1 test run: 0 passed, 1 failed, 1332 skipped",
+      "cases": 1,
+      "aborts": 1,
+      "startedAt": "2026-10-25T14:12:23.7823499Z",
+      "finishedAt": "2026-10-25T14:12:46.5640749Z"
+    },
+    {
+      "name": "task-final-r3082-control-result-closure-catalog",
+      "exitCode": 0,
+      "cases": 0,
+      "aborts": 0,
+      "startedAt": "2026-10-25T14:16:17.6929909Z",
+      "finishedAt": "2026-10-25T14:18:54.7458086Z"
+    },
+    {
+      "name": "task-final-r3083-control-result-closure-runtime",
+      "exitCode": 100,
+      "summary": "Summary [ 113.954s] 1357 tests run: 1356 passed (1 slow), 1 failed, 0 skipped",
+      "cases": 1357,
+      "aborts": 1,
+      "startedAt": "2026-10-25T14:18:55.9629980Z",
+      "finishedAt": "2026-10-25T14:20:51.8352098Z"
+    },
+    {
+      "name": "task-final-r3084-hir-control-stack-catalog",
+      "exitCode": 0,
+      "cases": 0,
+      "aborts": 0,
+      "startedAt": "2026-10-25T14:23:07.9456500Z",
+      "finishedAt": "2026-10-25T14:23:49.3774835Z"
+    },
+    {
+      "name": "task-final-r3085-hir-control-stack-runtime",
+      "exitCode": 100,
+      "summary": "Summary [   6.147s] 1 test run: 0 passed, 1 failed, 1332 skipped",
+      "cases": 1,
+      "aborts": 1,
+      "startedAt": "2026-10-25T14:23:50.2106782Z",
+      "finishedAt": "2026-10-25T14:23:58.1364215Z"
+    },
+    {
+      "name": "task-final-r3086-hir-control-stack-catalog",
+      "exitCode": 0,
+      "cases": 0,
+      "aborts": 0,
+      "startedAt": "2026-10-25T14:25:40.4853898Z",
+      "finishedAt": "2026-10-25T14:26:07.5135335Z"
+    },
+    {
+      "name": "task-final-r3087-hir-control-stack-runtime",
+      "exitCode": 100,
+      "summary": "Summary [   5.453s] 1 test run: 0 passed, 1 failed, 1332 skipped",
+      "cases": 1,
+      "aborts": 1,
+      "startedAt": "2026-10-25T14:26:08.5936587Z",
+      "finishedAt": "2026-10-25T14:26:15.6434789Z"
+    },
+    {
+      "name": "task-final-r3088-hir-control-stack-catalog",
+      "exitCode": 0,
+      "cases": 0,
+      "aborts": 0,
+      "startedAt": "2026-10-25T14:29:51.5732621Z",
+      "finishedAt": "2026-10-25T14:30:45.5601769Z"
+    },
+    {
+      "name": "task-final-r3089-hir-control-stack-runtime",
+      "exitCode": 100,
+      "summary": "Summary [   6.529s] 1 test run: 0 passed, 1 failed, 1332 skipped",
+      "cases": 1,
+      "aborts": 1,
+      "startedAt": "2026-10-25T14:30:46.6618617Z",
+      "finishedAt": "2026-10-25T14:30:54.9416135Z"
+    },
+    {
+      "name": "task-final-r3090-hir-control-stack-catalog",
+      "exitCode": 0,
+      "cases": 0,
+      "aborts": 0,
+      "startedAt": "2026-10-25T14:33:40.6574939Z",
+      "finishedAt": "2026-10-25T14:34:21.0267902Z"
+    },
+    {
+      "name": "task-final-r3091-hir-control-stack-runtime",
+      "exitCode": 100,
+      "summary": "Summary [   7.167s] 1 test run: 0 passed, 1 failed, 1332 skipped",
+      "cases": 1,
+      "aborts": 1,
+      "startedAt": "2026-10-25T14:34:22.9359917Z",
+      "finishedAt": "2026-10-25T14:34:31.8588616Z"
+    },
+    {
+      "name": "task-final-r3092-hir-control-stack-catalog",
+      "exitCode": 0,
+      "cases": 0,
+      "aborts": 0,
+      "startedAt": "2026-10-25T14:45:58.5307581Z",
+      "finishedAt": "2026-10-25T14:46:47.5585083Z"
+    },
+    {
+      "name": "task-final-r3093-hir-control-stack-runtime",
+      "exitCode": 0,
+      "summary": "Summary [   0.619s] 1 test run: 1 passed, 1332 skipped",
+      "cases": 1,
+      "aborts": 0,
+      "startedAt": "2026-10-25T14:46:49.5502577Z",
+      "finishedAt": "2026-10-25T14:46:52.0212001Z"
+    }
+  ]
+}

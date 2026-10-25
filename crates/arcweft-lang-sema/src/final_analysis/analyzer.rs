@@ -997,9 +997,8 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         match self
             .facts
             .record_physical_candidate_argument_evaluation(evaluation, limit)
-            .map_err(
-                |violation| FinalSemanticAnalysisError::CandidateFactTransaction { violation },
-            )? {
+            .map_err(FinalSemanticAnalysisError::from)?
+        {
             state::PhysicalCandidateEvaluationAdmission::Recorded
             | state::PhysicalCandidateEvaluationAdmission::Duplicate => Ok(()),
             state::PhysicalCandidateEvaluationAdmission::LimitReached => {

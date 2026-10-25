@@ -1,0 +1,634 @@
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "purpose": "Validation receipts, logs, catalog inventories, source freezes, actual executable hashes, diagnostic measurements and owner disposition. Byte copies only; no build artifacts copied, moved or retired.",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3080-hir-control-stack-catalog.inventory.json",
+      "bytes": 351935,
+      "sha256": "384170350157ed490a3445f15201402ae72dae18f087c7ba9650e77a08cab911"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3080-hir-control-stack-catalog.json",
+      "bytes": 662,
+      "sha256": "3b372e862fc462e34ccc6e81cb16705df3d7275936333ef5d4891acb79864e31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3080-hir-control-stack-catalog.log",
+      "bytes": 335693,
+      "sha256": "86df318c106544cad798c3fce2444f1aea0822466f97d2d68d9c5cd5880b35d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3081-hir-control-stack-runtime.json",
+      "bytes": 756,
+      "sha256": "3e6e60c304ec7b3e4dbc157699ac15564f1acd8b993828642bacaba51a5ff009"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3081-hir-control-stack-runtime.log",
+      "bytes": 495170,
+      "sha256": "60f1ab86baad8749095903dff0796deab1ce4d3372728f9d4cf00964b9062eff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3081-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 785,
+      "sha256": "cd4b47d590e811919c1038be0355363103a11d7d11e324b01792f9d7d373819c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3082-control-result-closure-catalog.inventory.json",
+      "bytes": 356322,
+      "sha256": "6ed362b8155f9bd8bb2afcffbca5798abb701a20347b6d3c05e1fbf720322476"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3082-control-result-closure-catalog.json",
+      "bytes": 588,
+      "sha256": "c2786f5f6014e4c5b0de0345f877a16df7692ac625e61bda68d53438abfcf826"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3082-control-result-closure-catalog.log",
+      "bytes": 316241,
+      "sha256": "d7f544329eae73ca246ea51b4240d459e1f9f74051a2aed467666417fa6756aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3083-control-result-closure-runtime.json",
+      "bytes": 682,
+      "sha256": "4c3888b7121cff9d32d40a8e0c39894e1de6653dcd5345a0b42ee915a77bde29"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3083-control-result-closure-runtime.log",
+      "bytes": 507785,
+      "sha256": "0c8f199d9cc8fc2619076dcf2818d9fe9cba770798b7903d0d7373b3ff7aa44c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3083-control-result-closure-runtime.terminal-audit.json",
+      "bytes": 806,
+      "sha256": "644f3ebbd502b57a3fd3eebbda9ae616d8da4ccc2389438af0c70f6222b1fd38"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3084-hir-control-stack-catalog.inventory.json",
+      "bytes": 351935,
+      "sha256": "f0b2c93fd002bfd85d1bffb7f6410a53dbe4c98ddf9f35b209864891bf5c787f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3084-hir-control-stack-catalog.json",
+      "bytes": 662,
+      "sha256": "6f8cbf011baf08d90c018672e911b059583730a337b82af0fc6d03ebdc385f99"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3084-hir-control-stack-catalog.log",
+      "bytes": 335693,
+      "sha256": "f876880e3687e8d6721dbbf9cb0b85ceca738c081b012b1a262a083bd345893e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3085-hir-control-stack-runtime.json",
+      "bytes": 756,
+      "sha256": "c5bed6fd33316d1d2586fab666b8f3bf5bb8bce1580e7abe9263be1271018e7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3085-hir-control-stack-runtime.log",
+      "bytes": 495467,
+      "sha256": "d4d3bc2816963fbb3726cbfbd7782eefae0473620aa24fd09ccca6970cce474f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3085-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 785,
+      "sha256": "7315652b8e2b86d86c0b35b56d72a97809af468a5289f78c96e9b831d4679512"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3086-hir-control-stack-catalog.inventory.json",
+      "bytes": 351935,
+      "sha256": "54a7b8b72c06d69a3e61d979d319b87153c9f44896818b9a760d6d306e1a1c66"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3086-hir-control-stack-catalog.json",
+      "bytes": 662,
+      "sha256": "a287a8dd9a081b812454ac87d2bd214f29e27082db35d464dee0784f9492bbe8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3086-hir-control-stack-catalog.log",
+      "bytes": 335693,
+      "sha256": "1881734aa24a998f1bddb821950547d483f5a1472e16b049c5f4c2c49ef7c765"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3087-hir-control-stack-runtime.json",
+      "bytes": 756,
+      "sha256": "632844dc794e7885348114ac8ca4dd9a613bf584d9a2cce8416cfcfb15151750"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3087-hir-control-stack-runtime.log",
+      "bytes": 495349,
+      "sha256": "88bcb03087a2c64f375b54d45d08436f79b1fecbc691514f31a4edf086772f9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3087-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 785,
+      "sha256": "8dc4703049804e3ffcf910a9674419667384c355663fd2d16d6dfb51e8266ebc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3088-hir-control-stack-catalog.inventory.json",
+      "bytes": 351935,
+      "sha256": "b4d5167f3a37f054019b7a5c5f1de6bdef04ac0af8f2025077cc418b972ec05c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3088-hir-control-stack-catalog.json",
+      "bytes": 662,
+      "sha256": "7229f5aea9f421952516bd590a535f00b61a3d68c516efba65b014b3c508a3e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3088-hir-control-stack-catalog.log",
+      "bytes": 335693,
+      "sha256": "c859b3254c691a64a39e9e33b2323f7ea760036f67714632b0566385501155bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3089-hir-control-stack-runtime.json",
+      "bytes": 756,
+      "sha256": "663683cb16972f3446f4aef15037bb7a3fea31db723172b768090a49aed339fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3089-hir-control-stack-runtime.log",
+      "bytes": 495353,
+      "sha256": "3ea132400d3510598bf1825419d0f7d0909c31c049f8476387137b93ba5d3a91"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3089-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 785,
+      "sha256": "0343c688df4df6720f4e16bae75301c8d4cb4adb27fca5899800ec0cc06735ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3090-hir-control-stack-catalog.inventory.json",
+      "bytes": 351935,
+      "sha256": "f915234ec9743fb7d4485869f09d139aa57793c2d31213c02a1501ff83f4c8a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3090-hir-control-stack-catalog.json",
+      "bytes": 662,
+      "sha256": "c26ac38205c46cf1398c3ea447d217501b764b585bf5e8ffbc957a0a704e7c44"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3090-hir-control-stack-catalog.log",
+      "bytes": 335693,
+      "sha256": "7479b2c0e16e87434e9de2e2581835fd7a8188e2f3496c538f8b09e43b2403e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3091-hir-control-stack-runtime.json",
+      "bytes": 756,
+      "sha256": "9c02fc8370235449e9304ec2435eee28b75ca88c327423234dda5e07c5844da7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3091-hir-control-stack-runtime.log",
+      "bytes": 495543,
+      "sha256": "788a003d970f36b61be7644038f5d63325962eadcdfa2954cdbf7b1148928d9f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3091-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 785,
+      "sha256": "67f48e384631be61435f73697cdc101c88d86ea7cc9950b9119192d7d6da8980"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3092-hir-control-stack-catalog.inventory.json",
+      "bytes": 351935,
+      "sha256": "7daf0a4e705f5f36cac85c04f6157e2cf3431bc71679263d84b94ab74f4aafa8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3092-hir-control-stack-catalog.json",
+      "bytes": 662,
+      "sha256": "b52a77540b829de65e7ca238e8be6ed97fc7004eb5c4899893ea39949104f036"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3092-hir-control-stack-catalog.log",
+      "bytes": 335693,
+      "sha256": "cc90e0a1036e32161a3984071a1c2a46c96d7573d4e5651a9af8aa15fa8186db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3093-hir-control-stack-runtime.json",
+      "bytes": 754,
+      "sha256": "b008c82eea5d19c9b046f2b20193a89f5664a4758a2c5aa4e527cf9521e718c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3093-hir-control-stack-runtime.log",
+      "bytes": 494632,
+      "sha256": "5b44e176f24878ddfcf9cc700c29ceb55a915b8e91be9d67e68e030c4b58a42c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3093-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 566,
+      "sha256": "6162c9f9acc67ba85e0baa7d8a6fba04941ac0c7f3d5baa96ad2d4647b925c0d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3094-traversal-sema-reverse-catalog.inventory.json",
+      "bytes": 1233247,
+      "sha256": "c92a7fbf28616ee65b81f76c05f180e3d4559c571b32ef72f4fb8e4a0addb9ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3094-traversal-sema-reverse-catalog.json",
+      "bytes": 1419,
+      "sha256": "8ea87a3baa89428260a7a0e7bb5cbda93895bc279d9a68942492c9551f1ba8a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3094-traversal-sema-reverse-catalog.log",
+      "bytes": 919767,
+      "sha256": "36e0827221ec471e414e1cb5246f3bcdd18b96ef7f994e78ae0dbf8074af3995"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.failure-recon.json",
+      "bytes": 163735,
+      "sha256": "bb909f90459ffd7eb2af57e667c48faa33dea834cc4242248f914c32ce1d8063"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.json",
+      "bytes": 1513,
+      "sha256": "53ca404ac54a9a460daab6ee2875cbdaa4b8ee4893d28071dd3e99326c949a50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.log",
+      "bytes": 4661260,
+      "sha256": "659899e9ae3d5046fba18dd759554246a4170a73e1d15c5d40b501b32d1cdac1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.terminal-audit.json",
+      "bytes": 8886,
+      "sha256": "ac12cd85e9c33a77a81e25bd5a8f4f99f6223e4bbcbefdc1fc0d697b4d4ae9ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3096-sema-local-use-workspace-check.input-audit.json",
+      "bytes": 324,
+      "sha256": "7f4d5867f600afb0448a4ba3b1b3663fc7d8b952de5c60d71724d61b3274b50c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3096-sema-local-use-workspace-check.json",
+      "bytes": 518,
+      "sha256": "0f069be075ad9e11bb45cedc78648991cb7877bdf6555b3e13f6f0912d5c21cb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3096-sema-local-use-workspace-check.log",
+      "bytes": 103609,
+      "sha256": "1942e02ed7079eabb1ae9f146926e3ebae67a8712778e9cf5cee61afe2910e36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3097-sema-local-use-workspace-clippy.input-audit.json",
+      "bytes": 326,
+      "sha256": "f246b1ce37059267bb8703d4cb7c8553dab064b653daab5c8a46132e097e356c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3097-sema-local-use-workspace-clippy.json",
+      "bytes": 521,
+      "sha256": "2f71779539777a9c72f3dcda2a410999010e223b94541d6e6f057afc53366e4b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3097-sema-local-use-workspace-clippy.log",
+      "bytes": 6616559,
+      "sha256": "588dd08af338402c07c0e6ce03d06930deb811b838ca29588a3b8b06f23563b3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3098-sema-local-use-structure.input-audit.json",
+      "bytes": 264,
+      "sha256": "4467d53b2c1c60d80a3af96e2297bfc5cdc4dee7e9de1f1c461bad45f400aa2c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3098-sema-local-use-structure.json",
+      "bytes": 452,
+      "sha256": "764e9d87c7bdab476f46ad6ab3dd1de0e8c2f5e7cd07ec236284510f0ace8bdd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3098-sema-local-use-structure.log",
+      "bytes": 64531,
+      "sha256": "7d29d8b88c845cc49958d044fe2c53215273462d72e774e4ba3908dfbd3cc406"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-checkpoint.verified.json",
+      "bytes": 40720,
+      "sha256": "d3c078f93b7c68955cc5d59fdb23d0c0b63e6013f23c9a13061b9e56a765706f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-public-evidence-audit.json",
+      "bytes": 136,
+      "sha256": "b3d479bb4e3717391250eb271c89ff3a665d8aeb96bc519083efd2b8bdcfe742"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-diagnostic-causes-owner-driver.log",
+      "bytes": 4567,
+      "sha256": "d66eb2b4cd97332add08016ee7c960bd1a118601c6935ebefafa0c8f8115f87e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-diagnostic-causes-owner-executables-after.json",
+      "bytes": 1487,
+      "sha256": "499bf47ed6d69db61e942de021a55ac70fb6cc2bf40339d3741ea725599c4328"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-diagnostic-causes-owner-executables-before.json",
+      "bytes": 1488,
+      "sha256": "71f191d5cad475fc80a1d1e8a0303d06ac10aa114d749a2f2ff70099126c346b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-diagnostic-causes-owner-freeze.ps1",
+      "bytes": 1988,
+      "sha256": "70d100a17616e7338d2648104dc2d7f61e5548ccc8912a1e44ca9cbc8124858a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-diagnostic-causes-owner-run.ps1",
+      "bytes": 2318,
+      "sha256": "18f7a771147f835d599ced1a0824a4c101eba9b07c535f3f14b939028d7a5507"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-diagnostic-causes-owner.graph.json",
+      "bytes": 1645,
+      "sha256": "0b02bbb6520ac0ea625a4a496dac269bcc1a6a95a34e2793b6d7acaa7e7230fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-diagnostic-causes-owner.source-freeze.json",
+      "bytes": 779646,
+      "sha256": "2e7467aed71ac1d4c118badd233ba6a162b7832c67266954af7d868cdeb3f42d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-effect-stage-trace-driver.log",
+      "bytes": 4083,
+      "sha256": "2d00163c10eaf90b73b7b43226fd565d909a8e3a5ed1c428c5106d579170e068"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-effect-stage-trace-executables-after.json",
+      "bytes": 481,
+      "sha256": "03bd435d6a05f7998781bf92719f75654bd9845f60308a2b2f53eb80d89e06b5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-effect-stage-trace-executables-before.json",
+      "bytes": 482,
+      "sha256": "c440c2b8471c4a09d1bab893faec749012bed677bbf9014fdd80482eb85b5d99"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-effect-stage-trace-freeze.ps1",
+      "bytes": 1978,
+      "sha256": "b5b2d3fe88b01629258f77a0726d21ca0d75cd275be812f79ab53cd28b86b280"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-effect-stage-trace-run.ps1",
+      "bytes": 1598,
+      "sha256": "7cb4ce7b03914cc3fad4e1e79348ce3f82896a8bcf5a1c1ef0bc7805b55b5b8f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-effect-stage-trace.graph.json",
+      "bytes": 1713,
+      "sha256": "138c1562bbde4bdc60198c52fa1f7cdd44301bec03e3609fa0f1fdf37f87686d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-effect-stage-trace.source-freeze.json",
+      "bytes": 779716,
+      "sha256": "e047bc05a657494e1f54c00b2a605e0bd84761f424fe23020f00e7513463ef79"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-error-cause-owner-driver.log",
+      "bytes": 4083,
+      "sha256": "322260d503086121931b02b3b9d7d86a2ccd7825d6656d1ae16ad9a70d7f68be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-error-cause-owner-executables-after.json",
+      "bytes": 481,
+      "sha256": "8fef87dab300336e497b08afbd171ee3ad1e1c3ee5b6ba76806c6d2b308b7f14"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-error-cause-owner-executables-before.json",
+      "bytes": 482,
+      "sha256": "de508e14e8821b98dab8b10a7764fccf88df549bdf38e4c5fa4d164016870554"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-error-cause-owner-freeze.ps1",
+      "bytes": 1976,
+      "sha256": "c79b1680a99289bee4641ddbc7e8f52b82967d205be16d4ab2975c47ac9bd981"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-error-cause-owner-run.ps1",
+      "bytes": 1595,
+      "sha256": "6407feb3801bb4bc1dc92ddcad76f6219f5dc21c442e44f19d90220080086833"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-error-cause-owner.graph.json",
+      "bytes": 1180,
+      "sha256": "9f3bab5aabbca2f8fd01d206a980bd67a30d62842cc464087a940ff4e098499d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-error-cause-owner.source-freeze.json",
+      "bytes": 779175,
+      "sha256": "7aa0c75a5cf979a2102755c73b0a89c698320175101872c06823e9927e5a97a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-final-effect-trace-driver.log",
+      "bytes": 4083,
+      "sha256": "a913230355cdfecbba2bf78ab3622a1970c9d8418b00e0544b31856e1e87e2ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-final-effect-trace-executables-after.json",
+      "bytes": 481,
+      "sha256": "f8cd05f3d558c5ba84d5ae571d579e27a0bd674b8a8af4aa74c3128fd790eced"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-final-effect-trace-executables-before.json",
+      "bytes": 482,
+      "sha256": "357b71f84145cdb83123e1852beca3b5567d2450d89e9a8770ae0d6f2fda3e12"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-final-effect-trace-freeze.ps1",
+      "bytes": 1978,
+      "sha256": "522ae3600fcc02c29ec3fc21925a288e48c688854957e38dbb8c248efde9ddce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-final-effect-trace-run.ps1",
+      "bytes": 1598,
+      "sha256": "d7a2b402a00b562878755f646311bb00e3dabfe67a40c3b7cadbfa88ac619c3e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-final-effect-trace.graph.json",
+      "bytes": 1705,
+      "sha256": "f8ef3c7cea19c2acf38f8a08cf8e7529d71d3cf133e3f8d531d47097d78f635a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-final-effect-trace.source-freeze.json",
+      "bytes": 779708,
+      "sha256": "1a666dc1487cbc9475aa2d5c7c43260d65faf0603b73955291e3486d4eee7e34"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-diagnostic-runs.json",
+      "bytes": 3974,
+      "sha256": "c30081777d99ac337488e228aa6bbde6fb97d10a15c39b03a5512a0d2aaf5c39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-emitter-driver.log",
+      "bytes": 3991,
+      "sha256": "d9e4db883a4f47cd53bdcf8aa671df30886646ba73028e3b70b5f4531be45bd8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-emitter-executables-after.json",
+      "bytes": 481,
+      "sha256": "47759ba83367e5b361241205658cfe09c4d1da96f9cc0255a2ea9fafaeef08cd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-emitter-executables-before.json",
+      "bytes": 482,
+      "sha256": "69a2a0c5e00a14cda7fcd9e7601136bd921eb73f1d9bf6436d8f1d77e46b08d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-emitter-freeze.ps1",
+      "bytes": 1976,
+      "sha256": "2a784ae67e0379c4cbfa67417bca891d5b7949486c63f4fc29957946d55f01e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-emitter-run.ps1",
+      "bytes": 1595,
+      "sha256": "5e22825ed800197f72f57972754859824ea64dc7f26412d311ddf83d1011df48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-emitter.graph.json",
+      "bytes": 1709,
+      "sha256": "b8c4b14f09621d826e4e062d2b9d9a9064812eb730254eb3d8ea167e0e80ec27"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-emitter.source-freeze.json",
+      "bytes": 779711,
+      "sha256": "ce48b6ff842e3ea6a3bdfd1d455b468d66047c22ab1eb72c19ea69517f0041d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-extraction-review.json",
+      "bytes": 1758,
+      "sha256": "46c48d9df26c503c16edd6220b0ff07b43fe8719dcd72ed2e906a738b35b39b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-frames-after.json",
+      "bytes": 417307,
+      "sha256": "0be0982eacebd82e3d5b6ae4ac6dfb47412d23d31003f74896a82c2f0bf4b2a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-frames-before.json",
+      "bytes": 1723,
+      "sha256": "e2edebad66c8555ae1408618c893aec6b1634481a635b43d1e975ea285ba8d60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-owner-measurements.json",
+      "bytes": 1835,
+      "sha256": "76d67405d5326c1c3c8771c79bb15855596fcbd41f7b5963f61553b012a7aaa2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-reverse-acceptance.json",
+      "bytes": 84853,
+      "sha256": "a95328ff00507c8ddbbd5422cd5e8db38f41c4efd83d18d89abd8f9509f8cf6a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-reverse-driver.log",
+      "bytes": 12286,
+      "sha256": "32671882c87f27db875c654fb0717bbc02cc31e11d289ada8e7482f32b049825"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-reverse-executables-after.json",
+      "bytes": 29730,
+      "sha256": "7316ff1fce83eea7f59992195310fc0a123ee293bbae080ed2474e6b38eb9a6b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-reverse-executables-before.json",
+      "bytes": 29731,
+      "sha256": "6b47367a5886a37ba19d83c5b2454a5a0e525e4a6dbee6e3100f44d76e601537"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-reverse-freeze.ps1",
+      "bytes": 1976,
+      "sha256": "27de114b96ff322872b72a685b46d4141d286f0eb5f8c7939c63facd64a682e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-reverse-run.ps1",
+      "bytes": 2186,
+      "sha256": "aea321f03eca560c843c18aa0d4f34c6942dffba6d010cba3304ec6abc73dc11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-reverse.graph.json",
+      "bytes": 1965,
+      "sha256": "584f955b31d6056d9cb096d29eb77b7d88dab99a16ddaf686e8105521bbaa1a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-reverse.source-freeze.json",
+      "bytes": 779711,
+      "sha256": "c24feefe358c6c77161bfe22436bc8f878cbbee2d3927360b70c63ff5669b90e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-structure-review.json",
+      "bytes": 6378,
+      "sha256": "bb88d80eb6daa77197055b3e418fe41ee9911f9f762fbaf9df9534db6d88d4a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-structure.ps1",
+      "bytes": 920,
+      "sha256": "81c1a20d4ad76a9bb09f1402618166e2a181d20daf77bdfa7660279adb31b9fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-workspace-gates.ps1",
+      "bytes": 884,
+      "sha256": "6f6142bcbe3b9e5586d356ca19311d7a00398f423a5c77e0d0a84c9124f93e49"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-report-stage-trace-driver.log",
+      "bytes": 4083,
+      "sha256": "e09146b06744f208720f3cc9f2ffe32961026ddb63ad4e2f102616dc58faa4a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-report-stage-trace-executables-after.json",
+      "bytes": 481,
+      "sha256": "b1dcca574d3f75ee53416abbe2e8165418fd2d9e1245f42f4448752ba076e5e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-report-stage-trace-executables-before.json",
+      "bytes": 482,
+      "sha256": "c9ce3e5aabe91535dc7e919b56ab3785d2320a94b52742f457b4fe9c555bfd61"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-report-stage-trace-freeze.ps1",
+      "bytes": 1978,
+      "sha256": "0633fbfe1ac9eb511dabdd4b72c345825919ad5ce26d30733ece197c2d6c228b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-report-stage-trace-run.ps1",
+      "bytes": 1598,
+      "sha256": "851cf3717fea09f0de7e4ed9367eb3bbf75fc94295839a3d1ca52aec2c074dad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-report-stage-trace.graph.json",
+      "bytes": 1644,
+      "sha256": "19bc94678d0788be3e2788e29e1e92a1d479b776be780eee55b110f80a4bf58a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-report-stage-trace.source-freeze.json",
+      "bytes": 779646,
+      "sha256": "039815378905aafef5f09e1f20ebedf1de45eeddad4bff427fc9ed23bd68313b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-validation-stage-trace-driver.log",
+      "bytes": 4083,
+      "sha256": "4fe5ec2cd2bd0f6fbce7e821416169eb03974b86af2bca6e29c04c2c08ec34f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-validation-stage-trace-executables-after.json",
+      "bytes": 481,
+      "sha256": "c818c11f730b66a2c7dbc974a656fd1b2f0e97997601cada52738fb5cf106ed3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-validation-stage-trace-executables-before.json",
+      "bytes": 482,
+      "sha256": "3a3baed5126d657ec03b0b165441e8e9129591e1e3e5b6b399881fef981d7358"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-validation-stage-trace-freeze.ps1",
+      "bytes": 1986,
+      "sha256": "da4686d2d871088b4dd2b8076759aac4fd1033dd23c81acb6274fd5a7e7326b2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-validation-stage-trace-run.ps1",
+      "bytes": 1610,
+      "sha256": "3e554da6042fb67f8e6848507212981356544378dc8fb60439170df1f775b34b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-validation-stage-trace.graph.json",
+      "bytes": 1705,
+      "sha256": "f8ef3c7cea19c2acf38f8a08cf8e7529d71d3cf133e3f8d531d47097d78f635a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-validation-stage-trace.source-freeze.json",
+      "bytes": 779708,
+      "sha256": "746328f6832623771f9cc7d000f07ec2f4e3f5c495f0f1c30d369f06a8f9e9d4"
+    }
+  ],
+  "totalBytes": 29019816,
+  "artifactCopyMove": false
+}

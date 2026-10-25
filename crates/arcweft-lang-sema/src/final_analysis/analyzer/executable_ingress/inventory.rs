@@ -206,11 +206,12 @@ pub(in crate::final_analysis::analyzer) fn extract_declaration_adjacency(
                 },
                 |_unselected| None,
             )
-            .ok_or(FinalSemanticAnalysisError::CandidateFactTransaction {
-                violation:
+            .ok_or_else(|| {
+                FinalSemanticAnalysisError::from(
                     crate::final_analysis::CandidateFactTransactionViolation::PreparedCallGraph(
                         crate::callable::CallConstraintInvariant::MissingOrStalePreparedNode.into(),
                     ),
+                )
             })?;
         let Some(target) = target else {
             continue;

@@ -1,0 +1,58 @@
+    | ------------------------------------------------ associated functions in this implementation
+305 |     pub(crate) fn new() -> Self {
+    |                   ^^^
+...
+533 |     pub(crate) fn collect_many_in_scope<'a>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `arcweft-lang-sema` (lib test) generated 12 warnings (1 duplicate) (run `cargo fix --lib -p arcweft-lang-sema --tests` to apply 3 suggestions)
+warning: `arcweft-lang-sema` (lib) generated 24 warnings (9 duplicates) (run `cargo fix --lib -p arcweft-lang-sema` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 30s
+{"name":"task-final-r3082-control-result-closure-catalog","all":1357,"matched":1357,"excluded":0,"required":["inferred_control_result_preserves_polymorphic_prefix_schemes","traversal_await_match_infers_an_empty_error_branch_without_a_result_annotation","unannotated_control_results_share_context_in_both_branch_orders","control_result_inference_replays_generic_calls_with_the_original_capture","control_result_inference_rejects_conflicts_and_missing_element_evidence","contextual_results_constrain_direct_and_nested_generic_arguments_before_probing","deeply_nested_unannotated_diverging_branches_keep_the_never_result","generic_nested_result_mismatch_still_checks_each_outer_candidate_source","failed_implicit_branch_synthesis_restores_scope_before_contextual_recheck","nested_call_is_rechecked_inside_each_outer_candidate_pass"]}
+{"catalog":"task-final-r3082-control-result-closure-catalog","phase":"before-run","inventoryOnly":false,"testBinaries":5,"nonTestBinaries":0,"total":5}
+        PASS [   1.583s] (1346/1357) arcweft-lang-sema::api_compile checked_match_reference_is_not_an_external_authority
+        PASS [   1.663s] (1347/1357) arcweft-lang-sema::api_compile checked_statement_authorities_have_no_external_constructors
+        PASS [   1.740s] (1348/1357) arcweft-lang-sema::api_compile descriptor_has_no_persisted_codec
+        PASS [   1.551s] (1349/1357) arcweft-lang-sema::api_compile detached_source_expression_effect_reader_is_unavailable
+        PASS [   1.744s] (1350/1357) arcweft-lang-sema::api_compile internal_checker_modules_are_unavailable
+        PASS [   1.870s] (1351/1357) arcweft-lang-sema::api_compile removed_character_classifier_and_mutation_bypasses_do_not_compile
+        PASS [   1.783s] (1352/1357) arcweft-lang-sema::api_compile removed_checked_statement_authorities_and_prepared_proofs_are_unavailable
+        PASS [   1.666s] (1353/1357) arcweft-lang-sema::api_compile removed_zero_consumer_nominal_index_helper_is_unavailable
+        PASS [   1.706s] (1354/1357) arcweft-lang-sema::api_compile removed_zero_consumer_type_helpers_are_unavailable
+        PASS [   1.625s] (1355/1357) arcweft-lang-sema::api_compile runtime_manifest_cannot_enter_registration_without_source_provenance
+        PASS [   1.685s] (1356/1357) arcweft-lang-sema::api_compile signature_query_identity_does_not_accept_incremental_snapshot_ids
+        PASS [   1.692s] (1357/1357) arcweft-lang-sema::api_compile unpublished_final_semantic_draft_is_not_an_external_authority
+        SLOW [  62.463s] (1344/1357) arcweft-lang-sema::api_compile associated_capacity_no_runtime_receiver_injection
+       ABORT [   6.849s] ( 719/1357) arcweft-lang-sema final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result
+           - with code 0xc00000fd: 再帰が深すぎます。スタックがオーバーフローしました。 (os error 1001)
+error: test run failed
+actual exit code: 100
+{"catalog":"task-final-r3082-control-result-closure-catalog","phase":"after-run","inventoryOnly":false,"testBinaries":5,"nonTestBinaries":0,"total":5}
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "run": "task-final-r3083-control-result-closure-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 113.954s] 1357 tests run: 1356 passed (1 slow), 1 failed, 0 skipped",
+  "executed": 1357,
+  "passed": 1356,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "ABORT",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T14:20:54.0886808Z"
+}
+

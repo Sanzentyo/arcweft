@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "run": "task-final-r3091-hir-control-stack-runtime",
+  "frames": [
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::LocalUseChecker::expression_inner",
+      "bytes": 43480
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::LocalUseChecker::statement",
+      "bytes": 31064
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::CheckedLocalUseCatalog::seal_closed_instance",
+      "bytes": 9472
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::LocalUseChecker::solve_flow",
+      "bytes": 8280
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::CheckedLocalUseCatalog::seal",
+      "bytes": 7976
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::LocalUseChecker::ingress_copy_requirement_from",
+      "bytes": 7768
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::LocalUseChecker::expression",
+      "bytes": 7512
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::flow::OwnershipFlow::solve",
+      "bytes": 6328
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::LocalUseChecker::pattern_has_affine_binding",
+      "bytes": 4968
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::LocalUseChecker::binding_copy_evidence",
+      "bytes": 4520
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::LocalUseChecker::check_pattern_overlap",
+      "bytes": 4456
+    },
+    {
+      "name": "arcweft_lang_sema::final_analysis::local_use::LocalUseChecker::expression_is_copy",
+      "bytes": 4056
+    }
+  ]
+}

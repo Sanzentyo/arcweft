@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "purpose": "One-off source review aid only; runtime acceptance is recorded separately. Original match arm bodies compared after whitespace/trailing comma normalization and explicit preserved early-exit/finalization plumbing.",
+  "comparisons": [
+    {
+      "name": "emit_index_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_await_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_pipe_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_if_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_if_let_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_match_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_short_circuit_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_block_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_computation_block_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_try_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_named_block_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_loop_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_thread_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_closure_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_record_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_field_path_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_placeholder_expression",
+      "equivalent": true
+    },
+    {
+      "name": "emit_selected_children_expression",
+      "equivalent": true
+    }
+  ]
+}

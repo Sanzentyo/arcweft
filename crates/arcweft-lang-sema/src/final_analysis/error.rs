@@ -380,7 +380,7 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("semantic candidate fact transaction violation: {violation}")]
     CandidateFactTransaction {
-        violation: CandidateFactTransactionViolation,
+        violation: Box<CandidateFactTransactionViolation>,
     },
     #[error(
         "assertion statement {owner:?} mode {mode:?} is not admitted in semantic context {context:?}"
@@ -421,10 +421,10 @@ pub enum FinalSemanticAnalysisError {
     #[error("project Fx declaration {declaration:?} cannot be sealed: {cause}")]
     FxDefinition {
         declaration: arcweft_lang_hir::symbol::CallableDeclarationKey,
-        cause: super::CheckedFxDefinitionSealError,
+        cause: Box<super::CheckedFxDefinitionSealError>,
     },
     #[error("accepted semantic root catalog construction or validation failed: {0}")]
-    AcceptedSemanticRootCatalog(#[from] AcceptedSemanticRootCatalogError),
+    AcceptedSemanticRootCatalog(#[source] Box<AcceptedSemanticRootCatalogError>),
     #[error("checked callable join enrichment failed: {0}")]
     CheckedCallableJoin(Box<CheckedCallableJoinError>),
     #[error("failed to construct the accepted nominal-resolution input for {owner:?}")]
@@ -683,9 +683,17 @@ impl From<AcceptedSemanticRootCatalogError> for FinalSemanticProjectError {
     }
 }
 
+impl From<AcceptedSemanticRootCatalogError> for FinalSemanticAnalysisError {
+    fn from(error: AcceptedSemanticRootCatalogError) -> Self {
+        Self::AcceptedSemanticRootCatalog(Box::new(error))
+    }
+}
+
 impl From<CandidateFactTransactionViolation> for FinalSemanticAnalysisError {
     fn from(violation: CandidateFactTransactionViolation) -> Self {
-        Self::CandidateFactTransaction { violation }
+        Self::CandidateFactTransaction {
+            violation: Box::new(violation),
+        }
     }
 }
 

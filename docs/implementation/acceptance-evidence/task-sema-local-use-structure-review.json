@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "workingTree": "main; eight owned Rust changes; original fourteen tracked WIP and six untracked files retained",
+  "owner": "arcweft-lang-sema",
+  "metadataSource": "task-final-r2285.metadata.json",
+  "manifestInputs": 99,
+  "manifestLockDrift": 0,
+  "directDependencies": 18,
+  "directWorkspaceConsumers": 12,
+  "transitiveReversePackages": 22,
+  "validationReversePackages": 23,
+  "measurements": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+      "bytes": 45036,
+      "physicalLines": 1185,
+      "baseBytes": 44769,
+      "baseLines": 1177,
+      "growth": 8,
+      "classification": "production",
+      "embeddedTestPhysicalLines": 64
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+      "bytes": 43787,
+      "physicalLines": 1090,
+      "baseBytes": 43856,
+      "baseLines": 1091,
+      "growth": -1,
+      "classification": "production",
+      "embeddedTestPhysicalLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+      "bytes": 292342,
+      "physicalLines": 7075,
+      "baseBytes": 292374,
+      "baseLines": 7075,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestPhysicalLines": 546
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+      "bytes": 39594,
+      "physicalLines": 796,
+      "baseBytes": 39626,
+      "baseLines": 796,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestPhysicalLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/executable_ingress/inventory.rs",
+      "bytes": 9216,
+      "physicalLines": 236,
+      "baseBytes": 9220,
+      "baseLines": 235,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestPhysicalLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/fx_definition.rs",
+      "bytes": 104706,
+      "physicalLines": 2510,
+      "baseBytes": 104588,
+      "baseLines": 2507,
+      "growth": 3,
+      "classification": "production",
+      "embeddedTestPhysicalLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/content_callables.rs",
+      "bytes": 64964,
+      "physicalLines": 1930,
+      "baseBytes": 65111,
+      "baseLines": 1950,
+      "growth": -20,
+      "classification": "test module",
+      "embeddedTestPhysicalLines": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+      "bytes": 138824,
+      "physicalLines": 3603,
+      "baseBytes": 133866,
+      "baseLines": 3375,
+      "growth": 228,
+      "classification": "production",
+      "embeddedTestPhysicalLines": 0
+    }
+  ],
+  "dispositions": [
+    {
+      "paths": [
+        "crates/arcweft-lang-sema/src/final_analysis/local_use.rs"
+      ],
+      "classification": "production",
+      "responsibility": "The existing LocalUseChecker emits the same ownership events into the single OwnershipFlow. Expression admission, exhaustive typed HIR family emission and final use/never continuation have private, separate stack lifetimes. The original worklist solver is unchanged.",
+      "state": "Existing Availability, move/loan modes, callback-local stack, synthetic owners, carrier/loop/output scopes and joins remain on the original checker and flow. Helpers borrow the same state; no second traversal or solver is introduced.",
+      "control": "ControlFlow distinguishes the original early exits from the common continuation. Index, record and rejected-call paths without executable edges still skip finalization, as do admitted places and inspection access.",
+      "coupling": "The eighteen existing expression-family bodies are directly dispatched in their original order, including the guarded short-circuit and field cases. Capture packets, loan cleanup before error, callable boundaries and graph source order remain unchanged.",
+      "dependencies": "Same borrowed accepted HIR and semantic facts; unchanged Cargo graph, Sans-I/O boundary, visibility and schema version.",
+      "tests": "Existing local ownership, callback, failure, Never and generic tests remain the acceptance boundary. The depth-thirty-two test and all thirty-two Never plus thirty-three selected-call assertions are unchanged."
+    },
+    {
+      "paths": [
+        "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/executable_ingress/inventory.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/fx_definition.rs"
+      ],
+      "classification": "production",
+      "responsibility": "The existing structured FinalSemanticAnalysisError stores three large cold diagnostic causes behind Box, and each original producer constructs the same variant and cause. Accepted-root conversion preserves Error::source; inventory creates the allocation lazily on failure.",
+      "state": "No new semantic state or resolution authority. The 7075-line call constraint owner and 2510-line Fx owner change only diagnostic construction; their existing type solving/sealing boundaries remain unchanged.",
+      "api": "The public diagnostic cause representation changes to boxed typed causes. All repository constructors and concrete matching consumers are migrated; no new visibility, facade, Cargo edge, unsafe, I/O, codec or version is introduced."
+    },
+    {
+      "paths": [
+        "crates/arcweft-lang-sema/src/final_analysis/tests/content_callables.rs"
+      ],
+      "classification": "test module",
+      "responsibility": "The four existing rejection assertions still require exactly InvalidBody or the Amplitude UnprovableBuiltinConstraint through cause.as_ref(). No negative assertion is weakened."
+    }
+  ],
+  "finalStructureRun": "task-final-r3098-sema-local-use-structure",
+  "acceptanceLimitation": "The focused R3093 passes the original thirty-two-level case. Full reverse/workspace results are recorded separately; frame measurements are diagnosis rather than acceptance."
+}

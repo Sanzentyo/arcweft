@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "name": "task-final-r3096-sema-local-use-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3096-sema-local-use-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T15:15:31.0795899Z",
+  "finishedAt": "2026-10-25T15:26:31.3334545Z"
+}

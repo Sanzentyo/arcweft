@@ -1235,9 +1235,9 @@ impl<'a, 'project, 'catalog, 'control>
             expected,
         );
         let attempt = attempt.cloned().ok_or_else(|| {
-            crate::final_analysis::FinalSemanticAnalysisError::CandidateFactTransaction {
-                violation: crate::final_analysis::CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch,
-            }
+            crate::final_analysis::FinalSemanticAnalysisError::from(
+                crate::final_analysis::CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch,
+            )
         })?;
         self.analyzer.record_physical_candidate_argument_evaluation(
             PhysicalCandidateArgumentEvaluation::new(

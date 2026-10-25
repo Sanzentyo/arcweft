@@ -485,9 +485,9 @@ impl Analyzer<'_, '_, '_> {
                 })
             }
             Ok(CandidateFactTransactionOutcome::Extracted { .. }) => {
-                Err(FinalSemanticAnalysisError::CandidateFactTransaction {
-                    violation: CandidateFactTransactionViolation::UnrecoverableLedger,
-                })
+                Err(FinalSemanticAnalysisError::from(
+                    CandidateFactTransactionViolation::UnrecoverableLedger,
+                ))
             }
             Err(error) => Err(into_text_proxy_public_error(error, last_expression)),
         }

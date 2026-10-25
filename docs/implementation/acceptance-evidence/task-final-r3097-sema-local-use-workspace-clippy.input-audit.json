@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "run": "task-final-r3097-sema-local-use-workspace-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T15:37:01.3104667Z"
+}

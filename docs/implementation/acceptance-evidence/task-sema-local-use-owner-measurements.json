@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "measurements": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+      "bytes": 45036,
+      "physicalLines": 1185,
+      "baseBytes": 44769,
+      "baseLines": 1177,
+      "growth": 8
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+      "bytes": 43787,
+      "physicalLines": 1090,
+      "baseBytes": 43856,
+      "baseLines": 1091,
+      "growth": -1
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+      "bytes": 292342,
+      "physicalLines": 7075,
+      "baseBytes": 292374,
+      "baseLines": 7075,
+      "growth": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+      "bytes": 39594,
+      "physicalLines": 796,
+      "baseBytes": 39626,
+      "baseLines": 796,
+      "growth": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/executable_ingress/inventory.rs",
+      "bytes": 9216,
+      "physicalLines": 236,
+      "baseBytes": 9220,
+      "baseLines": 235,
+      "growth": 1
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/fx_definition.rs",
+      "bytes": 104706,
+      "physicalLines": 2510,
+      "baseBytes": 104588,
+      "baseLines": 2507,
+      "growth": 3
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/content_callables.rs",
+      "bytes": 64964,
+      "physicalLines": 1930,
+      "baseBytes": 65111,
+      "baseLines": 1950,
+      "growth": -20
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+      "bytes": 138824,
+      "physicalLines": 3603,
+      "baseBytes": 133866,
+      "baseLines": 3375,
+      "growth": 228
+    }
+  ]
+}

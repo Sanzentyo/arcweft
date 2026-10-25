@@ -1908,42 +1908,17 @@ impl<'a> LocalUseChecker<'a> {
             return Ok(());
         }
         if self.in_place_receivers.contains(&owner) {
-            // The selected call writes through this direct place. Its target
-            // is resolved as a place and never read as a value operand.
-            let place = self
-                .analysis
-                .expression(owner)
-                .and_then(super::CheckedExpression::mutable_place)
-                .ok_or(CheckedLocalUseError::InvalidTopology)?;
-            return self.access_place(owner, place, CheckedLocalPlaceMode::Mutate, state);
+            return self.emit_in_place_receiver_expression(owner, state);
         }
         if self.borrowed_receivers.contains(&owner) {
-            let inputs = self
-                .analysis
-                .checked_capture_inputs(owner)
-                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-            let mut sources = inputs.sources();
-            let input = sources
-                .next()
-                .ok_or(CheckedLocalUseError::InvalidTopology)?;
-            if sources.next().is_some() {
-                return Err(CheckedLocalUseError::InvalidTopology);
-            }
-            return self.borrow_local(input.site(), input.local(), state);
+            return self.emit_borrowed_receiver_expression(owner, state);
         }
         if let Some(CheckedExpressionResolution::ImplicitCallable(_)) = self
             .analysis
             .expression(owner)
             .map(super::CheckedExpression::resolution)
         {
-            let captures = self
-                .analysis
-                .checked_capture_inputs(owner)
-                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-            for input in captures.sources() {
-                self.use_local(input.site(), input.local(), state)?;
-            }
-            return self.callable_body(|this, state| this.expression_inner(owner, state));
+            return self.emit_implicit_callable_expression(owner, state);
         }
         if self.scheduled_callback_roots.contains(&owner)
             && !matches!(
@@ -1954,35 +1929,127 @@ impl<'a> LocalUseChecker<'a> {
                 HirExprKind::Closure(_)
             )
         {
-            self.callback_local_uses.push(BTreeSet::new());
-            let result = self.callable_body(|this, state| this.expression_inner(owner, state));
-            let locals = self
-                .callback_local_uses
-                .pop()
-                .ok_or(CheckedLocalUseError::InvalidTopology)?;
-            result?;
-            for local in scheduled_free_locals(self.analysis, owner, locals)? {
-                self.use_local(CheckedLocalUseSite::Capture { owner, local }, local, state)?;
-            }
-            return Ok(());
+            return self.emit_scheduled_callback_expression(owner, state);
         }
         if let Some(captures) = self.effect_capture_sites.get(&owner).cloned() {
-            for local in captures {
-                self.use_local(CheckedLocalUseSite::Capture { owner, local }, local, state)?;
-            }
-            // The effect body runs later in its own callback frame. Its HIR
-            // expression reads still receive modes, but cannot consume the
-            // outer scope a second time after the capture packet is moved.
-            return self.callable_body(|this, state| this.expression_inner(owner, state));
+            return self.emit_effect_callback_expression(owner, captures, state);
         }
         self.expression_inner(owner, state)
     }
 
+    fn emit_in_place_receiver_expression(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<(), CheckedLocalUseError> {
+        // The selected call writes through this direct place. Its target
+        // is resolved as a place and never read as a value operand.
+        let place = self
+            .analysis
+            .expression(owner)
+            .and_then(super::CheckedExpression::mutable_place)
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        self.access_place(owner, place, CheckedLocalPlaceMode::Mutate, state)
+    }
+
+    fn emit_borrowed_receiver_expression(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<(), CheckedLocalUseError> {
+        let inputs = self
+            .analysis
+            .checked_capture_inputs(owner)
+            .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+        let mut sources = inputs.sources();
+        let input = sources
+            .next()
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        if sources.next().is_some() {
+            return Err(CheckedLocalUseError::InvalidTopology);
+        }
+        self.borrow_local(input.site(), input.local(), state)
+    }
+
+    fn emit_implicit_callable_expression(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<(), CheckedLocalUseError> {
+        let captures = self
+            .analysis
+            .checked_capture_inputs(owner)
+            .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+        for input in captures.sources() {
+            self.use_local(input.site(), input.local(), state)?;
+        }
+        self.callable_body(|this, state| this.expression_inner(owner, state))
+    }
+
+    fn emit_scheduled_callback_expression(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<(), CheckedLocalUseError> {
+        self.callback_local_uses.push(BTreeSet::new());
+        let result = self.callable_body(|this, state| this.expression_inner(owner, state));
+        let locals = self
+            .callback_local_uses
+            .pop()
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        result?;
+        for local in scheduled_free_locals(self.analysis, owner, locals)? {
+            self.use_local(CheckedLocalUseSite::Capture { owner, local }, local, state)?;
+        }
+        Ok(())
+    }
+
+    fn emit_effect_callback_expression(
+        &mut self,
+        owner: ExprId,
+        captures: Box<[LocalId]>,
+        state: &mut Availability,
+    ) -> Result<(), CheckedLocalUseError> {
+        for local in captures {
+            self.use_local(CheckedLocalUseSite::Capture { owner, local }, local, state)?;
+        }
+        // The effect body runs later in its own callback frame. Its HIR
+        // expression reads still receive modes, but cannot consume the
+        // outer scope a second time after the capture packet is moved.
+        self.callable_body(|this, state| this.expression_inner(owner, state))
+    }
+
+    // Access admission, family emission and result continuation share this one
+    // ownership graph while retaining separate stack lifetimes.
     fn expression_inner(
         &mut self,
         owner: ExprId,
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
+        if self.emit_local_place_use(owner, state)?.is_break() {
+            return Ok(());
+        }
+        let expression = self
+            .module
+            .resolve_expr(owner)
+            .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+        if self.emit_inspection_use(owner, state)?.is_break() {
+            return Ok(());
+        }
+        if self
+            .emit_expression_kind(owner, expression, state)?
+            .is_break()
+        {
+            return Ok(());
+        }
+        self.finish_expression_use(owner, state)
+    }
+
+    fn emit_local_place_use(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
         if let Some(place) =
             CheckedPlace::from_field(owner, |owner| self.analysis.expression(owner))
         {
@@ -2038,12 +2105,16 @@ impl<'a> LocalUseChecker<'a> {
                 return Err(CheckedLocalUseError::DuplicateSite { site });
             }
             self.flow.append(state, Event::Access(site));
-            return Ok(());
+            return Ok(std::ops::ControlFlow::Break(()));
         }
-        let expression = self
-            .module
-            .resolve_expr(owner)
-            .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_inspection_use(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
         if let Some(receiver) = self
             .analysis
             .expression(owner)
@@ -2061,280 +2132,45 @@ impl<'a> LocalUseChecker<'a> {
                         .unwrap_or_else(|| CheckedPlace::from_local(local))
                 }
             };
-            return self.access_place(owner, place, CheckedLocalPlaceMode::Inspect, state);
+            return self
+                .access_place(owner, place, CheckedLocalPlaceMode::Inspect, state)
+                .map(std::ops::ControlFlow::Break);
         }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_expression_kind(
+        &mut self,
+        owner: ExprId,
+        expression: &arcweft_lang_hir::expr::HirExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
         match expression.kind() {
-            HirExprKind::Index(_) => {
-                let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) else {
-                    return Ok(());
-                };
-                let children = edges.child_expressions().collect::<Vec<_>>();
-                for child in children {
-                    self.expression(child, state)?;
-                }
-                let selected_type = self
-                    .analysis
-                    .expression(owner)
-                    .and_then(super::CheckedExpression::value_type)
-                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                let selected_type = self.closed_type(selected_type)?;
-                if !self.type_is_copy(&selected_type)? {
-                    let ty = selected_type
-                        .semantic_identity_digest()
-                        .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-                    return Err(CheckedLocalUseError::IndexRequiresCopy {
-                        expression: owner,
-                        ty,
-                    });
-                }
-            }
-            HirExprKind::Await(value) => {
-                let Some(CheckedExpressionResolution::Await(checked)) = self
-                    .analysis
-                    .expression(owner)
-                    .map(super::CheckedExpression::resolution)
-                else {
-                    return Err(CheckedLocalUseError::InvalidTopology);
-                };
-                if checked.operand() != value.operand()
-                    || checked.observers().len() != value.branches().len()
-                    || !value.branches().iter().zip(checked.observers()).all(
-                        |(branch, observer)| {
-                            branch.kind() == arcweft_lang_hir::expr::HirAwaitBranchKind::Pending
-                                && branch.pattern() == Some(observer.pattern())
-                        },
-                    )
-                {
-                    return Err(CheckedLocalUseError::InvalidTopology);
-                }
-                self.expression(value.operand(), state)?;
-                for branch in value.branches() {
-                    self.repeat(state, |this, iteration| {
-                        this.bind(branch.locals(), iteration);
-                        this.contextual_body(branch.body(), iteration)
-                    })?;
-                }
-            }
-            HirExprKind::Pipe(_) => {
-                let pipe = match self
-                    .analysis
-                    .expression(owner)
-                    .map(super::CheckedExpression::resolution)
-                {
-                    Some(CheckedExpressionResolution::Pipe(pipe)) => pipe,
-                    Some(CheckedExpressionResolution::ImplicitCallable(callable)) => {
-                        match callable.body() {
-                            super::CheckedImplicitCallableBody::Pipe(pipe) => pipe,
-                            _ => return Err(CheckedLocalUseError::InvalidTopology),
-                        }
-                    }
-                    _ => return Err(CheckedLocalUseError::InvalidTopology),
-                };
-                self.expression(pipe.lookup_left(), state)?;
-                self.flow.append(
-                    state,
-                    Event::BindSynthetic(CheckedSyntheticUseOwner::Pipe(pipe.binding_identity())),
-                );
-                self.expression(pipe.lookup_right(), state)?;
-            }
-            HirExprKind::If(value) => {
-                self.expression(value.condition(), state)?;
-                self.branch(
-                    state,
-                    |this, state| this.expression(value.then_branch(), state),
-                    |this, state| this.expression(value.else_branch(), state),
-                )?;
-            }
-            HirExprKind::IfLet(value) => {
-                self.expression(value.scrutinee(), state)?;
-                let incoming = state.clone();
-                let mut matched = incoming.clone();
-                let mut unmatched = incoming;
-                let locals = self.pattern_bound_locals(value.pattern())?;
-                self.bind(&locals.iter().copied().collect::<Vec<_>>(), &mut matched);
-                if let Some(guard) = value.guard() {
-                    let locals = self.pattern_bound_locals(value.pattern())?;
-                    self.guard_expression(guard, locals, &mut matched)?;
-                    unmatched = unmatched.join(matched.clone());
-                }
-                self.expression(value.then_branch(), &mut matched)?;
-                self.expression(value.else_branch(), &mut unmatched)?;
-                *state = matched.join(unmatched);
-            }
-            HirExprKind::Match(value) => {
-                self.expression(value.scrutinee(), state)?;
-                let mut joined = None;
-                let mut fallthrough = state.clone();
-                for arm in value.arms() {
-                    let mut arm_state = fallthrough.clone();
-                    self.bind(arm.locals(), &mut arm_state);
-                    if let Some(guard) = arm.guard() {
-                        self.guard_expression(guard, arm.locals().iter().copied(), &mut arm_state)?;
-                        fallthrough = fallthrough.join(arm_state.clone());
-                    }
-                    self.expression(arm.value(), &mut arm_state)?;
-                    joined = Some(joined.map_or(arm_state.clone(), |previous: Availability| {
-                        previous.join(arm_state)
-                    }));
-                }
-                if let Some(joined) = joined {
-                    *state = joined;
-                }
-            }
+            HirExprKind::Index(_) => self.emit_index_expression(owner, state),
+            HirExprKind::Await(value) => self.emit_await_expression(owner, value, state),
+            HirExprKind::Pipe(_) => self.emit_pipe_expression(owner, state),
+            HirExprKind::If(value) => self.emit_if_expression(value, state),
+            HirExprKind::IfLet(value) => self.emit_if_let_expression(value, state),
+            HirExprKind::Match(value) => self.emit_match_expression(value, state),
             HirExprKind::Binary(value)
                 if matches!(
                     value.operator(),
                     HirBinaryOp::And | HirBinaryOp::Or | HirBinaryOp::Implies
                 ) =>
             {
-                self.expression(value.left(), state)?;
-                self.branch(
-                    state,
-                    |this, state| this.expression(value.right(), state),
-                    |_, _| Ok(()),
-                )?;
+                self.emit_short_circuit_expression(value, state)
             }
-            HirExprKind::Block(value) => {
-                for statement in value.statements() {
-                    self.statement(*statement, state)?;
-                }
-                self.expression(value.tail(), state)?;
-            }
+            HirExprKind::Block(value) => self.emit_block_expression(value, state),
             HirExprKind::ComputationBlock(value) => {
-                let catches = matches!(
-                    value.kind(),
-                    arcweft_lang_hir::expr::HirComputationBlockKind::Result
-                        | arcweft_lang_hir::expr::HirComputationBlockKind::Option
-                );
-                let exit = if catches {
-                    self.flow.append(state, Event::Join);
-                    let exit = self.flow.detached();
-                    self.carriers.push((owner, exit));
-                    Some(exit)
-                } else {
-                    None
-                };
-                for statement in value.statements() {
-                    self.statement(*statement, state)?;
-                }
-                self.expression(value.tail(), state)?;
-                if let Some(exit) = exit {
-                    self.carriers
-                        .pop()
-                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                    self.flow.connect(state, exit);
-                    *state = Availability::at(exit);
-                }
+                self.emit_computation_block_expression(owner, value, state)
             }
-            HirExprKind::Try(value) => {
-                self.expression(value.operand(), state)?;
-                let checked = match self
-                    .analysis
-                    .expression(owner)
-                    .map(super::CheckedExpression::resolution)
-                {
-                    Some(CheckedExpressionResolution::Try(checked)) => checked,
-                    Some(CheckedExpressionResolution::ImplicitCallable(callable)) => {
-                        match callable.body() {
-                            super::CheckedImplicitCallableBody::Try(checked) => checked,
-                            _ => return Err(CheckedLocalUseError::InvalidTopology),
-                        }
-                    }
-                    _ => return Err(CheckedLocalUseError::InvalidTopology),
-                };
-                if let super::CheckedTryBoundaryOwner::CarrierBlock(boundary) =
-                    checked.boundary().owner()
-                {
-                    let (_, exit) = self
-                        .carriers
-                        .iter()
-                        .rev()
-                        .find(|(owner, _)| *owner == boundary.lookup_owner())
-                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                    self.flow.connect(state, *exit);
-                }
-            }
-            HirExprKind::NamedBlock(value) => {
-                for statement in value.statements() {
-                    self.statement(*statement, state)?;
-                }
-                self.expression(value.tail(), state)?;
-            }
-            HirExprKind::Loop(value) => {
-                self.begin_loop(
-                    state,
-                    arcweft_lang_hir::project::HirSemanticBodyOwner::direct_expression(owner),
-                )?;
-                for statement in value.statements() {
-                    self.statement(*statement, state)?;
-                }
-                self.expression(value.tail(), state)?;
-                self.end_loop(state)?;
-            }
-            HirExprKind::Thread(value) => {
-                let Some(CheckedExpressionResolution::Thread(checked)) = self
-                    .analysis
-                    .expression(owner)
-                    .map(super::CheckedExpression::resolution)
-                else {
-                    return Err(CheckedLocalUseError::InvalidTopology);
-                };
-                if !checked.matches_source(value) {
-                    return Err(CheckedLocalUseError::InvalidTopology);
-                }
-                // A spawned body owns independent availability, loans and control
-                // scopes. Collect its inputs from those same admitted body reads,
-                // then transfer only external bindings in the parent frame.
-                self.callback_local_uses.push(BTreeSet::new());
-                let result =
-                    self.callable_body(|this, child| this.thread_body(value.body(), child));
-                let locals = self
-                    .callback_local_uses
-                    .pop()
-                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                result?;
-                for local in scheduled_free_locals(self.analysis, owner, locals)? {
-                    self.use_local(CheckedLocalUseSite::Capture { owner, local }, local, state)?;
-                }
-            }
-            HirExprKind::Closure(value) => {
-                let Some(CheckedExpressionResolution::Closure(_)) = self
-                    .analysis
-                    .expression(owner)
-                    .map(super::CheckedExpression::resolution)
-                else {
-                    return Err(CheckedLocalUseError::InvalidTopology);
-                };
-                let captures = self
-                    .analysis
-                    .checked_capture_inputs(owner)
-                    .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-                for input in captures.sources() {
-                    self.use_local(input.site(), input.local(), state)?;
-                }
-                self.callable_body(|this, state| this.expression(value.body(), state))?;
-            }
+            HirExprKind::Try(value) => self.emit_try_expression(owner, value, state),
+            HirExprKind::NamedBlock(value) => self.emit_named_block_expression(value, state),
+            HirExprKind::Loop(value) => self.emit_loop_expression(owner, value, state),
+            HirExprKind::Thread(value) => self.emit_thread_expression(owner, value, state),
+            HirExprKind::Closure(value) => self.emit_closure_expression(owner, value, state),
             HirExprKind::Record(_) | HirExprKind::RecordLiteral(_) => {
-                let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) else {
-                    return Ok(());
-                };
-                let inputs = self
-                    .analysis
-                    .checked_capture_inputs(owner)
-                    .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-                for field in edges.record_fields() {
-                    match field.source() {
-                        CheckedRecordValueSource::Expression(source) => {
-                            self.expression(source.raw(), state)?
-                        }
-                        CheckedRecordValueSource::Binding(_) => {
-                            let input = inputs
-                                .record_source_at(field.source_ordinal())
-                                .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                            self.use_local(input.site(), input.local(), state)?;
-                        }
-                    }
-                }
+                self.emit_record_expression(owner, state)
             }
             HirExprKind::Path(_)
                 if matches!(
@@ -2346,155 +2182,547 @@ impl<'a> LocalUseChecker<'a> {
                     ))
                 ) =>
             {
-                if self
-                    .analysis
-                    .expression(owner)
-                    .and_then(super::CheckedExpression::mutable_place)
-                    .filter(|place| !place.fields().is_empty())
-                    .is_some()
-                {
-                    let inputs = self
-                        .analysis
-                        .checked_capture_inputs(owner)
-                        .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-                    let mut sources = inputs.sources();
-                    let input = sources
-                        .next()
+                self.emit_field_path_expression(owner, state)
+            }
+            HirExprKind::Placeholder(_) => self.emit_placeholder_expression(owner, state),
+            _ => self.emit_selected_children_expression(owner, expression, state),
+        }
+    }
+
+    fn emit_index_expression(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) else {
+            return Ok(std::ops::ControlFlow::Break(()));
+        };
+        let children = edges.child_expressions().collect::<Vec<_>>();
+        for child in children {
+            self.expression(child, state)?;
+        }
+        let selected_type = self
+            .analysis
+            .expression(owner)
+            .and_then(super::CheckedExpression::value_type)
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        let selected_type = self.closed_type(selected_type)?;
+        if !self.type_is_copy(&selected_type)? {
+            let ty = selected_type
+                .semantic_identity_digest()
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+            return Err(CheckedLocalUseError::IndexRequiresCopy {
+                expression: owner,
+                ty,
+            });
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_await_expression(
+        &mut self,
+        owner: ExprId,
+        value: &arcweft_lang_hir::expr::HirAwaitExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        let Some(CheckedExpressionResolution::Await(checked)) = self
+            .analysis
+            .expression(owner)
+            .map(super::CheckedExpression::resolution)
+        else {
+            return Err(CheckedLocalUseError::InvalidTopology);
+        };
+        if checked.operand() != value.operand()
+            || checked.observers().len() != value.branches().len()
+            || !value
+                .branches()
+                .iter()
+                .zip(checked.observers())
+                .all(|(branch, observer)| {
+                    branch.kind() == arcweft_lang_hir::expr::HirAwaitBranchKind::Pending
+                        && branch.pattern() == Some(observer.pattern())
+                })
+        {
+            return Err(CheckedLocalUseError::InvalidTopology);
+        }
+        self.expression(value.operand(), state)?;
+        for branch in value.branches() {
+            self.repeat(state, |this, iteration| {
+                this.bind(branch.locals(), iteration);
+                this.contextual_body(branch.body(), iteration)
+            })?;
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_pipe_expression(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        let pipe = match self
+            .analysis
+            .expression(owner)
+            .map(super::CheckedExpression::resolution)
+        {
+            Some(CheckedExpressionResolution::Pipe(pipe)) => pipe,
+            Some(CheckedExpressionResolution::ImplicitCallable(callable)) => {
+                match callable.body() {
+                    super::CheckedImplicitCallableBody::Pipe(pipe) => pipe,
+                    _ => return Err(CheckedLocalUseError::InvalidTopology),
+                }
+            }
+            _ => return Err(CheckedLocalUseError::InvalidTopology),
+        };
+        self.expression(pipe.lookup_left(), state)?;
+        self.flow.append(
+            state,
+            Event::BindSynthetic(CheckedSyntheticUseOwner::Pipe(pipe.binding_identity())),
+        );
+        self.expression(pipe.lookup_right(), state)?;
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_if_expression(
+        &mut self,
+        value: &arcweft_lang_hir::expr::HirIfExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        self.expression(value.condition(), state)?;
+        self.branch(
+            state,
+            |this, state| this.expression(value.then_branch(), state),
+            |this, state| this.expression(value.else_branch(), state),
+        )?;
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_if_let_expression(
+        &mut self,
+        value: &arcweft_lang_hir::expr::HirIfLetExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        self.expression(value.scrutinee(), state)?;
+        let incoming = state.clone();
+        let mut matched = incoming.clone();
+        let mut unmatched = incoming;
+        let locals = self.pattern_bound_locals(value.pattern())?;
+        self.bind(&locals.iter().copied().collect::<Vec<_>>(), &mut matched);
+        if let Some(guard) = value.guard() {
+            let locals = self.pattern_bound_locals(value.pattern())?;
+            self.guard_expression(guard, locals, &mut matched)?;
+            unmatched = unmatched.join(matched.clone());
+        }
+        self.expression(value.then_branch(), &mut matched)?;
+        self.expression(value.else_branch(), &mut unmatched)?;
+        *state = matched.join(unmatched);
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_match_expression(
+        &mut self,
+        value: &arcweft_lang_hir::expr::HirMatchExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        self.expression(value.scrutinee(), state)?;
+        let mut joined = None;
+        let mut fallthrough = state.clone();
+        for arm in value.arms() {
+            let mut arm_state = fallthrough.clone();
+            self.bind(arm.locals(), &mut arm_state);
+            if let Some(guard) = arm.guard() {
+                self.guard_expression(guard, arm.locals().iter().copied(), &mut arm_state)?;
+                fallthrough = fallthrough.join(arm_state.clone());
+            }
+            self.expression(arm.value(), &mut arm_state)?;
+            joined = Some(joined.map_or(arm_state.clone(), |previous: Availability| {
+                previous.join(arm_state)
+            }));
+        }
+        if let Some(joined) = joined {
+            *state = joined;
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_short_circuit_expression(
+        &mut self,
+        value: &arcweft_lang_hir::expr::HirBinaryExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        self.expression(value.left(), state)?;
+        self.branch(
+            state,
+            |this, state| this.expression(value.right(), state),
+            |_, _| Ok(()),
+        )?;
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_block_expression(
+        &mut self,
+        value: &arcweft_lang_hir::expr::HirBlockExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        for statement in value.statements() {
+            self.statement(*statement, state)?;
+        }
+        self.expression(value.tail(), state)?;
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_computation_block_expression(
+        &mut self,
+        owner: ExprId,
+        value: &arcweft_lang_hir::expr::HirComputationBlockExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        let catches = matches!(
+            value.kind(),
+            arcweft_lang_hir::expr::HirComputationBlockKind::Result
+                | arcweft_lang_hir::expr::HirComputationBlockKind::Option
+        );
+        let exit = if catches {
+            self.flow.append(state, Event::Join);
+            let exit = self.flow.detached();
+            self.carriers.push((owner, exit));
+            Some(exit)
+        } else {
+            None
+        };
+        for statement in value.statements() {
+            self.statement(*statement, state)?;
+        }
+        self.expression(value.tail(), state)?;
+        if let Some(exit) = exit {
+            self.carriers
+                .pop()
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            self.flow.connect(state, exit);
+            *state = Availability::at(exit);
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_try_expression(
+        &mut self,
+        owner: ExprId,
+        value: &arcweft_lang_hir::expr::HirTryExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        self.expression(value.operand(), state)?;
+        let checked = match self
+            .analysis
+            .expression(owner)
+            .map(super::CheckedExpression::resolution)
+        {
+            Some(CheckedExpressionResolution::Try(checked)) => checked,
+            Some(CheckedExpressionResolution::ImplicitCallable(callable)) => {
+                match callable.body() {
+                    super::CheckedImplicitCallableBody::Try(checked) => checked,
+                    _ => return Err(CheckedLocalUseError::InvalidTopology),
+                }
+            }
+            _ => return Err(CheckedLocalUseError::InvalidTopology),
+        };
+        if let super::CheckedTryBoundaryOwner::CarrierBlock(boundary) = checked.boundary().owner() {
+            let (_, exit) = self
+                .carriers
+                .iter()
+                .rev()
+                .find(|(owner, _)| *owner == boundary.lookup_owner())
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            self.flow.connect(state, *exit);
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_named_block_expression(
+        &mut self,
+        value: &arcweft_lang_hir::expr::HirNamedBlockExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        for statement in value.statements() {
+            self.statement(*statement, state)?;
+        }
+        self.expression(value.tail(), state)?;
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_loop_expression(
+        &mut self,
+        owner: ExprId,
+        value: &arcweft_lang_hir::expr::HirLoopExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        self.begin_loop(
+            state,
+            arcweft_lang_hir::project::HirSemanticBodyOwner::direct_expression(owner),
+        )?;
+        for statement in value.statements() {
+            self.statement(*statement, state)?;
+        }
+        self.expression(value.tail(), state)?;
+        self.end_loop(state)?;
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_thread_expression(
+        &mut self,
+        owner: ExprId,
+        value: &arcweft_lang_hir::expr::HirThreadExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        let Some(CheckedExpressionResolution::Thread(checked)) = self
+            .analysis
+            .expression(owner)
+            .map(super::CheckedExpression::resolution)
+        else {
+            return Err(CheckedLocalUseError::InvalidTopology);
+        };
+        if !checked.matches_source(value) {
+            return Err(CheckedLocalUseError::InvalidTopology);
+        }
+        // A spawned body owns independent availability, loans and control
+        // scopes. Collect its inputs from those same admitted body reads,
+        // then transfer only external bindings in the parent frame.
+        self.callback_local_uses.push(BTreeSet::new());
+        let result = self.callable_body(|this, child| this.thread_body(value.body(), child));
+        let locals = self
+            .callback_local_uses
+            .pop()
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        result?;
+        for local in scheduled_free_locals(self.analysis, owner, locals)? {
+            self.use_local(CheckedLocalUseSite::Capture { owner, local }, local, state)?;
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_closure_expression(
+        &mut self,
+        owner: ExprId,
+        value: &arcweft_lang_hir::expr::HirClosureExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        let Some(CheckedExpressionResolution::Closure(_)) = self
+            .analysis
+            .expression(owner)
+            .map(super::CheckedExpression::resolution)
+        else {
+            return Err(CheckedLocalUseError::InvalidTopology);
+        };
+        let captures = self
+            .analysis
+            .checked_capture_inputs(owner)
+            .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+        for input in captures.sources() {
+            self.use_local(input.site(), input.local(), state)?;
+        }
+        self.callable_body(|this, state| this.expression(value.body(), state))?;
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_record_expression(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) else {
+            return Ok(std::ops::ControlFlow::Break(()));
+        };
+        let inputs = self
+            .analysis
+            .checked_capture_inputs(owner)
+            .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+        for field in edges.record_fields() {
+            match field.source() {
+                CheckedRecordValueSource::Expression(source) => {
+                    self.expression(source.raw(), state)?
+                }
+                CheckedRecordValueSource::Binding(_) => {
+                    let input = inputs
+                        .record_source_at(field.source_ordinal())
                         .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                    if sources.next().is_some() {
-                        return Err(CheckedLocalUseError::InvalidTopology);
-                    }
                     self.use_local(input.site(), input.local(), state)?;
                 }
             }
-            HirExprKind::Placeholder(_) => {
-                match self
-                    .analysis
-                    .expression(owner)
-                    .map(super::CheckedExpression::resolution)
-                {
-                    Some(CheckedExpressionResolution::PipeLeft(pipe)) => self.use_synthetic(
-                        owner,
-                        CheckedSyntheticUseOwner::Pipe(pipe.binding_identity()),
-                        state,
-                    )?,
-                    Some(CheckedExpressionResolution::ImplicitParameter(parameter)) => self
-                        .use_synthetic(
-                            owner,
-                            CheckedSyntheticUseOwner::ImplicitParameter(parameter.callable()),
-                            state,
-                        )?,
-                    Some(CheckedExpressionResolution::ImplicitCallable(callable))
-                        if matches!(
-                            callable.body(),
-                            super::CheckedImplicitCallableBody::Plain(body)
-                                if matches!(body.as_ref(), CheckedExpressionResolution::ImplicitParameter(_))
-                        ) =>
-                    {
-                        self.use_synthetic(
-                            owner,
-                            CheckedSyntheticUseOwner::ImplicitParameter(callable.identity()),
-                            state,
-                        )?
-                    }
-                    _ => {}
-                }
-            }
-            _ => {
-                if let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) {
-                    let children = edges.child_expressions().collect::<Vec<_>>();
-                    let loans_before = self.active_receiver_loans.len();
-                    let receiver = self.selected_receiver_source(owner);
-                    if let Some(receiver) = receiver
-                        && (self.borrowed_receivers.contains(&receiver)
-                            || self.in_place_receivers.contains(&receiver))
-                    {
-                        let checked = self
-                            .analysis
-                            .expression(receiver)
-                            .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                        let local = checked
-                            .mutable_place()
-                            .map(|place| place.local_id())
-                            .or_else(|| checked.execution_local_use())
-                            .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                        let place = checked
-                            .mutable_place()
-                            .unwrap_or_else(|| CheckedPlace::new(local, Box::new([])));
-                        self.active_receiver_loans.push((place, receiver));
-                    }
-                    for child in children {
-                        if let Err(error) = self.expression(child, state) {
-                            self.active_receiver_loans.truncate(loans_before);
-                            return Err(error);
-                        }
-                    }
-                    self.active_receiver_loans.truncate(loans_before);
-                    if let Some(receiver) = receiver
-                        && self.in_place_receivers.contains(&receiver)
-                    {
-                        self.flow
-                            .append(state, Event::Access(CheckedLocalUseSite::Place(receiver)));
-                    }
-                } else if !matches!(
-                    self.analysis
-                        .expression(owner)
-                        .map(super::CheckedExpression::resolution),
-                    Some(CheckedExpressionResolution::DialogueApplication { .. })
-                ) {
-                    // A rejected call/record may retain checked tooling facts
-                    // without an executable child graph.
-                    return Ok(());
-                }
-                if matches!(
-                    (
-                        expression.kind(),
-                        self.analysis
-                            .expression(owner)
-                            .map(super::CheckedExpression::resolution),
-                    ),
-                    (
-                        HirExprKind::AttachedContentApplication(_) | HirExprKind::PostfixBracket(_),
-                        Some(CheckedExpressionResolution::DialogueApplication { .. })
-                    )
-                ) {
-                    self.flow.append(state, Event::Join);
-                    let exit = self.flow.detached();
-                    self.outputs.push((owner, exit));
-                    for edge in expression
-                        .kind()
-                        .expression_owned_child_edges()
-                        .map_err(|_| CheckedLocalUseError::InvalidTopology)?
-                    {
-                        if !matches!(
-                            edge.role(),
-                            HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. }
-                        ) {
-                            continue;
-                        }
-                        match edge.child() {
-                            HirExpressionOwnedChild::Statement(statement) => {
-                                self.statement(statement, state)?;
-                            }
-                            HirExpressionOwnedChild::Body(child) => match child.child() {
-                                HirBodyChild::Statement(statement) => {
-                                    self.statement(statement, state)?;
-                                }
-                                HirBodyChild::Expression(expression) => {
-                                    self.expression(expression, state)?;
-                                }
-                            },
-                            HirExpressionOwnedChild::Pattern(_) => {}
-                        }
-                    }
-                    self.outputs
-                        .pop()
-                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                    self.flow.connect(state, exit);
-                    *state = Availability::at(exit);
-                }
-            }
         }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_field_path_expression(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        if self
+            .analysis
+            .expression(owner)
+            .and_then(super::CheckedExpression::mutable_place)
+            .filter(|place| !place.fields().is_empty())
+            .is_some()
+        {
+            let inputs = self
+                .analysis
+                .checked_capture_inputs(owner)
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+            let mut sources = inputs.sources();
+            let input = sources
+                .next()
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            if sources.next().is_some() {
+                return Err(CheckedLocalUseError::InvalidTopology);
+            }
+            self.use_local(input.site(), input.local(), state)?;
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_placeholder_expression(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        match self
+            .analysis
+            .expression(owner)
+            .map(super::CheckedExpression::resolution)
+        {
+            Some(CheckedExpressionResolution::PipeLeft(pipe)) => self.use_synthetic(
+                owner,
+                CheckedSyntheticUseOwner::Pipe(pipe.binding_identity()),
+                state,
+            )?,
+            Some(CheckedExpressionResolution::ImplicitParameter(parameter)) => self.use_synthetic(
+                owner,
+                CheckedSyntheticUseOwner::ImplicitParameter(parameter.callable()),
+                state,
+            )?,
+            Some(CheckedExpressionResolution::ImplicitCallable(callable))
+                if matches!(
+                    callable.body(),
+                    super::CheckedImplicitCallableBody::Plain(body)
+                        if matches!(body.as_ref(), CheckedExpressionResolution::ImplicitParameter(_))
+                ) =>
+            {
+                self.use_synthetic(
+                    owner,
+                    CheckedSyntheticUseOwner::ImplicitParameter(callable.identity()),
+                    state,
+                )?
+            }
+            _ => {}
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_selected_children_expression(
+        &mut self,
+        owner: ExprId,
+        expression: &arcweft_lang_hir::expr::HirExpr,
+        state: &mut Availability,
+    ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
+        if let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) {
+            let children = edges.child_expressions().collect::<Vec<_>>();
+            let loans_before = self.active_receiver_loans.len();
+            let receiver = self.selected_receiver_source(owner);
+            if let Some(receiver) = receiver
+                && (self.borrowed_receivers.contains(&receiver)
+                    || self.in_place_receivers.contains(&receiver))
+            {
+                let checked = self
+                    .analysis
+                    .expression(receiver)
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                let local = checked
+                    .mutable_place()
+                    .map(|place| place.local_id())
+                    .or_else(|| checked.execution_local_use())
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                let place = checked
+                    .mutable_place()
+                    .unwrap_or_else(|| CheckedPlace::new(local, Box::new([])));
+                self.active_receiver_loans.push((place, receiver));
+            }
+            for child in children {
+                if let Err(error) = self.expression(child, state) {
+                    self.active_receiver_loans.truncate(loans_before);
+                    return Err(error);
+                }
+            }
+            self.active_receiver_loans.truncate(loans_before);
+            if let Some(receiver) = receiver
+                && self.in_place_receivers.contains(&receiver)
+            {
+                self.flow
+                    .append(state, Event::Access(CheckedLocalUseSite::Place(receiver)));
+            }
+        } else if !matches!(
+            self.analysis
+                .expression(owner)
+                .map(super::CheckedExpression::resolution),
+            Some(CheckedExpressionResolution::DialogueApplication { .. })
+        ) {
+            // A rejected call/record may retain checked tooling facts
+            // without an executable child graph.
+            return Ok(std::ops::ControlFlow::Break(()));
+        }
+        if matches!(
+            (
+                expression.kind(),
+                self.analysis
+                    .expression(owner)
+                    .map(super::CheckedExpression::resolution),
+            ),
+            (
+                HirExprKind::AttachedContentApplication(_) | HirExprKind::PostfixBracket(_),
+                Some(CheckedExpressionResolution::DialogueApplication { .. })
+            )
+        ) {
+            self.flow.append(state, Event::Join);
+            let exit = self.flow.detached();
+            self.outputs.push((owner, exit));
+            for edge in expression
+                .kind()
+                .expression_owned_child_edges()
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?
+            {
+                if !matches!(
+                    edge.role(),
+                    HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. }
+                ) {
+                    continue;
+                }
+                match edge.child() {
+                    HirExpressionOwnedChild::Statement(statement) => {
+                        self.statement(statement, state)?;
+                    }
+                    HirExpressionOwnedChild::Body(child) => match child.child() {
+                        HirBodyChild::Statement(statement) => {
+                            self.statement(statement, state)?;
+                        }
+                        HirBodyChild::Expression(expression) => {
+                            self.expression(expression, state)?;
+                        }
+                    },
+                    HirExpressionOwnedChild::Pattern(_) => {}
+                }
+            }
+            self.outputs
+                .pop()
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            self.flow.connect(state, exit);
+            *state = Availability::at(exit);
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn finish_expression_use(
+        &mut self,
+        owner: ExprId,
+        state: &mut Availability,
+    ) -> Result<(), CheckedLocalUseError> {
         if self
             .analysis
             .expression(owner)

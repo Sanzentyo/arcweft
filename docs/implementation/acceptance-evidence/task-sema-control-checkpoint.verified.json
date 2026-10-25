@@ -1,0 +1,911 @@
+{
+  "version": 1,
+  "commit": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "parent": "19e3f9c26bd510e67e84ad92a9d3f89b75307141",
+  "tree": "60ebe679ae3de91d225361c482ef9348accc7bbd",
+  "remote": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "paths": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "blob": "638e4ff39875ccbd825c68aa095017d1b2a102da"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/control_results.rs",
+      "blob": "ff920e98f171aa017bd8442e73ef1f0a043b2b38"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/state.rs",
+      "blob": "c1c6013d88971c95d47f7b1a005cec0bb1777afe"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+      "blob": "7988b65ec91388ff0ccf7708cfce9fbef2082194"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/control_results.rs",
+      "blob": "74e706eaaff271e86d25612db6b7b4f3880e1621"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3032-hir-control-stack-catalog.input-audit.json",
+      "blob": "16a021ea8acd24cb4ccbfcf31c2e1ff434d91000"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3032-hir-control-stack-catalog.json",
+      "blob": "ba2b1b06a8df4a4d02b055fe0c7a88cb16f79773"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3032-hir-control-stack-catalog.log",
+      "blob": "01fa5c42d4add690c31ac55d9b852ac90d780054"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3034-hir-control-stack-catalog.inventory.json",
+      "blob": "bfcc15203c092189ebf0f8c08c0da6d9b8e48187"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3034-hir-control-stack-catalog.json",
+      "blob": "9b73134baadae8cef0c97543d6e7fcf6f6206b4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3034-hir-control-stack-catalog.log",
+      "blob": "48423f9b8ec0d32ebf0166bf145eebd304277112"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3035-hir-control-stack-runtime.json",
+      "blob": "873d319041e8a86ed39716740d46c43ea8d761f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3035-hir-control-stack-runtime.log",
+      "blob": "d0bff961d0713d39680ac1c58c49f0301ffce5da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3035-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "f14bfb240cc2eafcbd5e35b00e759aaafca0cad0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3036-hir-control-stack-catalog.inventory.json",
+      "blob": "f7106c2cd606d32cb7dac41ab40ea3834a3ac96a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3036-hir-control-stack-catalog.json",
+      "blob": "6568a0866ee6f1661838cfc12108cf44b9700b65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3036-hir-control-stack-catalog.log",
+      "blob": "5f5a3f6679324b82b540d26ddc226c0a9dd1dd26"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3037-hir-control-stack-runtime.json",
+      "blob": "decaca01282f499fcb4b1d45b4fffca5ec15ff15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3037-hir-control-stack-runtime.log",
+      "blob": "6aeb185dd651ece3cb9d44d5dcbd9f0e3ac66e82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3037-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "12073abc9cba97ffe3fcce07661bbaf256f2bba5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3038-hir-control-stack-catalog.inventory.json",
+      "blob": "a56a3332f51c7d3b942e91283ab4899bc3a8723f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3038-hir-control-stack-catalog.json",
+      "blob": "8a960d884a6c79ccb1197b4299a0514c73c9e46a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3038-hir-control-stack-catalog.log",
+      "blob": "8d693ffe4b00e823203ee63ddbd50ac14fb187b2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3039-hir-control-stack-runtime.json",
+      "blob": "d0f614f231c6e3f2731c7370db8af72700dcda2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3039-hir-control-stack-runtime.log",
+      "blob": "c6784c4a228c560052c2301dc3687e85767d6372"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3039-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "f75aa54a0972cdb5f5e01039e3766c3805d1cc57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3040-hir-control-stack-catalog.input-audit.json",
+      "blob": "9e3efb977e29d095632fff37a9666eeed1f20de1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3040-hir-control-stack-catalog.json",
+      "blob": "76882d23b9a0b1296b6d553e736cb2f60d34c7eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3040-hir-control-stack-catalog.log",
+      "blob": "ed826a6c485f5a2e2aed9a5dbf8fafc05805dd5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3042-hir-control-stack-catalog.inventory.json",
+      "blob": "a706b2be754d7d247465134d2b24d113ae22fc87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3042-hir-control-stack-catalog.json",
+      "blob": "417718abd6d9439edf63819c9efd9500035228e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3042-hir-control-stack-catalog.log",
+      "blob": "1bcbe7b2e23132ddfa67daee4ee590d95d9bfa86"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3043-hir-control-stack-runtime.json",
+      "blob": "3bda32e1beb59dfb8da4d7a7f949cd1e01a955ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3043-hir-control-stack-runtime.log",
+      "blob": "a644b31559d0b07e8a132fb0c3748fc886a4df26"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3043-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "f1dfbce5484a2bc0eed273dc10e94c2b6c8679af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3046-hir-control-stack-catalog.inventory.json",
+      "blob": "2e259b51f45528cb9c414dca289010e5944a5bd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3046-hir-control-stack-catalog.json",
+      "blob": "1b21b0ea1386c1d9cf7e2eaa093ddefbbd849174"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3046-hir-control-stack-catalog.log",
+      "blob": "f09b355969531c378bf866ba9c6a8d4f56dac492"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3047-hir-control-stack-runtime.json",
+      "blob": "9f28ee81df531cf7416360f9756ffedbd31c2b3d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3047-hir-control-stack-runtime.log",
+      "blob": "07983f0d0d4a0778a4e53801d96e706352189d18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3047-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "45c5598df8e348f261358fa49c2135019986ce0d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3048-hir-control-stack-catalog.inventory.json",
+      "blob": "262bbf69f04125e0296438de6a29e5bf5b21e0d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3048-hir-control-stack-catalog.json",
+      "blob": "175310ee1dc105afea5fe63936bef9c767e0c859"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3048-hir-control-stack-catalog.log",
+      "blob": "71ddf5be73170a977dafaecdd5996c339ff7ad20"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3049-hir-control-stack-runtime.json",
+      "blob": "1e3f4a2e094573567824fca8e2040a5701d2756c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3049-hir-control-stack-runtime.log",
+      "blob": "8dc3f47cb499f1466b79eee5b16d91451c79925a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3049-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "912d61251d802f9caffa3fda4d0e2da4ff73fb2b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3050-hir-control-stack-catalog.input-audit.json",
+      "blob": "4a9a8a3c4409599005e3695ae3e4faf861963b03"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3050-hir-control-stack-catalog.json",
+      "blob": "f82cbba0037158049cbfc29e1d4167bd284d0d30"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3050-hir-control-stack-catalog.log",
+      "blob": "ee91ae31613be7c92d3df5720af91fbb243303f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3052-control-result-closure-catalog.inventory.json",
+      "blob": "31e28092c162250626f0a8234bbdf8f6752a119f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3052-control-result-closure-catalog.json",
+      "blob": "1a924d714fb420b17cd09775854caa2ab0428ad1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3052-control-result-closure-catalog.log",
+      "blob": "46fe783919a8e6e4673dd34be2e087f62afa784f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3053-control-result-closure-runtime.json",
+      "blob": "1a6eb17abb90990077bdf64319889d71ea1ac32d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3053-control-result-closure-runtime.log",
+      "blob": "4b3ab8d66922f96bb14f497625b842f7d4bf1857"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3053-control-result-closure-runtime.terminal-audit.json",
+      "blob": "457e7718197db75d777b98e4a6e5ebcbcd775249"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3054-hir-control-stack-catalog.inventory.json",
+      "blob": "0fe366f5939ca959a344d5e87a8619f451ee7503"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3054-hir-control-stack-catalog.json",
+      "blob": "dc9c4206715b810ad6984bdb501ccac615a304da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3054-hir-control-stack-catalog.log",
+      "blob": "dbfe58e41bc084fbe3cc9e6dd717c4dbe6797f1b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3055-hir-control-stack-runtime.json",
+      "blob": "81ff95420a5f350737abd85f461f2810e7cd7643"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3055-hir-control-stack-runtime.log",
+      "blob": "7eb5bb2195672ce7b34a73843f1dee929d335953"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3055-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "48e2ca65e9f7131b5a72ee3e9d303dc4e4c2480e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3058-hir-control-stack-catalog.inventory.json",
+      "blob": "5dd81389336d9df5f8ebc7ae30f84e2089d04939"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3058-hir-control-stack-catalog.json",
+      "blob": "4cf62375f564b13bde5dfa18a8817fac9836d158"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3058-hir-control-stack-catalog.log",
+      "blob": "bfc9bfc380e9cff7108c16884547b1a1631368be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3059-hir-control-stack-runtime.json",
+      "blob": "4c4c8835b38084450d4c9eec54fd6ec53439f117"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3059-hir-control-stack-runtime.log",
+      "blob": "994211fd147baa57ea11f03958898bf493eca79a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3059-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "3d9bdf8594bf39bd16f14f6bde1fd304b2479585"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3062-hir-control-stack-catalog.input-audit.json",
+      "blob": "4cc5fe8b90426b8ff5ad8c3ded03661449e6f8e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3062-hir-control-stack-catalog.json",
+      "blob": "6a8a6709f3888d4538aebeaaa5950ccd74cd5ca2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3062-hir-control-stack-catalog.log",
+      "blob": "3fa6aa072e55d1c6ae6b65918bccd5d1ab01dcd4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3064-hir-control-stack-catalog.inventory.json",
+      "blob": "f8cec622fc757e5f2398179ea9b57912a30b2504"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3064-hir-control-stack-catalog.json",
+      "blob": "c99180c3929e1b2e2fd29c7a456110e3db5efbea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3064-hir-control-stack-catalog.log",
+      "blob": "cbb2e69121453ec5ec237abe5fd49dcf616792ad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3065-hir-control-stack-runtime.json",
+      "blob": "2ee83f1fb2365d5a0d1b3b4f6fd1ec80ca68caf9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3065-hir-control-stack-runtime.log",
+      "blob": "e14e34e3c225bf7b42f2f5bf356a71f0532aeccd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3065-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "14c02b93645d2bb5a51c509fe169e1bdabdcd030"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3066-hir-control-stack-catalog.inventory.json",
+      "blob": "80cf1c2fcfd69001116d35fd30d773dfd41dadf5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3066-hir-control-stack-catalog.json",
+      "blob": "c0b1cff92ce21c574c14ee73dd88ecac58609776"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3066-hir-control-stack-catalog.log",
+      "blob": "67f593eb8158484739e263a8f47cc27477e21219"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3067-hir-control-stack-runtime.json",
+      "blob": "725b28d36207fdd099b2b7f97bbeebca531aac00"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3067-hir-control-stack-runtime.log",
+      "blob": "2bea626aad66e5ccf4f61f19d15030ecb6db8a0a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3067-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "90b4d8f6e18a381b746252d2557063cefb5496a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3070-hir-control-stack-catalog.inventory.json",
+      "blob": "7f65a11a2664ef080d6309e5a39f0b7c0ebb4200"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3070-hir-control-stack-catalog.json",
+      "blob": "2d71392067f8d06d8c84ef310f8edae57aeb7c04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3070-hir-control-stack-catalog.log",
+      "blob": "eec8bf508a8cc01b39b080efd920e03046225802"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3071-hir-control-stack-runtime.json",
+      "blob": "c1c9a9f72540ae25ea7a6626ca6542ef1ea1b625"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3071-hir-control-stack-runtime.log",
+      "blob": "6f536661b612dd99271607b45d9bb90b3de670da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3071-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "4ccbb9b039081cd03ed1d5e7a158b7c974e0f79e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3072-sema-control-clippy.input-audit.json",
+      "blob": "2723b3dd498c0ddadc249aa895f79af482e88cea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3072-sema-control-clippy.json",
+      "blob": "dec4a93ae10c2bde4876ee2004f6ec456e10ffd7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3072-sema-control-clippy.log",
+      "blob": "da3fd676e5a1a77ba30eff77945000ff6a001f7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3073-sema-control-structure.input-audit.json",
+      "blob": "215572e2d204a99ec9983ccd6d83cb7845a20a11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3073-sema-control-structure.json",
+      "blob": "b2926ef6b1c0c69c0e8fee2467a4378cac410e40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3073-sema-control-structure.log",
+      "blob": "550f580e6b28eb8723d2c66cbd3807ac1ee2a99a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3074-control-result-closure-catalog.inventory.json",
+      "blob": "90148d531910bd8d5dc7fc2ae9be7b7a15544da5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3074-control-result-closure-catalog.json",
+      "blob": "d5ea15493740f8c79de194938b95c655e10251c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3074-control-result-closure-catalog.log",
+      "blob": "4d9096b740841b80e6f47a7efb2faac84273a17f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3075-control-result-closure-runtime.json",
+      "blob": "a68f9e603442cd6849f78f4876a2e526bf0024d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3075-control-result-closure-runtime.log",
+      "blob": "e07ec27215fc8d9d8de246dc129a0208c2590794"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3075-control-result-closure-runtime.terminal-audit.json",
+      "blob": "e52f75589fa23244fae3d37fa49997686e195848"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3076-control-result-closure-catalog.inventory.json",
+      "blob": "d173f47b8ba0f14ab7a4728e609058c02a4f8bad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3076-control-result-closure-catalog.json",
+      "blob": "e8b107cbe077e21b17dced28241c25bcc07e7ec0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3076-control-result-closure-catalog.log",
+      "blob": "ec293a176bb822a9cd56ce7d15a764020ce590a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3077-control-result-closure-runtime.json",
+      "blob": "9280233b819f6b80b16d45cd19efab1ec2dd64c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3077-control-result-closure-runtime.log",
+      "blob": "10faedd183c8ea11067bc2659550464341b1372c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3077-control-result-closure-runtime.terminal-audit.json",
+      "blob": "db53a3bca777c57f0cd8a893c44fa463051e378b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3078-sema-control-final-clippy.input-audit.json",
+      "blob": "9363cfb7abb7b4dd07e18c9d3a89b95fe3789e44"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3078-sema-control-final-clippy.json",
+      "blob": "6250c8fec85f3e5ab9bd83d21f8a5151bd150eda"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3078-sema-control-final-clippy.log",
+      "blob": "a429a9b2b46c9fb95a3346489621dcf8924e2f3a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3079-sema-control-structure.input-audit.json",
+      "blob": "9c4f48c198a15d9679005d0d0729b9a486035daa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3079-sema-control-structure.json",
+      "blob": "819104d940f3cba550abc10945a5a3c8c8c8bea8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3079-sema-control-structure.log",
+      "blob": "7e40b7692902c5608bfaec2dac09df157caf8cba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-checkpoint.verified.json",
+      "blob": "d52fd93e9e9ca8db329aefacbe8b07d02e0703c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-public-evidence-audit.json",
+      "blob": "7ebb721acc207b35e6fee4f33bdefb2e25ffec8f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-borrowed-executables-after.json",
+      "blob": "3c07289fca333bd935cd8359118312947e712152"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-borrowed-executables-before.json",
+      "blob": "35582bf18c71821324e9384fd2899dc4fe03a0df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-borrowed-freeze.ps1",
+      "blob": "58bfb44f6b43e7ea3a5f1fd5ca77f71e929dd63c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-borrowed-run.ps1",
+      "blob": "301fb11be04ccbc2ebcef7eb488911f70bf389b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-borrowed.graph.json",
+      "blob": "7d53dc32e797cbb7b1443e61fb3bb8bf6d71e5e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-borrowed.source-freeze.json",
+      "blob": "4577830b0e28482c3f639a1c75084218ac29edab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-owner-executables-after.json",
+      "blob": "42f5e1f21aa6a66af2394e2741160dabef118dff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-owner-executables-before.json",
+      "blob": "f8a6b7c66ed2c33b895c2edc33d5d160300792f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-owner-freeze.ps1",
+      "blob": "1de03105248cbf1f7af9a561bbd93998736e1abe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-owner-run.ps1",
+      "blob": "1650c590be66fd0687e29060d5bfcf640857dce6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-owner.graph.json",
+      "blob": "c646370cd140fdcd9971d4d921cf3b2d14cfc7b5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-owner.source-freeze.json",
+      "blob": "29493f5e4b7b4672ee675484feaa4fd7c46a51e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-phases-freeze.ps1",
+      "blob": "bb090728f2b803b254ce44960111874197624b84"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-phases-run.ps1",
+      "blob": "4d1f4b91cd2fb9d0e6a268deb2c96a0e3a18db2d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-phases.graph.json",
+      "blob": "c646370cd140fdcd9971d4d921cf3b2d14cfc7b5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-branch-phases.source-freeze.json",
+      "blob": "81e3500997e4f88eb48b362c3fcddce0b963a3bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-cache-frames-executables-after.json",
+      "blob": "24f2eaf6eff9302cd79b6f539292f6e0d01a1310"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-cache-frames-executables-before.json",
+      "blob": "329a74ac47f0341a26252ba610b3451c5da542ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-cache-frames-freeze.ps1",
+      "blob": "5e21c62c932fc8e76c46a42e824085adbd6ec922"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-cache-frames-run.ps1",
+      "blob": "f67c68017ea025510cc6717ba8494d9dcfdcb9af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-cache-frames.graph.json",
+      "blob": "56aa00005c416758fc5b7249c596749bc1a1f566"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-cache-frames.source-freeze.json",
+      "blob": "d981164d06ad6a0d37c35ee14e34850f6bea9bbb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-checkpoint-owner-executables-after.json",
+      "blob": "e69f604ddaee6cb194ba6e5fc044d1c0408c8e62"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-checkpoint-owner-executables-before.json",
+      "blob": "612ca284d2fdb3ff3f2f925c67948d1b10cb7f5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-checkpoint-owner-freeze.ps1",
+      "blob": "7795d27573ba90b8b59a4f16e7ebb2e666c31d28"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-checkpoint-owner-run.ps1",
+      "blob": "bb705b4e5877e2ba4e06fdb7dac0f1fa0630be17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-checkpoint-owner.graph.json",
+      "blob": "d6dbdc30ec202b7d6ab9f7a7e04016fba0e2da5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-checkpoint-owner.source-freeze.json",
+      "blob": "9be8ba8a2378016cea041285f44bdd97b07823b5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-depth-trace-executables-after.json",
+      "blob": "ee703d9f3aee7d2129884d9bd18dae2d429bc36d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-depth-trace-executables-before.json",
+      "blob": "dff04c96933c1490723d8a6c9c924c157a0593fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-depth-trace-freeze.ps1",
+      "blob": "d950581acc411cb5ed163cfaedc50f03096c96ea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-depth-trace-run.ps1",
+      "blob": "57db81670fc52ab223eb184a54b79f0c0ad257b2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-depth-trace.graph.json",
+      "blob": "e8dec5d7c55be8b19d7c7d6822bc77f9af9d8be7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-depth-trace.source-freeze.json",
+      "blob": "ef23200245d315dfb8363ea58a56b67f3d324f45"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-direct-executables-after.json",
+      "blob": "de8f45121ab94693dd78fa725725f5aa1faf4edc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-direct-executables-before.json",
+      "blob": "053b1307369ce45f2987b233581bf5983588fb5b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-direct-freeze.ps1",
+      "blob": "45f9b5cceb24578d26b82cd8c443dd79fad65579"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-direct-run.ps1",
+      "blob": "9b731398d20a575211f6720d6b6832fd1b46fa33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-direct.graph.json",
+      "blob": "7d53dc32e797cbb7b1443e61fb3bb8bf6d71e5e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-direct.source-freeze.json",
+      "blob": "0eea391f0717ecca6c9e7abb9b132d4f8060ba5a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-frames-executables-after.json",
+      "blob": "9288e10b11ec7cc7a445d4bfa99d8e489995490a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-frames-executables-before.json",
+      "blob": "a117f2a2baf4f2afa52afed3d282827cd67e9324"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-frames-freeze.ps1",
+      "blob": "6ec8dd3b3fb4d7da725b61041fa9a29c938f165d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-frames-run.ps1",
+      "blob": "d29e81136e0c8573962f636a25e0ad342365d6df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-frames.graph.json",
+      "blob": "d6dbdc30ec202b7d6ab9f7a7e04016fba0e2da5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-frames.source-freeze.json",
+      "blob": "2ff87ed09537020cfa95f2c4330e4bd298632980"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-owned-executables-after.json",
+      "blob": "8b2b03a089be3aab22fd715773816d927925d6e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-owned-executables-before.json",
+      "blob": "44366fa266e1d98feaecd5486d4628de9f985ce0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-owned-freeze.ps1",
+      "blob": "901b34af5a00d2e764d41c0782286f6d2f723712"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-owned-run.ps1",
+      "blob": "b41838a6fc735d58308fb0c4cb33b4818f073238"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-owned.graph.json",
+      "blob": "d6dbdc30ec202b7d6ab9f7a7e04016fba0e2da5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-effect-owned.source-freeze.json",
+      "blob": "428fc4a5637e82d0d1cc948796f9be9112d4d282"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-final-clippy-run.ps1",
+      "blob": "603373be1785de193662952f032ab377eb3b3339"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-final-owner-executables-after.json",
+      "blob": "6210cca89065d3f567094c46446c8ccdb14e0299"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-final-owner-executables-before.json",
+      "blob": "5a2f36d1337413212ba17dda81f8b5e30236ebb0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-final-owner-freeze.ps1",
+      "blob": "42775a4b9ffad5bc0517404df1efd5beb90c1a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-final-owner-run.ps1",
+      "blob": "7741c2cb90871d961827aeae05c786bb928efc0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-final-owner.graph.json",
+      "blob": "d6dbdc30ec202b7d6ab9f7a7e04016fba0e2da5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-final-owner.source-freeze.json",
+      "blob": "662910c381cb24fea7eb0698fce4dad74cabff36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-final-structure-run.ps1",
+      "blob": "7940006636a70d3d754c8d881e5b33b7a2b6732b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-finalization-trace-executables-after.json",
+      "blob": "152f559ac3cc0a32a0d5fd8efc9d735ad006fb6d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-finalization-trace-executables-before.json",
+      "blob": "05251af1db5489a6ae0cce922f2f56ff8456825d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-finalization-trace-freeze.ps1",
+      "blob": "972b5b733b85f050de595391b526a861a16027dc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-finalization-trace-run.ps1",
+      "blob": "2fbfc27ee26a134d7fa05f35147ef095241461c4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-finalization-trace.graph.json",
+      "blob": "73a40639301b75ae92f2df760a31af3fa692b601"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-finalization-trace.source-freeze.json",
+      "blob": "f07cb9b593bbdb3dae8676458b1e301e3c6d6965"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames-freeze.ps1",
+      "blob": "5d3a5463c503100239a5e61a83ac812e0a933c50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames-run.ps1",
+      "blob": "ca2f168dd22a63454648e484b801b0354343af24"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames-typed-executables-after.json",
+      "blob": "780eef47420875653174496305f1b587ec8f9b40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames-typed-executables-before.json",
+      "blob": "33db6db516ba7c1a2d073229ac5db40ecf5f042b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames-typed-freeze.ps1",
+      "blob": "3bec8f3d3cae138bd87082564d57a018c39bf07e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames-typed-run.ps1",
+      "blob": "55a390e49e05ef09a00bfabc41fe3423797c7db1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames-typed.graph.json",
+      "blob": "56aa00005c416758fc5b7249c596749bc1a1f566"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames-typed.source-freeze.json",
+      "blob": "be70211d590896cbf25c4bf940034106c7a7ce17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames.graph.json",
+      "blob": "56aa00005c416758fc5b7249c596749bc1a1f566"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-frames.source-freeze.json",
+      "blob": "bd87945b09d98a26a21d4cba7938ca8f813ab60a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace-fixed-executables-after.json",
+      "blob": "6ed72a3ae2fcdf5051f74a7df4aab0315df8dc6e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace-fixed-executables-before.json",
+      "blob": "feaac51fa8cced2c2570c426fa49b18c6af67eac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace-fixed-freeze.ps1",
+      "blob": "35225c8ea2519b7e1ff08b3a028aa2c70b533b86"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace-fixed-run.ps1",
+      "blob": "e312b676f37a5ffafc72c8177d76cae28cbbeece"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace-fixed.graph.json",
+      "blob": "73a40639301b75ae92f2df760a31af3fa692b601"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace-fixed.source-freeze.json",
+      "blob": "37994dee6777f2e98c5b829b945fb9933d8cc217"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace-freeze.ps1",
+      "blob": "adb0b63b01ff44916eb17bc73f2ee35b7276496b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace-run.ps1",
+      "blob": "02a2a2324c9c3b6dfc487ca2779a5f6823425f57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace.graph.json",
+      "blob": "73a40639301b75ae92f2df760a31af3fa692b601"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-item-trace.source-freeze.json",
+      "blob": "9d483b218a8104518f19a7e9135e75ee73273770"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-leaf-trace-executables-after.json",
+      "blob": "90975f5406d0ebe7919b84cfd43af0784a1615ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-leaf-trace-executables-before.json",
+      "blob": "670742913a87c1562d4ea22bf3ab083d6776a685"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-leaf-trace-freeze.ps1",
+      "blob": "1574f1d14ca0843a58ef950fe7a5637b34fc0719"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-leaf-trace-run.ps1",
+      "blob": "bf070696f7ffde8efc0e92422698623b5bbddb1b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-leaf-trace.graph.json",
+      "blob": "3203cffef32b607493cd12c695de1e713f384e12"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-leaf-trace.source-freeze.json",
+      "blob": "d12a2fa3ca8b56bbf879b52ecd430a51bef11f07"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement-fixed-executables-after.json",
+      "blob": "18a4951d8c9bace8689ed76560b48c04de8865b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement-fixed-executables-before.json",
+      "blob": "8eea9aa98b3b6431b3a1bdaf8673d4596139fe03"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement-fixed-freeze.ps1",
+      "blob": "b84a56b90275c3e832383b95a7d4a710c7416a2b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement-fixed-run.ps1",
+      "blob": "a0af8e9c06227687a5e7b3b42818bfa2f9b79cf2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement-fixed.graph.json",
+      "blob": "7d53dc32e797cbb7b1443e61fb3bb8bf6d71e5e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement-fixed.source-freeze.json",
+      "blob": "03d934c462b046eb6879ccc3cc8b6045ecf01c64"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement-freeze.ps1",
+      "blob": "73b491b9fe388a024a603fcee1ceab073a397273"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement-run.ps1",
+      "blob": "599349f1689c56582968b962012df40c79ed7c53"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement.graph.json",
+      "blob": "7d53dc32e797cbb7b1443e61fb3bb8bf6d71e5e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-settlement.source-freeze.json",
+      "blob": "b098955e2ca67f2289e6994342d68abc0d5aab88"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-stack-checkpoint.json",
+      "blob": "98c77ebd6fe2a587a39fb894640b131bfcd4e2b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-stack-evidence-integrity.json",
+      "blob": "804b350c350b7710b42ba0a7515b122cb145734c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-stack-frame-observations.json",
+      "blob": "c0a95594f9c2a54718f0755df79e8d022e73edd4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-stack-structure-review.json",
+      "blob": "494e98755d446304172d00c222bdb6b39d043247"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-structure-run.ps1",
+      "blob": "5a643d968d1f4e2de8ddca5aea7de2f86da3d206"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "28b1974c435e86b71799ea5db9d9f30caacbb0c0"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "3425eceb1e7a79bc33e77aba19dd7f1e6bbbfc60"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "6de186a2a9b9c572bf5624d2d1009674ce730d42a001e84a01d122e06e96bc8a",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T14:06:02.2067131Z"
+}

@@ -11722,3 +11722,62 @@ R3078のSema owner Clippyは終了0・警告あり、R3079の正規構造gateも
 最新Compiler全件、全22逆依存runtime、workspace check／Clippy、Tier2／Native-Web parityは未実行。
 ユーザーの中間commit方針に従う部分checkpointであり、32階層・全体goalの完了とはしない。
 実行証跡216件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-sema-control-stack-evidence-integrity.json)。
+
+## Sema local-use再帰frameの修復 — 2026-10-26
+
+基点は公開main `408fb789ff68c0e1e0cbfb19b40ba4397242f8e7`。前段224 pathのparentは
+`19e3f9c26bd510e67e84ad92a9d3f89b75307141`、treeは
+`60ebe679ae3de91d225361c482ef9348accc7bbd`、full patch SHA256は
+`6de186a2a9b9c572bf5624d2d1009674ce730d42a001e84a01d122e06e96bc8a`。
+全224公開blobと原本216件の公開byte hashは差分0、元tracked WIP 14件不変・index空を確認した。
+[前段公開照合](acceptance-evidence/task-sema-control-checkpoint.verified.json)、
+[公開原本照合](acceptance-evidence/task-sema-control-public-evidence-audit.json)。
+
+大きな診断cause 3種を同じtyped errorのBoxへ移し、元のproducerと具体的な拒否assertionをすべて移行した。
+AcceptedRootだけのR3081も、3種移行後の全Sema R3083も32階層ケースはABORTした。
+R3083は1,357件中1,356 PASS／1 ABORT、終了100、113.954秒であり、この変更だけを修復完了とはしない。
+R3085／R3087／R3089／R3091の一時markerから、callable確定・final statement effect seal・fact inventoryを通過し、
+local-use構築へ入った後のstack overflowと絞り込んだ。失敗runと原診断は書き換えず保持する。
+[各実行の終了結果](acceptance-evidence/task-sema-local-use-diagnostic-runs.json)。
+
+同じLocalUseChecker内でplace／inspection admission、18個の既存HIR分岐、共通のuse／Never継続、
+5種類のreceiver／callback入口をprivateな処理へ分けた。OwnershipFlowとその既存worklist solver、
+Availability、move／borrow、capture、loan cleanup、source順、carrier／loop／output scopeは元の所有者を維持する。
+元の早期returnと共通継続をControlFlowで区別し、実行graphのないIndex／Record／rejected-callで
+従来どおり継続を省略する。別solver、重複traversal、公開API拡張、Cargo edge、unsafe、I/O、契約versionは追加しない。
+[owner実測とcohesion disposition](acceptance-evidence/task-sema-local-use-structure-review.json)。
+
+R3091の実テストPDBでexpression_innerのframeは43,480 byteだった。分離後R3094の同frameは2,088、
+expressionは7,512から856 byteとなった。これは当該ビルドの静的frame測定であり、実threadの残stack量や受入証拠ではない。
+[修復前の測定](acceptance-evidence/task-sema-local-use-frames-before.json)、
+[修復後の測定](acceptance-evidence/task-sema-local-use-frames-after.json)。
+
+すべての一時診断を除去したR3092／R3093は、元の32階層ケースが**1／1 PASS**、終了0、0.619秒。
+32個の公開Never型と33 selected call、stack、budget、timeout、階層の条件は変更していない。
+3,986非文書入力・99 manifest／lock・実executableの前後hash差分0。
+このfocused結果を全体goalの完了とはせず、横断・workspace結果を別に記録する。
+
+R3094／R3095は解決済みCargo graphのHIR全23逆依存（Sema全22を含む）を全target・全feature・lockedで実行した。
+**4,856実行／4,806 PASS／50 FAIL／31 ignored**、終了100、1,672.748秒。
+全23 packageにnamed caseがあり、catalogと終端case集合、3,986非文書入力・99 manifest／lock・
+120 executable（115 test・5 non-test）の前後hash差分0。
+HIR全960／960 PASS（既存除外8）、Sema全1,357／1,357 PASS、Compiler全622／622 PASS。
+以前のHIR 7失敗と32階層のNeverケースもPASSし、修復後の全owner再実行まで確認できた。
+Generic Matchは151／151、owner／Source必須17件も17／17 PASS。受入済み境界を全体goalの未達で戻さない。
+[package集計・受入識別子・失敗集合](acceptance-evidence/task-sema-local-use-reverse-acceptance.json)、
+[終端照合](acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.terminal-audit.json)。
+
+CLIは641 PASS／50 FAILで、前段R2987と失敗識別子は同じ、新規追加0。原因が同じとは推定していない。
+traverse parallelのrun／bench 2件は、従来のSema最終型拒否を通過し、今回はCompilerの
+`compiler.runtime_semantic_projection`、CollectionMethodにtyped runtime intrinsicがないという拒否へ進んだ。
+現状一覧のSema入口の7件を5件（HIR recovery 2・final analysis 3）へ訂正し、この2件をruntime投影へ分けた。
+Source traverseの所有値構築の受入やCore AwaitManyの受入を取り消す根拠にはしない。
+[今回の原診断索引](acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.failure-recon.json)。
+
+R3096のworkspace check、R3097のworkspace Clippyは全target・全feature・lockedで終了0・警告あり。
+R3098の正規構造gateも終了0。いずれも3,986非文書入力の前後hash差分0。
+local-use ownerは3,603 physical LOC（基点3,375）、元のstate／graphを保ったprivate分割としてdispositionを記録した。
+大きいcall constraint／Fx ownerは診断構築のみの変更で、既存責任・state・Cargo依存を維持する。
+元のtracked WIP 14件／untracked実ファイル6件を保持したcheckoutでの検証であり、別のclean入力の実行とは呼ばない。
+最新Core全53逆依存・Tier 2・Native-Web capture parity、Source parallelの実行・全体goalは未完了のまま区別する。
+検証原本等125件をbyte不変で保全した。[保全一覧](acceptance-evidence/task-sema-local-use-evidence-integrity.json)。

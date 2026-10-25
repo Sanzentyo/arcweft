@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "408fb789ff68c0e1e0cbfb19b40ba4397242f8e7",
+  "run": "task-final-r3093-hir-control-stack-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.619s] 1 test run: 1 passed, 1332 skipped",
+  "executed": 1,
+  "passed": 1,
+  "failed": 0,
+  "skipped": 1332,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T14:46:56.6692394Z"
+}

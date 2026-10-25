@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "run": "task-final-r3098-sema-local-use-structure",
+  "actualExitCode": 0,
+  "scope": [
+    "just",
+    "structure-audit-gate"
+  ],
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T15:25:04.1262621Z"
+}
