@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3137-awbc-task-carrier-core-doctest",
+  "actualExitCode": 0,
+  "scope": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--doc"
+  ],
+  "sourceInputs": 3988,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T20:24:13.3529719Z"
+}

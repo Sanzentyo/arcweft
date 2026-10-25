@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "b979046ec831fae67fa8ff5e08dc35f952abdfed",
+  "run": "task-final-r3133-awbc-task-carrier-owner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 718.044s] 2243 tests run: 2243 passed (2 slow), 0 skipped",
+  "executed": 2243,
+  "passed": 2243,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3988,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T20:21:57.8665706Z"
+}

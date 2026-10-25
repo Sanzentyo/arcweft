@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "run": "task-final-r3136-awbc-task-carrier-workspace-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3988,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T20:21:43.9037322Z"
+}

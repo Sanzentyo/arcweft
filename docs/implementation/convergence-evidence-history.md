@@ -12091,3 +12091,29 @@ R3133のsession 71350とR3127 HIR Tier 2のsession 17793もliveとして確認�
 HIRは7／8 PASSで、最後のattached Threadを継続中。バイナリ・上限・assertionを変更していない。
 元の広いsource guardとHIR専用freezeの区別は前段の記録どおり維持する。
 原本等10件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-awbc-task-carrier-gates-evidence-integrity.json)。
+
+## AWBC carrierのowner全件・workspace gate・doctest終端 — 2026-10-26
+
+前段の証拠公開 `898c8ce9e00d119bb6dc5619dd7797361b0a8813` はparent
+`a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117`、tree
+`9d1e31403974a63498343afb635d2b98d3578f24`、full patch SHA256
+`a09c6d04b929c669dfedde500dceb7e119b19b6d2166cfb1b8be077a2a69edd4`。
+全13公開blob・原本等10件の公開byte hash差分0、元WIP 14件を保持した。
+
+R3133は全2,243件PASS・除外0・718.044秒・実際の終了0で終端した。
+Coreは2,085件、runtime-planは158件。最後の公開API compile-fail 3件もPASSし、
+開始前catalogと終端の全識別子が一致した。追加5件、carrierを変更した元Thread Sourceの拒否、
+元Program rowのcanonical codec／Source往復を含む必須7件もPASS。
+前段の「2,240件PASS・3件実行中」は当時の観測として保持し、終端結果へ書き換えない。
+3,988非文書入力・18実行ファイルの前後hash差分0。
+[owner終端・package別結果・必須ケース](acceptance-evidence/task-awbc-task-carrier-owner-acceptance.json)。
+
+R3136 workspace Clippyは全target・全feature・locked、警告あり・終了0、5分09秒。
+R3137 Core doctestは75／75 PASS・終了0。両方とも事前freezeの3,988入力との差分0。
+R3135 workspace check終了0とR3134正規構造scanner終了0も保持する。
+各checkの成功を全53逆依存runtimeやSource parallelの受入へ広げない。
+
+session 1303はR3138の全53逆依存catalogを構築中で、同driverが実際のrdeps filterを使う
+R3139 nextestへ進む。R3127 HIR Tier 2のsession 17793も同じrunを継続し、7／8 PASS・
+最後のattached Threadは未終端。Generic Matchの受入・公開済みは維持し、owner実行を151件の再実行とはしない。
+原本等13件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-awbc-task-carrier-owner-evidence-integrity.json)。

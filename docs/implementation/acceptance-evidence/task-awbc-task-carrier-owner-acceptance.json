@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "base": "b979046ec831fae67fa8ff5e08dc35f952abdfed",
+  "sourcePublication": "a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117",
+  "runtime": {
+    "version": 1,
+    "base": "b979046ec831fae67fa8ff5e08dc35f952abdfed",
+    "run": "task-final-r3133-awbc-task-carrier-owner-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [ 718.044s] 2243 tests run: 2243 passed (2 slow), 0 skipped",
+    "executed": 2243,
+    "passed": 2243,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3988,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-25T20:21:57.8665706Z"
+  },
+  "packages": [
+    {
+      "package": "arcweft-core",
+      "executed": 2085,
+      "passed": 2085,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "executed": 158,
+      "passed": 158,
+      "failed": 0
+    }
+  ],
+  "requiredCases": [
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "awbc::codec::runtime::task_tests::task_handle_type_codec_preserves_carrier_and_payload"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "awbc::codec::runtime::task_tests::task_handle_type_codec_rejects_unknown_tags_before_payload"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "awbc::codec::runtime::task_tests::task_row_codecs_require_full_carrier_independently_of_program_execution"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::selected::tests::host_row_rejects_thread_handle_even_with_the_same_ready_payload"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_destination_verifier_checks_the_row_carrier_and_payload"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drift"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_round_trips_without_a_host_request_and_reborrows_its_actual_row"
+    }
+  ],
+  "sourceInputs": 3988,
+  "sourceDrift": 0,
+  "executableHashes": 18,
+  "executableDrift": 0,
+  "manifestInputs": 99,
+  "manifestLockDrift": 0,
+  "workspaceCheck": {
+    "run": "task-final-r3135-awbc-task-carrier-workspace-check",
+    "exitCode": 0
+  },
+  "workspaceClippy": {
+    "run": "task-final-r3136-awbc-task-carrier-workspace-clippy",
+    "exitCode": 0,
+    "sourceDrift": 0
+  },
+  "scope": "Core and RuntimePlan owners only; complete transitive consumer runtime, cold ordinary Program Need and Source parallel acceptance remain separate",
+  "generic": "Accepted and published; owner selection is not a new run of the 151 Generic cases",
+  "held": 14,
+  "artifactCopyMove": false,
+  "doctest": {
+    "run": "task-final-r3137-awbc-task-carrier-core-doctest",
+    "exitCode": 0,
+    "passed": 75,
+    "failed": 0,
+    "ignored": 0,
+    "sourceDrift": 0
+  },
+  "recordedAt": "2026-10-25T20:27:31.8192247Z"
+}

@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "base": "898c8ce9e00d119bb6dc5619dd7797361b0a8813",
+  "rawOriginals": 13,
+  "byteDrift": 0,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3133-awbc-task-carrier-owner-runtime.json",
+      "sha256": "9140ae38fd45a014e14345744ed0f9109b56c3f5f8d9d7f457e820fbe1a83e9f",
+      "bytes": 717
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3133-awbc-task-carrier-owner-runtime.log",
+      "sha256": "1d03e83cf6b6e148c17a1006fe51c2b489209577ae98f6a32e262e7ea7058001",
+      "bytes": 773020
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3133-awbc-task-carrier-owner-runtime.terminal-audit.json",
+      "sha256": "bc3938f32f868db18afdf111162581e6c0c7e05b93391a62e921cb369c91fbe2",
+      "bytes": 588
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-owner-executables-after.json",
+      "sha256": "368df94e006a1c729f691dc9e9f6ebbc9e060f7ac4327b55d658cef775f532a0",
+      "bytes": 4679
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-owner-acceptance.json",
+      "sha256": "9c407db70329da9a8f2d24a8e97b21bbdff3acd7b1fc539962fa5e007dd75259",
+      "bytes": 3415
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3136-awbc-task-carrier-workspace-clippy.json",
+      "sha256": "bb97dfbf6ac42a19015fbd20da820bd6fa0bfe678838bf8c2f92b5ba81d796e1",
+      "bytes": 527
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3136-awbc-task-carrier-workspace-clippy.log",
+      "sha256": "db8e13731fca69c6e1b0e5a59374e5684061556ef53f6507814584297a34de31",
+      "bytes": 6617446
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3136-awbc-task-carrier-workspace-clippy.input-audit.json",
+      "sha256": "e7f836d94290523aa19dfcfd4c73e69169156d82111b21a625294fdc0b01a393",
+      "bytes": 329
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3137-awbc-task-carrier-core-doctest.json",
+      "sha256": "62b7dea1f07f47560169ad9a796061d1b70da4499fd8d5cafb61595898ba6826",
+      "bytes": 521
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3137-awbc-task-carrier-core-doctest.log",
+      "sha256": "1835697a42c21e9442ce7342b023022ca4402c5d34207ec62d036be5d30d5247",
+      "bytes": 78991
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3137-awbc-task-carrier-core-doctest.input-audit.json",
+      "sha256": "925cc3e1ff8f182e4ecb28c1e8f2126f39fc15d6124abfc8fab669b10ce9f798",
+      "bytes": 327
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-gates.verified.json",
+      "sha256": "ab7e9952ca077d71b696fdc60fe74cd617aa47246f600516cd053f76f641eb01",
+      "bytes": 2850
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-gates-public-evidence-audit.json",
+      "sha256": "a0f362fe32fcd2a1e715642c4523c47fe97dc8cae6bc80b8563ac960080ee4de",
+      "bytes": 135
+    }
+  ]
+}

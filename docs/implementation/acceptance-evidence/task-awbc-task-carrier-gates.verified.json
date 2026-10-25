@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "commit": "898c8ce9e00d119bb6dc5619dd7797361b0a8813",
+  "parent": "a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117",
+  "tree": "9d1e31403974a63498343afb635d2b98d3578f24",
+  "remote": "898c8ce9e00d119bb6dc5619dd7797361b0a8813",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-gates-evidence-integrity.json",
+      "blob": "aeacb66d14beded011dde33bdb554b2a2851f9ad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-owner-executables-before.json",
+      "blob": "091dde679c1e0ec05484087ccd2232ccd0ebf2ea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-owner-progress.json",
+      "blob": "515631ec39b897b39451813b6b27b49e535d476a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-public-evidence-audit.json",
+      "blob": "15d13dc09c981a2b10512be20d4b438578091621"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier.verified.json",
+      "blob": "9812b77c7631150d5c2a6d6a7a5226ed6fe28443"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3132-awbc-task-carrier-owner-catalog.inventory.json",
+      "blob": "d68ed2add89f1de99246c6ca14242378a53f275c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3132-awbc-task-carrier-owner-catalog.json",
+      "blob": "26ea14a28623221fb6fc384bdaafa91eaf58f131"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3132-awbc-task-carrier-owner-catalog.log",
+      "blob": "87673cd4d35eb2700ac396c781fecdcdace4d0df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3135-awbc-task-carrier-workspace-check.input-audit.json",
+      "blob": "acca31a8d441fc71e629e77893475326dcee79a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3135-awbc-task-carrier-workspace-check.json",
+      "blob": "37a7338cbbcff558bfb6ddd40189b1d901a66a45"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3135-awbc-task-carrier-workspace-check.log",
+      "blob": "6774549cbe2d74807774c30fefcb6135f2221c3f"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "dbeaa3c2a28b10838f02f1d926a358449ffaa659"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "43ffd2baece4cca2f3bda461a6d32c1916a90521"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "a09c6d04b929c669dfedde500dceb7e119b19b6d2166cfb1b8be077a2a69edd4",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T20:21:07.3671527Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117",
+  "name": "task-final-r3136-awbc-task-carrier-workspace-clippy",
+  "command": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3136-awbc-task-carrier-workspace-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T20:16:26.4451688Z",
+  "finishedAt": "2026-10-25T20:21:42.0330869Z"
+}
