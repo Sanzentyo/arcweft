@@ -134,7 +134,6 @@ impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest
         ] {
             visitor.fixed(digest, next)?;
         }
-        visitor.fixed(&[self.producer.handle_type().semantic_tag()], next)?;
         // The issued key already commits the invocation's presence. Absent
         // metadata has no rows, nodes or bytes in this logical descriptor.
         if let Some(binding) = self.producer.binding() {
@@ -150,7 +149,12 @@ impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest
         visitor.fixed(&[self.class.semantic_tag()], next)?;
         visitor.fixed(&self.priority.0.to_le_bytes(), next)?;
         visitor.string(&self.cancel_scope.0, next)?;
-        visitor.fixed(&[self.policy.semantic_tag()], next)?;
+        // Version-one control byte: bit 0 is policy, bit 1 is carrier.
+        // These independent finite choices share one logical scalar field;
+        // adding a carrier must not add a descriptor node or encoded byte.
+        let control =
+            self.policy.semantic_tag() | (self.producer.handle_type().semantic_tag() << 1);
+        visitor.fixed(&[control], next)?;
         match &self.outcome {
             TaskOutcomeContract::Program { payload } => {
                 visitor.fixed(&[1], next)?;

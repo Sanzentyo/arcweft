@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "7cbba9d186acda9e2b72df66b9266f8d07bc8c50",
+  "name": "task-final-r3118-handle-codec-core-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3118-handle-codec-core-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T17:45:17.0010920Z",
+  "finishedAt": "2026-10-25T17:47:52.8680744Z"
+}

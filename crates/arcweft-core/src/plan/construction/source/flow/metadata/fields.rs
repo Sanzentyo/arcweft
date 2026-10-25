@@ -480,6 +480,11 @@ impl Reader<'_, '_> {
         self.metadata
             .zero_based("task", self.counts.limits.task_count)?;
         self.metadata.digest()?;
+        let tag = self.metadata.byte()?;
+        crate::task::TaskHandleType::from_semantic_tag(tag, ()).ok_or(Error::Tag {
+            kind: "task handle type",
+            tag,
+        })?;
         self.ty()?;
         let tag = self.metadata.byte()?;
         crate::task::TaskClass::from_semantic_tag(tag).ok_or(Error::Tag {

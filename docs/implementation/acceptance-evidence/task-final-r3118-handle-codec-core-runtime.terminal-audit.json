@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "7cbba9d186acda9e2b72df66b9266f8d07bc8c50",
+  "run": "task-final-r3118-handle-codec-core-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 154.018s] 2080 tests run: 2080 passed (1 slow), 0 skipped",
+  "executed": 2080,
+  "passed": 2080,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3987,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T17:47:55.8443936Z"
+}

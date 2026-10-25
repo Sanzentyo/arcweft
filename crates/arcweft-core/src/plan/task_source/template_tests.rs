@@ -996,6 +996,43 @@ fn thread_source_codec_retains_program_definition_and_capture_roles() {
         RuntimeFunctionDefinitionIdentity::from_accepted_identity([2; 32])
     );
     assert_eq!(producer.family, NeedProducerFamily::StructuredTaskPlan);
+    assert_eq!(
+        producer.handle_type,
+        TaskHandleType::ThreadHandle {
+            payload: RuntimeTypeSemanticDigest::from_bytes(
+                *crate::pattern::RuntimeCheckedType::Unit
+                    .semantic_identity_digest()
+                    .as_bytes()
+            ),
+        }
+    );
+    // Corrupt the actual encoded producer field. Borrowed admission must reject
+    // its carrier before materializing any definition or issuing a Source lease.
+    let mut prefix = producer.function.as_bytes().to_vec();
+    prefix.push(producer.family.semantic_tag());
+    prefix.extend_from_slice(producer.contract.as_bytes());
+    prefix.extend_from_slice(&producer.plan.ordinal().to_le_bytes());
+    prefix.extend_from_slice(producer.producer_site.as_bytes());
+    let offsets = artifact
+        .bytes()
+        .windows(prefix.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == prefix).then_some(offset + prefix.len()))
+        .collect::<Vec<_>>();
+    let [offset] = offsets.as_slice() else {
+        panic!("the original producer has exactly one encoded definition");
+    };
+    for tag in [2, u8::MAX] {
+        let mut bytes = artifact.bytes().to_vec();
+        bytes[*offset] = tag;
+        let error = RuntimeTaskSourceArtifact::preflight_encoded(&bytes, limits).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("task handle type tag {tag}")),
+            "{error}"
+        );
+    }
 }
 
 #[test]

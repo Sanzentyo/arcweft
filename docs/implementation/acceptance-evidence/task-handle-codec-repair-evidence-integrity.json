@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "base": "7cbba9d186acda9e2b72df66b9266f8d07bc8c50",
+  "purpose": "Core carrier codec/resource repair; actual owner runtime and structure evidence, not reverse-consumer or workspace acceptance.",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3117-handle-codec-core-catalog.log",
+      "bytes": 440178,
+      "sha256": "49743b022fdfbc5619d676dada4c677cbac9cce97f05d265443152a5afa164f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3117-handle-codec-core-catalog.json",
+      "bytes": 573,
+      "sha256": "a3a5103329ae0f15a37f391c50506a3c9a5b79a5da61cc789ccace62f2fbd28d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3117-handle-codec-core-catalog.inventory.json",
+      "bytes": 526087,
+      "sha256": "18743152efa88442933ba8fb737ef971aa500b371cc1d4061a91500036831732"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3118-handle-codec-core-runtime.log",
+      "bytes": 711652,
+      "sha256": "11f4d9c75292d3348bfc2694b466a687401438cfab304daf49b356c3385d1fa5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3118-handle-codec-core-runtime.json",
+      "bytes": 665,
+      "sha256": "0b12b79989d5fdeeb5c60baba36d79f6c64a645b3cd720fa81c21a07cd287815"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3118-handle-codec-core-runtime.terminal-audit.json",
+      "bytes": 582,
+      "sha256": "db1a2dccfbbc7fe77d8345383c4512e2f76c1ab1840682b1d51ceab50e673c02"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3124-handle-codec-structure.log",
+      "bytes": 64609,
+      "sha256": "2f0e6b6263bef89c204df6c3a93909d4e591658f62a1c414ab0a2b469f120db3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3124-handle-codec-structure.json",
+      "bytes": 659,
+      "sha256": "005a49453c6a9afb52de09f30a7bd8630ac3432ee9ab4a9d126f74ce70d61fdb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3124-handle-codec-structure.input-audit.json",
+      "bytes": 473,
+      "sha256": "8b7e1bf95f343e52e12840c0d3ad4163844f08ead29dade6bcb28e5cd64063e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-core-executables-before.json",
+      "bytes": 3440,
+      "sha256": "6a3107c0e88f85750993f12c3e694ccbcb05cd17a9ab37638dda59ed08cfa815"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-core-executables-after.json",
+      "bytes": 3439,
+      "sha256": "d73cb611757bb3a51a31869fec3e06503ad724065c07182f0a0994d9b1ac8b0d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair.graph.json",
+      "bytes": 2736,
+      "sha256": "3f96fef07d999982b084d76a4678f3d84e604617056269783554dca75bfe4b30"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair.source-freeze.json",
+      "bytes": 779591,
+      "sha256": "079fbac2d8e08ab7270c02bad7c70e088a83741d61950f4a1d52c9e1da14c79f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair-freeze.ps1",
+      "bytes": 2013,
+      "sha256": "dc84b26e53fb6dfd5ac2c16a7129fd155090dc9faaab9681d0535b7b59dde567"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair-structure-review.json",
+      "bytes": 4316,
+      "sha256": "2428d3bbe442566ceced3dd23dc43d59bc5e8257891d0e2ade92ac1138c1b9c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-core-acceptance.json",
+      "bytes": 9951,
+      "sha256": "535f6c47923ef3a865444756278e45e5a3555b750dabe63f6c4c350ef6f458ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-core-driver.ps1",
+      "bytes": 1528,
+      "sha256": "c478819689214470855bdf7fe0561346723641f59676e05e1882b03fb92f7d2c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-failure.verified.json",
+      "bytes": 3900,
+      "sha256": "fe8fe915dd009b2ddd57579979945191a4c409cda3cc8d1c5c2eecb723517d18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-failure-public-evidence-audit.json",
+      "bytes": 135,
+      "sha256": "b20a5201ff8d6a2d7e7b88d981892a73b4dbc1fb9afbf4ba9766a43ec955cec7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/dependency_edges.csv",
+      "bytes": 77451,
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/file_metrics.csv",
+      "bytes": 326596,
+      "sha256": "fc0c1db229f0d332f0c1615df769c1adcef315638743dd4c54651e9600503bbf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/findings.md",
+      "bytes": 121534,
+      "sha256": "16186c6c66e77ba79dbde46102207c45d8186f8dcbca9c15b38582fe207662bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/public_type_duplicates.csv",
+      "bytes": 17121,
+      "sha256": "a75431ecd096a8760a437c4a5b889427a045c99a2589daa4f9232ed569d7d5d6"
+    }
+  ],
+  "totalBytes": 3105673,
+  "artifactCopyMove": false
+}

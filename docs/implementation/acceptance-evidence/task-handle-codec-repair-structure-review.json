@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "base": "7cbba9d186acda9e2b72df66b9266f8d07bc8c50",
+  "branch": "main",
+  "dirtyTrackedHeld": 14,
+  "changedRustPaths": 4,
+  "canonicalRun": "task-final-r3124-handle-codec-structure",
+  "canonicalExitCode": 0,
+  "measurementDrift": 0,
+  "owners": [
+    {
+      "path": "crates/arcweft-core/src/task/handle_type.rs",
+      "owner": "arcweft-core",
+      "bytes": "1430",
+      "physical_lines": "41",
+      "code_lines": "30",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 42,
+      "growth": -1,
+      "responsibility": "Single closed carrier algebra; the real digest payload remains the default. Unit-payload borrowed preflight validates exactly the same tag grammar without inventing a semantic digest. No second carrier catalog, I/O or state owner.",
+      "disposition": "Retain cohesive owner; no unrelated state/dependency/test boundary was introduced."
+    },
+    {
+      "path": "crates/arcweft-core/src/task/descriptor.rs",
+      "owner": "arcweft-core",
+      "bytes": "13552",
+      "physical_lines": "336",
+      "code_lines": "322",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 332,
+      "growth": 4,
+      "responsibility": "Single ordered TaskSpec descriptor visitor for live/inert admission and canonical encoding. Policy and carrier retain independent typed inputs and occupy disjoint control-byte bits; resource limits and payload admission remain unchanged.",
+      "disposition": "Retain cohesive owner; no unrelated state/dependency/test boundary was introduced."
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+      "owner": "arcweft-core",
+      "bytes": "20761",
+      "physical_lines": "633",
+      "code_lines": "628",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 628,
+      "growth": 5,
+      "responsibility": "Complete borrowed operation-field grammar before owned seed/value materialization. Producer metadata now consumes and validates the same carrier field as the encoder and materializing decoder. Existing framing/count/meter owners remain.",
+      "disposition": "Retain cohesive owner; no unrelated state/dependency/test boundary was introduced."
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": "45595",
+      "physical_lines": "1278",
+      "code_lines": "1249",
+      "classification": "test",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 1241,
+      "growth": 37,
+      "responsibility": "Original admitted producer Source tests, including native/decoded AWBC leases, metadata, capture roles and codec rejection. Strengthens one existing round-trip case with actual malformed bytes; no new arbitrary file boundary or production API for test layout.",
+      "disposition": "Retain cohesive owner; no unrelated state/dependency/test boundary was introduced."
+    }
+  ],
+  "publicContract": "TaskHandleType<Payload = RuntimeTypeSemanticDigest> reuses one grammar for inert borrowed preflight; the default live/snapshot producer fields and serialized payload shape remain semantic-digest typed.",
+  "dependencies": {
+    "manifestsAndLockUnchanged": 99,
+    "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+    "core": {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    "review": "No new crate/dependency/feature/root export or layer direction. Sans I/O is preserved."
+  },
+  "resourceContract": "Version-one control byte uses policy bit 0 and carrier bit 1. All other bits zero; existing exact 31-node/365-byte Need fixture and one-below rejection assertions remain unchanged.",
+  "reusedDisposition": "task-handle-runtime-structure-review.json for unchanged responsibility/state/dependency/test boundaries; exact changed measurements refreshed from the canonical report.",
+  "artifactCopyMove": false
+}

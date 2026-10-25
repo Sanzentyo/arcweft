@@ -11875,3 +11875,39 @@ borrowed preflight readerのproducer_definitionが読まず、後続のtype inde
 現状一覧の「修正後runtimeはまだ未確認」を、実測した失敗とconsumer未実行へ訂正した。
 初回失敗を後続の成功で置換せず、原ログ・receipt・catalog・入力／実行ファイル照合等をbyte不変で保持する。
 [保全一覧](acceptance-evidence/task-handle-runtime-failure-evidence-integrity.json)。
+
+## carrier codecとdescriptor資源境界の修復 — 2026-10-26
+
+公開基点 `7cbba9d186acda9e2b72df66b9266f8d07bc8c50` のparentは
+`5a2f0851316214b5b7de9e6c6ede9ff59e84c7d0`、treeは
+`753aa559deb43ce97d7fc8a133c1de88c5cd7822`、full patch SHA256は
+`bd6efbdbf56d1489678671435d4c4c7f1b198628fb0eee73cfd7a11aa2b0e342`。
+全19公開blob・原本等16件の公開byte hashは差分0。元tracked WIP 14件を保持した。
+
+Sourceのborrowed preflightが、encoder／materializing decoderと同じcarrier tagを読むよう修復した。
+TaskHandleTypeの同じ閉じた代数をpayload表現でparameterizeし、preflightはunit payloadで
+形を検査する。実producerの既定payloadは従来どおりsemantic digestであり、仮のdigestや別tag表を作らない。
+実際のThread artifactの往復ではcarrier／payloadを保持し、未知tag 2／255を構築前に拒否する。
+
+TaskSpecの共通descriptor visitorでは、policy bit 0／carrier bit 1を同じversion 1制御byteに保持する。
+独立した型の意味を保ちつつ追加node／byteを除き、既存の31 nodes／365 bytes exact fixtureと
+その一つ下での拒否assertionを変更していない。元のkeyは引き続きcarrierとpayloadの両方にcommitする。
+Native／AWBC、live／inert、enclosing bankの全consumerが同じvisitorを使用する。
+
+R3117のCore catalogは2,080件選択・除外0、実build表示4m34s。
+R3118は2,080／2,080 PASS（1 slow）／0 skipped、154.018秒、終了0。
+前段R3111の全42失敗が選択され、39 codec失敗・3 nodes失敗は全PASS。
+catalog集合・3,987非文書入力・13実行ファイルの前後hash差分0。
+99 manifest／lockも不変で、既存の解決済みmetadataからCore全53逆依存を選んだ。
+[owner検証と全42件の照合](acceptance-evidence/task-handle-codec-core-acceptance.json)。
+
+R3124正規scannerは --fail-on-blocking で終了0、同3,987入力の前後hash差分0。
+変更4 ownerはproduction 3／test 1。正規CSVのbytes／physical LOCと現在ファイルは全件一致。
+依存方向・state所有・test境界は維持し、単一carrier grammarの公開型parameter以外に
+公開contractやcrate／feature／I/O境界を増やしていない。
+[正規測定とdisposition](acceptance-evidence/task-handle-codec-repair-structure-review.json)。
+
+この公開cutはCore ownerと構造gateの修復確認である。全53逆依存の再buildは進行中で、
+consumer runtime・workspace check／Clippy・Core doctest・Tier2／画像parityの成功はまだ主張しない。
+前段の42失敗と全体goalの未達は履歴へ保持し、Generic Matchの受入は維持する。
+[原本等の保全一覧](acceptance-evidence/task-handle-codec-repair-evidence-integrity.json)。

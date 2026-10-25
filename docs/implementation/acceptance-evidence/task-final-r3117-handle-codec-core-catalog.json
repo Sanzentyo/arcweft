@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "7cbba9d186acda9e2b72df66b9266f8d07bc8c50",
+  "name": "task-final-r3117-handle-codec-core-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3117-handle-codec-core-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T17:39:51.5774414Z",
+  "finishedAt": "2026-10-25T17:44:32.0674968Z"
+}

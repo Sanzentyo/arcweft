@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "commit": "7cbba9d186acda9e2b72df66b9266f8d07bc8c50",
+  "parent": "5a2f0851316214b5b7de9e6c6ede9ff59e84c7d0",
+  "tree": "753aa559deb43ce97d7fc8a133c1de88c5cd7822",
+  "remote": "7cbba9d186acda9e2b72df66b9266f8d07bc8c50",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3109-handle-runtime-full-catalog.inventory.json",
+      "blob": "4b9824a2477afeb8259e0824e46faab9786558a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3109-handle-runtime-full-catalog.json",
+      "blob": "70c91a20b0be3f65774dca6703741c94ff5dfa96"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3109-handle-runtime-full-catalog.log",
+      "blob": "6b4ab3cb64312a591e57df0de82415d2a0c4ffc5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3110-handle-runtime-core-catalog.inventory.json",
+      "blob": "f77b4104b2c16126d192f880886baf9d116f7258"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3110-handle-runtime-core-catalog.json",
+      "blob": "8615594954f47fe119e026077ccaefdd054f0134"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3110-handle-runtime-core-catalog.log",
+      "blob": "a1288ddcf70ce16bbd4264cb8ed2a2f444ec66c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3111-handle-runtime-core-runtime.failure-recon.json",
+      "blob": "1298fe969bf15f60011b0dd2f95184be5fbfb4df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3111-handle-runtime-core-runtime.json",
+      "blob": "fbd4d2a2c8d2af62a2957485b17cac750ef2698f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3111-handle-runtime-core-runtime.log",
+      "blob": "9dc36a6fd7bd3f622e112d9404a1096c5d62021e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3111-handle-runtime-core-runtime.terminal-audit.json",
+      "blob": "ae0e1a34b32250dc59f0f1d6c398613f6252a274"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-driver.log",
+      "blob": "1d2baa8c781844fd69d8293791365675aabdf3dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-executables-after-core.json",
+      "blob": "64a7291b0fd1dbd1985e99b421ff0d9973eb4b94"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-executables-before.json",
+      "blob": "d46589097260e1f107c1f6c6ba7f5cfe6ac3ce0c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-failure-evidence-integrity.json",
+      "blob": "1f20ae76a663b375ed43090bdaceebc913629afc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-failure.json",
+      "blob": "8e3dbbd9f33a788fd8ff0096496497f5a8c97ad8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-structure-checkpoint.verified.json",
+      "blob": "c91ac3344ffbf824fa9e4281b3b437224cb0297e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-structure-public-evidence-audit.json",
+      "blob": "de05feaf708bd79c6ca86564f37fad97c2d6dd64"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "b38dde5ce9ebbc0eeb13ed7f456104db50be92d2"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "1cd06a66897eb15091bb7e0adcc40ad6b5bbdd6e"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "bd6efbdbf56d1489678671435d4c4c7f1b198628fb0eee73cfd7a11aa2b0e342",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T17:36:48.4506618Z"
+}

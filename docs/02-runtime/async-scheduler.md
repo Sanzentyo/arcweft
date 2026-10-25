@@ -239,6 +239,9 @@ its original binding is rejected before accepting an outcome authority.
 Retained descriptors count the invocation's context, rows and labels in the
 enclosing resource allowance. Absent invocation metadata adds no logical node or
 encoded bytes; the issued instance key already commits its absence or presence.
+The version-one descriptor stores policy in bit 0 and handle carrier in bit 1
+of one control byte; the remaining bits are zero. This preserves both choices
+without charging an additional logical scalar node or byte for the carrier.
 Immutable rows may share storage; resource
 admission still checks every row before a producer or retained field copies its
 lease. Version-one saves retain the binding in the producer instance rather than

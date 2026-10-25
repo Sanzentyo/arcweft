@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "7cbba9d186acda9e2b72df66b9266f8d07bc8c50",
+  "name": "task-final-r3124-handle-codec-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-handle-codec-structure-report"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3124-handle-codec-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T17:45:16.4012820Z",
+  "finishedAt": "2026-10-25T17:45:20.7344909Z"
+}
