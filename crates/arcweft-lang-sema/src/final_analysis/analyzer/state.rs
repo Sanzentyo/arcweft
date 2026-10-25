@@ -2571,27 +2571,40 @@ impl<'project, 'catalog, 'control> super::Analyzer<'project, 'catalog, 'control>
             .map_err(AnalyzerExpressionError::fact)?;
         let expression_authority = match self.facts.candidate_expression_authority(&checkpoint) {
             Ok(authority) => authority,
-            Err(error) => {
-                return match self.facts.rollback_candidate_transaction(checkpoint) {
-                    Ok(()) => Err(AnalyzerExpressionError::fact(error)),
-                    Err(failure) => Err(AnalyzerExpressionError::fact(
-                        self.facts.abort_after_close_failure(failure),
-                    )),
-                };
-            }
+            Err(error) => return Err(self.rollback_candidate_authority_error(checkpoint, error)),
         };
         let transaction_authority = match self.facts.transaction_authority(&checkpoint) {
             Ok(authority) => authority,
-            Err(error) => {
-                return match self.facts.rollback_candidate_transaction(checkpoint) {
-                    Ok(()) => Err(AnalyzerExpressionError::fact(error)),
-                    Err(failure) => Err(AnalyzerExpressionError::fact(
-                        self.facts.abort_after_close_failure(failure),
-                    )),
-                };
-            }
+            Err(error) => return Err(self.rollback_candidate_authority_error(checkpoint, error)),
         };
-        let action = match operation(self, expression_authority, transaction_authority) {
+        let result = operation(self, expression_authority, transaction_authority);
+        self.finish_candidate_fact_transaction(checkpoint, result)
+    }
+
+    fn rollback_candidate_authority_error(
+        &mut self,
+        checkpoint: CandidateFactCheckpoint,
+        error: CandidateFactTransactionViolation,
+    ) -> super::expression_error::AnalyzerExpressionError {
+        use super::expression_error::AnalyzerExpressionError;
+        match self.facts.rollback_candidate_transaction(checkpoint) {
+            Ok(()) => AnalyzerExpressionError::fact(error),
+            Err(failure) => {
+                AnalyzerExpressionError::fact(self.facts.abort_after_close_failure(failure))
+            }
+        }
+    }
+
+    fn finish_candidate_fact_transaction<T, E>(
+        &mut self,
+        checkpoint: CandidateFactCheckpoint,
+        result: Result<CandidateFactTransactionAction<T>, E>,
+    ) -> Result<CandidateFactTransactionOutcome<T>, super::expression_error::AnalyzerExpressionError>
+    where
+        E: Into<CandidateFactOperationFailure>,
+    {
+        use super::expression_error::AnalyzerExpressionError;
+        let action = match result {
             Ok(action) => action,
             Err(error) => {
                 return match self.facts.rollback_candidate_transaction(checkpoint) {

@@ -556,6 +556,19 @@ struct PreparedExecutionEffectSealer<'a> {
     control: FinalSemanticAnalysisControl<'a>,
 }
 
+// One in-progress row of the existing effect sealer. Phase calls borrow the same
+// state so recursive child sealing does not retain unrelated phase temporaries.
+struct PreparedExpressionEffectFold<'a> {
+    owner: ExprId,
+    kind: &'a HirExprKind,
+    row: PreparedExecutionEffectRow,
+    implicit_body: Option<PreparedExecutionEffectRow>,
+    latent_callable: bool,
+    independent_computation: bool,
+    direct_field_place: bool,
+    accepted_closure: bool,
+}
+
 impl<'a> PreparedExecutionEffectSealer<'a> {
     fn new(input: PreparedExecutionEffectInput<'a>) -> Result<Self, FinalSemanticAnalysisError> {
         Self::from_facts(
@@ -823,6 +836,24 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         if !self.active_expressions.insert(owner) {
             return Err(FinalSemanticAnalysisError::ExpressionCycle { owner });
         }
+        let mut fold = self.prepare_expression_effect_fold(owner)?;
+        if fold.latent_callable && self.selected.expression_source().is_some() {
+            // A creation query does not execute the independently sealed body.
+            self.active_expressions.remove(&owner);
+            self.expression_rows.insert(owner, fold.row.clone());
+            return Ok(fold.row);
+        }
+        self.fold_expression_receiver(&mut fold)?;
+        self.fold_expression_operands(&mut fold)?;
+        self.fold_expression_body(&mut fold)?;
+        self.fold_expression_owned_children(&mut fold)?;
+        self.finish_expression_effect_fold(fold)
+    }
+
+    fn prepare_expression_effect_fold(
+        &self,
+        owner: ExprId,
+    ) -> Result<Box<PreparedExpressionEffectFold<'a>>, FinalSemanticAnalysisError> {
         let fact = self
             .expression_fact(owner)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
@@ -849,7 +880,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         }
         let latent_callable =
             fact.creates_implicit_callable() || matches!(kind, HirExprKind::Closure(_));
-        let mut implicit_body = fact.creates_implicit_callable().then(|| {
+        let implicit_body = fact.creates_implicit_callable().then(|| {
             let mut body = row.clone();
             body.source = Some(CheckedExecutionOperation::Body(Arc::new(
                 CheckedExecutionBodyOwner::CallableValue(owner),
@@ -860,14 +891,6 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             row.effects = EffectRow::closed(EffectSet::new());
             row.direct_suspension = false;
             row.requires_flow = false;
-            if self.selected.expression_source().is_some() {
-                // This query observes creation, which does not execute a
-                // nested callable's body. Full catalog sealing records that
-                // body's independent row later through the same fold.
-                self.active_expressions.remove(&owner);
-                self.expression_rows.insert(owner, row.clone());
-                return Ok(row);
-            }
         }
         let direct_field_place = fact
             .field_root(|child| {
@@ -891,6 +914,27 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     HirComputationBlockKind::Seq | HirComputationBlockKind::Stream
                 )
         );
+        Ok(Box::new(PreparedExpressionEffectFold {
+            owner,
+            kind,
+            row,
+            implicit_body,
+            latent_callable,
+            direct_field_place,
+            accepted_closure,
+            independent_computation,
+        }))
+    }
+
+    fn fold_expression_receiver(
+        &mut self,
+        fold: &mut PreparedExpressionEffectFold<'a>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let owner = fold.owner;
+        let latent_callable = fold.latent_callable;
+        let independent_computation = fold.independent_computation;
+        let row = &mut fold.row;
+        let implicit_body = &mut fold.implicit_body;
         if !independent_computation
             && let Some(receiver) = self.call_effects.get(&owner).and_then(|row| row.receiver)
         {
@@ -907,12 +951,27 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     self.seal_expression(receiver)?
                 }
             };
-            if let Some(body) = &mut implicit_body {
+            if let Some(body) = implicit_body.as_mut() {
                 body.union_with(&receiver_row, self.control)?;
             } else if !latent_callable {
                 row.union_with(&receiver_row, self.control)?;
             }
         }
+        Ok(())
+    }
+
+    fn fold_expression_operands(
+        &mut self,
+        fold: &mut PreparedExpressionEffectFold<'a>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let owner = fold.owner;
+        let kind = fold.kind;
+        let latent_callable = fold.latent_callable;
+        let independent_computation = fold.independent_computation;
+        let direct_field_place = fold.direct_field_place;
+        let accepted_closure = fold.accepted_closure;
+        let row = &mut fold.row;
+        let implicit_body = &mut fold.implicit_body;
         for edge in self.selected.expression_edges(owner)? {
             let HirExpressionEvaluationEdge::Expression {
                 role,
@@ -934,42 +993,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             if matches!(kind, HirExprKind::Closure(_))
                 && matches!(role, HirExpressionChildRole::ClosureBody)
             {
-                if accepted_closure {
-                    let mut body = PreparedExecutionEffectRow::default();
-                    body.source = Some(CheckedExecutionOperation::Body(Arc::new(
-                        CheckedExecutionBodyOwner::CallableValue(owner),
-                    )));
-                    body.union_with(&child_row, self.control)?;
-                    if self
-                        .bodies
-                        .insert(
-                            Arc::new(CheckedExecutionBodyOwner::CallableValue(owner)),
-                            body,
-                        )
-                        .is_some()
-                    {
-                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                    }
-                }
-                let declaration = self
-                    .active_declaration
-                    .clone()
-                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                if self
-                    .closures
-                    .insert(
-                        (declaration, owner),
-                        PreparedClosureExecutionEffectRow {
-                            owner,
-                            row: child_row.clone(),
-                        },
-                    )
-                    .is_some()
-                {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
+                self.record_closure_effect_body(owner, accepted_closure, &child_row)?;
             }
-            if let Some(body) = &mut implicit_body {
+            if let Some(body) = implicit_body.as_mut() {
                 body.union_with(&child_row, self.control)?;
             }
             if !latent_callable
@@ -980,12 +1006,67 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 row.union_with(&child_row, self.control)?;
             }
         }
+        Ok(())
+    }
+
+    fn record_closure_effect_body(
+        &mut self,
+        owner: ExprId,
+        accepted_closure: bool,
+        child_row: &PreparedExecutionEffectRow,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        if accepted_closure {
+            let mut body = PreparedExecutionEffectRow::default();
+            body.source = Some(CheckedExecutionOperation::Body(Arc::new(
+                CheckedExecutionBodyOwner::CallableValue(owner),
+            )));
+            body.union_with(child_row, self.control)?;
+            if self
+                .bodies
+                .insert(
+                    Arc::new(CheckedExecutionBodyOwner::CallableValue(owner)),
+                    body,
+                )
+                .is_some()
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        }
+        let declaration = self
+            .active_declaration
+            .clone()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        if self
+            .closures
+            .insert(
+                (declaration, owner),
+                PreparedClosureExecutionEffectRow {
+                    owner,
+                    row: child_row.clone(),
+                },
+            )
+            .is_some()
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        Ok(())
+    }
+
+    fn fold_expression_body(
+        &mut self,
+        fold: &mut PreparedExpressionEffectFold<'a>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let kind = fold.kind;
+        let latent_callable = fold.latent_callable;
+        let independent_computation = fold.independent_computation;
+        let row = &mut fold.row;
+        let implicit_body = &mut fold.implicit_body;
         if let Some(body) = kind
             .try_body_projection()
             .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?
         {
             let body_row = self.fold_body(&body)?;
-            if let Some(body) = &mut implicit_body {
+            if let Some(body) = implicit_body.as_mut() {
                 body.union_with(&body_row, self.control)?;
             }
             if !matches!(kind, HirExprKind::Thread(_))
@@ -995,6 +1076,17 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 row.union_with(&body_row, self.control)?;
             }
         }
+        Ok(())
+    }
+
+    fn fold_expression_owned_children(
+        &mut self,
+        fold: &mut PreparedExpressionEffectFold<'a>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let owner = fold.owner;
+        let kind = fold.kind;
+        let row = &mut fold.row;
+        let implicit_body = &mut fold.implicit_body;
         let eager_owned_children = matches!(kind, HirExprKind::Await(_));
         for edge in kind
             .expression_owned_child_edges()
@@ -1009,13 +1101,26 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 },
             };
             if eager_owned_children {
-                if let Some(body) = &mut implicit_body {
+                if let Some(body) = implicit_body.as_mut() {
                     body.union_with(&child, self.control)?;
                 } else {
                     row.union_with(&child, self.control)?;
                 }
             }
         }
+        Ok(())
+    }
+
+    fn finish_expression_effect_fold(
+        &mut self,
+        fold: Box<PreparedExpressionEffectFold<'a>>,
+    ) -> Result<PreparedExecutionEffectRow, FinalSemanticAnalysisError> {
+        let PreparedExpressionEffectFold {
+            owner,
+            row,
+            implicit_body,
+            ..
+        } = *fold;
         if let Some(body) = implicit_body
             && self
                 .bodies

@@ -541,6 +541,17 @@ impl Analyzer<'_, '_, '_> {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
         }
+        match self.cached_expression_fact(context, owner)? {
+            Some(checked) => self.evaluate_cached_expression(owner, expectation, checked),
+            None => self.evaluate_uncached_expression(context, owner, expectation),
+        }
+    }
+
+    fn cached_expression_fact(
+        &self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+    ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
         let cached = match context.authority() {
             super::expression_error::AnalyzerExpressionFactAuthority::Published => {
                 self.facts.expressions().get(&owner).cloned()
@@ -599,176 +610,93 @@ impl Analyzer<'_, '_, '_> {
                     .iter()
                     .any(|scope| scope.owner == owner)
         });
-        if let Some(checked) = cached {
-            let previous = checked.clone();
-            let checked = self.specialize_checked_function_value(owner, checked, &expectation)?;
-            if checked != previous {
-                let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
-                    |this, _, _| {
-                        this.facts
-                            .replace_contextual_expression(owner, checked.clone())
-                            .map_err(|_| {
-                                AnalyzerExpressionError::fact(
-                                    super::CandidateFactTransactionViolation::ProjectionUnavailable,
-                                )
-                            })?;
-                        Ok(CandidateFactTransactionAction::Commit(()))
-                    },
-                )?;
-                outcome
-                    .into_committed()
-                    .map_err(AnalyzerExpressionError::fact)?;
-            }
-            if expectation.accepts_cached(&checked) {
-                self.record_implicit_capture_fact(owner, &checked)
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                self.record_implicit_capture_descendants(owner)
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                return Ok(checked);
-            }
-            let module = self
-                .module(owner.module())
-                .map_err(AnalyzerExpressionError::fatal)?;
-            let expression = module.resolve_expr(owner).map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-            })?;
-            if let (Some(expected), HirExprKind::Literal(literal)) =
-                (expectation.contextual_shape(), expression.kind())
-                && let Some((ty, selection)) = literal_type(literal, Some(expected))
-            {
-                let contextual = CheckedExpression::value(
-                    ty,
-                    selection,
-                    checked.effects().clone(),
-                    CheckedExpressionResolution::Literal(literal.clone()),
-                );
-                let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
-                    |this, _authority, _transaction| {
-                        this.facts
-                            .replace_contextual_expression(owner, contextual.clone())
-                            .map_err(|_| {
-                                AnalyzerExpressionError::fact(
-                                    super::CandidateFactTransactionViolation::ProjectionUnavailable,
-                                )
-                            })?;
-                        Ok(CandidateFactTransactionAction::Commit(contextual))
-                    },
-                )?;
-                return outcome
-                    .into_committed()
-                    .map(Into::into)
-                    .map_err(AnalyzerExpressionError::fact);
-            }
-            return Err(AnalyzerExpressionError::rejected(owner));
+        Ok(cached)
+    }
+
+    fn evaluate_cached_expression(
+        &mut self,
+        owner: ExprId,
+        expectation: AnalyzerExpressionExpectation<'_>,
+        checked: PreparedExpressionFact,
+    ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
+        let previous = checked.clone();
+        let checked = self.specialize_checked_function_value(owner, checked, &expectation)?;
+        if checked != previous {
+            let outcome =
+                self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(|this, _, _| {
+                    this.facts
+                        .replace_contextual_expression(owner, checked.clone())
+                        .map_err(|_| {
+                            AnalyzerExpressionError::fact(
+                                super::CandidateFactTransactionViolation::ProjectionUnavailable,
+                            )
+                        })?;
+                    Ok(CandidateFactTransactionAction::Commit(()))
+                })?;
+            outcome
+                .into_committed()
+                .map_err(AnalyzerExpressionError::fact)?;
         }
+        if expectation.accepts_cached(&checked) {
+            self.record_implicit_capture_fact(owner, &checked)
+                .map_err(AnalyzerExpressionError::fatal)?;
+            self.record_implicit_capture_descendants(owner)
+                .map_err(AnalyzerExpressionError::fatal)?;
+            return Ok(checked);
+        }
+        let module = self
+            .module(owner.module())
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let expression = module.resolve_expr(owner).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+        })?;
+        if let (Some(expected), HirExprKind::Literal(literal)) =
+            (expectation.contextual_shape(), expression.kind())
+            && let Some((ty, selection)) = literal_type(literal, Some(expected))
+        {
+            let contextual = CheckedExpression::value(
+                ty,
+                selection,
+                checked.effects().clone(),
+                CheckedExpressionResolution::Literal(literal.clone()),
+            );
+            let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+                |this, _authority, _transaction| {
+                    this.facts
+                        .replace_contextual_expression(owner, contextual.clone())
+                        .map_err(|_| {
+                            AnalyzerExpressionError::fact(
+                                super::CandidateFactTransactionViolation::ProjectionUnavailable,
+                            )
+                        })?;
+                    Ok(CandidateFactTransactionAction::Commit(contextual))
+                },
+            )?;
+            return outcome
+                .into_committed()
+                .map(Into::into)
+                .map_err(AnalyzerExpressionError::fact);
+        }
+        Err(AnalyzerExpressionError::rejected(owner))
+    }
+
+    fn evaluate_uncached_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expectation: AnalyzerExpressionExpectation<'_>,
+    ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         self.with_expression_guard(owner, |this| {
             let outcome = this.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
                 |this, _authority, transaction_authority| {
-                    this.control.check().map_err(|error| match error {
-                        FinalSemanticAnalysisError::Cancelled => AnalyzerExpressionError::Abort(
-                            crate::types::constraints::TypeConstraintAbort::Cancelled,
-                        ),
-                        error => AnalyzerExpressionError::fatal(error),
-                    })?;
-                    let module = this
-                        .module(owner.module())
-                        .map_err(AnalyzerExpressionError::fatal)?;
-                    let expression = module
-                        .resolve_expr(owner)
-                        .map_err(|_| {
-                            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                        })?
-                        .clone();
-                    let expression_uses = this
-                        .topology
-                        .module(owner.module())
-                        .filter(|topology| topology.snapshot() == module.snapshot_id())
-                        .map(|topology| topology.expression_uses())
-                        .ok_or_else(|| {
-                            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                        })?;
-                    let region = expression_uses
-                        .implicit_callable_region(owner)
-                        .map_err(|_| {
-                            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                        })?;
-                    let placeholders = region.placeholders().collect::<Vec<_>>().into_boxed_slice();
-                    let inside_implicit_callable =
-                        this.implicit_callable_stack.iter().rev().any(|context| {
-                            expression_uses
-                                .implicit_callable_region(context.owner)
-                                .is_ok_and(|region| region.contains_expression(owner))
-                        });
-                    let reentering_implicit_callable = this
-                        .implicit_callable_stack
-                        .iter()
-                        .any(|scope| scope.owner == owner);
-                    let checked = if placeholders.is_empty()
-                        || (inside_implicit_callable && !reentering_implicit_callable)
-                    {
-                        match this.check_prepared_expression_kind(
-                            context,
-                            module,
-                            owner,
-                            &expression,
-                            &expectation,
-                        )? {
-                            Some(prepared) => Ok(prepared),
-                            None => this
-                                .check_expression_kind::<CandidateFactOperationFailure>(
-                                    context,
-                                    module,
-                                    owner,
-                                    &expression,
-                                    &expectation,
-                                    &transaction_authority,
-                                )
-                                .map(Into::into),
-                        }
-                    } else {
-                        this.check_implicit_callable_expression::<CandidateFactOperationFailure>(
-                            context,
-                            module,
-                            owner,
-                            &expression,
-                            &expectation,
-                            placeholders,
-                            &transaction_authority,
-                        )
-                    };
+                    let checked = this.check_fresh_expression(
+                        context,
+                        owner,
+                        &expectation,
+                        &transaction_authority,
+                    )?;
                     let checked =
-                        this.specialize_checked_function_value(owner, checked?, &expectation)?;
-                    let checked = this.attach_nested_path_evidence(owner, checked)?;
-                    this.record_implicit_capture_fact(owner, &checked)
-                        .map_err(AnalyzerExpressionError::fatal)?;
-                    let write = if context.is_candidate()
-                        && this.facts.expressions().contains_key(&owner)
-                    {
-                        this.facts
-                            .replace_existing_expression(owner, checked.clone())
-                    } else {
-                        this.facts.publish_new_expression(owner, checked.clone())
-                    };
-                    if let Err(error) = write {
-                        return Err(match error {
-                            super::state::ExpressionFactWriteViolation::AlreadyPublished => {
-                                AnalyzerExpressionError::invariant(
-                                    FinalSemanticAnalysisError::DuplicateFact {
-                                        family: super::SemanticFactFamily::Expression,
-                                    },
-                                )
-                            }
-                            super::state::ExpressionFactWriteViolation::MissingPublishedFact => {
-                                AnalyzerExpressionError::invariant(
-                                    FinalSemanticAnalysisError::WrongPayloadFamily,
-                                )
-                            }
-                            super::state::ExpressionFactWriteViolation::Candidate(violation) => {
-                                AnalyzerExpressionError::fact(violation)
-                            }
-                        }
-                        .into());
-                    }
+                        this.finish_fresh_expression(context, owner, &expectation, checked)?;
                     Ok(CandidateFactTransactionAction::Commit(checked))
                 },
             )?;
@@ -776,6 +704,122 @@ impl Analyzer<'_, '_, '_> {
                 .into_committed()
                 .map_err(AnalyzerExpressionError::fact)
         })
+    }
+
+    fn check_fresh_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+        transaction_authority: &CandidateFactTransactionAuthority<'_>,
+    ) -> Result<PreparedExpressionFact, CandidateFactOperationFailure> {
+        self.control.check().map_err(|error| match error {
+            FinalSemanticAnalysisError::Cancelled => AnalyzerExpressionError::Abort(
+                crate::types::constraints::TypeConstraintAbort::Cancelled,
+            ),
+            error => AnalyzerExpressionError::fatal(error),
+        })?;
+        let module = self
+            .module(owner.module())
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let expression = module.resolve_expr(owner).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+        })?;
+        let expression_uses = self
+            .topology
+            .module(owner.module())
+            .filter(|topology| topology.snapshot() == module.snapshot_id())
+            .map(|topology| topology.expression_uses())
+            .ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+        let region = expression_uses
+            .implicit_callable_region(owner)
+            .map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+        let placeholders = region.placeholders().collect::<Vec<_>>().into_boxed_slice();
+        let inside_implicit_callable = self.implicit_callable_stack.iter().rev().any(|context| {
+            expression_uses
+                .implicit_callable_region(context.owner)
+                .is_ok_and(|region| region.contains_expression(owner))
+        });
+        let reentering_implicit_callable = self
+            .implicit_callable_stack
+            .iter()
+            .any(|scope| scope.owner == owner);
+        let checked = if placeholders.is_empty()
+            || (inside_implicit_callable && !reentering_implicit_callable)
+        {
+            match self.check_prepared_expression_kind(
+                context,
+                module,
+                owner,
+                expression,
+                expectation,
+            )? {
+                Some(prepared) => Ok(prepared),
+                None => self
+                    .check_expression_kind::<CandidateFactOperationFailure>(
+                        context,
+                        module,
+                        owner,
+                        expression,
+                        expectation,
+                        transaction_authority,
+                    )
+                    .map(Into::into),
+            }
+        } else {
+            self.check_implicit_callable_expression::<CandidateFactOperationFailure>(
+                context,
+                module,
+                owner,
+                expression,
+                expectation,
+                placeholders,
+                transaction_authority,
+            )
+        };
+        checked
+    }
+
+    fn finish_fresh_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+        checked: PreparedExpressionFact,
+    ) -> Result<PreparedExpressionFact, CandidateFactOperationFailure> {
+        let checked = self.specialize_checked_function_value(owner, checked, expectation)?;
+        let checked = self.attach_nested_path_evidence(owner, checked)?;
+        self.record_implicit_capture_fact(owner, &checked)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let write = if context.is_candidate() && self.facts.expressions().contains_key(&owner) {
+            self.facts
+                .replace_existing_expression(owner, checked.clone())
+        } else {
+            self.facts.publish_new_expression(owner, checked.clone())
+        };
+        if let Err(error) = write {
+            return Err(match error {
+                super::state::ExpressionFactWriteViolation::AlreadyPublished => {
+                    AnalyzerExpressionError::invariant(FinalSemanticAnalysisError::DuplicateFact {
+                        family: super::SemanticFactFamily::Expression,
+                    })
+                }
+                super::state::ExpressionFactWriteViolation::MissingPublishedFact => {
+                    AnalyzerExpressionError::invariant(
+                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                    )
+                }
+                super::state::ExpressionFactWriteViolation::Candidate(violation) => {
+                    AnalyzerExpressionError::fact(violation)
+                }
+            }
+            .into());
+        }
+        Ok(checked)
     }
 
     fn with_expression_guard<T>(
@@ -1596,7 +1640,6 @@ impl Analyzer<'_, '_, '_> {
     where
         E: From<AnalyzerExpressionError> + From<CandidateFactOperationFailure>,
     {
-        let expected = expectation.contextual_shape();
         if expression.is_poisoned() {
             return Err(
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner).into(),
@@ -1607,6 +1650,58 @@ impl Analyzer<'_, '_, '_> {
         {
             return Ok(checked);
         }
+        match expression.kind() {
+            HirExprKind::Block(block) => self
+                .check_control_block_expression(context, module, owner, block, expectation)
+                .map_err(E::from),
+            HirExprKind::ComputationBlock(block) => self
+                .check_control_computation_block_expression(
+                    context,
+                    module,
+                    owner,
+                    block,
+                    expectation,
+                )
+                .map_err(E::from),
+            HirExprKind::NamedBlock(block) => self
+                .check_control_named_block_expression(context, module, owner, block, expectation)
+                .map_err(E::from),
+            HirExprKind::Loop(loop_expression) => self
+                .check_control_loop_expression(context, module, owner, loop_expression, expectation)
+                .map_err(E::from),
+            HirExprKind::If(conditional) => self
+                .check_control_if_expression(context, owner, conditional, expectation)
+                .map_err(E::from),
+            HirExprKind::IfLet(conditional) => self
+                .check_control_if_let_expression(context, module, owner, conditional, expectation)
+                .map_err(E::from),
+            HirExprKind::Match(match_expr) => self
+                .check_control_match_expression(context, module, owner, match_expr, expectation)
+                .map_err(E::from),
+            _ => self.check_noncontrol_expression_kind::<E>(
+                context,
+                module,
+                owner,
+                expression,
+                expectation,
+                transaction_authority,
+            ),
+        }
+    }
+
+    fn check_noncontrol_expression_kind<E>(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        expression: &HirExpr,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+        transaction_authority: &CandidateFactTransactionAuthority<'_>,
+    ) -> Result<CheckedExpression, E>
+    where
+        E: From<AnalyzerExpressionError> + From<CandidateFactOperationFailure>,
+    {
+        let expected = expectation.contextual_shape();
         if let Some(checked) =
             self.check_leaf_expression_kind(module, owner, expression, expected)?
         {
@@ -1628,11 +1723,6 @@ impl Analyzer<'_, '_, '_> {
         }
         if let Some(checked) =
             self.check_unary_expression_kind(context, module, owner, expression, expectation)?
-        {
-            return Ok(checked);
-        }
-        if let Some(checked) =
-            self.check_control_expression_kind(context, module, owner, expression, expectation)?
         {
             return Ok(checked);
         }
@@ -2237,397 +2327,348 @@ impl Analyzer<'_, '_, '_> {
         common_type(results, None).ok_or_else(|| AnalyzerExpressionError::rejected(body))
     }
 
-    fn check_control_expression_kind(
+    fn check_control_block_expression(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
-        expression: &HirExpr,
+        block: &arcweft_lang_hir::expr::HirBlockExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
-        let expected = expectation.contextual_shape();
-        match expression.kind() {
-            HirExprKind::Block(block) => {
-                self.evaluate_block_statement_uses(context, module, block.statements())?;
-                let returns = !self
-                    .block_statements_completion(module, block.statements(), None)?
-                    .continues();
-                let tail = self.evaluate_expression_with_expectation(
-                    context,
-                    block.tail(),
-                    if returns {
-                        AnalyzerExpressionExpectation::Unconstrained
-                    } else {
-                        expectation.clone()
-                    },
-                )?;
-                if context.is_candidate()
-                    && tail.value_type().is_none()
-                    && self
-                        .has_unselected_call_diagnostic(context, block.tail())
-                        .map_err(AnalyzerExpressionError::fact)?
-                {
-                    // The enclosing candidate owns this contextual rejection.
-                    // Preserve its call diagnostic instead of turning a known
-                    // rejected tail into a missing expression-type invariant.
-                    return Err(AnalyzerExpressionError::rejected(owner));
-                }
-                let tail_type = tail.value_type().cloned().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: block.tail(),
-                        },
-                    )
-                })?;
-                let tail_selection = tail.type_selection().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: block.tail(),
-                        },
-                    )
-                })?;
-                Ok(structural_expression(
-                    if returns { TypeKind::Never } else { tail_type },
-                    tail_selection,
-                ))
-            }
-            HirExprKind::ComputationBlock(block) => {
-                self.evaluate_block_statement_uses(context, module, block.statements())?;
-                let returns = matches!(
-                    block.kind(),
-                    HirComputationBlockKind::Result | HirComputationBlockKind::Option
-                ) && !self
-                    .block_statements_completion(module, block.statements(), None)?
-                    .continues();
-                let expected_success = match (block.kind(), expected) {
-                    (HirComputationBlockKind::Result, Some(TypeKind::Result { ok, .. })) => {
-                        Some(ok.as_ref())
-                    }
-                    (HirComputationBlockKind::Option, Some(TypeKind::Option(item))) => {
-                        Some(item.as_ref())
-                    }
-                    _ => None,
-                };
-                let tail = self.evaluate_expression_with_expectation(
-                    context,
-                    block.tail(),
-                    if returns {
-                        AnalyzerExpressionExpectation::Unconstrained
-                    } else {
-                        expectation.project_checked(owner, expected_success)?
-                    },
-                )?;
-                let tail_type = tail.value_type().cloned().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: block.tail(),
-                        },
-                    )
-                })?;
-                let ty = match block.kind() {
-                    HirComputationBlockKind::Result => {
-                        let expected_error = match expected {
-                            Some(TypeKind::Result { error, .. }) => Some(error.as_ref()),
-                            _ => None,
-                        };
-                        let error_expectation =
-                            expectation.project_checked(owner, expected_error)?;
-                        let residuals = self.try_residuals_for_block(owner);
-                        let error = if let Some(expected) = error_expectation.complete_type() {
-                            if residuals.iter().all(|residual| expected.accepts(residual)) {
-                                expected.clone()
-                            } else {
-                                return Err(AnalyzerExpressionError::rejected(owner));
-                            }
-                        } else if residuals.is_empty() {
-                            TypeKind::Never
-                        } else {
-                            common_type(residuals.iter().copied(), None)
-                                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
-                        };
-                        TypeKind::Result {
-                            ok: Box::new(tail_type.clone()),
-                            error: Box::new(error),
-                        }
-                    }
-                    HirComputationBlockKind::Option => {
-                        TypeKind::Option(Box::new(tail_type.clone()))
-                    }
-                    HirComputationBlockKind::Seq => TypeKind::Seq(Box::new(tail_type.clone())),
-                    HirComputationBlockKind::Stream => TypeKind::Stream {
-                        item: Box::new(tail_type),
-                        error: Box::new(TypeKind::Unit),
-                    },
-                };
-                Ok(structural_expression(
-                    if returns { TypeKind::Never } else { ty },
-                    CheckedTypeSelection::Inferred,
-                ))
-            }
-            HirExprKind::NamedBlock(block) => {
-                self.evaluate_block_statement_uses(context, module, block.statements())?;
-                let returns = !self
-                    .block_statements_completion(module, block.statements(), None)?
-                    .continues();
-                let tail = self.evaluate_expression_with_expectation(
-                    context,
-                    block.tail(),
-                    if returns {
-                        AnalyzerExpressionExpectation::Unconstrained
-                    } else {
-                        expectation.clone()
-                    },
-                )?;
-                let tail_type = tail.value_type().cloned().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: block.tail(),
-                        },
-                    )
-                })?;
-                let tail_selection = tail.type_selection().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: block.tail(),
-                        },
-                    )
-                })?;
-                let namespace = module
-                    .scope_namespace(block.scope())
-                    .map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?;
-                let name = arcweft_id::DeclarationName::try_new(namespace.name().as_str())
-                    .map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
-                    })?;
-                Ok(CheckedExpression::value(
-                    if returns { TypeKind::Never } else { tail_type },
-                    tail_selection,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Scope(
-                        crate::final_analysis::CheckedScopeIdentity::Named(name),
-                    ),
-                ))
-            }
-            HirExprKind::Loop(loop_expression) => {
-                self.evaluate_block_statement_uses(context, module, loop_expression.statements())?;
-                self.evaluate_expression(context, loop_expression.tail(), None)?;
-                let mut exits = Vec::new();
-                for (_, statement) in module.statements() {
-                    let HirStmtKind::Break { label: None, value } = statement.kind() else {
-                        continue;
-                    };
-                    if !break_targets_loop(module, statement.scope(), owner)
-                        .map_err(AnalyzerExpressionError::fatal)?
-                    {
-                        continue;
-                    }
-                    if let Some(value) = value {
-                        exits.push(self.evaluate_expression_with_expectation(
-                            context,
-                            *value,
-                            expectation.clone(),
-                        )?);
-                    } else {
-                        exits.push(
-                            structural_expression(TypeKind::Unit, CheckedTypeSelection::Inferred)
-                                .into(),
-                        );
-                    }
-                }
-                let (ty, selection) = if exits.is_empty() {
-                    (TypeKind::Never, CheckedTypeSelection::Inferred)
-                } else {
-                    let exit_types = exits
-                        .iter()
-                        .map(|value| {
-                            value.value_type().ok_or_else(|| {
-                                AnalyzerExpressionError::fatal(
-                                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                                )
-                            })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let ty = common_type(exit_types, expectation.complete_type())
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    (ty, CheckedTypeSelection::Inferred)
-                };
-                Ok(structural_expression(ty, selection))
-            }
-            HirExprKind::If(conditional) => {
-                self.evaluate_expression(context, conditional.condition(), Some(&TypeKind::Bool))?;
-                let inferred = self.infer_control_branch_type(
-                    context,
-                    owner,
-                    expectation,
-                    [conditional.then_branch(), conditional.else_branch()],
-                )?;
-                let branch_expectation = if let Some(inferred) = inferred.as_ref() {
-                    expectation.project_checked(owner, Some(inferred))?
-                } else {
-                    expectation.clone()
-                };
-                let then_value = self.evaluate_expression_with_expectation(
-                    context,
-                    conditional.then_branch(),
-                    branch_expectation.clone(),
-                )?;
-                let then_type = then_value.value_type().cloned().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: conditional.then_branch(),
-                        },
-                    )
-                })?;
-                let else_value = self.evaluate_expression_with_expectation(
-                    context,
-                    conditional.else_branch(),
-                    branch_expectation.clone(),
-                )?;
-                let else_type = else_value.value_type().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: conditional.else_branch(),
-                        },
-                    )
-                })?;
-                let ty = common_type([&then_type, else_type], expectation.complete_type())
-                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                Ok(structural_expression(ty, CheckedTypeSelection::Inferred))
-            }
-            HirExprKind::IfLet(conditional) => {
-                let scrutinee = self.evaluate_expression(context, conditional.scrutinee(), None)?;
-                let scrutinee_type = scrutinee.value_type().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: conditional.scrutinee(),
-                        },
-                    )
-                })?;
-                self.seed_contextual_pattern_locals(module, conditional.pattern(), scrutinee_type)
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                if let Some(guard) = conditional.guard() {
-                    self.evaluate_expression(context, guard, Some(&TypeKind::Bool))?;
-                }
-                let inferred = self.infer_control_branch_type(
-                    context,
-                    owner,
-                    expectation,
-                    [conditional.then_branch(), conditional.else_branch()],
-                )?;
-                let branch_expectation = if let Some(inferred) = inferred.as_ref() {
-                    expectation.project_checked(owner, Some(inferred))?
-                } else {
-                    expectation.clone()
-                };
-                let then_value = self.evaluate_expression_with_expectation(
-                    context,
-                    conditional.then_branch(),
-                    branch_expectation.clone(),
-                )?;
-                let then_type = then_value.value_type().cloned().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: conditional.then_branch(),
-                        },
-                    )
-                })?;
-                let else_value = self.evaluate_expression_with_expectation(
-                    context,
-                    conditional.else_branch(),
-                    branch_expectation.clone(),
-                )?;
-                let else_type = else_value.value_type().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: conditional.else_branch(),
-                        },
-                    )
-                })?;
-                let ty = common_type([&then_type, else_type], expectation.complete_type())
-                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                Ok(structural_expression(ty, CheckedTypeSelection::Inferred))
-            }
-            HirExprKind::Match(match_expr) => {
-                let scrutinee = self.evaluate_expression(context, match_expr.scrutinee(), None)?;
-                let scrutinee_type = scrutinee.value_type().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner: match_expr.scrutinee(),
-                        },
-                    )
-                })?;
-                for arm in match_expr.arms() {
-                    self.seed_contextual_pattern_locals(module, arm.pattern(), scrutinee_type)
-                        .map_err(AnalyzerExpressionError::fatal)?;
-                }
-                let inferred = self.infer_control_branch_type(
-                    context,
-                    owner,
-                    expectation,
-                    match_expr.arms().iter().map(|arm| arm.value()),
-                )?;
-                let branch_expectation = if let Some(inferred) = inferred.as_ref() {
-                    expectation.project_checked(owner, Some(inferred))?
-                } else {
-                    expectation.clone()
-                };
-                let mut values = Vec::new();
-                let mut arms = Vec::with_capacity(match_expr.arms().len());
-                for arm in match_expr.arms() {
-                    if let Some(guard) = arm.guard() {
-                        self.evaluate_expression(context, guard, Some(&TypeKind::Bool))?;
-                    }
-                    values.push(self.evaluate_expression_with_expectation(
-                        context,
-                        arm.value(),
-                        branch_expectation.clone(),
-                    )?);
-                    arms.push(crate::final_analysis::CheckedMatchArmFact::new(
-                        arm.guard(),
-                        arm.value(),
-                    ));
-                }
-                let value_types = values
-                    .iter()
-                    .map(|value| {
-                        value.value_type().ok_or_else(|| {
-                            AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                            )
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let ty = if value_types.is_empty() {
-                    TypeKind::Never
-                } else {
-                    common_type(value_types, expectation.complete_type())
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
-                };
-                Ok(
-                    structural_expression(ty, CheckedTypeSelection::Inferred).with_match_fact(
-                        crate::final_analysis::CheckedMatchFact::new(
-                            match_expr.scrutinee(),
-                            arms.into_boxed_slice(),
-                        ),
-                    ),
-                )
-            }
-            _ => return Ok(None),
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        self.evaluate_block_statement_uses(context, module, block.statements())?;
+        let returns = !self
+            .block_statements_completion(module, block.statements(), None)?
+            .continues();
+        let tail = self.evaluate_expression_with_expectation(
+            context,
+            block.tail(),
+            if returns {
+                AnalyzerExpressionExpectation::Unconstrained
+            } else {
+                expectation.clone()
+            },
+        )?;
+        if context.is_candidate()
+            && tail.value_type().is_none()
+            && self
+                .has_unselected_call_diagnostic(context, block.tail())
+                .map_err(AnalyzerExpressionError::fact)?
+        {
+            // The enclosing candidate owns this contextual rejection.
+            // Preserve its call diagnostic instead of turning a known
+            // rejected tail into a missing expression-type invariant.
+            return Err(AnalyzerExpressionError::rejected(owner));
         }
-        .map(Some)
+        let tail_type = tail.value_type().cloned().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: block.tail(),
+            })
+        })?;
+        let tail_selection = tail.type_selection().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: block.tail(),
+            })
+        })?;
+        Ok(structural_expression(
+            if returns { TypeKind::Never } else { tail_type },
+            tail_selection,
+        ))
     }
 
-    /// Completes statement-owned expressions before their containing block is
-    /// sealed. A closure's capture choices depend on its whole body, including
-    /// discarded-value statements. The same typed walk emits use-time evidence
-    /// when an implicit callable transaction is active.
+    fn check_control_computation_block_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        block: &arcweft_lang_hir::expr::HirComputationBlockExpr,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        let expected = expectation.contextual_shape();
+        self.evaluate_block_statement_uses(context, module, block.statements())?;
+        let returns = matches!(
+            block.kind(),
+            HirComputationBlockKind::Result | HirComputationBlockKind::Option
+        ) && !self
+            .block_statements_completion(module, block.statements(), None)?
+            .continues();
+        let expected_success = match (block.kind(), expected) {
+            (HirComputationBlockKind::Result, Some(TypeKind::Result { ok, .. })) => {
+                Some(ok.as_ref())
+            }
+            (HirComputationBlockKind::Option, Some(TypeKind::Option(item))) => Some(item.as_ref()),
+            _ => None,
+        };
+        let tail = self.evaluate_expression_with_expectation(
+            context,
+            block.tail(),
+            if returns {
+                AnalyzerExpressionExpectation::Unconstrained
+            } else {
+                expectation.project_checked(owner, expected_success)?
+            },
+        )?;
+        let tail_type = tail.value_type().cloned().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: block.tail(),
+            })
+        })?;
+        let ty = match block.kind() {
+            HirComputationBlockKind::Result => {
+                let expected_error = match expected {
+                    Some(TypeKind::Result { error, .. }) => Some(error.as_ref()),
+                    _ => None,
+                };
+                let error_expectation = expectation.project_checked(owner, expected_error)?;
+                let residuals = self.try_residuals_for_block(owner);
+                let error = if let Some(expected) = error_expectation.complete_type() {
+                    if residuals.iter().all(|residual| expected.accepts(residual)) {
+                        expected.clone()
+                    } else {
+                        return Err(AnalyzerExpressionError::rejected(owner));
+                    }
+                } else if residuals.is_empty() {
+                    TypeKind::Never
+                } else {
+                    common_type(residuals.iter().copied(), None)
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
+                };
+                TypeKind::Result {
+                    ok: Box::new(tail_type.clone()),
+                    error: Box::new(error),
+                }
+            }
+            HirComputationBlockKind::Option => TypeKind::Option(Box::new(tail_type.clone())),
+            HirComputationBlockKind::Seq => TypeKind::Seq(Box::new(tail_type.clone())),
+            HirComputationBlockKind::Stream => TypeKind::Stream {
+                item: Box::new(tail_type),
+                error: Box::new(TypeKind::Unit),
+            },
+        };
+        Ok(structural_expression(
+            if returns { TypeKind::Never } else { ty },
+            CheckedTypeSelection::Inferred,
+        ))
+    }
+
+    fn check_control_named_block_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        block: &arcweft_lang_hir::expr::HirNamedBlockExpr,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        self.evaluate_block_statement_uses(context, module, block.statements())?;
+        let returns = !self
+            .block_statements_completion(module, block.statements(), None)?
+            .continues();
+        let tail = self.evaluate_expression_with_expectation(
+            context,
+            block.tail(),
+            if returns {
+                AnalyzerExpressionExpectation::Unconstrained
+            } else {
+                expectation.clone()
+            },
+        )?;
+        let tail_type = tail.value_type().cloned().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: block.tail(),
+            })
+        })?;
+        let tail_selection = tail.type_selection().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: block.tail(),
+            })
+        })?;
+        let namespace = module
+            .scope_namespace(block.scope())
+            .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
+            .ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
+            })?;
+        let name =
+            arcweft_id::DeclarationName::try_new(namespace.name().as_str()).map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
+            })?;
+        Ok(CheckedExpression::value(
+            if returns { TypeKind::Never } else { tail_type },
+            tail_selection,
+            EffectSet::new(),
+            CheckedExpressionResolution::Scope(crate::final_analysis::CheckedScopeIdentity::Named(
+                name,
+            )),
+        ))
+    }
+
+    fn check_control_loop_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        loop_expression: &arcweft_lang_hir::expr::HirLoopExpr,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        self.evaluate_block_statement_uses(context, module, loop_expression.statements())?;
+        self.evaluate_expression(context, loop_expression.tail(), None)?;
+        let mut exits = Vec::new();
+        for (_, statement) in module.statements() {
+            let HirStmtKind::Break { label: None, value } = statement.kind() else {
+                continue;
+            };
+            if !break_targets_loop(module, statement.scope(), owner)
+                .map_err(AnalyzerExpressionError::fatal)?
+            {
+                continue;
+            }
+            if let Some(value) = value {
+                exits.push(self.evaluate_expression_with_expectation(
+                    context,
+                    *value,
+                    expectation.clone(),
+                )?);
+            } else {
+                exits.push(
+                    structural_expression(TypeKind::Unit, CheckedTypeSelection::Inferred).into(),
+                );
+            }
+        }
+        let (ty, selection) = if exits.is_empty() {
+            (TypeKind::Never, CheckedTypeSelection::Inferred)
+        } else {
+            let exit_types = exits
+                .iter()
+                .map(|value| {
+                    value.value_type().ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let ty = common_type(exit_types, expectation.complete_type())
+                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+            (ty, CheckedTypeSelection::Inferred)
+        };
+        Ok(structural_expression(ty, selection))
+    }
+
+    fn check_control_if_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        conditional: &arcweft_lang_hir::expr::HirIfExpr,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        self.evaluate_expression(context, conditional.condition(), Some(&TypeKind::Bool))?;
+        self.check_control_branch_pair(
+            context,
+            owner,
+            conditional.then_branch(),
+            conditional.else_branch(),
+            expectation,
+        )
+    }
+
+    fn check_control_if_let_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        conditional: &arcweft_lang_hir::expr::HirIfLetExpr,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        let scrutinee = self.evaluate_expression(context, conditional.scrutinee(), None)?;
+        let scrutinee_type = scrutinee.value_type().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: conditional.scrutinee(),
+            })
+        })?;
+        self.seed_contextual_pattern_locals(module, conditional.pattern(), scrutinee_type)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        if let Some(guard) = conditional.guard() {
+            self.evaluate_expression(context, guard, Some(&TypeKind::Bool))?;
+        }
+        self.check_control_branch_pair(
+            context,
+            owner,
+            conditional.then_branch(),
+            conditional.else_branch(),
+            expectation,
+        )
+    }
+
+    fn check_control_match_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        match_expr: &arcweft_lang_hir::expr::HirMatchExpr,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        let scrutinee = self.evaluate_expression(context, match_expr.scrutinee(), None)?;
+        let scrutinee_type = scrutinee.value_type().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: match_expr.scrutinee(),
+            })
+        })?;
+        for arm in match_expr.arms() {
+            self.seed_contextual_pattern_locals(module, arm.pattern(), scrutinee_type)
+                .map_err(AnalyzerExpressionError::fatal)?;
+        }
+        let inferred = self.infer_control_branch_type(
+            context,
+            owner,
+            expectation,
+            match_expr.arms().iter().map(|arm| arm.value()),
+        )?;
+        let branch_expectation = if let Some(inferred) = inferred.as_ref() {
+            expectation.project_checked(owner, Some(inferred))?
+        } else {
+            expectation.clone()
+        };
+        let mut values = Vec::new();
+        let mut arms = Vec::with_capacity(match_expr.arms().len());
+        for arm in match_expr.arms() {
+            if let Some(guard) = arm.guard() {
+                self.evaluate_expression(context, guard, Some(&TypeKind::Bool))?;
+            }
+            values.push(self.evaluate_expression_with_expectation(
+                context,
+                arm.value(),
+                branch_expectation.clone(),
+            )?);
+            arms.push(crate::final_analysis::CheckedMatchArmFact::new(
+                arm.guard(),
+                arm.value(),
+            ));
+        }
+        let value_types = values
+            .iter()
+            .map(|value| {
+                value.value_type().ok_or_else(|| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let ty = if value_types.is_empty() {
+            TypeKind::Never
+        } else {
+            common_type(value_types, expectation.complete_type())
+                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
+        };
+        Ok(
+            structural_expression(ty, CheckedTypeSelection::Inferred).with_match_fact(
+                crate::final_analysis::CheckedMatchFact::new(
+                    match_expr.scrutinee(),
+                    arms.into_boxed_slice(),
+                ),
+            ),
+        )
+    }
+
     pub(super) fn evaluate_block_statement_uses(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,

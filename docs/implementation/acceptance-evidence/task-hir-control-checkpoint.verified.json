@@ -1,0 +1,327 @@
+{
+  "version": 1,
+  "commit": "19e3f9c26bd510e67e84ad92a9d3f89b75307141",
+  "parent": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "tree": "80039bb977e4e71ae653cb4ae13b275753ded9e7",
+  "remote": "19e3f9c26bd510e67e84ad92a9d3f89b75307141",
+  "paths": [
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs",
+      "blob": "fb4f2e73d9b575518809c51c7c2b70f94a00182a"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests/control.rs",
+      "blob": "7efd12264bc4a9a536740a4f8a60973dc13a5352"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3018-hir-control-stack-catalog.inventory.json",
+      "blob": "3f5b8ed961f2b6d94d0fac4ac56e3f314d538cd7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3018-hir-control-stack-catalog.json",
+      "blob": "7b9330970517baee18b15964942ddb720dd67065"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3018-hir-control-stack-catalog.log",
+      "blob": "0d31c3faea34024ecc0dd9cdc475771b36f28449"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3019-hir-control-stack-runtime.json",
+      "blob": "067dcf8cbbe5ddf980a6f0fab8d365f5d374af78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3019-hir-control-stack-runtime.log",
+      "blob": "01f282cb6381d50bccdef2728edb156b65e6f71e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3019-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "052a166702e9499462ba482dc67a9f6e1e5100b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3020-hir-control-stack-catalog.inventory.json",
+      "blob": "28a5f270d0afb7cb920afda471397f7dcf21ceb2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3020-hir-control-stack-catalog.json",
+      "blob": "a49845650cd8592e0bfad9c0112d3c49e31de982"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3020-hir-control-stack-catalog.log",
+      "blob": "72e32e0c237d48b957e52a48d5ff3ec2dad9edc3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3021-hir-control-stack-runtime.json",
+      "blob": "54ef5e7bb7f25c4f809f5468577c7b17fc0736de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3021-hir-control-stack-runtime.log",
+      "blob": "21c1a0f85b1f6768aa5c1adb58d93dad8c66d02a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3021-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "cc60c9e2b6f022d3b77ea24d70f2688915fbea6e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3022-hir-control-stack-catalog.inventory.json",
+      "blob": "ac721eaf6391b6ea42320d05ec6a132f57b315f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3022-hir-control-stack-catalog.json",
+      "blob": "6e4595c4ec410b27e4e0253ae9e7eb0dae7544a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3022-hir-control-stack-catalog.log",
+      "blob": "85bc5689df2f10a812dcc845623f1e1f4b90d84a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3023-hir-control-stack-runtime.json",
+      "blob": "c39fd63fcb8c2dba60c6423fb037900a5d4b5d8b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3023-hir-control-stack-runtime.log",
+      "blob": "ca2636708c5421678228c5e42d48759b405459f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3023-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "13c6d021c8bef0abb3772af81716c6933583aebd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3024-hir-control-stack-catalog.inventory.json",
+      "blob": "7cf60f6c9a427da891eb46eeba984cd3e1f3ec51"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3024-hir-control-stack-catalog.json",
+      "blob": "4f94bd1836347d7d535acf326d19dd1c7a66f162"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3024-hir-control-stack-catalog.log",
+      "blob": "82f412bf74615ea1b50b1f759133811a409f949c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3025-hir-control-stack-runtime.json",
+      "blob": "3f3c87c4ad40975886d2901733f1421e771efb70"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3025-hir-control-stack-runtime.log",
+      "blob": "f7c72c1eff856bd9066ab1a93f1b66b8e9c72105"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3025-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "e4c6e9807be6c0f8a82b373b71be30c74505176c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3026-hir-control-stack-catalog.inventory.json",
+      "blob": "72af73137f3be255c3ed073163d1e7a0e984ce6b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3026-hir-control-stack-catalog.json",
+      "blob": "8e9a7a7289a3c4a40d02c994c260916a3b462f86"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3026-hir-control-stack-catalog.log",
+      "blob": "f771824f44e156f008df1c0ff66983dcbf3dda67"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3027-hir-control-stack-runtime.json",
+      "blob": "afecb34ad8a9de88d4a7b999fe331af4250838f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3027-hir-control-stack-runtime.log",
+      "blob": "395fe830fe779d2d77e1990e97d78296c7edcf36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3027-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "aa98e1e633b7290ac4145e8ae54dcd1843285d40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3028-hir-control-stack-catalog.inventory.json",
+      "blob": "aecc3c17160db2de8e4589da9fa2e94603e1c179"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3028-hir-control-stack-catalog.json",
+      "blob": "89bd8e3d14f20d12d51871f64ca46e88a3ae8a91"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3028-hir-control-stack-catalog.log",
+      "blob": "93f32c7bd2ac4d88586fc2ed5b5361555a4a72fa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3029-hir-control-stack-runtime.json",
+      "blob": "b3c5652a847e64e38de0cb61853e3952b255897b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3029-hir-control-stack-runtime.log",
+      "blob": "1310030cc76f96e7a0a2425d895902294460a125"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3029-hir-control-stack-runtime.terminal-audit.json",
+      "blob": "ea1062bfe5b187712754a020fc0d26a22f2c96be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3030-hir-control-clippy.input-audit.json",
+      "blob": "c14e552aff8ac24f4901b431282a82f55f59d831"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3030-hir-control-clippy.json",
+      "blob": "6d2ad6bf7afb4a99922bb509ee2bfb39bcc15d60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3030-hir-control-clippy.log",
+      "blob": "9bece5007c37e2347b42102cf07603d9e72f5378"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3031-hir-control-structure.input-audit.json",
+      "blob": "2723e5f973c27e23c5303722c37c295f867311df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3031-hir-control-structure.json",
+      "blob": "546fcae8fa88f1bdf4f2e48a29089a70e8597d1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3031-hir-control-structure.log",
+      "blob": "9fe0b38506b8873462471b4aab36da61679a4051"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-acceptance.json",
+      "blob": "332f1ba365bd19cc18ecfd5a450993f20c4fce51"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-evidence-integrity.json",
+      "blob": "0f0c8fb2d1b33519f82b1c5e0f9cd0cc0d26812a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-named-repair-executables-after.json",
+      "blob": "52e77ae99d623102edffc87ea8da3f17af46ed39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-named-repair-executables-before.json",
+      "blob": "a8b250f7965225b4b21a1144eb6dcf5a3d2d6ae8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-named-repair.graph.json",
+      "blob": "299ef921b2cfcba77c4358a7c8abe5fa23745e23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-named-repair.source-freeze.json",
+      "blob": "7944afe39dbfb8b25c774d7f99eaac02668b3bf0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-owner-executables-after.json",
+      "blob": "19848d5494adabd5c760ada558a6d0940ebbbc33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-owner-executables-before.json",
+      "blob": "8e6edff17c3f3ab0351099dfe6525bdcc0c9c227"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-owner.graph.json",
+      "blob": "299ef921b2cfcba77c4358a7c8abe5fa23745e23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-owner.source-freeze.json",
+      "blob": "9a63e4664434612afd5c0a4c5cb2d623f095f960"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-direct-executables-after.json",
+      "blob": "c73d2a1704100c3dc3db5b4c9a97d840964462e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-direct-executables-before.json",
+      "blob": "4d5da2f4911abe6fa39dcc57027053cd9b86293d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-direct.graph.json",
+      "blob": "299ef921b2cfcba77c4358a7c8abe5fa23745e23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-direct.source-freeze.json",
+      "blob": "bffe2043017dea9cb9633d66917fb4f906759970"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-executables-after.json",
+      "blob": "6cbbd111c5df0e3fd56c42204032bcb7572612ad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-executables-before.json",
+      "blob": "78c4596c4d8c21a70d4d5e94cfe666d5632835d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-family-frames.json",
+      "blob": "0f0c70d5298f41106f74a4d688ba1af2592509aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-phase-executables-after.json",
+      "blob": "b1ef24d8a5b2d12856fbd3898a7020015d9181b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-phase-executables-before.json",
+      "blob": "876d37e10a0c07ef1ef37c62ccbf68d6fac39e13"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-phase.graph.json",
+      "blob": "15230a0dbfe73f1ecf2ee76d3d3622622587dbfb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-phase.source-freeze.json",
+      "blob": "2df3546cdd4db6e97132271927fa926fe9639fcc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack.graph.json",
+      "blob": "299ef921b2cfcba77c4358a7c8abe5fa23745e23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack.source-freeze.json",
+      "blob": "38870d04f8e9be1c4bdeb1f7aa312a92c3701496"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-structure-review.json",
+      "blob": "b17058c085b466bdab0b2951cc63b5dd7fd3d194"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-expression-stack-inspection.json",
+      "blob": "fff45c954cfa5eb61c48700e88a9fa0311f954f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-sema-depth-phase-executables-after.json",
+      "blob": "84a186358279b5af829c94aee7d7f40d60782f9c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-sema-depth-phase-executables-before.json",
+      "blob": "13dfcfb388871e84d94cfc8b7aab7d61c342c2bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-sema-depth-phase.graph.json",
+      "blob": "3de349b7cb47a546ed3e3f1f0cc65539ab44fe73"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-sema-depth-phase.source-freeze.json",
+      "blob": "7d7e8c8a2eaab596bd96eb4b4824eda8c01dac9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-checkpoint.verified.json",
+      "blob": "8a78381a0996a199cd62cb76086cd3d305f57878"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-public-evidence-audit.json",
+      "blob": "53d4e4d107614949698d030518984b7455d3258e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-stack-inspection.json",
+      "blob": "1192f2ef496d9a4caceeca520b563cd336c0dea9"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "5c1ea7b0cd8649b4e9426d7c95267efc412f97c8"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "10afcdb374de7dd740dddb476fec2ee4f701557a"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "310251723da2f0ead20269cc74b253f3e957032889fb7d78f0e0cc4877bfe11a",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T12:37:43.0700711Z"
+}

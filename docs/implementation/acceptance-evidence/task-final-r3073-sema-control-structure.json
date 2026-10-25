@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "base": "19e3f9c26bd510e67e84ad92a9d3f89b75307141",
+  "name": "task-final-r3073-sema-control-structure",
+  "command": [
+    "just",
+    "structure-audit-gate"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3073-sema-control-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T13:54:00.0637189Z",
+  "finishedAt": "2026-10-25T13:54:06.8599092Z"
+}

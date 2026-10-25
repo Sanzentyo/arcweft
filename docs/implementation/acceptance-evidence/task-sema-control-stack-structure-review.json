@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "base": "19e3f9c26bd510e67e84ad92a9d3f89b75307141",
+  "workingTree": "main; five owned Rust modifications; original fourteen tracked WIP paths and six untracked files retained",
+  "owner": "arcweft-lang-sema",
+  "metadataSource": "task-final-r2285.metadata.json",
+  "manifestInputs": 99,
+  "manifestLockDrift": 0,
+  "directDependencies": 18,
+  "directWorkspaceConsumers": 12,
+  "transitiveReversePackages": 22,
+  "measurements": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "bytes": 239911,
+      "physicalLines": 5627,
+      "baseLines": 5586
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/control_results.rs",
+      "bytes": 6783,
+      "physicalLines": 189,
+      "baseLines": 176
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/state.rs",
+      "bytes": 124635,
+      "physicalLines": 3281,
+      "baseLines": 3268,
+      "embeddedTestPhysicalLines": 600
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/control_results.rs",
+      "bytes": 5644,
+      "physicalLines": 137,
+      "baseLines": 71
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+      "bytes": 73209,
+      "physicalLines": 1888,
+      "baseLines": 1783
+    }
+  ],
+  "dispositions": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "classification": "production",
+      "responsibility": "Expression expectations, HIR-family dispatch and fact evaluation. The seven control families retain their original checks, while cache lookup, checking and publication have separate stack lifetimes.",
+      "state": "Existing analyzer, candidate ledger, implicit/function stacks and original project HIR; no new authority.",
+      "api": "Private dispatch/phase methods; no visibility widening, dependency edge, I/O or contract-version change.",
+      "tests": "The existing control-result owner keeps thirty-two levels and additionally checks all thirty-two published Never types and thirty-three selected calls."
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/state.rs",
+      "classification": "production with existing embedded tests",
+      "responsibility": "The sole candidate checkpoint runner still acquires authority once and owns commit, rollback, extract and close-failure poisoning.",
+      "state": "Settlement is private to the same owner; operation errors are converted only after successful rollback.",
+      "api": "No checkpoint lifecycle or authority is exposed."
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+      "classification": "production",
+      "responsibility": "Prepared and final execution-effect sealing. A private in-progress expression row carries the same fact-derived flags, row and implicit-body row through receiver, operand, body, owned-child and final-publication phases.",
+      "state": "The existing effect sealer remains the sole owner of active sets, row caches, bodies and closure catalog. The in-progress carrier is heap-owned during recursion; selected edges, place semantics, latent boundaries and publication checks remain in the original order.",
+      "api": "No second fold, grammar traversal, schema, public API, unsafe or I/O path."
+    }
+  ],
+  "acceptanceLimitation": "The thirty-two-level semantic analysis still aborts in the focused run. This checkpoint is not acceptance of that case or of the whole goal. Full owner and Clippy results are recorded separately.",
+  "finalStructureRun": "task-final-r3079-sema-control-structure"
+}

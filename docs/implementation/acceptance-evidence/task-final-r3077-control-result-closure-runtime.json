@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "19e3f9c26bd510e67e84ad92a9d3f89b75307141",
+  "name": "task-final-r3077-control-result-closure-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3077-control-result-closure-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T13:57:50.2283270Z",
+  "finishedAt": "2026-10-25T14:00:02.2002137Z"
+}

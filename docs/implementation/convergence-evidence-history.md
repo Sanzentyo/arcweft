@@ -11676,3 +11676,49 @@ production ownerは2,555 physical LOC（基点2,422、増加133）、test owner�
 最新の全23逆依存runtime・workspace check／Clippy、Semaの32階層受入はこのcutの結果に含めない。
 Generic Matchの受入・公開済み状態を維持する。
 [検証原本の保全一覧](acceptance-evidence/task-hir-control-evidence-integrity.json)。
+
+## Sema私有frame分離の中間checkpoint — 2026-10-25
+
+基点は公開main `19e3f9c26bd510e67e84ad92a9d3f89b75307141`。前段78 pathのparentは
+`9c605ebf917c7dbe705a09680c3cf10483c0e35a`、treeは
+`80039bb977e4e71ae653cb4ae13b275753ded9e7`、full patch SHA256は
+`310251723da2f0ead20269cc74b253f3e957032889fb7d78f0e0cc4877bfe11a`。
+全78公開blobと原本73件の公開byte hashは差分0、元tracked WIP 14件不変・index空を確認した。
+[前段公開照合](acceptance-evidence/task-hir-control-checkpoint.verified.json)、
+[公開原本照合](acceptance-evidence/task-hir-control-public-evidence-audit.json)。
+
+5 Rust pathで、cache照合、未検査式の検査とfact公開、7 control family、If／IfLetの
+branch型推論と確定検査、candidateの実行と確定処理をprivateな段階へ分けた。
+元HIRをborrowし、原checkpoint・rollback・extract・close失敗後のpoisoningの所有者を維持する。
+Styleの先行検査と通常controlへの継続も元の順序に保った。
+準備段階のeffect rowも、同じsealerが保つ一つのheap-owned carrierを各phaseがborrowする。
+receiver／place、selected operand、closure、latent body、owned child、最終公開の規則は変更していない。
+別solver、別traversal、公開API、Cargo edge、unsafe、I/O、契約versionを追加していない。
+
+このcheckpointは32階層ケースの修復完了ではない。途中のR3032・R3040・R3050・R3062は
+実際にコンパイル終了101で、runtimeを開始できていない。helper抽出の型・import・参照、
+診断markerのformat文字列を直した。ほかのfocused runも原本どおりABORTとして保持する。
+R3053の全Semaは1,356 PASS／1 ABORT、181.768秒。effect分離後のR3075も同件数、100.860秒。
+後続成功へ書き換えたり、未開始runtimeを実行済みと数えたりしていない。
+
+診断入力R3055は32個のIfへ進み、1,121回のIf／Callの到達markerを記録した。
+R3065はitem解析・expression転記の後、callable確定へ進んだところでABORTした。
+実テストPDBのprepared effect `seal_expression` frameは当時39,832 byteだった。
+最初のeffect分離後R3067は8,808 byteだが同じケースはABORTしており、frame縮小を受入と呼ばない。
+[測定と限定](acceptance-evidence/task-sema-control-stack-frame-observations.json)。
+すべての一時print／counter／backtraceを除去し、現在の5 pathの入力へ戻して検証した。
+
+最終R3076／R3077はSema全target・全feature・locked、**1,357実行／1,356 PASS／1 ABORT**、
+除外0、終了100、130.343秒。5 executable・3,986非文書入力の前後hash差分0。
+残るケースは32階層Neverのstack overflowで、32個の公開Never型・33 selected callを要求したまま。
+stack／階層／timeout／budget／assertionを緩めず、失敗をignoreにもしていない。
+受入済みGeneric MatchのSema側144識別子は全PASSへ照合した。Compiler側7件は今回の入力で未実行で、
+過去の151件PASSや受入・公開full SHAを保持する。全体goalやこの追加ケースの未達でGeneric Matchを戻さない。
+[全件と受入識別子の照合](acceptance-evidence/task-sema-control-stack-checkpoint.json)。
+
+R3078のSema owner Clippyは終了0・警告あり、R3079の正規構造gateも終了0。
+双方3,986入力の前後差分0。変更ownerの実測値・責任・state・依存方向・private APIと
+[cohesion disposition](acceptance-evidence/task-sema-control-stack-structure-review.json)を記録した。
+最新Compiler全件、全22逆依存runtime、workspace check／Clippy、Tier2／Native-Web parityは未実行。
+ユーザーの中間commit方針に従う部分checkpointであり、32階層・全体goalの完了とはしない。
+実行証跡216件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-sema-control-stack-evidence-integrity.json)。

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "19e3f9c26bd510e67e84ad92a9d3f89b75307141",
+  "name": "task-final-r3076-control-result-closure-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3076-control-result-closure-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T13:57:07.0566610Z",
+  "finishedAt": "2026-10-25T13:57:49.0139906Z"
+}

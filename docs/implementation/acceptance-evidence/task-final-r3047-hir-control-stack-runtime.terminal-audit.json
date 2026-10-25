@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "19e3f9c26bd510e67e84ad92a9d3f89b75307141",
+  "run": "task-final-r3047-hir-control-stack-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   7.232s] 1 test run: 0 passed, 1 failed, 1332 skipped",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 1332,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "ABORT",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T13:23:30.3405610Z"
+}

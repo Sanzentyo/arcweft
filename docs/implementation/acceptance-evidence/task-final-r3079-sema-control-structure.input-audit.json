@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "run": "task-final-r3079-sema-control-structure",
+  "actualExitCode": 0,
+  "scope": [
+    "just",
+    "structure-audit-gate"
+  ],
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T13:59:14.4399706Z"
+}

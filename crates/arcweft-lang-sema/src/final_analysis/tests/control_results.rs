@@ -122,6 +122,19 @@ fn deeply_nested_unannotated_diverging_branches_keep_the_never_result() {
     let world = fixture(&source, None);
     let analysis =
         analyze(&world).expect("Never supplies a result context without repeated synthesis");
+    let project = world.project.analysis_view().unwrap();
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let mut controls = 0;
+    for (owner, expression) in module.expressions() {
+        if matches!(expression.kind(), HirExprKind::If(_)) {
+            assert_eq!(
+                analysis.expression(owner).unwrap().value_type(),
+                Some(&TypeKind::Never)
+            );
+            controls += 1;
+        }
+    }
+    assert_eq!(controls, 32);
     assert_eq!(analysis.calls().count(), 33);
     assert!(
         analysis

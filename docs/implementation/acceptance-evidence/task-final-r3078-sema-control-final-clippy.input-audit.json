@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3078-sema-control-final-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T13:59:02.6240189Z"
+}

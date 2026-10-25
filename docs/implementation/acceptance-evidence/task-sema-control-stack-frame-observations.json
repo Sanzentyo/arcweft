@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "base": "19e3f9c26bd510e67e84ad92a9d3f89b75307141",
+  "method": "Read-only llvm-pdbutil dump --symbols --jmc on the actual Sema test executable PDB; procedure names reset at S_END and inline sites before matching the following frame size.",
+  "before": {
+    "inputRun": "task-final-r3065-hir-control-stack-runtime",
+    "frames": [
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::seal_expression",
+        "bytes": 39832
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::seal_statement",
+        "bytes": 26248
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::StatementEffectSealer::seal_expression<arcweft_lang_sema::final_analysis::statement_seal::CheckedStatementSeal>",
+        "bytes": 17208
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::StatementEffectSealer::seal_statement<arcweft_lang_sema::final_analysis::statement_seal::CheckedStatementSeal>",
+        "bytes": 16792
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::StatementEffectSealer::seal<arcweft_lang_sema::final_analysis::statement_seal::CheckedStatementSeal>",
+        "bytes": 12968
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::fold_declaration_phases",
+        "bytes": 12552
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::seal",
+        "bytes": 10296
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::StatementEffectSealer::validate_callable_rows<arcweft_lang_sema::final_analysis::statement_seal::CheckedStatementSeal>",
+        "bytes": 9800
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::StatementEffectSealer::complete_statement_fold<arcweft_lang_sema::final_analysis::statement_seal::CheckedStatementSeal>",
+        "bytes": 5000
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::fold_body",
+        "bytes": 4984
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::finish",
+        "bytes": 4344
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::seal_declaration",
+        "bytes": 4328
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::StatementEffectSealer::fold_body<arcweft_lang_sema::final_analysis::statement_seal::CheckedStatementSeal>",
+        "bytes": 4296
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::prepare_expression_body_effects",
+        "bytes": 2920
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::from_facts",
+        "bytes": 2776
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::prepare_declaration_execution_effects",
+        "bytes": 2712
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::prepare_execution_effects",
+        "bytes": 2520
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::seal_statement_effects<arcweft_lang_sema::final_analysis::statement_seal::CheckedStatementSeal>",
+        "bytes": 2344
+      }
+    ]
+  },
+  "firstEffectSplit": {
+    "inputRun": "task-final-r3067-hir-control-stack-runtime",
+    "frames": [
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::from_facts",
+        "bytes": 2776
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::seal_statement",
+        "bytes": 26248
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::seal_expression",
+        "bytes": 8808
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::seal_declaration",
+        "bytes": 4328
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::fold_expression_body",
+        "bytes": 5720
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::fold_declaration_phases",
+        "bytes": 12552
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::fold_expression_operands",
+        "bytes": 7416
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::fold_expression_receiver",
+        "bytes": 4504
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::record_closure_effect_body",
+        "bytes": 5560
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::finish_expression_effect_fold",
+        "bytes": 2280
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::fold_expression_owned_children",
+        "bytes": 9064
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::prepare_expression_effect_fold",
+        "bytes": 7192
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::seal",
+        "bytes": 10296
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::finish",
+        "bytes": 4344
+      },
+      {
+        "name": "arcweft_lang_sema::final_analysis::statement_effects::PreparedExecutionEffectSealer::fold_body",
+        "bytes": 4984
+      }
+    ]
+  },
+  "peHeader": {
+    "inputRun": "task-final-r3067-hir-control-stack-runtime",
+    "path": "target/debug/deps/arcweft_lang_sema-71f74520dae64c37.exe",
+    "sizeOfStackReserve": 1048576,
+    "sizeOfStackCommit": 4096,
+    "qualification": "The image header is not a measurement of the executing test thread's available stack."
+  },
+  "scope": "These frame records support diagnosis, not acceptance. Both runs still aborted. No stack, recursion, timeout, budget or assertion limit was changed."
+}
