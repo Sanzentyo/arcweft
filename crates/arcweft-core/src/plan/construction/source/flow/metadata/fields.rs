@@ -189,7 +189,20 @@ pub(super) fn preflight(
             reader.optional_text()?;
             reader.pattern()?;
             reader.producer_definition()?;
-            reader.locals()?;
+            let count = reader.metadata.u32()? as usize;
+            reader
+                .counts
+                .array::<crate::plan::RuntimeProgramTaskCapture<crate::plan::RuntimeLocalSeedId>>(
+                    count,
+                )?;
+            for _ in 0..count {
+                let tag = reader.metadata.byte()?;
+                crate::value::RuntimeLocalReadMode::from_semantic_tag(tag).ok_or(Error::Tag {
+                    kind: "Program capture mode",
+                    tag,
+                })?;
+                reader.local()?;
+            }
             reader.body()?;
         }
         29 => {

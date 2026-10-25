@@ -19,7 +19,8 @@ impl AwbcFlowLowerer<'_, '_> {
         let mut frame = FrameBuilder::new();
         let mut params = Vec::with_capacity(source.captures().len());
         let mut input_ownership = Vec::with_capacity(source.captures().len());
-        for (position, local) in source.captures().iter().copied().enumerate() {
+        for (position, capture) in source.captures().iter().enumerate() {
+            let local = capture.local;
             let declaration = self
                 .plan
                 .local_declarations()

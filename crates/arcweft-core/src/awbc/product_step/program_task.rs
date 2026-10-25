@@ -7,7 +7,7 @@ mod tests;
 
 use super::{AwbcProductStepExecutor, ProductChildFiber, ProductChildFiberOwner, ProductStepError};
 use crate::awbc::fiber::{
-    AwbcFiberRoot, FiberCursor, FiberState, FiberStateError, PreparedYieldedRegisterWrite,
+    FiberCursor, FiberStateError, PreparedProgramTaskFiber, PreparedYieldedRegisterWrite,
     validate_program_task_argument_refs,
 };
 use crate::awbc::schema::{AwbcRegisterId, AwbcTaskPlanId};
@@ -42,8 +42,6 @@ pub(in crate::awbc) enum ProgramTaskError {
     Parent,
     #[error("Program start exceeds its child identity or collection capacity")]
     Capacity,
-    #[error("Program capture {position} is not unrestricted")]
-    Capture { position: usize },
 }
 
 enum ParentSlot {
@@ -58,7 +56,7 @@ struct PreparedProgramStart {
     destination: crate::pattern::RuntimeSemanticTypeId,
     admission: RuntimeRetainedValueAdmission,
     spec: TaskSpec,
-    child: FiberState,
+    child: PreparedProgramTaskFiber,
     parent_id: RuntimeFiberInstanceId,
     generation: crate::task::GenerationId,
     next_generation: u64,
@@ -127,13 +125,14 @@ impl AwbcProductStepExecutor {
             ParentSlot::Child(index) => &mut self.child_fibers[index].fiber,
         };
         assert_eq!(parent.instance, prepared.parent_id);
+        let child = prepared.child.commit(parent);
         parent.commit_yielded_register_write_prepared(prepared.write, value);
         self.child_fibers.push_back(ProductChildFiber {
             owner: ProductChildFiberOwner::Program {
                 launch,
                 parent: prepared.parent_id,
             },
-            fiber: prepared.child,
+            fiber: child,
             runtime_generation: prepared.generation,
             pending_host_call: None,
         });
@@ -238,25 +237,14 @@ impl AwbcProductStepExecutor {
             request: TaskRequest::Program(checked.source().clone()),
             debug_label: producer.debug_label.clone(),
         };
-        let copies = values
-            .iter()
-            .enumerate()
-            .map(|(position, value)| {
-                value
-                    .live_view()
-                    .copy_unrestricted()
-                    .ok_or(ProgramTaskError::Capture { position })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let child = FiberState::for_function_with_arguments_prepared(
+        let child = parent.prepare_program_task_fiber(
             &self.program,
-            AwbcFiberRoot::Task(plan),
-            copies,
+            plan,
+            captures,
             inputs,
             instance,
             self.next_generation,
-            parent.budget.quantum.max(1),
-        );
+        )?;
         Ok(PreparedProgramStart {
             parent: slot,
             write,

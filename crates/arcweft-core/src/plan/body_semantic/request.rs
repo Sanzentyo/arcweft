@@ -425,7 +425,8 @@ impl OriginalRequestEndpoint<'_> {
                 });
             }
             let mut arguments = Vec::with_capacity(actual);
-            for (ordinal, local) in captures.iter().copied().enumerate() {
+            for (ordinal, capture) in captures.iter().enumerate() {
+                let local = capture.local;
                 meter.charge_work(1)?;
                 let ty = endpoint
                     .source_local_type(local)

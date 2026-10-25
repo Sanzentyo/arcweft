@@ -216,6 +216,28 @@ impl Reader<'_, '_, '_> {
         self.counts.array::<RuntimeLocalSeedId>(count)?;
         (0..count).map(|_| self.local()).collect()
     }
+    fn program_task_captures(
+        &mut self,
+    ) -> Result<Vec<crate::plan::RuntimeProgramTaskCapture<RuntimeLocalSeedId>>, Error> {
+        let count = self.metadata.u32()? as usize;
+        self.counts
+            .array::<crate::plan::RuntimeProgramTaskCapture<RuntimeLocalSeedId>>(count)?;
+        (0..count)
+            .map(|_| {
+                let tag = self.metadata.byte()?;
+                let mode = crate::value::RuntimeLocalReadMode::from_semantic_tag(tag).ok_or(
+                    Error::Tag {
+                        kind: "Program capture mode",
+                        tag,
+                    },
+                )?;
+                Ok(crate::plan::RuntimeProgramTaskCapture {
+                    local: self.local()?,
+                    mode,
+                })
+            })
+            .collect()
+    }
     fn body(&mut self) -> Result<Vec<RuntimeFlowOpSeed>, Error> {
         let count = self.bodies.u32()? as usize;
         if count > self.seeds.len() {
@@ -949,7 +971,7 @@ impl Reader<'_, '_, '_> {
                 name: self.optional_text()?,
                 binding: self.pattern()?,
                 producer: self.producer_definition()?,
-                captures: self.locals()?,
+                captures: self.program_task_captures()?,
                 body: self.body()?,
             },
             29 => Op::Scope {

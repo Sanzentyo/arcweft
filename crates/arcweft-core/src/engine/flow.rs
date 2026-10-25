@@ -918,47 +918,20 @@ impl Engine {
                     );
                     return;
                 }
-                let super::thread::PreparedProgramTask {
-                    spec,
-                    mut child,
-                    next_fiber_id,
-                } = match self.prepare_program_task(&source_site) {
+                let prepared = match self.prepare_program_task(&source_site) {
                     Ok(prepared) => prepared,
                     Err(error) => {
                         self.fail_eval(error, output);
                         return;
                     }
                 };
-                let accepted =
-                    self.need_producers
-                        .ensure_program_task_with_binding(spec, |receipt| {
-                            let handle = crate::task::RuntimeNeedHandle::try_from(receipt.clone())
-                                .map_err(super::thread::ProgramTaskPreparationError::Handle)?;
-                            crate::pattern::match_runtime_pattern_owned(
-                                &self.plan,
-                                binding,
-                                RuntimeValue::NeedHandle(handle),
-                                self.fiber.frame.env.function_instantiation(),
-                            )
-                            .map_err(super::thread::ProgramTaskPreparationError::Binding)?
-                            .ok_or(super::thread::ProgramTaskPreparationError::BindingMismatch)
-                        });
-                let (accepted, launch, bindings) = match accepted {
+                let accepted = match self.start_prepared_program_task(prepared, binding) {
                     Ok(accepted) => accepted,
                     Err(error) => {
                         self.fail_eval(error, output);
                         return;
                     }
                 };
-                child.launch = super::FlowFiberLaunch::Program(launch);
-                // Even an empty child admits implicit Unit before retirement.
-                // All fallible preparation and binding precede these commits.
-                child.frame.status = FlowFiberStatus::Running;
-                self.child_fibers.push_back(child);
-                self.next_fiber_id = next_fiber_id;
-                self.run_child_next = true;
-                self.fiber.frame.env.bind_all(bindings);
-                self.task_request_quota_remaining -= 1;
                 self.advance_if_needed(next_op_index);
                 output.requests.tasks.push(accepted);
             }

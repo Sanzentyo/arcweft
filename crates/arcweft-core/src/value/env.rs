@@ -8,6 +8,40 @@ use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::scope::RuntimeScopeIdentity;
 use crate::task::RuntimeProgramOwner;
 
+struct PreparedCaptureEnvironment {
+    environment: RuntimeEnv,
+    moves: Vec<(usize, RuntimeLocalDeclarationId)>,
+}
+
+/// The exclusive parent borrow keeps every deferred Move in place until the
+/// complete task receipt and result binding have been admitted.
+pub(crate) struct PreparedRuntimeTaskCaptures<'parent> {
+    source: &'parent mut RuntimeEnv,
+    prepared: PreparedCaptureEnvironment,
+}
+
+impl PreparedRuntimeTaskCaptures<'_> {
+    pub(crate) fn function_instantiation(
+        &self,
+    ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
+        self.prepared.environment.function_instantiation()
+    }
+
+    pub(crate) fn commit(self) -> RuntimeEnv {
+        let Self {
+            source,
+            mut prepared,
+        } = self;
+        for (index, local) in prepared.moves {
+            prepared.environment.scopes[0].slots[index].value = source
+                .take(local)
+                .expect("the exclusive capture preparation retains its admitted source")
+                .into();
+        }
+        prepared.environment
+    }
+}
+
 impl super::RuntimeScopeTypeContext {
     pub(crate) fn instantiation(
         &self,
@@ -388,43 +422,77 @@ impl RuntimeEnv {
         &self,
         locals: &[RuntimeLocalDeclarationId],
     ) -> Result<Self, RuntimeEvalError> {
-        let mut selected = locals
+        let captures = locals
             .iter()
             .copied()
-            .collect::<std::collections::BTreeSet<_>>();
-        for local in &selected {
+            .map(crate::plan::RuntimeProgramTaskCapture::copy)
+            .collect::<Vec<_>>();
+        Ok(self.prepare_capture_environment(&captures)?.environment)
+    }
+
+    pub(crate) fn prepare_task_captures(
+        &mut self,
+        captures: &[crate::plan::RuntimeProgramTaskCapture],
+    ) -> Result<PreparedRuntimeTaskCaptures<'_>, RuntimeEvalError> {
+        let prepared = self.prepare_capture_environment(captures)?;
+        Ok(PreparedRuntimeTaskCaptures {
+            source: self,
+            prepared,
+        })
+    }
+
+    fn prepare_capture_environment(
+        &self,
+        captures: &[crate::plan::RuntimeProgramTaskCapture],
+    ) -> Result<PreparedCaptureEnvironment, RuntimeEvalError> {
+        let mut selected = std::collections::BTreeSet::new();
+        for capture in captures {
+            if !selected.insert(capture.local) {
+                return Err(RuntimeEvalError::DuplicateProgramTaskCapture {
+                    local: capture.local,
+                });
+            }
             let value = self
-                .get(*local)
-                .ok_or(RuntimeEvalError::UninitializedLocal(*local))?;
-            if !value.ownership().permits_copy() {
-                return Err(RuntimeEvalError::AffineLocalCopy(*local));
+                .get(capture.local)
+                .ok_or(RuntimeEvalError::UninitializedLocal(capture.local))?;
+            if capture.mode == super::RuntimeLocalReadMode::Copy
+                && !value.ownership().permits_copy()
+            {
+                return Err(RuntimeEvalError::AffineLocalCopy(capture.local));
             }
         }
         // A captured task owns a new lexical root, not the caller's scope or
         // return stack. Only its nearest authenticated type environment is
         // inherited; nested calls above that root retain their own contexts.
         let function_context = self.source_function_context();
-        let mut slots = Vec::with_capacity(selected.len());
-        for local in locals {
-            if selected.remove(local) {
-                slots.push(RuntimeLocalSlot::new(
-                    *local,
-                    self.get(*local)
-                        .expect("all captures were inspected before copying")
-                        .clone()
-                        .into(),
-                ));
-            }
+        let mut slots = Vec::with_capacity(captures.len());
+        let mut moves = Vec::new();
+        for (index, capture) in captures.iter().enumerate() {
+            let value = match capture.mode {
+                super::RuntimeLocalReadMode::Copy => self
+                    .get(capture.local)
+                    .expect("all capture reads were inspected before any copy")
+                    .clone()
+                    .into(),
+                super::RuntimeLocalReadMode::Move => {
+                    moves.push((index, capture.local));
+                    Default::default()
+                }
+            };
+            slots.push(RuntimeLocalSlot::new(capture.local, value));
         }
-        Ok(Self {
-            scopes: vec![RuntimeScope {
-                identity: RuntimeScopeIdentity::Anonymous,
-                presentation_scope: None,
-                function_context,
-                slots,
-            }],
-            spare_scopes: Vec::new(),
-            assignment_discards: crate::line_task::RuntimeHandleDropAuthorization::default(),
+        Ok(PreparedCaptureEnvironment {
+            moves,
+            environment: Self {
+                scopes: vec![RuntimeScope {
+                    identity: RuntimeScopeIdentity::Anonymous,
+                    presentation_scope: None,
+                    function_context,
+                    slots,
+                }],
+                spare_scopes: Vec::new(),
+                assignment_discards: crate::line_task::RuntimeHandleDropAuthorization::default(),
+            },
         })
     }
 
@@ -1452,6 +1520,73 @@ mod tests {
 
     fn local(ordinal: u32) -> RuntimeLocalDeclarationId {
         RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::new(ordinal).unwrap())
+    }
+
+    #[test]
+    fn program_capture_moves_commit_once_after_preparation_and_keep_source_order() {
+        use crate::plan::RuntimeProgramTaskCapture as Capture;
+        let affine = local(1);
+        let scalar = local(2);
+        let mut env = RuntimeEnv::default();
+        let need = crate::tests::reusable_need("capture.move");
+        let correlation = need.correlation();
+        env.set(affine, RuntimeValue::NeedHandle(need));
+        env.set(scalar, RuntimeValue::Bool(true));
+        let captures = [Capture::copy(scalar), Capture::moved(affine)];
+
+        drop(env.prepare_task_captures(&captures).unwrap());
+        assert!(
+            matches!(env.get(affine), Some(RuntimeValue::NeedHandle(handle)) if handle.correlation() == correlation)
+        );
+        assert_eq!(env.get(scalar), Some(&RuntimeValue::Bool(true)));
+
+        let mut child = env.prepare_task_captures(&captures).unwrap().commit();
+        assert_eq!(env.get(affine), None);
+        assert_eq!(env.get(scalar), Some(&RuntimeValue::Bool(true)));
+        assert_eq!(
+            child.scopes[0]
+                .slots
+                .iter()
+                .map(|slot| slot.local)
+                .collect::<Vec<_>>(),
+            vec![scalar, affine]
+        );
+        assert!(
+            matches!(child.take(affine), Some(RuntimeValue::NeedHandle(handle)) if handle.correlation() == correlation)
+        );
+        assert_eq!(child.take(affine), None);
+        assert_eq!(child.get(scalar), Some(&RuntimeValue::Bool(true)));
+    }
+
+    #[test]
+    fn rejected_program_capture_preparation_preserves_all_earlier_moves() {
+        use crate::plan::RuntimeProgramTaskCapture as Capture;
+        let first = local(1);
+        let second = local(2);
+        let missing = local(3);
+        let mut env = RuntimeEnv::default();
+        let first_need = crate::tests::reusable_need("capture.first");
+        let second_need = crate::tests::reusable_need("capture.second");
+        let correlations = [first_need.correlation(), second_need.correlation()];
+        env.set(first, RuntimeValue::NeedHandle(first_need));
+        env.set(second, RuntimeValue::NeedHandle(second_need));
+        assert!(matches!(
+            env.prepare_task_captures(&[Capture::moved(first), Capture::copy(second)]),
+            Err(RuntimeEvalError::AffineLocalCopy(local)) if local == second
+        ));
+        assert!(matches!(
+            env.prepare_task_captures(&[Capture::moved(first), Capture::moved(missing)]),
+            Err(RuntimeEvalError::UninitializedLocal(local)) if local == missing
+        ));
+        assert!(matches!(
+            env.prepare_task_captures(&[Capture::moved(first), Capture::moved(first)]),
+            Err(RuntimeEvalError::DuplicateProgramTaskCapture { local }) if local == first
+        ));
+        for (local, correlation) in [first, second].into_iter().zip(correlations) {
+            assert!(
+                matches!(env.get(local), Some(RuntimeValue::NeedHandle(handle)) if handle.correlation() == correlation)
+            );
+        }
     }
 
     #[test]

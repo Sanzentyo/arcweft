@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "run": "task-final-r3156-program-capture-owner-catalog",
+  "actualExitCode": 101,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "-E",
+    "binary(=arcweft_core) | binary(=arcweft_runtime_plan)",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T23:42:02.3441295Z"
+}

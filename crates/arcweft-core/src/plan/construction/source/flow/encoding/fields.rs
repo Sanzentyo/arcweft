@@ -521,7 +521,11 @@ impl Writer {
             } => {
                 self.optional_text(name.as_deref())?;
                 self.producer_definition(producer, plan)?;
-                self.locals(captures)?;
+                self.count(captures.len())?;
+                for capture in captures {
+                    self.byte(capture.mode.semantic_tag())?;
+                    self.local(capture.local)?;
+                }
             }
             FlowOp::Scope { identity, .. } | FlowOp::EnterScope { identity } => {
                 self.scope(identity)?;

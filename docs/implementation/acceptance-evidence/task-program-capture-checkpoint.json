@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "base": "7c94e50db9e8fe78357bbb71af9ead3e2ab15360",
+  "checkpoint": "Explicit Program capture Copy/Move migration; acceptance pending",
+  "runtime": {
+    "version": 1,
+    "base": "7c94e50db9e8fe78357bbb71af9ead3e2ab15360",
+    "run": "task-final-r3159-program-capture-current-runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [  34.008s] 2166 tests run: 2164 passed, 2 failed, 0 skipped",
+    "caseRowSource": "complete-live-status-before-terminal-summary",
+    "executed": 2166,
+    "passed": 2164,
+    "failed": 2,
+    "skipped": 0,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3989,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::program_task::tests::program_need_moves_its_original_affine_input_through_every_public_save"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "engine::thread::tests::ordinary_program_need_moves_an_affine_capture_and_retains_it_through_rollback"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-25T23:55:07.0191244Z"
+  },
+  "fixtureFailure": "Both new Native/AWBC cases stop before execution at FlowRuntimeId::canonical with reserved family prefix flow",
+  "fixtureRepair": "Use canonical owned_program_capture path without the family prefix; one fixture line changed after R3159, not yet rerun",
+  "sourceDifferenceAfterRuntime": [
+    "crates/arcweft-core/src/plan/task_source/template_tests.rs"
+  ],
+  "requiredPending": [
+    "Native/AWBC genuine affine Program capture execution",
+    "Source rejection and duplicate/move failure atomicity coverage review",
+    "workspace check and Clippy after final input",
+    "Core doctest and structural audit",
+    "full 53-package reverse consumer runtime"
+  ],
+  "sourceInputs": 3989,
+  "sourceDriftAtRuntimeTerminal": 0,
+  "limitsAssertionsWeakened": false,
+  "artifactCopyMove": false,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/audit-nextest-final-result.ps1",
+      "bytes": 5266,
+      "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3155-program-capture-transfer-check.input-audit.json",
+      "bytes": 376,
+      "sha256": "4219718c8f982f4442c51647a4bf26c3973252bda5a4683cace8bb0db0cedd16"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3155-program-capture-transfer-check.json",
+      "bytes": 570,
+      "sha256": "528f065b445eec74a672fdbbb482a44184869327021bc1285cc34a25047636eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3155-program-capture-transfer-check.log",
+      "bytes": 92345,
+      "sha256": "e45454ef931ee977080db8b9a8d8f786b9407603cdc8ccd3a5406e4e6eb4e0ac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3156-program-capture-owner-catalog.input-audit.json",
+      "bytes": 503,
+      "sha256": "76f1d164c7f85d874bd445a8ef95a2460cee9cb39296a1e65939ea1cd2350a48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3156-program-capture-owner-catalog.json",
+      "bytes": 696,
+      "sha256": "a9d75b89d6f0ec43fcfdefc974083befb1e374ebcab6abc1687cadd60e9d2f26"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3156-program-capture-owner-catalog.log",
+      "bytes": 87072,
+      "sha256": "e6c0a51a0617a2cbf0379df232b47b3e71e266a2dd9621dd9cfb793b109ffa57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3157-program-capture-affine-catalog.input-audit.json",
+      "bytes": 423,
+      "sha256": "ae7c13b4338189a8442840aa7c53c28aa5f4f20eeb6fe95d061cb39ecaf6b0e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3157-program-capture-affine-catalog.json",
+      "bytes": 617,
+      "sha256": "0664b8a4ca4e8c3a00253b7a5818bd2cc9733b59be97bfd847136d29482149fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3157-program-capture-affine-catalog.log",
+      "bytes": 86217,
+      "sha256": "4f86be3a3d652cee323bcf90c0797c39f8facf7a43d88a1c4ae224bb53e6a092"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3158-program-capture-current-catalog.input-audit.json",
+      "bytes": 422,
+      "sha256": "da7358326990dcce0774db326ba3d132bd55bdb1fba10760fa2eee919bb2874c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3158-program-capture-current-catalog.inventory.json",
+      "bytes": 549543,
+      "sha256": "5eeda475b50c1297fc6c2684a4c88a2919c8c073d3a52397e41cc434d67f8fcc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3158-program-capture-current-catalog.json",
+      "bytes": 617,
+      "sha256": "7c75a3fd8181b5e36a5c77e660ae9243c9f97e5367173c50c1ce0fd8fa671839"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3158-program-capture-current-catalog.log",
+      "bytes": 462815,
+      "sha256": "7aed493fd9397ce4eb7f4fa480f1a3522c9d2a6ef9ff7c80f21db282f7bf56e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3159-program-capture-current-runtime.json",
+      "bytes": 635,
+      "sha256": "c7cc50dc5fffb4995d42c8bbdf4f05176448dd036d66b0dfe36cbfed3f429198"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3159-program-capture-current-runtime.log",
+      "bytes": 422927,
+      "sha256": "74ff2e09dc6cb8f81716704705d54270d9ddc3d8511b6a0c1645725d93cd0635"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3159-program-capture-current-runtime.terminal-audit.json",
+      "bytes": 1056,
+      "sha256": "44287caf6a3a2e3f1b808635608550a401d57a3911bf32e1e5bfd81430329598"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-affine.source-freeze.json",
+      "bytes": 779791,
+      "sha256": "add9220d90504aa6f55ddf876ccb0f46e8507721fac701dd6e3e5cdcebeb7644"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-compile.source-freeze.json",
+      "bytes": 779803,
+      "sha256": "4ecc492307d4713d834531b71b09e3017e4342736af16d85b314b2c10adc0107"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-current.executables-after.json",
+      "bytes": 732,
+      "sha256": "36df89ecb137968b94342c5be959a76a05a35f9fbbcf0af1e3c910c23e6b29f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-current.executables-before.json",
+      "bytes": 733,
+      "sha256": "62ce34a9c124d8d402faadb81c0208a4151c231ceba85d311e083c3e6565c9db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-current.source-freeze.json",
+      "bytes": 779827,
+      "sha256": "b1f8ee848541691519f36e05f098815b3ab2b3db7418a6e8b6c432ed808b750f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owner.source-freeze.json",
+      "bytes": 779769,
+      "sha256": "c9a644d2a30f30bdc3ee00828c7ebaa15a961c4f8e6daa72034d10140d3870a0"
+    }
+  ],
+  "recordedAt": "2026-10-25T23:56:19.3224802Z",
+  "executableHashes": 2,
+  "executableDrift": 0
+}

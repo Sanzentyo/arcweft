@@ -44,7 +44,10 @@ fn executable_from(original: RuntimeTaskSourceProgram) -> AwbcProgram {
     else {
         panic!("fixture retains its original Thread")
     };
-    let declaration = original.local_declarations().get(captures[0]).unwrap();
+    let declaration = original
+        .local_declarations()
+        .get(captures[0].local)
+        .unwrap();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
     AwbcProgram {
@@ -127,6 +130,7 @@ fn executable_from(original: RuntimeTaskSourceProgram) -> AwbcProgram {
             execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
                 source: row.key().into(),
                 kernel: AwbcFunctionId(0),
+                capture_modes: captures.iter().map(|capture| capture.mode).collect(),
             }),
         }],
         ..AwbcProgram::default()
@@ -279,6 +283,7 @@ fn program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drif
         Field::HandleType,
         Field::Definition,
         Field::Capture { index: 0 },
+        Field::CaptureMode { index: 0 },
     ] {
         let mut code = executable();
         match field {
@@ -302,6 +307,12 @@ fn program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drif
                     RuntimeFunctionInputTransfer::Transferred(
                         crate::plan::RuntimeFunctionCaptureMode::Copy,
                     )
+            }
+            Field::CaptureMode { .. } => {
+                let AwbcTaskPlanExecution::Program(body) = &mut code.task_plans[0].execution else {
+                    unreachable!()
+                };
+                body.capture_modes[0] = crate::value::RuntimeLocalReadMode::Move;
             }
             _ => unreachable!(),
         }

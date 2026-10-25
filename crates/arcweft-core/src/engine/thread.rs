@@ -44,6 +44,7 @@ pub(super) struct PreparedProgramTask {
     pub(super) spec: TaskSpec,
     pub(super) child: FlowFiber,
     pub(super) next_fiber_id: u64,
+    captures: Vec<crate::plan::RuntimeProgramTaskCapture>,
 }
 
 impl Engine {
@@ -122,12 +123,12 @@ impl Engine {
         admission.validate_metadata_collection(captures.len())?;
         let values = captures
             .iter()
-            .map(|local| {
+            .map(|capture| {
                 self.fiber
                     .frame
                     .env
-                    .get(*local)
-                    .ok_or(ProgramTaskPreparationError::UnknownCapture(*local))
+                    .get(capture.local)
+                    .ok_or(ProgramTaskPreparationError::UnknownCapture(capture.local))
             })
             .collect::<Result<Vec<_>, _>>()?;
         let checked = source.template_producer_spec(
@@ -144,7 +145,7 @@ impl Engine {
             .map_err(Box::new)?;
         let pending_ops = self.prepare_task_root_work(body, false).map_err(Box::new)?;
         let (child, next_fiber_id) = self
-            .prepare_child_fiber(pending_ops, captures)
+            .prepare_child_fiber(pending_ops, &[])
             .map_err(Box::new)?;
         let spec = TaskSpec {
             generation: self.generation,
@@ -161,6 +162,49 @@ impl Engine {
             spec,
             child,
             next_fiber_id,
+            captures: captures.clone(),
         })
+    }
+
+    pub(super) fn start_prepared_program_task(
+        &mut self,
+        prepared: PreparedProgramTask,
+        binding: &crate::pattern::RuntimePattern,
+    ) -> Result<crate::task::TaskSubmission, ProgramTaskPreparationError> {
+        let PreparedProgramTask {
+            spec,
+            mut child,
+            next_fiber_id,
+            captures,
+        } = prepared;
+        let captured = self
+            .fiber
+            .frame
+            .env
+            .prepare_task_captures(&captures)
+            .map_err(Box::new)?;
+        let (accepted, launch, bindings) =
+            self.need_producers
+                .ensure_program_task_with_binding(spec, |receipt| {
+                    let handle = crate::task::RuntimeNeedHandle::try_from(receipt.clone())?;
+                    crate::pattern::match_runtime_pattern_owned(
+                        &self.plan,
+                        binding,
+                        crate::value::RuntimeValue::NeedHandle(handle),
+                        captured.function_instantiation(),
+                    )?
+                    .ok_or(ProgramTaskPreparationError::BindingMismatch)
+                })?;
+        // Every fallible Source/capture/receipt/binding check precedes this
+        // exclusive Move commit and the parent/child scheduler mutation.
+        child.frame.env = captured.commit();
+        child.launch = super::FlowFiberLaunch::Program(launch);
+        child.frame.status = super::FlowFiberStatus::Running;
+        self.child_fibers.push_back(child);
+        self.next_fiber_id = next_fiber_id;
+        self.run_child_next = true;
+        self.fiber.frame.env.bind_all(bindings);
+        self.task_request_quota_remaining -= 1;
+        Ok(accepted)
     }
 }

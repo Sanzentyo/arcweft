@@ -29,6 +29,8 @@ use thiserror::Error;
 mod await_many;
 mod format;
 mod input;
+mod program_task;
+pub(crate) use program_task::PreparedProgramTaskFiber;
 mod return_context;
 mod scope;
 mod stream;
@@ -402,6 +404,27 @@ impl PreparedInitialFlow {
 impl PreparedFunctionInputBinding {
     pub(crate) const fn function(&self) -> AwbcFunctionId {
         self.function
+    }
+
+    fn allocate_fiber(
+        self,
+        program: &AwbcProgram,
+        root: AwbcFiberRoot,
+        instance: RuntimeFiberInstanceId,
+        generation: u64,
+        budget_quantum: u64,
+    ) -> (FiberState, Box<[AwbcRegisterId]>) {
+        let mut fiber = FiberState::allocate_function_frame(
+            program,
+            root,
+            self.function,
+            instance,
+            generation,
+            budget_quantum,
+        )
+        .expect("prepared function input binding validated the AWBC frame");
+        fiber.frames[0].type_instantiation = self.type_instantiation.map(std::sync::Arc::new);
+        (fiber, self.parameter_registers)
     }
 }
 
@@ -1571,6 +1594,10 @@ impl<P, V> FiberReturnContinuation<P, V> {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum FiberStateError {
+    #[error("Program capture {position} requires unrestricted Copy custody")]
+    ProgramCaptureCopy { position: usize },
+    #[error("Program capture moves register {register:?} more than once")]
+    DuplicateProgramCaptureMove { register: AwbcRegisterId },
     #[error(transparent)]
     EffectMaterialization(#[from] crate::effect::RuntimeEffectMaterializeError),
     #[error(transparent)]
@@ -2191,18 +2218,10 @@ impl FiberState {
         budget_quantum: u64,
     ) -> Self {
         debug_assert_eq!(prepared.parameter_registers.len(), args.len());
-        let mut fiber = Self::allocate_function_frame(
-            program,
-            root,
-            prepared.function,
-            instance,
-            generation,
-            budget_quantum,
-        )
-        .expect("prepared function input binding validated the AWBC frame");
-        fiber.frames[0].type_instantiation = prepared.type_instantiation.map(std::sync::Arc::new);
+        let (mut fiber, parameters) =
+            prepared.allocate_fiber(program, root, instance, generation, budget_quantum);
         let registers = &mut fiber.frames[0].registers;
-        for (register, value) in prepared.parameter_registers.into_iter().zip(args) {
+        for (register, value) in parameters.into_iter().zip(args) {
             registers[register.index()] = value.into();
         }
         fiber

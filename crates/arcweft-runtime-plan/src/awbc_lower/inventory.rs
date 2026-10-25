@@ -1727,6 +1727,11 @@ impl AwbcInventory {
                 arcweft_core::awbc::schema::AwbcProgramTaskPlan {
                     source: key.into(),
                     kernel,
+                    capture_modes: source
+                        .captures()
+                        .iter()
+                        .map(|capture| capture.mode)
+                        .collect(),
                 },
             ),
         };

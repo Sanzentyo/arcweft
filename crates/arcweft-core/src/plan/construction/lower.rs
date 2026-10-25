@@ -3887,15 +3887,29 @@ impl RuntimePlanBodyConstruction<'_> {
                     name,
                     binding,
                     producer,
-                    captures: captures
-                        .iter()
-                        .map(|local| {
-                            local
-                                .resolve(&self.issuer)
-                                .map(|(local, _)| local)
-                                .ok_or(RuntimePlanBuildError::ForeignLocalSeed)
-                        })
-                        .collect::<Result<_, _>>()?,
+                    captures: {
+                        let mut selected = std::collections::BTreeSet::new();
+                        captures
+                            .into_iter()
+                            .map(|capture| {
+                                let (local, _) = capture
+                                    .local
+                                    .resolve(&self.issuer)
+                                    .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
+                                if !selected.insert(local) {
+                                    return Err(
+                                        RuntimePlanBuildError::DuplicateProgramTaskCapture {
+                                            local,
+                                        },
+                                    );
+                                }
+                                Ok(crate::plan::RuntimeProgramTaskCapture {
+                                    local,
+                                    mode: capture.mode,
+                                })
+                            })
+                            .collect::<Result<_, _>>()?
+                    },
                     body: self.lower_flow_ops(body)?,
                 }
             }
@@ -5394,9 +5408,19 @@ impl RuntimePlanBodyConstruction<'_> {
                         )?;
                     }
                 }
-                FlowOp::ProgramTask { binding, body, .. } => {
-                    let mut nested = scope.clone();
-                    let mut nested_frames = scope_frames.clone();
+                FlowOp::ProgramTask {
+                    binding,
+                    captures,
+                    body,
+                    ..
+                } => {
+                    let mut nested = BTreeSet::new();
+                    for capture in captures {
+                        require_local_in_scope(capture.local, scope)?;
+                        used.insert(capture.local);
+                        nested.insert(capture.local);
+                    }
+                    let mut nested_frames = Vec::new();
                     self.validate_flow_operation_locals_inner(
                         body,
                         &mut nested,

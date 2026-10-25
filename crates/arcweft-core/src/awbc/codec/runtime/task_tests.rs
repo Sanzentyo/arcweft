@@ -3,6 +3,40 @@ use crate::awbc::codec::AwbcDecodeBudget;
 use crate::task::TaskHandleType;
 
 #[test]
+fn program_capture_modes_are_required_and_unknown_wire_tags_are_rejected() {
+    use crate::value::RuntimeLocalReadMode as Mode;
+    let row = AwbcProgramTaskPlan {
+        source: crate::task::ExpectedTaskPlanKey::new([0x36; 32]),
+        kernel: AwbcFunctionId(0),
+        capture_modes: vec![Mode::Move, Mode::Copy],
+    };
+    let mut writer = Writer::default();
+    let execution = AwbcTaskPlanExecution::Program(row.clone());
+    execution.write_wire(&mut writer).unwrap();
+    let bytes = writer.into_bytes();
+    let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+    assert_eq!(
+        AwbcTaskPlanExecution::read_wire(&mut reader).unwrap(),
+        execution
+    );
+    reader.finish().unwrap();
+    let mut json = serde_json::to_value(&row).unwrap();
+    assert_eq!(
+        serde_json::from_value::<AwbcProgramTaskPlan>(json.clone()).unwrap(),
+        row
+    );
+    json.as_object_mut().unwrap().remove("capture_modes");
+    assert!(serde_json::from_value::<AwbcProgramTaskPlan>(json).is_err());
+    for tag in 2..=u8::MAX {
+        let bytes = [tag];
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert!(
+            matches!(Mode::read_wire(&mut reader), Err(AwbcCodecError::UnknownTag { kind: "Program capture mode", tag: actual, offset: 0 }) if actual == tag)
+        );
+    }
+}
+
+#[test]
 fn task_handle_type_codec_preserves_carrier_and_payload() {
     for (handle_type, expected) in [
         (
@@ -69,6 +103,7 @@ fn task_row_codecs_require_full_carrier_independently_of_program_execution() {
             execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
                 source: crate::task::ExpectedTaskPlanKey::new([0x35; 32]),
                 kernel: AwbcFunctionId(0),
+                capture_modes: vec![],
             }),
         };
         let mut writer = Writer::default();

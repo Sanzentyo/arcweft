@@ -34,6 +34,7 @@ pub(crate) enum RuntimeAwbcProgramSourceField {
     CaptureCount,
     Capture { index: usize },
     CaptureType { index: usize },
+    CaptureMode { index: usize },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -139,6 +140,7 @@ impl RuntimeTaskSourceProgram {
             captures.len(),
             signature.params.len(),
             kernel.input_ownership.len(),
+            program.capture_modes.len(),
         ] {
             meter.charge_work(1)?;
             if actual > limits.max_function_roles as usize {
@@ -158,6 +160,14 @@ impl RuntimeTaskSourceProgram {
             row.handle_type.map_payload(|_| ()) == producer.handle_type.map_payload(|_| ()),
             meter,
         )?;
+        check(
+            Field::CaptureCount,
+            captures.len() == program.capture_modes.len(),
+            meter,
+        )?;
+        for (index, (capture, mode)) in captures.iter().zip(&program.capture_modes).enumerate() {
+            check(Field::CaptureMode { index }, capture.mode == *mode, meter)?;
+        }
         check(
             Field::Kernel,
             kernel.kind == AwbcFunctionKind::ProgramTask,
@@ -245,7 +255,8 @@ impl RuntimeTaskSourceProgram {
         // Extracting an original body retains external bindings. It does not
         // fabricate a language Copy or Move operation from frame ingress.
         meter.charge_work(captures.len() as u64)?;
-        for (index, (local, actual)) in captures.iter().zip(&kernel.input_ownership).enumerate() {
+        for (index, (capture, actual)) in captures.iter().zip(&kernel.input_ownership).enumerate() {
+            let local = &capture.local;
             let declaration = original
                 .local_declarations()
                 .get(*local)
@@ -285,7 +296,8 @@ impl RuntimeTaskSourceProgram {
                     source,
                 },
             })?;
-        for (index, (local, ty)) in captures.iter().zip(&signature.params).enumerate() {
+        for (index, (capture, ty)) in captures.iter().zip(&signature.params).enumerate() {
+            let local = &capture.local;
             let declaration = original
                 .local_declarations()
                 .get(*local)

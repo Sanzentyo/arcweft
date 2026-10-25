@@ -3,11 +3,7 @@ use crate::awbc::schema::*;
 use crate::plan::FlowOp;
 use std::sync::Arc;
 
-#[test]
-fn ordinary_program_need_starts_from_its_source_and_survives_each_public_save() {
-    use crate::task::{RuntimeNeedHandle, TaskHandleType, TaskRequest};
-    use crate::value::RuntimeValue;
-
+fn program_need_entry_code() -> AwbcProgram {
     let mut code = crate::plan::task_source::program_need_executable_fixture();
     code.runtime_types.push(AwbcRuntimeType::new(
         crate::pattern::RuntimeSemanticTypeId::from_bytes([20; 32]),
@@ -97,6 +93,15 @@ fn ordinary_program_need_starts_from_its_source_and_survives_each_public_save() 
         roles: crate::entry::RuntimeEntryRoles::None,
     });
     code.canonicalize_string_table();
+    code
+}
+
+#[test]
+fn ordinary_program_need_starts_from_its_source_and_survives_each_public_save() {
+    use crate::task::{RuntimeNeedHandle, TaskHandleType, TaskRequest};
+    use crate::value::RuntimeValue;
+
+    let code = program_need_entry_code();
     let bytes = code.encode_canonical().unwrap();
     let decoded =
         AwbcProgram::decode_canonical(&bytes, crate::awbc::codec::AwbcDecodeBudget::default())
@@ -154,6 +159,224 @@ fn ordinary_program_need_starts_from_its_source_and_survives_each_public_save() 
             .need_producers
             .take_ready_for_correlation(&task.handle().correlation)
             .is_err()
+    );
+}
+
+#[test]
+fn program_need_moves_its_original_affine_input_through_every_public_save() {
+    use crate::plan::{RuntimeGeneratedFunctionRole, RuntimeTaskSourceReadContext};
+    use crate::value::RuntimeLocalReadMode;
+    let (original, flow, coordinates) =
+        crate::plan::task_source::owned_program_need_fixture(RuntimeLocalReadMode::Move);
+    let body = original
+        .task_program_body(
+            &coordinates[1],
+            &mut RuntimeTaskSourceReadContext::new(Default::default()),
+        )
+        .unwrap();
+    let producer = body.producer();
+    let capture = original
+        .local_declarations()
+        .get(body.captures()[0].local)
+        .unwrap();
+    let string = crate::pattern::RuntimeCheckedType::String.semantic_identity_digest();
+    let input_type = original
+        .type_table()
+        .get(capture.ty())
+        .unwrap()
+        .semantic_identity();
+    let mut code = program_need_entry_code();
+    code.original_source = Some(original.task_source_artifact(Default::default()).unwrap());
+    code.runtime_types[1] = AwbcRuntimeType::new(string, AwbcRuntimeTypeShape::String);
+    code.runtime_types[2] =
+        AwbcRuntimeType::new(input_type, AwbcRuntimeTypeShape::Need(AwbcTypeId(1)));
+    code.runtime_types.push(AwbcRuntimeType::new(
+        crate::pattern::RuntimeSemanticTypeId::from_bytes([0xa4; 32]),
+        AwbcRuntimeTypeShape::Need(AwbcTypeId(2)),
+    ));
+    code.functions[0].definition = producer
+        .function
+        .generated_child(RuntimeGeneratedFunctionRole::TaskBody);
+    code.functions[0].input_ownership[0] = AwbcFunctionInputOwnership::owned(
+        capture.origin(),
+        crate::plan::RuntimeFunctionInputSource::Capture { position: 0 },
+        crate::plan::RuntimeFunctionInputTransfer::ExternalBinding,
+    );
+    code.functions[0].blocks = AwbcTableRange::new(0, 1);
+    code.signatures[0].params = vec![AwbcTypeId(2)];
+    code.signatures[0].result = Some(AwbcTypeId(2));
+    for slot in &mut code.frame_layouts[0].slots {
+        slot.ty = AwbcTypeId(2);
+    }
+    code.blocks[0].instructions = AwbcTableRange::new(0, 0);
+    code.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(0)),
+    };
+    code.functions[1].definition =
+        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xa9; 32]);
+    code.frame_layouts[1].slots[0].ty = AwbcTypeId(2);
+    code.frame_layouts[1].slots[1].ty = AwbcTypeId(3);
+    code.blocks[1].instructions = AwbcTableRange::new(1, 3);
+    code.flow_bindings[0].flow = flow.clone();
+    code.flow_executables[0].metadata.flow = flow;
+    let second = AwbcTaskPlan {
+        class: AwbcTaskClass::Cpu,
+        priority: producer.priority.0,
+        cancel_scope: code.task_plans[0].cancel_scope,
+        policy: AwbcTaskPolicy::AlwaysStart,
+        handle_type: crate::task::TaskHandleType::Need {
+            payload: AwbcTypeId(2),
+        },
+        execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
+            source: body.task_plan().key().into(),
+            kernel: AwbcFunctionId(0),
+            capture_modes: vec![RuntimeLocalReadMode::Move],
+        }),
+    };
+    let first_source = original
+        .task_program_body(
+            &coordinates[0],
+            &mut RuntimeTaskSourceReadContext::new(Default::default()),
+        )
+        .unwrap();
+    let first_row = first_source.task_plan();
+    let mut first_kernel = code.functions[0].clone();
+    first_kernel.definition = first_source
+        .producer()
+        .function
+        .generated_child(RuntimeGeneratedFunctionRole::TaskBody);
+    first_kernel.signature = AwbcSignatureId(2);
+    first_kernel.frame_layout = AwbcFrameLayoutId(2);
+    first_kernel.input_ownership.clear();
+    first_kernel.blocks = AwbcTableRange::new(2, 1);
+    first_kernel.entry_block = AwbcBlockId(2);
+    code.functions.push(first_kernel);
+    code.signatures.push(AwbcSignature {
+        params: vec![],
+        result: Some(AwbcTypeId(1)),
+        effects: AwbcEffectSetId(0),
+    });
+    let mut first_frame = code.frame_layouts[0].clone();
+    first_frame.slots.truncate(1);
+    first_frame.slots[0].ty = AwbcTypeId(1);
+    first_frame.slots[0].role = AwbcFrameSlotRole::Temporary;
+    code.frame_layouts.push(first_frame);
+    code.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(2),
+        instructions: AwbcTableRange::new(0, 1),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(0)),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    code.strings.push("owned result".into());
+    code.constants = vec![
+        AwbcConstant::Unit,
+        AwbcConstant::String(AwbcStringId(u32::try_from(code.strings.len() - 1).unwrap())),
+    ];
+    code.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::StartProgram {
+            dst: AwbcRegisterId(0),
+            plan: AwbcTaskPlanId(0),
+            args: vec![],
+        },
+        AwbcInstruction::StartProgram {
+            dst: AwbcRegisterId(1),
+            plan: AwbcTaskPlanId(1),
+            args: vec![AwbcRegisterId(0)],
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        },
+    ];
+    let mut first = second.clone();
+    first.handle_type = crate::task::TaskHandleType::Need {
+        payload: AwbcTypeId(1),
+    };
+    let AwbcTaskPlanExecution::Program(first_body) = &mut first.execution else {
+        unreachable!()
+    };
+    first_body.source = first_row.key().into();
+    first_body.kernel = AwbcFunctionId(2);
+    first_body.capture_modes.clear();
+    code.task_plans = vec![first, second];
+    // Source admission also checks the distinct scope strings for both rows.
+    for (row, scope) in [(0, "owned.program.input"), (1, "owned.program.capture")] {
+        code.strings.push(scope.into());
+        code.task_plans[row].cancel_scope =
+            AwbcStringId(u32::try_from(code.strings.len() - 1).unwrap());
+    }
+    code.canonicalize_string_table();
+    let bytes = code.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap();
+    let mut executor = AwbcProductStepExecutor::for_entry(decoded, AwbcEntryId(0), 1).unwrap();
+    let mut submissions = vec![];
+    let mut completions = vec![];
+    let mut moved_parent_observed = false;
+    for _ in 0..256 {
+        let step = executor.step(Default::default(), Default::default());
+        assert!(step.stats.executed_ops <= 1);
+        assert!(
+            step.output.diagnostics.is_empty(),
+            "{:?}",
+            step.output.diagnostics
+        );
+        assert!(step.output.requests.host_calls.is_empty());
+        submissions.extend(step.output.requests.tasks);
+        completions.extend(step.output.requests.program_task_completions);
+        if submissions.len() == 2
+            && let Ok(frame) = executor.fiber.active_frame()
+        {
+            assert!(frame.register(AwbcRegisterId(0)).is_err());
+            moved_parent_observed = true;
+        }
+        let snapshot = executor.snapshot_for_save().unwrap();
+        let save = super::super::AwbcProductExecutorSaveSnapshot::from_live(
+            &snapshot,
+            executor.admitted_program(),
+        )
+        .unwrap();
+        let encoded = serde_json::to_vec(&save).unwrap();
+        let decoded: super::super::AwbcProductExecutorSaveSnapshot =
+            serde_json::from_slice(&encoded).unwrap();
+        let restored = decoded
+            .into_live_for_program(executor.admitted_program())
+            .unwrap();
+        executor = executor.restore_snapshot_owned(restored).unwrap();
+        if completions.len() == 2 && executor.child_fibers.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(submissions.len(), 2);
+    assert_eq!(completions.len(), 2);
+    assert!(moved_parent_observed);
+    let result = executor
+        .need_producers
+        .take_ready_for_correlation(&submissions[1].handle().correlation)
+        .unwrap()
+        .into_value();
+    assert!(
+        matches!(result, RuntimeValue::NeedHandle(handle) if handle.correlation() == submissions[0].handle().correlation)
+    );
+    assert!(
+        executor
+            .need_producers
+            .take_ready_for_correlation(&submissions[1].handle().correlation)
+            .is_err()
+    );
+    assert_eq!(
+        executor
+            .need_producers
+            .take_ready_for_correlation(&submissions[0].handle().correlation)
+            .unwrap()
+            .into_value(),
+        RuntimeValue::String("owned result".into())
     );
 }
 

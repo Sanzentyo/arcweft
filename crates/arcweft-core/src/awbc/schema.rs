@@ -2866,9 +2866,11 @@ pub struct AwbcHostTaskPlan {
 /// Inert assertions joining a kernel to its retained original Task Source.
 /// Source admission, rather than this row, grants execution authority.
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwbcProgramTaskPlan {
     pub source: crate::task::ExpectedTaskPlanKey,
     pub kernel: AwbcFunctionId,
+    pub capture_modes: Vec<crate::value::RuntimeLocalReadMode>,
 }
 
 /// Request shape is recorded exactly once on the common task-plan row.

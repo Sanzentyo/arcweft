@@ -340,9 +340,7 @@ impl<'a> OriginalRequestEndpoint<'a> {
             OriginalRequestOwner::Construction(builder) => builder.source_local_type(local),
         }
     }
-    pub(super) fn program_captures(
-        &self,
-    ) -> Option<&'a [crate::runtime_id::RuntimeLocalDeclarationId]> {
+    pub(super) fn program_captures(&self) -> Option<&'a [crate::plan::RuntimeProgramTaskCapture]> {
         match (self.kind, self.source) {
             (
                 EndpointKind::ProgramTask,

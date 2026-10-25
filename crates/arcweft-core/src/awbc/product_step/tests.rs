@@ -7175,7 +7175,7 @@ fn await_many_original_program_with_thread(
                         mutable: false,
                     },
                 ),
-                captures: vec![source.clone()],
+                captures: vec![crate::plan::RuntimeProgramTaskCapture::copy(source.clone())],
                 producer: NeedProducerDefinition {
                     function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xb4; 32]),
                     family: NeedProducerFamily::StructuredTaskPlan,
@@ -7659,7 +7659,7 @@ fn await_many_product_program_with_thread(
         program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::owned(
             original
                 .local_declarations()
-                .get(captures[0])
+                .get(captures[0].local)
                 .unwrap()
                 .origin(),
             crate::plan::RuntimeFunctionInputSource::Capture { position: 0 },
@@ -7683,6 +7683,7 @@ fn await_many_product_program_with_thread(
                 crate::awbc::schema::AwbcProgramTaskPlan {
                     source: original.task_plan(&producer.plan).unwrap().key().into(),
                     kernel: AwbcFunctionId(0),
+                    capture_modes: vec![crate::value::RuntimeLocalReadMode::Copy],
                 },
             ),
         });

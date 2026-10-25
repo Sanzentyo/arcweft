@@ -26,6 +26,8 @@ mod producer_tests;
 #[cfg(test)]
 mod template_tests;
 pub use owned::{RuntimeTaskSource, RuntimeTaskSourceAssertion};
+#[cfg(test)]
+pub(crate) use template_tests::owned_program_need_fixture;
 
 use super::body_semantic::function::OriginalRequestEndpoint;
 use super::body_semantic::{RuntimeBodySemanticContext, RuntimeBodySemanticError};

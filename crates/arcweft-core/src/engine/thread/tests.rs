@@ -225,6 +225,16 @@ fn retire(
     engine: &mut Engine,
     rollback_each_step: bool,
 ) -> (TaskSubmission, ProgramTaskCompletion) {
+    let (mut tasks, mut reports) = retire_all(engine, rollback_each_step);
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(reports.len(), 1);
+    (tasks.pop().unwrap(), reports.pop().unwrap())
+}
+
+fn retire_all(
+    engine: &mut Engine,
+    rollback_each_step: bool,
+) -> (Vec<TaskSubmission>, Vec<ProgramTaskCompletion>) {
     let mut tasks = Vec::new();
     let mut reports = Vec::new();
     for _ in 0..64 {
@@ -239,9 +249,7 @@ fn retire(
                 .unwrap();
         }
         if matches!(engine.fiber().frame.status, FlowFiberStatus::Done(_)) {
-            assert_eq!(tasks.len(), 1);
-            assert_eq!(reports.len(), 1);
-            return (tasks.pop().unwrap(), reports.pop().unwrap());
+            return (tasks, reports);
         }
     }
     panic!("the actual Program body failed to retire without a Host");
@@ -291,6 +299,44 @@ fn ordinary_program_need_retains_source_custody_and_moves_its_result_once() {
             .need_producers
             .take_ready_for_correlation(&correlation)
             .is_err()
+    );
+}
+
+#[test]
+fn ordinary_program_need_moves_an_affine_capture_and_retains_it_through_rollback() {
+    let (plan, flow, _) = crate::plan::task_source::owned_program_need_fixture(
+        crate::value::RuntimeLocalReadMode::Move,
+    );
+    let mut engine = Engine::for_flow(plan, &flow).unwrap();
+    let (tasks, reports) = retire_all(&mut engine, true);
+    assert_eq!(tasks.len(), 2);
+    assert_eq!(reports.len(), 2);
+    assert!(
+        reports
+            .iter()
+            .all(|report| report.terminal() == &ProgramTaskTerminal::Completed)
+    );
+    let result = engine
+        .need_producers
+        .take_ready_for_correlation(&tasks[1].handle().correlation)
+        .unwrap()
+        .into_value();
+    assert!(
+        matches!(result, RuntimeValue::NeedHandle(handle) if handle.correlation() == tasks[0].handle().correlation)
+    );
+    assert!(
+        engine
+            .need_producers
+            .take_ready_for_correlation(&tasks[1].handle().correlation)
+            .is_err()
+    );
+    assert_eq!(
+        engine
+            .need_producers
+            .take_ready_for_correlation(&tasks[0].handle().correlation)
+            .unwrap()
+            .into_value(),
+        RuntimeValue::String("owned result".into())
     );
 }
 

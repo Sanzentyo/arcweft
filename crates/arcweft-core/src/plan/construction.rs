@@ -266,6 +266,8 @@ pub enum RuntimePlanBuildError {
     },
     #[error("a construction-only local handle belongs to another runtime-plan builder")]
     ForeignLocalSeed,
+    #[error("Program task repeats capture local {local:?}")]
+    DuplicateProgramTaskCapture { local: RuntimeLocalDeclarationId },
     #[error("a construction-only function-site handle belongs to another runtime-plan builder")]
     ForeignFunctionSiteSeed,
     #[error("runtime defer site has no executable capture-only Unit function body")]

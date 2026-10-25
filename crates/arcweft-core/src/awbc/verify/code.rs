@@ -2213,6 +2213,21 @@ fn apply_instruction(
             if !matches {
                 return invalid_type(&at, "Program destination matching task carrier and payload");
             }
+            if args.len() != task_body.capture_modes.len() {
+                return argument_count(&at, task_body.capture_modes.len(), args.len());
+            }
+            let mut moved = std::collections::BTreeSet::new();
+            for (register, mode) in args.iter().zip(&task_body.capture_modes) {
+                if *mode == crate::value::RuntimeLocalReadMode::Move && !moved.insert(*register) {
+                    return invalid_type(
+                        &at,
+                        "Program task capture moves each register at most once",
+                    );
+                }
+            }
+            for register in moved {
+                clear_register(verifier, function, block, register, state)?;
+            }
             write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::StreamYield { stream, value } => {

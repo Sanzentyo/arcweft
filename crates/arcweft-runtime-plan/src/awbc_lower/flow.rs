@@ -1683,9 +1683,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 {
                     let args = captures
                         .iter()
-                        .map(|local| {
+                        .map(|capture| {
                             frame
-                                .register_for_local(*local)
+                                .register_for_local(capture.local)
                                 .expect("checked Program capture is bound in its enclosing frame")
                         })
                         .collect();

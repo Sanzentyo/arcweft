@@ -1214,6 +1214,8 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                     &at,
                 )?;
                 if kernel.kind != AwbcFunctionKind::ProgramTask
+                    || program_task.capture_modes.len()
+                        != program.signatures[kernel.signature.index()].params.len()
                     || program.signatures[kernel.signature.index()].result
                         != Some(task.payload_type())
                 {

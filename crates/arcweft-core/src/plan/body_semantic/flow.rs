@@ -204,7 +204,8 @@ impl RuntimeBodySemanticContext<'_> {
                 encoder.count(captures.len());
                 for capture in captures {
                     encoder.enter_element();
-                    self.write_local(encoder, *capture)?;
+                    encoder.tag(capture.mode.semantic_tag());
+                    self.write_local(encoder, capture.local)?;
                 }
             }
             FlowOp::AwaitMany {

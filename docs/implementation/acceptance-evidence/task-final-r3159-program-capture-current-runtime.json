@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "7c94e50db9e8fe78357bbb71af9ead3e2ab15360",
+  "name": "task-final-r3159-program-capture-current-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3159-program-capture-current-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T23:51:44.6420803Z",
+  "finishedAt": "2026-10-25T23:52:20.3088250Z"
+}

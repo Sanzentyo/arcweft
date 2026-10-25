@@ -210,7 +210,7 @@ impl RuntimeTaskSourceRef<'_> {
                 RuntimeTaskTemplateArguments::ProgramTask { .. },
             ) => {
                 admission.validate_metadata_collection(captures.len())?;
-                locals.extend_from_slice(captures.as_slice());
+                locals.extend(captures.iter().map(|capture| capture.local));
             }
             (
                 Some(FlowOp::AwaitMany { target, .. }),

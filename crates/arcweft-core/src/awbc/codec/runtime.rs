@@ -211,6 +211,7 @@ impl Wire for AwbcTaskPlanExecution {
                 writer.write_u8(1);
                 program.source.bytes().write_wire(writer)?;
                 program.kernel.write_wire(writer)?;
+                program.capture_modes.write_wire(writer)?;
             }
         }
         Ok(())
@@ -228,6 +229,7 @@ impl Wire for AwbcTaskPlanExecution {
             1 => Ok(Self::Program(AwbcProgramTaskPlan {
                 source: crate::task::ExpectedTaskPlanKey::new(<[u8; 32]>::read_wire(reader)?),
                 kernel: AwbcFunctionId::read_wire(reader)?,
+                capture_modes: Vec::<crate::value::RuntimeLocalReadMode>::read_wire(reader)?,
             })),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "task execution",
@@ -235,6 +237,23 @@ impl Wire for AwbcTaskPlanExecution {
                 offset,
             }),
         }
+    }
+}
+
+impl Wire for crate::value::RuntimeLocalReadMode {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "Program capture mode",
+            tag,
+            offset,
+        })
     }
 }
 

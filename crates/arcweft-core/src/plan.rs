@@ -1162,7 +1162,7 @@ pub enum FlowOp {
         name: Option<String>,
         binding: RuntimePattern,
         producer: crate::task::NeedProducerDefinition,
-        captures: Vec<RuntimeLocalDeclarationId>,
+        captures: Vec<RuntimeProgramTaskCapture>,
         body: Vec<FlowOp>,
     },
     Scope {
@@ -1201,6 +1201,32 @@ pub enum FlowOp {
         expr: RuntimeExpr,
     },
     Noop,
+}
+
+/// One original local and its checked transfer into a Program task frame.
+/// A Copy request still requires actual unrestricted custody at admission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeProgramTaskCapture<Local = RuntimeLocalDeclarationId> {
+    pub local: Local,
+    pub mode: crate::value::RuntimeLocalReadMode,
+}
+
+impl<Local> RuntimeProgramTaskCapture<Local> {
+    #[must_use]
+    pub const fn copy(local: Local) -> Self {
+        Self {
+            local,
+            mode: crate::value::RuntimeLocalReadMode::Copy,
+        }
+    }
+
+    #[must_use]
+    pub const fn moved(local: Local) -> Self {
+        Self {
+            local,
+            mode: crate::value::RuntimeLocalReadMode::Move,
+        }
+    }
 }
 
 /// Runtime source of a general typed `Need<T>` Await. The executor evaluates

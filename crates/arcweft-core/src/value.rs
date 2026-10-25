@@ -1629,7 +1629,9 @@ impl fmt::Debug for RuntimeExpr {
 }
 
 /// How one checked local use transfers the value from its owning binding.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
 pub enum RuntimeLocalReadMode {
     Copy,
     Move,
@@ -2710,6 +2712,8 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
+    #[error("Program task repeats capture local {local:?}")]
+    DuplicateProgramTaskCapture { local: RuntimeLocalDeclarationId },
     #[error("native task request evaluation failed: {message}")]
     HostTaskRequest { message: String },
     #[error(transparent)]
@@ -4248,6 +4252,14 @@ impl RuntimeLocalReadMode {
         match self {
             Self::Copy => 0,
             Self::Move => 1,
+        }
+    }
+
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Copy),
+            1 => Some(Self::Move),
+            _ => None,
         }
     }
 }

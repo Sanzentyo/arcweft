@@ -12271,3 +12271,32 @@ R3154はCore／runtime-planのall-target／all-feature／locked checkを実行�
 この資料整理でCargoを再実行せず、元receipt／logをbyte不変で保存した。
 [失敗receipt](acceptance-evidence/task-final-r3154-program-capture-transfer-check.json)、
 [原ログ](acceptance-evidence/task-final-r3154-program-capture-transfer-check.log)。
+
+## Program captureの明示的transfer移行checkpoint — 2026-10-26
+
+基点は公開main `7c94e50db9e8fe78357bbb71af9ead3e2ab15360`。Core／runtime-planの35 Rustファイルで
+captureを元localと明示的Copy／Moveへ移行した。Source semantic transcript・version 1 private grammar・
+AWBC row／canonical wire／Serde・元Source admission・全producer／consumerを同じmode inventoryへ揃えた。
+Threadのloweringは従来どおりCopyを明示する。実行kind・型identityからCopyを許可せず、実値のcustodyを検査する。
+Nativeは親の排他的borrowを保つ準備guard、AWBCは実rowとkernel input proofに束縛した準備frameを使う。
+Source・全capture・実receipt・result bindingの検査前にMoveせず、commit後に親slotを空にする。
+TaskSpecへlive値を移さず、子のlexical rootを明示captureと元の認証済みtype/effect contextに限定した。
+
+R3154の重複メソッド／fixture型不一致を修復し、R3155 owner all-target／all-feature／locked checkは
+終了0（1分55秒、警告あり）。新規fixtureを加えたR3156は存在しないchecked-type enumの指定、R3157は
+private index型の指定でcompile失敗。前者は実type projection、後者は元Source座標を使うよう修復した。
+R3158のowner library catalogは全2,166件／除外0、終了0。R3159は2,164 PASS／2 FAIL／0 skip、
+34.008秒、nextest終了100。両失敗は新規Native／AWBC fixtureの `FlowRuntimeId::canonical` に
+reserved family prefixを渡したもので、実行前に同じ箇所で拒否された。prefixを除く1行を修復し、未再実行で公開する。
+既存の通常Program Need／Thread結果・source codecのケースはPASS、新しいEnv移動準備／失敗保全2件と
+wire／Serde mode拒否1件、既存Source不一致ケースへ加えたmode改変拒否もPASSした。
+
+R3159は既定の最終表示が失敗だけのため、監査helperの「summary後に全件がある」という前提では
+照合に失敗した。再実行せず、終端receipt／summaryとsummary前の全2,166状態行をcatalogへ照合し、
+余分・不足・重複0を確認した。原ログは変更していない。各compile／catalog／runtimeの3,989入力は
+実行前にfreezeし、終端後の差分0を確認した。ビルド生成物の移動・コピー・退避はない。
+
+これは移行途中のcheckpointであり、affineな元Program Needを使うNative／AWBCの実行・各step保存復元を
+受入済みとはしない。共有gate・構造gate・全53逆依存も最終入力で別途確認する。
+ユーザーの「途中commitを必ず正常動作まで確認しなくてよい」という指示に従い、元WIPを混ぜずに公開する。
+[結果・失敗・入力と原本](acceptance-evidence/task-program-capture-checkpoint.json)。

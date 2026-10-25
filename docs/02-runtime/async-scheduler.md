@@ -48,15 +48,20 @@ AWBC task plans keep scheduling and `TaskHandleType<AwbcTypeId>` in one common
 row. This retains both the language carrier and its exact Ready payload type;
 execution kind does not determine the carrier. Host rows require `Need<T>`.
 `AwbcTaskPlanExecution::Host` owns the Host request projection, signature,
-arguments and closed Host plan kind. `Program` owns only the original expected
-task-plan key and its `ProgramTask` kernel. The version-one wire grammar encodes
+arguments and closed Host plan kind. `Program` owns the original expected
+task-plan key, its `ProgramTask` kernel and the source-ordered capture transfer
+modes. The version-one wire grammar encodes
 this distinction directly; a Program row has no synthetic Host argument packet.
 Its Source admission resolves the key in the retained original executable and
 checks the Program task operation, generated task-body definition, scheduling,
 carrier, payload, and complete capture type relation. The carrier must match
 before capture types are traversed or an original Source lease is returned.
-Capture metadata must preserve the original local, source order and `ExternalBinding` transfer; owned kernel input
-does not grant a language Copy or Move operation. One caller-owned semantic
+Capture metadata must preserve the original local, source order and
+`ExternalBinding` kernel ingress. Each original Program capture separately
+declares `Copy` or `Move`; its version-one semantic and wire tag is respectively
+0 or 1, and other tags are rejected. AWBC rows must carry the complete mode
+inventory and match the original Source before capture types are traversed.
+Owned kernel input does not grant a language Copy or Move operation. One caller-owned semantic
 meter bounds this work before a Source lease is copied. An assertion or decoded
 row alone grants no execution authority, and ordinary function roots and calls
 cannot enter a `ProgramTask` kernel.
@@ -76,10 +81,17 @@ the complete invocation effect set.
 `StartProgram` names the admitted task-plan row and a typed destination whose
 carrier and payload match that row. A Thread Source declares `ThreadHandle<T>`;
 changing only the AWBC row to `Need<T>` fails original Source admission.
-Thread captures stay in the parent and require unrestricted Copy custody.
+Source-level Thread captures select Copy and require actual unrestricted custody.
+An explicit Program Move capture stays owned by the parent during preparation.
 The product executor prepares the child, authenticates the original Source and
 captures, and admits the actual launch receipt before committing the parent
-write, child queue, quota and identity cursors. Program kernels require a Task
+write, child queue, quota and identity cursors. Only then does it move captured
+values into the prepared child frame. A rejected Source, capture, receipt or
+result binding preserves the parent values and launch state. Duplicate moves
+from one register are rejected; successful moves clear the source registers
+before the destination handle is written, including when those registers alias.
+Copy requires actual value custody and is never inferred from a type identity,
+language carrier or backend. Program kernels require a Task
 fiber root owned by that accepted launch. A returning child retains its result
 until attached descendants retire, then transfers the value to the common
 producer registry. Saved child metadata records the handle and parent identity;
@@ -100,7 +112,11 @@ task receipt. Child preparation checks the original Source and captures without
 changing the parent environment. The journal admits the receipt and runs the
 fallible result binding before inserting its Program launch. Binding rejection
 or unwind rolls back the receipt and ordinal frontier. Successful admission
-then publishes the prepared child, parent bindings, quota and continuation.
+then transfers explicit Move captures and publishes the prepared child, parent
+bindings, quota and continuation. TaskSpec retains checked metadata rather than
+copies of live captured values. The child lexical root contains only its
+declared captures and retains the enclosing authenticated type/effect context;
+uncaptured parent locals and parent control frames do not enter it.
 The result pattern participates in the common operation traversal and the
 version-one source grammar, including counted preflight and materialization.
 

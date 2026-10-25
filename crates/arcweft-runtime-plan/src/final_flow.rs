@@ -8416,7 +8416,10 @@ impl<'a> FinalFlowLowerer<'a> {
             name: thread.name().map(|name| name.as_str().to_owned()),
             binding,
             producer,
-            captures,
+            captures: captures
+                .into_iter()
+                .map(arcweft_core::plan::RuntimeProgramTaskCapture::copy)
+                .collect(),
             body,
         }];
         ops.extend(self.lower_flow_tail(tail)?);

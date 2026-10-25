@@ -804,6 +804,209 @@ pub(in crate::plan::task_source) fn thread_with_lexical_context() -> RuntimeTask
     program_context(true, 1, false)
 }
 
+pub(crate) fn owned_program_need_fixture(
+    mode: crate::value::RuntimeLocalReadMode,
+) -> (
+    RuntimePlan,
+    FlowRuntimeId,
+    [RuntimeTaskPlanBuildCoordinate; 2],
+) {
+    let mut builder = RuntimePlanBuilder::new();
+    let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+    let string = crate::pattern::RuntimeCheckedType::String.semantic_identity_digest();
+    let input_type = RuntimeSemanticTypeId::from_bytes([0xa3; 32]);
+    let task_type = RuntimeSemanticTypeId::from_bytes([0xa4; 32]);
+    let locals = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(string, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(input_type, RuntimePlanTypeProjection::Need(string)),
+                RuntimePlanTypeSeed::new(task_type, RuntimePlanTypeProjection::Need(input_type)),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(
+                    RuntimeLocalDeclarationSource::Binding {
+                        identity: [0xa6; 32],
+                        declaration: RuntimeLocalBindingDeclaration::new(
+                            RuntimeLocalBindingKind::PatternBinding,
+                            false,
+                            RuntimeLocalBindingStorage::Derived,
+                        ),
+                    },
+                    input_type,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    RuntimeLocalDeclarationSource::Binding {
+                        identity: [0xa7; 32],
+                        declaration: RuntimeLocalBindingDeclaration::new(
+                            RuntimeLocalBindingKind::PatternBinding,
+                            false,
+                            RuntimeLocalBindingStorage::Derived,
+                        ),
+                    },
+                    task_type,
+                ),
+            ],
+        )
+        .unwrap();
+    let input = locals.local_ids()[0].clone();
+    let result = RuntimeExprSeed::new(
+        input_type,
+        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+            input.clone(),
+            crate::value::RuntimeLocalReadMode::Move,
+        )),
+    );
+    let definition = RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xa8; 32]);
+    let function = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition,
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                transfer: RuntimeFunctionInputTransfer::ExternalBinding,
+                origin: RuntimeFunctionInputOrigin::Binding([0xa6; 32]),
+                source: RuntimeFunctionInputSource::Capture { position: 0 },
+                input_local: input.clone(),
+                pattern: RuntimePatternSeed::new(
+                    input_type,
+                    RuntimePatternSeedKind::Bind {
+                        local: input.clone(),
+                        mutable: false,
+                    },
+                ),
+                ownership: RuntimeValueOwnershipRequirement::Owned,
+                unrestricted_bindings: Box::new([]),
+            }]),
+            result: input_type,
+            body_kind: RuntimeFunctionSiteBodyKind::Executable,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &function,
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([RuntimeFlowOpSeed::ReturnExpr(result.clone())]),
+            }),
+        )
+        .unwrap();
+    let first_definition = RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xac; 32]);
+    builder
+        .push_function_site_seed(
+            first_definition,
+            RuntimeFunctionSemanticRole::Ordinary,
+            [],
+            RuntimeExprSeed::new(
+                string,
+                RuntimeExprSeedKind::Value(RuntimeValue::String("owned result".into())),
+            ),
+        )
+        .unwrap();
+    let first_coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
+    let coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
+    let flow = FlowRuntimeId::canonical("owned_program_capture").unwrap();
+    builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: vec![],
+        })
+        .unwrap();
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            RuntimeFunctionSiteDeclarationSeed::flow(
+                RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xa9; 32]),
+                None,
+                Box::new([]),
+                unit,
+                RuntimeEffectSet::empty(),
+            ),
+            RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([
+                    RuntimeFlowOpSeed::ProgramTask {
+                        name: None,
+                        binding: RuntimePatternSeed::new(
+                            input_type,
+                            RuntimePatternSeedKind::Bind {
+                                local: input.clone(),
+                                mutable: false,
+                            },
+                        ),
+                        producer: crate::task::NeedProducerDefinition {
+                            function: first_definition,
+                            family: NeedProducerFamily::StructuredTaskPlan,
+                            contract: NeedProducerContractDigest::from_bytes([0xad; 32]),
+                            plan: first_coordinate.clone(),
+                            producer_site: NeedProducerSiteDigest::from_bytes([0xae; 32]),
+                            handle_type: crate::task::TaskHandleType::Need {
+                                payload: RuntimeTypeSemanticDigest::from_bytes(*string.as_bytes()),
+                            },
+                            class: TaskClass::Cpu,
+                            priority: TaskPriority(0),
+                            cancel_scope: CancelScopeId("owned.program.input".into()),
+                            policy: TaskPolicy::AlwaysStart,
+                            debug_label: "original owned Program input".into(),
+                        },
+                        captures: vec![],
+                        body: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                            string,
+                            RuntimeExprSeedKind::Value(RuntimeValue::String("owned result".into())),
+                        ))],
+                    },
+                    RuntimeFlowOpSeed::ProgramTask {
+                        name: None,
+                        binding: RuntimePatternSeed::new(
+                            task_type,
+                            RuntimePatternSeedKind::Bind {
+                                local: locals.local_ids()[1].clone(),
+                                mutable: false,
+                            },
+                        ),
+                        producer: crate::task::NeedProducerDefinition {
+                            function: definition,
+                            family: NeedProducerFamily::StructuredTaskPlan,
+                            contract: NeedProducerContractDigest::from_bytes([0xaa; 32]),
+                            plan: coordinate.clone(),
+                            producer_site: NeedProducerSiteDigest::from_bytes([0xab; 32]),
+                            handle_type: crate::task::TaskHandleType::Need {
+                                payload: RuntimeTypeSemanticDigest::from_bytes(
+                                    *input_type.as_bytes(),
+                                ),
+                            },
+                            class: TaskClass::Cpu,
+                            priority: TaskPriority(0),
+                            cancel_scope: CancelScopeId("owned.program.capture".into()),
+                            policy: TaskPolicy::AlwaysStart,
+                            debug_label: "owned Program capture".into(),
+                        },
+                        captures: vec![RuntimeProgramTaskCapture { local: input, mode }],
+                        body: vec![RuntimeFlowOpSeed::ReturnExpr(result)],
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        unit,
+                        RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                    )),
+                ]),
+            },
+        ))
+        .unwrap();
+    (
+        builder.finish().unwrap(),
+        flow,
+        [first_coordinate, coordinate],
+    )
+}
+
 pub(in crate::plan::task_source) fn thread_with_captures(count: usize) -> RuntimeTaskSourceProgram {
     program_context(false, count, false)
 }
@@ -913,7 +1116,10 @@ fn program_context(
     ops.push(RuntimeFlowOpSeed::ProgramTask {
         name: None,
         binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
-        captures,
+        captures: captures
+            .into_iter()
+            .map(RuntimeProgramTaskCapture::copy)
+            .collect(),
         producer: crate::task::NeedProducerDefinition {
             function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([2; 32]),
             family: NeedProducerFamily::StructuredTaskPlan,

@@ -6,7 +6,6 @@ use crate::plan::{
     FlowOp, RuntimeFunctionSite, RuntimePlan, RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanRef,
     RuntimeTaskPlanSealLimits,
 };
-use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::task::NeedProducerDefinition;
 use crate::task::semantic::TaskSemanticMeter;
 
@@ -41,7 +40,7 @@ pub struct RuntimeProgramTaskBodyRef<'program> {
     source: RuntimeTaskSourceRef<'program>,
     function: &'program RuntimeFunctionSite,
     producer: &'program NeedProducerDefinition,
-    captures: &'program [RuntimeLocalDeclarationId],
+    captures: &'program [crate::plan::RuntimeProgramTaskCapture],
     body: &'program [FlowOp],
 }
 
@@ -109,7 +108,7 @@ impl RuntimeProgramTaskBodyRef<'_> {
     }
 
     #[must_use]
-    pub const fn captures(&self) -> &[RuntimeLocalDeclarationId] {
+    pub const fn captures(&self) -> &[crate::plan::RuntimeProgramTaskCapture] {
         self.captures
     }
 
