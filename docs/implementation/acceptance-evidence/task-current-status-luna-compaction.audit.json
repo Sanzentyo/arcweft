@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "base": "843947a2c595368e323bbc4d57981053e1fb5e6c",
+  "model": "gpt-6-luna",
+  "reasoningEffort": "max",
+  "delegatedFiles": [
+    "docs/implementation/current-status.md"
+  ],
+  "reviewedFiles": [
+    {
+      "path": "docs/implementation/current-status.md",
+      "relativeLinks": 39,
+      "missing": 0,
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "relativeLinks": 8,
+      "missing": 0,
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "relativeLinks": 1,
+      "missing": 0,
+      "unclosedFences": 0
+    }
+  ],
+  "sourceChanges": false,
+  "oldCurrentFullIds": 24,
+  "currentFullIds": 25,
+  "missingFullIds": [],
+  "removedCurrentLinksRetainedInHistory": [
+    "acceptance-evidence/task-final-r2979-traversal-registered-sema-runtime.terminal-audit.json",
+    "acceptance-evidence/task-final-r2983-traversal-latent-callable-runtime.terminal-audit.json",
+    "acceptance-evidence/task-traversal-latent-sema-reuse.json"
+  ],
+  "genericAcceptedHead": "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+  "genericPublishedHead": "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+  "genericExecution": {
+    "run": "task-final-r2987-traversal-sema-reverse-runtime",
+    "passed": 151,
+    "failed": 0
+  },
+  "rationale": "Repeated status and caveats are consolidated; exact source/acceptance boundaries remain. New CLI diagnostics supersede the old unknown-traverse classification. Failures, original raw bytes and full Git identities are retained.",
+  "recordedAt": "2026-10-25T10:17:20.590Z"
+}

@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "base": "843947a2c595368e323bbc4d57981053e1fb5e6c",
+  "files": [
+    {
+      "path": "task-final-r2986-traversal-sema-reverse-catalog.log",
+      "bytes": 754442,
+      "sha256": "7f1f78444ad0d0fdedcb9b7a5c37ad985d42975087dfec74b302a40da63119cd"
+    },
+    {
+      "path": "task-final-r2986-traversal-sema-reverse-catalog.json",
+      "bytes": 1383,
+      "sha256": "d37349056c57ad7bb7d094f93f3277c8ca21d39151e8bf2a18bf6a9a84e057a6"
+    },
+    {
+      "path": "task-final-r2986-traversal-sema-reverse-catalog.inventory.json",
+      "bytes": 979971,
+      "sha256": "a856805b7535e805c118c664809c73b8e2fe82883431e4dc348918fbc62992c0"
+    },
+    {
+      "path": "task-final-r2987-traversal-sema-reverse-runtime.log",
+      "bytes": 4340970,
+      "sha256": "8b935be818e8454da62b8dcfe223cc3aa1ecacd9e3090749891aae396912244d"
+    },
+    {
+      "path": "task-final-r2987-traversal-sema-reverse-runtime.json",
+      "bytes": 1477,
+      "sha256": "f1735af9625a9a0ce9ec2ff015f548d2867d61e2878bb1eb587e5d9540bf8b60"
+    },
+    {
+      "path": "task-final-r2987-traversal-sema-reverse-runtime.terminal-audit.json",
+      "bytes": 8886,
+      "sha256": "cd44ca78566a39137493071ade64713084458eae7fc30b0b5acbf0fd63c0644d"
+    },
+    {
+      "path": "task-final-r2987-traversal-sema-reverse-runtime.failure-recon.json",
+      "bytes": 114357,
+      "sha256": "2e2bfcbc8426df9d09c370e37bb243f43de479287d66b3f2c799a130263e2ef9"
+    },
+    {
+      "path": "task-traversal-sema-reverse.graph.json",
+      "bytes": 1142,
+      "sha256": "aa411e6b3f7b513638438703cdf7129ffd3dfc7a31557ef346e04c9d18352fd1"
+    },
+    {
+      "path": "task-traversal-sema-reverse.source-freeze.json",
+      "bytes": 778477,
+      "sha256": "f7a1c5a262f360f9f9a2500cf2e5345940fb590c0fe0bc5ee4e326cd2e5250b6"
+    },
+    {
+      "path": "task-traversal-sema-reverse-executables-before.json",
+      "bytes": 28756,
+      "sha256": "0df5d0e9044eb127fbd4d71c31a09c9867c79ac670eac9d2a7fa999476efbad1"
+    },
+    {
+      "path": "task-traversal-sema-reverse-executables-after.json",
+      "bytes": 28755,
+      "sha256": "cf30b1b1025fe61f39c5c0bef67563b3bf3ae6b9417d7c5dddeeb687b62d7e18"
+    },
+    {
+      "path": "task-traversal-sema-reverse-acceptance.json",
+      "bytes": 80238,
+      "sha256": "c4a2b6637cc1e9e570fcf58ca1b66f62f9892c5cbb17ac5377ebb291b4960b8d"
+    },
+    {
+      "path": "task-traversal-registered-source-checkpoint.verified.json",
+      "bytes": 12370,
+      "sha256": "c8da8ae83219c286ef11b242691919e271620e1e7ee3987af8d14d895887b36d"
+    },
+    {
+      "path": "task-traversal-registered-public-evidence-audit.json",
+      "bytes": 163,
+      "sha256": "29302593176ae30128413f69436d6aecccc7a142e2f6c3a4eb4c868a8b0d251d"
+    }
+  ],
+  "byteDrift": 0,
+  "recordedAt": "2026-10-25T10:14:59.805Z"
+}

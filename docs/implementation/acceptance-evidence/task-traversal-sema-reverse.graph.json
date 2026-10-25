@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "base": "843947a2c595368e323bbc4d57981053e1fb5e6c",
+  "metadataSource": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "changed": [
+    "arcweft-lang-sema",
+    "arcweft-compiler"
+  ],
+  "reverseWorkspace": [
+    "arcweft-adapter-sema",
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-lang-sema",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-web",
+    "arcweft-project-loader",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-test",
+    "arcweft-tooling",
+    "arcweft-verify",
+    "arcweft-verify-lsp",
+    "arcweft-verify-oxiz",
+    "arcweft-verify-z3"
+  ],
+  "packageCount": 22,
+  "owned": [],
+  "temporaryDiagnostics": false,
+  "sourceCuts": [
+    "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+    "843947a2c595368e323bbc4d57981053e1fb5e6c"
+  ]
+}

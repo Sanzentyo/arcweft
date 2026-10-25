@@ -11510,3 +11510,42 @@ checkも終了0・警告あり、Cargo表示2.05s。各3,983入力の前後hash�
 Source Traverseの所有値構築の受入は、callbackの実行、parallelによるaggregate Needの開始・await・保存復元や、
 全22／全53逆依存runtime等の包括受入とは区別する。Generic Matchの受入・公開済み状態も維持する。
 [原本の保全一覧](acceptance-evidence/task-traversal-registered-evidence-integrity.json)。
+
+## Sema全22逆依存の終端とCLI診断の更新 — 2026-10-25
+
+照合基点は公開main `843947a2c595368e323bbc4d57981053e1fb5e6c`。前段のSource Traverse構築受入は
+同SHAで通常公開し、parent `42c9d06867a1e29bf0bd302485bb4f130445dc89`、tree
+`b35768bc0765ac238af64357e17b4d82c9eb6f0a`、full patch SHA256
+`2a89cdc027f43573c1aa9ffd46049872edb69c2ac9e713a3ae3981df08bde8e6`。公開64 blobの差分0、
+元tracked WIP 14件不変、index空を確認した。保持した検証原本57件は公開Git blobともbyte差分0。
+[前段の公開照合](acceptance-evidence/task-traversal-registered-source-checkpoint.verified.json)、
+[公開原本のbyte照合](acceptance-evidence/task-traversal-registered-public-evidence-audit.json)。
+
+R2986 catalog／R2987 runtimeは、解決済みCargo graphのSema全22推移的consumerを対象に、
+全target／全feature／locked、既定選択・通常のbuild jobsで実行した。22 packageすべてにnamed caseがあり、
+111 test binariesと5 non-test binariesを構築。catalogは3,908件中3,885選択、既定のignored 23件を維持した。
+終端は **3,885実行／3,835 PASS（slow 53）／50 FAIL／23 ignored**、終了100、1,135.671秒。
+catalogと終端case集合が一致し、3,983非文書入力・116 executableの前後hash差分0。99 manifest／lockも不変。
+生成物の移動・コピーは行っていない。
+[終端照合](acceptance-evidence/task-final-r2987-traversal-sema-reverse-runtime.terminal-audit.json)、
+[graph・package／binary集計・必須ケース](acceptance-evidence/task-traversal-sema-reverse-acceptance.json)。
+
+Semaは全1,348／1,348、Compilerは620／620（うちcallable_execution 182／182）PASS。
+親scope隔離とcallback効果を含むSema owner 14件、Source Traverseの3ケースは17／17 PASS。
+Generic Matchの受入115 transcript・24 coverage・5公開query・7 Native／decoded-AWBC継続／保存も151／151 PASSだった。
+stdio起動待ちとCompiler API拒否fixtureの以前の2失敗も、今回の終端PASSに一致する。
+
+失敗はCLIの50件で、同packageは641 PASS／50 FAIL。前段R2929の50識別子を全選択し、新規失敗識別子0、
+失敗集合から外れた旧case 0。これは原因の同一性を示さない。今回の原診断ではtraverse利用のrun／benchは
+未知のメソッドではなく、sema.final_analysisの最終型未確定（ExprId slot69／slot103）で拒否された。
+意味解析入口7件の分類をHIR recovery 2件・final semantic analysis 5件へ訂正した。
+Backgroundのtyped Presentation ABI拒否と、word-internal hyphenのcolumn 1169／1127不一致も実際の原診断に残る。
+全50識別子・原ログ行・上限付き抜粋を[診断索引](acceptance-evidence/task-final-r2987-traversal-sema-reverse-runtime.failure-recon.json)へ保持し、
+全文は[原ログ](acceptance-evidence/task-final-r2987-traversal-sema-reverse-runtime.log)のbyteを維持する。大きなJSONを含む5件の抜粋には短縮を明記した。
+
+今回のpublication差分は資料・証拠のみ。R2985 workspace check、R2981／R2984のowner Clippyと前段の構造gateは、
+同じ非文書入力の証拠として維持する。Core全53逆依存を現在入力で再実行した結果や、workspace Clippy・Tier2・
+Native-Web capture parityの包括受入とはしない。Source Traverse構築とparallelのaggregate Need実行も区別した。
+現状一覧の重複説明はLuna／maxの縮約を親が照合し、現在の判定を唯一の一覧へ反映した。
+[前段Semaの終端](acceptance-evidence/task-final-r2979-traversal-registered-sema-runtime.terminal-audit.json)も履歴として保持する。
+[保全一覧](acceptance-evidence/task-traversal-sema-reverse-evidence-integrity.json)。

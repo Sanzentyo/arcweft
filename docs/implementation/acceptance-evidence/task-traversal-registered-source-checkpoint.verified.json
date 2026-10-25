@@ -1,0 +1,271 @@
+{
+  "version": 1,
+  "commit": "843947a2c595368e323bbc4d57981053e1fb5e6c",
+  "parent": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "tree": "b35768bc0765ac238af64357e17b4d82c9eb6f0a",
+  "remote": "843947a2c595368e323bbc4d57981053e1fb5e6c",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+      "blob": "12d039047315c486cd93fbe9df827bd62db1f0c9"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+      "blob": "48f39fd341e6743ebae77d33546e9f636ec24d7b"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/generic_calls.rs",
+      "blob": "6e9a77d3c13eb5a0aed1486dce80fc7a34e62e60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-public-evidence-audit.json",
+      "blob": "d41a0c4c1a9d5ecc7e5040eb04ecda02ee461243"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-sema-checkpoint.verified.json",
+      "blob": "9b23d23e39c0c2ec8795ae3cd10f2a80084dd7a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2974-traversal-manifest-callable-catalog.inventory.json",
+      "blob": "d2c9244e3259bb31d3f6abdfa0579eedf0410b11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2974-traversal-manifest-callable-catalog.json",
+      "blob": "97c4ff2db20f00e6d17d7b3754cc2688c6eac258"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2974-traversal-manifest-callable-catalog.log",
+      "blob": "4e6819efe3248601cbdda30634cf283b4c65c7f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2975-traversal-manifest-callable-runtime.json",
+      "blob": "4da6ac70e641d9bc6cec725877519055c9ef184c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2975-traversal-manifest-callable-runtime.log",
+      "blob": "05f361e4be5a75db2cc91e06febdd7362e7e6647"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2975-traversal-manifest-callable-runtime.terminal-audit.json",
+      "blob": "a6a9d06d18854c10d469c9daf71c9a93f5f1a7d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2976-traversal-registered-callable-catalog.inventory.json",
+      "blob": "0db34bc838f1e398b0618ff108fadac908ace018"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2976-traversal-registered-callable-catalog.json",
+      "blob": "0ac8eeca3e7d2bdd352f31e8f1b599f187b5c250"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2976-traversal-registered-callable-catalog.log",
+      "blob": "057b139f77aea960573f0478c5ccab62d74cec75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2977-traversal-registered-callable-runtime.json",
+      "blob": "e77c54922f42b902d131a17d78c61c0f5317a8cd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2977-traversal-registered-callable-runtime.log",
+      "blob": "92a13032b323e0819a5c6a2935bf539fa45485eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2977-traversal-registered-callable-runtime.terminal-audit.json",
+      "blob": "f7f2976b33c28b44e648aa8d6db70c9de06cdff4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2978-traversal-registered-sema-catalog.inventory.json",
+      "blob": "d61434d8ccd2165814e9664292e42eaabff0828e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2978-traversal-registered-sema-catalog.json",
+      "blob": "2ee9ee80293f72702e46e8ef7fe681b96e046087"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2978-traversal-registered-sema-catalog.log",
+      "blob": "1d448e3d6beb3c649e63912fd42be7a64ec95ec5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2979-traversal-registered-sema-runtime.json",
+      "blob": "121c7a8f80a086be605eafc3b1c8d6d261160682"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2979-traversal-registered-sema-runtime.log",
+      "blob": "b5a14eded6fb40341b97bcdd3dd15049d40738ea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2979-traversal-registered-sema-runtime.terminal-audit.json",
+      "blob": "16e47d850593f298ea40fd20dce5086c2755e4fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2980-traversal-registered-workspace-check.input-audit.json",
+      "blob": "a6de5918d55f66b9005bc8f19d9638302d090540"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2980-traversal-registered-workspace-check.json",
+      "blob": "745ee29436dd38c6eb6b64a6f9e9790dbc5dd405"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2980-traversal-registered-workspace-check.log",
+      "blob": "75c334707cd0f9ba0ae65e7b3a981f50f05c448e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2981-traversal-registered-owner-clippy.input-audit.json",
+      "blob": "ec1e416d14d804e979c0bb77f5917fed381f15fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2981-traversal-registered-owner-clippy.json",
+      "blob": "e480bf8ebcdec3863dd9e6c80b5575a4a0db3bc5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2981-traversal-registered-owner-clippy.log",
+      "blob": "6e9cb71626ad258f347e7cc6f4a3033834c1c8a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2982-traversal-latent-callable-catalog.inventory.json",
+      "blob": "11f628c68f2f70f9395a56b693b759ad74f06206"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2982-traversal-latent-callable-catalog.json",
+      "blob": "41e4e837d667aef9254316973864b9f85e039f4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2982-traversal-latent-callable-catalog.log",
+      "blob": "9d6482fa23d4ace70bf80d2877a5e1a23dc91ce2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2983-traversal-latent-callable-runtime.json",
+      "blob": "96c135aec4acc968e980f958ab59b9fdd375ccdb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2983-traversal-latent-callable-runtime.log",
+      "blob": "e32e27cf248c177da2ceda54fce30308615ae1aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2983-traversal-latent-callable-runtime.terminal-audit.json",
+      "blob": "401cbd3a5dc7e591c3cc2c99b312b8affc595d53"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2984-traversal-latent-fixture-clippy.input-audit.json",
+      "blob": "3ed07e2935c3f170a12d5d9c9f59bd086eea3aa0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2984-traversal-latent-fixture-clippy.json",
+      "blob": "05b2e04e9367a8b8e2e54c954664767076f28e83"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2984-traversal-latent-fixture-clippy.log",
+      "blob": "5b110028511361032fbd3ead4b78d58ae5afe190"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2985-traversal-latent-workspace-check.input-audit.json",
+      "blob": "bf2f7fab565e4d031c72e39185490512b28e1da0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2985-traversal-latent-workspace-check.json",
+      "blob": "f555b92fd9925f3ec5935f9d854dee80c8acc4a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2985-traversal-latent-workspace-check.log",
+      "blob": "d68787a1941d14f14028ba331edbd8e8a93802fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-latent-sema-reuse.json",
+      "blob": "b01728bee4e2449e4682f4ea4a904078474fe231"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-latent-source-executables-after.json",
+      "blob": "752fe75090f0eaf7ba3892230581739a52759608"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-latent-source-executables-before.json",
+      "blob": "8b160cb92a1e8f1ea74afce41721f8205b6996f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-latent-source-sema-executables-reuse.json",
+      "blob": "3edaf061bb562ce3431d08c071ed0cd6aa9220f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-latent-source.graph.json",
+      "blob": "a933306735d6f75757b39c3ced3c2be7756a3491"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-latent-source.source-freeze.json",
+      "blob": "bb4ac4685422da8e7663bb09c0414fb32a52787a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-manifest-callable-audit.json",
+      "blob": "52d2a222b77b8317d7e920b3a9b28d748a356ce3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-manifest-source-executables-after.json",
+      "blob": "a67a234b2ba2b24ed6b306ba4febc9959bf09125"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-manifest-source-executables-before.json",
+      "blob": "0400ada1710ed3588dbd1416e38a5fab49d30ff7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-manifest-source.graph.json",
+      "blob": "7f6e9c6e63bef371f1a135f40889a21719dbebeb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-manifest-source.source-freeze.json",
+      "blob": "6c4f0560faead35cdc95557cb6ed40746c740ebc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-document-audit.json",
+      "blob": "5f25400b6cce74172ff921cf1b9691320eea167e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-evidence-integrity.json",
+      "blob": "d985c32a9363ad58e284cc9b32c4851d726f2bee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-owner-measurements.json",
+      "blob": "33084d9bb9ab373120bcb93cbdf32c97dec261d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-source-acceptance.json",
+      "blob": "9167836c7c76e1d1c2c2cf9d9a584bc67fd4cb24"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-source-executables-after.json",
+      "blob": "9beb78737c1c436999aeb4f7f0627f92fc553f5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-source-executables-before.json",
+      "blob": "85f17b95faefb69a65aa4a795cdc1ca211d928e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-source-sema-executables-after.json",
+      "blob": "245aed6dfd26256d60d144f924461a9f21999d4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-source-sema-executables-before.json",
+      "blob": "09b2ac0685d709461f4c29d01e5ec5ddb614eeb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-source.graph.json",
+      "blob": "a933306735d6f75757b39c3ced3c2be7756a3491"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-source.source-freeze.json",
+      "blob": "e0aa22b293b656c2011b1530472ccb6a7255a6f6"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "f72a2352193c7ea6717f4ba3dd01541e17ed4083"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "3277a38e90391e13d56e3e18db508736d2323797"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "2a89cdc027f43573c1aa9ffd46049872edb69c2ac9e713a3ae3981df08bde8e6",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T09:20:26.3434664Z"
+}

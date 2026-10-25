@@ -480,3 +480,17 @@ backend実行前だったため、実行済みや四family合格とはしない�
 これは新しいlambda入力の具体的な拒否に基づく追加修復範囲であり、Generic Matchや
 既存5 Sema対象・型関係7件を全体goalだけで未完了へ戻す判断ではない。
 途中R2954の網羅漏れとR2957の失敗、実行入力・full SHAは履歴／原本へ保持した。
+
+## 現状一覧の縮約とR2987の診断訂正 — 2026-10-25
+
+基点は公開main `843947a2c595368e323bbc4d57981053e1fb5e6c`。GPT-6 Luna／maxへ現状一覧の
+重複説明を削減する裁量を委ね、親が全差分・受入境界・件数・full SHA・証拠linkを照合した。
+冒頭と各行の同じ成功数・全体goalに関する留保の重複を減らし、訂正理由はこの整理記録へ集約した。
+Generic Matchの受入・公開済み状態、Source Traverse構築の受入とSource parallel未接続という別境界は保持した。
+短縮が「同じcaptureの複数回使用」を「複数capture」や、未呼出しcallbackを実際に起動したという意味に変えないよう親が調整した。
+
+R2987の実終端を反映し、最新22逆依存の3,835 PASS／50 FAIL／23 ignoredとGeneric 151／151 PASSを記した。
+旧「未知のtraverse 2件」は、今回のrun／bench原診断がsema.final_analysisの最終型未確定を示すため訂正した。
+古い分類・R2929・元の失敗・公開full SHAは履歴と原本に保持し、同じ失敗名だけで同一原因とは扱わない。
+資料の縮約のためにCargoを再実行しておらず、並行して完了したR2987を一度だけ集計している。
+[資料照合](acceptance-evidence/task-current-status-luna-compaction.audit.json)にSHA・linkの保全確認を記す。
