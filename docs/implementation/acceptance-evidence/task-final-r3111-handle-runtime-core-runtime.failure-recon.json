@@ -1,0 +1,379 @@
+{
+  "version": 1,
+  "run": "task-final-r3111-handle-runtime-core-runtime",
+  "failures": [
+    {
+      "test": "awbc::product_step::program_task::tests::program_handle_private_fiber_checkpoint_restores_its_original_source",
+      "line": 2381,
+      "diagnosis": [
+        "        awbc::product_step::program_task::tests::program_handle_private_fiber_checkpoint_restores_its_original_source",
+        "    thread 'awbc::product_step::program_task::tests::program_handle_private_fiber_checkpoint_restores_its_original_source' (54756) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\program_task\\tests.rs:50:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 257, maximum: 4 }))))"
+      ]
+    },
+    {
+      "test": "awbc::product_step::tests::await_many_admission_frontier_survives_product_save_restore_and_rebind",
+      "line": 2418,
+      "diagnosis": [
+        "    thread 'awbc::product_step::tests::await_many_admission_frontier_survives_product_save_restore_and_rebind' (12984) panicked at crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7621:14:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "awbc::product_step::tests::await_many_checkpoint_requires_the_original_source_lease_and_rejects_changed_operands",
+      "line": 2437,
+      "diagnosis": [
+        "        awbc::product_step::tests::await_many_checkpoint_requires_the_original_source_lease_and_rejects_changed_operands",
+        "    thread 'awbc::product_step::tests::await_many_checkpoint_requires_the_original_source_lease_and_rejects_changed_operands' (46552) panicked at crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7621:14:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "awbc::product_step::tests::await_many_inert_input_and_site_failures_precede_construction_and_preserve_fiber",
+      "line": 2456,
+      "diagnosis": [
+        "    thread 'awbc::product_step::tests::await_many_inert_input_and_site_failures_precede_construction_and_preserve_fiber' (48044) panicked at crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7621:14:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "awbc::product_step::tests::await_many_input_take_requires_genuine_source_and_preserves_the_frame_on_rejection",
+      "line": 2475,
+      "diagnosis": [
+        "        awbc::product_step::tests::await_many_input_take_requires_genuine_source_and_preserves_the_frame_on_rejection",
+        "    thread 'awbc::product_step::tests::await_many_input_take_requires_genuine_source_and_preserves_the_frame_on_rejection' (49820) panicked at crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7621:14:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "awbc::product_step::tests::await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted",
+      "line": 2494,
+      "diagnosis": [
+        "    thread 'awbc::product_step::tests::await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted' (29204) panicked at crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7621:14:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "awbc::product_step::tests::await_many_product_templates_resolve_their_genuine_original_source",
+      "line": 2513,
+      "diagnosis": [
+        "        awbc::product_step::tests::await_many_product_templates_resolve_their_genuine_original_source",
+        "    thread 'awbc::product_step::tests::await_many_product_templates_resolve_their_genuine_original_source' (29872) panicked at crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7621:14:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "awbc::product_step::tests::await_many_result_aggregation_runs_native_and_product_with_ordered_errors_and_public_restore",
+      "line": 2532,
+      "diagnosis": [
+        "        awbc::product_step::tests::await_many_result_aggregation_runs_native_and_product_with_ordered_errors_and_public_restore",
+        "    thread 'awbc::product_step::tests::await_many_result_aggregation_runs_native_and_product_with_ordered_errors_and_public_restore' (34956) panicked at crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7621:14:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 1792, maximum: 7 }))))"
+      ]
+    },
+    {
+      "test": "awbc::product_step::tests::program_child_result_fanout_binds_retires_and_survives_each_public_restore",
+      "line": 2582,
+      "diagnosis": [
+        "    thread 'awbc::product_step::tests::program_child_result_fanout_binds_retires_and_survives_each_public_restore' (36072) panicked at crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7621:14:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 1793, maximum: 8 }))))"
+      ]
+    },
+    {
+      "test": "engine::rollback::await_state::many_tests::native_fanout_values_borrow_the_enclosing_resource_bank",
+      "line": 2965,
+      "diagnosis": [
+        "        engine::rollback::await_state::many_tests::native_fanout_values_borrow_the_enclosing_resource_bank",
+        "    thread 'engine::rollback::await_state::many_tests::native_fanout_values_borrow_the_enclosing_resource_bank' (48020) panicked at crates\\arcweft-core\\src\\engine\\rollback\\await_state\\many_tests.rs:314:56:",
+        "    called `Result::unwrap()` on an `Err` value: Resource(BudgetExceeded { budget: \"nodes\" })"
+      ]
+    },
+    {
+      "test": "engine::rollback::await_state::tests::native_waits_share_live_inert_and_parent_node_limits",
+      "line": 2986,
+      "diagnosis": [
+        "    thread 'engine::rollback::await_state::tests::native_waits_share_live_inert_and_parent_node_limits' (54824) panicked at crates\\arcweft-core\\src\\engine\\rollback\\await_state\\tests.rs:87:56:",
+        "    called `Result::unwrap()` on an `Err` value: Resource(BudgetExceeded { budget: \"nodes\" })"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::program_task::tests::program_kernel_requires_its_task_kind_and_suspending_role_flags",
+      "line": 3749,
+      "diagnosis": [
+        "        plan::task_source::program::program_task::tests::program_kernel_requires_its_task_kind_and_suspending_role_flags",
+        "    thread 'plan::task_source::program::program_task::tests::program_kernel_requires_its_task_kind_and_suspending_role_flags' (44948) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\program_task\\tests.rs:50:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 257, maximum: 4 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::program_task::tests::program_kernel_retains_the_original_lexical_context_with_its_distinct_capture_abi",
+      "line": 3768,
+      "diagnosis": [
+        "        plan::task_source::program::program_task::tests::program_kernel_retains_the_original_lexical_context_with_its_distinct_capture_abi",
+        "    thread 'plan::task_source::program::program_task::tests::program_kernel_retains_the_original_lexical_context_with_its_distinct_capture_abi' (49404) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\program_task\\tests.rs:50:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 257, maximum: 4 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_checks_payload_and_capture_types_against_the_original",
+      "line": 3787,
+      "diagnosis": [
+        "        plan::task_source::program::program_task::tests::program_kernel_source_checks_payload_and_capture_types_against_the_original",
+        "    thread 'plan::task_source::program::program_task::tests::program_kernel_source_checks_payload_and_capture_types_against_the_original' (44584) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\program_task\\tests.rs:50:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 257, maximum: 4 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drift",
+      "line": 3806,
+      "diagnosis": [
+        "        plan::task_source::program::program_task::tests::program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drift",
+        "    thread 'plan::task_source::program::program_task::tests::program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drift' (44604) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\program_task\\tests.rs:50:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 257, maximum: 4 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_round_trips_without_a_host_request_and_reborrows_its_actual_row",
+      "line": 3825,
+      "diagnosis": [
+        "        plan::task_source::program::program_task::tests::program_kernel_source_round_trips_without_a_host_request_and_reborrows_its_actual_row",
+        "    thread 'plan::task_source::program::program_task::tests::program_kernel_source_round_trips_without_a_host_request_and_reborrows_its_actual_row' (42052) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\program_task\\tests.rs:50:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 257, maximum: 4 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::program_task::tests::program_source_rejects_effect_permissions_not_owned_by_the_enclosing_invocation",
+      "line": 3844,
+      "diagnosis": [
+        "        plan::task_source::program::program_task::tests::program_source_rejects_effect_permissions_not_owned_by_the_enclosing_invocation",
+        "    thread 'plan::task_source::program::program_task::tests::program_source_rejects_effect_permissions_not_owned_by_the_enclosing_invocation' (55236) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\program_task\\tests.rs:50:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 257, maximum: 4 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::program_task::tests::program_source_rejects_host_rows_and_exhausted_work_without_issuing_a_lease",
+      "line": 3863,
+      "diagnosis": [
+        "        plan::task_source::program::program_task::tests::program_source_rejects_host_rows_and_exhausted_work_without_issuing_a_lease",
+        "    thread 'plan::task_source::program::program_task::tests::program_source_rejects_host_rows_and_exhausted_work_without_issuing_a_lease' (3836) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_await_many_rejects_another_genuine_admitted_child_from_the_same_source",
+      "line": 3891,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_await_many_rejects_another_genuine_admitted_child_from_the_same_source",
+        "    thread 'plan::task_source::program::template::tests::awbc_await_many_rejects_another_genuine_admitted_child_from_the_same_source' (53984) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_templates_bound_roles_before_a_forged_key_and_admit_shared_capture_prefixes",
+      "line": 3910,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_templates_bound_roles_before_a_forged_key_and_admit_shared_capture_prefixes",
+        "    thread 'plan::task_source::program::template::tests::awbc_templates_bound_roles_before_a_forged_key_and_admit_shared_capture_prefixes' (42184) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_templates_check_argument_and_capture_types_after_valid_payloads",
+      "line": 3929,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_templates_check_argument_and_capture_types_after_valid_payloads",
+        "    thread 'plan::task_source::program::template::tests::awbc_templates_check_argument_and_capture_types_after_valid_payloads' (21136) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_changed_original_family_and_base_row_kind",
+      "line": 3948,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_templates_reject_changed_original_family_and_base_row_kind",
+        "    thread 'plan::task_source::program::template::tests::awbc_templates_reject_changed_original_family_and_base_row_kind' (47756) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_foreign_keys_without_metadata_fallback",
+      "line": 3967,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_templates_reject_foreign_keys_without_metadata_fallback",
+        "    thread 'plan::task_source::program::template::tests::awbc_templates_reject_foreign_keys_without_metadata_fallback' (48092) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_independently_valid_metadata_and_capture_changes",
+      "line": 3986,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_templates_reject_independently_valid_metadata_and_capture_changes",
+        "    thread 'plan::task_source::program::template::tests::awbc_templates_reject_independently_valid_metadata_and_capture_changes' (54000) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_real_other_endpoint_kinds_and_absent_or_native_rows",
+      "line": 4005,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_templates_reject_real_other_endpoint_kinds_and_absent_or_native_rows",
+        "    thread 'plan::task_source::program::template::tests::awbc_templates_reject_real_other_endpoint_kinds_and_absent_or_native_rows' (50276) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_same_id_different_executable_payload_and_capture_shapes",
+      "line": 4024,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_templates_reject_same_id_different_executable_payload_and_capture_shapes",
+        "    thread 'plan::task_source::program::template::tests::awbc_templates_reject_same_id_different_executable_payload_and_capture_shapes' (54324) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_templates_resolve_both_original_rows_and_capture_abis_after_decode",
+      "line": 4043,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_templates_resolve_both_original_rows_and_capture_abis_after_decode",
+        "    thread 'plan::task_source::program::template::tests::awbc_templates_resolve_both_original_rows_and_capture_abis_after_decode' (13568) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_templates_share_exact_prior_and_first_failed_work",
+      "line": 4062,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_templates_share_exact_prior_and_first_failed_work",
+        "    thread 'plan::task_source::program::template::tests::awbc_templates_share_exact_prior_and_first_failed_work' (53340) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::program::template::tests::awbc_template_owning_source_preserves_checked_rows_and_rechecks_the_new_allowance",
+      "line": 4089,
+      "diagnosis": [
+        "        plan::task_source::program::template::tests::awbc_template_owning_source_preserves_checked_rows_and_rechecks_the_new_allowance",
+        "    thread 'plan::task_source::program::template::tests::awbc_template_owning_source_preserves_checked_rows_and_rechecks_the_new_allowance' (47056) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::awbc_host_request_kernel_cannot_claim_an_original_thread_source",
+      "line": 4118,
+      "diagnosis": [
+        "        plan::task_source::template_tests::awbc_host_request_kernel_cannot_claim_an_original_thread_source",
+        "    thread 'plan::task_source::template_tests::awbc_host_request_kernel_cannot_claim_an_original_thread_source' (41788) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::host_template_sources_cannot_be_relabelled_as_program_work",
+      "line": 4137,
+      "diagnosis": [
+        "        plan::task_source::template_tests::host_template_sources_cannot_be_relabelled_as_program_work",
+        "    thread 'plan::task_source::template_tests::host_template_sources_cannot_be_relabelled_as_program_work' (52376) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::template_materialization_keeps_original_metadata_and_rejects_foreign_or_failed_banks",
+      "line": 4156,
+      "diagnosis": [
+        "        plan::task_source::template_tests::template_materialization_keeps_original_metadata_and_rejects_foreign_or_failed_banks",
+        "    thread 'plan::task_source::template_tests::template_materialization_keeps_original_metadata_and_rejects_foreign_or_failed_banks' (45200) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::template_source_container_graphs_reject_same_identity_with_another_shape_before_values",
+      "line": 4175,
+      "diagnosis": [
+        "        plan::task_source::template_tests::template_source_container_graphs_reject_same_identity_with_another_shape_before_values",
+        "    thread 'plan::task_source::template_tests::template_source_container_graphs_reject_same_identity_with_another_shape_before_values' (5384) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::template_source_count_preflight_rejects_virtual_fanout_before_capture_or_child_views",
+      "line": 4194,
+      "diagnosis": [
+        "        plan::task_source::template_tests::template_source_count_preflight_rejects_virtual_fanout_before_capture_or_child_views",
+        "    thread 'plan::task_source::template_tests::template_source_count_preflight_rejects_virtual_fanout_before_capture_or_child_views' (33248) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::template_source_leases_keep_the_actual_original_and_code_alive_until_the_last_spec",
+      "line": 4213,
+      "diagnosis": [
+        "        plan::task_source::template_tests::template_source_leases_keep_the_actual_original_and_code_alive_until_the_last_spec",
+        "    thread 'plan::task_source::template_tests::template_source_leases_keep_the_actual_original_and_code_alive_until_the_last_spec' (29384) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::template_sources_check_capture_source_and_item_types_against_the_actual_program",
+      "line": 4232,
+      "diagnosis": [
+        "        plan::task_source::template_tests::template_sources_check_capture_source_and_item_types_against_the_actual_program",
+        "    thread 'plan::task_source::template_tests::template_sources_check_capture_source_and_item_types_against_the_actual_program' (39816) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::template_sources_bound_debug_metadata_before_borrowing_captures",
+      "line": 4251,
+      "diagnosis": [
+        "        plan::task_source::template_tests::template_sources_bound_debug_metadata_before_borrowing_captures",
+        "    thread 'plan::task_source::template_tests::template_sources_bound_debug_metadata_before_borrowing_captures' (43204) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::template_sources_keep_original_keys_and_exact_nested_argument_transcripts",
+      "line": 4270,
+      "diagnosis": [
+        "        plan::task_source::template_tests::template_sources_keep_original_keys_and_exact_nested_argument_transcripts",
+        "    thread 'plan::task_source::template_tests::template_sources_keep_original_keys_and_exact_nested_argument_transcripts' (39728) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::template_sources_preflight_owner_kind_and_complete_capture_count_before_value_views",
+      "line": 4289,
+      "diagnosis": [
+        "        plan::task_source::template_tests::template_sources_preflight_owner_kind_and_complete_capture_count_before_value_views",
+        "    thread 'plan::task_source::template_tests::template_sources_preflight_owner_kind_and_complete_capture_count_before_value_views' (22740) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::thread_source_codec_retains_program_definition_and_capture_roles",
+      "line": 4308,
+      "diagnosis": [
+        "        plan::task_source::template_tests::thread_source_codec_retains_program_definition_and_capture_roles",
+        "    thread 'plan::task_source::template_tests::thread_source_codec_retains_program_definition_and_capture_roles' (38328) panicked at crates\\arcweft-core\\src\\plan\\task_source\\template_tests.rs:936:68:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 257, maximum: 4 }))))"
+      ]
+    },
+    {
+      "test": "plan::task_source::template_tests::template_sources_preserve_inert_storage_and_one_exact_sticky_bank",
+      "line": 4327,
+      "diagnosis": [
+        "        plan::task_source::template_tests::template_sources_preserve_inert_storage_and_one_exact_sticky_bank",
+        "    thread 'plan::task_source::template_tests::template_sources_preserve_inert_storage_and_one_exact_sticky_bank' (47448) panicked at crates\\arcweft-core\\src\\plan\\task_source\\program\\template\\tests.rs:246:18:",
+        "    called `Result::unwrap()` on an `Err` value: RuntimeTaskSourceArtifactError(Program(Bodies(Flow(Reference { kind: \"type\", actual: 768, maximum: 3 }))))"
+      ]
+    },
+    {
+      "test": "plan::value_admission::tests::need_request_values_share_live_and_snapshot_resource_limits_in_native_and_awbc",
+      "line": 4449,
+      "diagnosis": [
+        "        plan::value_admission::tests::need_request_values_share_live_and_snapshot_resource_limits_in_native_and_awbc",
+        "    thread 'plan::value_admission::tests::need_request_values_share_live_and_snapshot_resource_limits_in_native_and_awbc' (47680) panicked at crates\\arcweft-core\\src\\plan\\value_admission\\tests.rs:126:10:",
+        "    called `Result::unwrap()` on an `Err` value: Value { ty: RuntimePlanTypeId(2), source: BudgetExceeded { budget: \"nodes\" } }"
+      ]
+    }
+  ]
+}

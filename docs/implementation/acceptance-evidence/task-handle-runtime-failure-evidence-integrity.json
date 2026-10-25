@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "base": "5a2f0851316214b5b7de9e6c6ede9ff59e84c7d0",
+  "purpose": "Actual post-carrier-migration Core runtime, not a full reverse-consumer run or Generic Match reacceptance",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3109-handle-runtime-full-catalog.log",
+      "bytes": 1369254,
+      "sha256": "ee18bfc9137afdc5fca112eabfb1e51c514b70e6f8accfa727e9459a1ee14152"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3109-handle-runtime-full-catalog.json",
+      "bytes": 2579,
+      "sha256": "30460619920f044f1b8be74f856a9f9319edbb6394b5587f6194b1ddf1027cc1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3109-handle-runtime-full-catalog.inventory.json",
+      "bytes": 1845077,
+      "sha256": "062ce2b0219a13f14205176139026617fc10793557e4e10e435639521bfa2885"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3110-handle-runtime-core-catalog.log",
+      "bytes": 558756,
+      "sha256": "dede7d8bb795405f5ebbe9e29403d655b08c1a1f22b709710dce1d0390275155"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3110-handle-runtime-core-catalog.json",
+      "bytes": 2621,
+      "sha256": "cff69c3a5b5e3df531d47b085332542063abc4de766023c532b2d04a4bfa76de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3110-handle-runtime-core-catalog.inventory.json",
+      "bytes": 526089,
+      "sha256": "fd6c5025dd05021573afd0e226d04b21b8d5fc7d43960b5761eeee937b16fb6b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3111-handle-runtime-core-runtime.log",
+      "bytes": 772630,
+      "sha256": "e09d0802d0b76ff2a27610539b7d750b4f13dad53c6a7f2fa1c169da4f423f44"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3111-handle-runtime-core-runtime.json",
+      "bytes": 2715,
+      "sha256": "dfad1d1130d37aaabce76019d9a3c8888d546dcb4d28c05b43715b0ff990bcbf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3111-handle-runtime-core-runtime.terminal-audit.json",
+      "bytes": 10549,
+      "sha256": "82452455f738197f6ea202e6142512e82fde2caf2a2104a2e330b2586494a83e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3111-handle-runtime-core-runtime.failure-recon.json",
+      "bytes": 29864,
+      "sha256": "98ce146fb78e209dcc21003d290958e714c468c1c745a12e889089f5f9eec1d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-executables-before.json",
+      "bytes": 56284,
+      "sha256": "935fb8501ae7d36ea038c8930adf31a1bd8f4f18c1e4ba97f6f27e43fbcb8f46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-executables-after-core.json",
+      "bytes": 56283,
+      "sha256": "945868de032a0673d122f65c57341fefb01dd6b681c8f601fabe76503329db60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-structure-checkpoint.verified.json",
+      "bytes": 3503,
+      "sha256": "93f5a1ed0b753b78ad5a22a0430de2d3db57759d8db6b0c60e1cc36507e717ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-structure-public-evidence-audit.json",
+      "bytes": 135,
+      "sha256": "e1d588c4803d105349ecf144cade5866cbe58889684866d35c4d197b36e1851e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-driver.log",
+      "bytes": 15915,
+      "sha256": "344e773321c4e63913fe7027719a37eb77bdd23a8a3f256095a823e0e3d5d42e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-failure.json",
+      "bytes": 7746,
+      "sha256": "92512438e43ba9f8bae554dc0588d91feff1f4d6205bdb4cee6f96d980c34663"
+    }
+  ],
+  "totalBytes": 5260000,
+  "artifactCopyMove": false
+}

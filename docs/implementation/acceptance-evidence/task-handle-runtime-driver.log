@@ -1,0 +1,327 @@
+warning: `arcweft-compiler` (test "try_pipe") generated 3 warnings (3 duplicates)
+warning: `arcweft-compiler` (test "project_function_instances") generated 3 warnings (3 duplicates)
+warning: `arcweft-compiler` (test "agent_enum_execution") generated 3 warnings (3 duplicates)
+warning: `arcweft-compiler` (test "inline_failure_policy") generated 3 warnings
+warning: `arcweft-compiler` (test "named_scopes") generated 3 warnings (3 duplicates)
+warning: `arcweft-runtime-driver` (lib test) generated 1 warning (1 duplicate)
+warning: `arcweft-compiler` (lib test) generated 1 warning (run `cargo fix --lib -p arcweft-compiler --tests` to apply 1 suggestion)
+warning: `arcweft-lang-sema` (lib test) generated 12 warnings (10 duplicates)
+warning: `arcweft-cli` (lib test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29m 16s
+{"name":"task-final-r3109-handle-runtime-full-catalog","all":7388,"matched":7349,"excluded":39,"required":["host_template_sources_cannot_be_relabelled_as_program_work","equal_payloads_with_different_carriers_have_distinct_task_and_need_identities","host_requests_cannot_issue_or_restore_thread_handles_with_the_same_payload","thread_source_uses_original_capture_order_and_retains_only_an_admitted_source","saved_producer_metadata_is_recovered_only_from_the_original_derivation_input","deeply_nested_unannotated_diverging_branches_keep_the_never_result"]}
+{"catalog":"task-final-r3109-handle-runtime-full-catalog","phase":"before-run","inventoryOnly":false,"testBinaries":221,"nonTestBinaries":6,"total":227}
+  --> crates\arcweft-runtime-scheduler\src\lib.rs:12:13
+   |
+12 |     TaskId, TaskKey, TaskPolicy, TaskPublicationRevision, TaskSequence, compare_task_events,
+   |             ^^^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `arcweft-view` (lib test) generated 1 warning (run `cargo fix --lib -p arcweft-view --tests` to apply 1 suggestion)
+warning: `arcweft-runtime-scheduler` (lib test) generated 1 warning (run `cargo fix --lib -p arcweft-runtime-scheduler --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.76s
+{"name":"task-final-r3110-handle-runtime-core-catalog","all":2080,"matched":2080,"excluded":0,"required":["host_template_sources_cannot_be_relabelled_as_program_work","equal_payloads_with_different_carriers_have_distinct_task_and_need_identities","host_requests_cannot_issue_or_restore_thread_handles_with_the_same_payload","thread_source_uses_original_capture_order_and_retains_only_an_admitted_source","saved_producer_metadata_is_recovered_only_from_the_original_derivation_input"]}
+        FAIL [   0.569s] (1325/2080) arcweft-core plan::task_source::program::template::tests::awbc_templates_share_exact_prior_and_first_failed_work
+        FAIL [   0.851s] (1334/2080) arcweft-core plan::task_source::program::template::tests::awbc_template_owning_source_preserves_checked_rows_and_rechecks_the_new_allowance
+        FAIL [   0.352s] (1345/2080) arcweft-core plan::task_source::template_tests::awbc_host_request_kernel_cannot_claim_an_original_thread_source
+        FAIL [   0.371s] (1346/2080) arcweft-core plan::task_source::template_tests::host_template_sources_cannot_be_relabelled_as_program_work
+        FAIL [   0.370s] (1347/2080) arcweft-core plan::task_source::template_tests::template_materialization_keeps_original_metadata_and_rejects_foreign_or_failed_banks
+        FAIL [   0.380s] (1348/2080) arcweft-core plan::task_source::template_tests::template_source_container_graphs_reject_same_identity_with_another_shape_before_values
+        FAIL [   0.383s] (1349/2080) arcweft-core plan::task_source::template_tests::template_source_count_preflight_rejects_virtual_fanout_before_capture_or_child_views
+        FAIL [   0.329s] (1350/2080) arcweft-core plan::task_source::template_tests::template_source_leases_keep_the_actual_original_and_code_alive_until_the_last_spec
+        FAIL [   0.337s] (1351/2080) arcweft-core plan::task_source::template_tests::template_sources_check_capture_source_and_item_types_against_the_actual_program
+        FAIL [   0.358s] (1352/2080) arcweft-core plan::task_source::template_tests::template_sources_bound_debug_metadata_before_borrowing_captures
+        FAIL [   0.371s] (1353/2080) arcweft-core plan::task_source::template_tests::template_sources_keep_original_keys_and_exact_nested_argument_transcripts
+        FAIL [   0.391s] (1354/2080) arcweft-core plan::task_source::template_tests::template_sources_preflight_owner_kind_and_complete_capture_count_before_value_views
+        FAIL [   0.403s] (1355/2080) arcweft-core plan::task_source::template_tests::thread_source_codec_retains_program_definition_and_capture_roles
+        FAIL [   0.419s] (1356/2080) arcweft-core plan::task_source::template_tests::template_sources_preserve_inert_storage_and_one_exact_sticky_bank
+        FAIL [   0.326s] (1460/2080) arcweft-core plan::value_admission::tests::need_request_values_share_live_and_snapshot_resource_limits_in_native_and_awbc
+error: test run failed
+actual exit code: 100
+{
+  "version": 1,
+  "base": "5a2f0851316214b5b7de9e6c6ede9ff59e84c7d0",
+  "run": "task-final-r3111-handle-runtime-core-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 196.573s] 2080 tests run: 2038 passed (1 slow), 42 failed, 0 skipped",
+  "executed": 2080,
+  "passed": 2038,
+  "failed": 42,
+  "skipped": 0,
+  "selectedPackages": 53,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [
+    "arcweft",
+    "arcweft-adapter-desktop",
+    "arcweft-adapter-sema",
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-policy",
+    "arcweft-agent-protocol",
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-browser-bench",
+    "arcweft-bundle",
+    "arcweft-bundle-assets",
+    "arcweft-character-view",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-debug-model",
+    "arcweft-debug-sqlite",
+    "arcweft-dialogue",
+    "arcweft-glyphon",
+    "arcweft-host-adapter",
+    "arcweft-lang-jit-cranelift",
+    "arcweft-lang-sema",
+    "arcweft-launch",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-text-input",
+    "arcweft-player-web",
+    "arcweft-project",
+    "arcweft-project-loader",
+    "arcweft-rag",
+    "arcweft-render-text",
+    "arcweft-render-web",
+    "arcweft-render-wgpu",
+    "arcweft-resource-manifest",
+    "arcweft-resource-model",
+    "arcweft-runtime-accelerator",
+    "arcweft-runtime-codegen",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-runtime-scheduler",
+    "arcweft-save",
+    "arcweft-test",
+    "arcweft-text-layout",
+    "arcweft-text-model",
+    "arcweft-tooling",
+    "arcweft-verify",
+    "arcweft-verify-lsp",
+    "arcweft-verify-oxiz",
+    "arcweft-verify-z3",
+    "arcweft-view"
+  ],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3987,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_handle_private_fiber_checkpoint_restores_its_original_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::await_many_admission_frontier_survives_product_save_restore_and_rebind"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::await_many_checkpoint_requires_the_original_source_lease_and_rejects_changed_operands"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::await_many_inert_input_and_site_failures_precede_construction_and_preserve_fiber"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::await_many_input_take_requires_genuine_source_and_preserves_the_frame_on_rejection"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::await_many_product_templates_resolve_their_genuine_original_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::await_many_result_aggregation_runs_native_and_product_with_ordered_errors_and_public_restore"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::program_child_result_fanout_binds_retires_and_survives_each_public_restore"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "engine::rollback::await_state::many_tests::native_fanout_values_borrow_the_enclosing_resource_bank"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "engine::rollback::await_state::tests::native_waits_share_live_inert_and_parent_node_limits"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_requires_its_task_kind_and_suspending_role_flags"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_retains_the_original_lexical_context_with_its_distinct_capture_abi"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_checks_payload_and_capture_types_against_the_original"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drift"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_round_trips_without_a_host_request_and_reborrows_its_actual_row"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_source_rejects_effect_permissions_not_owned_by_the_enclosing_invocation"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_source_rejects_host_rows_and_exhausted_work_without_issuing_a_lease"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_await_many_rejects_another_genuine_admitted_child_from_the_same_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_templates_bound_roles_before_a_forged_key_and_admit_shared_capture_prefixes"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_templates_check_argument_and_capture_types_after_valid_payloads"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_changed_original_family_and_base_row_kind"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_foreign_keys_without_metadata_fallback"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_independently_valid_metadata_and_capture_changes"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_real_other_endpoint_kinds_and_absent_or_native_rows"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_templates_reject_same_id_different_executable_payload_and_capture_shapes"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_templates_resolve_both_original_rows_and_capture_abis_after_decode"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_templates_share_exact_prior_and_first_failed_work"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::template::tests::awbc_template_owning_source_preserves_checked_rows_and_rechecks_the_new_allowance"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::awbc_host_request_kernel_cannot_claim_an_original_thread_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::host_template_sources_cannot_be_relabelled_as_program_work"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::template_materialization_keeps_original_metadata_and_rejects_foreign_or_failed_banks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::template_source_container_graphs_reject_same_identity_with_another_shape_before_values"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::template_source_count_preflight_rejects_virtual_fanout_before_capture_or_child_views"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::template_source_leases_keep_the_actual_original_and_code_alive_until_the_last_spec"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::template_sources_check_capture_source_and_item_types_against_the_actual_program"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::template_sources_bound_debug_metadata_before_borrowing_captures"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::template_sources_keep_original_keys_and_exact_nested_argument_transcripts"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::template_sources_preflight_owner_kind_and_complete_capture_count_before_value_views"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::thread_source_codec_retains_program_definition_and_capture_roles"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::template_sources_preserve_inert_storage_and_one_exact_sticky_bank"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::value_admission::tests::need_request_values_share_live_and_snapshot_resource_limits_in_native_and_awbc"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T17:21:37.1048129Z"
+}
+
+{"catalog":"task-final-r3109-handle-runtime-full-catalog","phase":"after-run","inventoryOnly":false,"testBinaries":221,"nonTestBinaries":6,"total":227}

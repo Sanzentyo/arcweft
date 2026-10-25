@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "commit": "5a2f0851316214b5b7de9e6c6ede9ff59e84c7d0",
+  "parent": "529dc24116788e639ec08d54b84a9f013ed0502a",
+  "tree": "9a8dc2917426d00487c7a3d804e36272cd8a29fd",
+  "remote": "5a2f0851316214b5b7de9e6c6ede9ff59e84c7d0",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3115-handle-runtime-structure.input-audit.json",
+      "blob": "27bd20938204a2f260e3930a3e1b3048fdb6ea72"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3115-handle-runtime-structure.json",
+      "blob": "c9ac2a80dd9221b0ff73a2679933f035537b21b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3115-handle-runtime-structure.log",
+      "blob": "a63a85b08dd0a8e454ea1f4b62ea21d6a1db4806"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-checkpoint.verified.json",
+      "blob": "82cbccc6fbac052886c98bbfd3b5b8a15ed58d30"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-public-evidence-audit.json",
+      "blob": "02cd17d6d026963dcc141f7cbe6df0566fd97e6b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-freeze.ps1",
+      "blob": "2ee3b1b2b2ab43310bed6b4a5eb3e0927eb382a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/file_metrics.csv",
+      "blob": "269d1f43203df8b4f7ddabaf4a44d47a29c24fcf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/findings.md",
+      "blob": "23b8a8d01fba5ae4f6a9bbf81144cdef67a886a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-report/public_type_duplicates.csv",
+      "blob": "5c1560ade8f660e9ce3a432d7d6137f6b96c354a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-structure-review.json",
+      "blob": "d46809684f2e28cf2696718f0536b4c474c07a0a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime.graph.json",
+      "blob": "41cacd69465ddb8f11b40df04f240c7ff544f08d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime.source-freeze.json",
+      "blob": "6ddf2fbfbd284acf8d7088ae3fdfe421e5c0dc6c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-structure-evidence-integrity.json",
+      "blob": "4066682ef3433b355c7511889b6a30c1692920c9"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "8da6fce0ac82bb74908ab8bc58c29955e1bfd418"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "afb32c28bf6ad86c0e999585f02f9f96e632082f"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "0ef3fb66a5f9190e37ecb5acd9efcad0fc9e10ea2d56d6572f1951fa7bf0ddbf",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T17:08:21.7524305Z"
+}

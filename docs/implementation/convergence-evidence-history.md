@@ -11848,3 +11848,30 @@ R3115は正規 `tools/structure-audit.rs` を `--fail-on-blocking` と `--write`
 [実測とdisposition](acceptance-evidence/task-handle-runtime-structure-review.json)、
 [正規report](acceptance-evidence/task-handle-runtime-structure-report/findings.md)。
 原本等14件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-handle-structure-evidence-integrity.json)。
+
+## carrier移行後のCore runtime失敗 — 2026-10-26
+
+照合基点は公開main `5a2f0851316214b5b7de9e6c6ede9ff59e84c7d0`。parentは
+`529dc24116788e639ec08d54b84a9f013ed0502a`、treeは
+`9a8dc2917426d00487c7a3d804e36272cd8a29fd`、full patch SHA256は
+`0ef3fb66a5f9190e37ecb5acd9efcad0fc9e10ea2d56d6572f1951fa7bf0ddbf`。
+前段17公開blob・原本等14件の公開byte hash差分0。
+
+R3109はCoreの全53逆依存を全target・全feature・lockedでbuild／catalogし終了0。
+221 test binaries・6 non-test binaries、選択7,349件・除外39件。
+R3111ではCoreの2,080件を実行し、2,038 PASS／42 FAIL／0 skipped、196.573秒、終了100。
+Core catalogと終端case集合、3,987非文書入力、227実行ファイルの前後hash差分はすべて0。
+Core失敗でdriverが止まったため、残るconsumerのruntimeは未実行。
+[実行の範囲と全失敗](acceptance-evidence/task-handle-runtime-failure.json)、
+[終端照合](acceptance-evidence/task-final-r3111-handle-runtime-core-runtime.terminal-audit.json)。
+
+39件はSource codecのtype参照不正。encoderとmaterializing decoderが保持するcarrier tagを、
+borrowed preflight readerのproducer_definitionが読まず、後続のtype indexが257／768へずれる。
+残る3件はdescriptorのnodes上限超過。carrierを独立したfixed fieldとして追加したことを
+実際のenclosing resource bankの拒否と照合した。製品の資源上限・assertionは変更していない。
+これらはcarrier移行の当該境界を修復すべき具体的な根拠であり、既存の受入履歴全体の取消しではない。
+特にGeneric Matchの151件はこのCore runに含まれず、未実行を失敗とも受入取消しとも扱わない。
+
+現状一覧の「修正後runtimeはまだ未確認」を、実測した失敗とconsumer未実行へ訂正した。
+初回失敗を後続の成功で置換せず、原ログ・receipt・catalog・入力／実行ファイル照合等をbyte不変で保持する。
+[保全一覧](acceptance-evidence/task-handle-runtime-failure-evidence-integrity.json)。

@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "base": "5a2f0851316214b5b7de9e6c6ede9ff59e84c7d0",
+  "sourcePublication": "529dc24116788e639ec08d54b84a9f013ed0502a",
+  "scope": "Actual post-carrier-migration Core runtime, not a full reverse-consumer run or Generic Match reacceptance",
+  "catalog": {
+    "run": "task-final-r3109-handle-runtime-full-catalog",
+    "exitCode": 0,
+    "selectedPackages": 53,
+    "total": 7388,
+    "matched": 7349,
+    "excluded": 39,
+    "testBinaries": 221,
+    "nonTestBinaries": 6
+  },
+  "runtime": {
+    "run": "task-final-r3111-handle-runtime-core-runtime",
+    "exitCode": 100,
+    "executed": 2080,
+    "passed": 2038,
+    "failed": 42,
+    "skipped": 0,
+    "summary": "Summary [ 196.573s] 2080 tests run: 2038 passed (1 slow), 42 failed, 0 skipped",
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3987,
+    "sourceDrift": 0,
+    "executableHashes": 227,
+    "executableDrift": 0
+  },
+  "failureGroups": [
+    {
+      "kind": "source-codec-type-reference",
+      "count": 39,
+      "tests": [
+        "awbc::product_step::program_task::tests::program_handle_private_fiber_checkpoint_restores_its_original_source",
+        "awbc::product_step::tests::await_many_admission_frontier_survives_product_save_restore_and_rebind",
+        "awbc::product_step::tests::await_many_checkpoint_requires_the_original_source_lease_and_rejects_changed_operands",
+        "awbc::product_step::tests::await_many_inert_input_and_site_failures_precede_construction_and_preserve_fiber",
+        "awbc::product_step::tests::await_many_input_take_requires_genuine_source_and_preserves_the_frame_on_rejection",
+        "awbc::product_step::tests::await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted",
+        "awbc::product_step::tests::await_many_product_templates_resolve_their_genuine_original_source",
+        "awbc::product_step::tests::await_many_result_aggregation_runs_native_and_product_with_ordered_errors_and_public_restore",
+        "awbc::product_step::tests::program_child_result_fanout_binds_retires_and_survives_each_public_restore",
+        "plan::task_source::program::program_task::tests::program_kernel_requires_its_task_kind_and_suspending_role_flags",
+        "plan::task_source::program::program_task::tests::program_kernel_retains_the_original_lexical_context_with_its_distinct_capture_abi",
+        "plan::task_source::program::program_task::tests::program_kernel_source_checks_payload_and_capture_types_against_the_original",
+        "plan::task_source::program::program_task::tests::program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drift",
+        "plan::task_source::program::program_task::tests::program_kernel_source_round_trips_without_a_host_request_and_reborrows_its_actual_row",
+        "plan::task_source::program::program_task::tests::program_source_rejects_effect_permissions_not_owned_by_the_enclosing_invocation",
+        "plan::task_source::program::program_task::tests::program_source_rejects_host_rows_and_exhausted_work_without_issuing_a_lease",
+        "plan::task_source::program::template::tests::awbc_await_many_rejects_another_genuine_admitted_child_from_the_same_source",
+        "plan::task_source::program::template::tests::awbc_templates_bound_roles_before_a_forged_key_and_admit_shared_capture_prefixes",
+        "plan::task_source::program::template::tests::awbc_templates_check_argument_and_capture_types_after_valid_payloads",
+        "plan::task_source::program::template::tests::awbc_templates_reject_changed_original_family_and_base_row_kind",
+        "plan::task_source::program::template::tests::awbc_templates_reject_foreign_keys_without_metadata_fallback",
+        "plan::task_source::program::template::tests::awbc_templates_reject_independently_valid_metadata_and_capture_changes",
+        "plan::task_source::program::template::tests::awbc_templates_reject_real_other_endpoint_kinds_and_absent_or_native_rows",
+        "plan::task_source::program::template::tests::awbc_templates_reject_same_id_different_executable_payload_and_capture_shapes",
+        "plan::task_source::program::template::tests::awbc_templates_resolve_both_original_rows_and_capture_abis_after_decode",
+        "plan::task_source::program::template::tests::awbc_templates_share_exact_prior_and_first_failed_work",
+        "plan::task_source::program::template::tests::awbc_template_owning_source_preserves_checked_rows_and_rechecks_the_new_allowance",
+        "plan::task_source::template_tests::awbc_host_request_kernel_cannot_claim_an_original_thread_source",
+        "plan::task_source::template_tests::host_template_sources_cannot_be_relabelled_as_program_work",
+        "plan::task_source::template_tests::template_materialization_keeps_original_metadata_and_rejects_foreign_or_failed_banks",
+        "plan::task_source::template_tests::template_source_container_graphs_reject_same_identity_with_another_shape_before_values",
+        "plan::task_source::template_tests::template_source_count_preflight_rejects_virtual_fanout_before_capture_or_child_views",
+        "plan::task_source::template_tests::template_source_leases_keep_the_actual_original_and_code_alive_until_the_last_spec",
+        "plan::task_source::template_tests::template_sources_check_capture_source_and_item_types_against_the_actual_program",
+        "plan::task_source::template_tests::template_sources_bound_debug_metadata_before_borrowing_captures",
+        "plan::task_source::template_tests::template_sources_keep_original_keys_and_exact_nested_argument_transcripts",
+        "plan::task_source::template_tests::template_sources_preflight_owner_kind_and_complete_capture_count_before_value_views",
+        "plan::task_source::template_tests::thread_source_codec_retains_program_definition_and_capture_roles",
+        "plan::task_source::template_tests::template_sources_preserve_inert_storage_and_one_exact_sticky_bank"
+      ],
+      "observedCause": {
+        "path": "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+        "owner": "Reader::producer_definition",
+        "detail": "Borrowed preflight omits the carrier tag already written by encoding/fields.rs and read by decoding.rs. The next u32 type index consumes the carrier byte and becomes 257 or 768."
+      }
+    },
+    {
+      "kind": "descriptor-nodes-budget",
+      "count": 3,
+      "tests": [
+        "engine::rollback::await_state::many_tests::native_fanout_values_borrow_the_enclosing_resource_bank",
+        "engine::rollback::await_state::tests::native_waits_share_live_inert_and_parent_node_limits",
+        "plan::value_admission::tests::need_request_values_share_live_and_snapshot_resource_limits_in_native_and_awbc"
+      ],
+      "observedCause": {
+        "path": "crates/arcweft-core/src/task/descriptor.rs",
+        "owner": "TaskSpec::visit_descriptor",
+        "detail": "The migration added a separate carrier fixed-field node before the existing descriptor fields. Actual enclosing-bank limit tests fail with nodes BudgetExceeded; limits and assertions are unchanged."
+      }
+    }
+  ],
+  "consumers": {
+    "started": false,
+    "reason": "Driver stopped after Core exit 100; R3113 was not started."
+  },
+  "genericMatch": {
+    "status": "accepted-and-published",
+    "acceptanceCommit": "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+    "publicationCommit": "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+    "latestCompleted151CaseRun": "R3095",
+    "current151CaseRerun": "not-run",
+    "reopeningEvidence": false
+  },
+  "notRun": [
+    "post-migration reverse consumer runtime",
+    "post-migration workspace Clippy",
+    "post-migration Core doctest",
+    "Tier 2",
+    "Native-Web capture parity"
+  ],
+  "heldTrackedPaths": 14,
+  "untrackedFiles": 6,
+  "artifactCopyMove": false
+}
