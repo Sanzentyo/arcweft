@@ -447,7 +447,8 @@ match load_avatar(user) {
 
 `await ... with` lowers to `FlowOp::Await` with an optional binding, a `RuntimeNeedAwaitTarget`, and pending observers. The target retains the source expression; runtime execution evaluates it and suspends on the checked `Need<T>` or `ThreadHandle<T>` source. The admitted source supplies the task request and execution authority. See [FlowOp::Await](../../crates/arcweft-core/src/plan.rs#L1094) and [RuntimeNeedAwaitTarget](../../crates/arcweft-core/src/plan.rs#L1209).
 
-Bounded effectful traversal lowers to `FlowOp::AwaitMany`:
+Bounded effectful traversal constructs an ordinary Need whose Program producer
+executes the shared `AwaitMany` operation:
 
 ```arcw
 let texts = try await paths.traverse(fs.read_text).parallel(limit = 4) with {
@@ -455,7 +456,15 @@ let texts = try await paths.traverse(fs.read_text).parallel(limit = 4) with {
 }
 ```
 
-`AwaitMany` evaluates its source once, creates no more than `limit` in-flight child requests, and assembles ready values in source order. The runtime-plan source accepts a sequence, an array, or a homogeneous tuple. The source-facing `traverse` contract in [Traits and Seq](../01-language/traits-seq-ranges.md#traversable) uses `Vec<T>`. Child results retain their source indices, so same-key joining can share host work without merging waiting positions. See [AwaitManyTarget](../../crates/arcweft-core/src/task.rs#L789) and [source type validation](../../crates/arcweft-core/src/plan/construction/lower.rs#L4548). The VM owns bounded fanout; thread pools, async runtimes, and I/O remain adapter responsibilities.
+The Need can be bound or passed before it is awaited. Its checked producer
+policy determines when work starts; the Need carrier does not imply a cold
+descriptor. `AlwaysStart` Program producers move consumed inputs into their
+execution frame when the launch is admitted. The returned Need retains that
+accepted launch authority. Preparation and rejection preserve the caller's
+input custody. Await removes the temporal layer and does not reconstruct a
+producer from the spelling of its source expression.
+
+`AwaitMany` evaluates its source once, creates no more than `limit` in-flight child requests, and assembles ready values in source order. The runtime-plan source accepts a sequence, an array, or a homogeneous tuple. The source-facing `traverse` contract in [Traits and Seq](../01-language/traits-seq-ranges.md#traversable) retains the exact collection type. Child results retain their source indices, so same-key joining can share host work without merging waiting positions. See [AwaitManyTarget](../../crates/arcweft-core/src/task.rs#L789) and [source type validation](../../crates/arcweft-core/src/plan/construction/lower.rs#L4548). The VM owns bounded fanout; thread pools, async runtimes, and I/O remain adapter responsibilities.
 
 The original aggregate and child payload rows determine collection behavior.
 `Sequence<Child>` retains each complete child value, including a child `Result`.

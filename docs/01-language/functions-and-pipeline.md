@@ -515,9 +515,14 @@ let images = try await image_paths.traverse(asset.image).parallel(limit = 4) wit
 - `map`: callback を通常の関数として適用し、その effect row と停止可能性を
   呼び出しへ引き継ぐ。`map(callback)` の部分適用を作るだけでは、callback の
   潜在効果を実行しない。
-- `traverse`: `Task` / `Need` を返す。
-- `.parallel(limit = N)`: bounded fanout。VM は一度に最大 `N` 件の
-  `TaskSpec` を出し、結果を入力順の `Vec` として返す。
+- `traverse`: collection と callback を所有する `Traversal<S, F>` を構築する。
+  この構築では callback を呼び出さない。
+- `.parallel(limit = N)`: Traversal を消費し、通常の
+  `Need<Result<Vec<U>, E>>` を構築する。checked producer の開始 policy に従い、
+  最大 `N` 件の child request を同時実行する。結果は入力順に集約する。
+
+型・動的 limit・所有権・最低 index の domain error の規則は
+[Traversable の契約](traits-seq-ranges.md#traversable)を正本とする。
 
 
 

@@ -12117,3 +12117,26 @@ session 1303はR3138の全53逆依存catalogを構築中で、同driverが実際
 R3139 nextestへ進む。R3127 HIR Tier 2のsession 17793も同じrunを継続し、7／8 PASS・
 最後のattached Threadは未終端。Generic Matchの受入・公開済みは維持し、owner実行を151件の再実行とはしない。
 原本等13件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-awbc-task-carrier-owner-evidence-integrity.json)。
+
+## Traversalの戻り値・Program Needの開始policyの訂正 — 2026-10-26
+
+照合基点は公開main `f62635a5bdf66a34d64ce4d147f4e0f132833cc3`。
+前段checkpointと説明中の「coldな通常Program Needが必須」という前提を訂正する。
+Supersedes: 当該cold必須という設計上の前提のみ。過去の実行結果・失敗・full SHA・受入は変更しない。
+
+採用済み `traits-seq-ranges.md` は、traverseがcollectionとcallbackを所有するTraversalを構築し、
+parallelが通常のNeedを返し、開始はchecked producerのpolicyに従うと定める。Need carrierそのものが
+coldを要求するという条件はない。現行Compilerのextern Need producerもTaskPolicy::AlwaysStartを発行し、
+CoreはAlwaysStartの結果を一度だけ所有移送する。Program aggregateも明示したAlwaysStartのproducerとし、
+消費した入力をadmitted execution frameへ移す方針を採る。未起動descriptor用の別authorityを、
+このSource経路の受入のためだけに追加しない。
+
+functions-and-pipeline.mdに残っていた「traverse自体がTask／Needを返す」という旧説明は、
+Traversal<S,F>とNeed<Result<Vec<U>,E>>の所有章へ揃えた。Nはaggregate自身ではなくin-flight child requestの上限。
+async-scheduler.mdのawait直結に見える説明も、bind／pass可能な通常NeedのProgram producerが共通AwaitManyを
+実行する契約へ明確化した。Vecだけとする重複説明は、Vec／Array／Slice／Seqの元collection型を保持する契約へ訂正した。
+
+Programの通常NeedをThreadHandleへ変更して代用しない。元Program Source、実際のcapture transfer、
+inputの所有移送とlaunch／result-bindingの失敗原子性を同じtyped ownerに保持する。
+この仕様訂正で未接続のSource parallelを完了とはせず、公開済みThread／AwaitManyやGeneric Matchの受入も戻さない。
+ビルド中の3,988非文書入力とHIR依存入力を変更せず、今回の確認は文書の内容・リンク・差分に限定した。
