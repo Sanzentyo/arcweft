@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "base": "b29ece5177278a7638220116d2c7eaa7908776df",
+  "at": "2026-10-25T01:49:05.2922788Z",
+  "scope": "Documentation reconciliation only; no new Cargo/runtime execution",
+  "owned": [
+    "docs/02-runtime/core.md",
+    "docs/implementation/acceptance-evidence/task-core-contract-doc-audit.json",
+    "docs/implementation/acceptance-evidence/task-presentation-owner-reverse-checkpoint.verified.json",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md",
+    "docs/implementation/documentation-cleanup.md"
+  ],
+  "deleted": [],
+  "markdown": [
+    {
+      "path": "docs/02-runtime/core.md",
+      "sha256": "bd41669f5f9e3c14bd20e1c78912c72c988069ef75e7d2c6dc0861836d289b6c",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "sha256": "01c5c17f5d376b7af66c8597474848b33488dce4597504df5d41978b94705d11",
+      "checkedSurface": "added hunks",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "sha256": "e4570db8535658d234ec56e348826b7f904c8b8b9ee2547df1e0e56a849dae9a",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "sha256": "7197467f5bfa3e4c9f70d63826d8a481440a4cd6ffdcea3b1a6017636ef0cf70",
+      "checkedSurface": "added hunks",
+      "fencesBalanced": true
+    }
+  ],
+  "checkedRelativeLinks": 44,
+  "relativeLinks": [
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "../../crates/arcweft-core/src/engine.rs"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "../01-language/control-transfer-return-out-yield.md"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "../../crates/arcweft-core/src/engine/work.rs"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "runtime-step-and-executors.md"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "../../crates/arcweft-core/src/step.rs"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "../../crates/arcweft-core/src/effect.rs"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "../../crates/arcweft-core/src/line_task.rs"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "runtime-step-and-executors.md"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "../../crates/arcweft-core/src/plan.rs"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "target": "hooks-memoization.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../README.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-c3-c5-closure-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-phase-note-publication.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-handle-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-scope-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2903-presentation-owner-core-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/vertical-break-validation-2026-07-14.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../03-presentation/text-typesetting.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.acceptance-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-native-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-fanout-child-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md#traversable"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#awaitmanyのresult集約と消費前検査--2026-10-25"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2908-presentation-owner-reverse-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-ownership-review.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.failure-recon.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-stdio-readiness-recheck.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-diagnostic-recheck.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "documentation-cleanup.md"
+    }
+  ],
+  "unclosedFences": 0,
+  "priorFullShaIdentifiers": 1091,
+  "lostFullShaIdentifiers": [],
+  "untrackedHeld": 6,
+  "untrackedHeldDrift": 0,
+  "genericAcceptance": "Preserved; existing151/151PASS and published acceptance unchanged",
+  "validationReuse": "Existing runtime results remain historical evidence, not rerun by this cut"
+}

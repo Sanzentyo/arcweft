@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "commit": "b29ece5177278a7638220116d2c7eaa7908776df",
+  "parent": "3f719081009c1b7159c46c58bca10031731c1f90",
+  "tree": "8b4bffd9009d4a12ce2b35d58400082e44c227a2",
+  "remote": "b29ece5177278a7638220116d2c7eaa7908776df",
+  "advertised": "b29ece5177278a7638220116d2c7eaa7908776df",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/tests/ui/runtime_capability_policy_absent.stderr",
+      "blob": "9566e78c2ad3586436b60f3af55c4346c1447067",
+      "workingBlob": "9566e78c2ad3586436b60f3af55c4346c1447067"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2907-presentation-owner-reverse-catalog.inventory.json",
+      "blob": "0dfd7903fad65e1452d68223167eef305a1781a3",
+      "workingBlob": "0dfd7903fad65e1452d68223167eef305a1781a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2907-presentation-owner-reverse-catalog.json",
+      "blob": "bcd907f047fc66ce0511b53acfb1533f26839fd3",
+      "workingBlob": "bcd907f047fc66ce0511b53acfb1533f26839fd3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2907-presentation-owner-reverse-catalog.log",
+      "blob": "82e931a4ff945f9dc3cbe8af580efcb76944b52c",
+      "workingBlob": "82e931a4ff945f9dc3cbe8af580efcb76944b52c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2908-presentation-owner-reverse-runtime.json",
+      "blob": "bccda91d67ce01ef455a9ef0c1c1aaee96c77399",
+      "workingBlob": "bccda91d67ce01ef455a9ef0c1c1aaee96c77399"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2908-presentation-owner-reverse-runtime.log",
+      "blob": "9b8ab42159fe96afaa4b9a92218a6f3ec77143a7",
+      "workingBlob": "9b8ab42159fe96afaa4b9a92218a6f3ec77143a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2908-presentation-owner-reverse-runtime.terminal-audit.json",
+      "blob": "f85817c61ddbe28d5b96f66eb8b69334453e1038",
+      "workingBlob": "f85817c61ddbe28d5b96f66eb8b69334453e1038"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2909-presentation-stdio-readiness-catalog.json",
+      "blob": "006c0b52845c902f2c327295923e38ffd595fc31",
+      "workingBlob": "006c0b52845c902f2c327295923e38ffd595fc31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2909-presentation-stdio-readiness-catalog.log",
+      "blob": "e0f9bc6573cb0671ff5f61c72d1c08762a6bb3c5",
+      "workingBlob": "e0f9bc6573cb0671ff5f61c72d1c08762a6bb3c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2911-presentation-stdio-readiness-catalog.inventory.json",
+      "blob": "91a64ed1ecaf06263697d0eb52923a6ef43a29bd",
+      "workingBlob": "91a64ed1ecaf06263697d0eb52923a6ef43a29bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2911-presentation-stdio-readiness-catalog.json",
+      "blob": "cbea10bb3c7a199cd0a99e6bc657d259e1b6be47",
+      "workingBlob": "cbea10bb3c7a199cd0a99e6bc657d259e1b6be47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2911-presentation-stdio-readiness-catalog.log",
+      "blob": "fc7bc6c1dcff495c9582d8fa069950963b7b81d0",
+      "workingBlob": "fc7bc6c1dcff495c9582d8fa069950963b7b81d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2912-presentation-stdio-readiness-runtime.json",
+      "blob": "57d306329ca5da55b514fc55d188aa915b8bfe8d",
+      "workingBlob": "57d306329ca5da55b514fc55d188aa915b8bfe8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2912-presentation-stdio-readiness-runtime.log",
+      "blob": "968ce9bcdaa3c688baac43deeac8d3f1b5754996",
+      "workingBlob": "968ce9bcdaa3c688baac43deeac8d3f1b5754996"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2912-presentation-stdio-readiness-runtime.terminal-audit.json",
+      "blob": "5658ee67fb581c4a86fdcbe4395b14613395d6e6",
+      "workingBlob": "5658ee67fb581c4a86fdcbe4395b14613395d6e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2913-presentation-diagnostic-catalog.inventory.json",
+      "blob": "f50df6554281e4b9a53413c6372129345fbd774c",
+      "workingBlob": "f50df6554281e4b9a53413c6372129345fbd774c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2913-presentation-diagnostic-catalog.json",
+      "blob": "7f94474f90db74f78ee1dcc725b8394d6e8aba75",
+      "workingBlob": "7f94474f90db74f78ee1dcc725b8394d6e8aba75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2913-presentation-diagnostic-catalog.log",
+      "blob": "73400c239687041be5f2eece7f7170543e0a0e58",
+      "workingBlob": "73400c239687041be5f2eece7f7170543e0a0e58"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2914-presentation-diagnostic-runtime.json",
+      "blob": "eeed22e8df2c163ea98359713235de3e87409fd8",
+      "workingBlob": "eeed22e8df2c163ea98359713235de3e87409fd8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2914-presentation-diagnostic-runtime.log",
+      "blob": "418931cb29f4c99310a9279b554f4e224b2dd8c2",
+      "workingBlob": "418931cb29f4c99310a9279b554f4e224b2dd8c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2914-presentation-diagnostic-runtime.terminal-audit.json",
+      "blob": "25d075990ad6249f0b5f8ef3a651563b964e01bb",
+      "workingBlob": "25d075990ad6249f0b5f8ef3a651563b964e01bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-diagnostic-binaries.json",
+      "blob": "fff36da76106024a44e9924d0a24009157e42d15",
+      "workingBlob": "fff36da76106024a44e9924d0a24009157e42d15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-diagnostic-recheck.json",
+      "blob": "937c0d6e59a376f85576dfee1940fd5f9c492725",
+      "workingBlob": "937c0d6e59a376f85576dfee1940fd5f9c492725"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-diagnostic.graph.json",
+      "blob": "e0cee43a99b87cc9606d486ae8dc10efeef654bf",
+      "workingBlob": "e0cee43a99b87cc9606d486ae8dc10efeef654bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-diagnostic.source-freeze.json",
+      "blob": "ca4aec458ec488bf8839a0b2d018e5750fc1a072",
+      "workingBlob": "ca4aec458ec488bf8839a0b2d018e5750fc1a072"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-cli-retry-binaries.json",
+      "blob": "33e1ed94ceff6a8742d2c6b14d0c0945b8eff90e",
+      "workingBlob": "33e1ed94ceff6a8742d2c6b14d0c0945b8eff90e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-publication.verified.json",
+      "blob": "d7f01b179ef5edcecb4fb687ce3870ba5e6c7925",
+      "workingBlob": "d7f01b179ef5edcecb4fb687ce3870ba5e6c7925"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-reverse-acceptance.json",
+      "blob": "f9bbfce4d06fe296f67b2950f8b4637d38ab2b19",
+      "workingBlob": "f9bbfce4d06fe296f67b2950f8b4637d38ab2b19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-reverse-doc-audit.json",
+      "blob": "5da738175f13d064cc60da8aee3cfa77ea8d0c67",
+      "workingBlob": "5da738175f13d064cc60da8aee3cfa77ea8d0c67"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-reverse-evidence-integrity.json",
+      "blob": "eec69e51603d5eefb5322cb02cf46959e7630df4",
+      "workingBlob": "eec69e51603d5eefb5322cb02cf46959e7630df4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-reverse-generic-selection.json",
+      "blob": "681fe861ce398e7d1e7411ed38a24c8068e27818",
+      "workingBlob": "681fe861ce398e7d1e7411ed38a24c8068e27818"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-reverse.executables.before.json",
+      "blob": "fc71247234941d7bec9013d2dc99e04771d43b05",
+      "workingBlob": "fc71247234941d7bec9013d2dc99e04771d43b05"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-stdio-readiness-recheck.json",
+      "blob": "f13085db6405180da9fdf174d687829e0060707b",
+      "workingBlob": "f13085db6405180da9fdf174d687829e0060707b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-source-contract-checkpoint.verified.json",
+      "blob": "18844a942df59b95ea3ed10fb3d6516af1b997c7",
+      "workingBlob": "18844a942df59b95ea3ed10fb3d6516af1b997c7"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "3345efb3feb1380d480b9487e3c57d53263c01e2",
+      "workingBlob": "3345efb3feb1380d480b9487e3c57d53263c01e2"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "583b003e7cff943cb7864b702fbb8499125514fb",
+      "workingBlob": "583b003e7cff943cb7864b702fbb8499125514fb"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "71b8e4b6dd7f1c24c12025b3ad3be81f48b5369f",
+      "workingBlob": "71b8e4b6dd7f1c24c12025b3ad3be81f48b5369f"
+    }
+  ],
+  "sourceCount": 6517,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "a6710eb0470ce03b17c77b46fc73955749085ae220ad9ad4acc7e0236d729744",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-25T01:45:09.3862948Z"
+}

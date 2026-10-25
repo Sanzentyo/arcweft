@@ -49,12 +49,6 @@ admits every segment on the same cumulative collection, string and nesting
 allowance before retaining the path. Imported references retain their explicit
 closed target through the existing owner admission.
 
-If runtime-ID equality, hashing, or storage later becomes a measured hot path,
-the canonical path representation may be interned behind the typed ID API. That
-optimization must preserve the same source/runtime/public domain split and must
-not make atom numbers part of save files, bundles, diagnostics, or authored
-source.
-
 ### Plan-local declaration origins
 
 Every `RuntimeLocalDeclaration` retains its complete checked declaration source,
@@ -175,126 +169,14 @@ Native and AWBC values do not publish different storage representations in a
 codec. Callers still admit the resulting value against its expected
 role or executable type at the consuming boundary.
 
-```rust
-pub struct Engine {
-    plan: RuntimePlan,
-    fiber: FlowFiber,
-}
+## Execution ownership
 
-pub struct RuntimePlan {
-    pub entry_flow: Option<FlowRuntimeId>,
-    pub flows: Vec<RuntimeFlow>,
-    pub line_task_groups: Vec<LineTaskGroup>,
-    pub stream_plans: Vec<StreamPlan>,
-}
-
-pub struct RuntimeFlow {
-    pub id: FlowRuntimeId,
-    pub params: Box<[RuntimeLocalDeclarationId]>,
-    function_site: RuntimeFunctionSiteId,
-    function: Arc<RuntimeFunctionSite>,
-}
-
-pub struct RuntimeExecutableBody {
-    effects: RuntimeEffectSet,
-    ops: Box<[FlowOp]>,
-}
-
-pub enum FlowOp {
-    Let { pattern: RuntimePattern, expr: RuntimeExpr },
-    LetElse { pattern: RuntimePattern, expr: RuntimeExpr, else_ops: Vec<FlowOp> },
-    Dialogue { line: RuntimeLineId, task_group: usize },
-    Choice { id: Option<String>, options: Vec<ChoiceRuntimeOption> },
-    Await { target: AwaitTarget, pending: Vec<LineEffectRequest> },
-    If { condition: RuntimeExpr, then_ops: Vec<FlowOp>, else_ops: Vec<FlowOp> },
-    IfLet { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, then_ops: Vec<FlowOp>, else_ops: Vec<FlowOp> },
-    Match { scrutinee: RuntimeExpr, arms: Vec<RuntimeMatchArm> },
-    Loop { body: Vec<FlowOp> },
-    LetLoop { pattern: RuntimePattern, body: Vec<FlowOp> },
-    LoopNext { body: Arc<[FlowOp]> },
-    While { condition: RuntimeExpr, body: Vec<FlowOp> },
-    WhileNext { condition: RuntimeExpr, body: Arc<[FlowOp]> },
-    WhileLet { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, body: Vec<FlowOp> },
-    WhileLetNext { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, body: Arc<[FlowOp]> },
-    For { pattern: RuntimePattern, source: RuntimeExpr, body: Vec<FlowOp> },
-    ForNext { pattern: RuntimePattern, items: Arc<[RuntimeValue]>, index: usize, body: Arc<[FlowOp]> },
-    Scope(Vec<FlowOp>),
-    LetScope { pattern: RuntimePattern, ops: Vec<FlowOp>, value: RuntimeExpr },
-    Break(Option<RuntimeExpr>),
-    Continue,
-    Goto(FlowRuntimeId),
-    GotoExpr(RuntimeExpr),
-    Return(String),
-    ReturnExpr(RuntimeExpr),
-    Effect(LineEffectRequest),
-    EnterScope,
-    ExitScope,
-    ExitScopeBind { pattern: RuntimePattern, expr: RuntimeExpr },
-    Noop,
-}
-
-pub struct FlowFiber {
-    pub line_cursor: usize,
-    pub cursor: Option<FlowCursor>,
-    pub pending_ops: VecDeque<FlowOp>,
-    pub control_stack: Vec<FlowControlStackEntry>,
-    pub env: RuntimeEnv,
-    pub observations: RuntimeObservationState,
-    pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState>,
-    pub status: FlowFiberStatus,
-}
-
-pub enum FlowControlStackEntryKind {
-    Scope,
-    Loop { body: Vec<FlowOp>, result: Option<RuntimePattern> },
-    While { condition: RuntimeExpr, body: Vec<FlowOp> },
-    WhileLet {
-        pattern: RuntimePattern,
-        expr: RuntimeExpr,
-        guard: Option<RuntimeExpr>,
-        body: Vec<FlowOp>,
-    },
-}
-
-pub struct RuntimeStepInput {
-    pub tick: TickId,
-    pub dt: LogicalDuration,
-    pub input_events: Vec<RoutedInputEvent>,
-    pub need_states: Vec<RuntimeNeedState>,
-    pub task_events: Vec<TaskEvent>,
-    pub audio_events: Vec<AudioEvent>,
-    pub host_call_results: Vec<RuntimeHostCallResult>,
-    pub root_events: Vec<RootEventInput>,
-    pub deferred_root_events: Vec<RootEventInput>,
-}
-
-pub struct RuntimeStepOutput {
-    pub diagnostics: Vec<RuntimeDiagnostic>,
-    pub flow_events: Vec<FlowEvent>,
-    pub effects: RuntimeEffectBatch,
-    pub requests: HostRequestBatch,
-}
-
-pub struct RuntimeEffectBatch {
-    pub line: Vec<LineEffectRequest>,
-    pub stream_events: Vec<RuntimeStreamEvent>,
-}
-
-pub struct HostRequestBatch {
-    pub tasks: Vec<TaskSubmission>,
-    pub program_task_completions: Vec<ProgramTaskCompletion>,
-    pub audio: Vec<AudioCommandEnvelope>,
-    pub cancel_scopes: Vec<CancelScopeId>,
-    pub ensure_content: Vec<RuntimeContentRequest>,
-    pub host_calls: Vec<RuntimeHostCallRequest>,
-}
-
-pub struct RuntimeStepResult {
-    pub output: RuntimeStepOutput,
-    pub fiber_status: FlowFiberStatus,
-    pub stop_reason: RuntimeStepStopReason,
-}
-```
+`Engine` owns the admitted plan and the root/child fibers. A `FlowFiber` carries
+execution identity and one `NativeFlowExecutionFrame`; that frame owns its
+original program authority, environment, pending work, control continuations,
+observations, stream state, and terminal invocation result. Live execution and
+inert private rollback use the same owning grammar with different storage types.
+The authoritative definitions are in [engine.rs](../../crates/arcweft-core/src/engine.rs).
 
 Flow roots and structured function sites share `RuntimeExecutableBody`.
 Consumers read `RuntimeFlow::body()` and its `effects()` / `ops()` accessors;
@@ -309,12 +191,16 @@ transfers begin a new effect scope as described in
 `RuntimeStepMode` と `RuntimeStepBudget::max_ops` に従って lowered flow op を
 内部 drain する。`OneOp` は最大 1 op、`Drain` / `Server` は blocked/done/failed
 または budget まで進め、`Game` は presentation-visible output で host に制御を返す。
-`Dialogue` は line task group を実行し、`Choice` は入力待ち、`Await` は `TaskSpec`
-を出して `TaskEvent` で再開する。`Let` / `LetElse` /
-`If` / `IfLet` / `Match` / `Loop` / `LetLoop` / `While` / `WhileLet` / `For` / `LetScope` は
+`Dialogue` は line task group を実行し、`Choice` は入力待ち、`Await` は元Sourceで
+認証されたNeed／ThreadHandleを評価して停止・復帰する。`Let` / `LetElse` /
+`If` / `IfLet` / `Match` / `Loop` / `While` / `WhileLet` / `For` は
 `RuntimeValue` / `RuntimeExpr` / `RuntimePattern` と `RuntimeEnv` で評価され、
-選択された block は `pending_ops` queue に積まれて以降の runtime op として実行される。
-`FlowFiber::control_stack` は lexical scope と loop continuation を明示的に保持し、
+選択されたbodyは元program内のsource rangeとしてframeのwork queueへ入り、
+runtime bindingとiteratorの進行は型付きcontinuationが所有する。
+queueは `FlowOp` の複製列ではなく `NativePendingWork` を保持する。
+[work owner](../../crates/arcweft-core/src/engine/work.rs) と
+[実行・停止復帰の契約](runtime-step-and-executors.md) を参照する。
+frameのcontrol stackはlexical scopeとloop continuationを保持し、
 `break` / `continue` が body 内の残り op と scope-local binding を破棄して
 最も近い loop/while/while-let continuation へ移るために使われる。
 `let name = scope { ... }` は final expression を scope 内で評価してから外側の
@@ -330,131 +216,42 @@ branch / match / while-let pattern binding は選択された lexical scope に�
 Match はコンテナ全体を覆う共通 Block を作らず、通常の arm はそれぞれ独立した
 `MatchArm` scope を所有し、Thread の braced arm だけが単一の `Block` scope を所有する。
 binding は guard 評価後や arm 終了後には外側や sibling arm へ漏れない。
-`Goto` / `GotoExpr` / `Return` / `ReturnExpr` は `FlowFiber` の cursor/status を更新する。
+`Goto` / `GotoExpr` / `Return` / `ReturnExpr` は所有frameのwork・結果・statusを遷移させる。
 `RuntimeStepInput` の task/host ingress は replay-stable order に正規化され、外部
 capability の `StreamPlan` と stream state に反映される。stream payload は
 `RuntimePayload` として `RuntimeValue` shape を保持し、CLI 表示だけが human-readable
-label に変換する。`FlowFiber.observations`
+label に変換する。frameの `observations`
 は emitted log / signal / metric / event を累積し、CLI/LSP/test/replay tooling が
 JSON で観測できる。
 実 thread、wall-clock、renderer、audio、device、filesystem は adapter 側の責務である。
 `ScopeExit::Completed | Cancelled | Failed` は outcome-guarded `defer` stack の
 選択に使う。
 
-## EffectRequest
+## Host requests and effects
 
-`EffectRequest` は実行済みの副作用ではなく、host adapter への要求である。たとえば `SaveCheckpoint` は checkpoint data を作る要求であり、実際の file write、compression、encryption、cloud sync は build/player/CLI adapter が行う。
-
-```rust
-pub enum EffectRequest {
-    EnsureAsset(AssetRequest),
-    EnsureShader(ShaderRequest),
-    EnsureAudio(AudioRequest),
-    EnsureBgm(BgmRequest),
-    SynthesizeSpeech(TtsRequest),
-    CallWasm(WasmCallRequest),
-    StartActivity(ActivityStartRequest),
-    EnsureHtmlPanel(HtmlPanelSpec),
-    Audio(AudioCommand),
-    SaveCheckpoint(SaveRequest),
-    Log(StructuredLog),
-    Signal(SignalUpdate),
-}
-```
+`RuntimeStepOutput` separates pure effect data in `RuntimeEffectBatch` from
+host requests in `HostRequestBatch`. Task submissions, audio, host calls,
+line commands, content requests, and next-step root events keep their typed
+owners; they are requests for adapters to execute. File writes, compression,
+encryption, cloud sync, and device I/O stay outside Core.
+The complete input/output grammar is owned by
+[step.rs](../../crates/arcweft-core/src/step.rs); materialized line effects are
+owned by [effect.rs](../../crates/arcweft-core/src/effect.rs).
 
 ## Dialogue line task groups
 
-A dialogue `with` block lowers to a line-scoped task group. This model stays
-Sans I/O: `thread name:` creates a child task in VM/runtime data, not an OS
-thread. Presentation, audio, wait, and signal work is emitted as effect requests
-for adapters to perform at frame boundaries.
+A dialogue `with` block lowers to a sealed, plan-owned `LineTaskGroup`.
+Its dense node table owns Sequence, Start, Parallel, Child, and Action nodes;
+Action leaves contain typed `FlowOp` bodies. The group retains its definition,
+captures, activation exports, result type, handle sites, cancellation rules,
+and cleanup. The owning grammar is in
+[line_task.rs](../../crates/arcweft-core/src/line_task.rs).
 
-```rust
-pub struct LineTaskGroup {
-    pub root: LineTaskScope,
-    pub options: Vec<LineOptionRequest>,
-    pub bindings: Vec<LineBindingRequest>,
-    pub out: Vec<LineOutRequest>,
-    pub cancel_rules: Vec<LineCancelRuleRequest>,
-    pub memo: Vec<LineMemoRequest>,
-    pub cleanup: LineCleanupPolicy,
-}
-
-pub struct LineTaskScope {
-    pub node: LineTaskNode,
-    pub defer_stack: Vec<Vec<LineEffectRequest>>,
-    pub completed_defer_stack: Vec<Vec<LineEffectRequest>>,
-    pub cancelled_defer_stack: Vec<Vec<LineEffectRequest>>,
-    pub failed_defer_stack: Vec<Vec<LineEffectRequest>>,
-}
-
-pub enum LineTaskNode {
-    Seq(Vec<LineTaskNode>),
-    Start(Vec<LineTaskNode>),
-    Parallel {
-        policy: ParallelPolicy,
-        children: Vec<LineTaskNode>,
-    },
-    Child(LineChildTask),
-    Effect(LineEffectRequest),
-}
-
-pub struct LineChildTask {
-    pub id: TaskId,
-    pub key: Option<TaskKey>,
-    pub name: Option<String>,
-    pub trigger: LineTaskTrigger,
-    pub priority: TaskPriority,
-    pub join_policy: ChildJoinPolicy,
-    pub cancel_policy: ChildCancelPolicy,
-    pub scope: Box<LineTaskScope>,
-}
-
-pub enum LineTaskTrigger {
-    Immediate,
-    Mark(String),
-    Delay(LogicalDuration),
-}
-
-pub enum LineEffectRequest {
-    RegisterHandle { key: String, handle: String },
-    DropHandle { key: String },
-    Wait(RuntimeWaitTarget),
-    Call(RuntimeCall),
-    Log(RuntimeLog),
-    SignalWrite(RuntimeAssignment),
-    MetricWrite(RuntimeAssignment),
-    EmitEvent(RuntimeEvent),
-    Out(LineOutRequest),
-    Return(String),
-    Goto(String),
-    Panic(String),
-    Fail(String),
-    Bail(String),
-    Ensure { condition: String, message: String },
-    Assert(RuntimeAssertion),
-    Close(String),
-    Select(String),
-    Break { label: Option<String>, value: Option<String> },
-    Continue { label: Option<String> },
-}
-
-pub struct RuntimeAssertion {
-    guard: RuntimeAssertionGuardId,
-    condition: String,
-    message: String,
-    profile: RuntimeAssertionProfile,
-}
-
-pub struct RuntimeAssertionFailure {
-    assertion: RuntimeAssertion,
-}
-
-pub enum RuntimeAssertionProfile {
-    Always,
-    DebugOnly,
-}
-```
+The shared activation reducer schedules those bodies and retains their exact
+capture packets. Native child execution uses the ordinary frame and original
+program authority. This is deterministic VM/runtime work; OS threads and I/O
+remain adapter responsibilities. Lifecycle and suspension rules belong to
+[RuntimeStep and Executors](runtime-step-and-executors.md).
 
 `RuntimeEffectExpr::Assert` evaluates its condition as a typed `Bool` inside
 the Sans-I/O runtime. `true` produces no host request. Only `false`
@@ -472,40 +269,8 @@ association, CLI, LSP, Agent, and debug presentation use persisted evidence and
 must not fabricate HIR or syntax identity. Both paths emit the stable code
 `runtime.assertion_failed`.
 
-Checked HIR dialogue plans map into this data model:
-
-```text
-init statements             -> LineTaskGroup.root.node effects
-defer in init/line scope    -> LineTaskGroup.root defer stacks
-thread name { ... }         -> LineTaskNode::Child with trigger Immediate
-defer in thread/on handler  -> child LineTaskScope defer stacks
-defer on completed          -> current scope completed_defer_stack
-defer on cancelled          -> current scope cancelled_defer_stack
-defer on failed             -> current scope failed_defer_stack
-start { ... }               -> LineTaskNode::Start
-together { ... }            -> LineTaskNode::Parallel(JoinAll)
-at(0.35s) { ... }           -> child task with trigger Delay(0.35s)
-on mark(@.mark) { ... }      -> child task with typed RuntimeDialogueMarkId trigger
-wait(mark(@.x))              -> rejected before executable runtime-plan publication
-wait(0.35s)                 -> LineEffectRequest::Wait(RuntimeWaitTarget::Duration(...))
-'line.key <- expr           -> LineEffectRequest::RegisterHandle
-'line.key |> drop           -> LineEffectRequest::DropHandle
-call-like expression stmt   -> LineEffectRequest::Call
-log.info(...)               -> LineEffectRequest::Log
-signal.set(target, value)   -> LineEffectRequest::SignalWrite
-metric.set(target, value)   -> LineEffectRequest::MetricWrite
-event.emit(Event, fields)   -> LineEffectRequest::EmitEvent
-ensure(cond, msg)           -> LineEffectRequest::Ensure
-assert.check(cond, ...)     -> LineEffectRequest::Assert(profile=Always)
-assert.debug(cond, ...)     -> LineEffectRequest::Assert(profile=DebugOnly)
-out expr                    -> LineEffectRequest::Out and LineTaskGroup.out
-cancel on ... { ... }       -> LineTaskGroup.cancel_rules
-memo name(...)              -> LineTaskGroup.memo
-```
-
-Ordinary line-plan `wait(...)` currently admits only `Duration`. Mark waits are
-reserved for a later typed suspension cut and cannot fall through to a string
-runtime target.
+Ordinary line-plan `wait(...)` admits only `Duration`. A mark trigger retains
+its typed `RuntimeDialogueMarkId`; it cannot become a string wait target.
 
 `yield` is not a line effect. It lowers only through Stream generation plans;
 a dialogue line plan must use `out` for line-scope values.
@@ -517,30 +282,13 @@ obvious deterministic conflicts such as two children writing the same signal or
 line `out` value unless the effect category is append-only, such as structured
 logs or event emission.
 
-Child task triggers emit a `TaskSpec` and expose the child scope body as
-deterministic effect data. Native workers, cooperative jobs, and web workers
-consume those requests outside `arcweft-core`.
+Checked flows retain their `RuntimeFlow` / `RuntimeExecutableBody` owners.
+`FlowOp::Dialogue` carries a typed content identity, target, and result binding;
+it does not recover its task graph from an untyped task-group index. Await,
+calls, control bodies, defer registrations, and effects use the owning
+[FlowOp grammar](../../crates/arcweft-core/src/plan.rs).
 
-HIR runtime lowering converts checked flows to `RuntimeFlow` / `FlowOp` data;
-dialogue line plans lower to `LineTaskGroup` and are referenced by index from
-`FlowOp::Dialogue`.
-
-```text
-dialogue line              -> FlowOp::Dialogue + LineTaskGroup
-choice                     -> FlowOp::Choice + ChoiceRuntimeOption list
-await ... with             -> FlowOp::Await + pending LineEffectRequest list
-let / let else             -> FlowOp::Let / FlowOp::LetElse
-if / if let / match        -> structured FlowOp nodes with RuntimePattern arms
-loop / while / while let   -> structured FlowOp nodes
-for PAT in EXPR            -> FlowOp::For over RuntimeValue::Seq
-scope / bare block         -> FlowOp::Scope
-goto @flow.x / goto route  -> FlowOp::GotoExpr
-return expr                -> FlowOp::ReturnExpr
-out / log / signal / call  -> FlowOp::Effect or line effect
-cancel on input(.SkipLine)  -> line cancel rule selected from RuntimeStepInput
-```
-
-This slice is intentionally strict: runtime lowering errors on unsupported flow
+Runtime lowering errors on unsupported flow
 items instead of converting them to `Noop`.
 
 Raw line-plan statements fail lowering. They are not reparsed, silently accepted,

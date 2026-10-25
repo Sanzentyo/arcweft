@@ -11094,7 +11094,7 @@ R2908ではその失敗50識別子がすべて選択され再び失敗し、追�
   `HostTaskRequest<_>::Custom` が完全修飾表記になったため不一致だった。
   `.stderr` の2行だけを実際の表記へ訂正し、`.rs` fixtureと欠落policyに対する
   E0560／E0559を保持した。R2913は対象1件を選択し、R2914は**1／1 PASS**、
-  2.646秒、終了0。同じCompiler実行ファイルでcompile-fail 8例を実行し、新buildはない。
+  2.646秒、終了0。同じCompiler実行ファイルでcompile-fail 8例を実行し、test実行ファイルの再buildはない。
   変更後の3,980非文書入力を別freezeで照合した。
   [変更範囲と実行ファイル照合](acceptance-evidence/task-presentation-diagnostic-recheck.json)、
   [再確認の終端](acceptance-evidence/task-final-r2914-presentation-diagnostic-runtime.terminal-audit.json)。

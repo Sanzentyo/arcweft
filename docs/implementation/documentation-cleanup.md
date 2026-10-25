@@ -362,3 +362,26 @@ Generic Matchは新しい同条件151件もすべてPASSしたため、受入・
 追加失敗は具体的なtest識別子・診断とともに記し、全体goalや別境界の未達だけで完了項目を
 未完了へ戻していない。Compilerの診断期待値2行の修正と、変更なしstdio単独再確認の成功は、
 全体runの52 FAILを消す根拠にはしていない。CLIの観測は現状一覧、実行条件と原結果は履歴へ集約した。
+
+## Core章の旧API複製とlowering対応表の削除 — 2026-10-25
+
+基点は公開main `b29ece5177278a7638220116d2c7eaa7908776df`。
+GPT-6 Luna／maxの読み取り監査でも、Generic Matchの誤った現行未完了判定はなく、
+最新R2908と2件の単独再確認を合算せず扱う記述は整合していた。
+現状一覧以外に残る未追跡の2026-10-09 CLIメモ2件は、当時の進行中表現を持つことも確認した。
+この2件は元の保持WIPであり変更・commitしていない。現状一覧冒頭の履歴扱いを維持し、
+現在の残作業表へ取り込まない。`save-replay.md` の「未完了 task」はruntime taskの保存仕様であり、
+プロジェクトの残作業列挙ではない。
+
+親が現在の `engine.rs`／`engine/work.rs`／`plan.rs`／`line_task.rs`／`step.rs`／`effect.rs` と
+照合し、`02-runtime/core.md` のRust型定義sketch 3個とlowering対応表2個を削除した。
+旧sketchの `FlowFiber` 直下のenv／queue、`VecDeque<FlowOp>`、存在しない `EffectRequest` と
+`LineTaskScope`、文字列Mark／Delay trigger、Dialogueのtask-group整数indexは、
+現在のframe所有・元Source work・dense task graph・typed identityと一致していなかった。
+Luna監査もframe／queueの所有構造のずれを確認した。
+実装型の複製は置き直さず、現ownerへのリンクと所有境界の説明に置換した。
+将来のID interning案と「later suspension cut」の進捗表現も除いた。
+
+Sans-I/O、ID domain、元program authority、nominal value admission、assertion identity、
+scope／defer／cancellation、保存復元・決定性の契約は保持した。削除範囲に実検証結果やfull SHAはない。
+文書整理のみで、Rust／Cargo／runtimeは新たに実行していない。
