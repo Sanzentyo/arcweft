@@ -7166,7 +7166,7 @@ fn await_many_original_program_with_thread(
             .reserve_original_source()
             .unwrap();
         ops = vec![
-            RuntimeFlowOpSeed::Thread {
+            RuntimeFlowOpSeed::ProgramTask {
                 name: None,
                 binding: RuntimePatternSeed::new(
                     handle,
@@ -7279,7 +7279,7 @@ fn await_many_product_program_with_thread(
         .unwrap()
         .ops()[0];
     let (fanout, thread) = match first {
-        crate::plan::FlowOp::Thread {
+        crate::plan::FlowOp::ProgramTask {
             body,
             producer,
             captures,

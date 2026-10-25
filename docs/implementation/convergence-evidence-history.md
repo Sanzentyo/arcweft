@@ -12201,3 +12201,45 @@ R3127 HIR Tier 2のsession 17793も継続中で、7／8 PASS・最後のattached
 `1c9cae1fdbf65362db39b1e554a916a03b2ade50`、tree `b11b090cb28368b6acf9474f29e6519154d02d81`、
 patch SHA256 `911c4d189965eade014ffefe1eb19275d733c96f5a0e71b0222a6c754ee9ea02`、公開blob差分0、
 原本7件の公開byte差分0。[公開照合](acceptance-evidence/task-awbc-task-carrier-reverse-start.verified.json)。
+
+## 元Program Task operationのcarrier共通化 checkpoint — 2026-10-26
+
+基点は公開main `2ffcb80f996f517325e7270d6f402b052bde2620`。保持tracked WIP 14件と
+untracked実ファイル6件を保全し、5 packageの31 Rustファイルを変更した。
+
+`FlowOp::Thread`／`RuntimeFlowOpSeed::Thread` を `ProgramTask` へ直接移行した。
+元Source、producer定義、実body、capture order、result binding、policyを同じoperationに保持する。
+Core builderはbackendからThreadHandleを決めず、producerが宣言したNeed／ThreadHandleと
+bindingのhead・payloadを照合する。元ThreadのSourceはThreadHandleのままであり、AWBC rowだけを
+Needへ変更したものは引き続き元Source admissionで拒否する。Native／AWBC、private Source codec、
+body/Q grammar、compiler projection、Pure AOT／JIT／acceleratorの全consumerを同時に移行した。
+内部versionは1、operation tagは28を保ち、旧variantのalias／readerは残さない。
+
+- R3140 owner all-target／all-feature／locked checkは終了101。新規テストが存在しない
+  `RuntimeNeedHandle::producer()` を呼んだ1件で失敗した。実際の保持specのproducerへ修正した。
+- R3141 catalogはCore／runtime-plan、all-target／all-feature／lockedで終了0。
+  全2,245件・全件選択・除外0、新規の通常Program Need 2件も含む。
+- R3142の選択用catalogはbinary名にpackage形式のhyphenを指定してfilter parseで停止した。
+  テストは起動していない。実際の`binary-name`を読み、R3144でunderscoreの2 libraryを選択した。
+- R3145は2 libraryの全2,161件を実行し、2,160 PASS／1 FAIL／0 skipped、39.440秒、終了100。
+  catalogと終端集合の差分0、3,988非文書入力・18 executableの前後差分0。
+  Nativeの新規Program Needは各step rollback後にもBoolを一度だけ取得できた。
+  元Threadを含む既存libraryの検証と、Need／ThreadHandle双方の実Source canonical往復もPASS。
+- AWBCの新規ケースはentryがexact flow executableを欠き、runtime開始前の検査で拒否された。
+  fixtureに親Flowのbinding／executable／Flow roleを補い、Source Need、1-op量子、各stepの公開save DTO
+  Serde往復、同じadmitted Programへの復元、一回の結果移動の条件を保持した。R3146を構築中。
+  修復後の実行成功は未確認であり、最初の失敗を成功へ書き換えない。
+- R3145のfreezeはR3141 catalog構築中、runtime開始前に記録した。command開始前のsnapshotと
+  解釈しない。修復後は別のfreezeをR3146開始前に記録し、異なる入力の結果を混ぜない。
+- これはユーザーが許可した途中checkpoint。R3139全53逆依存や前段check／Clippy／doctestを
+  今回の31ファイル変更後の合格へ転用しない。captureはunrestricted Copy条件を維持し、
+  Traversal／Fnの所有入力移動とSource parallelのdynamic limit／callback／集約は未接続のまま。
+  callback数・実行量・budget・batch・capture・実Host request数の条件は変更していない。
+
+[全範囲・失敗・修復](acceptance-evidence/task-program-body-carrier-checkpoint.json)、
+[初回library終端](acceptance-evidence/task-final-r3145-program-body-carrier-library-runtime.terminal-audit.json)、
+[原本保全](acceptance-evidence/task-program-body-carrier-evidence-integrity.json)。
+前段R3139結果の公開は11 path、commit `2ffcb80f996f517325e7270d6f402b052bde2620`、parent
+`68ea734f678d3698f1ac2f736fd520be8dafa6cf`、tree `c11b665ceb712d2eac226ca5a8643f497c0a7d4e`、
+patch SHA256 `198272b135165e1c3de3ebf973d99a1c4c9de5e6325b46e3fd2a3f7676507dd3`、公開blob差分0、
+原本8件の公開byte差分0。[公開照合](acceptance-evidence/task-awbc-task-carrier-reverse.verified.json)。

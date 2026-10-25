@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "commit": "2ffcb80f996f517325e7270d6f402b052bde2620",
+  "parent": "68ea734f678d3698f1ac2f736fd520be8dafa6cf",
+  "tree": "c11b665ceb712d2eac226ca5a8643f497c0a7d4e",
+  "remote": "2ffcb80f996f517325e7270d6f402b052bde2620",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-acceptance.json",
+      "blob": "9305367a182a056613df6144493326a2b8fc40f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-evidence-integrity.json",
+      "blob": "0ca8f21d4d4321714b6997b5204961ba10e9a54c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-executables-after.json",
+      "blob": "4d8fba7194fab18b1b7e5f84d23777a6952e86e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-start-public-evidence-audit.json",
+      "blob": "b264369a89ce3ca8238627a69a3806e81a4c0cba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-start.verified.json",
+      "blob": "66a99b516de7af9aacc80543113b587f199bb130"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.failure-recon.json",
+      "blob": "dafc01249201b2d522833a42fe2dd3ad15231db4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.json",
+      "blob": "003c16700a69368ed3397ce3e7742c36d48dd1cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.log",
+      "blob": "74b98e90adbde4724cc810247cd78045864bd995"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.terminal-audit.json",
+      "blob": "61ee3c441c7f52dc2a26659be83fc0e241324954"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "8aae7c3db033c1d4858cfac6b62f235bbf07425c"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "7f95b46772fa386ee421a610d8262e71cbc9b901"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "198272b135165e1c3de3ebf973d99a1c4c9de5e6325b46e3fd2a3f7676507dd3",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T21:39:00.3591405Z"
+}

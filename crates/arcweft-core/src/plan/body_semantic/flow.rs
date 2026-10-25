@@ -193,7 +193,7 @@ impl RuntimeBodySemanticContext<'_> {
                 self.write_type(encoder, target.result)?;
                 self.write_host_arguments_metadata(encoder, &target.args)?;
             }
-            FlowOp::Thread {
+            FlowOp::ProgramTask {
                 producer, captures, ..
             } => {
                 Self::write_task_reference(

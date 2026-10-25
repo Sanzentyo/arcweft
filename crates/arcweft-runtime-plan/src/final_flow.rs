@@ -6123,14 +6123,14 @@ fn resolve_flow_tail_holes(
                 evidence,
                 body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
             }),
-            RuntimeFlowOpSeed::Thread {
+            RuntimeFlowOpSeed::ProgramTask {
                 name,
                 binding,
                 producer,
                 captures,
                 body,
             } => {
-                output.push(RuntimeFlowOpSeed::Thread {
+                output.push(RuntimeFlowOpSeed::ProgramTask {
                     name,
                     binding,
                     producer,
@@ -8412,7 +8412,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 )
             }
         };
-        let mut ops = vec![RuntimeFlowOpSeed::Thread {
+        let mut ops = vec![RuntimeFlowOpSeed::ProgramTask {
             name: thread.name().map(|name| name.as_str().to_owned()),
             binding,
             producer,
@@ -9992,7 +9992,7 @@ mod tests {
         )
         .expect("Thread expression statement lowers");
 
-        let [FlowOp::Thread { name, body, .. }] = report.plan.flows()[0].body().ops() else {
+        let [FlowOp::ProgramTask { name, body, .. }] = report.plan.flows()[0].body().ops() else {
             panic!("ordinary expression statement must project its typed Thread payload")
         };
         assert!(name.is_none());

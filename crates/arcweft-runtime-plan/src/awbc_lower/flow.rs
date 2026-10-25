@@ -1671,7 +1671,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             FlowOp::Loop { result, body: ops } => {
                 self.lower_loop(frame, body, result.as_ref(), ops, path);
             }
-            FlowOp::Thread {
+            FlowOp::ProgramTask {
                 producer,
                 binding,
                 captures,
@@ -1686,7 +1686,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         .map(|local| {
                             frame
                                 .register_for_local(*local)
-                                .expect("checked Thread capture is bound in its enclosing frame")
+                                .expect("checked Program capture is bound in its enclosing frame")
                         })
                         .collect();
                     let ty = admitted_plan_type(self.inventory, self.plan, binding.ty());

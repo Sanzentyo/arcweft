@@ -30,10 +30,13 @@ Source. They do not require an adapter host-call declaration.
 task-plan coordinate, site, handle type and scheduling policy. `TaskHandleType`
 contains the language carrier (`Need` or `ThreadHandle`) and its exact payload
 identity. The producer-instance transcript and version-one source codec commit
-both fields. A Thread stores
-that definition directly. `NeedProducerTemplate` combines the same definition
+both fields. `FlowOp::ProgramTask` stores
+that definition directly and checks its result binding against the declared
+carrier and payload. Source-level Thread producers declare `ThreadHandle<T>`;
+ordinary Program Need producers declare `Need<T>` on the same operation.
+`NeedProducerTemplate` combines the same definition
 with a Host request only for producers that actually construct Host arguments.
-Thread semantic endpoints and private source encoding contain no synthetic Host
+Program task semantic endpoints and private source encoding contain no synthetic Host
 capability, operation or request arguments; their captures retain their original
 program roles. AWBC Host request kernels admit only actual Host templates;
 they cannot certify a program body by returning an empty Host argument tuple.
@@ -49,7 +52,7 @@ arguments and closed Host plan kind. `Program` owns only the original expected
 task-plan key and its `ProgramTask` kernel. The version-one wire grammar encodes
 this distinction directly; a Program row has no synthetic Host argument packet.
 Its Source admission resolves the key in the retained original executable and
-checks the Thread operation, generated task-body definition, scheduling,
+checks the Program task operation, generated task-body definition, scheduling,
 carrier, payload, and complete capture type relation. The carrier must match
 before capture types are traversed or an original Source lease is returned.
 Capture metadata must preserve the original local, source order and `ExternalBinding` transfer; owned kernel input
@@ -59,7 +62,7 @@ row alone grants no execution authority, and ordinary function roots and calls
 cannot enter a `ProgramTask` kernel.
 
 `RuntimePlan::task_program_body` gives code generators a borrowed projection of
-the actual sealed Thread operation and its enclosing declaration. Its shared
+the actual sealed Program task operation and its enclosing declaration. Its shared
 `RuntimeTaskSourceReadContext` bounds cumulative Source lookup work and remains
 rejected after an invalid lookup. The projection contains the original capture
 order, body and producer; it grants neither a launch receipt nor a runtime task.
@@ -334,7 +337,7 @@ and counters. A rejected batch retains its original packet order and owned
 payloads with the caller; no payload clone or independently reusable admission
 token is required. Successful completion normalizes the same packets in place.
 CLI native file tasks and source-level flow `thread` work use this scheduler. Joinable source
-`thread name { ... }` lowers to `FlowOp::Thread`; entering the op publishes its
+`thread name { ... }` lowers to `FlowOp::ProgramTask`; entering the op publishes its
 admitted Program submission and spawns the body as a scoped VM child fiber.
 The scheduler retains that submission until Core's actual terminal report.
 Child fibers are stepped

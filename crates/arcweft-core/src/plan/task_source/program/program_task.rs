@@ -120,7 +120,7 @@ impl RuntimeTaskSourceProgram {
         let source = original
             .task_source_by_expected_key(&program.source, limits, meter)
             .map_err(|source| Error::Source { task, source })?;
-        let Some(FlowOp::Thread {
+        let Some(FlowOp::ProgramTask {
             producer, captures, ..
         }) = source.request_endpoint().operation()
         else {

@@ -3857,7 +3857,7 @@ impl RuntimePlanBodyConstruction<'_> {
                     body: self.lower_flow_ops(body)?,
                 }
             }
-            RuntimeFlowOpSeed::Thread {
+            RuntimeFlowOpSeed::ProgramTask {
                 name,
                 binding,
                 producer,
@@ -3866,28 +3866,24 @@ impl RuntimePlanBodyConstruction<'_> {
             } => {
                 let binding = self.lower_pattern_seed(binding)?;
                 let producer = self.lower_producer_definition(producer)?;
-                let expected = crate::task::TaskHandleType::ThreadHandle {
-                    payload: producer.handle_type.payload_type(),
-                };
-                if producer.handle_type != expected {
-                    return Err(RuntimePlanBuildError::ProducerHandleType {
-                        expected,
-                        actual: producer.handle_type,
-                    });
-                }
                 let payload = self.resolve_seed_type(
-                    "Thread result payload",
+                    "Program task result payload",
                     crate::pattern::RuntimeSemanticTypeId::from_bytes(
                         *producer.handle_type.payload_type().as_bytes(),
                     ),
                 )?;
-                match self.projection(binding.ty())? {
-                    RuntimePlanTypeProjection::ThreadHandle(item) => {
-                        require_same("Thread result payload", payload, *item)?;
-                    }
-                    _ => return invalid_projection("Thread result binding", binding.ty()),
+                match (producer.handle_type, self.projection(binding.ty())?) {
+                    (
+                        crate::task::TaskHandleType::Need { .. },
+                        RuntimePlanTypeProjection::Need(item),
+                    )
+                    | (
+                        crate::task::TaskHandleType::ThreadHandle { .. },
+                        RuntimePlanTypeProjection::ThreadHandle(item),
+                    ) => require_same("Program task result payload", payload, *item)?,
+                    _ => return invalid_projection("Program task result binding", binding.ty()),
                 }
-                FlowOp::Thread {
+                FlowOp::ProgramTask {
                     name,
                     binding,
                     producer,
@@ -5398,7 +5394,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         )?;
                     }
                 }
-                FlowOp::Thread { binding, body, .. } => {
+                FlowOp::ProgramTask { binding, body, .. } => {
                     let mut nested = scope.clone();
                     let mut nested_frames = scope_frames.clone();
                     self.validate_flow_operation_locals_inner(

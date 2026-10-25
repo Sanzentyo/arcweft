@@ -1067,7 +1067,7 @@ impl super::RuntimePlanInventory {
             FlowOp::LetElse { .. }
             | FlowOp::StandardMap(_)
             | FlowOp::FormatOperandAttempt { .. }
-            | FlowOp::Thread { .. }
+            | FlowOp::ProgramTask { .. }
             | FlowOp::Scope { .. }
             | FlowOp::Loop { .. }
             | FlowOp::While { .. }

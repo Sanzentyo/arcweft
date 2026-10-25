@@ -406,7 +406,7 @@ fn template_sources_preflight_owner_kind_and_complete_capture_count_before_value
     assert!(matches!(
         child.template_producer_spec(
             &program,
-            RuntimeTaskTemplateArguments::Thread {
+            RuntimeTaskTemplateArguments::ProgramTask {
                 captures: &captures
             },
             None,
@@ -793,18 +793,26 @@ fn template_source_container_graphs_reject_same_identity_with_another_shape_befo
 }
 
 pub(in crate::plan::task_source) fn thread() -> RuntimeTaskSourceProgram {
-    thread_context(false, 1)
+    program_context(false, 1, false)
+}
+
+pub(in crate::plan::task_source) fn program_need() -> RuntimeTaskSourceProgram {
+    program_context(false, 1, true)
 }
 
 pub(in crate::plan::task_source) fn thread_with_lexical_context() -> RuntimeTaskSourceProgram {
-    thread_context(true, 1)
+    program_context(true, 1, false)
 }
 
 pub(in crate::plan::task_source) fn thread_with_captures(count: usize) -> RuntimeTaskSourceProgram {
-    thread_context(false, count)
+    program_context(false, count, false)
 }
 
-fn thread_context(lexical_context: bool, capture_count: usize) -> RuntimeTaskSourceProgram {
+fn program_context(
+    lexical_context: bool,
+    capture_count: usize,
+    ordinary_need: bool,
+) -> RuntimeTaskSourceProgram {
     let mut builder = RuntimePlanBuilder::new();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
@@ -815,7 +823,14 @@ fn thread_context(lexical_context: bool, capture_count: usize) -> RuntimeTaskSou
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
-                RuntimePlanTypeSeed::new(handle, RuntimePlanTypeProjection::ThreadHandle(unit)),
+                RuntimePlanTypeSeed::new(
+                    handle,
+                    if ordinary_need {
+                        RuntimePlanTypeProjection::Need(unit)
+                    } else {
+                        RuntimePlanTypeProjection::ThreadHandle(unit)
+                    },
+                ),
                 RuntimePlanTypeSeed::new(
                     function_type,
                     RuntimePlanTypeProjection::Function {
@@ -895,7 +910,7 @@ fn thread_context(lexical_context: bool, capture_count: usize) -> RuntimeTaskSou
             ),
         })
         .collect::<Vec<_>>();
-    ops.push(RuntimeFlowOpSeed::Thread {
+    ops.push(RuntimeFlowOpSeed::ProgramTask {
         name: None,
         binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
         captures,
@@ -905,8 +920,14 @@ fn thread_context(lexical_context: bool, capture_count: usize) -> RuntimeTaskSou
             contract: NeedProducerContractDigest::from_bytes([21; 32]),
             plan: coordinate,
             producer_site: NeedProducerSiteDigest::from_bytes([22; 32]),
-            handle_type: crate::task::TaskHandleType::ThreadHandle {
-                payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+            handle_type: if ordinary_need {
+                crate::task::TaskHandleType::Need {
+                    payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+                }
+            } else {
+                crate::task::TaskHandleType::ThreadHandle {
+                    payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+                }
             },
             class: TaskClass::Cpu,
             priority: TaskPriority(0),
@@ -984,7 +1005,7 @@ fn thread_source_codec_retains_program_definition_and_capture_roles() {
             maximum: 0
         })
     ));
-    let Some(FlowOp::Thread {
+    let Some(FlowOp::ProgramTask {
         captures, producer, ..
     }) = source.request_endpoint().operation()
     else {
@@ -1127,7 +1148,7 @@ fn thread_source_uses_original_capture_order_and_retains_only_an_admitted_source
     let spec = source
         .template_producer_spec(
             &program,
-            RuntimeTaskTemplateArguments::Thread {
+            RuntimeTaskTemplateArguments::ProgramTask {
                 captures: &captures,
             },
             None,
@@ -1266,7 +1287,7 @@ fn thread_source_uses_original_capture_order_and_retains_only_an_admitted_source
     assert!(matches!(
         source.template_producer_spec(
             &program,
-            RuntimeTaskTemplateArguments::Thread {
+            RuntimeTaskTemplateArguments::ProgramTask {
                 captures: &[] as &[RuntimeValue]
             },
             None,

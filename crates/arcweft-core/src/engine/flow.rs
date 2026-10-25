@@ -910,19 +910,19 @@ impl Engine {
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::Thread { binding, .. } => {
+            FlowOp::ProgramTask { binding, .. } => {
                 if self.task_request_quota_remaining == 0 {
                     self.fail_task_request_quota(
-                        "Thread start exceeds the remaining task request quota",
+                        "Program task start exceeds the remaining task request quota",
                         output,
                     );
                     return;
                 }
-                let super::thread::PreparedThread {
+                let super::thread::PreparedProgramTask {
                     spec,
                     mut child,
                     next_fiber_id,
-                } = match self.prepare_thread(&source_site) {
+                } = match self.prepare_program_task(&source_site) {
                     Ok(prepared) => prepared,
                     Err(error) => {
                         self.fail_eval(error, output);
@@ -933,15 +933,15 @@ impl Engine {
                     self.need_producers
                         .ensure_program_task_with_binding(spec, |receipt| {
                             let handle = crate::task::RuntimeNeedHandle::try_from(receipt.clone())
-                                .map_err(super::thread::ThreadPreparationError::Handle)?;
+                                .map_err(super::thread::ProgramTaskPreparationError::Handle)?;
                             crate::pattern::match_runtime_pattern_owned(
                                 &self.plan,
                                 binding,
                                 RuntimeValue::NeedHandle(handle),
                                 self.fiber.frame.env.function_instantiation(),
                             )
-                            .map_err(super::thread::ThreadPreparationError::Binding)?
-                            .ok_or(super::thread::ThreadPreparationError::BindingMismatch)
+                            .map_err(super::thread::ProgramTaskPreparationError::Binding)?
+                            .ok_or(super::thread::ProgramTaskPreparationError::BindingMismatch)
                         });
                 let (accepted, launch, bindings) = match accepted {
                     Ok(accepted) => accepted,

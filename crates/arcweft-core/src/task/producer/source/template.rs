@@ -17,7 +17,7 @@ use crate::value::{
 /// These are borrowed logical operands, not an already copied request or an
 /// untyped caller-built tuple. Each role is admitted against its original AST.
 pub(crate) enum RuntimeTaskTemplateArguments<'value, V> {
-    Thread {
+    ProgramTask {
         captures: &'value [V],
     },
     AwaitManyBase {
@@ -34,7 +34,7 @@ pub(crate) enum RuntimeTaskTemplateArguments<'value, V> {
 impl<'value, V: RuntimeStoredValue> RuntimeTaskTemplateArguments<'value, V> {
     fn captures(&self) -> &'value [V] {
         match self {
-            Self::Thread { captures }
+            Self::ProgramTask { captures }
             | Self::AwaitManyBase { captures, .. }
             | Self::AwaitManyChild { captures, .. } => captures,
         }
@@ -206,8 +206,8 @@ impl RuntimeTaskSourceRef<'_> {
         let mut locals = Vec::new();
         match (self.request_endpoint().operation(), &arguments) {
             (
-                Some(FlowOp::Thread { captures, .. }),
-                RuntimeTaskTemplateArguments::Thread { .. },
+                Some(FlowOp::ProgramTask { captures, .. }),
+                RuntimeTaskTemplateArguments::ProgramTask { .. },
             ) => {
                 admission.validate_metadata_collection(captures.len())?;
                 locals.extend_from_slice(captures.as_slice());
@@ -303,7 +303,7 @@ impl RuntimeTaskSourceRef<'_> {
         let captured = RuntimeValueView::Tuple(RuntimeTupleView::Views(&captured));
         let max_bytes = admission.work().limits().platform_encoded_bytes();
         let digest = match arguments {
-            RuntimeTaskTemplateArguments::Thread { .. } => {
+            RuntimeTaskTemplateArguments::ProgramTask { .. } => {
                 crate::entry::schema::canonical_runtime_value_view_digest(captured, max_bytes)
             }
             RuntimeTaskTemplateArguments::AwaitManyBase { source, .. } => {

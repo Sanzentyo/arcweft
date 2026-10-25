@@ -1158,7 +1158,7 @@ pub enum FlowOp {
         evidence: RuntimeIteratorEvidence,
         body: Vec<FlowOp>,
     },
-    Thread {
+    ProgramTask {
         name: Option<String>,
         binding: RuntimePattern,
         producer: crate::task::NeedProducerDefinition,

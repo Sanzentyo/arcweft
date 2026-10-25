@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "base": "2ffcb80f996f517325e7270d6f402b052bde2620",
+  "sourceFiles": 31,
+  "packages": [
+    "arcweft-cli",
+    "arcweft-core",
+    "arcweft-lang-jit-cranelift",
+    "arcweft-runtime-accelerator",
+    "arcweft-runtime-plan"
+  ],
+  "purpose": "Original ProgramTask authority can declare either ordinary Need or ThreadHandle; binding must match its exact carrier and payload",
+  "firstCheck": {
+    "run": "task-final-r3140-program-body-carrier-owner-check",
+    "exitCode": 101,
+    "reason": "New test called a nonexistent RuntimeNeedHandle::producer method",
+    "repair": "Use the actual retained spec producer"
+  },
+  "catalog": {
+    "run": "task-final-r3141-program-body-carrier-owner-catalog",
+    "exitCode": 0,
+    "all": 2245,
+    "matched": 2245,
+    "excluded": 0
+  },
+  "filterSelectionError": {
+    "run": "task-final-r3142-program-body-carrier-focused-catalog",
+    "reason": "binary() selects executable names with underscores; package-style hyphen names were rejected",
+    "testsExecuted": 0,
+    "repair": "Actual binary-name fields selected in R3144"
+  },
+  "libraryRuntime": {
+    "version": 1,
+    "base": "2ffcb80f996f517325e7270d6f402b052bde2620",
+    "run": "task-final-r3145-program-body-carrier-library-runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [  39.440s] 2161 tests run: 2160 passed, 1 failed, 0 skipped",
+    "executed": 2161,
+    "passed": 2160,
+    "failed": 1,
+    "skipped": 0,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3988,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::program_task::tests::ordinary_program_need_starts_from_its_source_and_survives_each_public_save"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-25T21:57:35.7599554Z"
+  },
+  "libraryRuntimeExecutables": {
+    "hashed": 18,
+    "drift": 0
+  },
+  "nativeOrdinaryNeed": {
+    "test": "engine::thread::tests::ordinary_program_need_retains_source_custody_and_moves_its_result_once",
+    "status": "PASS",
+    "rollbackEveryStep": true,
+    "result": "Bool true transferred exactly once"
+  },
+  "awbcOrdinaryNeed": {
+    "test": "awbc::product_step::program_task::tests::ordinary_program_need_starts_from_its_source_and_survives_each_public_save",
+    "status": "FAIL before execution in R3145; fixture repaired, rerun pending",
+    "reason": "Entry target has no exact flow executable",
+    "repair": "Give actual parent Flow its exact binding/executable metadata and Flow role; preserve Source Need and every per-step save/assertion"
+  },
+  "currentInput": "task-program-body-carrier-entry.source-freeze.json",
+  "pendingCatalog": "task-final-r3146-program-body-carrier-entry-catalog",
+  "scope": "Intermediate source checkpoint; Copy captures retained. Affine input transfer, Source parallel, final owner/reverse/workspace gates are not accepted by this checkpoint.",
+  "heldTracked": 14,
+  "untrackedFiles": 6,
+  "artifactCopyMove": false
+}

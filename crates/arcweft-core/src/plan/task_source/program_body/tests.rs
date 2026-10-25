@@ -9,7 +9,7 @@ fn thread_coordinate(plan: &RuntimePlan) -> &RuntimeTaskPlanBuildCoordinate {
         .iter_with_ids()
         .find_map(|(_, function)| {
             function.body().executable()?.ops().iter().find_map(|op| {
-                if let FlowOp::Thread { producer, .. } = op {
+                if let FlowOp::ProgramTask { producer, .. } = op {
                     Some(&producer.plan)
                 } else {
                     None
@@ -28,7 +28,7 @@ fn compiler_program_body_borrows_the_original_operation_and_enclosing_function()
     assert_eq!(source.task_plan(), plan.task_plan(coordinate).unwrap());
     let [
         _,
-        FlowOp::Thread {
+        FlowOp::ProgramTask {
             producer,
             captures,
             body,

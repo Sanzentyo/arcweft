@@ -217,7 +217,7 @@ fn admit_ops(name: &str, ops: &[FlowOp], depth: usize) -> Result<(), RuntimeEval
             | FlowOp::For { .. }
             | FlowOp::Break(_)
             | FlowOp::Continue => Some("loop control"),
-            FlowOp::Thread { .. } => Some("thread"),
+            FlowOp::ProgramTask { .. } => Some("thread"),
             FlowOp::ExitScopeBind { pattern, .. } => {
                 if matches!(
                     pattern.kind(),

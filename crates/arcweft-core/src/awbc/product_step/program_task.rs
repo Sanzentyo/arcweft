@@ -186,7 +186,7 @@ impl AwbcProductStepExecutor {
         let limits = RuntimeTaskPlanSealLimits::default();
         let mut meter = admission.task_source_meter(limits)?;
         let source = program.awbc_program_source(plan, limits, &mut meter)?;
-        let Some(crate::plan::FlowOp::Thread { producer, .. }) =
+        let Some(crate::plan::FlowOp::ProgramTask { producer, .. }) =
             source.request_endpoint().operation()
         else {
             return Err(ProgramTaskError::MissingSource);
@@ -198,7 +198,7 @@ impl AwbcProductStepExecutor {
             .collect::<Result<Vec<_>, _>>()?;
         let checked = source.template_producer_spec(
             program,
-            RuntimeTaskTemplateArguments::Thread { captures: &values },
+            RuntimeTaskTemplateArguments::ProgramTask { captures: &values },
             frame.type_instantiation.as_deref(),
             &mut admission,
         )?;

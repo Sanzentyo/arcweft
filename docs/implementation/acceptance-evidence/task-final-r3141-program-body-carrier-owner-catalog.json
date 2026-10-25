@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "2ffcb80f996f517325e7270d6f402b052bde2620",
+  "name": "task-final-r3141-program-body-carrier-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3141-program-body-carrier-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T21:48:18.1254466Z",
+  "finishedAt": "2026-10-25T21:54:35.5307888Z"
+}

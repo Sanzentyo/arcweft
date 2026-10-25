@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "2ffcb80f996f517325e7270d6f402b052bde2620",
+  "name": "task-final-r3142-program-body-carrier-focused-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json",
+    "-E",
+    "binary(=arcweft-core) | binary(=arcweft-runtime-plan)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3142-program-body-carrier-focused-catalog.log",
+  "exitCode": 94,
+  "startedAt": "2026-10-25T21:56:04.8945014Z",
+  "finishedAt": "2026-10-25T21:56:06.0058384Z"
+}

@@ -7,20 +7,23 @@ use crate::task::*;
 use crate::value::RuntimeValue;
 
 fn engine(explicit_return: bool) -> Engine {
+    engine_with_carrier(explicit_return, false)
+}
+
+fn engine_with_carrier(explicit_return: bool, ordinary_need: bool) -> Engine {
     let mut builder = RuntimePlanBuilder::new();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
-    let handle = RuntimeSemanticTypeId::from_bytes([0xde; 32]);
+    let thread = RuntimeSemanticTypeId::from_bytes([0xde; 32]);
+    let need = RuntimeSemanticTypeId::from_bytes([0xdf; 32]);
+    let handle = if ordinary_need { need } else { thread };
     let locals = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
-                RuntimePlanTypeSeed::new(handle, RuntimePlanTypeProjection::ThreadHandle(boolean)),
-                RuntimePlanTypeSeed::new(
-                    RuntimeSemanticTypeId::from_bytes([0xdf; 32]),
-                    RuntimePlanTypeProjection::Need(boolean),
-                ),
+                RuntimePlanTypeSeed::new(thread, RuntimePlanTypeProjection::ThreadHandle(boolean)),
+                RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(boolean)),
                 RuntimePlanTypeSeed::new(
                     RuntimeSemanticTypeId::from_bytes([0xe0; 32]),
                     RuntimePlanTypeProjection::ThreadHandle(unit),
@@ -92,7 +95,7 @@ fn engine(explicit_return: bool) -> Engine {
             RuntimeExecutableBodySeed {
                 effects: RuntimeEffectSet::empty(),
                 ops: Box::new([
-                    RuntimeFlowOpSeed::Thread {
+                    RuntimeFlowOpSeed::ProgramTask {
                         name: None,
                         binding: RuntimePatternSeed::new(
                             handle,
@@ -108,8 +111,18 @@ fn engine(explicit_return: bool) -> Engine {
                             contract: NeedProducerContractDigest::from_bytes([0xdc; 32]),
                             plan: coordinate,
                             producer_site: NeedProducerSiteDigest::from_bytes([0xdd; 32]),
-                            handle_type: crate::task::TaskHandleType::ThreadHandle {
-                                payload: RuntimeTypeSemanticDigest::from_bytes(*boolean.as_bytes()),
+                            handle_type: if ordinary_need {
+                                crate::task::TaskHandleType::Need {
+                                    payload: RuntimeTypeSemanticDigest::from_bytes(
+                                        *boolean.as_bytes(),
+                                    ),
+                                }
+                            } else {
+                                crate::task::TaskHandleType::ThreadHandle {
+                                    payload: RuntimeTypeSemanticDigest::from_bytes(
+                                        *boolean.as_bytes(),
+                                    ),
+                                }
                             },
                             class: TaskClass::Cpu,
                             priority: TaskPriority(0),
@@ -232,6 +245,53 @@ fn retire(
         }
     }
     panic!("the actual Program body failed to retire without a Host");
+}
+
+#[test]
+fn ordinary_program_need_retains_source_custody_and_moves_its_result_once() {
+    let mut engine = engine_with_carrier(true, true);
+    let (task, report) = retire(&mut engine, true);
+    assert_eq!(report.terminal(), &ProgramTaskTerminal::Completed);
+    let handle = RuntimeNeedHandle::try_from(task.clone()).unwrap();
+    assert!(matches!(
+        handle.spec().producer.handle_type(),
+        crate::task::TaskHandleType::Need { .. }
+    ));
+    let value = RuntimeValue::NeedHandle(handle);
+    let lookup = |marker| {
+        engine
+            .plan
+            .type_table()
+            .id_for_semantic(RuntimeSemanticTypeId::from_bytes([marker; 32]))
+            .unwrap()
+    };
+    assert!(
+        engine
+            .plan
+            .validate_live_value(lookup(0xdf), &value, RuntimeSchemaLimits::engine_default())
+            .is_ok()
+    );
+    assert!(
+        engine
+            .plan
+            .validate_live_value(lookup(0xde), &value, RuntimeSchemaLimits::engine_default())
+            .is_err()
+    );
+    let correlation = task.handle().correlation;
+    assert_eq!(
+        engine
+            .need_producers
+            .take_ready_for_correlation(&correlation)
+            .unwrap()
+            .into_value(),
+        RuntimeValue::Bool(true)
+    );
+    assert!(
+        engine
+            .need_producers
+            .take_ready_for_correlation(&correlation)
+            .is_err()
+    );
 }
 
 #[test]

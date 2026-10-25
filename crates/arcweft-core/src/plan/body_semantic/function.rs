@@ -231,7 +231,9 @@ impl<'a> OriginalRequestEndpoint<'a> {
                 _ => None,
             },
             EndpointKind::ProgramTask => match operation {
-                plan::FlowOp::Thread { producer, .. } => Some(Source::ProgramProducer(producer)),
+                plan::FlowOp::ProgramTask { producer, .. } => {
+                    Some(Source::ProgramProducer(producer))
+                }
                 _ => None,
             },
             EndpointKind::MakeNeed => match operation {
@@ -344,7 +346,7 @@ impl<'a> OriginalRequestEndpoint<'a> {
         match (self.kind, self.source) {
             (
                 EndpointKind::ProgramTask,
-                ProducerEndpointSource::Operation(plan::FlowOp::Thread { captures, .. }),
+                ProducerEndpointSource::Operation(plan::FlowOp::ProgramTask { captures, .. }),
             ) => Some(captures),
             _ => None,
         }
@@ -924,7 +926,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         use plan::FlowOp as Op;
         match op {
             Op::HostCall { .. } => &[EndpointKind::HostTask],
-            Op::Thread { .. } => &[EndpointKind::ProgramTask],
+            Op::ProgramTask { .. } => &[EndpointKind::ProgramTask],
             Op::StartNeedProducer { .. } => &[EndpointKind::MakeNeed],
             Op::AwaitMany { .. } => &[EndpointKind::AwaitManyBase, EndpointKind::AwaitManyChild],
             Op::Dialogue { .. } => &[EndpointKind::LineTask],

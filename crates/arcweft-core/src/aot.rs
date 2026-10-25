@@ -136,7 +136,7 @@ impl AotLinearOp {
             | FlowOp::While { .. }
             | FlowOp::WhileLet { .. }
             | FlowOp::For { .. }
-            | FlowOp::Thread { .. }
+            | FlowOp::ProgramTask { .. }
             | FlowOp::Scope { .. }
             | FlowOp::Break(_)
             | FlowOp::Continue
@@ -293,7 +293,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::While { .. }
         | FlowOp::WhileLet { .. }
         | FlowOp::For { .. }
-        | FlowOp::Thread { .. }
+        | FlowOp::ProgramTask { .. }
         | FlowOp::Scope { .. }
         | FlowOp::Break(_)
         | FlowOp::Continue
@@ -338,7 +338,7 @@ impl AotOpClass {
             | FlowOp::While { .. }
             | FlowOp::WhileLet { .. }
             | FlowOp::For { .. }
-            | FlowOp::Thread { .. }
+            | FlowOp::ProgramTask { .. }
             | FlowOp::Scope { .. } => Self::Branch,
             FlowOp::Effect(_)
             | FlowOp::EvaluatedEffect(_)
@@ -390,7 +390,7 @@ impl AotProgramStats {
                 | FlowOp::While { body, .. }
                 | FlowOp::WhileLet { body, .. }
                 | FlowOp::For { body, .. }
-                | FlowOp::Thread { body, .. } => self.record_ops(body),
+                | FlowOp::ProgramTask { body, .. } => self.record_ops(body),
                 FlowOp::Scope { body, .. } => self.record_ops(body),
                 FlowOp::Await { observers, .. } => {
                     for observer in observers {

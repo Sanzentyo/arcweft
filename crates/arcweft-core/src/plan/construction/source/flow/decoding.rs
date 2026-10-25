@@ -945,7 +945,7 @@ impl Reader<'_, '_, '_> {
                 evidence: self.iterator()?,
                 body: self.body()?,
             },
-            28 => Op::Thread {
+            28 => Op::ProgramTask {
                 name: self.optional_text()?,
                 binding: self.pattern()?,
                 producer: self.producer_definition()?,

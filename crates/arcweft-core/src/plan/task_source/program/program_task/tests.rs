@@ -21,6 +21,10 @@ pub(crate) fn executable() -> AwbcProgram {
     executable_from(original)
 }
 
+pub(crate) fn need_executable() -> AwbcProgram {
+    executable_from(crate::plan::task_source::template_tests::program_need())
+}
+
 fn executable_from(original: RuntimeTaskSourceProgram) -> AwbcProgram {
     let original = original.original();
     let row = original
@@ -34,7 +38,7 @@ fn executable_from(original: RuntimeTaskSourceProgram) -> AwbcProgram {
             &mut meter(),
         )
         .unwrap();
-    let Some(FlowOp::Thread {
+    let Some(FlowOp::ProgramTask {
         producer, captures, ..
     }) = source.request_endpoint().operation()
     else {
@@ -219,7 +223,12 @@ fn program_destination_verifier_checks_the_row_carrier_and_payload() {
 
 #[test]
 fn program_kernel_source_round_trips_without_a_host_request_and_reborrows_its_actual_row() {
-    let code = executable();
+    for code in [executable(), need_executable()] {
+        check_program_source_round_trip(code);
+    }
+}
+
+fn check_program_source_round_trip(code: AwbcProgram) {
     let bytes = code.encode_canonical().unwrap();
     let decoded =
         AwbcProgram::decode_canonical(&bytes, crate::awbc::codec::AwbcDecodeBudget::default())

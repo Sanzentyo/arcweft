@@ -6,6 +6,8 @@ mod artifact;
 mod owned;
 mod program;
 #[cfg(test)]
+pub(crate) use program::program_need_executable_fixture;
+#[cfg(test)]
 pub(crate) use program::program_task_executable_fixture;
 mod program_body;
 pub use artifact::{
@@ -43,7 +45,7 @@ pub enum RuntimeTaskSourceError {
     ForeignExecution,
     #[error("Task source expected key does not resolve in this completed program")]
     MissingExpectedKey,
-    #[error("Task source is not an original Thread body")]
+    #[error("Task source is not an original Program task body")]
     NotProgramBody,
     #[error("completed Task source has no request endpoint {request:?}")]
     MissingEndpoint { request: RuntimeTaskRequestSource },

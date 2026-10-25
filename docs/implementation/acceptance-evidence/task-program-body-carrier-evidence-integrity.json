@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "base": "2ffcb80f996f517325e7270d6f402b052bde2620",
+  "rawOriginals": 20,
+  "byteDrift": 0,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3140-program-body-carrier-owner-check.json",
+      "bytes": 576,
+      "sha256": "a7f6a99808a60063fe76be4cd597f53d46f4cb3ec22864a6f463b849264c8eed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3140-program-body-carrier-owner-check.log",
+      "bytes": 85775,
+      "sha256": "a320bb31c99ec349e57abe6c5ace66ca9cc3698926b681188786193e579a060c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier.source-freeze.json",
+      "bytes": 781507,
+      "sha256": "e3bb78f67498909703d5c2e03ded4c9e7c3c60d6e79280758e22151311a33bd6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse.verified.json",
+      "bytes": 2525,
+      "sha256": "8b360be1f24a3fad5453e17a95874c21b1cbf7739e1adb7eed4cffcd465fce5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-public-evidence-audit.json",
+      "bytes": 134,
+      "sha256": "47a28fd27ecdfaf7256efdf7acd1e666ada27a99182088c35b39aab5748103bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3141-program-body-carrier-owner-catalog.json",
+      "bytes": 631,
+      "sha256": "56a2bdd489b900a1125a3b6c788a769e5d735431b2148623f014db4e8166b01c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3141-program-body-carrier-owner-catalog.log",
+      "bytes": 480528,
+      "sha256": "9a3fb583907246d784758a91ee0ebf1d8e7c1a7c70cf2a4b9d72f623366c5527"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3141-program-body-carrier-owner-catalog.inventory.json",
+      "bytes": 568288,
+      "sha256": "efc51178d1e2f13d6018ffef7b25d6ac5b85d36cc322ec597845a7ca713864e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3142-program-body-carrier-focused-catalog.json",
+      "bytes": 709,
+      "sha256": "9b59c65fe7ebda222a26c66a7bcb865efb8ac29bb1e61dc1977e25b4d1a1daed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3142-program-body-carrier-focused-catalog.log",
+      "bytes": 642,
+      "sha256": "95a8151a991aead6037c455eb7d257880db5eab75342aef4b02f3c6d2bda7dd8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3144-program-body-carrier-library-catalog.json",
+      "bytes": 708,
+      "sha256": "628e93af88752f25466205cbf604210fc465e4c276d18d3a4dd961eba0abcab3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3144-program-body-carrier-library-catalog.log",
+      "bytes": 469095,
+      "sha256": "5ede53a7cc8c5c9c3e12b862e5971d8a113c026dbeee5c68e88ea6eeaf351aed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3144-program-body-carrier-library-catalog.inventory.json",
+      "bytes": 548294,
+      "sha256": "6f6df6f50e6cd807a81fd84040a450eb51c8542728337705fcefb8ea5d19b769"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3145-program-body-carrier-library-runtime.json",
+      "bytes": 802,
+      "sha256": "aae8c85f054e4b6f2516d5eaa92a39fabc8810ab5b3c59e02b3940d612c7fbf6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3145-program-body-carrier-library-runtime.log",
+      "bytes": 750551,
+      "sha256": "6bc931475245bd20744da7a3bd5027beabbc22a96cc418a3f6e56b2628e1f705"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3145-program-body-carrier-library-runtime.terminal-audit.json",
+      "bytes": 806,
+      "sha256": "3f766efd56dcd15bbf10dc7903fd3252e593b6853f1623b9103766b95e57fd46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-library-executables-before.json",
+      "bytes": 4685,
+      "sha256": "70083228b101a9157bda105b6b8ac9a2b0b8962ca03af47bc5a3fd8536ca5f92"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-library-executables-after.json",
+      "bytes": 4684,
+      "sha256": "9a68047a175fb3ee76bcf6c2ced894766239c762c66db1830d9ed01180d2f807"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-entry.source-freeze.json",
+      "bytes": 781560,
+      "sha256": "c743a59ee7de4748d3d89231f62b65918fe4d80a5f5ca20d5b4250f680e4c0ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-checkpoint.json",
+      "bytes": 3195,
+      "sha256": "27fbe1aea4a6a66260a42510f3ca7fd09cebcfac2723575ebf3b00065ab1f6ba"
+    }
+  ]
+}

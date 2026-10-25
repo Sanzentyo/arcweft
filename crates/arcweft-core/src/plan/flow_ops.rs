@@ -224,7 +224,7 @@ impl FlowOp {
             Self::While { .. } => 22,
             Self::WhileLet { .. } => 24,
             Self::For { .. } => 26,
-            Self::Thread { .. } => 28,
+            Self::ProgramTask { .. } => 28,
             Self::Scope { .. } => 29,
             Self::Break(_) => 31,
             Self::Continue => 32,
@@ -395,7 +395,7 @@ impl FlowOp {
                 visitor(Role::Pattern, Node::Pattern(pattern))?;
                 expression(Role::Source, source, visitor)?;
             }
-            FlowOp::Thread { binding, .. } => {
+            FlowOp::ProgramTask { binding, .. } => {
                 visitor(Role::Result, Node::Pattern(binding))?;
             }
             FlowOp::RegisterDefer { captures, .. } => {
@@ -503,7 +503,7 @@ impl FlowOp {
             | Self::While { body, .. }
             | Self::WhileLet { body, .. }
             | Self::For { body, .. }
-            | Self::Thread { body, .. }
+            | Self::ProgramTask { body, .. }
             | Self::Scope { body, .. } => Schema::One(Role::Body, body),
             FlowOp::Let { .. }
             | FlowOp::Assign { .. }

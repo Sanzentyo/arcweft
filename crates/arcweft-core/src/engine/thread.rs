@@ -1,4 +1,4 @@
-//! Thread producer admission against the original program, before frame copies.
+//! Program task admission against the original Source, before frame copies.
 
 use super::{Engine, FlowFiber};
 use crate::entry::RuntimeSchemaLimits;
@@ -17,7 +17,7 @@ use std::sync::Arc;
 mod tests;
 
 #[derive(Debug, thiserror::Error)]
-pub(super) enum ThreadPreparationError {
+pub(super) enum ProgramTaskPreparationError {
     #[error(transparent)]
     Admission(#[from] AwbcRuntimeValueSnapshotError),
     #[error(transparent)]
@@ -34,13 +34,13 @@ pub(super) enum ThreadPreparationError {
     Handle(#[from] crate::task::RuntimeNeedHandleError),
     #[error(transparent)]
     Binding(#[from] crate::pattern::RuntimePatternMatchError),
-    #[error("Thread handle did not match its checked result binding")]
+    #[error("Program task handle did not match its checked result binding")]
     BindingMismatch,
-    #[error("unknown Thread capture {0:?}")]
+    #[error("unknown Program task capture {0:?}")]
     UnknownCapture(RuntimeLocalDeclarationId),
 }
 
-pub(super) struct PreparedThread {
+pub(super) struct PreparedProgramTask {
     pub(super) spec: TaskSpec,
     pub(super) child: FlowFiber,
     pub(super) next_fiber_id: u64,
@@ -96,11 +96,11 @@ impl Engine {
         };
     }
 
-    pub(super) fn prepare_thread(
+    pub(super) fn prepare_program_task(
         &self,
         operation: &super::code_cursor::NativeSourceOperation,
-    ) -> Result<PreparedThread, ThreadPreparationError> {
-        let Some(FlowOp::Thread { producer, .. }) = operation.operation(&self.plan) else {
+    ) -> Result<PreparedProgramTask, ProgramTaskPreparationError> {
+        let Some(FlowOp::ProgramTask { producer, .. }) = operation.operation(&self.plan) else {
             return Err(crate::task::RuntimeTaskProducerSourceError::RequestKind.into());
         };
         let program = RuntimeTaskSourceProgram::native(Arc::clone(&self.plan));
@@ -113,7 +113,7 @@ impl Engine {
         let source = program
             .original()
             .task_source(&producer.plan, limits, &mut meter)?;
-        let Some(FlowOp::Thread {
+        let Some(FlowOp::ProgramTask {
             producer, captures, ..
         }) = source.request_endpoint().operation()
         else {
@@ -127,12 +127,12 @@ impl Engine {
                     .frame
                     .env
                     .get(*local)
-                    .ok_or(ThreadPreparationError::UnknownCapture(*local))
+                    .ok_or(ProgramTaskPreparationError::UnknownCapture(*local))
             })
             .collect::<Result<Vec<_>, _>>()?;
         let checked = source.template_producer_spec(
             &program,
-            RuntimeTaskTemplateArguments::Thread { captures: &values },
+            RuntimeTaskTemplateArguments::ProgramTask { captures: &values },
             self.fiber.frame.env.function_instantiation(),
             &mut admission,
         )?;
@@ -157,7 +157,7 @@ impl Engine {
             request: TaskRequest::Program(checked.source().clone()),
             debug_label: producer.debug_label.clone(),
         };
-        Ok(PreparedThread {
+        Ok(PreparedProgramTask {
             spec,
             child,
             next_fiber_id,

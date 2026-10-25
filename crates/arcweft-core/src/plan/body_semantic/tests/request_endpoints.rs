@@ -176,7 +176,7 @@ fn fixture(
             pending: vec![],
         }
     } else {
-        RuntimeFlowOpSeed::Thread {
+        RuntimeFlowOpSeed::ProgramTask {
             name: None,
             binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
             captures: vec![],

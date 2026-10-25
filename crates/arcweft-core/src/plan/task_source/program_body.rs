@@ -1,4 +1,4 @@
-//! Compiler access to an actual original Thread body through the common Source
+//! Compiler access to an original Program task body through the common Source
 //! owner. Borrowing code grants no task receipt or runtime execution authority.
 
 use super::{RuntimeTaskSourceError, RuntimeTaskSourceRef};
@@ -55,7 +55,7 @@ impl RuntimePlan {
     ) -> Result<RuntimeProgramTaskBodyRef<'_>, RuntimeTaskSourceError> {
         let source = self.task_source(coordinate, context.limits, &mut context.meter)?;
         let endpoint = source.request;
-        let Some(FlowOp::Thread {
+        let Some(FlowOp::ProgramTask {
             producer,
             captures,
             body,

@@ -513,7 +513,7 @@ impl Writer {
             }
             FlowOp::Loop { result, .. } => self.flag(result.is_some())?,
             FlowOp::For { evidence, .. } => self.iterator(evidence)?,
-            FlowOp::Thread {
+            FlowOp::ProgramTask {
                 name,
                 producer,
                 captures,

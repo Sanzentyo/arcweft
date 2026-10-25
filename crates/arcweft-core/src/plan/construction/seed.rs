@@ -542,7 +542,7 @@ pub enum RuntimeFlowOpSeed {
         evidence: RuntimeIteratorEvidenceSeed,
         body: Vec<Self>,
     },
-    Thread {
+    ProgramTask {
         name: Option<String>,
         binding: RuntimePatternSeed,
         producer: crate::task::NeedProducerDefinition,
@@ -1000,7 +1000,7 @@ fn collect_control_flow_free_locals(
                 result.collect_binding_locals(bound);
             }
         }
-        RuntimeFlowOpSeed::Thread { binding, body, .. } => {
+        RuntimeFlowOpSeed::ProgramTask { binding, body, .. } => {
             collect_flow_ops_free_locals(body, bound, locals);
             binding.collect_binding_locals(bound);
         }
@@ -1107,7 +1107,7 @@ fn collect_terminal_or_effect_free_locals(
         | RuntimeFlowOpSeed::While { .. }
         | RuntimeFlowOpSeed::WhileLet { .. }
         | RuntimeFlowOpSeed::For { .. }
-        | RuntimeFlowOpSeed::Thread { .. }
+        | RuntimeFlowOpSeed::ProgramTask { .. }
         | RuntimeFlowOpSeed::Scope { .. } => unreachable!("flow-op collector dispatched variant"),
     }
 }
