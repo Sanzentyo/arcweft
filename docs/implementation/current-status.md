@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-26。照合基点は公開main `898c8ce9e00d119bb6dc5619dd7797361b0a8813`。
+確認日: 2026-10-26。照合基点は公開main `1c9cae1fdbf65362db39b1e554a916a03b2ade50`。
 既存checkoutの元tracked WIP 14件／untracked実ファイル6件を保持している。AWBC carrier移行18 Rustファイルは中間checkpointとして公開済みであり、前cutの検証をこの新入力全体の合格へ転用しない。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
@@ -49,7 +49,7 @@
 | LSP signature stampのcache／publication拒否 | **fixture準備順を修復・LSP全223件PASS** | disk-backed alternate environment 6種をrequest admissionより前へ構築する。prepared mutationを同じ型付き代数で保持し、request中はauthority差し替えと検査を行う。19 mutation×cache-hit／post-computeの38組、正確なstale型／cache不変／publication拒否のassertionと10秒deadlineを維持。R3129は223／223 PASS、R3130 Clippyは警告あり・終了0、各3,987入力の前後差分0。[修復と限定影響](acceptance-evidence/task-signature-stamp-staging-acceptance.json)。 |
 | HIRの全23逆依存runtime（Sema全22を含む） | **R3095終端：4,856実行／4,806 PASS／50 FAIL／31 ignored** | 解決済みCargo graphの全23 package、全target／全feature／locked、終了100。全23にnamed caseがあり、115 test binaries・5 non-test binariesを構築。catalogと終端case集合、3,986非文書入力・99 manifest／lock・120 executableのhash差分0。Generic 151件とowner／Source必須17件は全PASS。[範囲・package集計](acceptance-evidence/task-sema-local-use-reverse-acceptance.json)、[終端照合](acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.terminal-audit.json)。 |
 | Coreの全53逆依存runtime | **R3121終端：7,349実行／7,298 PASS／51 FAIL／39 ignored** | 全53 package、全target／全feature／locked、終了100、2,454.113秒。221 test binaries・6 non-test binaries、named caseは50 package、buildのみ3 package。全catalog集合、3,987非文書入力、227実行ファイルの前後hash差分0。統合Coreは2,080／2,080、Compiler 622／622、Sema 1,357／1,357、Generic 151／151、必須owner／Source 17／17 PASS。[終端照合](acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.terminal-audit.json)、[全package・必須ケース・前段比較](acceptance-evidence/task-handle-codec-reverse-acceptance.json)。 |
-| Workspace gate／Tier 2／Native-Web capture parity | **今回のworkspace check／Clippyは終了0、Core doctestは75 PASS。53逆依存はビルド中** | R3135 check／R3136 Clippyは全target・全feature・locked、警告あり・終了0。R3137 doctestは75／75 PASS。各3,988非文書入力の終端後hash差分0。[gateとownerの照合](acceptance-evidence/task-awbc-task-carrier-owner-acceptance.json)。R3138 catalogを構築後、R3139でCore／runtime-planの実際のrdeps filterを用いて全53 packageを実行する。統合runtimeの終端は未確認。HIR Tier 2はR3127で7／8 PASS、最後のattached Threadを実行中。他のTier 2／Native-Web capture parityは未再実行。 |
+| Workspace gate／Tier 2／Native-Web capture parity | **今回のworkspace check／Clippyは終了0、Core doctestは75 PASS。53逆依存runtimeは実行中** | R3135 check／R3136 Clippyは全target・全feature・locked、警告あり・終了0。R3137 doctestは75／75 PASS。各3,988非文書入力の終端後hash差分0。[gateとownerの照合](acceptance-evidence/task-awbc-task-carrier-owner-acceptance.json)。R3138は7,393件中7,354件選択・39件除外。R3139はCore／runtime-planの実際のrdeps filterで全53 packageを実行中。Generic 151件・必須owner／Source 17件の選択漏れ0。先行ownerの18実行ファイルは今回のfeature統合で全件異なるため再実行する。221 test binaries・6 non-test binariesの開始前hashを記録し、統合runtimeの終端は未確認。[統合選択と再利用範囲](acceptance-evidence/task-awbc-task-carrier-reverse-selection.json)。HIR Tier 2はR3127で7／8 PASS、最後のattached Threadを実行中。他のTier 2／Native-Web capture parityは未再実行。 |
 
 全51失敗の識別子・原ログ行・診断は[最新診断索引](acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.failure-recon.json)へ集約した。R3095の50件分類は検証履歴へ移し、現在の根本原因一覧として重複掲載しない。
 

@@ -12140,3 +12140,26 @@ Programの通常NeedをThreadHandleへ変更して代用しない。元Program S
 inputの所有移送とlaunch／result-bindingの失敗原子性を同じtyped ownerに保持する。
 この仕様訂正で未接続のSource parallelを完了とはせず、公開済みThread／AwaitManyやGeneric Matchの受入も戻さない。
 ビルド中の3,988非文書入力とHIR依存入力を変更せず、今回の確認は文書の内容・リンク・差分に限定した。
+
+## AWBC carrier全53逆依存の統合選択・実行開始 — 2026-10-26
+
+仕様訂正の公開 `1c9cae1fdbf65362db39b1e554a916a03b2ade50` はparent
+`f62635a5bdf66a34d64ce4d147f4e0f132833cc3`、tree
+`22f2fae0734ccef4025923fdb8c0aca4c76c6b4b`、full patch SHA256
+`beca80e5700e67aa9e23617dbdf2aaaa7c5ba9bedbe48738d1020d614671990b`。
+公開3 blob差分0、元WIP 14件を保持。文書の相対link 11件は欠落0、実行中の3,988 source入力との差分0。
+文書訂正のための新しいRust実行は行っていない。[文書・入力照合](acceptance-evidence/task-traversal-start-policy.audit.json)。
+
+R3138 catalogは終了0。全target・全feature・locked、Core／runtime-planの実際のrdeps filterと全53 packageを選択し、
+7,393件中7,354件選択／39件除外を確認した。named caseは50 packageで、arcweft／arcweft-bundle-assets／arcweft-render-webの
+3 packageはこの選択でbuildのみ。受入済みGeneric 151件と必須owner／Source 17件の識別子は全て選択されている。
+追加5テストとLSP修復matrixも選択した。
+
+今回のfeature統合では、先行owner runの18実行ファイルが全件異なる。owner 2,243 PASSを統合結果へ転記せず、
+R3139で同じ必須ケースも再実行する。221 test binaries・6 non-test binariesの開始前hashを記録した。
+[選択・package範囲・必須ケース・実行ファイル比較](acceptance-evidence/task-awbc-task-carrier-reverse-selection.json)。
+
+session 1303でR3139 nextestを実行中。実際の全体summary／終了コードは未確認であり、途中の成功・失敗を終端としない。
+R3127 HIR Tier 2のsession 17793も継続中で、7／8 PASS・最後のattached Threadは未終端。
+旧supervisorの広すぎるguardと開始前に記録したHIR専用freezeを区別し、終了後は実際のnextest結果を専用入力で照合する。
+原本等7件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-awbc-task-carrier-reverse-start-evidence-integrity.json)。

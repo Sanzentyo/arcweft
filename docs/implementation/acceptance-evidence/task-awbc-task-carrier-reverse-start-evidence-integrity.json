@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "base": "1c9cae1fdbf65362db39b1e554a916a03b2ade50",
+  "rawOriginals": 7,
+  "byteDrift": 0,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3138-awbc-task-carrier-reverse-catalog.json",
+      "bytes": 2662,
+      "sha256": "3a8bb59c3abc6a5be5881a506a76408456ea29d4d505aebab3be97e370b03621"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3138-awbc-task-carrier-reverse-catalog.log",
+      "bytes": 1370113,
+      "sha256": "914af252d9a9ac56d80988d7dfeb05d39b2af8a2bf145eff9f2d4e752c7306cb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3138-awbc-task-carrier-reverse-catalog.inventory.json",
+      "bytes": 1846351,
+      "sha256": "28daafc5fca2acad29f5eee6c2fa738282b2826527ae950deffb666e7d0fea2a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-executables-before.json",
+      "bytes": 56291,
+      "sha256": "c4f777092f0856e356b50534356d48765ff461d98c5d1c0d9ca070c97633d444"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-selection.json",
+      "bytes": 7243,
+      "sha256": "6842a9ac818a7431e0e27b87f02d0032d6db3198226086cdadb0c74a76a04069"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-start-policy.verified.json",
+      "bytes": 954,
+      "sha256": "633039d8478220ebcc6e74dc2049451adc2593523ec6656b21ba8d73d60e0b9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-start-policy.audit.json",
+      "bytes": 295,
+      "sha256": "ed1744370043de09d6d9ca905dd80c64c406114dd129078493dab6252a823602"
+    }
+  ]
+}

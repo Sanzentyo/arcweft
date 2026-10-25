@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "commit": "1c9cae1fdbf65362db39b1e554a916a03b2ade50",
+  "parent": "f62635a5bdf66a34d64ce4d147f4e0f132833cc3",
+  "tree": "22f2fae0734ccef4025923fdb8c0aca4c76c6b4b",
+  "remote": "1c9cae1fdbf65362db39b1e554a916a03b2ade50",
+  "paths": [
+    {
+      "path": "docs/01-language/functions-and-pipeline.md",
+      "blob": "e0582941cd69a8254b66355b118abfeecbb25a6f"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "blob": "715e8eb9c8f5db4d1986ff761b75b28d899a22b7"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "6e7154e476015e13897b5b33538e7009fa4ebf0a"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "beca80e5700e67aa9e23617dbdf2aaaa7c5ba9bedbe48738d1020d614671990b",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T20:43:52.1723163Z"
+}

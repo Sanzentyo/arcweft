@@ -1,0 +1,11 @@
+{
+  "contracts": [
+    "docs/01-language/functions-and-pipeline.md",
+    "docs/02-runtime/async-scheduler.md"
+  ],
+  "links": 11,
+  "missing": 0,
+  "sourceInputs": 3988,
+  "sourceDrift": 0,
+  "rustExecution": "No new run for this prose-only correction; existing sessions unchanged"
+}
