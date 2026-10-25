@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "run": "task-final-r2929-presentation-custody-reverse-runtime",
+  "actualExitCode": 100,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "binaries": 227,
+  "binaryDrift": 0,
+  "scope": "Complete Core reverse closure; inspect actual failure set and accepted151 before acceptance claims",
+  "at": "2026-10-25T03:40:47.7519030Z"
+}

@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "sourcePublication": "763a7cdd54afc31b3697e40572797323e5384638",
+  "observedHead": "35f9580a2e483dc23a6597611ab9d347466c0eae",
+  "records": 11,
+  "bytes": 8718565.0,
+  "artifactCopyMove": false,
+  "scope": "Raw catalog/runtime and input/executable/publication receipts only; no build artifacts copied or moved",
+  "files": [
+    {
+      "file": "task-final-r2928-presentation-custody-reverse-catalog.json",
+      "bytes": 2597,
+      "sha256": "8c5a130e0c12eb4114aeae1db2d400f68602c9c8f087efb2a233668c1665e878",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2928-presentation-custody-reverse-catalog.log",
+      "bytes": 1362634,
+      "sha256": "6af31e4be91a719d15966a130f9c8fd444a98093fb5c3086f9b4e6cfba080437",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2928-presentation-custody-reverse-catalog.inventory.json",
+      "bytes": 1835828,
+      "sha256": "33df4166dcb14ae07d206249665929eb6ed3ec4ae0603bc2b55de725604744c3",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2929-presentation-custody-reverse-runtime.json",
+      "bytes": 2691,
+      "sha256": "6fc958bae3ac4910909cebe460ca998dd05559b247e6c617b54743300e65b9c1",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2929-presentation-custody-reverse-runtime.log",
+      "bytes": 5375175,
+      "sha256": "286cf4093d57f2c6979b45ea7af5970c4e0322f01f1d13b37a2debd8cf5aca70",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2929-presentation-custody-reverse-runtime.terminal-audit.json",
+      "bytes": 8968,
+      "sha256": "f6f23bd7c0f3ae1354b9020927a458bfd611489fec3053901774ab92026ebaf8",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-reverse.executables.before.json",
+      "bytes": 56293,
+      "sha256": "72e91a429079f1210484f76963ec1c2f6c160449e9f0b829d8f13ae69ca1e99c",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-reverse-runtime.audit.json",
+      "bytes": 357,
+      "sha256": "a61b8b3fb6cbfcfc5c0226b4700f295426fb9468e6b19540cbf980e03d1b46c3",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-reverse-acceptance.json",
+      "bytes": 56266,
+      "sha256": "014f8395d54582f2e54148d135a15b79884b97d8d4de43d7debc4ce77eb80748",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-checkpoint.verified.json",
+      "bytes": 15926,
+      "sha256": "e42b9b8bb78442ad186d08207dde1fd31d52c75e8c85a314209b5d42aed1cacc",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-current-contract-final-checkpoint.verified.json",
+      "bytes": 1830,
+      "sha256": "cd7f4b4908cb3a610bb47e4369ce533b4146f6425ceb9a9a52df955215588664",
+      "byteIdentical": true
+    }
+  ],
+  "at": "2026-10-25T03:41:26.3456190Z"
+}

@@ -1,0 +1,1372 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2928-presentation-custody-reverse-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "bytes": 292867584,
+      "nonTest": true,
+      "sha256": "ffc731c9526a6a73ecbb23a82cc683ef3b4c43e88aea28015e08ca7744e2c512"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcweft-lsp.exe",
+      "bytes": 109248512,
+      "nonTest": true,
+      "sha256": "53e0b7442b89f7ccfe8d64558c75b403d58a32a468a620ddce196f7b01839928"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\arcweft-player-native.exe",
+      "bytes": 175215616,
+      "nonTest": true,
+      "sha256": "86ecb2ee921dcc80f7c38fa71c7978a79485d669c5cc6a00f69e6fd21e5cac2e"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\action_button_submit-297596d059d71151.exe",
+      "bytes": 20677120,
+      "nonTest": false,
+      "sha256": "0e0378ff12afcf27ea195c8284f35479029f268b5aa270aae9f649b7af383807"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\agent_enum_execution-88f009a65846abe0.exe",
+      "bytes": 116023808,
+      "nonTest": false,
+      "sha256": "a20de75bcaf5a662faa849b77810f2984f8448b3f9094d07d785ac36424cd263"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-2a90ef76880c7cab.exe",
+      "bytes": 3250176,
+      "nonTest": false,
+      "sha256": "c04d026fb748d9beb8105c8aa6ca6e09bef16f7434eba0de8685c1ca44216500"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-440811f94723fd51.exe",
+      "bytes": 3257856,
+      "nonTest": false,
+      "sha256": "b9273f8fc1529b1ac4707d09e45aad949c0c10a1189dbf0ab36ba6e28b5a1343"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-4c87fee3f6c3507e.exe",
+      "bytes": 3250176,
+      "nonTest": false,
+      "sha256": "37f025c593a12889f5837843628c3f49bb6aa0e70643e862b1947517031ee94a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-5634c01cc95f5cca.exe",
+      "bytes": 3249152,
+      "nonTest": false,
+      "sha256": "140dc4c524611de57b14cf8d7d374a867eacf19f38fbb4081c5de70294110155"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-bb44e73956796891.exe",
+      "bytes": 3248640,
+      "nonTest": false,
+      "sha256": "cd722370320e85e46700c4fe0d7deef660ee0d101857cdb9c3bdcaebb2b1fc57"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcw_fixtures_check_run-1de0cc0ddf54db9a.exe",
+      "bytes": 868864,
+      "nonTest": false,
+      "sha256": "8fcef0e52eaaedf7696813ebf5191cb4edd1096b6cfc175763fa2ac67dbd83a1"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcw-3941da92fa867cb1.exe",
+      "bytes": 734208,
+      "nonTest": false,
+      "sha256": "8965e0a5e08a93f964f16d9e4835f03d66a873ac2d7bf35393b1977848b7a870"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_adapter_desktop-038a3fd12b18b163.exe",
+      "bytes": 3296256,
+      "nonTest": false,
+      "sha256": "a5068fe15d678cbc28dc4a8c139d0cf1324ae2ba2c0602cf1d57aa4ab3eb08b3"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_adapter_sema-b280e5a5fb634501.exe",
+      "bytes": 6574592,
+      "nonTest": false,
+      "sha256": "682a1c5cd02472dc2a0e48cda4e52e0b6cfe8f8065abd6d597ec1448857d9a8d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_mcp_client-4444b99042636971.exe",
+      "bytes": 2700800,
+      "nonTest": false,
+      "sha256": "47f6863ed85e3f7c82b71c507454d4f0c71cb09d3b2983e495efe7cac5374cdd"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_mcp-75ad6d3b5b8882cd.exe",
+      "bytes": 16765440,
+      "nonTest": false,
+      "sha256": "c3a8e04d6e0b2377c8235c96602683bd372ad2fac68feb0b54742c1d298b3a08"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_policy-2258f04a486fa032.exe",
+      "bytes": 12016640,
+      "nonTest": false,
+      "sha256": "2e04d34a9b9b6d66debbad4deb147c230e8c1263cbf08c2e8dce6d696ecc9d8b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_protocol-a23c1f15e06c1c86.exe",
+      "bytes": 18955776,
+      "nonTest": false,
+      "sha256": "5d452af748d5434dbf9b712bda9e15024549ceb1f1887cc9eda7839f85291ade"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_repl-3ea2871b1555bfdc.exe",
+      "bytes": 97937920,
+      "nonTest": false,
+      "sha256": "c4b901ab83c4817b0438308d470df7db61b0f0d4cbc19bc28159253847cc8a1a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_runner-96ad7a2de164427f.exe",
+      "bytes": 55756288,
+      "nonTest": false,
+      "sha256": "81f981aa6787bf41f9a72bb6a17716ccb45aba823fd3bdd3b9771c9a6588d3fd"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_browser_bench-88bd25a8ce0e4bc9.exe",
+      "bytes": 1922048,
+      "nonTest": false,
+      "sha256": "554cc3ad35eb67cd7bd3896ea9d3866644d20b8ba2097f3f0bef93188c94fb8d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_browser_bench.dll",
+      "bytes": 909312,
+      "nonTest": true,
+      "sha256": "d3a7f285961f845e05f4d95fa4a214e11b6c98e340120a8890cec2a7bbf9f32b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_bundle_assets-8c98474600139820.exe",
+      "bytes": 732672,
+      "nonTest": false,
+      "sha256": "661199724b0dcf36256c93b258e43557833e4f28b551a809964c855339d4648a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_bundle-9fc41dddff3fe8db.exe",
+      "bytes": 172312576,
+      "nonTest": false,
+      "sha256": "d0dadbb4694aa1a24666cfe3a841fe59fb45794ce223a3d2c2ecc6c38b57d5a9"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_character_view-f58cf826a284f9d3.exe",
+      "bytes": 1938944,
+      "nonTest": false,
+      "sha256": "8b00fad2dfa76a7a564b80e90835da0b51d21da94c6759acbc5b74790309efcc"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_cli-a6fe9b122dd4b8b5.exe",
+      "bytes": 374895104,
+      "nonTest": false,
+      "sha256": "6d3184ae9eee0b1f0254199005c76465163f469da06462956c581733241f7905"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-ab479908c2412289.exe",
+      "bytes": 268846592,
+      "nonTest": false,
+      "sha256": "38eab26cf2c2e841943a366731e9daefa2bec5b45e6bb42f53fdce8f32bffc6e"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-fcbbac8dbd1281a5.exe",
+      "bytes": 80813056,
+      "nonTest": false,
+      "sha256": "7f2e3343711ea83ad619f306e0b03143b2386245636332584541eb569d187f5e"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_debug_model-53a3596e371e8cee.exe",
+      "bytes": 846336,
+      "nonTest": false,
+      "sha256": "10d9d0e0a832beb4376f453a8a2ea10b9e2673eb9dd774d6f28598af0b3a64fd"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_debug_sqlite-5025f571520b58c0.exe",
+      "bytes": 4270080,
+      "nonTest": false,
+      "sha256": "97287c816953c278df5253eb0e26719ff312bbc3582aa8d2c309c61c71ae69f3"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_dialogue-82dab08cff5dec7e.exe",
+      "bytes": 19103232,
+      "nonTest": false,
+      "sha256": "98967648ebe61b0ab2cf31343640cc8bd4b739427781831e4a250d8e92ae8ebe"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_glyphon-fa4d331ee505d079.exe",
+      "bytes": 7290368,
+      "nonTest": false,
+      "sha256": "ed700fe63649fb4ab11aea39a9d69eb0fde436e426fc7026060cf624e6b3cc4b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_host_adapter-6aa8a1dc23fa018e.exe",
+      "bytes": 4905984,
+      "nonTest": false,
+      "sha256": "45960d5e472c5f7bb11cd1ef76300d5cc95e4c3dd53fd35ad290845261a54f1b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_jit_cranelift-f76888908aa5b31a.exe",
+      "bytes": 33245184,
+      "nonTest": false,
+      "sha256": "ab1f2ac9b9d540b33f6853bb451fe7be40d76d3c7f4caf96f171255eda9f0ea4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-9c2a65da5ddfdf49.exe",
+      "bytes": 83537408,
+      "nonTest": false,
+      "sha256": "78974f3d6cc8f753a8a59c53d843e4b82fb494a973215f27647a35acf3766f6b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_launch-7b881c1bb1c68e9a.exe",
+      "bytes": 13435392,
+      "nonTest": false,
+      "sha256": "78b17ac33d63d1f4ccfa5d6582a2072c089624603e86790d23f5a318c201d641"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lsp-55b8ec8776f3cc79.exe",
+      "bytes": 732672,
+      "nonTest": false,
+      "sha256": "509ddcf91eab12e88be9b9335d669c99f81a749b0c3d6b32685ae16b26770b8d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lsp-5e23c55215b82a44.exe",
+      "bytes": 113319936,
+      "nonTest": false,
+      "sha256": "a22fdb0df57513635322b302315dfc5c6b5c5a5e5b071a8ad09bd47b4b556e68"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_native-1fd9343fab191936.exe",
+      "bytes": 162028544,
+      "nonTest": false,
+      "sha256": "ee0e1e419d3ba031b508d009d45aedaf24fdc2ca136a254fce2ad0f2f56c8676"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_native-49005a6ddb51e29d.exe",
+      "bytes": 177563648,
+      "nonTest": false,
+      "sha256": "bf6dfd588710ada016309933ce7c76a9f538add48611e6ba7f897bad7940347e"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_scene-18497549244bae8b.exe",
+      "bytes": 63950336,
+      "nonTest": false,
+      "sha256": "acc1480e14fc44ecd46bb99f8b081f76a4968f18969ede859ec5051496fb549b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_text_input-64a0cd08d9814d0d.exe",
+      "bytes": 1108480,
+      "nonTest": false,
+      "sha256": "81a967c5e36e994c23b11a28a076563ee40d9bfa1ce9975a093c34df46e64596"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web-4500c0959c10b7ef.exe",
+      "bytes": 119813120,
+      "nonTest": false,
+      "sha256": "4377d33bfef046adca1bb900c564eecae8becb977e8de31c80b0e3ee2ee0351b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web.dll",
+      "bytes": 908800,
+      "nonTest": true,
+      "sha256": "e83a5a121acd06120e7d8f6c313b4b438bacce11984d100534093e4e254109a4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_project_loader-d92d431d60d87221.exe",
+      "bytes": 83572736,
+      "nonTest": false,
+      "sha256": "0810e36220709d7a88518a78dcc593b89b8b537df7f378ed962693245af99aad"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_project-31de4cb03d23d5e7.exe",
+      "bytes": 3469312,
+      "nonTest": false,
+      "sha256": "45e76376fce07f3cdb15bf7cdf08e349bb0f5a2aa56597e84097cae9e564b4cc"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_rag-cff9351b6eecd741.exe",
+      "bytes": 983040,
+      "nonTest": false,
+      "sha256": "f59df8a70448a75cc3b1cd9874900cf70d08aea27ca026f97b6197e855adb2e8"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_render_text-e914c0846b104c09.exe",
+      "bytes": 732672,
+      "nonTest": false,
+      "sha256": "7a42039610ac44a023220499a8637cc8ce8946526011b98699cea1f13a9a8818"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_render_web-b12fabd5c897b550.exe",
+      "bytes": 732672,
+      "nonTest": false,
+      "sha256": "55a0460a0b37d9305813c50d5dfa3cae70807a6567597a43f8518c330b6d6147"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_render_wgpu-2eeb5b37ac75009f.exe",
+      "bytes": 37710336,
+      "nonTest": false,
+      "sha256": "0c0e2a7038b6040fd0b9452bc90689ff0df66ef9c24239af16f7bf6a4f28b026"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_resource_manifest-7ed9e9f8e30c7b22.exe",
+      "bytes": 1231360,
+      "nonTest": false,
+      "sha256": "67e65be80542fafc6f2f93deac51c8c5b471cb65dc76f30ea1380fcbab7ae1e0"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_resource_model-686e74074db12d75.exe",
+      "bytes": 1989632,
+      "nonTest": false,
+      "sha256": "2350f6cb21b6e9ec4f2e081cbe3b6ec7ca88800ff66790766ba97c74e4e15a52"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_accelerator-c6655c7c9f108212.exe",
+      "bytes": 78752768,
+      "nonTest": false,
+      "sha256": "134114fd9716b62f78f07c5a52e6beb4be0d37a57a076b202c684fe56eb1dbae"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_codegen-30f372a67422ebb2.exe",
+      "bytes": 18140160,
+      "nonTest": false,
+      "sha256": "557e2f4d76559c8f71f93342d8f7036450a584110098c811f40feef7ae4dc60f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_driver-827ddfef54ce0e05.exe",
+      "bytes": 72211456,
+      "nonTest": false,
+      "sha256": "34d9e668e1790a6acee196cce99f43756c8eea4a4ee8dfd98d9153732b75d6ac"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_host-b7c6130172af1e18.exe",
+      "bytes": 169914368,
+      "nonTest": false,
+      "sha256": "10f050e3250f2bd75d540ac2a6336ad403e9693bf9bc9ea50fc219831057fa55"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-3573c896f1830436.exe",
+      "bytes": 104127488,
+      "nonTest": false,
+      "sha256": "2ecd95cd8bb372d6e38a5ad4788c102cf2dfa7d20dc2b78e6fe2dc38ba768429"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_scheduler-6dac3e76f9ad5c09.exe",
+      "bytes": 4272640,
+      "nonTest": false,
+      "sha256": "04da4e6b44d7a35ed9b65cef58372fd734eb2b7f826940a0ff2066dcbc27ad3a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_save-f34e2a59e383fc14.exe",
+      "bytes": 1446400,
+      "nonTest": false,
+      "sha256": "e93bf64b7ec93158cf530d145bb47705ae08e4fd2f4658f3337acb310bde29cc"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_test-27455b55bd8690e4.exe",
+      "bytes": 20858368,
+      "nonTest": false,
+      "sha256": "79af67a3ce92e91f5375f2806f58d2c45b6673e310d6b9ffd34d08495e892db3"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_text_layout-43751947ac6b1381.exe",
+      "bytes": 1329664,
+      "nonTest": false,
+      "sha256": "5abcf79858c4a40074544cbedd54bf8b787b5ed8a3456a7a8cab81a142171a5d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_text_model-0ee8d21a5cbada01.exe",
+      "bytes": 16551424,
+      "nonTest": false,
+      "sha256": "7c12644e6dbc191ed8c62028c9643477308f2f14f18d04eefaa241a205a783ca"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_tooling-8a04c5d1181ed33b.exe",
+      "bytes": 7454720,
+      "nonTest": false,
+      "sha256": "1648a96ad4e7c74bd946969431e4f9b5eaf3ad5ac7fce2f760f5a3dc055cb6e7"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_verify_lsp-43325537fb7d8eba.exe",
+      "bytes": 2967040,
+      "nonTest": false,
+      "sha256": "223e813aeaa1366901fbca08232feaf7c9baa6d6c4889dd07fdb8c66cbded4ac"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_verify_oxiz-587a9b7d498c183f.exe",
+      "bytes": 4989952,
+      "nonTest": false,
+      "sha256": "f8f174d7344908f132d8ceb001d853fa5625d473f26e7946b501aa95525c8bde"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_verify_z3-6bfa1677fb9d75f3.exe",
+      "bytes": 962560,
+      "nonTest": false,
+      "sha256": "edba5af5eea0786dbd78939f4568b23d1ec2795e74f4f63e226c5b031805ac66"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_verify-e66ef970830d4198.exe",
+      "bytes": 1336832,
+      "nonTest": false,
+      "sha256": "4208f79dcb019e551eae34f34d6d7a9b14aaa7b88d4389d4bba441f7112f4045"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_view-333ba1bb8fe94846.exe",
+      "bytes": 4737536,
+      "nonTest": false,
+      "sha256": "101be627826a2c40ebc1d0fcbfad84e4c87829ee7faa21d78685df415aba12f2"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft-52504b8741f4a024.exe",
+      "bytes": 732672,
+      "nonTest": false,
+      "sha256": "8da263e8c17c564fb9b2e107ff66f04f787d648787ac922b3a84d222016be466"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertion_identity-09b23a06226358da.exe",
+      "bytes": 73999360,
+      "nonTest": false,
+      "sha256": "21d99c719fb08faa5dfcddff9b429793f3be5fca1c5be82e888f04a1ff48d6fc"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertions-cba81240f9033392.exe",
+      "bytes": 92242432,
+      "nonTest": false,
+      "sha256": "b9a918622657a774bfb4763e789980b4676ac1e22634663ece0bb8338a937a9a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_parity-7fa0989d45214c56.exe",
+      "bytes": 44730368,
+      "nonTest": false,
+      "sha256": "aeda10eb9505f33de38633eb45f284ceb36a0cafc3b91d737ec4b2c63f7f92e5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_runner-201e925573697884.exe",
+      "bytes": 2523136,
+      "nonTest": false,
+      "sha256": "c66e49c7b87e0440514c3ea3f1722a50cfc8887391d0a6e69f797f74a51fc3f4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_session-aa65b80c732e62d9.exe",
+      "bytes": 106555392,
+      "nonTest": false,
+      "sha256": "62428997d4038e0349890798ceabdfd1576778f45525e714e47c287a2d6a1b1d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_record_type-06cc74777ff6d842.exe",
+      "bytes": 7385600,
+      "nonTest": false,
+      "sha256": "41adcdfdf79766e62a778e61f6f24365dd263a7e93da40837cd98e67524d8c45"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_variant_types-96bc9f828c6ef621.exe",
+      "bytes": 9984000,
+      "nonTest": false,
+      "sha256": "a1a6f56a2d51f0082b677bd0b97129ae87fa7f54f05be39d6419983e316660a5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\bracket_numeric_batch-1d6d43fd89acf6f3.exe",
+      "bytes": 152976384,
+      "nonTest": false,
+      "sha256": "65689c1e2f8d9b173a7fd2102beb88ead381f97a2cc16130f5cc5db066f46e23"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\browser_bench_host-455e0009e46fd569.exe",
+      "bytes": 732672,
+      "nonTest": false,
+      "sha256": "c815b858c823bbe5ae35f5f7dfdf1d526a5778fdfc653e52ff5e578820fedb98"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\builtin_payload_admission-41f7bfa00d3dc025.exe",
+      "bytes": 6141440,
+      "nonTest": false,
+      "sha256": "1aa69b2ccc9607923e1b29d5531b893d925eccc16a1e7a62fe616cffc7d89885"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\bundle_runner-8602e3ee36ea08f0.exe",
+      "bytes": 129140224,
+      "nonTest": false,
+      "sha256": "48cf79401be31e19a8df40d28d0550cc19243cfbc3ead88c543950bfa4bf1c05"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\bytecode_link_producer_inventory-9db05dffc39d980a.exe",
+      "bytes": 794624,
+      "nonTest": false,
+      "sha256": "ba8320928df1e75ef2ade0098f5a9c00525aaf01195d7a7727be0be0a420f2df"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-05c9e361a00eafff.exe",
+      "bytes": 121000960,
+      "nonTest": false,
+      "sha256": "e13b9191d965724f3615eadbc6afdc0dff0ed2d92347d5c8caf397f4b26b95db"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\capability_policy-8dc38052447837b6.exe",
+      "bytes": 7173120,
+      "nonTest": false,
+      "sha256": "f74033620a96402d0e0e22a92650a234881925981fc6cc6be40cb2ff17aefe44"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\catalog_asset_execution-2589931077d82c1c.exe",
+      "bytes": 116024320,
+      "nonTest": false,
+      "sha256": "6a8152ede672f2b87a69b8a81decbe6887fa1403cb06210e2240258bf4e779bb"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\character_nominal_mismatch-e335f5dc0c23f27e.exe",
+      "bytes": 1114112,
+      "nonTest": false,
+      "sha256": "fb688dd7ea8788b8001a74427f05df6de654ad926d9f0d671d653c759977c47b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\character_package-2ed4284c0ccba554.exe",
+      "bytes": 3070976,
+      "nonTest": false,
+      "sha256": "e243050db6c040676ae8a087343518b64b39aa20eaa79e99f3dd9aab55e3952b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\character_stage-68f0f96faab4185a.exe",
+      "bytes": 5180928,
+      "nonTest": false,
+      "sha256": "9ae82793526f38651e3cccb82821ef18e6ea42dd32f99fbc9f61c7ae03c57840"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\check_core_cli-375e940644ebe149.exe",
+      "bytes": 103512576,
+      "nonTest": false,
+      "sha256": "e52e643a9a5ecb0b7048b7ab228d55dbbb647e419b5573f8a409f0ec7f83c3db"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\check-8600c8293ec39bf2.exe",
+      "bytes": 305052160,
+      "nonTest": false,
+      "sha256": "da6dd9b82e9ad9968dee5eb0fe6e8d57908f4ca885db6c2d7a11dc0265ea8ea8"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_match_query-703acbebca7f9695.exe",
+      "bytes": 54944768,
+      "nonTest": false,
+      "sha256": "5b3c89e27a573d314b7a9221452f89e1c5225d041567a67877d26beb078a2e38"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_statement_read_only_views-d67c3fb0f543f4c1.exe",
+      "bytes": 740352,
+      "nonTest": false,
+      "sha256": "21c1320c1ef2fc0a4ed76b1306f5fc856e26354ec60f7312cfcc88b64c9955e7"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\choice_static-d59ec978fa408b93.exe",
+      "bytes": 97792000,
+      "nonTest": false,
+      "sha256": "9307277561dccac16299ec18bbf8440865eb1ad5503aa753398ca36f27a93860"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\computed_style-1e3260ccf0ad4fe7.exe",
+      "bytes": 2376704,
+      "nonTest": false,
+      "sha256": "85dad770910d0c43dad93e9ee555171a9c3b56a702e105893092b3aa923fdcdd"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\controller_navigation-6904fa7cefb5206f.exe",
+      "bytes": 1663488,
+      "nonTest": false,
+      "sha256": "d6f945fe74a9fc5e89babc6e463ed2b7431f36a20e830e6a7dc97aa3caa219d5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\data_format_nominal-4ee6d27afd05ff18.exe",
+      "bytes": 97828352,
+      "nonTest": false,
+      "sha256": "38e8feb3fb1e185bed56d06f14e88f34e24f5e8495dffe89645161d883299a24"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-5bc026b11773c3d3.exe",
+      "bytes": 1017344,
+      "nonTest": false,
+      "sha256": "d102d7f96a3160cac3ba979bcd264d79faa4f3d2a157f418f152f2e6af5cc5ba"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-7304d402ab8d724a.exe",
+      "bytes": 1255936,
+      "nonTest": false,
+      "sha256": "d01af28071e17ab8fb415c8614c9106aad67e5120a2ef40fb222574dd60d4278"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-c3e870112bc92d8f.exe",
+      "bytes": 1190912,
+      "nonTest": false,
+      "sha256": "c10ed31356a877058a088bbf5b22daae87c169514d2026476f2b18035efd6ab6"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\descriptor_invariants-554e493e9fbe4833.exe",
+      "bytes": 2291712,
+      "nonTest": false,
+      "sha256": "63b3ebff356c7cb95af147d0e99d95fdb57b0137f93e604eba97f9cd51144cbd"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\diagnostic_ownership-8b7ad18a58a2def0.exe",
+      "bytes": 6767616,
+      "nonTest": false,
+      "sha256": "98ccd727775546e45c63f618e6a2f150b090c0ee9a0575d12958c9d6b2495138"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_profile_admission-8637a3e807c14f17.exe",
+      "bytes": 97728000,
+      "nonTest": false,
+      "sha256": "327e21562a282cbee72e9921c53f30cb86b9c78256f79fc41ec651031517009a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_view_store-dc2143b8c13730b0.exe",
+      "bytes": 18608640,
+      "nonTest": false,
+      "sha256": "316e5c999424209f11e743a8797191f9464fe625f4039f5e5721af908da2a34b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_view-392dede2e50c8057.exe",
+      "bytes": 66024960,
+      "nonTest": false,
+      "sha256": "e5c4e58629b385d2aebf6e5ff9a132853f4c7753d7ad1322a4b13c147e0f99e1"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\direct_suspension-e010eef430ec8e08.exe",
+      "bytes": 14786048,
+      "nonTest": false,
+      "sha256": "6cf5aaaf0c1b1aa0c0cb3874bbae7f66cd4592a850a33f76195e0b5191dc5f61"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\document_layout-cb9968579eb59d94.exe",
+      "bytes": 4860416,
+      "nonTest": false,
+      "sha256": "f4c2d4d3c03a4926dde801159f63f7518466b91cde7700da75a9e11e22183c53"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\environment_callable_tensor-9b2165f1e5d9a14b.exe",
+      "bytes": 168217088,
+      "nonTest": false,
+      "sha256": "b437c94882329d89c117765257db6e518b3153eacb1e564b04c9ef1a34d0963a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\evaluated_effects-f918d9c18aa7a9af.exe",
+      "bytes": 138620416,
+      "nonTest": false,
+      "sha256": "c1e42c86dce8f1fec2cd567b96630f56aafcd6bd53e1a2f959164eea9398640f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_effects-5c1cae2951a2629a.exe",
+      "bytes": 113387520,
+      "nonTest": false,
+      "sha256": "4d3cd89cb591f8ad4c98eaf215befab782c07e1284f6f721968fa4746064adcf"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-d3e5d47c56d4ad9c.exe",
+      "bytes": 125703680,
+      "nonTest": false,
+      "sha256": "fd0ebf13b494cbb33800ca8bb11f2cd8c7043c6ec022fef712f58fd3b8fca5eb"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\frame_resolution-24742acc51bda994.exe",
+      "bytes": 5996032,
+      "nonTest": false,
+      "sha256": "868f6bd3dae398dc1e8b9bf9ad1e0d06f7635a76d5fd9473c6861d8858212a39"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\generic_continuation_snapshot-5699d9a013f04da1.exe",
+      "bytes": 174643712,
+      "nonTest": false,
+      "sha256": "5c7d037d7481560b37258063e6c43fd58259dc2e6a2b10c8115639e11cc45209"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry_contract-9cb0d538d4da1caf.exe",
+      "bytes": 1018880,
+      "nonTest": false,
+      "sha256": "a3641d5f43a991dcac53067517e248885560450c734f57c60f8d13876fcb340b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry_runtime_control_styles-e9397a2a5d22e5f5.exe",
+      "bytes": 17838592,
+      "nonTest": false,
+      "sha256": "a5021229bb849612c0c827598db0edd69a2659232dfe8163bc49470f6ddf6437"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry-5728cf2bd9df299c.exe",
+      "bytes": 17993728,
+      "nonTest": false,
+      "sha256": "addb12cfd6a309d269e3eb9fd8c78f3913709e7d87e3f3f19e148614b24094d2"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\identity_contract-d8db11382e51ed2a.exe",
+      "bytes": 868864,
+      "nonTest": false,
+      "sha256": "80a260f10dc3662fbfa2d49b942ad3ba17b4f70b28dd3f483151e9f4be0061fc"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\ime_player_rendered-67956e544ab97d6f.exe",
+      "bytes": 157969920,
+      "nonTest": false,
+      "sha256": "3b5270d7ce7a95c604f57733348ee5b83f1564a414ffab531d5bc5aa76cea973"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\inline_failure_policy-22d27c873135f193.exe",
+      "bytes": 115411968,
+      "nonTest": false,
+      "sha256": "e4a33cd515eefb3b414482ccf219c9e783e506d94265ec61c31507ed2ae9a9f5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\input-7b4d7b019f3c05f4.exe",
+      "bytes": 20840960,
+      "nonTest": false,
+      "sha256": "2e03debcdd42b8c1ad5296e904465898039252f251140059c4405fcd25a91586"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\interaction_routing-4b610d12100c8e1e.exe",
+      "bytes": 1942528,
+      "nonTest": false,
+      "sha256": "776eb096bbf9a99c5055eae43fa6328f951163c60a2dac994bd9bd0136fc588a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\interaction_visual_state-3ad4af9723aedc70.exe",
+      "bytes": 20495872,
+      "nonTest": false,
+      "sha256": "35d4b46d66d909d9f47cefb018ae68bf08ccaf2435d262b8501f3ca6715da694"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\iterator_witness_awbc-e8ca48c35687a69d.exe",
+      "bytes": 35048448,
+      "nonTest": false,
+      "sha256": "503cafce4635f72a569e81832ee9e5ddf6841185d0e7a743e66bff924518981f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\iterator_witness_source-5ca3e81228c7b895.exe",
+      "bytes": 125538304,
+      "nonTest": false,
+      "sha256": "7be256054e93fdcc0ccaa46d1c249c635af193817a647c271bc2a2957b4e7f53"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\local_declaration_source-46a92d16fecd0a5e.exe",
+      "bytes": 92209664,
+      "nonTest": false,
+      "sha256": "787fd70a9eda32389a06cbe15e0835dd0c4b47711260167f76e773daa5a7b5e9"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\locale_catalog_resource_codec-4595881ef5ceb81b.exe",
+      "bytes": 23142400,
+      "nonTest": false,
+      "sha256": "cdb64d31970e9252b9938873faa884561d2366a36e5332273d7e1d0253c62a94"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axes-1986bc6ee78baf50.exe",
+      "bytes": 1959936,
+      "nonTest": false,
+      "sha256": "d3007c8413609dbf80a9cfa20e7f54d06bdaea3be0bbbd0c8a005ea86babcb14"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axis_cascade-8245dc51acc1e3c7.exe",
+      "bytes": 1732608,
+      "nonTest": false,
+      "sha256": "d6a6051bae6adddd44cf1f5ba1acd1f161d415c787839f552f33f03f099ac0bf"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axis_host_seed-de095e42dc113778.exe",
+      "bytes": 1080832,
+      "nonTest": false,
+      "sha256": "89f327edf864829f8021ef2fc2a2ebfe6447f835ccd99b339b1bf3129a55dddd"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\logical_axis_provider-567376e98e6c6266.exe",
+      "bytes": 1879040,
+      "nonTest": false,
+      "sha256": "c029ccd2788e4ca7fd24550d200d6196e18d1e65c858e27c79c076acbd7a27ad"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\maintained_manifests-2db5c5e245cbb60c.exe",
+      "bytes": 9848832,
+      "nonTest": false,
+      "sha256": "6f1f7a3947d8cb607ada9609081fb3c32e0dbf6b5d1115b61ae725af104683aa"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\manifest_contract-e2b096dcfa408ce9.exe",
+      "bytes": 3824640,
+      "nonTest": false,
+      "sha256": "f6dc01cfc5086e20f1481c3182f8a9ea8f8d5c579adf4bd359d9375b3d0154f0"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\motion_transitions-750ca262e1466fa7.exe",
+      "bytes": 924672,
+      "nonTest": false,
+      "sha256": "e8860e9c7cb5dde68c50d6715ffe710f62ad3f5ac45e3dda923c3737b591adde"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\named_scopes-645eeb427f7a99e4.exe",
+      "bytes": 117558272,
+      "nonTest": false,
+      "sha256": "5f295cd917048c8e456feb59be9104b936874b29da0f0635081f12b4063f1995"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_host_contracts-80cc1db0010ffda3.exe",
+      "bytes": 1065472,
+      "nonTest": false,
+      "sha256": "e602d94cdeb72971844659d51f8a897ad62f4fb7b90a4839b3b79c13c147648f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_integration-f50a716e94217bd5.exe",
+      "bytes": 6097408,
+      "nonTest": false,
+      "sha256": "d5356430bac336aa81e8b7c133408e07bad40633946319d27387dbc207acff85"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_style_parity_sample-b01b65d4fa6e12b4.exe",
+      "bytes": 6529024,
+      "nonTest": false,
+      "sha256": "3a35df7101bcabfc2ff61467febccc0c4dcc42303b775ca2b20994e319b4a5df"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\nominal_schema_admission-e6a5125f1ef9e69c.exe",
+      "bytes": 7066112,
+      "nonTest": false,
+      "sha256": "b886ecd368eaedfee163daedbff088c3d8050da721d7a0f1b793b0d87e256fce"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\parity-ccff14a6a81e037a.exe",
+      "bytes": 20447232,
+      "nonTest": false,
+      "sha256": "b51de4f47a588e709e61402240e57d80ddfe255162e6e0ae9410f949bd938a5f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\parser_diagnostic-6b89e20f8de69625.exe",
+      "bytes": 91803136,
+      "nonTest": false,
+      "sha256": "3549dc5ad69c724603b3f93d9714ff9585618b4bf3cf34b1a49c63cb7b684ed2"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\patch_schema-8114e48aacfd6869.exe",
+      "bytes": 26498560,
+      "nonTest": false,
+      "sha256": "d165815f14e44a2b047cc273977ad28b1e0b2668124d391a8faf25d5c3522a62"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\prepared_text-9a400fb5f5fc52f9.exe",
+      "bytes": 31356928,
+      "nonTest": false,
+      "sha256": "dc46ca051dcbfbf05c3d30e70ef73d0b8e826227e908e55e4baccc8b1c76cb02"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\product_awbc_only-2240fa0c194e0c57.exe",
+      "bytes": 154863616,
+      "nonTest": false,
+      "sha256": "c743535844e04504280afef25f63eb28399a4fd4e3329503dcf1223c4eeb5f96"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\product_catalog_resource_codecs-0bf6fd7c40113d21.exe",
+      "bytes": 154896384,
+      "nonTest": false,
+      "sha256": "c0afdf7cd552015073d4b1d298c06415d04082f604aff41ca424abfce5d79bf5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\project_cache_transaction-2076cefde89ea902.exe",
+      "bytes": 181241856,
+      "nonTest": false,
+      "sha256": "b30bd540e43beb0eb6274e65671a5f9fd224759340795fafaf83bce5eea3338d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\project_function_instances-449c51131080c367.exe",
+      "bytes": 116120064,
+      "nonTest": false,
+      "sha256": "494b5c00665313287a003ae734c0398f80b1440319ac2b7904fb23c99b9370bd"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-1e29d69307b567fa.exe",
+      "bytes": 3248640,
+      "nonTest": false,
+      "sha256": "88b1ca2a0c11c8b01753d29b769039ba51a66d826746a230573fb5e41cc937d6"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-28e4fc3479918ff2.exe",
+      "bytes": 3248640,
+      "nonTest": false,
+      "sha256": "a105c9be94014f9a03bf4814cb167dcc6b8e8648f30e12645a4adbda73179c40"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-47b3e36b280ee6ad.exe",
+      "bytes": 3248640,
+      "nonTest": false,
+      "sha256": "dd0b2f8d826e1ecb0924e271a212d9c1c9faaf30f2b95523c75f4f41310c3333"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-a746a3f59eb4f9b2.exe",
+      "bytes": 3248640,
+      "nonTest": false,
+      "sha256": "8688763719d93c9ee415d0046779ad1db50dcfc1211967df9ded40faab20abe6"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\publication_contract-b514db9fda174ac7.exe",
+      "bytes": 4588544,
+      "nonTest": false,
+      "sha256": "97768d80e10cee219f8623079b7c356df2043f70990660833fee361345afb90f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\record_admission-b8d1d9da135edfe7.exe",
+      "bytes": 6244352,
+      "nonTest": false,
+      "sha256": "fff342397cb8296726b7902cdae6dd5bf7709cf526f280a519081554008ab12c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\record_field_names-e3c5930229192b36.exe",
+      "bytes": 5101568,
+      "nonTest": false,
+      "sha256": "86263941462a2e3782c3b2008fbf39eddd1a79c922eb2c508f8af5cf016e7eab"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\registry_contract-bb302877ca1a43fd.exe",
+      "bytes": 2075136,
+      "nonTest": false,
+      "sha256": "da673a32390767899fef0f04d20704050ace5a11406c133c815b5d7b370a39da"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_e2e-7aec36a4510007d3.exe",
+      "bytes": 31817728,
+      "nonTest": false,
+      "sha256": "5dce7df33cfda02cd1802ac132851f43471e467cc534012480e8e40a06b591e5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_json-99c65274f985c77a.exe",
+      "bytes": 27308032,
+      "nonTest": false,
+      "sha256": "b3185d951d1440990e40d25ba5bbb05f7e3a364453f562b09345472856e48447"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_cell-a4eca3a010b0d7c2.exe",
+      "bytes": 126268416,
+      "nonTest": false,
+      "sha256": "769f57cecefceed84df4dd8ec2455437472a1262be55c7310827b1bc2c8a6066"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_command-63401b5f19a18abb.exe",
+      "bytes": 7144960,
+      "nonTest": false,
+      "sha256": "f7a86ffd16f57b548242b3faac92bdcb0459a627e0dba138cb9790abae91f16c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_command-929817e68115b6a6.exe",
+      "bytes": 5703680,
+      "nonTest": false,
+      "sha256": "2c8a2f5124eacd1abd6fd7344fe83b19bec74c8b74dcd78343e3c3b3292dafad"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_task_adapter-1ee358c7eb61d095.exe",
+      "bytes": 6393344,
+      "nonTest": false,
+      "sha256": "cfa433330b99ecac9211891a84dce2b93bb9f57d42826bae0e741c9aa5662fa8"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_tiering-be384e4989af1754.exe",
+      "bytes": 126423040,
+      "nonTest": false,
+      "sha256": "e55ac0e89e9b61ac01646ed08ccb81c587e17c091a006d00ae1425aa37efa9f4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_trace-ec15f00c5bfb02b6.exe",
+      "bytes": 5657088,
+      "nonTest": false,
+      "sha256": "5338b940135704b4151784561eb9ab6eae30e07d04c4cfda555b121ceee6fb23"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_transaction-7ecf1a83f2409441.exe",
+      "bytes": 5444096,
+      "nonTest": false,
+      "sha256": "b3d1f1612b6ce65424e65e17c6447b8d6f83ec505962b41e79115fe8d85ba4aa"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\report-290d87175ac54ae6.exe",
+      "bytes": 1645056,
+      "nonTest": false,
+      "sha256": "07d305b9ad5ea64ef823fc4b429d197748c2c16458168c693d3fb600ef06c3a4"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\resolved_document-988a21d19af8cca0.exe",
+      "bytes": 6092288,
+      "nonTest": false,
+      "sha256": "54dd2c0a474da3954fd28838167604eae7cd90ee81245f42beef338b9ba51749"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\resource_codec_common-c0253216ff0f36b3.exe",
+      "bytes": 2604544,
+      "nonTest": false,
+      "sha256": "5145cb3d9409c104c3c13fe81107c34d0e683e3edcc518d625768a3789d2740f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\resource_type_manifest_section-ecdabbf956a38362.exe",
+      "bytes": 5530624,
+      "nonTest": false,
+      "sha256": "d12728560f7907444516d9371c852564f24ffd4f50de843d8c861574e9b5f585"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\responsive_stage_placement-db706d3081646602.exe",
+      "bytes": 777216,
+      "nonTest": false,
+      "sha256": "a3f50b958cc948d2f88617a10381cdaa2c9c673c87f89d40c73162472b2fb171"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\retained_identity_contract-cace98fdcd50596f.exe",
+      "bytes": 1064448,
+      "nonTest": false,
+      "sha256": "96e762a1eac3f7d74eb88e36ee59aca5405af87dd73f8f033d78d628f19cf5d2"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\rich_text_schema-21754de61c1ecef8.exe",
+      "bytes": 926720,
+      "nonTest": false,
+      "sha256": "f03c93b87b607b9cf169d71e0f52e41b0171511540c23c9dbc8c79acfe898778"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_diagnostic-3754e9996bcd8b60.exe",
+      "bytes": 73927680,
+      "nonTest": false,
+      "sha256": "fec6615a4036be1e5ef41356bfc11a3508adb1fb54c7f24b8c292fd4ead9a4d8"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_diagnostic-5e605b74dcd783ac.exe",
+      "bytes": 75038720,
+      "nonTest": false,
+      "sha256": "eeece200da7bbd95b032a31882d6979ba85896da4ca768b7257959377e4a2338"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_identity-3635d2f0ea8f1287.exe",
+      "bytes": 2317824,
+      "nonTest": false,
+      "sha256": "7b02901d7016a3b6f9efc13061eed7bd3a0713e775461ce02d1522e1538adbdc"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_identity-dd8a822eca7cf726.exe",
+      "bytes": 1309184,
+      "nonTest": false,
+      "sha256": "36e7dd92355b278d0044fcf9d327bdec4ecbab75c8b8898030a6b53e53b08f51"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_color-65915aea41edd0a2.exe",
+      "bytes": 116021248,
+      "nonTest": false,
+      "sha256": "78b0fc5a51cab10aa5c20a3ad07c22f2607029de494a5d0ffe0243f652c12fc7"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_backdrop_gpu_smoke-48d4097946b64cbc.exe",
+      "bytes": 30996480,
+      "nonTest": false,
+      "sha256": "ab5d39db5063a40c74656eb18b885b9efd5d5075ee1edd89df964a8e5310abf6"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_style_lowering-4906449f69994609.exe",
+      "bytes": 1957888,
+      "nonTest": false,
+      "sha256": "6d518b73a66893589bd3549237e0923eec16d35243bbb67ceddaf545321c9502"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_style_resolution-28dc1f05e87f45a8.exe",
+      "bytes": 2296320,
+      "nonTest": false,
+      "sha256": "77c4c97e13488c62cbdbfbeda81d8e40559a76419a33255344912e6e5c0d4965"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_id_boundaries-3d452ecd6526d43b.exe",
+      "bytes": 6981120,
+      "nonTest": false,
+      "sha256": "7e7ae39440a1f6d33e96169e0640272ef6f91ad254d30e71e5934c1f8a8371cf"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_native_options-b0ca7d54f1f12b13.exe",
+      "bytes": 783360,
+      "nonTest": false,
+      "sha256": "29d19aa0f0a0a4b5cab24f373f6f7d320f0879e86c2204a8b7756d2a6ffd587c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_resource_codecs-88509239aa897c9f.exe",
+      "bytes": 26552320,
+      "nonTest": false,
+      "sha256": "43e04f888197c96d926d341853058c3a6ffbf2d5e29bb2527fa0cf88a7351f6c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_text_controls-1c28d168dad03022.exe",
+      "bytes": 20764672,
+      "nonTest": false,
+      "sha256": "1b7772c9bcb6a24310ecb35b2d568a4cabc9f5d824de8478e5716d7e2bd3ce42"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\scope_propagation-ac9db87e519a1926.exe",
+      "bytes": 117322752,
+      "nonTest": false,
+      "sha256": "13d2b3cab76561cc251466c6bd16d5ae7a7c2be6723f184a50e651a1451eea51"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\scroll_regions-4633705208e5f56b.exe",
+      "bytes": 31366144,
+      "nonTest": false,
+      "sha256": "81e9f2b16abccfad0cfd137b82eaec93e0fd01039669f3afced461c81599777f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\seq04_8_4_persistent_cache_build_cli_goldens-4c80dfc374ddcebb.exe",
+      "bytes": 2406912,
+      "nonTest": false,
+      "sha256": "d50aecc6bf2a7d64dbeae8fd35e2c4921a90a46d619996f05307fe484bd66526"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\shared_text_layout-076e71fdd886d2f6.exe",
+      "bytes": 18938880,
+      "nonTest": false,
+      "sha256": "2afab71c8e669c0e571b40077019caefb518853071bc05d5f380dd795e308971"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\source_map-df71480a84ca1e20.exe",
+      "bytes": 2522112,
+      "nonTest": false,
+      "sha256": "785f9c018f130c4c94df56c0d632923f53a3275ab0c9fc22b750a2bd6bc79d61"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\standard_dialogue_view-9ccf972555bde2fd.exe",
+      "bytes": 15873024,
+      "nonTest": false,
+      "sha256": "203ed73c3adbb3403e2a54ee1089262be3898108ea6f51fdbdd7fd1c421d0a2d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\strict_decode-bd125f9580c11acd.exe",
+      "bytes": 1290240,
+      "nonTest": false,
+      "sha256": "04ccd3d4dfebac10de411bcd2148a02cc4dac8d4ad7ce5503ccacc4bcff336e9"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\style_cross_section_refs-2c57f4258ef7044d.exe",
+      "bytes": 155222528,
+      "nonTest": false,
+      "sha256": "e9caaf186707a613f19e1b2740fd67eed557c0aee05fafaebce9544ed62c3461"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\style_environment-9e4b19f0397d2d51.exe",
+      "bytes": 2151424,
+      "nonTest": false,
+      "sha256": "04a256fb54ca249544c348038803c6d1fd10015e7874f125af0701691ea2476c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\style_metadata-f159c447ebd9b2d7.exe",
+      "bytes": 1208320,
+      "nonTest": false,
+      "sha256": "1c1b29bb7dcec0b21b98136367cf061de707ee39e0a0f23b49d9801e8e21c6cc"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\style_sheet-2f3b14ccda6bb302.exe",
+      "bytes": 3441664,
+      "nonTest": false,
+      "sha256": "1e71dd332105d73dfd47512409937497eda5ce337f10a051792e7e411462930d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_admission-880072812237b454.exe",
+      "bytes": 2435072,
+      "nonTest": false,
+      "sha256": "fe68f12a14c3ad5d881112ee38cce60bf5bc5b8e2ba558d2e045e5b347da4c91"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_plan_view_prefix-e52919b12cbd0056.exe",
+      "bytes": 739840,
+      "nonTest": false,
+      "sha256": "e0a7bef2bd75dd323550d86577c2a1deb15e5a909c6db5cf59b8c9b03d38316f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\try_pipe-a7553b826e3d7cfd.exe",
+      "bytes": 116028416,
+      "nonTest": false,
+      "sha256": "615e975409a1fcf2ccf1e59be764d95c6cf57233993b02b08db485e9c6feab7e"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\typed_json_preflight-868b9de9f41c6687.exe",
+      "bytes": 3985920,
+      "nonTest": false,
+      "sha256": "f42203cae030d36c7691bce0e17106fb08ea124f5ee42ef8b32a756f52453231"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\value_contract-05d3edbbc824c9aa.exe",
+      "bytes": 1153024,
+      "nonTest": false,
+      "sha256": "f2a0a042e6588533e96ffda94cfd77d8a438a591fae7937871b311a3d880d514"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\vertical_break_quality-218bb38403c6f706.exe",
+      "bytes": 1591296,
+      "nonTest": false,
+      "sha256": "33178266ad6407898f255237f8d197a67d8eec5c7feb44ad6cbc21fd31769b3e"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_action_button_resources-50ef091837f93c6b.exe",
+      "bytes": 2091008,
+      "nonTest": false,
+      "sha256": "83757892d5def3f93dd23051fc6403e7ee4817ff987f385c60934d8d0113df64"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_blend_hsl_modes-71f209427e259882.exe",
+      "bytes": 797184,
+      "nonTest": false,
+      "sha256": "b6e9b5cde89baf46a1a62d85a48706edb2a2408fb5b25fabd34112f5a03d2a92"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_exact_png_golden-0b01ce4bc98c5b89.exe",
+      "bytes": 806912,
+      "nonTest": false,
+      "sha256": "12ff5396ef8a7e2bfb9d3c91ad846e97339e4db1ba045bd430e8bb75bc96cf61"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_gpu_smoke-7032b409a89430e9.exe",
+      "bytes": 13415936,
+      "nonTest": false,
+      "sha256": "e8779d153e36119c6c2351b6f7e7f91ed492f594bc6c599edfb1fcb3ce6da2ac"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_plan-a688bae02e9a1177.exe",
+      "bytes": 1016320,
+      "nonTest": false,
+      "sha256": "3c09d08a520a99bedfcd494d06793753b881f3640d19860e8fc17c45ac075cc8"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_clip_mask_render_closure-c554ff1c31f31388.exe",
+      "bytes": 1029632,
+      "nonTest": false,
+      "sha256": "f60e2a6acc9c0ba3b8d7a9da2e91d9855b0977514707ba183bf1e7395d3346a2"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke_seq06_13c-cf4be8ecc9d98dfb.exe",
+      "bytes": 822272,
+      "nonTest": false,
+      "sha256": "53e5b20962b85a3cb92184d617ce10185dcf35ab22b8061527cc06cb1c16bf9a"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke_timestamps-998ccd0d5b7e7c52.exe",
+      "bytes": 739840,
+      "nonTest": false,
+      "sha256": "54253e6d28f0761f1c48255a23f43b2bd998e7cf44d0a52d965aef9b9da8a5dc"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke-4a9479e8d3095df5.exe",
+      "bytes": 739840,
+      "nonTest": false,
+      "sha256": "f8440a25a8931d370b810ae41ec52dccb82787cf5b4db2ac74ed3598177b7ebd"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_plan-5c6b4fb47281eb47.exe",
+      "bytes": 979456,
+      "nonTest": false,
+      "sha256": "4ae10b21bd1f8e5d1972cf03051bde7398f8a0177bec5916a8e9f939d6c16b4f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_export_part-8f59419146e50a29.exe",
+      "bytes": 7174656,
+      "nonTest": false,
+      "sha256": "c2c2a0c3f015f9e233680433c790377af4162d1e3c8bcddd480038b30738b2a6"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_focus_navigation_resources-d99c77763fc0e632.exe",
+      "bytes": 6190592,
+      "nonTest": false,
+      "sha256": "40f3a7d86ede8d5bd4b91cc89f7308822922656c83e3773b97ccc45750270833"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_geometry_transaction-73537bb2bf4fe07e.exe",
+      "bytes": 17897472,
+      "nonTest": false,
+      "sha256": "8258fa2831a34d2c037fb5f684e5b2fa7f79212625ddfe58dd2464b4db87814c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_interaction_dispatch-f520d67f1ee74687.exe",
+      "bytes": 2997248,
+      "nonTest": false,
+      "sha256": "c4c186194fcdd65ae350ca3f0bb97c02ab77130b67b7b4e6acaed51d50b508cb"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_product_validation-c92ae5c75075c192.exe",
+      "bytes": 10140160,
+      "nonTest": false,
+      "sha256": "e37c07cd62d401875b8830b7549f183d54a4facdfcb9c686a306bf36f2a5400f"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_product-16040efdc21ae6eb.exe",
+      "bytes": 262033920,
+      "nonTest": false,
+      "sha256": "0998c67611fabcb854820d5ea0697285f061fa23c7258b18959e7d456bedf19d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_resource_codecs-3ec3f664c4cc09b9.exe",
+      "bytes": 23697408,
+      "nonTest": false,
+      "sha256": "8cac7dec9e1aadd9c803a4a37e70858ef625e2a4ce8b1c06f916682a0031351c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_runtime_text_controls-41b2c41279db8f01.exe",
+      "bytes": 2104320,
+      "nonTest": false,
+      "sha256": "e6fa5e833e4538e59a6b5cb8ffc2162337e9b09d683f29df1b3a5966367fe022"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_runtime-3f1e3701277e8251.exe",
+      "bytes": 46346240,
+      "nonTest": false,
+      "sha256": "92f46d4d7711d266eb9a1115903ecd90a1e9ab7d3a19774e9cef59fc2bff30e7"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_scene_player_path-ba4ba6f3a4427162.exe",
+      "bytes": 8099328,
+      "nonTest": false,
+      "sha256": "a1dce4f3598785349ee0077a36f254c017e6474909373935f2c09b51ea07a51b"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_style_environment_codec-b2d0ca16fb8d67d8.exe",
+      "bytes": 13667328,
+      "nonTest": false,
+      "sha256": "86f8593c90ebdc313455326884c4ef537ea0c2a7b532ebf3bb4bd6588af76b46"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_style_program-3543011b7f4f3eee.exe",
+      "bytes": 9217024,
+      "nonTest": false,
+      "sha256": "e961bdc9d8815a105feb445ed76610f69562fc4ebdfe870b1c61575ae1af38b6"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\virtualization-0a92a9a055e2d706.exe",
+      "bytes": 1319936,
+      "nonTest": false,
+      "sha256": "28cc2af935ea7578133cc59fdb327421fd67cf04fee1a849313ad807a5fc5621"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\web_text_input_glue-df6d49d4452f228a.exe",
+      "bytes": 1649664,
+      "nonTest": false,
+      "sha256": "7e796798d3bc254fe15966a4e407d0b7715421299dd5f9aa46014bb076d8c693"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_ingress_runtime-2e503e5c00cf16bf.exe",
+      "bytes": 97830912,
+      "nonTest": false,
+      "sha256": "de299e1b99e1b2003340c2572999f27f6410ad7d77d01125dd379052e144b944"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_live_patch_smoke-f5d0ec0ad8e3d862.exe",
+      "bytes": 98167296,
+      "nonTest": false,
+      "sha256": "4dea43dcb3a30195b43b057ff1ab1d98b66fd455953b932e4673f3dcc0f13be9"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\windows_tsf_ime_sample-bffece8c61557f89.exe",
+      "bytes": 734208,
+      "nonTest": false,
+      "sha256": "61d362061ddaf38672439f5bc18b60215a513cdf5dd077dfe49cd2ebcfeb3c50"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\examples\\macos_nstextinputclient_real_ime-8f635a2eb8f8bbf0.exe",
+      "bytes": 732672,
+      "nonTest": false,
+      "sha256": "fcda3befc2ed02d22695e72667f20b8d4d9db1fce5ec39741561ce078e74787c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\examples\\math_bench-01cfaa116557206b.exe",
+      "bytes": 2561024,
+      "nonTest": false,
+      "sha256": "1ad2cfb9c37a8774739243952d1d90ab449e6867fe6e0c880c15eae8414caa9c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\windows-tsf-ime-sample.exe",
+      "bytes": 2734592,
+      "nonTest": true,
+      "sha256": "370bc9c4cdc2aef18cdc01eb36c3e88c2c48da3ee992e8eb8b0a6c11ecd0a33b"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T03:04:00.2904048Z"
+}

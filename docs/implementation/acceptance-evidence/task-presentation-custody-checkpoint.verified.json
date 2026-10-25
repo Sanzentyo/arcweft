@@ -1,0 +1,331 @@
+{
+  "version": 1,
+  "commit": "763a7cdd54afc31b3697e40572797323e5384638",
+  "parent": "c985b52c024f049113be24933e683428920e53b6",
+  "tree": "898de34112d52f5cde691fa250abe0b83090e5ef",
+  "remote": "763a7cdd54afc31b3697e40572797323e5384638",
+  "advertised": "763a7cdd54afc31b3697e40572797323e5384638",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "blob": "25c3e4f06bfd9fd8541df44282eaf2d8cdd47648",
+      "workingBlob": "25c3e4f06bfd9fd8541df44282eaf2d8cdd47648"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+      "blob": "05a645781b62bf2f879881547490d958e24a56bd",
+      "workingBlob": "05a645781b62bf2f879881547490d958e24a56bd"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+      "blob": "2cbd21e3ed3459a3be1ed7aa6a49b9b155623f41",
+      "workingBlob": "2cbd21e3ed3459a3be1ed7aa6a49b9b155623f41"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation.rs",
+      "blob": "714bdbfa1bc6d49edbdb51854b524a7fd3ef9229",
+      "workingBlob": "714bdbfa1bc6d49edbdb51854b524a7fd3ef9229"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/rollback.rs",
+      "blob": "91a0eb6009f483f19d08314c90346e2579ba62b0",
+      "workingBlob": "91a0eb6009f483f19d08314c90346e2579ba62b0"
+    },
+    {
+      "path": "crates/arcweft-core/src/entry/schema.rs",
+      "blob": "a09e1037f88e91c3610af28efd4c25ba28a9cb6a",
+      "workingBlob": "a09e1037f88e91c3610af28efd4c25ba28a9cb6a"
+    },
+    {
+      "path": "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+      "blob": "742f05003d51429d74380c8c98a527cf19861bb2",
+      "workingBlob": "742f05003d51429d74380c8c98a527cf19861bb2"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "4eaf8ad4a7f1f107769365a5649ccdd62a396fad",
+      "workingBlob": "4eaf8ad4a7f1f107769365a5649ccdd62a396fad"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+      "blob": "a994bcbabf9377a8e6c2c0e0fc1cf679b202288b",
+      "workingBlob": "a994bcbabf9377a8e6c2c0e0fc1cf679b202288b"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "blob": "d12c910657651f5ed94774940115b77bcf0fe23b",
+      "workingBlob": "d12c910657651f5ed94774940115b77bcf0fe23b"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/ownership.rs",
+      "blob": "f78f4d66af5dadf2dcad1379b19fdbe07adeb0a0",
+      "workingBlob": "f78f4d66af5dadf2dcad1379b19fdbe07adeb0a0"
+    },
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "blob": "c64bf06fe93945f926546e5b5164142383c2040d",
+      "workingBlob": "c64bf06fe93945f926546e5b5164142383c2040d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-core-contract-checkpoint.verified.json",
+      "blob": "7a787a9917bacbcfe1e72d769c4617e7b3ca4448",
+      "workingBlob": "7a787a9917bacbcfe1e72d769c4617e7b3ca4448"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2915-presentation-custody-core-check.json",
+      "blob": "d5787074a81570245917f7cab2e58dff6190008a",
+      "workingBlob": "d5787074a81570245917f7cab2e58dff6190008a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2915-presentation-custody-core-check.log",
+      "blob": "4932741d9e8fc0354c52e6fc7197cda7ddfb3f0c",
+      "workingBlob": "4932741d9e8fc0354c52e6fc7197cda7ddfb3f0c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2916-presentation-custody-core-check.json",
+      "blob": "c33e398d9e9a37ea2f114362f53dbc5e25353c68",
+      "workingBlob": "c33e398d9e9a37ea2f114362f53dbc5e25353c68"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2916-presentation-custody-core-check.log",
+      "blob": "0fe8d929d6bf078f843c756db415a005d9fa010b",
+      "workingBlob": "0fe8d929d6bf078f843c756db415a005d9fa010b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2917-presentation-custody-owner-catalog.json",
+      "blob": "5bc3ef2db85539af008238768d302f00ba3c26e8",
+      "workingBlob": "5bc3ef2db85539af008238768d302f00ba3c26e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2917-presentation-custody-owner-catalog.log",
+      "blob": "b55ba833f6be1a25be6c5699c23518dc6d97b6fc",
+      "workingBlob": "b55ba833f6be1a25be6c5699c23518dc6d97b6fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2918-presentation-custody-final-owner-catalog.inventory.json",
+      "blob": "1107930de1bcc7b5032582555bde9472c044b2db",
+      "workingBlob": "1107930de1bcc7b5032582555bde9472c044b2db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2918-presentation-custody-final-owner-catalog.json",
+      "blob": "b3472d8a7a919438bef1151b522b4a22be2b8800",
+      "workingBlob": "b3472d8a7a919438bef1151b522b4a22be2b8800"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2918-presentation-custody-final-owner-catalog.log",
+      "blob": "e62db758adbf3e126621aea8d8b2a5269af27b17",
+      "workingBlob": "e62db758adbf3e126621aea8d8b2a5269af27b17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2919-presentation-custody-owner-runtime.json",
+      "blob": "faed53fbbb0321c3d595ea4fb109f4010be93188",
+      "workingBlob": "faed53fbbb0321c3d595ea4fb109f4010be93188"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2919-presentation-custody-owner-runtime.log",
+      "blob": "deac12399b1cff612a31eb14f49723f4174f5aa4",
+      "workingBlob": "deac12399b1cff612a31eb14f49723f4174f5aa4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2919-presentation-custody-owner-runtime.terminal-audit.json",
+      "blob": "f30da9d5b671af7888792024fb96346b643ebe0d",
+      "workingBlob": "f30da9d5b671af7888792024fb96346b643ebe0d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2920-presentation-custody-core-catalog.inventory.json",
+      "blob": "6fb70f8e86ad67a4655851c13876299395f6c819",
+      "workingBlob": "6fb70f8e86ad67a4655851c13876299395f6c819"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2920-presentation-custody-core-catalog.json",
+      "blob": "a5459d2211e138f5cfad6eb52523ab95ed333c00",
+      "workingBlob": "a5459d2211e138f5cfad6eb52523ab95ed333c00"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2920-presentation-custody-core-catalog.log",
+      "blob": "7c35c867382744c6f46d4e043d10c8d384d96eac",
+      "workingBlob": "7c35c867382744c6f46d4e043d10c8d384d96eac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2921-presentation-custody-core-runtime.json",
+      "blob": "b7a527a37a4fc4723e79fe5c16820f38d7d965d9",
+      "workingBlob": "b7a527a37a4fc4723e79fe5c16820f38d7d965d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2921-presentation-custody-core-runtime.log",
+      "blob": "366448a231c95c602d914944abe2d16947536ca5",
+      "workingBlob": "366448a231c95c602d914944abe2d16947536ca5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2921-presentation-custody-core-runtime.terminal-audit.json",
+      "blob": "ad2a0765e0b9d2f87eaaf78d0d5bec9521e626db",
+      "workingBlob": "ad2a0765e0b9d2f87eaaf78d0d5bec9521e626db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2922-presentation-custody-workspace-check.json",
+      "blob": "e50ffc92f59942aefe8521c249b2841c459c305f",
+      "workingBlob": "e50ffc92f59942aefe8521c249b2841c459c305f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2922-presentation-custody-workspace-check.log",
+      "blob": "e7d00de43b149db17a06f9aae0e94edf7b2da94d",
+      "workingBlob": "e7d00de43b149db17a06f9aae0e94edf7b2da94d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2923-presentation-custody-workspace-clippy.json",
+      "blob": "647f4cbd53a0920ac3ab8a2ab67208cdfefff92d",
+      "workingBlob": "647f4cbd53a0920ac3ab8a2ab67208cdfefff92d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2923-presentation-custody-workspace-clippy.log",
+      "blob": "baa7815b49a7a5b61225e923d6dbc6b734c4e7a1",
+      "workingBlob": "baa7815b49a7a5b61225e923d6dbc6b734c4e7a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2924-presentation-custody-structure.json",
+      "blob": "fb7fc22c621b0dd591f9f23c51201c4d6b846e5b",
+      "workingBlob": "fb7fc22c621b0dd591f9f23c51201c4d6b846e5b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2924-presentation-custody-structure.log",
+      "blob": "df754b923abfd655adba8ddc10174b86d05d44a3",
+      "workingBlob": "df754b923abfd655adba8ddc10174b86d05d44a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2925-presentation-custody-rejection-core-catalog.inventory.json",
+      "blob": "656133e1df2891bcefff0665e4834b7b6073189d",
+      "workingBlob": "656133e1df2891bcefff0665e4834b7b6073189d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2925-presentation-custody-rejection-core-catalog.json",
+      "blob": "cbb46d094258b30527d7792fbedb1d8bddba5aeb",
+      "workingBlob": "cbb46d094258b30527d7792fbedb1d8bddba5aeb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2925-presentation-custody-rejection-core-catalog.log",
+      "blob": "6028e815a87d9a77b8f222ee09b60b96e147d116",
+      "workingBlob": "6028e815a87d9a77b8f222ee09b60b96e147d116"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.json",
+      "blob": "48c2d324fdd0856ed8816e90a01861037362a0aa",
+      "workingBlob": "48c2d324fdd0856ed8816e90a01861037362a0aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.log",
+      "blob": "9629d9be4d9a5f1cfff6b9c08cc434da84d79580",
+      "workingBlob": "9629d9be4d9a5f1cfff6b9c08cc434da84d79580"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.terminal-audit.json",
+      "blob": "0cbf18dcaeb817609c4cc1ed1a3fa2b5cc52eafa",
+      "workingBlob": "0cbf18dcaeb817609c4cc1ed1a3fa2b5cc52eafa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2927-presentation-custody-final-core-clippy.json",
+      "blob": "7238a2cd6f2ffb160f74a94b2923d26d5df10af6",
+      "workingBlob": "7238a2cd6f2ffb160f74a94b2923d26d5df10af6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2927-presentation-custody-final-core-clippy.log",
+      "blob": "e1f19ebee737e0cc0d2abd984d231640281ba729",
+      "workingBlob": "e1f19ebee737e0cc0d2abd984d231640281ba729"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-acceptance.json",
+      "blob": "4e38fd7e6edf77fbbd45335a102e99b86d5ded4d",
+      "workingBlob": "4e38fd7e6edf77fbbd45335a102e99b86d5ded4d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-core-runtime.audit.json",
+      "blob": "8c8e3654b8c66fec24d0c4c1c7af93e8ec0b21a4",
+      "workingBlob": "8c8e3654b8c66fec24d0c4c1c7af93e8ec0b21a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-doc-audit.json",
+      "blob": "591478337c4cf843248f2da2a89e16cdc97053ac",
+      "workingBlob": "591478337c4cf843248f2da2a89e16cdc97053ac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-evidence-integrity.json",
+      "blob": "478052cf6c2f4007df61c0ed992675a109ae0156",
+      "workingBlob": "478052cf6c2f4007df61c0ed992675a109ae0156"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-final-core.executables.before.json",
+      "blob": "aaabdbeafd414afb7fbe8745826fa03884e1df6e",
+      "workingBlob": "aaabdbeafd414afb7fbe8745826fa03884e1df6e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-final.graph.json",
+      "blob": "6c79aada62f92eabb662458d7e957d094bc5d3ab",
+      "workingBlob": "6c79aada62f92eabb662458d7e957d094bc5d3ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-final.source-freeze.json",
+      "blob": "612a8aef627068594d1a7cc2d97439f4375ad554",
+      "workingBlob": "612a8aef627068594d1a7cc2d97439f4375ad554"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-owner.executables.before.json",
+      "blob": "66d9388bc5e268fad2f9d1da0a6f066aef954ae4",
+      "workingBlob": "66d9388bc5e268fad2f9d1da0a6f066aef954ae4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-ownership-review.json",
+      "blob": "e144d28860f31afbcedf50af0a041fa2ea8902e9",
+      "workingBlob": "e144d28860f31afbcedf50af0a041fa2ea8902e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-rejection-core.executables.before.json",
+      "blob": "80c3bf89d9bfe4a93fd58e35a9bbc20daea7c23f",
+      "workingBlob": "80c3bf89d9bfe4a93fd58e35a9bbc20daea7c23f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-rejection-runtime.audit.json",
+      "blob": "365b35e3ae0e3c0efd140bdf209119f7ae9901b9",
+      "workingBlob": "365b35e3ae0e3c0efd140bdf209119f7ae9901b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-rejection-scope.json",
+      "blob": "e9b08fcd10b8cf23ef07b1b33848db621072c8bd",
+      "workingBlob": "e9b08fcd10b8cf23ef07b1b33848db621072c8bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-rejection.graph.json",
+      "blob": "775582db5f34d24514e78684768ed0f3a397b4bb",
+      "workingBlob": "775582db5f34d24514e78684768ed0f3a397b4bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody-rejection.source-freeze.json",
+      "blob": "809030f5ab28865c5616b50cac26737df5c2f943",
+      "workingBlob": "809030f5ab28865c5616b50cac26737df5c2f943"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody.graph.json",
+      "blob": "6c79aada62f92eabb662458d7e957d094bc5d3ab",
+      "workingBlob": "6c79aada62f92eabb662458d7e957d094bc5d3ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-custody.source-freeze.json",
+      "blob": "0eb412ab7e0bbf647b0cef2f38cebba233a357dc",
+      "workingBlob": "0eb412ab7e0bbf647b0cef2f38cebba233a357dc"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "9ea30083115504b886d60f5056dacf549889dabd",
+      "workingBlob": "9ea30083115504b886d60f5056dacf549889dabd"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "f40e9c6e757b67512a951603581fdbfe6a5b143e",
+      "workingBlob": "f40e9c6e757b67512a951603581fdbfe6a5b143e"
+    }
+  ],
+  "sourceCount": 6569,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "aac7c1fc74c7ebaa81c4c507c225aef2d432d6e7a1889555029e7273e3581128",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-25T02:50:41.2293320Z"
+}

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "commit": "35f9580a2e483dc23a6597611ab9d347466c0eae",
+  "parent": "763a7cdd54afc31b3697e40572797323e5384638",
+  "tree": "64f954d38edbac14ee1e92ea01de5892dbd40e4a",
+  "remote": "35f9580a2e483dc23a6597611ab9d347466c0eae",
+  "advertised": "35f9580a2e483dc23a6597611ab9d347466c0eae",
+  "paths": [
+    {
+      "path": "docs/01-language/ids-and-references.md",
+      "blob": "5853634adb46de71fa229df4f52cac9041958714",
+      "workingBlob": "5853634adb46de71fa229df4f52cac9041958714"
+    },
+    {
+      "path": "docs/04-tooling/agent-debug-mcp-cli.md",
+      "blob": "999ad1ed1fc7a14ef395d340c52eb9a3e30a0fb5",
+      "workingBlob": "999ad1ed1fc7a14ef395d340c52eb9a3e30a0fb5"
+    },
+    {
+      "path": "docs/04-tooling/cli.md",
+      "blob": "146941c0d47a3b8eb1208e71eb7d2fcdae8bdaf0",
+      "workingBlob": "146941c0d47a3b8eb1208e71eb7d2fcdae8bdaf0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-current-contract-final-doc-audit.json",
+      "blob": "9974c3297e358338d0ed458a769f8c9a9adad10d",
+      "workingBlob": "9974c3297e358338d0ed458a769f8c9a9adad10d"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "fa1ad8ff534a3dececb3a7e96b4832308b2026f8",
+      "workingBlob": "fa1ad8ff534a3dececb3a7e96b4832308b2026f8"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "b57a33eaffdca8c2777c0242c12fa0e69d1b95f3",
+      "workingBlob": "b57a33eaffdca8c2777c0242c12fa0e69d1b95f3"
+    }
+  ],
+  "sourceCount": 6571,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "ad4c6c339a9973b44e4f1d93bb7bfe6d2f7a8f16ccb01a4db27b8c789252d9cd",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-25T03:22:32.4099462Z"
+}

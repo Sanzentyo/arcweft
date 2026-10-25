@@ -11157,3 +11157,43 @@ R2928 catalogを開始した。この記録時点で新入力の横断runtimeは
 前段R2908の151件やCLI失敗を新入力の結果へ読み替えていない。
 Source Presentation命令、View構築／mount authority、Dialogue activationの独立bank、
 AWBC ledger／命令とdriverへの接続の受入は含めない。元14 tracked WIP／6 untracked実ファイルを保持した。
+
+## Presentation Handle custodyの全53逆依存検証 — 2026-10-25
+
+Rust公開は `763a7cdd54afc31b3697e40572797323e5384638`、終端照合時の公開mainは
+文書変更後の `35f9580a2e483dc23a6597611ab9d347466c0eae`。
+前段のCore公開 `4a626c6fd1ef3c43a400b983fc118623d689b18f` に対するR2908と異なる入力を、
+独立したR2928 catalog／R2929 runtimeで検証した。元のtracked WIP 14件とuntracked実ファイル6件を保持した。
+
+R2928 catalogは2026-10-25T03:03:36.569244Zに終了0。
+元Cargo metadataによるCore全53逆依存の全target／全feature／lockedで、
+7,353件中7,314件を選択、39件をignoredとした。221 test binariesと6 non-test binariesを
+実パスで固定し、生成物の移動・コピーは行っていない。
+R2929は03:04:00.444750Zに開始し、03:40:26.456250Zに終了100。
+**7,314実行／7,264 PASS／50 FAIL／39 ignored、2,158.248秒、slow 82件**。
+catalogと終端case集合が一致し、3,981非文書入力・227実行ファイルの前後hash差分0。
+[終端照合](acceptance-evidence/task-final-r2929-presentation-custody-reverse-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-presentation-custody-reverse-runtime.audit.json)。
+
+Core 2,074／2,074、Sema 1,334／1,334、Compiler 617／617、runtime-plan 158／158、
+runtime-driver 177／177がPASS。CLIは641 PASS／50 FAIL。
+`arcweft`／`arcweft-bundle-assets`／`arcweft-render-web` はbuildのみでnamed caseはない。
+R2908の52失敗識別子もすべて今回選択され、stdio READY待ちとCompilerの拒否診断fixtureはPASS、
+残る50識別子がFAIL、新規失敗識別子0だった。同じ識別子であることだけで根本原因の同一性を断定しない。
+R2908の52 FAIL、後続単独再確認、最終R2929を別々の実行として保持した。
+
+Generic Matchの受入151件は今回も全件選択され、**151／151 PASS**。
+115 transcript／24 coverage／5公開query／7 Native・decoded-AWBC継続／保存のexact setと一致する。
+受入 `850534b9e9bc8c8872f6528dd00050a5e6e7699e`、公開
+`f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2` の完了を維持した。
+[package集計・失敗集合・全151件](acceptance-evidence/task-presentation-custody-reverse-acceptance.json)。
+
+現在の`traverse`入口については、CLIのrun／bench 2件とも
+`sema.call.unknown_target`／unknown method `traverse` を今回の原診断でも確認した。
+Core内AwaitManyの集約成功を、このSource入口の受入へ広げていない。
+Source Presentation命令／View構築・mount／Dialogue activation／AWBC ledger／driver command ABI、
+Need全14・C6・Tier2・Native-Web parityの包括受入を、この逆依存runだけで完了とはしない。
+
+原log・receipt・catalog・hash・公開照合11件／8,718,565 bytesをbyte／SHA256一致で保全した。
+[原本保全一覧](acceptance-evidence/task-presentation-custody-reverse-evidence-integrity.json)。
+現状の項目別判定はcurrent-status.mdへ集約し、古い予定や重複した残作業表は追加していない。
