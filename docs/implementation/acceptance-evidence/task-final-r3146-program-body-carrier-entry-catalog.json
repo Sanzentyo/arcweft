@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "2ffcb80f996f517325e7270d6f402b052bde2620",
+  "name": "task-final-r3146-program-body-carrier-entry-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json",
+    "-E",
+    "binary(=arcweft_core) | binary(=arcweft_runtime_plan)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3146-program-body-carrier-entry-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T21:59:15.2889156Z",
+  "finishedAt": "2026-10-25T22:00:50.9030915Z"
+}

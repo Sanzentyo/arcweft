@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "run": "task-final-r3147-program-body-carrier-entry-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  44.879s] 2161 tests run: 2160 passed, 1 failed, 0 skipped",
+  "executed": 2161,
+  "passed": 2160,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3988,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::ordinary_program_need_starts_from_its_source_and_survives_each_public_save"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T22:09:38.4682365Z"
+}

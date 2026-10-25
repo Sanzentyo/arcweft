@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "name": "task-final-r3150-program-body-carrier-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3150-program-body-carrier-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T22:16:03.9944804Z",
+  "finishedAt": "2026-10-25T22:19:38.7242590Z"
+}

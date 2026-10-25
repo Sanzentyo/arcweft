@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "name": "task-final-r3152-program-body-carrier-core-doctest",
+  "command": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--doc"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3152-program-body-carrier-core-doctest.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T22:24:05.9920628Z",
+  "finishedAt": "2026-10-25T22:26:10.1855731Z"
+}

@@ -12243,3 +12243,59 @@ body/Q grammar、compiler projection、Pure AOT／JIT／acceleratorの全consume
 `68ea734f678d3698f1ac2f736fd520be8dafa6cf`、tree `c11b665ceb712d2eac226ca5a8643f497c0a7d4e`、
 patch SHA256 `198272b135165e1c3de3ebf973d99a1c4c9de5e6325b46e3fd2a3f7676507dd3`、公開blob差分0、
 原本8件の公開byte差分0。[公開照合](acceptance-evidence/task-awbc-task-carrier-reverse.verified.json)。
+
+## 通常Program Needのlibrary終端とHIR E13 Tier 2終端 — 2026-10-26
+
+照合基点は公開main `d0dd946a9dfcbc62898682c75d7aad7cb1b8de42`。元tracked WIP 14件／untracked実ファイル6件を保持。
+
+通常Program Needは、Nativeの実Sourceから起動し、各step rollback後もBool結果を一度だけ移動できた。
+AWBCの追加fixtureには元Flowの正確なbinding／executable／roleを補ったが、R3147はFlow IDが
+`program.need` のsource familyであったため生成時に拒否された。2,161実行／2,160 PASS／1 FAIL、
+44.879秒、nextest終了100。以前のR3145のexact flow metadata不足とは別のfixture診断であり、両原本を保持する。
+IDを`flow.program_need`へ修復し、同じ起動・1-op量子・各step公開save DTOのSerde往復／同じadmitted Sourceへの復元・
+task／completion各1件・結果の一回移動という全条件を保って再実行した。
+
+- R3148 catalogは2,161件選択・終了0。R3149はCore library 2,034／2,034、runtime-plan library
+  127／127、合計2,161 PASS／0 skipped、41.970秒、nextest終了0。新規Native／AWBCの2件、
+  Need／ThreadHandle双方の実Source canonical往復もPASS。3,988非文書入力・18 executableの前後差分0。
+- 現在の製品ソースは`d0dd946a9dfcbc62898682c75d7aad7cb1b8de42`から不変で、今回のRust変更は
+  追加fixtureのFlow ID修復1件のみ。Copy capture条件の検証であり、Traversal／Fnの所有入力移動・Source parallelは未接続。
+- R3146／R3147の原本と前後hash、修復後のR3148／R3149と別freezeを保持した。失敗を削除・成功へ改変せず、
+  型付きentry/Flow契約をfixtureで満たした。R3150 workspace check、R3151 Clippy、R3152 Core doctestは別に検証する。
+
+HIRは独立したR3127が終端した。R3094／R3095で構築された実HIR executableを元のtarget pathのまま再利用し、
+8件の本番境界を`--run-ignored ignored-only --test-threads 1`で実行した。
+8 PASS（6 slow）／953選択外、13,855.823秒、nextest終了0。最後のattached Thread expressionは6,977.240秒でPASS。
+HIR／Syntax expression、source byte、diagnostic、totalSlots exact／one-overと3 retired generation、
+attached Flow／Thread expressionのexact／one-overとrollbackのassertion・製品上限は変更していない。
+
+- 事前の全体manifestは2026-10-25 17:39:51 UTC、run開始18:07:59 UTC。
+  実Cargo graphのHIR依存8 packageの1,322入力は、その事前manifestとのhash差分0。
+  HIR専用freezeのファイル作成はrun中の19:25:48 UTCであり、新しく採取したhashへすり替えたものではない。
+- supervisorは古い全体3,987入力guardで、並行して変更したCore／LSP／consumerの45 pathを検出して終了1。
+  runtimeの終了0とは区別し、元driver・全体manifest・guard診断の出典を保持する。
+  HIRの実依存範囲内の差分は0であり、同じ実行を専用範囲で終端照合した。runtimeの再実行はない。
+- catalogと終端8件の集合差分0、1,322入力と元HIR executable 1件の前後hash差分0。
+  実行ファイルは37,315,072 bytes、SHA256 `cec2aaf4e468f9691ec41a4305c5f4614637ed28f7e36fc325c0a0a77f59d482`。
+  移動・コピー・退避は行っていない。他のTier 2／workspace最終受入／Native-Web capture parityは別範囲。
+
+[Program Needの範囲と全library](acceptance-evidence/task-program-body-carrier-library-acceptance.json)、
+[HIR 8件とscope訂正](acceptance-evidence/task-hir-tier2-current-acceptance.json)、
+[Program Need原本保全](acceptance-evidence/task-program-body-carrier-library-evidence-integrity.json)、
+[HIR原本保全](acceptance-evidence/task-hir-tier2-terminal-evidence-integrity.json)。
+
+ProgramTask共通化の公開は55 path、commit `d0dd946a9dfcbc62898682c75d7aad7cb1b8de42`、parent
+`2ffcb80f996f517325e7270d6f402b052bde2620`、tree `6103e2ffeca7e4ea0851936e82107339162c8286`、
+patch SHA256 `b920b6b46f6b26fe471bd3404b3b5235f247adfa760a7bafc13a79449ad79d59`、公開blob差分0、
+原本20件の公開byte差分0。[公開照合](acceptance-evidence/task-program-body-carrier.verified.json)。
+
+同じ3,988非文書入力の共有gateも終端した。R3150 workspace checkは3分29秒、R3151 workspace Clippyは
+4分16秒で、いずれもall-target／all-feature／locked、既存警告あり・終了0。R3152 Core doctestは75／75 PASS。
+各command後のSource差分0を確認した。これらは通常の全53逆依存runtimeや最終workspace runtimeの合格とは別である。
+R3153 canonical構造gateも終了0。今回変更した31 Rustファイルについて、基点
+`2ffcb80f996f517325e7270d6f402b052bde2620`からの正確なphysical LOC／byte／分類／embedded test LOCと、
+5 ownerのfan-in／fan-outを記録した。300 LOC超の増加は0。Coreの閉じたoperation grammar／元Source／
+launchと保存の所有境界、RuntimePlanのsemantic projection、既存Pure JIT／acceleratorのadmission境界を保持し、
+carrierごとの並行モデル、I/O、追加のpublic split APIは導入していない。既存大規模ownerはこの単一grammarと
+state contextの結合を理由に維持し、無関係なsize警告を分割の根拠にしていない。
+[所有境界と実測](acceptance-evidence/task-program-body-carrier-structure-review.json)。

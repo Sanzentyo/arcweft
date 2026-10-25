@@ -1,0 +1,388 @@
+{
+  "version": 1,
+  "base": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "cutBase": "2ffcb80f996f517325e7270d6f402b052bde2620",
+  "sourcePublication": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "workingTree": "main; original fourteen tracked WIP held; one fixture Flow ID correction pending publication",
+  "scannerRun": "task-final-r3153-program-body-carrier-structure",
+  "scannerExitCode": 0,
+  "files": [
+    {
+      "path": "crates/arcweft-cli/src/app/jit.rs",
+      "owner": "arcweft-cli",
+      "bytes": 70718,
+      "physicalLoc": 1938,
+      "basePhysicalLoc": 1938,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/aot.rs",
+      "owner": "arcweft-core",
+      "bytes": 15207,
+      "physicalLoc": 443,
+      "basePhysicalLoc": 443,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 10468,
+      "physicalLoc": 274,
+      "basePhysicalLoc": 274,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 11587,
+      "physicalLoc": 328,
+      "basePhysicalLoc": 174,
+      "growth": 154,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 321752,
+      "physicalLoc": 8166,
+      "basePhysicalLoc": 8166,
+      "growth": 0,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow.rs",
+      "owner": "arcweft-core",
+      "bytes": 85743,
+      "physicalLoc": 2062,
+      "basePhysicalLoc": 2062,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 111
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread.rs",
+      "owner": "arcweft-core",
+      "bytes": 6514,
+      "physicalLoc": 166,
+      "basePhysicalLoc": 166,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 19197,
+      "physicalLoc": 527,
+      "basePhysicalLoc": 467,
+      "growth": 60,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan.rs",
+      "owner": "arcweft-core",
+      "bytes": 53477,
+      "physicalLoc": 1557,
+      "basePhysicalLoc": 1557,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+      "owner": "arcweft-core",
+      "bytes": 15585,
+      "physicalLoc": 375,
+      "basePhysicalLoc": 375,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/function.rs",
+      "owner": "arcweft-core",
+      "bytes": 38587,
+      "physicalLoc": 970,
+      "basePhysicalLoc": 968,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/tests/request_endpoints.rs",
+      "owner": "arcweft-core",
+      "bytes": 14291,
+      "physicalLoc": 385,
+      "basePhysicalLoc": 385,
+      "growth": 0,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "owner": "arcweft-core",
+      "bytes": 255915,
+      "physicalLoc": 6007,
+      "basePhysicalLoc": 6011,
+      "growth": -4,
+      "classification": "production",
+      "embeddedTestLoc": 281
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+      "owner": "arcweft-core",
+      "bytes": 100559,
+      "physicalLoc": 3061,
+      "basePhysicalLoc": 3061,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 91
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+      "owner": "arcweft-core",
+      "bytes": 42486,
+      "physicalLoc": 1077,
+      "basePhysicalLoc": 1077,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/encoding/fields.rs",
+      "owner": "arcweft-core",
+      "bytes": 21926,
+      "physicalLoc": 564,
+      "basePhysicalLoc": 564,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/entry_inventory.rs",
+      "owner": "arcweft-core",
+      "bytes": 65184,
+      "physicalLoc": 1703,
+      "basePhysicalLoc": 1703,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/flow_ops.rs",
+      "owner": "arcweft-core",
+      "bytes": 25923,
+      "physicalLoc": 708,
+      "basePhysicalLoc": 708,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source.rs",
+      "owner": "arcweft-core",
+      "bytes": 6008,
+      "physicalLoc": 157,
+      "basePhysicalLoc": 155,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program.rs",
+      "owner": "arcweft-core",
+      "bytes": 6357,
+      "physicalLoc": 170,
+      "basePhysicalLoc": 168,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 11627,
+      "physicalLoc": 306,
+      "basePhysicalLoc": 306,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 18533,
+      "physicalLoc": 517,
+      "basePhysicalLoc": 508,
+      "growth": 9,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body.rs",
+      "owner": "arcweft-core",
+      "bytes": 4085,
+      "physicalLoc": 123,
+      "basePhysicalLoc": 123,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 4751,
+      "physicalLoc": 141,
+      "basePhysicalLoc": 141,
+      "growth": 0,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 46315,
+      "physicalLoc": 1301,
+      "basePhysicalLoc": 1280,
+      "growth": 21,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/pure/aot/body.rs",
+      "owner": "arcweft-core",
+      "bytes": 24880,
+      "physicalLoc": 667,
+      "basePhysicalLoc": 667,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer/source/template.rs",
+      "owner": "arcweft-core",
+      "bytes": 18330,
+      "physicalLoc": 419,
+      "basePhysicalLoc": 419,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-lang-jit-cranelift/src/body.rs",
+      "owner": "arcweft-lang-jit-cranelift",
+      "bytes": 17837,
+      "physicalLoc": 457,
+      "basePhysicalLoc": 457,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-accelerator/src/compile.rs",
+      "owner": "arcweft-runtime-accelerator",
+      "bytes": 59826,
+      "physicalLoc": 1732,
+      "basePhysicalLoc": 1732,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 152932,
+      "physicalLoc": 3928,
+      "basePhysicalLoc": 3928,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 442386,
+      "physicalLoc": 10367,
+      "basePhysicalLoc": 10367,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 653
+    }
+  ],
+  "packageDependencies": [
+    {
+      "package": "arcweft-cli",
+      "manifest": "crates/arcweft-cli/Cargo.toml",
+      "workspace_fan_in": "0",
+      "workspace_fan_out": "54",
+      "development_workspace_fan_in": "0",
+      "development_workspace_fan_out": "2"
+    },
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    {
+      "package": "arcweft-lang-jit-cranelift",
+      "manifest": "crates/arcweft-lang-jit-cranelift/Cargo.toml",
+      "workspace_fan_in": "2",
+      "workspace_fan_out": "1",
+      "development_workspace_fan_in": "0",
+      "development_workspace_fan_out": "0"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "manifest": "crates/arcweft-runtime-accelerator/Cargo.toml",
+      "workspace_fan_in": "3",
+      "workspace_fan_out": "13",
+      "development_workspace_fan_in": "0",
+      "development_workspace_fan_out": "0"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+      "workspace_fan_in": "5",
+      "workspace_fan_out": "10",
+      "development_workspace_fan_in": "5",
+      "development_workspace_fan_out": "0"
+    }
+  ],
+  "dispositions": [
+    {
+      "owner": "Core plan/construction/Source/body semantic contexts",
+      "responsibility": "One closed operation grammar and original Program body authority for both checked carriers",
+      "decision": "Replace the Thread-only variant directly. Binding validates declared carrier and payload; Source key, original body and capture roles remain one authority. Existing large schema and constructor tables remain cohesive; no duplicate AST traversal, state cluster, carrier-specific catalog or public split API was added."
+    },
+    {
+      "owner": "Core Engine and AWBC product Program task launch",
+      "responsibility": "Actual Source admission, child preparation, receipt binding, quotas, retirement and persistence",
+      "decision": "Reuse the existing original Program launch transaction for ordinary Need. Capture custody remains the existing Copy contract; no affine-input support is claimed. Native rollback and AWBC public-save tests follow these owners. New fixture helpers are cfg(test) only."
+    },
+    {
+      "owner": "RuntimePlan final_flow and awbc_lower",
+      "responsibility": "Project admitted semantic Thread producers and original Program bodies into the shared operation and AWBC kernel",
+      "decision": "Keep syntax/HIR ownership outside Core. Exhaustive projections migrate together without backend-derived carrier, synthetic Host request or compatibility reader. Existing large lowering contexts retain one compilation state and closed grammar; this cut adds no independent traversal or I/O."
+    },
+    {
+      "owner": "CLI JIT, Cranelift JIT and runtime accelerator",
+      "responsibility": "Existing exhaustive operation admission and work estimation",
+      "decision": "Migrate the same operation arm and retain the existing scheduling/pure-backend boundary. No fallback execution route or unrelated responsibility is added."
+    }
+  ],
+  "dependencies": "No manifest, feature, dependency or unsafe changes. Core remains Sans-I/O; crate direction is unchanged.",
+  "limitsAndAssertions": "Existing resource, stack, budget, batch, capture and copy assertions retained; new Program Need cases do not weaken Thread conditions.",
+  "scope": "Changed-owner structural review, including the material shared public operation contract. Unrelated historical size triggers are not behavior failures or permission to split cohesive owners."
+}

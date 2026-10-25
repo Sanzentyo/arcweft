@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "name": "task-final-r3148-program-body-carrier-flow-id-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json",
+    "-E",
+    "binary(=arcweft_core) | binary(=arcweft_runtime_plan)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3148-program-body-carrier-flow-id-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T22:10:59.0627709Z",
+  "finishedAt": "2026-10-25T22:11:51.8478374Z"
+}

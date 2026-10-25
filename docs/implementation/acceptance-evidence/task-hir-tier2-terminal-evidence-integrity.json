@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "base": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "rawOriginals": 9,
+  "byteDrift": 0,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3127-hir-tier2-production-runtime.json",
+      "bytes": 954,
+      "sha256": "081f10dcf369ddf6ed18ca5e7dcaeeec1f46d0a1790ed409540376abad292884"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3127-hir-tier2-production-runtime.log",
+      "bytes": 337993,
+      "sha256": "24782c9849657e8da6e9b0cede51c232af8a89bf300ef5cd62a11b89fe5360e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3127-hir-tier2-production-runtime.terminal-audit.json",
+      "bytes": 578,
+      "sha256": "33d8e9fc8e401531bd03cf88d859816372d4576ced927825d2f0ea1a7aa678e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-executables-after.json",
+      "bytes": 483,
+      "sha256": "bfa79c812c5b2f816d0d87617d2f5daef20c166b140eff27149550e72e31229b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-guard-reconciliation.json",
+      "bytes": 3505,
+      "sha256": "2b5890f228947d682e45a84cbd30ea938104cc5f3dec95ca6a5c7a1e7e35c01e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-acceptance.json",
+      "bytes": 7556,
+      "sha256": "bff307137aa57b9b3c1512fa01424ea1d4f56f0ff3333d254b287a1d80e8337e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-driver.ps1",
+      "bytes": 1540,
+      "sha256": "b63ffc61558ba01f89625160ed62ef04484a8540a031364a3698b42fd603bad4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier.verified.json",
+      "bytes": 9314,
+      "sha256": "b5ff2d07ba35caaeffdc6f1dfb277d741435a227c9b4ec6ff9f73c30c178d0b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-public-evidence-audit.json",
+      "bytes": 135,
+      "sha256": "2adf6adabad94284a3c3c48ad69da33f8892dd1b4b6e0661e3133e7bfe8f8abb"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "19c68836a06c5668d1d4a99db20c698d61483565",
+  "run": "task-final-r3127-hir-tier2-production-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [13855.823s] 8 tests run: 8 passed (6 slow), 953 skipped",
+  "executed": 8,
+  "passed": 8,
+  "failed": 0,
+  "skipped": 953,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 1322,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T22:06:41.2209190Z"
+}

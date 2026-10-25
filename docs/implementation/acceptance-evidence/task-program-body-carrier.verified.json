@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "commit": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "parent": "2ffcb80f996f517325e7270d6f402b052bde2620",
+  "tree": "6103e2ffeca7e4ea0851936e82107339162c8286",
+  "remote": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "paths": [
+    {
+      "path": "crates/arcweft-cli/src/app/jit.rs",
+      "blob": "6b995957f4d4266ef1adcc1fc5d1bb04911a3c65"
+    },
+    {
+      "path": "crates/arcweft-core/src/aot.rs",
+      "blob": "0677f35e3782c64d95c1bcac2a73088134652bc4"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task.rs",
+      "blob": "2405109b0904c034863ae3d7b45c8480461d9b21"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+      "blob": "8a9bcad59f9ffa2df7e24191ecdc2ba5ee283790"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "blob": "68db0781032e2275f3c3bd0cf975bf3a3da4b4d0"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow.rs",
+      "blob": "16501e73e3f07217f1485ecd1a5473f51b70bef6"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread.rs",
+      "blob": "188e8491cebd399e91ecbf09ffb2a3240f56d16a"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+      "blob": "622de23607ec3d92c0d807f68c30d0ef220550dd"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan.rs",
+      "blob": "9c1ba930c9e5a7716de0ce5ec42172c0a3afe89f"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+      "blob": "ae3ca5dc538f8e7495b920a230adc3fd1aa515ba"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/function.rs",
+      "blob": "f82a2baae8d54f4037e8a7f376d0f646d68f9668"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/tests/request_endpoints.rs",
+      "blob": "054603b972d1e6d0a409ecec5e0642fa027645e9"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "blob": "b1b6c66f37c6ffec850f374fc1fa2690229a5b35"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+      "blob": "556cd4ddfc8802b9747fd6e1d8126828e4450701"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+      "blob": "886137ab8d3209ccd2d58b81f105b51cb1f3ee08"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/encoding/fields.rs",
+      "blob": "de2a4b21ad11191c9d7e7766d5de3a10bb276ed6"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/entry_inventory.rs",
+      "blob": "2f095be921b9fff3241bceb79a55eea42badfb8e"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/flow_ops.rs",
+      "blob": "285ac4492dfad2f4ddf6dad9c035f310c238abb1"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source.rs",
+      "blob": "e02d57daadd917394147fc26732ad9308b82d49d"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program.rs",
+      "blob": "c012649d110ec09f77421a3bc9de9969d3e35d9c"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+      "blob": "359ad88f7a90de11e72cb1e028477e7c6c1fc66d"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+      "blob": "98809c0fec6e96ff5e2153f40687b66abe53b524"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body.rs",
+      "blob": "701b2d0d5b6c50391e58f449c7a78669c05c066a"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body/tests.rs",
+      "blob": "88e77358f85f718bf9239b1640c0b88fe21eafba"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "blob": "1835dd82f776d7a7fc6bc98782faec37e9a99d98"
+    },
+    {
+      "path": "crates/arcweft-core/src/pure/aot/body.rs",
+      "blob": "a735a42deaecd9788a6f56663bf592b3e3e674d3"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer/source/template.rs",
+      "blob": "97df7fb4ec2852b16dae8e9db8af0b769361c94a"
+    },
+    {
+      "path": "crates/arcweft-lang-jit-cranelift/src/body.rs",
+      "blob": "96dfcf02f567a7cb9594d3a2c07bcbbf57ff3238"
+    },
+    {
+      "path": "crates/arcweft-runtime-accelerator/src/compile.rs",
+      "blob": "5e45ce8b08cc3ee161a56b02c5bf7720f746674b"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+      "blob": "d7b07ce74f7f0b4524574587d9cc9ab54897df6b"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "blob": "55c4e6b4556fc227c6945d56042c8964979a15aa"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "blob": "e124e9422bbf1e2537d53e50376c53c986471f6e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-public-evidence-audit.json",
+      "blob": "ea64d6535b092923676a7e3f16732674b1ed7b48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse.verified.json",
+      "blob": "b239aae9d764658ddc8fe4953518fcab1c6a87a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3140-program-body-carrier-owner-check.json",
+      "blob": "ea2b86becdfbcaa64c249aa4266e979d50fb751f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3140-program-body-carrier-owner-check.log",
+      "blob": "82e305fe9a7a46f277b6a54f81264999fb8a63c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3141-program-body-carrier-owner-catalog.inventory.json",
+      "blob": "a07d8e7def78865ceec6765f4c10f59b83395b2c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3141-program-body-carrier-owner-catalog.json",
+      "blob": "31b09e846e007047c9520de38c452502889c9eb3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3141-program-body-carrier-owner-catalog.log",
+      "blob": "67167fc8dc7de77136208ab2a055957e78af6c8a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3142-program-body-carrier-focused-catalog.json",
+      "blob": "d77d847b15de61bffd21d044895c1df0ee7c3729"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3142-program-body-carrier-focused-catalog.log",
+      "blob": "0a13256620334040f0fc7bff1ad904f6d2f86f75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3144-program-body-carrier-library-catalog.inventory.json",
+      "blob": "d8c59c7fa694d5c0ffe92d8b70f6b0b6207b4533"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3144-program-body-carrier-library-catalog.json",
+      "blob": "6117bb1a164d874994740d888169a8e7fcf17753"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3144-program-body-carrier-library-catalog.log",
+      "blob": "03775918c30203ca18f8528f657edf10182615e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3145-program-body-carrier-library-runtime.json",
+      "blob": "1c25f8271eb14746e43aca85a90dd18d16d8ebc7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3145-program-body-carrier-library-runtime.log",
+      "blob": "e46a127e9ec9049c839a911c4deede9cce42701b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3145-program-body-carrier-library-runtime.terminal-audit.json",
+      "blob": "c02702bdd8aa1364a316bd85aad94ecd92c1419a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-checkpoint.json",
+      "blob": "71b546d9c777d2ae2a5a5fa37c2ac255406f016e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-entry.source-freeze.json",
+      "blob": "32e7e88ff623b3b3762bc078fd9dab11c17c2789"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-evidence-integrity.json",
+      "blob": "a8079024ca259c2bcbeab680bad9a133cfeef16c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-library-executables-after.json",
+      "blob": "970e6f0c8158dd2d609880f8ca04fb9f46cada8b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier-library-executables-before.json",
+      "blob": "a537dfec8f1da380e49a2f22f377c86b4b20dc75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-body-carrier.source-freeze.json",
+      "blob": "3b93eb0e29b9b074132d53775aa98ed9fec10699"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "3f722a98bd05ac069cedc45058c54a88e967fe38"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "670ae21f326793e8369f75b0256d59c16a115a0a"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "b920b6b46f6b26fe471bd3404b3b5235f247adfa760a7bafc13a79449ad79d59",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T22:02:30.0281616Z"
+}

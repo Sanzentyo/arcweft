@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "19c68836a06c5668d1d4a99db20c698d61483565",
+  "name": "task-final-r3127-hir-tier2-production-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "--binaries-metadata",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-hir-tier2-current.binaries.json",
+    "--cargo-metadata",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2285.metadata.json",
+    "--run-ignored",
+    "ignored-only",
+    "--test-threads",
+    "1",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3127-hir-tier2-production-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T18:07:59.9752316Z",
+  "finishedAt": "2026-10-25T21:58:56.2259096Z"
+}

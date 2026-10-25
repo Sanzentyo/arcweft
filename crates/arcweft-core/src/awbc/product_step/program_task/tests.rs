@@ -69,9 +69,11 @@ fn ordinary_program_need_starts_from_its_source_and_survives_each_public_save() 
         source_map: None,
     });
     code.strings.push("entry.program_need".into());
-    let flow =
-        crate::plan::FlowRuntimeId::from_checked_declaration_digest([0x93; 32], "program.need")
-            .unwrap();
+    let flow = crate::plan::FlowRuntimeId::from_checked_declaration_digest(
+        [0x93; 32],
+        "flow.program_need",
+    )
+    .unwrap();
     code.flow_bindings.push(AwbcFlowBinding {
         flow: flow.clone(),
         function: AwbcFunctionId(1),

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3152-program-body-carrier-core-doctest",
+  "actualExitCode": 0,
+  "scope": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--doc"
+  ],
+  "sourceInputs": 3988,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T22:26:11.8797323Z"
+}

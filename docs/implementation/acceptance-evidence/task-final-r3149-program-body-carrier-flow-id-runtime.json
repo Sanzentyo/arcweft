@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "base": "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+  "name": "task-final-r3149-program-body-carrier-flow-id-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all",
+    "-E",
+    "binary(=arcweft_core) | binary(=arcweft_runtime_plan)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3149-program-body-carrier-flow-id-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T22:11:54.1112810Z",
+  "finishedAt": "2026-10-25T22:12:37.7973793Z"
+}
