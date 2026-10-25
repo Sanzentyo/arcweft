@@ -11344,3 +11344,26 @@ R2952 catalog／R2953では、このownerの既存6件と新規1件の計7件を
 Generic Matchと先行する個別受入の再開根拠にはしていない。
 
 [owner全件の原本保全一覧](acceptance-evidence/task-traversal-runtime-owner-evidence-integrity.json)。
+
+### 資料整理の公開と型関係修復の対象終端
+
+7文書の旧API案整理と現状／履歴の訂正は `d666e0e51f727f41f4fb2e4fa55b56807820a31a`
+で通常commit／non-forced pushした。parentは `7e0092db58d578b249abd7ec669cd3b97d4e722c`、
+treeは `78bb0d7f71a27ba2c24b3371b759d9907e555743`、full patchのSHA256は
+`1db54056d513b1e1fdcfac7b7f41033c2422ff49b0aa8052423250a31844917f`。
+19 pathの公開blob差分0、元14件のWIP patch不変、型関係修復1 pathの保全、index空を確認した。
+[資料公開の照合](acceptance-evidence/task-documentation-current-final.verified.json)。
+
+上記の修復後catalog構築中表示に対し、R2952はCore libraryの2,024件中7件を選択した。
+R2953は**7／7 PASS**、終了0、0.207秒、2,017非選択で完了した。R2951の失敗3件は
+すべて選択されてPASSし、元Sourceの完全な型algebra、異なるdense順、role／shape拒否、
+codec policy、共有prefixの異なるtail、正確なworkと失敗bankの境界を確認した。
+catalogと終端case集合が一致し、3,981非文書入力・1実行ファイルのhash差分0。
+[対象の終端照合](acceptance-evidence/task-final-r2953-traversal-source-relation-runtime.terminal-audit.json)、
+[入力と実行ファイル](acceptance-evidence/task-traversal-source-relation-runtime.audit.json)、
+[原本保全一覧](acceptance-evidence/task-traversal-source-relation-evidence-integrity.json)。
+
+これは元Source／AWBC型関係ownerの修復検証であり、R2951全2,406件の新たな全件成功ではない。
+同じ修復入力の全53逆依存runtime、workspace check／Clippy、構造gate、Sourceの
+traverse／parallel・first-class Need実行の最終受入は未実行／未接続のまま区別する。
+先行Generic Match等を未完了へ戻していない。

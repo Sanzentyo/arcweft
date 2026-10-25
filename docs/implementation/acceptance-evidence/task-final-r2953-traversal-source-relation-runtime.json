@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+  "name": "task-final-r2953-traversal-source-relation-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(plan::task_source::program::types::tests::)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2953-traversal-source-relation-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T06:38:47.5343906Z",
+  "finishedAt": "2026-10-25T06:38:51.4666960Z"
+}

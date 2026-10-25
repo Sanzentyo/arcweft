@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2952-traversal-source-relation-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 80837632,
+      "nonTest": false,
+      "sha256": "6845ae17c00b4bdc9172383c7d76a5f75846eb03239fbe627aa087c19d8c94f4"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T06:41:12.1462759Z"
+}

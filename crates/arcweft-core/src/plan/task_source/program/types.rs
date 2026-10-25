@@ -385,6 +385,21 @@ impl<'program, 'work> RuntimeAwbcSourceTypeRelation<'program, 'work> {
                 true
             }
             (
+                P::Traversal { source, mapping },
+                A::Traversal {
+                    source: actual_source,
+                    mapping: actual_mapping,
+                },
+            ) => {
+                self.children(
+                    pair,
+                    &[*source, *mapping],
+                    &[*actual_source, *actual_mapping],
+                    pending,
+                )?;
+                true
+            }
+            (
                 P::Stream { item, error },
                 A::Stream {
                     item: actual_item,

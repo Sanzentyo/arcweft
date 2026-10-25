@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+  "name": "task-final-r2952-traversal-source-relation-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(plan::task_source::program::types::tests::)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2952-traversal-source-relation-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T06:32:38.0320168Z",
+  "finishedAt": "2026-10-25T06:38:44.9879377Z"
+}

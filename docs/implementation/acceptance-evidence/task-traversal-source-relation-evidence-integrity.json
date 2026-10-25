@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "base": "d666e0e51f727f41f4fb2e4fa55b56807820a31a",
+  "scope": "R2952 catalog, R2953 targeted repair acceptance, preceding documentation publication",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2952-traversal-source-relation-catalog.log",
+      "bytes": 424354,
+      "sha256": "c87ad96fa3c817dc2813703779025e33512913c37bc21402ee2162cf310bd7f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2952-traversal-source-relation-catalog.json",
+      "bytes": 649,
+      "sha256": "8c8fc2bab7061d59183c960eae12daac0a65a474b6d2c0f67677e01ac39b437c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2952-traversal-source-relation-catalog.inventory.json",
+      "bytes": 514958,
+      "sha256": "3c6f9dd23f4f4005ae081fd89fc84f1ceee39a35e27e270c2919e164d18cd3c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2953-traversal-source-relation-runtime.log",
+      "bytes": 646923,
+      "sha256": "605adc4183897e485c1c3ae03aa9d6fc177e338d4e8f1e212b5da2fcfebfbe85"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2953-traversal-source-relation-runtime.json",
+      "bytes": 741,
+      "sha256": "f0bc0fe9623a443fd58a2d91ed6739406c3ddf35386969bf8623c548c7707fa1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2953-traversal-source-relation-runtime.terminal-audit.json",
+      "bytes": 575,
+      "sha256": "3969e5d805db25564c3b5dee404411e921491e468ad1405b53cad1273f24915c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-executables-before.json",
+      "bytes": 485,
+      "sha256": "5959b589279612b3a7fb06f9884fd9ba6615e5cbec13e843733ce0c19302d6a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-executables-after.json",
+      "bytes": 484,
+      "sha256": "1796ca6df0aff3a799bd08b4a9e5c1b5cfe62a7a2462385f46923a8fcc215879"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-runtime.audit.json",
+      "bytes": 436,
+      "sha256": "df946f019a4d079fd02834c1de7e40e46e4c3694f250fcbe89b8bf0bf26df141"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-documentation-current-final.verified.json",
+      "bytes": 3661,
+      "sha256": "c0cd929954f319b59f3c9ae8b5c854845a4a28ae7b2b28fd2c06aa2d2bf04de0"
+    }
+  ]
+}

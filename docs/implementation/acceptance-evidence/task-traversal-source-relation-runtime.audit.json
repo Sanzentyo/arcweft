@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "run": "task-final-r2953-traversal-source-relation-runtime",
+  "actualExitCode": 0,
+  "executed": 7,
+  "passed": 7,
+  "skipped": 2017,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "binaries": 1,
+  "binaryDrift": 0,
+  "scope": "All seven original/AWBC source type-relation owner cases, including the three prior failures; not a new full owner/reverse runtime run",
+  "originalWip": 14,
+  "artifactCopyMove": false
+}

@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "commit": "d666e0e51f727f41f4fb2e4fa55b56807820a31a",
+  "parent": "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+  "tree": "78bb0d7f71a27ba2c24b3371b759d9907e555743",
+  "remote": "d666e0e51f727f41f4fb2e4fa55b56807820a31a",
+  "paths": [
+    {
+      "path": "docs/00-overview/code-fences.md",
+      "blob": "5006b2e88887f76fbc5ca58925edf8d80e279429"
+    },
+    {
+      "path": "docs/04-tooling/agent-debug-mcp-cli.md",
+      "blob": "c95badbd5337dd7a615e7c17fb87b6ae20511b0c"
+    },
+    {
+      "path": "docs/04-tooling/cli.md",
+      "blob": "d9fcee9ba03a599ec329021305cad5aebc43811a"
+    },
+    {
+      "path": "docs/04-tooling/graph-rag-git.md",
+      "blob": "abf2350583dbd3660cd8127f0f4d442f3a09ac33"
+    },
+    {
+      "path": "docs/04-tooling/logging-signal-test-bench.md",
+      "blob": "e4581569616216a13b0ac811d1587fb4b00a626f"
+    },
+    {
+      "path": "docs/04-tooling/lsp.md",
+      "blob": "435513747660abd0372b3a5572cf566b96232323"
+    },
+    {
+      "path": "docs/04-tooling/verification.md",
+      "blob": "bc83724295a09916d635f115a2165f47bcb1638b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-documentation-prune-final.audit.json",
+      "blob": "13bb03c3f0967d6632b0359dbfc93ff86825ddb6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2951-traversal-runtime-owner-runtime.json",
+      "blob": "0a2200a98b69ba3ac92770182a8ef87542404e2f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2951-traversal-runtime-owner-runtime.log",
+      "blob": "f59365a1c287a973d6c13c644555648f7dbbc929"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2951-traversal-runtime-owner-runtime.terminal-audit.json",
+      "blob": "090e4c804602aa40ad7308ee12dd1ea290e98322"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-owner-evidence-integrity.json",
+      "blob": "c833c58857eb9f55dddc5d081b46d47c9b9c3c15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-owner-executables-after.json",
+      "blob": "503158a9c2e7b73e6f37581d9c8227f55c0185df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-owner-runtime.audit.json",
+      "blob": "57f7fd8ff53cfca24829934a77ab3e629d181fe2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-checkpoint.verified.json",
+      "blob": "677cc24b27cd89ab5a47c61f248093a5dc1a2956"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-repair.source-freeze.json",
+      "blob": "f211244d7ee98cdc7ff1b9724dfb859b0d6f8ec2"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "78ce42072fc1196a3c4fd2bccf693c270150fcd6"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "df36fbe7e2ef89afd499440d9b377fcc603030da"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "95d31a9fd33ecf30596f460c45beef62e356eccb"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "1db54056d513b1e1fdcfac7b7f41033c2422ff49b0aa8052423250a31844917f",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/types.rs",
+      "sha256": "914b07c0f9f8e0edd8bed72ed555a0582a3e2d8c84a613d881f4688926fbc8a1"
+    }
+  ],
+  "indexEmpty": true,
+  "at": "2026-10-25T06:41:03.5553326Z"
+}
