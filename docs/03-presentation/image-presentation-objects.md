@@ -94,10 +94,8 @@ family-relative references such as `bg(@asset:.bg.room)` and
 stored public-id roundtrips, and external interfaces that need the stored public
 id verbatim.
 
-The older fluent sketch form `image(@asset).fit(...)` is not the implemented
-surface. Declared image objects are the canonical reusable object form and lower
-into the same semantic image object model rather than adding a compatibility
-adapter.
+Declared image objects are the canonical reusable object form and use the same
+semantic image object model as ordinary image calls.
 
 ## Object Model
 
@@ -151,9 +149,9 @@ The typed `StagePlacement` value carried by an image bundle object supports an
 output-logical absolute rectangle or a responsive anchor resolved against the
 design and output viewports. Player frame planning produces design, output, and
 physical bounds that the image renderer and observation path consume together.
-The current bounded `image(...)` call lowers its explicit `x`, `y`, `width`, and
-`height` to absolute placement; background staging constructs its own top-left
-design placement. This typed runtime model does not define a source-level anchor
+An `image(...)` call with explicit `x`, `y`, `width`, and `height` uses absolute
+placement; background staging uses top-left design placement.
+This typed runtime model does not define a source-level anchor
 spelling or connect character-stage placement to image objects.
 
 ## Animation Time

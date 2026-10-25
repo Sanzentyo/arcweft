@@ -339,3 +339,13 @@ Dialogue activation／driver ABIまでの受入としていない。Generic Matc
 冒頭のGeneric Matchは受入SHAと公開SHAを別々に記すよう訂正した。
 以前のLuna／maxによる旧資料削除と現行仕様への統合は維持し、削除済み資料を復活させていない。
 この文書整理そのものは新しいRust受入の証拠ではなく、同時進行のRust検証は収束履歴へ分けた。
+
+## 画像callの採用契約と実装状況の分離 — 2026-10-25
+
+公開基点 `2d1ce741898668793248d3d0dffd29698e0d6ba3` のCompilerを確認した。
+`lower.rs` のPresentation候補拒否と、`Handle`／`SlotRef`／resource型のruntime投影拒否は
+現在も残っている。このため画像章の「current bounded call lowers」という表現を、
+配置の採用規則として記す形へ直した。これは未接続のproducerを実装済みと読ませない訂正で、
+画像・backgroundの配置要件や、既存の下流image model／rendererの受入を取り消すものではない。
+同じ章の旧fluent sketchとの比較も削除し、現在の宣言とcallが使う単一のsemantic modelだけを残した。
+実行結果・full SHAを含む部分は削除していない。Rustの検証入力は変更していない。

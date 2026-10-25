@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "base": "2d1ce741898668793248d3d0dffd29698e0d6ba3",
+  "at": "2026-10-25T00:40:30.6252430Z",
+  "scope": "Documentation reconciliation only; no new Cargo/runtime execution",
+  "owned": [
+    "docs/03-presentation/image-presentation-objects.md",
+    "docs/implementation/acceptance-evidence/task-presentation-source-contract-doc-audit.json",
+    "docs/implementation/documentation-cleanup.md"
+  ],
+  "deleted": [],
+  "markdown": [
+    {
+      "path": "docs/03-presentation/image-presentation-objects.md",
+      "sha256": "778a4a161e33840f38baf5af4b4eb315743b1cc18f72b13cf3c4675a540b1b43",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "sha256": "97a6dc9cd4358b358642e4e4bc036ca0ae122a2fc8096386a320507d56e4c367",
+      "checkedSurface": "added hunks",
+      "fencesBalanced": true
+    }
+  ],
+  "checkedRelativeLinks": 2,
+  "relativeLinks": [
+    {
+      "path": "docs/03-presentation/image-presentation-objects.md",
+      "target": "layers.md"
+    },
+    {
+      "path": "docs/03-presentation/image-presentation-objects.md",
+      "target": "../../samples/image-animation.arcw"
+    }
+  ],
+  "unclosedFences": 0,
+  "priorFullShaIdentifiers": 16,
+  "lostFullShaIdentifiers": [],
+  "untrackedHeld": 6,
+  "untrackedHeldDrift": 0,
+  "genericAcceptance": "Preserved; existing151/151PASS and published acceptance unchanged",
+  "validationReuse": "Existing runtime results remain historical evidence, not rerun by this cut"
+}
