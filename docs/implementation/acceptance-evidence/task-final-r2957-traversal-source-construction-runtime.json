@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+  "name": "task-final-r2957-traversal-source-construction-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(traversal::)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2957-traversal-source-construction-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T07:10:38.6049443Z",
+  "finishedAt": "2026-10-25T07:10:40.5689244Z"
+}

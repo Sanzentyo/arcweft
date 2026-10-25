@@ -228,6 +228,8 @@ macro_rules! callable_case {
 mod standard_map_control;
 #[path = "callable_cases/standard_map_program.rs"]
 mod standard_map_program;
+#[path = "callable_cases/traversal.rs"]
+mod traversal;
 
 callable_case!(
     moved_local_reinitializes_and_accepts_rhs_self_transfer,

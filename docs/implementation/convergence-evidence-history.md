@@ -11367,3 +11367,42 @@ catalogと終端case集合が一致し、3,981非文書入力・1実行ファイ
 同じ修復入力の全53逆依存runtime、workspace check／Clippy、構造gate、Sourceの
 traverse／parallel・first-class Need実行の最終受入は未実行／未接続のまま区別する。
 先行Generic Match等を未完了へ戻していない。
+
+## Source Traverse構築の接続と追加lambdaケースの失敗 — 2026-10-25
+
+基点は公開main `b1e89daf80a30d73806326f5daef1cde7b0751d4`。前段の型関係修復は
+同SHAで公開し、parent `d666e0e51f727f41f4fb2e4fa55b56807820a31a`、tree
+`725dc922741b1840aac706589c5a5d0407ad1c7f`、full patch SHA256
+`fe21dca038d39f584438dd128f6ccb89412343e1c2859e7df1cfb063e9af83ed`、公開14 blob差分0、
+元WIP 14件不変、index空を確認した。[公開照合](acceptance-evidence/task-traversal-source-relation-checkpoint.verified.json)。
+
+Compilerのchecked CollectionMethodIdから独立したTraverse dispatchを投影し、runtime-planの
+call ownerが初期group・完全なreceiver／mapping row・結果Traversalの子型を検査する。
+source-order ANFで全operandを一度ずつ所有localへ移し、そのlocalから既存のtyped productを
+構築する。元collectionと実際のcallable値を保持し、callbackを呼ぶCall／Applyを生成しない。
+Fn type digestを実callable／captureへ置き換える経路や、別value registryを追加していない。
+
+6 Rust pathに実装と2 Sourceケースを追加した。Root関数はTraversalを返し、実capabilityを
+返すcallbackとString captureを保持する。Native／canonical decoded AWBCで元program lease、
+collection、capture、子task 0、1-op予算を検査する内容だが、後記のSema失敗により
+backend検証には到達していない。Vec／Array／Seq／Sliceを用意したうち、反復ケースは
+最初のVecで停止したため、残る3 familyを実行済みとはしない。
+
+実Cargo graphによるCompiler／runtime-plan全16推移的consumerを確認した。manifest／lock
+99入力は不変。R2954 workspace checkは新dispatchの型依存visitor漏れ1件で終了101。
+修正後R2955は全target／全feature／lockedで**終了0・警告あり**、Cargo表示24.25sだった。
+両checkの入力は3,982非文書pathで前後hash差分0。当時の5 owned pathと修正後6 owned pathを
+別スナップショットへ保持した。
+
+R2956 catalogはcallable_executionの181件中2件を選択。R2957は**2実行／0 PASS／2 FAIL**、
+終了100、0.160秒、179非選択だった。catalogと終端case集合が一致し、3,982非文書入力・
+1実行ファイルの前後hash差分0。直接lambdaのtraverseは `sema.call.no_viable_signature`、
+computed collection／block callbackは `MissingCheckedExpressionCoordinate` で拒否された。
+これは追加ケースで観測した具体的なSema不具合であり、Native／AWBC構築成功の証拠ではない。
+[終端照合](acceptance-evidence/task-final-r2957-traversal-source-construction-runtime.terminal-audit.json)、
+[検証入力と実行ファイル](acceptance-evidence/task-traversal-source-construction-runtime.audit.json)、
+[原本保全一覧](acceptance-evidence/task-traversal-source-construction-evidence-integrity.json)。
+
+既存のGeneric Match、Semaの以前の5対象／全1,339件、型・codec／元Source型関係7件の
+結果は保持する。新しい2失敗の修復と、parallelによるfirst-class aggregate Needの構築・
+開始・await／保存復元を別の未達として扱い、全体goalの未完了から個別受入を取り消さない。

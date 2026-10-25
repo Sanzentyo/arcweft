@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+  "name": "task-final-r2956-traversal-source-construction-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(traversal::)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2956-traversal-source-construction-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T07:01:27.5055417Z",
+  "finishedAt": "2026-10-25T07:10:37.6944459Z"
+}

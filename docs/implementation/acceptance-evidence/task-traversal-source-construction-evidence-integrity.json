@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "base": "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+  "scope": "Intermediate compiler failure, corrected workspace check, two semantically rejected source cases, exact inputs/executable, preceding publication",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2954-traversal-source-construction-workspace-check.log",
+      "bytes": 100578,
+      "sha256": "d97b26070c67676346a948831cf44db6a5ea8b4beb8d0496798714089aa195da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2954-traversal-source-construction-workspace-check.json",
+      "bytes": 550,
+      "sha256": "487d37af4001360a2789adf44a70c9f60d44d516e08c63f7ad06024db8308549"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2954-traversal-source-construction-workspace-check.input-audit.json",
+      "bytes": 341,
+      "sha256": "8c6962ec824d763af7118aa20d0161a57b046efa918f0ddc912fdf3bc5efda8e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2955-traversal-source-construction-workspace-check.log",
+      "bytes": 102269,
+      "sha256": "ddaa45a0155ea17d627ee3a8998338a0f37982c5eb155c5283b427db99674aaa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2955-traversal-source-construction-workspace-check.json",
+      "bytes": 548,
+      "sha256": "ac0f9450c4ad1f53326bc1408dfd2a074b2e96b12369355372f2c838f12a82d8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2955-traversal-source-construction-workspace-check.input-audit.json",
+      "bytes": 339,
+      "sha256": "2b1d07474acfdf4ac2de2953b999f1c3ee03e14ba5ecd925e4f72e17f2d3b403"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2956-traversal-source-construction-catalog.log",
+      "bytes": 112048,
+      "sha256": "77f04d9e9326c9bb961b7db0d8f56c978dd6354c6dbc77a0f7227053dbf33aea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2956-traversal-source-construction-catalog.json",
+      "bytes": 658,
+      "sha256": "f9225287fca7f5d5c436667178680ba4d5286f512f11a41a69c96db5d96805c7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2956-traversal-source-construction-catalog.inventory.json",
+      "bytes": 43130,
+      "sha256": "705eff46a96b0a1897cf9ef5ace0c99e391e1f6e95e1045713f9109ab6021b2a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2957-traversal-source-construction-runtime.log",
+      "bytes": 136257,
+      "sha256": "5a4e066968a40b3f1d4df65dd50b1ae5c4740c92ef5a44d39d221cbd7661b8d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2957-traversal-source-construction-runtime.json",
+      "bytes": 752,
+      "sha256": "71f4396580e62384f972b738dbe15f73de45fc3c07339e3e422acfae02135e10"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2957-traversal-source-construction-runtime.terminal-audit.json",
+      "bytes": 987,
+      "sha256": "d040545d50492e3ba3b3f17efad328e958082f7fe7125245e4a8d2fcd3a02e96"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-executables-before.json",
+      "bytes": 496,
+      "sha256": "daf8b7c2fe52455b6c8ed2f3d0c06c500d1408a516379699ea7ba2f073ca80cb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-executables-after.json",
+      "bytes": 495,
+      "sha256": "e2e66185218749c2d2bb9ae247caf80df184e7517d6861401fb0fb335d4c2a8f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction.source-freeze.json",
+      "bytes": 778540,
+      "sha256": "2ee84118def7a7b89e83664862c40afb2f5884df70965a9bcb96891a093d88e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction.graph.json",
+      "bytes": 1117,
+      "sha256": "459f03ac2f019536cf38b9b19e05077da7f2e84054de750420073485e70deb80"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-final.source-freeze.json",
+      "bytes": 778616,
+      "sha256": "92106127fa9f497ad20e2dd99791fb6db3faa6566b59cc61bfbe85891ef14004"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-final.graph.json",
+      "bytes": 1192,
+      "sha256": "40570871fce9c3c178cfc2fa89934442c04f0f3c08263aadf88ff84f2a08513a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-runtime.audit.json",
+      "bytes": 527,
+      "sha256": "537ca954ba66e6a222886155a5e2b33af8e7993d887b3b86d3c01766f401e683"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-checkpoint.verified.json",
+      "bytes": 3033,
+      "sha256": "8721603a20c3793f0c53139f29d8ad8af295694f5e4eed81dfaf781536f2587f"
+    }
+  ]
+}

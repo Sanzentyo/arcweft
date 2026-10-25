@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "commit": "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+  "parent": "d666e0e51f727f41f4fb2e4fa55b56807820a31a",
+  "tree": "725dc922741b1840aac706589c5a5d0407ad1c7f",
+  "remote": "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/types.rs",
+      "blob": "91b91b2d48d2e00c084e9c6db752976c1b11d961"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-documentation-current-final.verified.json",
+      "blob": "b92ac197ae48b13a0c9d72bb4bd7e6fe18b7a963"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2952-traversal-source-relation-catalog.inventory.json",
+      "blob": "f8e2180c402ceb38554eb25cf91835d8f9b22c5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2952-traversal-source-relation-catalog.json",
+      "blob": "f149efdbd050033c5961a33eb2ec4647f138f391"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2952-traversal-source-relation-catalog.log",
+      "blob": "d2074c07e5219a109442ecbb7ff31adb5d2717d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2953-traversal-source-relation-runtime.json",
+      "blob": "e65eb62ec7c93751b0c490477dc728c0bd855c72"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2953-traversal-source-relation-runtime.log",
+      "blob": "5c799da6f4c09cf2ed278aba4f25d16f39914553"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2953-traversal-source-relation-runtime.terminal-audit.json",
+      "blob": "2e0d11082da6d1aa49725350069eb77f3aea3111"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-evidence-integrity.json",
+      "blob": "63676aedd8845e06469676c2436ea0100b53c47c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-executables-after.json",
+      "blob": "3fbd8181054626eae96701d7fa2eb49250e5b0ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-executables-before.json",
+      "blob": "a966c8aedec67ef70028ca3ee3a08df91cc4121c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-relation-runtime.audit.json",
+      "blob": "188fc644cb3ee199f9c70078fae137a6fcea796e"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "2228a13b15c64423f6a7c59c38272afb2369c60a"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "2d36d2205d21d11477fe919745f6292679e805f0"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "fe21dca038d39f584438dd128f6ccb89412343e1c2859e7df1cfb063e9af83ed",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T06:44:44.9090301Z"
+}

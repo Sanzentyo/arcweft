@@ -2147,7 +2147,8 @@ impl<'hir> FinalExprLowerer<'hir> {
             | RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::CharacterDialogue(_),
             )
-            | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(_)) => {
+            | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(_))
+            | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Traverse) => {
                 unreachable!("specialized dispatch was handled by source-row ANF")
             }
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
@@ -2472,6 +2473,27 @@ impl<'hir> FinalExprLowerer<'hir> {
             })
             .collect::<Result<Vec<_>, String>>()?;
         let body = match selected.dispatch() {
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Traverse) => {
+                let source = self.exact_scalar_operand_value(
+                    id,
+                    &local_values,
+                    operands,
+                    "traversal source",
+                    |operand| {
+                        matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+                    },
+                )?;
+                let mapping = self.exact_scalar_operand_value(
+                    id,
+                    &local_values,
+                    operands,
+                    "traversal mapping",
+                    |operand| {
+                        operand.parameter() == Some(RuntimeCallParameterCoordinate::new(0, 0))
+                    },
+                )?;
+                RuntimeExprSeedKind::Tuple(Box::new([source, mapping]))
+            }
             RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::CharacterDialogue(dialogue),
             ) => {

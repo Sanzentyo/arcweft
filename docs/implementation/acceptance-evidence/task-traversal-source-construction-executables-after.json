@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2956-traversal-source-construction-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-6f0f9fd90f0abf3c.exe",
+      "bytes": 121091072,
+      "nonTest": false,
+      "sha256": "147567219bd622e820798808a4efc4891e54a9c30c9f20830d3871dcac47c596"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T07:11:01.4750354Z"
+}

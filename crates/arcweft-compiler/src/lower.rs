@@ -9707,6 +9707,12 @@ fn runtime_call_target(
             ),
         ));
     }
+    if matches!(
+        selected_id,
+        CallableCandidateId::CollectionMethod(CollectionMethodId::Traverse { .. })
+    ) {
+        return Ok(RuntimeResolvedStaticCallTarget::Traverse);
+    }
     if let Some(intrinsic) = runtime_intrinsic(selected_id) {
         return Ok(RuntimeResolvedStaticCallTarget::Intrinsic(intrinsic));
     }

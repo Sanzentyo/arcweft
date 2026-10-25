@@ -4218,6 +4218,42 @@ impl RuntimeResolvedCall {
         self.result
     }
 
+    fn accepts_traversal_type(&self, result: Option<&RuntimeNormalizedType>) -> bool {
+        let [source, mapping] = self.operands() else {
+            return false;
+        };
+        let Some(RuntimeTypeShape::Traversal {
+            source: expected_source,
+            mapping: expected_mapping,
+        }) = result.map(RuntimeNormalizedType::shape)
+        else {
+            return false;
+        };
+        self.completed_group.get() == 0
+            && self.result == RuntimeCallResultShape::Value
+            && self.attached_content.is_none()
+            && self.project_function.is_none()
+            && self.need_producer.is_none()
+            && self.mutation.is_none()
+            && matches!(source.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+            && matches!(
+                mapping.origin(),
+                RuntimeResolvedCallOperandOrigin::Argument {
+                    argument: 0,
+                    slot: 0
+                }
+            )
+            && mapping.parameter() == Some(RuntimeCallParameterCoordinate::new(0, 0))
+            && self.operands().iter().all(|operand| {
+                matches!(
+                    operand.projection(),
+                    RuntimeResolvedCallOperandProjection::Scalar
+                )
+            })
+            && expected_source.as_ref() == source.ty()
+            && expected_mapping.as_ref() == mapping.ty()
+    }
+
     /// Whether this target is represented by a structural expression payload
     /// rather than the common positioned Call/Apply carrier. Such payloads
     /// must consume the shared source-order ANF materialization before they
@@ -4232,6 +4268,7 @@ impl RuntimeResolvedCall {
                     | RuntimeResolvedStaticCallTarget::Variant(_)
                     | RuntimeResolvedStaticCallTarget::Reduction(_)
                     | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
+                    | RuntimeResolvedStaticCallTarget::Traverse
             )
         )
     }
@@ -4291,6 +4328,7 @@ impl RuntimeResolvedCallDispatch {
                 | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
                 | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
+                | RuntimeResolvedStaticCallTarget::Traverse
                 | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Registered(_)
                 | RuntimeResolvedStaticCallTarget::Line(_),
@@ -4332,6 +4370,8 @@ pub enum RuntimeResolvedStaticCallTarget {
     VecPopFront,
     VecPop,
     VecPush,
+    /// Owns the checked collection and unary Need-returning function value.
+    Traverse,
     Agent(crate::agent::RuntimeAgentIntrinsic),
     AgentProbeComparison(arcweft_core::value::RuntimeAgentCompareOp),
     AgentDiagnosticsHasError,
@@ -8318,6 +8358,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedStaticCallTarget::Reduction(_)
                     | RuntimeResolvedStaticCallTarget::StandardMap(_)
                     | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
+                    | RuntimeResolvedStaticCallTarget::Traverse
                     | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                     | RuntimeResolvedStaticCallTarget::Line(_)
                     | RuntimeResolvedStaticCallTarget::Registered(_)
@@ -12156,6 +12197,13 @@ fn validate_call(
         return Err(RuntimeSemanticFactsError::MissingProjectFunctionCallPlan);
     }
     match call.dispatch() {
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Traverse) => {
+            if !call.accepts_traversal_type(expression_source_type) {
+                return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                    expression,
+                });
+            }
+        }
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
             callable,
         )) => validate_callable(modules, callable)?,
@@ -13189,6 +13237,7 @@ fn validate_project_function_instance(
                 | RuntimeResolvedStaticCallTarget::Reduction(_)
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
                 | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
+                | RuntimeResolvedStaticCallTarget::Traverse
                 | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                 | RuntimeResolvedStaticCallTarget::Line(_)
                 | RuntimeResolvedStaticCallTarget::Registered(_)

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r2957-traversal-source-construction-runtime",
+  "actualExitCode": 100,
+  "executed": 2,
+  "passed": 0,
+  "failed": 2,
+  "skipped": 179,
+  "sourceInputs": 3982,
+  "sourceDrift": 0,
+  "binaries": 1,
+  "binaryDrift": 0,
+  "scope": "Both source cases rejected during semantic analysis before Native or AWBC execution; direct callback candidate rejection and computed callback missing checked expression coordinate",
+  "reversePackages": 16,
+  "originalWip": 14,
+  "artifactCopyMove": false
+}

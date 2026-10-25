@@ -470,3 +470,13 @@ Cargo／runtimeを追加実行しておらず、並行するTraversalの実検�
 親の最終確認は10 Markdownの相対link 59件、未閉鎖fence 0、削除部分のfull Git ID欠落0。
 [資料照合](acceptance-evidence/task-documentation-prune-final.audit.json)。元の非文書WIPは保持し、
 後続の型関係修復は資料整理のcommitへ混ぜない。
+
+## Source構築の接続と追加失敗の範囲を分離 — 2026-10-25
+
+基点 `b1e89daf80a30d73806326f5daef1cde7b0751d4` 後の実装・R2955 check成功・
+R2957の2 Source失敗を反映し、現状一覧のDSL行をSemaの既存対象、runtime型・codec、
+Source traverse構築、parallel Need構築へ分けた。両Sourceケースは意味解析で拒否され、
+backend実行前だったため、実行済みや四family合格とはしない。
+これは新しいlambda入力の具体的な拒否に基づく追加修復範囲であり、Generic Matchや
+既存5 Sema対象・型関係7件を全体goalだけで未完了へ戻す判断ではない。
+途中R2954の網羅漏れとR2957の失敗、実行入力・full SHAは履歴／原本へ保持した。

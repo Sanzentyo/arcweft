@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "base": "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+  "metadataSource": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "changed": [
+    "arcweft-runtime-plan",
+    "arcweft-compiler"
+  ],
+  "reverseWorkspace": [
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-web",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-test",
+    "arcweft-tooling",
+    "arcweft-verify-lsp"
+  ],
+  "packageCount": 16,
+  "owned": [
+    "crates/arcweft-compiler/src/lower.rs",
+    "crates/arcweft-compiler/tests/callable_execution.rs",
+    "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+    "crates/arcweft-runtime-plan/src/final_expr.rs",
+    "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+    "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs"
+  ]
+}
