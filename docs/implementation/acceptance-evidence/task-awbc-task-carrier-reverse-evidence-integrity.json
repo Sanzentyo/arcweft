@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "base": "68ea734f678d3698f1ac2f736fd520be8dafa6cf",
+  "rawOriginals": 8,
+  "byteDrift": 0,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-acceptance.json",
+      "bytes": 56233,
+      "sha256": "255c95fbea024d00d2bd76223c7e7c2704d56cb9b1166b92cfc129b6b06245d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.json",
+      "bytes": 2756,
+      "sha256": "0424b20382b00696d9557213b2d4bd771e7b44b138e3b24986976d7d08c8c05f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.log",
+      "bytes": 5377987,
+      "sha256": "6804f6eaed9ef9b1c15725f2c9f0f1ee14987f8f054d47cfebfc755817b8083b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.terminal-audit.json",
+      "bytes": 8965,
+      "sha256": "fea38c4c3d1daa3aa1a64b8c5f4770dd2c5ac6fbfc0146fe2fff80f6db065398"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.failure-recon.json",
+      "bytes": 3429719,
+      "sha256": "9efc5e38344bd656ef7a19c9fde9fbb4a5136afa3f5e603dae574e2092663803"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-executables-after.json",
+      "bytes": 56290,
+      "sha256": "9dc8c028caa7ae13f57ca6ac5c0849658e1435ba94091014bd2a0845982f24ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-start.verified.json",
+      "bytes": 2291,
+      "sha256": "35f0d0b2213058c577007aeb0605c68d2dc89669c224a2c90d28ea890ede1eee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-start-public-evidence-audit.json",
+      "bytes": 134,
+      "sha256": "53871a88bea26de6d38fce3a261851753ab60aa7ee4bd748b739f044f8fb8a09"
+    }
+  ]
+}

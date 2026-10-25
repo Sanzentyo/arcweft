@@ -12163,3 +12163,41 @@ session 1303でR3139 nextestを実行中。実際の全体summary／終了コー
 R3127 HIR Tier 2のsession 17793も継続中で、7／8 PASS・最後のattached Threadは未終端。
 旧supervisorの広すぎるguardと開始前に記録したHIR専用freezeを区別し、終了後は実際のnextest結果を専用入力で照合する。
 原本等7件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-awbc-task-carrier-reverse-start-evidence-integrity.json)。
+
+## AWBC carrier移行の全53逆依存runtime終端 — 2026-10-26
+
+照合基点は公開main `68ea734f678d3698f1ac2f736fd520be8dafa6cf`。Source移行は
+`a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117`、検証開始時の公開基点は
+`1c9cae1fdbf65362db39b1e554a916a03b2ade50`。その後の文書公開によってRust入力は変わっていない。
+元tracked WIP 14件／untracked実ファイル6件を保持した実checkoutで検証した。
+
+- R3139は全53 package、all-target／all-feature／locked、実際のfilter
+  `rdeps(=arcweft-core) | rdeps(=arcweft-runtime-plan)` で終端した。
+  7,354実行／7,304 PASS（59 slow）／50 FAIL／39 skipped、2,085.309秒、nextest終了100。
+  supervisor session 1303の観測終了コードは1であり、Cargo/nextestの実終了100と区別する。
+  終端auditと終了後の実行ファイルpinはどちらも完了した。
+- catalogと全終端case集合の差分0、3,988非文書入力・99 manifest／lock・227実行ファイルの
+  前後差分0。53のうち50 packageにnamed caseがあり、buildのみ3 packageはcatalog通り。
+  先行owner実行の18 executableは今回のfeature統合で全件異なっていたため、同入力の重複実行ではない。
+- Core 2,085／2,085、runtime-plan 158／158、Compiler 622／622、Sema 1,357／1,357、
+  LSP 223／223 PASS。Generic Matchの既受入151件と必須owner／Source 17件も全PASS。
+  Generic Matchの受入を全体goalの未達で取り消さない。
+- 前回R3121の51失敗と比べ、新しい失敗識別子0、今回失敗しなくなったのはLSP stamp 1件。
+  これはR3129のowner修復を今回の統合入力でも確認した結果である。CLIは641 PASS／50 FAIL。
+  50識別子は前回と一致するが、根本原因の同一性はこの集合比較から推定しない。
+- 今回50件のstderrを今回の原ログから抽出した。Source parallelのrun／bench 2件は
+  `CollectionMethod has no typed runtime intrinsic` のCompiler拒否を今回も確認した。
+  現状一覧のR3121診断への案内と未終端表記を更新し、R3121の51失敗・原診断は履歴に保持した。
+  終了前の進捗記録も実行時点の証拠として残す。
+- R3135 workspace check／R3136 workspace Clippy終了0、R3137 Core doctest 75／75の
+  受入範囲を維持する。今回の通常runtimeはHIR Tier 2、他Tier 2、Native-Web capture parity、
+  未接続のSource parallel、全14 task familyの最終受入を代替しない。HIR R3127は最後の1件が実行中。
+
+[集計と全package・必須ケース](acceptance-evidence/task-awbc-task-carrier-reverse-acceptance.json)、
+[終端audit](acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.terminal-audit.json)、
+[今回の失敗診断](acceptance-evidence/task-final-r3139-awbc-task-carrier-reverse-runtime.failure-recon.json)、
+[byte保全](acceptance-evidence/task-awbc-task-carrier-reverse-evidence-integrity.json)。
+統合開始の公開 `68ea734f678d3698f1ac2f736fd520be8dafa6cf` は10 path、parent
+`1c9cae1fdbf65362db39b1e554a916a03b2ade50`、tree `b11b090cb28368b6acf9474f29e6519154d02d81`、
+patch SHA256 `911c4d189965eade014ffefe1eb19275d733c96f5a0e71b0222a6c754ee9ea02`、公開blob差分0、
+原本7件の公開byte差分0。[公開照合](acceptance-evidence/task-awbc-task-carrier-reverse-start.verified.json)。

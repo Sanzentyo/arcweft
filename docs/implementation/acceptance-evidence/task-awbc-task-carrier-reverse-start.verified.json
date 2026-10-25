@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "commit": "68ea734f678d3698f1ac2f736fd520be8dafa6cf",
+  "parent": "1c9cae1fdbf65362db39b1e554a916a03b2ade50",
+  "tree": "b11b090cb28368b6acf9474f29e6519154d02d81",
+  "remote": "68ea734f678d3698f1ac2f736fd520be8dafa6cf",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-executables-before.json",
+      "blob": "7b18808dd6acdbd75abd67995eb103724b06dce2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-selection.json",
+      "blob": "e6e09107ab068e6e7fe43175d2f350558e73b3f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-task-carrier-reverse-start-evidence-integrity.json",
+      "blob": "26cfcca92f25218a7d80f818f67700d1429ebfce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3138-awbc-task-carrier-reverse-catalog.inventory.json",
+      "blob": "b612fa97f81e23b8bc772f59b432524c0ee6ff44"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3138-awbc-task-carrier-reverse-catalog.json",
+      "blob": "a9820268bdba6b50497666e04d684016c2c7778d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3138-awbc-task-carrier-reverse-catalog.log",
+      "blob": "040dd0c6055cfa5d49c075701b7d5e9fe8f9bb49"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-start-policy.audit.json",
+      "blob": "e1da63c4b0c0ea0b23f09c7bdf72afb0a6b0d8be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-start-policy.verified.json",
+      "blob": "10a984d671c0ceb5b68c39427a36cd5ae31c4af7"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "530bfe6df6438f5fe0fd20a3484b6865eed095ba"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "124b312f94e1358c51ece2503bbb3d8ba9ef5af6"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "911c4d189965eade014ffefe1eb19275d733c96f5a0e71b0222a6c754ee9ea02",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T21:14:37.7455485Z"
+}
