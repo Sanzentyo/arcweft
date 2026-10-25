@@ -26,14 +26,24 @@ fn source_traversal_retains_computed_source_and_callback_operands() {
     );
 }
 
+#[test]
+fn source_traversal_does_not_enter_the_callback_body() {
+    // Every supplied path violates this runtime guard. Successful construction
+    // must retain the real callback without entering its body in either backend.
+    assert_source_traversal(
+        "Vec<String>",
+        r#"values.traverse(|path| { assert.check(path == "callback was invoked"); request(prefix, path) })"#,
+    );
+}
+
 fn assert_source_traversal(family: &str, expression: &str) {
     let source = format!(
         r#"
 extern capability fs {{
-    fn read_text(path: String) -> Need<Result<String, String>> effects {{ fs.read }}
+    fn read_text(prefix: String, path: String) -> Need<Result<String, String>> effects {{ fs.read }}
 }}
 fn request(prefix: String, path: String) -> Need<Result<String, String>> effects {{ fs.read }} {{
-    fs.read_text(prefix + path)
+    fs.read_text(prefix, path)
 }}
 fn paths(values: {family}) -> {family} {{ values }}
 pub fn root(values: {family}, prefix: String) -> Traversal<{family}, String -> Need<Result<String, String>> effects {{ fs.read }}> effects {{}} {{
@@ -42,9 +52,9 @@ pub fn root(values: {family}, prefix: String) -> Traversal<{family}, String -> N
 flow main() -> String {{ return "unused" }}
 "#
     );
-    let compiled = compile_source(&source).unwrap_or_else(|error| panic!("{family}: {error:?}"));
+    let compiled = compile_traversal_source(&source);
     let declaration = compiled
-        .analysis
+        .analysis_lease()
         .final_analysis()
         .hir_topology()
         .modules()
@@ -56,7 +66,7 @@ flow main() -> String {{ return "unused" }}
         .declaration()
         .clone();
     let selected = compiled
-        .analysis
+        .analysis_lease()
         .compile_deterministic_program(
             CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
                 declaration,
@@ -175,4 +185,138 @@ flow main() -> String {{ return "unused" }}
             &[RuntimeValue::String("root/".to_owned())]
         );
     }
+}
+
+fn compile_traversal_source(source: &str) -> arcweft_compiler::project::CompiledProject {
+    use arcweft_adapter_context::manifest::{
+        AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableParameterIndex,
+        AdapterEffectCapability, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
+        AdapterManifest, AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence,
+        AdapterTypeKind,
+    };
+    use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
+    use arcweft_compiler::project::{
+        ProjectCompilationContext, ProjectCompilationSession, compile_project,
+    };
+    use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
+    use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
+    use arcweft_lang_syntax::{
+        ast::module_path::CanonicalModulePath, incremental::SyntaxDatabase, parser::ParseOptions,
+    };
+    use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+    use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
+    use arcweft_source::{
+        SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId,
+    };
+    use std::{collections::BTreeMap, path::PathBuf};
+
+    let effect = AdapterEffectCapability::new("fs.read");
+    let parameters = ["prefix", "path"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| {
+            AdapterFunctionParam::try_new(
+                AdapterCallableParameterIndex::try_from_usize(index).unwrap(),
+                Some(AdapterCallableName::try_new(name).unwrap()),
+                AdapterTypeKind::String,
+                AdapterParameterPassing::PositionalOrNamed,
+                AdapterParameterPresence::Required,
+            )
+            .unwrap()
+        })
+        .collect();
+    let manifest = AdapterManifest::new("test.traversal", "Source traversal fixture")
+        .with_effect(effect.clone())
+        .with_host_call(AdapterHostCall::with_signature(
+            "fs.read_text",
+            AdapterFunctionSignature::try_new(
+                vec![
+                    AdapterParameterGroup::try_new(
+                        AdapterCallableGroupIndex::try_from_usize(0).unwrap(),
+                        parameters,
+                    )
+                    .unwrap(),
+                ],
+                AdapterTypeKind::Need {
+                    item: Box::new(AdapterTypeKind::Result {
+                        ok: Box::new(AdapterTypeKind::String),
+                        error: Box::new(AdapterTypeKind::String),
+                    }),
+                },
+            )
+            .unwrap(),
+            [effect],
+        ));
+    let registration = AdapterSemanticRegistration::new(&manifest);
+    let parts = registration.source_backed_facts(0).unwrap().into_parts();
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://traversal/src/main.arcw").unwrap(),
+            SourceName::path("src/main.arcw"),
+            source,
+        )
+        .unwrap(),
+    );
+    let manifest_document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://traversal/arcw.toml").unwrap(),
+            SourceName::path("arcw.toml"),
+            "schema = 1\n[package]\nid = \"org.arcweft.traversal-fixture\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap(),
+    );
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        PackageSpec {
+            id: PackageId::new("org.arcweft.traversal-fixture").unwrap(),
+            version: PackageVersion::new("0.1.0").unwrap(),
+        },
+        BuildSpec::default(),
+        Arc::clone(&manifest_document),
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            PathBuf::from("src/main.arcw"),
+            Arc::clone(&document),
+            [],
+        )],
+    )
+    .unwrap();
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new("org.arcweft.traversal-fixture").unwrap(),
+        document.identity().id().clone(),
+        "traversal",
+    )
+    .unwrap();
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![manifest_document, Arc::clone(&document), parts.document],
+        parts.externals.into_vec(),
+        Vec::new(),
+        vec![parts.environment],
+    )
+    .unwrap();
+    let context = ProjectCompilationContext::new(
+        Arc::new(registration.declare_target(TypeCheckEnv::standard())),
+        Arc::new(facts),
+        Arc::new(ResourceTypeRegistry::empty()),
+        None,
+        None,
+    );
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            document,
+            ParseOptions::default(),
+        )
+        .unwrap();
+    compile_project(
+        &mut ProjectCompilationSession::try_new().unwrap(),
+        &project,
+        &BTreeMap::from([(CanonicalModulePath::crate_root(), parsed)]),
+        &context,
+    )
+    .unwrap_or_else(|error| panic!("manifest-backed traversal project: {error:?}"))
 }

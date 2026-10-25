@@ -11464,3 +11464,49 @@ checked_statement_factの可視性拡大はanalyzer内の実際のquery consumer
 Source構築のNative／AWBC、parallelによるfirst-class aggregate Needの受入ではない。
 Generic Matchの既存151件の受入と公開full SHAは維持する。
 [原本の保全一覧](acceptance-evidence/task-contextual-callback-evidence-integrity.json)。
+
+## Source Traverseのmanifest契約とNative／AWBC構築の受入 — 2026-10-25
+
+基点は公開main `42c9d06867a1e29bf0bd302485bb4f130445dc89`。前段Sema修復は同SHAで通常公開した。
+parent `1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f`、tree `3cb7967a5d1a858c57be804b8a4eaa9269cedb87`、
+full patch SHA256 `6c37dd9f95fc67a9a9dfb9cfc8ebf21ab4958a58098ea8fea25d83a788b9bd3b`。
+79公開blob差分0、元WIP 14件不変、index空を確認し、保持した検証原本64件は公開Git blobでもSHA256差分0だった。
+[前段の公開照合](acceptance-evidence/task-contextual-callback-sema-checkpoint.verified.json)、
+[公開原本のbyte照合](acceptance-evidence/task-contextual-callback-public-evidence-audit.json)。
+
+Source fixtureをProjectCompilationContextとAdapterSemanticRegistrationで実manifestへ結び、宣言されたhost signature、
+effect row、source-backed externals／environmentを元のchecked catalogへ登録した。manifest digestの仮造や、
+dummy HIR call、別callable ownerでの迂回はない。共通effect foldのoperand／place参照も、sealed factと
+現在のsource factを同じ取得APIへ揃えた。
+
+初回R2974／R2975はCompiler callable_execution全181件を選び、**179 PASS／2 FAIL**、終了100、10.707秒。
+2件はmanifest admissionを通過し、fixtureに入れていたStringの `prefix + path` をruntime-planが数値演算として拒否した。
+RuntimeBinaryOpの構築・評価・AWBC検証は数値用であり、今回のTraversal所有値構築はString連結を受入条件としていない。
+fixtureを2つのString入力をそのまま渡す実manifest signatureへ訂正した。String capture、実際のNeed<Result<String,String>>、
+callbackの効果、元program、低予算と子task 0の条件を保った。この失敗と当時の入力を削除していない。
+
+訂正後R2976／R2977は**181／181 PASS**、終了0、20.695秒、除外0。Vec／Array／Seq／Sliceとcomputed
+source／block callbackの5条件をNative／canonical decoded AWBCの両方で構築した。元collection、実Fn値の
+String captureと元program leaseを返却値で確認し、各stepは1-op以下・子task request 0だった。
+R2978／R2979のSema全target／全feature／lockedは**1,348／1,348 PASS**、終了0、163.753秒、slow 1・除外0。
+3,983非文書入力と5 executableの前後hash差分0。R2980 workspace checkも終了0・警告あり、Cargo表示1m10s。
+R2981のSema／Compiler全target／全feature／locked Clippyは終了0・警告あり、Cargo表示5m31s。
+
+さらに、実入力a.txt／b.txtでは必ず失敗する動的 `assert.check` をcallback bodyへ置いた独立ケースを追加した。
+構築がbodyに入れば失敗するため、子task 0だけでなく非呼出しを実行で確認する。R2982／R2983は
+**182／182 PASS**、終了0、10.807秒、除外0。6 Source条件×Native／decoded AWBCの12構築が完了し、
+guardケースも診断／失敗なく元のcallableを保持した。catalog／終端case集合、3,983入力・1 executableのhash差分0。
+[全182件の終端](acceptance-evidence/task-final-r2983-traversal-latent-callable-runtime.terminal-audit.json)。
+
+Sema実行後のsource差分は、このCompiler integration fixtureのguard追加1 pathだけである。Semaとその実依存入力は
+不変で、Semaの5 executableも後から同じhashと確認した。R2979を別入力の再実行とは呼ばず、その範囲で証拠を再利用する。
+R2984は変更したCompiler test targetのClippyで終了0・警告あり、R2985の全workspace／全target／全feature／locked
+checkも終了0・警告あり、Cargo表示2.05s。各3,983入力の前後hash差分0。
+[Sema証拠の再利用条件](acceptance-evidence/task-traversal-latent-sema-reuse.json)、
+[受入行列と各checkの範囲](acceptance-evidence/task-traversal-registered-source-acceptance.json)。
+
+変更3 Rust pathの最大増加は144 LOC。前段R2972のownership dispositionとblocking 0を、同じeffect fold／source-adapter
+境界、Cargo依存不変、private lookupとtest setupだけの変更という範囲で再利用する。新しい構造走査と称していない。
+Source Traverseの所有値構築の受入は、callbackの実行、parallelによるaggregate Needの開始・await・保存復元や、
+全22／全53逆依存runtime等の包括受入とは区別する。Generic Matchの受入・公開済み状態も維持する。
+[原本の保全一覧](acceptance-evidence/task-traversal-registered-evidence-integrity.json)。

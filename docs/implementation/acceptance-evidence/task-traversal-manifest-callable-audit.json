@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "run": "task-final-r2975-traversal-manifest-callable-runtime",
+  "catalog": "task-final-r2974-traversal-manifest-callable-catalog",
+  "executed": 181,
+  "passed": 179,
+  "failed": 2,
+  "skipped": 0,
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "executables": 1,
+  "executableDrift": 0,
+  "phase": "runtime-plan lowering",
+  "diagnosis": "Both Traversal fixtures now pass manifest admission but introduce String + in a callback body. RuntimeBinaryOp Add, plan construction, value evaluation and AWBC admission are numeric. The Traversal construction contract does not require a String-concatenation feature; use a real two-String host signature retaining both inputs.",
+  "recordedAt": "2026-10-25T08:49:07.593Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2974-traversal-manifest-callable-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-6f0f9fd90f0abf3c.exe",
+      "bytes": 122467328,
+      "nonTest": false,
+      "sha256": "52cd5fb935d6744b05e6b014c75fec1e72421298d48e0023599d0763d8ed82a3"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T08:46:26.7178392Z"
+}

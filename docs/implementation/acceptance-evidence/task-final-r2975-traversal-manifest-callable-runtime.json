@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "name": "task-final-r2975-traversal-manifest-callable-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2975-traversal-manifest-callable-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T08:45:53.5214924Z",
+  "finishedAt": "2026-10-25T08:46:06.1937420Z"
+}

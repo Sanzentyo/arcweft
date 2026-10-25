@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "name": "task-final-r2979-traversal-registered-sema-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2979-traversal-registered-sema-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T08:52:45.0471003Z",
+  "finishedAt": "2026-10-25T08:56:45.9943113Z"
+}

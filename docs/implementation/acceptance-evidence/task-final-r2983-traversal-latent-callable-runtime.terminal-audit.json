@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "run": "task-final-r2983-traversal-latent-callable-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  10.807s] 182 tests run: 182 passed, 0 skipped",
+  "executed": 182,
+  "passed": 182,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T09:14:17.0940963Z"
+}

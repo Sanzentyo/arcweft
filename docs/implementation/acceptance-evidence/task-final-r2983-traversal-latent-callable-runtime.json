@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "name": "task-final-r2983-traversal-latent-callable-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2983-traversal-latent-callable-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T09:11:33.0184141Z",
+  "finishedAt": "2026-10-25T09:11:45.9198744Z"
+}

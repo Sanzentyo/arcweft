@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "documents": [
+    {
+      "path": "docs/implementation/current-status.md",
+      "scope": "full current list",
+      "relativeLinks": 36,
+      "missingLinks": 0,
+      "unclosedFence": 0
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "scope": "new dated evidence",
+      "relativeLinks": 6,
+      "missingLinks": 0,
+      "unclosedFence": 0
+    }
+  ],
+  "recordedAt": "2026-10-25T09:18:32.815Z"
+}

@@ -1,0 +1,331 @@
+{
+  "version": 1,
+  "commit": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "parent": "1a8f56aea5fa605e70cb918c5ed2fdfd34d69d0f",
+  "tree": "3cb7967a5d1a858c57be804b8a4eaa9269cedb87",
+  "remote": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "paths": [
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/continuation.rs",
+      "blob": "906dd2aac9a1cef495f31b5faa7fcb23ea7accb9"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "blob": "0ffa3b62bdbb0fa6f56b532d6de489fe3ea0380d"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+      "blob": "b260e4d3ff88714a77b6510043e7e2727d66388f"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/source_effects.rs",
+      "blob": "5379104e0d30428e3f01b6f1a566cd817d7898b6"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/statements.rs",
+      "blob": "debbd8501e91d737e28b63435ce5730c7e6d39cc"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+      "blob": "5dff0065c9fdd4bd064f1bdc067a3f8ca204a996"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/generic_calls.rs",
+      "blob": "443f146364db819daa05c129668c1854c0a74b73"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/constraints/application.rs",
+      "blob": "241a7569cb35c404306d44f01452e6210c1fd205"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/constraints/application/tests.rs",
+      "blob": "060895ad3cc877296f444d5208756cc08c06ef14"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/constraints/context.rs",
+      "blob": "71d1444da8e55123acade8ffb508aa22b487ddfb"
+    },
+    {
+      "path": "docs/01-language/functions-and-pipeline.md",
+      "blob": "21f32dd99294cfaae283c03eb2d12c35145158d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-body-effects-checked-executables-after.json",
+      "blob": "dd305979e0975964790e5f33563262b39cdd8517"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-body-effects-checked-executables-before.json",
+      "blob": "60a3286d0bb8570416641d65552c3317c78cecd6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-body-effects-checked.graph.json",
+      "blob": "b6132e475209c37ea3cda0f6275d9cf006ffe168"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-body-effects-checked.source-freeze.json",
+      "blob": "71e26bb702c1cd64e1c2bcb36118a0a64b359ccf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-body-effects-final-executables-after.json",
+      "blob": "30c7f9eaac6b61654b743ffcaa3b6f35ccdc548f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-body-effects-final-executables-before.json",
+      "blob": "19139de72d6568b57ef97faa31a2ca9b542ef11c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-compiler-source-executables-after.json",
+      "blob": "8f15768b3789b0b07d71560ffc166c99bda0fb3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-compiler-source-executables-before.json",
+      "blob": "bd20e7d4dbb9da5b65de0cc806e4f8bc35c3839e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-document-audit.json",
+      "blob": "d5945137dfcbc6faa282a7bcaf3f8fa42a2826a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-evidence-integrity.json",
+      "blob": "25981b495f09b4afdd786468750d86bf655b6d6a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-executable-audit.json",
+      "blob": "fe50868d2814a1fa3bea959017e0a231d0fe4c73"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-inference-executables-after.json",
+      "blob": "48b9bc56f723a5e684e16fa161ff1aedbe086c87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-inference-executables-before.json",
+      "blob": "438ebe153d564a1387cbdca6e620b5b2227ff770"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-owner-measurements.json",
+      "blob": "8fe385c1d4231349a4f9b96315ffea0a6b067ea3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-sema-acceptance.json",
+      "blob": "920f34be071ba336d70e69344ab766435809365d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-sema-full-executables-after.json",
+      "blob": "e1e88e2409a4db86b57147fcc04cdb0b0155524f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-contextual-callback-sema-full-executables-before.json",
+      "blob": "21b149147e7e8b48a444865731e0c9cd84d363d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2958-traversal-callback-diagnostic-catalog.inventory.json",
+      "blob": "0fa054fcffdf2623820daf4491d1adfc07137baa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2958-traversal-callback-diagnostic-catalog.json",
+      "blob": "ae486bcefb596ee24f9ff23a19f6deb741d9073c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2958-traversal-callback-diagnostic-catalog.log",
+      "blob": "b882e14bc2cb360a98b95e19f0dcc0672b7bc13d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2959-traversal-callback-diagnostic-runtime.json",
+      "blob": "721f0f43dad7908baeefdf1ad4c853920e44b92d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2959-traversal-callback-diagnostic-runtime.log",
+      "blob": "27428b349dac8f43a36b5c139b3235ec3a29b4b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2959-traversal-callback-diagnostic-runtime.terminal-audit.json",
+      "blob": "c1901231c47e4860ddfe3efaa031cd43ef3a1502"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2960-contextual-callback-inference-catalog.inventory.json",
+      "blob": "00963f0f1d925b14b9764c4daea3e855d1d78e0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2960-contextual-callback-inference-catalog.json",
+      "blob": "deccf3d0c93bdb57adec651fad22d313c47786b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2960-contextual-callback-inference-catalog.log",
+      "blob": "e120ebbe68734b917e327d58b605ad29c1018a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2961-contextual-callback-inference-runtime.json",
+      "blob": "c015e9145b3db449327eb584752036b701f9e6a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2961-contextual-callback-inference-runtime.log",
+      "blob": "953abe80703c57ba012f2e0041bb1008f7dd1e36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2961-contextual-callback-inference-runtime.terminal-audit.json",
+      "blob": "05d8c12746b3185d063dcb3233e6e59b7912ab42"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2962-contextual-callback-body-effects-catalog.input-audit.json",
+      "blob": "2e2c3bea89e3f731b37a405eebc1bbea0ec8cc2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2962-contextual-callback-body-effects-catalog.json",
+      "blob": "0e3463b1542edad569deb9b2c285e8718280ca3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2962-contextual-callback-body-effects-catalog.log",
+      "blob": "eed022cda530ae201af82bc731174c911712659c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2964-contextual-callback-body-effects-final-catalog.inventory.json",
+      "blob": "49b699a6175b49779f66b335a41794f36979905c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2964-contextual-callback-body-effects-final-catalog.json",
+      "blob": "e60d79f619b771717dc841dc9378dc5094be0c93"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2964-contextual-callback-body-effects-final-catalog.log",
+      "blob": "2ea3462dce72d76423084f6a202f55bf2a0118a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2965-contextual-callback-body-effects-final-runtime.json",
+      "blob": "ea4958f9c84af4817caebd8d0943cfa691aabe3f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2965-contextual-callback-body-effects-final-runtime.log",
+      "blob": "b38e62a29f868e9e6e11c19a0a5592457d0e7f0a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2965-contextual-callback-body-effects-final-runtime.terminal-audit.json",
+      "blob": "dc3c665878ce52832d84b02f6ab668c389abbe78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2966-contextual-callback-body-effects-checked-catalog.inventory.json",
+      "blob": "66513d45cd111834bce03c5509d68fabab2b7be8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2966-contextual-callback-body-effects-checked-catalog.json",
+      "blob": "60b72f805c347fa0d0df6a584892cc7319b8cf33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2966-contextual-callback-body-effects-checked-catalog.log",
+      "blob": "a9238f273052a0158acdf05f86e964ce392847b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2967-contextual-callback-body-effects-checked-runtime.json",
+      "blob": "f660eb4317da972c2e91899affbb6c48025027fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2967-contextual-callback-body-effects-checked-runtime.log",
+      "blob": "df3de9f1376d7bc486b9fdd5d8bfbadfd6c90414"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2967-contextual-callback-body-effects-checked-runtime.terminal-audit.json",
+      "blob": "900b70f92de7e3f425a143fa63b4c85844f503dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2968-contextual-callback-sema-full-catalog.inventory.json",
+      "blob": "cde5daa4ed6aba7c51a7906e73813946d73e8c0d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2968-contextual-callback-sema-full-catalog.json",
+      "blob": "ce10a7627cf13a71de7fb8e859a1d27fc22e4e97"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2968-contextual-callback-sema-full-catalog.log",
+      "blob": "7153c175fda3a17efdeb5d5b92f1100ba161c43b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2969-contextual-callback-sema-full-runtime.json",
+      "blob": "a3aa4dabf8cff98d9873c20569a89415c2ffc9b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2969-contextual-callback-sema-full-runtime.log",
+      "blob": "3995a89d453ea1ffc800c04cbf8ea783253f7fad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2969-contextual-callback-sema-full-runtime.terminal-audit.json",
+      "blob": "a0b85bd496715332b9c8c35bd9f57510d7e5a1d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2970-contextual-callback-compiler-source-catalog.inventory.json",
+      "blob": "9c4928b2dc8fcb9d098790b51a3b114b8e7ff881"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2970-contextual-callback-compiler-source-catalog.json",
+      "blob": "e89787d91041a7821269ec4b7f139e7382fbb45f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2970-contextual-callback-compiler-source-catalog.log",
+      "blob": "90859a0210115aa5c3e03dd7807ab88fc16f0856"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2971-contextual-callback-compiler-source-runtime.json",
+      "blob": "6e54893dcdbd56263cf492bbc6ac147030ed95fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2971-contextual-callback-compiler-source-runtime.log",
+      "blob": "e895ad583807635f406e1e4831ba57d3c79cea53"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2971-contextual-callback-compiler-source-runtime.terminal-audit.json",
+      "blob": "fa496b303d30249f8abb80a3883792fd92072377"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2972-contextual-callback-structure-gate.input-audit.json",
+      "blob": "5e34eb38a3e9b39deb59419a9d0320f0511a2eff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2972-contextual-callback-structure-gate.json",
+      "blob": "3cf491d6e57c88015a3f50ced7005cd10ab278c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2972-contextual-callback-structure-gate.log",
+      "blob": "d5641cbf523603e4d236a7edd86f7a19094adb5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2973-contextual-callback-sema-clippy.input-audit.json",
+      "blob": "40d8bb4a07b04c16ba93cc799a240c5b05545b4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2973-contextual-callback-sema-clippy.json",
+      "blob": "124b644c05b3018dfd6cea79ccd4de5045908625"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2973-contextual-callback-sema-clippy.log",
+      "blob": "102161e9727d026ceedc1eeb49b049319efd7e48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-callback-diagnostic-audit.json",
+      "blob": "8ebbc1fb83c4bb1ba103ba7d6e5dfaeb99a590f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-callback-diagnostic-executables-after.json",
+      "blob": "01a2ae9adf5140175f5df57ffeda6f05a166733e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-callback-diagnostic-executables-before.json",
+      "blob": "eccab8c13cac5fa0a7f6d2aa998f1085ca6f2998"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-construction-checkpoint.verified.json",
+      "blob": "1f56e944d9e0076dba5526360a4a453b6500fbb4"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "68f1fc2ea70e93ea4019c7b36d388772c0ebf335"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "92dc5cf69e7c26ab43b20903c9f4cee1bb0d3cb3"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "6c37dd9f95fc67a9a9dfb9cfc8ebf21ab4958a58098ea8fea25d83a788b9bd3b",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T08:40:32.6433952Z"
+}

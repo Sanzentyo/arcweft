@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "name": "task-final-r2980-traversal-registered-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2980-traversal-registered-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T08:52:45.8317423Z",
+  "finishedAt": "2026-10-25T08:54:01.1834994Z"
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "name": "task-final-r2974-traversal-manifest-callable-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2974-traversal-manifest-callable-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T08:44:40.8952611Z",
+  "finishedAt": "2026-10-25T08:45:52.2683640Z"
+}

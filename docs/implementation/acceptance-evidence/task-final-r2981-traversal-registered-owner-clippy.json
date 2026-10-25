@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "name": "task-final-r2981-traversal-registered-owner-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-lang-sema",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2981-traversal-registered-owner-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T08:54:35.3195610Z",
+  "finishedAt": "2026-10-25T09:00:08.5113280Z"
+}

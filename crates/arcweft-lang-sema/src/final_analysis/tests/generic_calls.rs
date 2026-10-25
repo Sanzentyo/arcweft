@@ -986,10 +986,10 @@ fn assert_traversal_callback_source(expression: &str, calls: usize) {
     let source = format!(
         r#"
 extern capability fs {{
-    fn read_text(path: String) -> Need<Result<String, String>> effects {{ fs.read }}
+    fn read_text(prefix: String, path: String) -> Need<Result<String, String>> effects {{ fs.read }}
 }}
 fn request(prefix: String, path: String) -> Need<Result<String, String>> effects {{ fs.read }} {{
-    fs.read_text(prefix + path)
+    fs.read_text(prefix, path)
 }}
 fn paths(values: Vec<String>) -> Vec<String> {{ values }}
 fn root(values: Vec<String>, prefix: String) -> Traversal<Vec<String>, String -> Need<Result<String, String>> effects {{ fs.read }}> effects {{}} {{

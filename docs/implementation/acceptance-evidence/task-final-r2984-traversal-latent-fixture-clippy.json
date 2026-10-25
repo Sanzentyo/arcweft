@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "name": "task-final-r2984-traversal-latent-fixture-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2984-traversal-latent-fixture-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T09:14:18.0337848Z",
+  "finishedAt": "2026-10-25T09:14:26.3146855Z"
+}

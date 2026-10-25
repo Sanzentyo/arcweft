@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "branch": "main",
+  "scope": "Source Traverse owning construction with a real manifest-owned Need factory; shared effect-source operand/place lookup",
+  "owned": [
+    "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/tests/generic_calls.rs"
+  ],
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "manifestLockInputs": 99,
+  "manifestLockDrift": 0,
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "reverseWorkspace": [
+    "arcweft-adapter-sema",
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-lang-sema",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-web",
+    "arcweft-project-loader",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-test",
+    "arcweft-tooling",
+    "arcweft-verify",
+    "arcweft-verify-lsp",
+    "arcweft-verify-oxiz",
+    "arcweft-verify-z3"
+  ],
+  "reversePackages": 22,
+  "compiler": {
+    "run": "task-final-r2983-traversal-latent-callable-runtime",
+    "executed": 182,
+    "passed": 182,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 10.807,
+    "executableDrift": 0
+  },
+  "sema": {
+    "run": "task-final-r2979-traversal-registered-sema-runtime",
+    "executed": 1348,
+    "passed": 1348,
+    "failed": 0,
+    "skipped": 0,
+    "slow": 1,
+    "seconds": 163.753,
+    "testBinaries": 5,
+    "executableDrift": 0,
+    "inputReuse": "task-traversal-latent-sema-reuse.json"
+  },
+  "constructionMatrix": {
+    "collections": [
+      "Vec<String>",
+      "Array<String,2>",
+      "Seq<String>",
+      "Slice<String>"
+    ],
+    "computedSourceAndCallback": true,
+    "sourceCases": 6,
+    "backends": [
+      "Native",
+      "canonical decoded AWBC"
+    ],
+    "backendInvocations": 12,
+    "maxOpsPerStep": 1,
+    "childTaskRequests": 0,
+    "originalProgramLease": true,
+    "retainedCapture": [
+      "root/"
+    ],
+    "callbackExecuted": false,
+    "ordinaryNeedCallbackType": "String -> Need<Result<String,String>> effects {fs.read}",
+    "manifestOwnedOperation": "fs.read_text(prefix:String,path:String)",
+    "constructionStepGuard": 4096,
+    "latentCallbackGuard": "assert.check(path == \"callback was invoked\") with actual a.txt/b.txt inputs"
+  },
+  "workspaceCheck": {
+    "run": "task-final-r2985-traversal-latent-workspace-check",
+    "exitCode": 0,
+    "warnings": true,
+    "scope": "workspace all-targets all-features locked"
+  },
+  "clippy": {
+    "run": "task-final-r2981-traversal-registered-owner-clippy",
+    "exitCode": 0,
+    "warnings": true,
+    "scope": "Sema and Compiler all-targets all-features locked"
+  },
+  "structuralEvidenceReused": {
+    "run": "task-final-r2972-contextual-callback-structure-gate",
+    "blocking": 0,
+    "reason": "The same effect-fold owner and private source-adapter boundary remain. The follow-up routes every operand/place lookup through that source and repairs only manifest-backed test setup. No Cargo dependency, public facade, I/O owner, or execution algebra changes."
+  },
+  "retainedFailure": {
+    "run": "task-final-r2975-traversal-manifest-callable-runtime",
+    "executed": 181,
+    "passed": 179,
+    "failed": 2,
+    "seconds": 10.707,
+    "reason": "Fixture introduced String + while RuntimeBinaryOp arithmetic is numeric. Both String inputs now remain separate in the actual manifest-owned host signature; the callback, capture, Need result and lazy construction conditions are retained."
+  },
+  "notAcceptedByThisRun": [
+    "Source parallel aggregate Need construction/start/await/save/restore",
+    "bare extern-capability function-value runtime factory recipe",
+    "current all22 Sema reverse-dependency runtime acceptance",
+    "current all53 Core reverse-dependency runtime acceptance",
+    "current workspace Clippy",
+    "Native public save and full resource-boundary acceptance"
+  ],
+  "acceptedGenericMatchUnchanged": true,
+  "originalTrackedWip": 14,
+  "originalUntrackedFiles": 6,
+  "recordedAt": "2026-10-25T09:18:32.785Z",
+  "testTargetClippy": {
+    "run": "task-final-r2984-traversal-latent-fixture-clippy",
+    "exitCode": 0,
+    "warnings": true,
+    "scope": "Compiler callable_execution all-features locked"
+  },
+  "maximumSingleFileGrowth": 144
+}

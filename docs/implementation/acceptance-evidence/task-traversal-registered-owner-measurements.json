@@ -1,0 +1,29 @@
+[
+  {
+    "path": "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "test",
+    "bytes": 12018,
+    "physicalLoc": 322,
+    "basePhysicalLoc": 178,
+    "growth": 144
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "production",
+    "bytes": 70009,
+    "physicalLoc": 1783,
+    "basePhysicalLoc": 1783,
+    "growth": 0
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/tests/generic_calls.rs",
+    "owner": "arcweft-lang-sema",
+    "classification": "test",
+    "bytes": 34903,
+    "physicalLoc": 1031,
+    "basePhysicalLoc": 1031,
+    "growth": 0
+  }
+]

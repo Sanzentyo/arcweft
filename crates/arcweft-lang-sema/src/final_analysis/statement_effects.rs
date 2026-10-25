@@ -806,6 +806,13 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         Ok(row)
     }
 
+    fn expression_fact(&self, owner: ExprId) -> Option<&'a PreparedExpressionFact> {
+        match self.selected.expression_source() {
+            Some(source) => source.expression(owner),
+            None => self.expression_facts.get(&owner).copied(),
+        }
+    }
+
     fn seal_expression(
         &mut self,
         owner: ExprId,
@@ -817,10 +824,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             return Err(FinalSemanticAnalysisError::ExpressionCycle { owner });
         }
         let fact = self
-            .expression_facts
-            .get(&owner)
-            .copied()
-            .or_else(|| self.selected.expression_source()?.expression(owner))
+            .expression_fact(owner)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
         let module = self.module(owner.module())?;
         let kind = module
@@ -867,15 +871,13 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         }
         let direct_field_place = fact
             .field_root(|child| {
-                self.expression_facts
-                    .get(&child)
+                self.expression_fact(child)
                     .and_then(|fact| fact.local_place_source())
             })
             .is_some()
             || fact
                 .inspection_root(|child| {
-                    self.expression_facts
-                        .get(&child)
+                    self.expression_fact(child)
                         .and_then(|fact| fact.local_place_source())
                 })
                 .is_some();
@@ -895,8 +897,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             let receiver_row = match receiver {
                 PreparedCallReceiverEvaluation::Place(receiver)
                     if self
-                        .expression_facts
-                        .get(&receiver)
+                        .expression_fact(receiver)
                         .is_some_and(|fact| fact.supports_place_access()) =>
                 {
                     PreparedExecutionEffectRow::place(receiver)
@@ -923,8 +924,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             };
             let child_row = if matches!(self.call_effects.get(&owner).and_then(|row| row.receiver), Some(PreparedCallReceiverEvaluation::Place(receiver)) if receiver == child)
                 && self
-                    .expression_facts
-                    .get(&child)
+                    .expression_fact(child)
                     .is_some_and(|fact| fact.supports_place_access())
             {
                 PreparedExecutionEffectRow::place(child)

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "run": "task-final-r2980-traversal-registered-workspace-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T08:54:32.9311930Z"
+}

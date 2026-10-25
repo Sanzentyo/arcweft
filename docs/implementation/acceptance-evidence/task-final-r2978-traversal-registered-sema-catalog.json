@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "name": "task-final-r2978-traversal-registered-sema-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2978-traversal-registered-sema-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T08:51:34.5635825Z",
+  "finishedAt": "2026-10-25T08:52:43.5414337Z"
+}

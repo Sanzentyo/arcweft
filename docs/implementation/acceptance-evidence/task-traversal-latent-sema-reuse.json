@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+  "run": "task-final-r2979-traversal-registered-sema-runtime",
+  "executed": 1348,
+  "passed": 1348,
+  "sourceChangesAfterRun": [
+    "crates/arcweft-compiler/tests/callable_cases/traversal.rs"
+  ],
+  "changedPackageInSemaForwardDependencies": false,
+  "cargoManifestsLockUnchanged": 99,
+  "reason": "Only the Compiler integration fixture gained the dynamic callback guard after the Sema run; Sema code, tests and resolved dependencies are unchanged.",
+  "recordedAt": "2026-10-25T09:15:00.536Z",
+  "reusedBinaries": 5,
+  "executableDrift": 0
+}
