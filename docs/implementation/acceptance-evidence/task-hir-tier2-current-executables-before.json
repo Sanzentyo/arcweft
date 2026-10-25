@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3126-hir-tier2-production-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_hir-196650236a03025a.exe",
+      "bytes": 37315072,
+      "nonTest": false,
+      "sha256": "cec2aaf4e468f9691ec41a4305c5f4614637ed28f7e36fc325c0a0a77f59d482"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T18:07:59.8860543Z"
+}

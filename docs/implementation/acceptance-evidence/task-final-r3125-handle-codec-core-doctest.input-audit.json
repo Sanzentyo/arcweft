@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3125-handle-codec-core-doctest",
+  "actualExitCode": 0,
+  "scope": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3987,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T18:31:52.9270778Z"
+}

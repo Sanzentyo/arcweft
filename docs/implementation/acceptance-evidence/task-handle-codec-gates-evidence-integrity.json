@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "base": "19c68836a06c5668d1d4a99db20c698d61483565",
+  "purpose": "Terminal workspace check/Clippy/Core-doctest and complete reverse catalog evidence; runtime and HIR Tier 2 are still running. HIR input/binary reuse and ignored-test selection setup is recorded; no Tier 2 terminal success is claimed.",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3119-handle-codec-reverse-catalog.log",
+      "bytes": 1369254,
+      "sha256": "f60f9fdbe015ff4e0c8b9d1d4b5494d4617ec82737b3b4948dd1b07b3788915e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3119-handle-codec-reverse-catalog.json",
+      "bytes": 2581,
+      "sha256": "a750294d43b1ad52c164b0d965b9159dba356d15b4672db966d6a56cf897d1f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3119-handle-codec-reverse-catalog.inventory.json",
+      "bytes": 1845078,
+      "sha256": "ff6c965d91df343803f5c44a0d3de046177e17a0ab6f9873e9d616604893d559"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3120-handle-codec-consumer-catalog.log",
+      "bytes": 1364953,
+      "sha256": "e78ff7ce7bc383235a02380ee116200d47050c7b67cfb2b3c47491a124052cc3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3120-handle-codec-consumer-catalog.json",
+      "bytes": 2623,
+      "sha256": "7337c8431caed2aa4f2b33bde489f0f7abaf9b8770643cab8be5621e4768979a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3120-handle-codec-consumer-catalog.inventory.json",
+      "bytes": 1845079,
+      "sha256": "736b4f1f116ddea32f802bf3a6bef4b6f24b3b2a3a87569a426169707edd01ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3122-handle-codec-workspace-check.log",
+      "bytes": 106210,
+      "sha256": "24120fbab1abe092725395a4da2340d44cb042c22cfefdcef07b88acb014c2f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3122-handle-codec-workspace-check.json",
+      "bytes": 514,
+      "sha256": "64281e5d077e681200b9947b083e14d2fb2fe782a4b148c8f1e57a366699968f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3122-handle-codec-workspace-check.input-audit.json",
+      "bytes": 322,
+      "sha256": "717dbf560cb1e91b78b4cd5fe63a822c082b18f62647cf0768e22e410dc88452"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3123-handle-codec-workspace-clippy.log",
+      "bytes": 6617570,
+      "sha256": "dd430a3c04dbd5be6521dc79836abe0af2a148b8d0b7baf1a6f1062babace210"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3123-handle-codec-workspace-clippy.json",
+      "bytes": 517,
+      "sha256": "fbfe34f13aef798034ce476f0ee1fddb3030568fcffcafd290279d25df841196"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3123-handle-codec-workspace-clippy.input-audit.json",
+      "bytes": 324,
+      "sha256": "1cf513cb4c91e1f2fa0ec30c0efd276ee5189f41fe6e7f2116bcc768e6b932d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3125-handle-codec-core-doctest.log",
+      "bytes": 78974,
+      "sha256": "1039fc23d569ad857a71a9ccc23dd279560d2b4259073341ed339ea7808f04d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3125-handle-codec-core-doctest.json",
+      "bytes": 511,
+      "sha256": "c7218659455aea2c1d1c6b6a85240df6c0955deb982c5aee1e9c96532b4ab460"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3125-handle-codec-core-doctest.input-audit.json",
+      "bytes": 322,
+      "sha256": "90b33bd74d9d4ea35f804eeddaad2bda347eab3f4abde2bb9aca04dfd6f97be4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-runtime-selection.json",
+      "bytes": 6763,
+      "sha256": "329ffb5ac88c911200bf8b119c3e62c34e2b7d25eede06871161fb815df19a2b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-reverse-executables-before.json",
+      "bytes": 56285,
+      "sha256": "2a2801d59eb9e5a2bbd6b34308585802b8e866fc3469858be1030586718ea996"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-runtime-driver.ps1",
+      "bytes": 5505,
+      "sha256": "6d551e8194543487f97f898da17c81340dc377302c50cdc0617d8e2e5a9bb056"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-required-cases.json",
+      "bytes": 44070,
+      "sha256": "bc751e654e0900f0988e59f98d3d32fa736a6e8ea61463e085553b558c9d1c8c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair.verified.json",
+      "bytes": 6011,
+      "sha256": "4abfaba6d1882a21b73d48209664aba62cc51d3b52224ee5c6409f387e13f904"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair-public-evidence-audit.json",
+      "bytes": 135,
+      "sha256": "61b4ebcb3e204b8764cb2c9cdacefbbd36f291221de3e9367e2ea30bfbfd872e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-gates.json",
+      "bytes": 11324,
+      "sha256": "fcb879044c7185c9f507d08e7f7a73ce6c6fa34f12f61701cdb45c6401e6f1ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current.binaries.json",
+      "bytes": 1541,
+      "sha256": "03eb5cd863fefaa1b6fa8fb807fe15f51dc5f1548010041cc0b1898f7ab38ec2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-input-audit.json",
+      "bytes": 257153,
+      "sha256": "2607fe9c4ba530b8b218d350e1833ec17f916e4a72b7ce95fdede8bf3c92514d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3126-hir-tier2-production-catalog.log",
+      "bytes": 182567,
+      "sha256": "c03823da8a3568c77dff76726e7d05bbef6b88c1853778067768abf926c118ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3126-hir-tier2-production-catalog.json",
+      "bytes": 815,
+      "sha256": "b4cff28d70c7971e922651b1bf160c5a55d3b9b6fc6ecc86a99bb03d9cbfdb8a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3126-hir-tier2-production-catalog.inventory.json",
+      "bytes": 249773,
+      "sha256": "1286b578d9a7a3bf4a447da17dc3f55da65f0367155a4834f92831fbd6777f65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-executables-before.json",
+      "bytes": 484,
+      "sha256": "6965b1ddaec126129ee519c50e2ec9fd218809d46339b9a73de22338b0efc120"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-driver.ps1",
+      "bytes": 1540,
+      "sha256": "b63ffc61558ba01f89625160ed62ef04484a8540a031364a3698b42fd603bad4"
+    }
+  ],
+  "totalBytes": 14058798,
+  "artifactCopyMove": false
+}

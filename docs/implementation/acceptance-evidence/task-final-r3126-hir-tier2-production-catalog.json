@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "19c68836a06c5668d1d4a99db20c698d61483565",
+  "name": "task-final-r3126-hir-tier2-production-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "--binaries-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-hir-tier2-current.binaries.json",
+    "--cargo-metadata",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+    "--run-ignored",
+    "ignored-only",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3126-hir-tier2-production-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T18:07:34.1921374Z",
+  "finishedAt": "2026-10-25T18:07:35.5975958Z"
+}

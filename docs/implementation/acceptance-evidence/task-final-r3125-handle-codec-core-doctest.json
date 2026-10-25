@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "19c68836a06c5668d1d4a99db20c698d61483565",
+  "name": "task-final-r3125-handle-codec-core-doctest",
+  "command": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3125-handle-codec-core-doctest.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T18:31:03.4346177Z",
+  "finishedAt": "2026-10-25T18:31:43.2458231Z"
+}

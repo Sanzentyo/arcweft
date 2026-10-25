@@ -1,0 +1,50 @@
+{
+  "rust-build-meta": {
+    "target-directory": "D:\\git\\arcweft\\target",
+    "build-directory": "D:\\git\\arcweft\\target",
+    "base-output-directories": [
+      "debug"
+    ],
+    "non-test-binaries": {},
+    "build-script-out-dirs": {
+      "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0": "debug/build/arcweft-cli-86702cfd0bcaa78b/out"
+    },
+    "build-script-info": {},
+    "linked-paths": [
+      "debug/build/blake3-10d058e1ab0beac6/out",
+      "debug/build/libsqlite3-sys-030d8f36b1d9d297/out",
+      "debug/build/ring-0e92a9ace67bbdc4/out",
+      "debug/build/zstd-sys-6cceb1064e6d7a37/out"
+    ],
+    "platforms": {
+      "host": {
+        "platform": {
+          "triple": "x86_64-pc-windows-msvc",
+          "target-features": "unknown"
+        },
+        "libdir": {
+          "status": "available",
+          "path": "C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib"
+        }
+      },
+      "targets": []
+    },
+    "target-platforms": [
+      {
+        "triple": "x86_64-pc-windows-msvc",
+        "target-features": "unknown"
+      }
+    ],
+    "target-platform": null
+  },
+  "rust-binaries": {
+    "arcweft-lang-hir": {
+      "binary-id": "arcweft-lang-hir",
+      "binary-name": "arcweft_lang_hir",
+      "package-id": "path+file:///D:/git/arcweft/crates/arcweft-lang-hir#0.1.0",
+      "kind": "lib",
+      "binary-path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_hir-196650236a03025a.exe",
+      "build-platform": "target"
+    }
+  }
+}

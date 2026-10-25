@@ -11911,3 +11911,32 @@ R3124正規scannerは --fail-on-blocking で終了0、同3,987入力の前後has
 consumer runtime・workspace check／Clippy・Core doctest・Tier2／画像parityの成功はまだ主張しない。
 前段の42失敗と全体goalの未達は履歴へ保持し、Generic Matchの受入は維持する。
 [原本等の保全一覧](acceptance-evidence/task-handle-codec-repair-evidence-integrity.json)。
+
+## carrier修復後のworkspace gateと統合runtimeの選択 — 2026-10-26
+
+公開 `19c68836a06c5668d1d4a99db20c698d61483565` はparent
+`7cbba9d186acda9e2b72df66b9266f8d07bc8c50`、tree
+`14c411e3e2644415b28948bc001e131d42e47af3`、full patch SHA256
+`714da76d3e66b78e060c3d596547dcca9cf4a470df19c984e81cf668f0b267c2`。
+全32公開blob・原本等24件の公開byte hash差分0、index空・元WIP 14件を保持した。
+
+R3119はCore全53逆依存を全target・全feature・lockedでbuild／catalogし終了0。
+221 test binaries・6 non-test binaries、7,349件選択・39件除外、Cargo表示29m49s。
+単体Coreの13実行ファイルと統合buildの13件はすべてhashが異なった。
+そのためCore単体runの代用をせず、R3121はCoreを含む全7,349件を実行する選択とした。
+R3120で全catalog集合、Generic Matchの受入151件と必須owner／Source 17件の選択を照合。
+これらの選択確認はruntimeの成功ではない。R3121はこの記録時点で進行中・未終端。
+[実ファイル比較・選択理由・gateの範囲](acceptance-evidence/task-handle-codec-gates.json)。
+
+R3122 workspace check／R3123 workspace Clippyは全target・全feature・lockedで
+警告あり・終了0。R3125 Core doctestは75／75 PASS、終了0。各3,987非文書入力の
+前後hash差分0。R3124の正規構造gateは同じ修復入力で既に終了0として保持している。
+元の42失敗と、その修復後の単体Core 2,080 PASSはそれぞれの入力の履歴として保持する。
+[原本・receipt・入力照合の保全一覧](acceptance-evidence/task-handle-codec-gates-evidence-integrity.json)。
+
+独立したHIRのTier 2 production境界8件もR3127で逐次実行中。実行前に、HIRの依存8
+workspace packageと関連globalを含む1,322入力・元の37,315,072-byteバイナリを照合し差分0。
+実際のR3094 catalogのHIR library rowをlauncher metadataへ投影し、生成物を移動・コピーせず
+再利用した。[入力・バイナリ照合](acceptance-evidence/task-hir-tier2-current-input-audit.json)を保持する。
+4–8 GiBと見積もられたproduction世代保持を含むため、test threads 1で全8件を逐次実行する。
+この時点で全Tier 2、当該8件の終端、Native-Web capture parityの成功を主張しない。

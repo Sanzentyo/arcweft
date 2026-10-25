@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "run": "task-final-r3122-handle-codec-workspace-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3987,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T18:24:49.9825345Z"
+}

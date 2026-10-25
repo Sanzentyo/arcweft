@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "commit": "19c68836a06c5668d1d4a99db20c698d61483565",
+  "parent": "7cbba9d186acda9e2b72df66b9266f8d07bc8c50",
+  "tree": "14c411e3e2644415b28948bc001e131d42e47af3",
+  "remote": "19c68836a06c5668d1d4a99db20c698d61483565",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+      "blob": "6e43b5e7b30b6fcd2299699d85377b9444aa30c6"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "blob": "66eff0281ceae60dd269195445eae1853a3d7b83"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/descriptor.rs",
+      "blob": "b2a9f199b9a1ad469d1156c1aec9b4b2e2565e61"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/handle_type.rs",
+      "blob": "5b02139405147d573b1bcbca07b4b72dfa7b8148"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "blob": "3ed813ba9104c2c3a57d565fe3e34a2d3e0f7b37"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3117-handle-codec-core-catalog.inventory.json",
+      "blob": "9acaf90c9d2ce9296d68d028cc11031c188acd01"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3117-handle-codec-core-catalog.json",
+      "blob": "4d476feb5f3425e4e3c91edc5f8d9c5ea6b9dc50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3117-handle-codec-core-catalog.log",
+      "blob": "04200ad4f4e3ebfbb89a017267e820f5d22525e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3118-handle-codec-core-runtime.json",
+      "blob": "8c3feae63aa7ed93fdee132cdb0126939cc354f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3118-handle-codec-core-runtime.log",
+      "blob": "ab7a09939b82a64917aeb65cac1a7ab2fd786cfc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3118-handle-codec-core-runtime.terminal-audit.json",
+      "blob": "cea53fccb241d8e8ea05a0ee81cdceadd8e7a1da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3124-handle-codec-structure.input-audit.json",
+      "blob": "9faa071cfc020eb774824fd9d7820e2881ec18bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3124-handle-codec-structure.json",
+      "blob": "dc51d5296eff40ba922ae47255df15c6477b1b88"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3124-handle-codec-structure.log",
+      "blob": "bead122a973e2632dd4472b883a8649de2cd9403"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-core-acceptance.json",
+      "blob": "4444cb96a7082bd9087b5182138d7a76dc9b1f67"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-core-driver.ps1",
+      "blob": "3aa69d3ea39d50f161dfa675da28026e37bc492e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-core-executables-after.json",
+      "blob": "82d27848b16ca05b2e1edc8b7b0eb2893b287dd3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-core-executables-before.json",
+      "blob": "cb4726cda67b1035c19e00d27420dbf0030db7ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair-evidence-integrity.json",
+      "blob": "99344c751fa2be75a4469e9b484deb39fab44350"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair-freeze.ps1",
+      "blob": "b9dff1c64043c9ff5e5fd5584d9bf2dfffccabe0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair-structure-review.json",
+      "blob": "b07b2cc59dbd180b97bc729b2258e11955d21283"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair.graph.json",
+      "blob": "2b04b81b28794a7ffd40a7c69f68c0b0a4642a5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair.source-freeze.json",
+      "blob": "6411b5d628a919a030cef6a0415c1ca5839ce59c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/file_metrics.csv",
+      "blob": "cc866d062484c44ba95d4842a4e1718970904d19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/findings.md",
+      "blob": "23b8a8d01fba5ae4f6a9bbf81144cdef67a886a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-structure-report/public_type_duplicates.csv",
+      "blob": "5c1560ade8f660e9ce3a432d7d6137f6b96c354a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-failure-public-evidence-audit.json",
+      "blob": "aaca4e0cdbc3b1b1ca3cfd55e9498cf36e8e6166"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-runtime-failure.verified.json",
+      "blob": "47129b16ea1209365b1634beb25fce80c82b0085"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "80e44bea58fff80911be43199ad7e78bad5c50ea"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "bd3286fb40ad15b8c56f7bf069a1c301a215bd30"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "714da76d3e66b78e060c3d596547dcca9cf4a470df19c984e81cf668f0b267c2",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T17:50:51.5880493Z"
+}

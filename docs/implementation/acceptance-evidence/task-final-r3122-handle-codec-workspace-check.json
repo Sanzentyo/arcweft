@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "19c68836a06c5668d1d4a99db20c698d61483565",
+  "name": "task-final-r3122-handle-codec-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3122-handle-codec-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T17:56:35.3609213Z",
+  "finishedAt": "2026-10-25T18:24:37.6836619Z"
+}
