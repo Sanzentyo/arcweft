@@ -474,8 +474,13 @@ impl RuntimePlanBodyConstruction<'_> {
                 }
             }
             RuntimeExprSeedKind::Tuple(items) => {
-                let expected = match self.projection(ty)? {
+                let traversal;
+                let expected: &[RuntimePlanTypeId] = match self.projection(ty)? {
                     RuntimePlanTypeProjection::Tuple(items) => items.as_ref(),
+                    RuntimePlanTypeProjection::Traversal { source, mapping } => {
+                        traversal = [*source, *mapping];
+                        &traversal
+                    }
                     _ => return invalid_projection("tuple expression", ty),
                 };
                 if expected.len() != items.len() {
@@ -1682,6 +1687,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
             | RuntimePlanTypeProjection::AgentValue
             | RuntimePlanTypeProjection::Iterator(_)
             | RuntimePlanTypeProjection::Need(_)
+            | RuntimePlanTypeProjection::Traversal { .. }
             | RuntimePlanTypeProjection::Stream { .. }
             | RuntimePlanTypeProjection::ThreadHandle(_)
             | RuntimePlanTypeProjection::Shared(_)

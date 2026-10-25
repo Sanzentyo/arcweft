@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "df897b47c06934940c09842bbd18a0512e217249",
+  "name": "task-final-r2947-traversal-runtime-type-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2947-traversal-runtime-type-core-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-25T05:34:48.3667435Z",
+  "finishedAt": "2026-10-25T05:35:49.5330781Z"
+}

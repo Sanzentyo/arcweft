@@ -644,6 +644,7 @@ fn visit_runtime_type_strings(
         | AwbcRuntimeTypeShape::Map { .. }
         | AwbcRuntimeTypeShape::Need(_)
         | AwbcRuntimeTypeShape::Task(_)
+        | AwbcRuntimeTypeShape::Traversal { .. }
         | AwbcRuntimeTypeShape::Stream { .. }
         | AwbcRuntimeTypeShape::Shared(_)
         | AwbcRuntimeTypeShape::Reference(_)
@@ -1008,6 +1009,10 @@ pub enum AwbcRuntimeTypeShape {
     },
     Need(AwbcTypeId),
     Task(AwbcTypeId),
+    Traversal {
+        source: AwbcTypeId,
+        mapping: AwbcTypeId,
+    },
     Stream {
         item: AwbcTypeId,
         error: AwbcTypeId,
@@ -1059,6 +1064,10 @@ impl AwbcRuntimeTypeShape {
             Self::Map { key, value, .. } => {
                 visit(*key);
                 visit(*value);
+            }
+            Self::Traversal { source, mapping } => {
+                visit(*source);
+                visit(*mapping);
             }
             Self::Stream { item, error } => {
                 visit(*item);

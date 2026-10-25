@@ -721,6 +721,10 @@ impl Wire for AwbcRuntimeType {
             },
             37 => AwbcRuntimeTypeShape::AgentValue,
             39 => AwbcRuntimeTypeShape::Color,
+            40 => AwbcRuntimeTypeShape::Traversal {
+                source: AwbcTypeId::read_wire(reader)?,
+                mapping: AwbcTypeId::read_wire(reader)?,
+            },
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "runtime type",
@@ -911,6 +915,12 @@ fn write_runtime_type_composite_shape(
             item.write_wire(writer)?;
             error.write_wire(writer)
         }),
+        AwbcRuntimeTypeShape::Traversal { source, mapping } => {
+            write_tagged_fields(writer, 40, |writer| {
+                source.write_wire(writer)?;
+                mapping.write_wire(writer)
+            })
+        }
         AwbcRuntimeTypeShape::Shared(value) => write_tagged(writer, 34, value),
         AwbcRuntimeTypeShape::Reference(value) => write_tagged(writer, 35, value),
         AwbcRuntimeTypeShape::Function {

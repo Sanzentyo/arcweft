@@ -432,3 +432,11 @@ R2946の終端後は、現状一覧の実行中表示を1,339／1,339 PASSへ更
 意味解析の公開SHAは `f7841d517c0bf5fe7a6ca8e667072dff2e701219`。
 実Compilerの失敗とSource実行の未接続は残し、旧入力の横断成功へ読み替えていない。
 原log／receipt、catalog、公開照合とhashは別々の原本として保持する。
+
+## Traversal型移行後のgate表記訂正 — 2026-10-25
+
+基点 `df897b47c06934940c09842bbd18a0512e217249` 後の23 Rust pathを照合した。
+現状一覧の「直近workspace checkはCompiler移行漏れで失敗」を、修復後R2949の終了0へ置換した。
+R2938／R2947／R2948の実際の失敗とfull SHAは履歴・原本に保持する。
+型・codecとIR product構築の実装を、SourceのNeed構築・実行受入と区別した。
+新しいCore入力へ先行Sema／横断runの成功を転用せず、Generic Matchの受入は維持した。

@@ -324,6 +324,7 @@ impl AwbcProgram {
             | AwbcRuntimeTypeShape::Iterator(_)
             | AwbcRuntimeTypeShape::Need(_)
             | AwbcRuntimeTypeShape::Task(_)
+            | AwbcRuntimeTypeShape::Traversal { .. }
             | AwbcRuntimeTypeShape::Stream { .. }
             | AwbcRuntimeTypeShape::Shared(_)
             | AwbcRuntimeTypeShape::Reference(_)

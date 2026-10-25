@@ -116,6 +116,7 @@ pub enum RuntimeValueKind {
     Function,
     Dynamic,
     BoundType,
+    Traversal,
 }
 
 /// Compatibility label emitted by the owning type registry or derived
@@ -975,6 +976,7 @@ impl RuntimeValueKind {
             Self::AgentValue => 131,
             Self::BoundType => 132,
             Self::Color => 133,
+            Self::Traversal => 134,
         }
     }
 
@@ -1013,6 +1015,7 @@ impl RuntimeValueKind {
             131 => Some(Self::AgentValue),
             132 => Some(Self::BoundType),
             133 => Some(Self::Color),
+            134 => Some(Self::Traversal),
             _ => None,
         }
     }
@@ -1301,6 +1304,11 @@ fn runtime_type_layout_digest(
         AwbcRuntimeTypeShape::Task(item) => {
             transcript.write_tag(31);
             transcript.write_type(program, *item)?;
+        }
+        AwbcRuntimeTypeShape::Traversal { source, mapping } => {
+            transcript.write_tag(40);
+            transcript.write_type(program, *source)?;
+            transcript.write_type(program, *mapping)?;
         }
         AwbcRuntimeTypeShape::Stream { item, error } => {
             transcript.write_tag(32);
@@ -1826,6 +1834,7 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         AwbcRuntimeTypeShape::Map { .. } => RuntimeValueKind::Map,
         AwbcRuntimeTypeShape::Need(_) => RuntimeValueKind::Need,
         AwbcRuntimeTypeShape::Task(_) => RuntimeValueKind::Task,
+        AwbcRuntimeTypeShape::Traversal { .. } => RuntimeValueKind::Traversal,
         AwbcRuntimeTypeShape::Stream { .. } => RuntimeValueKind::Stream,
         AwbcRuntimeTypeShape::Shared(_) => RuntimeValueKind::Shared,
         AwbcRuntimeTypeShape::Reference(_) => RuntimeValueKind::Reference,
@@ -2869,6 +2878,45 @@ mod opaque_runtime_type_tests {
         assert_eq!(
             runtime_frame_layout_digest(&left, &left_frame),
             runtime_frame_layout_digest(&right, &right_frame)
+        );
+    }
+
+    #[test]
+    fn traversal_layout_keeps_its_type_head_and_source_callback_roles() {
+        let program = AwbcProgram::default();
+        let identity = RuntimeSemanticTypeId::from_bytes([0x71; 32]);
+        let row = AwbcRuntimeType::new(
+            identity,
+            AwbcRuntimeTypeShape::Traversal {
+                source: AwbcTypeId(0),
+                mapping: AwbcTypeId(1),
+            },
+        );
+        let swapped = AwbcRuntimeType::new(
+            identity,
+            AwbcRuntimeTypeShape::Traversal {
+                source: AwbcTypeId(1),
+                mapping: AwbcTypeId(0),
+            },
+        );
+        let tuple = AwbcRuntimeType::new(
+            identity,
+            AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0), AwbcTypeId(1)]),
+        );
+        let declaration = runtime_type_declaration(&program, &row).unwrap();
+        assert_eq!(declaration.value_kind, RuntimeValueKind::Traversal);
+        assert_eq!(RuntimeValueKind::Traversal.encoded(), 134);
+        assert_eq!(
+            RuntimeValueKind::from_encoded(134),
+            Some(RuntimeValueKind::Traversal)
+        );
+        assert_ne!(
+            declaration.layout_digest,
+            runtime_type_layout_digest(&program, &swapped).unwrap()
+        );
+        assert_ne!(
+            declaration.layout_digest,
+            runtime_type_layout_digest(&program, &tuple).unwrap()
         );
     }
 

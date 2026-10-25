@@ -282,7 +282,17 @@ impl FunctionTypeAuthority for AwbcProgram {
                     value: v,
                 },
             ) if a == b => visit(*x, *y).and_then(|()| visit(*u, *v)),
-            (T::Stream { item: x, error: u }, T::Stream { item: y, error: v }) => {
+            (
+                T::Traversal {
+                    source: x,
+                    mapping: u,
+                },
+                T::Traversal {
+                    source: y,
+                    mapping: v,
+                },
+            )
+            | (T::Stream { item: x, error: u }, T::Stream { item: y, error: v }) => {
                 visit(*x, *y).and_then(|()| visit(*u, *v))
             }
             (T::Range(x), T::Range(y))
@@ -609,7 +619,17 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
                     value: v,
                 },
             ) if a == b => visit(*x, *y).and_then(|()| visit(*u, *v)),
-            (T::Stream { item: x, error: u }, T::Stream { item: y, error: v }) => {
+            (
+                T::Traversal {
+                    source: x,
+                    mapping: u,
+                },
+                T::Traversal {
+                    source: y,
+                    mapping: v,
+                },
+            )
+            | (T::Stream { item: x, error: u }, T::Stream { item: y, error: v }) => {
                 visit(*x, *y).and_then(|()| visit(*u, *v))
             }
             (T::Range(x), T::Range(y))

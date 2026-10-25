@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "df897b47c06934940c09842bbd18a0512e217249",
+  "name": "task-final-r2948-traversal-runtime-type-consumer-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2948-traversal-runtime-type-consumer-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-25T05:46:31.9124218Z",
+  "finishedAt": "2026-10-25T05:49:04.9752415Z"
+}

@@ -76,7 +76,11 @@ impl Writer<'_> {
                 self.reference(*key)?;
                 self.reference(*value)?;
             }
-            P::Stream { item, error } => {
+            P::Traversal {
+                source: item,
+                mapping: error,
+            }
+            | P::Stream { item, error } => {
                 self.reference(*item)?;
                 self.reference(*error)?;
             }
@@ -478,6 +482,11 @@ impl Reader<'_, '_> {
                 let dense = crate::math::RuntimeDenseNumericType::from_semantic_parts(parts)
                     .ok_or(RuntimeTypeSourceError::DenseNumeric { parts })?;
                 materialize.then_some(P::DenseNumeric(dense))
+            }
+            37 => {
+                let source = self.reference()?;
+                let mapping = self.reference()?;
+                materialize.then_some(P::Traversal { source, mapping })
             }
             tag => {
                 return Err(RuntimeTypeSourceError::Tag {

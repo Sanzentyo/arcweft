@@ -5396,6 +5396,10 @@ fn runtime_type_scoped_at(
         },
         TypeKind::BorrowRef { inner, .. } => RuntimeTypeShape::Reference(nested(inner)?),
         TypeKind::Need(item) => RuntimeTypeShape::Need(nested(item)?),
+        TypeKind::Traversal { source, mapping } => RuntimeTypeShape::Traversal {
+            source: nested_at(source, RuntimeTypeProjectionStep::TraversalSource)?,
+            mapping: nested_at(mapping, RuntimeTypeProjectionStep::TraversalMapping)?,
+        },
         TypeKind::Stream { item, error } => RuntimeTypeShape::Stream {
             item: nested(item)?,
             error: nested(error)?,
@@ -9954,7 +9958,10 @@ fn runtime_intrinsic(
             CollectionMethodId::Len => Some(RuntimeIntrinsic::CoreSeqLen),
             CollectionMethodId::Sum => Some(RuntimeIntrinsic::CoreSeqSum),
             CollectionMethodId::Collect { .. } => Some(RuntimeIntrinsic::CoreIterCollect),
-            CollectionMethodId::Filter | CollectionMethodId::Contains => None,
+            CollectionMethodId::Filter
+            | CollectionMethodId::Contains
+            | CollectionMethodId::Traverse { .. }
+            | CollectionMethodId::Parallel { .. } => None,
         };
     }
     if let arcweft_lang_sema::callable::CallableCandidateId::CapacityMethod(method) = candidate {

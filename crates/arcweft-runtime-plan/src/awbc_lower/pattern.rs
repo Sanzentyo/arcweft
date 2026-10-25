@@ -426,6 +426,12 @@ fn plan_type_shape(
         RuntimePlanTypeProjection::Need(value) => {
             AwbcRuntimeTypeShape::Need(reserved_plan_type(inventory, *value)?)
         }
+        RuntimePlanTypeProjection::Traversal { source, mapping } => {
+            AwbcRuntimeTypeShape::Traversal {
+                source: reserved_plan_type(inventory, *source)?,
+                mapping: reserved_plan_type(inventory, *mapping)?,
+            }
+        }
         RuntimePlanTypeProjection::Stream { item, error } => AwbcRuntimeTypeShape::Stream {
             item: reserved_plan_type(inventory, *item)?,
             error: reserved_plan_type(inventory, *error)?,

@@ -827,6 +827,7 @@ impl AwbcInventory {
             | AwbcRuntimeTypeShape::Map { .. }
             | AwbcRuntimeTypeShape::Need(_)
             | AwbcRuntimeTypeShape::Task(_)
+            | AwbcRuntimeTypeShape::Traversal { .. }
             | AwbcRuntimeTypeShape::Stream { .. }
             | AwbcRuntimeTypeShape::Shared(_)
             | AwbcRuntimeTypeShape::Reference(_)

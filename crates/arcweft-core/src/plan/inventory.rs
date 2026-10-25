@@ -401,6 +401,7 @@ impl RuntimePlanInventory {
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Iterator(_)
             | RuntimePlanTypeProjection::Need(_)
+            | RuntimePlanTypeProjection::Traversal { .. }
             | RuntimePlanTypeProjection::Stream { .. }
             | RuntimePlanTypeProjection::ThreadHandle(_)
             | RuntimePlanTypeProjection::Shared(_)

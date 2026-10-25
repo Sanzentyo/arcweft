@@ -144,6 +144,7 @@ pub enum RuntimeOperationalType {
     Option,
     Map,
     Need,
+    Traversal,
     Stream,
     ThreadHandle,
     Shared,
@@ -252,6 +253,11 @@ pub enum RuntimePlanTypeProjection<R> {
         value: R,
     },
     Need(R),
+    /// Captured source collection and full unary callback type.
+    Traversal {
+        source: R,
+        mapping: R,
+    },
     Stream {
         item: R,
         error: R,
@@ -379,6 +385,31 @@ impl<R> RuntimePlanTypeProjection<R> {
         Ok(incoming.clone())
     }
 
+    /// Checks the traversal relation through borrowed queries on the existing
+    /// type table. Callback parameters and effects are never cloned for this
+    /// structural check, including when a malformed source references a function.
+    pub(crate) fn valid_traversal_contract<'a>(
+        &self,
+        mut sequence_item: impl FnMut(R) -> Option<R>,
+        mut function: impl FnMut(R) -> Option<(&'a [R], R)>,
+        mut need: impl FnMut(R) -> Option<R>,
+        mut is_result: impl FnMut(R) -> bool,
+    ) -> bool
+    where
+        R: Copy + Eq + 'a,
+    {
+        let Self::Traversal { source, mapping } = self else {
+            return false;
+        };
+        let Some(input) = sequence_item(*source) else {
+            return false;
+        };
+        let Some((parameters, result)) = function(*mapping) else {
+            return false;
+        };
+        parameters == [input] && need(result).is_some_and(&mut is_result)
+    }
+
     /// Counts canonical direct type references without allocating the child list.
     pub(crate) fn child_count(&self) -> Option<usize> {
         Some(match self {
@@ -396,7 +427,10 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::BuiltinVariant { cases, .. } => {
                 cases.iter().filter(|case| case.is_some()).count()
             }
-            Self::Map { .. } | Self::Stream { .. } | Self::Option { .. } => 2,
+            Self::Map { .. }
+            | Self::Traversal { .. }
+            | Self::Stream { .. }
+            | Self::Option { .. } => 2,
             Self::Result { .. } => 4,
             Self::Function { parameters, .. } => parameters.len().checked_add(1)?,
             Self::Nominal { arguments, .. }
@@ -440,6 +474,10 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Agent(RuntimeAgentTypeProjection::DataShape(child)) => Box::new([child]),
             Self::BuiltinVariant { cases, .. } => cases.iter().filter_map(Option::as_ref).collect(),
             Self::Map { key, value, .. }
+            | Self::Traversal {
+                source: key,
+                mapping: value,
+            }
             | Self::Stream {
                 item: key,
                 error: value,
@@ -527,6 +565,10 @@ impl<R> RuntimePlanTypeProjection<R> {
                 value: map(value)?,
             },
             Self::Need(item) => RuntimePlanTypeProjection::Need(map(item)?),
+            Self::Traversal { source, mapping } => RuntimePlanTypeProjection::Traversal {
+                source: map(source)?,
+                mapping: map(mapping)?,
+            },
             Self::Stream { item, error } => RuntimePlanTypeProjection::Stream {
                 item: map(item)?,
                 error: map(error)?,
@@ -615,6 +657,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Option { .. } => Some(RuntimeOperationalType::Option),
             Self::Map { .. } => Some(RuntimeOperationalType::Map),
             Self::Need { .. } => Some(RuntimeOperationalType::Need),
+            Self::Traversal { .. } => Some(RuntimeOperationalType::Traversal),
             Self::Stream { .. } => Some(RuntimeOperationalType::Stream),
             Self::ThreadHandle(_) => Some(RuntimeOperationalType::ThreadHandle),
             Self::Shared(_) => Some(RuntimeOperationalType::Shared),

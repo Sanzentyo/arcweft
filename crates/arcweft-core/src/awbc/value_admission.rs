@@ -234,8 +234,15 @@ enum Children<'a> {
     Single(Expected),
     Repeated(Expected),
     Tuple(&'a [AwbcTypeId]),
+    Traversal {
+        source: AwbcTypeId,
+        mapping: AwbcTypeId,
+    },
     Record(&'a [AwbcRecordField]),
-    MapEntry { key: AwbcTypeId, value: AwbcTypeId },
+    MapEntry {
+        key: AwbcTypeId,
+        value: AwbcTypeId,
+    },
     Reduction(AwbcTypeId),
     Callable(&'a [crate::plan::RuntimeCallableRetainedInput<AwbcTypeId>]),
 }
@@ -504,6 +511,13 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                     key: *key,
                     value: *value,
                 }))
+            }
+            (Type::Traversal { source, mapping }, View::Tuple(actual)) => {
+                Self::arity(2, actual.len())?;
+                Ok(Children::Traversal {
+                    source: *source,
+                    mapping: *mapping,
+                })
             }
             (Type::Tuple(items), View::Tuple(actual)) => {
                 Self::arity(items.len(), actual.len())?;
@@ -777,6 +791,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> ValueVali
             Children::Single(expected) if index == 0 => Some(*expected),
             Children::Repeated(expected) => Some(*expected),
             Children::Tuple(items) => items.get(index).copied().map(Expected::Type),
+            Children::Traversal { source, mapping } => match index {
+                0 => Some(Expected::Type(*source)),
+                1 => Some(Expected::Type(*mapping)),
+                _ => None,
+            },
             Children::Record(fields) => fields.get(index).map(|field| Expected::Type(field.ty)),
             Children::MapEntry { key, .. } if index == 0 => Some(Expected::Type(*key)),
             Children::MapEntry { value, .. } if index == 1 => Some(Expected::Type(*value)),

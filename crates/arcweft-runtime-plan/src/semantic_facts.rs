@@ -243,6 +243,10 @@ pub enum RuntimeTypeShape {
         value: Box<RuntimeNormalizedType>,
     },
     Need(Box<RuntimeNormalizedType>),
+    Traversal {
+        source: Box<RuntimeNormalizedType>,
+        mapping: Box<RuntimeNormalizedType>,
+    },
     Stream {
         item: Box<RuntimeNormalizedType>,
         error: Box<RuntimeNormalizedType>,
@@ -337,6 +341,8 @@ pub enum RuntimeSequenceKind {
 /// One deterministic descent from a normalized runtime type to a checked leaf.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeTypeProjectionStep {
+    TraversalSource,
+    TraversalMapping,
     SequenceItem,
     MapKey,
     MapValue,
@@ -379,6 +385,7 @@ impl RuntimeTypeProjectionPath {
 /// Closed diagnostic category for shapes outside the checked value algebra.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeUnsupportedTypeShape {
+    Traversal,
     Bound,
     Range,
     Iterator,
@@ -707,6 +714,12 @@ impl RuntimeNormalizedType {
                 value: child(value),
             },
             RuntimeTypeShape::Need(item) => RuntimePlanTypeProjection::Need(child(item)),
+            RuntimeTypeShape::Traversal { source, mapping } => {
+                RuntimePlanTypeProjection::Traversal {
+                    source: child(source),
+                    mapping: child(mapping),
+                }
+            }
             RuntimeTypeShape::Stream { item, error } => RuntimePlanTypeProjection::Stream {
                 item: child(item),
                 error: child(error),
@@ -826,6 +839,10 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Need(item)
             | RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Probe(item)) => vec![item],
             RuntimeTypeShape::Map { key, value, .. }
+            | RuntimeTypeShape::Traversal {
+                source: key,
+                mapping: value,
+            }
             | RuntimeTypeShape::Stream {
                 item: key,
                 error: value,
@@ -1082,6 +1099,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Range(_)
             | RuntimeTypeShape::Iterator(_)
             | RuntimeTypeShape::Need(_)
+            | RuntimeTypeShape::Traversal { .. }
             | RuntimeTypeShape::Stream { .. }
             | RuntimeTypeShape::Parser { .. }
             | RuntimeTypeShape::ThreadHandle(_)
@@ -1142,6 +1160,7 @@ fn unsupported_runtime_shape(shape: &RuntimeTypeShape) -> Option<RuntimeUnsuppor
         RuntimeTypeShape::BoundType(_) => Some(RuntimeUnsupportedTypeShape::Bound),
         RuntimeTypeShape::Range(_) => Some(RuntimeUnsupportedTypeShape::Range),
         RuntimeTypeShape::Iterator(_) => Some(RuntimeUnsupportedTypeShape::Iterator),
+        RuntimeTypeShape::Traversal { .. } => Some(RuntimeUnsupportedTypeShape::Traversal),
         RuntimeTypeShape::Stream { .. } => Some(RuntimeUnsupportedTypeShape::Stream),
         RuntimeTypeShape::Parser { .. } => Some(RuntimeUnsupportedTypeShape::Parser),
         RuntimeTypeShape::ThreadHandle(_) => Some(RuntimeUnsupportedTypeShape::ThreadHandle),
@@ -10723,6 +10742,8 @@ fn validate_pure_programs(
 }
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("runtime traversal {identity:?} has an inconsistent collection or callback contract")]
+    InvalidTraversalType { identity: RuntimeSemanticTypeId },
     #[error("runtime expression {expression:?} has no accepted origin")]
     MissingExpressionOrigin { expression: ExprId },
     #[error("scope {owner:?} origin belongs to another owner or HIR allocation")]
@@ -11888,6 +11909,35 @@ fn validate_normalized_type(
         RuntimeTypeShape::Agent(
             RuntimeAgentTypeShape::Probe(value) | RuntimeAgentTypeShape::DataShape(value),
         ) => validate_normalized_type(modules, value),
+        RuntimeTypeShape::Traversal { source, mapping } => {
+            validate_normalized_type(modules, source)?;
+            validate_normalized_type(modules, mapping)?;
+            let invalid = || RuntimeSemanticFactsError::InvalidTraversalType {
+                identity: ty.identity(),
+            };
+            let input = match source.shape() {
+                RuntimeTypeShape::Sequence { item, .. } | RuntimeTypeShape::Array { item, .. } => {
+                    item
+                }
+                _ => return Err(invalid()),
+            };
+            let RuntimeTypeShape::Function {
+                parameters, result, ..
+            } = mapping.shape()
+            else {
+                return Err(invalid());
+            };
+            if parameters.len() != 1 || parameters[0].identity() != input.identity() {
+                return Err(invalid());
+            }
+            let RuntimeTypeShape::Need(payload) = result.shape() else {
+                return Err(invalid());
+            };
+            if !matches!(payload.shape(), RuntimeTypeShape::Result { .. }) {
+                return Err(invalid());
+            }
+            Ok(())
+        }
         RuntimeTypeShape::Map { key, value, .. }
         | RuntimeTypeShape::Stream {
             item: key,

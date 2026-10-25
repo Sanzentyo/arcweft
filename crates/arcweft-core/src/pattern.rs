@@ -2590,6 +2590,7 @@ fn runtime_record_pattern_domain(
         | RuntimePlanTypeProjection::Array { .. }
         | RuntimePlanTypeProjection::Map { .. }
         | RuntimePlanTypeProjection::Need(_)
+        | RuntimePlanTypeProjection::Traversal { .. }
         | RuntimePlanTypeProjection::Stream { .. }
         | RuntimePlanTypeProjection::Result { .. }
         | RuntimePlanTypeProjection::Option { .. }

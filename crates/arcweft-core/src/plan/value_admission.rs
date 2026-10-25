@@ -377,6 +377,10 @@ enum Children<'a> {
     Single(Expected),
     Repeated(Expected),
     Tuple(&'a [RuntimePlanTypeId]),
+    Traversal {
+        source: RuntimePlanTypeId,
+        mapping: RuntimePlanTypeId,
+    },
     Record(&'a [RuntimePlanRecordField<RuntimePlanTypeId>]),
     NominalRecord(&'a [RuntimeNominalRecordDomainField]),
     MapEntry {
@@ -759,6 +763,13 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 }
                 Ok(Children::Repeated(Expected::Type(*item)))
             }
+            (Type::Traversal { source, mapping }, View::Tuple(actual)) => {
+                Self::arity(2, actual.len())?;
+                Ok(Children::Traversal {
+                    source: *source,
+                    mapping: *mapping,
+                })
+            }
             (Type::Tuple(items), View::Tuple(actual)) => {
                 Self::arity(items.len(), actual.len())?;
                 Ok(Children::Tuple(items))
@@ -968,6 +979,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>> Va
             Children::Single(expected) if index == 0 => Some(*expected),
             Children::Repeated(expected) => Some(*expected),
             Children::Tuple(items) => items.get(index).copied().map(Expected::Type),
+            Children::Traversal { source, mapping } => match index {
+                0 => Some(Expected::Type(*source)),
+                1 => Some(Expected::Type(*mapping)),
+                _ => None,
+            },
             Children::Record(fields) => fields.get(index).map(|field| Expected::Type(*field.ty())),
             Children::NominalRecord(fields) => {
                 fields.get(index).map(|field| Expected::Type(field.ty()))

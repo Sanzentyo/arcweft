@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r2949-traversal-runtime-type-workspace-check",
+  "actualExitCode": 0,
+  "scope": "workspace/all-targets/all-features/locked; check only, runtime tests pending",
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "changedOwners": [
+    "arcweft-core",
+    "arcweft-runtime-plan",
+    "arcweft-compiler",
+    "arcweft-bundle"
+  ],
+  "reverseWorkspacePackages": 53,
+  "held": 14,
+  "at": "2026-10-25T06:02:58.2567665Z"
+}

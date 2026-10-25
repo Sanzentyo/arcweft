@@ -102,6 +102,12 @@ impl RuntimeCallableSpecializationContext for AwbcProgram {
             },
             AwbcRuntimeTypeShape::Need(item) => RuntimePlanTypeProjection::Need(*item),
             AwbcRuntimeTypeShape::Task(item) => RuntimePlanTypeProjection::ThreadHandle(*item),
+            AwbcRuntimeTypeShape::Traversal { source, mapping } => {
+                RuntimePlanTypeProjection::Traversal {
+                    source: *source,
+                    mapping: *mapping,
+                }
+            }
             AwbcRuntimeTypeShape::Stream { item, error } => RuntimePlanTypeProjection::Stream {
                 item: *item,
                 error: *error,

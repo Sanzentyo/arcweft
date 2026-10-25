@@ -304,6 +304,7 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::Iterator(_)
             | RuntimePlanTypeProjection::Map { .. }
             | RuntimePlanTypeProjection::Need(_)
+            | RuntimePlanTypeProjection::Traversal { .. }
             | RuntimePlanTypeProjection::Stream { .. }
             | RuntimePlanTypeProjection::ThreadHandle(_)
             | RuntimePlanTypeProjection::Shared(_)
@@ -412,6 +413,12 @@ pub enum RuntimePlanTypeTableError {
     },
     #[error("runtime plan type identity space is exhausted")]
     IdentityExhausted,
+    #[error(
+        "semantic type {semantic_identity:?} has an invalid traversal collection or callback contract"
+    )]
+    InvalidTraversalSchema {
+        semantic_identity: RuntimeSemanticTypeId,
+    },
     #[error("semantic type {semantic_identity:?} has a non-canonical builtin variant schema")]
     InvalidBuiltinVariantSchema {
         semantic_identity: RuntimeSemanticTypeId,
@@ -792,6 +799,48 @@ fn validate_candidate_graph(
     }
     for (index, row) in rows.iter().enumerate() {
         row.validate_builtin_payloads(plan_type_id_for_index(index)?, rows)?;
+        if matches!(
+            row.projection(),
+            RuntimePlanTypeProjection::Traversal { .. }
+        ) {
+            let projection = |id| {
+                rows.get(declaration_index(id)?)
+                    .map(RuntimePlanTypeDeclaration::projection)
+            };
+            if !row.projection().valid_traversal_contract(
+                |id| match projection(id)? {
+                    RuntimePlanTypeProjection::Sequence { item, .. }
+                    | RuntimePlanTypeProjection::Array { item, .. } => Some(*item),
+                    _ => None,
+                },
+                |id| match projection(id)? {
+                    RuntimePlanTypeProjection::Function {
+                        parameters, result, ..
+                    } => Some((parameters.as_ref(), *result)),
+                    _ => None,
+                },
+                |id| match projection(id)? {
+                    RuntimePlanTypeProjection::Need(payload) => Some(*payload),
+                    _ => None,
+                },
+                |id| {
+                    matches!(
+                        projection(id),
+                        Some(
+                            RuntimePlanTypeProjection::Result { .. }
+                                | RuntimePlanTypeProjection::BuiltinVariant {
+                                    owner: RuntimeBuiltinVariantIdentity::Result,
+                                    ..
+                                }
+                        )
+                    )
+                },
+            ) {
+                return Err(RuntimePlanTypeTableError::InvalidTraversalSchema {
+                    semantic_identity: row.semantic_identity(),
+                });
+            }
+        }
     }
     validate_codec_uses(rows)?;
     Ok(())
@@ -1054,6 +1103,141 @@ mod tests {
             .expect("failed batches committed nothing");
         assert_eq!(retained_id.get(), NonZeroU32::MIN);
         assert_eq!(next.get(), NonZeroU32::new(2).unwrap());
+    }
+
+    fn traversal_seeds() -> Vec<RuntimePlanTypeSeed> {
+        use RuntimePlanTypeProjection as P;
+        vec![
+            leaf(31, P::String),
+            leaf(
+                32,
+                P::Sequence {
+                    kind: RuntimePlanSequenceKind::Vec,
+                    item: identity(31),
+                },
+            ),
+            leaf(33, P::Tuple(Box::new([identity(31)]))),
+            leaf(
+                34,
+                P::Result {
+                    value: identity(31),
+                    error: identity(31),
+                    value_payload: identity(33),
+                    error_payload: identity(33),
+                },
+            ),
+            leaf(35, P::Need(identity(34))),
+            leaf(
+                36,
+                P::Function {
+                    contract: crate::plan::RuntimeFunctionTypeContract::monomorphic(
+                        crate::effect_row::EffectSet::from_labels(["fs.read"]).unwrap(),
+                    ),
+                    parameters: Box::new([identity(31)]),
+                    result: identity(35),
+                },
+            ),
+            leaf(
+                37,
+                P::Traversal {
+                    source: identity(32),
+                    mapping: identity(36),
+                },
+            ),
+            leaf(38, P::Tuple(Box::new([identity(32), identity(36)]))),
+        ]
+    }
+
+    #[test]
+    fn traversal_type_retains_source_and_callback_as_an_independent_operational_head() {
+        let mut builder = RuntimePlanTypeTableBuilder::new();
+        let ids = builder
+            .intern_batch(traversal_seeds())
+            .expect("valid String traversal");
+        let table = builder.finish().unwrap();
+        assert_eq!(
+            table.class(ids[6]),
+            Ok(RuntimePlanTypeClass::Operational(
+                RuntimeOperationalType::Traversal
+            ))
+        );
+        assert_eq!(
+            table.class(ids[7]),
+            Ok(RuntimePlanTypeClass::Operational(
+                RuntimeOperationalType::Tuple
+            ))
+        );
+        assert_eq!(
+            table.get(ids[6]).unwrap().projection(),
+            &RuntimePlanTypeProjection::Traversal {
+                source: ids[1],
+                mapping: ids[5]
+            }
+        );
+        assert_ne!(
+            table.get(ids[6]).unwrap().semantic_identity(),
+            table.get(ids[7]).unwrap().semantic_identity()
+        );
+    }
+
+    #[test]
+    fn traversal_type_contract_rejects_malformed_edges_without_committing_rows_or_ids() {
+        use RuntimePlanTypeProjection as P;
+        for invalid_case in 0..7 {
+            let mut seeds = traversal_seeds();
+            match invalid_case {
+                0 => {
+                    seeds[6].projection = P::Traversal {
+                        source: identity(31),
+                        mapping: identity(36),
+                    }
+                }
+                1 => {
+                    seeds[6].projection = P::Traversal {
+                        source: identity(32),
+                        mapping: identity(35),
+                    }
+                }
+                2 => {
+                    let P::Function { parameters, .. } = &mut seeds[5].projection else {
+                        unreachable!()
+                    };
+                    *parameters = Box::new([identity(32)]);
+                }
+                3 => {
+                    let P::Function { parameters, .. } = &mut seeds[5].projection else {
+                        unreachable!()
+                    };
+                    *parameters = Box::new([identity(31), identity(31)]);
+                }
+                4 => {
+                    let P::Function { result, .. } = &mut seeds[5].projection else {
+                        unreachable!()
+                    };
+                    *result = identity(31);
+                }
+                5 => seeds[4].projection = P::Need(identity(31)),
+                6 => {
+                    seeds[3].projection = P::Option {
+                        item: identity(31),
+                        some_payload: identity(33),
+                    }
+                }
+                _ => unreachable!(),
+            }
+            let mut builder = RuntimePlanTypeTableBuilder::new();
+            builder.intern(leaf(90, P::Unit)).unwrap();
+            let original_rows = builder.rows.clone();
+            let original_ids = builder.by_semantic_identity.clone();
+            assert!(
+                matches!(builder.intern_batch(seeds), Err(RuntimePlanTypeTableError::InvalidTraversalSchema { semantic_identity }) if semantic_identity == identity(37)),
+                "invalid case {invalid_case}"
+            );
+            assert_eq!(builder.rows, original_rows);
+            assert_eq!(builder.by_semantic_identity, original_ids);
+            let ids = builder.intern_batch(traversal_seeds()).unwrap();
+            assert_eq!(ids[0].get(), NonZeroU32::new(2).unwrap());
+        }
     }
 
     #[test]

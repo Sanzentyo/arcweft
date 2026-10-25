@@ -1102,8 +1102,14 @@ fn apply_instruction(
         AwbcInstruction::MakeTuple { dst, items } => {
             check_args_budget(verifier, items.len())?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            let Some(AwbcRuntimeTypeShape::Tuple(types)) = runtime_shape(program, dst_ty) else {
-                return invalid_type(&at, "tuple destination");
+            let traversal;
+            let types: &[AwbcTypeId] = match runtime_shape(program, dst_ty) {
+                Some(AwbcRuntimeTypeShape::Tuple(types)) => types,
+                Some(AwbcRuntimeTypeShape::Traversal { source, mapping }) => {
+                    traversal = [*source, *mapping];
+                    &traversal
+                }
+                _ => return invalid_type(&at, "tuple destination"),
             };
             if types.len() != items.len() {
                 return argument_count(&at, types.len(), items.len());
@@ -6322,6 +6328,7 @@ pub(super) fn runtime_type_permits_copy(
                 | AwbcRuntimeTypeShape::Agent(_)
                 | AwbcRuntimeTypeShape::Need(_)
                 | AwbcRuntimeTypeShape::Task(_)
+                | AwbcRuntimeTypeShape::Traversal { .. }
                 | AwbcRuntimeTypeShape::Stream { .. }
                 | AwbcRuntimeTypeShape::Shared(_)
                 | AwbcRuntimeTypeShape::Reference(_)

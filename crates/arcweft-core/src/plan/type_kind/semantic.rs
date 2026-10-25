@@ -43,6 +43,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Array { .. }
             | Self::Map { .. }
             | Self::Need(..)
+            | Self::Traversal { .. }
             | Self::Stream { .. }
             | Self::Result { .. }
             | Self::Option { .. }
@@ -98,6 +99,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Opaque { .. } => 34,
             Self::Agent(..) => 35,
             Self::DenseNumeric(_) => 36,
+            Self::Traversal { .. } => 37,
         }
     }
 }
@@ -176,6 +178,7 @@ impl RuntimePlanTypeProjection<RuntimePlanTypeId> {
             | Self::Range(_)
             | Self::Iterator(_)
             | Self::Need(_)
+            | Self::Traversal { .. }
             | Self::Stream { .. }
             | Self::Result { .. }
             | Self::Option { .. }

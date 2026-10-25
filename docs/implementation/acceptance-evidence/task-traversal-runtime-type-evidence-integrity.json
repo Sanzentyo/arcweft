@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "base": "df897b47c06934940c09842bbd18a0512e217249",
+  "scope": "R2947/R2948 intermediate failures; R2949 workspace check; R2950 owner catalog, not runtime acceptance",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2947-traversal-runtime-type-core-check.json",
+      "bytes": 538,
+      "sha256": "bcca8d6aef09af1ad3fd023f0f8e847823296e25743c13c416f95d3dbcc2227f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2947-traversal-runtime-type-core-check.log",
+      "bytes": 14273,
+      "sha256": "f0169d5606eff6b6d84c4c3a2d0d1681730ed9abd31fd122aeea470d08f4fc5a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2948-traversal-runtime-type-consumer-check.json",
+      "bytes": 622,
+      "sha256": "3da7252f68b500ccca7da90f0ad854e4fec495633f6af53c5b54fffb5a87e075"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2948-traversal-runtime-type-consumer-check.log",
+      "bytes": 94239,
+      "sha256": "3ebde7cb294ef916fdd0d8f01ffb36be051521c2db058568c308dbf1c8b9077e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2949-traversal-runtime-type-workspace-check.json",
+      "bytes": 534,
+      "sha256": "25abe5153259cb63f97397b1deed018c3255e96b9b5eeb7ed4e1f19f12c0b864"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2949-traversal-runtime-type-workspace-check.log",
+      "bytes": 105563,
+      "sha256": "e932ceb590b31faa1e4c9824b46525d4f765acaf4b4c4c6312bf383a7e86597d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-final.source-freeze.json",
+      "bytes": 779290,
+      "sha256": "fc76a76ddf28c5d2f93b691c4dcc1f0eddec6851f4ca1c90c9cbe9cffe0284a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-final.graph.json",
+      "bytes": 4078,
+      "sha256": "0317216628560e02236b9fa5e26bab45a031f4140e524d4a866f574af66493d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-workspace.source-freeze.json",
+      "bytes": 779350,
+      "sha256": "cb93b58dce51dc8224d0ce4abb770b5fd738f6a6f3c731606614299d112153e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-type-workspace.graph.json",
+      "bytes": 4161,
+      "sha256": "9b882a1d97e1b1fa773bab220bad61b3c3b4b78bd1a73da4db00639c424abfdb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-workspace-check.audit.json",
+      "bytes": 469,
+      "sha256": "f5f5e6c46d84731aba87dfcdf8ca86b0d9beadd6ebd7e3c2e8d81b3ac8045af5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2950-traversal-runtime-owner-catalog.json",
+      "bytes": 619,
+      "sha256": "33aa7f2aaab3c91f9823476ec5eb2aaa94b8035e6c30cb0299c0320969e98c86"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2950-traversal-runtime-owner-catalog.log",
+      "bytes": 497473,
+      "sha256": "1b6c5ccb168cea6f273908e6d89f857675ab16d87ca5d1cf403859309818a2e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2950-traversal-runtime-owner-catalog.inventory.json",
+      "bytes": 604199,
+      "sha256": "a4c524ad5f23392156f5a39b8e38ea212a48eba8989e23f3646a56ba9ef5f089"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-runtime-owner-executables-before.json",
+      "bytes": 8726,
+      "sha256": "3eae61e6889a7da89c83024deed12be133be8e7c081a9155ba5038893b934fb4"
+    }
+  ]
+}

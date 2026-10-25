@@ -11267,3 +11267,48 @@ catalogと終端case集合が一致し、3,981非文書入力・5実行ファイ
 [実行ファイル照合](acceptance-evidence/task-traversal-sema-final-full-runtime.audit.json)。
 R2938のCompiler網羅漏れ2件は修復しておらず、このSema成功をworkspace／逆依存runtime成功へ
 読み替えていない。Source lowering／Need値の実構築と実行の包括受入も、この結果には含めない。
+
+## Traversalのruntime型・codecとBundle移行 — 2026-10-25
+
+基点は公開main `df897b47c06934940c09842bbd18a0512e217249`。
+Core／runtime-plan／Compiler／Bundleの23 Rust pathを変更した。実Cargo metadataによる
+4 ownerの推移的逆依存は53 package、manifest／lock 99入力は不変だった。
+
+`RuntimePlanTypeProjection::Traversal`は元sourceと完全なmapping型を保持する独立した型headである。
+保持値自体は純粋な二要素productなので既存のTuple carrierを使い、TraversalをTuple型へは消去しない。
+Core typed productとAWBC MakeTupleはこのheadの二つの子型を照合する。既存の値visitorで
+実際のcollectionと元program leaseを持つcallable／captureを訪問し、別のvalue registryや
+Host request、Thread handleへの読み替えを導入していない。
+
+型表は元rowへの借用queryでcollection要素とFnの単一引数を一致させ、返り値が
+Need／Resultであることを検査してからbatchをcommitする。callbackのparameter／effect metadataを
+複製してから不正なsourceを拒否する経路は使わない。NativeとAWBCは同じ所有型の契約を使う。
+scope、canonical child order、型置換、function relation、checked／operational分類を移行した。
+保存用Source codecのsemantic kindは37、AWBC wire tagは40、Bundle layout tagは40、value kindは134。
+既存tagとArcweft-ownedのversion 1は維持する。Data codecのoperational型拒否も維持した。
+
+新しい境界のため、String→Need<Result<String,String>>の型graph、独立したTraversal class、
+7種類の不正edgeを拒否した後のrow／lookup／次IDの不変性、完全Source型algebraのcodec往復、
+AWBC wire往復と異なるdense順の元Source型関係、source／callbackを取り違えたcandidateの拒否、
+Bundleの独立headとroleをcommitするlayout digestを検証するcaseを追加／移行した。
+この記録時点でこれらのruntime testは未実行であり、追加したことだけを合格とは記さない。
+型表の関係検査は所有型に置き、各backendの借用queryは表現の投影だけを行う。既存ownerに
+凝集した規則とその失敗原子性testを追加したもので、Source spellingをgateにしていない。
+
+R2947 Core checkは終了101で、保存Source type-row writerとAWBC test変換の網羅漏れ2件だった。
+この途中checkには開始前の入力hash固定を記録していないため、最終入力の受入へ転用しない。
+修正後のR2948はCore／runtime-plan／Compilerの全target／全feature／lockedで終了101。
+依存先Bundleのlayout digestとruntime-value-kind投影に網羅漏れ2件があり、原logと当時の入力を保持した。
+
+consumerを移行したR2949 workspace checkは**終了0・警告あり**、Cargo表示2m 35sで完了した。
+全target／全feature／locked。3,981非文書入力の前後hash差分0を確認した。
+[原ログ](acceptance-evidence/task-final-r2949-traversal-runtime-type-workspace-check.log)、
+[入力照合](acceptance-evidence/task-traversal-runtime-workspace-check.audit.json)。
+R2950 catalogはCore／Bundleの全2,406件、34 test binariesを選択し、追加4 caseを各1件確認した。
+R2951 runtimeはこの記録時点で実行中。Clippy、構造gate、全53逆依存runtimeは未実行である。
+[原本保全一覧](acceptance-evidence/task-traversal-runtime-type-evidence-integrity.json)。
+
+Sourceのtraverse／parallel call lowering、first-class aggregate Needの実構築・開始・await、
+実capability callbackの実行と保存復元はこのcutで受入済みとはしない。
+先行Generic Match、Sema全1,339件と既存AwaitManyの受入は取り消していない。
+元tracked WIP 14件とuntracked実ファイル6件を保持した。

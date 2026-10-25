@@ -160,6 +160,40 @@ pub(in crate::plan) fn full_table() -> RuntimePlanTypeTable {
             .collect();
         add(&mut seeds, P::BuiltinVariant { owner, cases });
     }
+    let traversal_source = add(
+        &mut seeds,
+        P::Sequence {
+            kind: RuntimePlanSequenceKind::Vec,
+            item: unit,
+        },
+    );
+    let traversal_result = add(
+        &mut seeds,
+        P::Result {
+            value: unit,
+            error: unit,
+            value_payload: payload,
+            error_payload: payload,
+        },
+    );
+    let traversal_need = add(&mut seeds, P::Need(traversal_result));
+    let traversal_mapping = add(
+        &mut seeds,
+        P::Function {
+            contract: RuntimeFunctionTypeContract::monomorphic(
+                EffectSet::from_labels(["fs.read"]).unwrap(),
+            ),
+            parameters: Box::new([unit]),
+            result: traversal_need,
+        },
+    );
+    add(
+        &mut seeds,
+        P::Traversal {
+            source: traversal_source,
+            mapping: traversal_mapping,
+        },
+    );
     let binder = RuntimeTypeBinder::new(1, 1, 1);
     let child = RuntimeTypeScope::root().enter(binder).unwrap();
     let bound = identity(u32::try_from(seeds.len() + 1).unwrap());
@@ -242,7 +276,7 @@ pub(in crate::plan) fn full_table() -> RuntimePlanTypeTable {
 #[test]
 fn complete_original_type_algebra_round_trips_through_existing_graph_admission() {
     let original = full_table();
-    let mut kinds = [false; 37];
+    let mut kinds = [false; 38];
     for declaration in original.declarations() {
         kinds[declaration.projection().executable_semantic_kind() as usize] = true;
     }

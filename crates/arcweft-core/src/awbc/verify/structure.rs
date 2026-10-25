@@ -173,6 +173,53 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::DataShape(item)) => {
                 check_index(program.runtime_types.len(), item.0, "runtime_types", &at)?;
             }
+            AwbcRuntimeTypeShape::Traversal { source, mapping } => {
+                check_index(program.runtime_types.len(), source.0, "runtime_types", &at)?;
+                check_index(program.runtime_types.len(), mapping.0, "runtime_types", &at)?;
+                let projection = crate::plan::RuntimePlanTypeProjection::Traversal {
+                    source: *source,
+                    mapping: *mapping,
+                };
+                let shape = |id: AwbcTypeId| {
+                    program
+                        .runtime_types
+                        .get(id.index())
+                        .map(AwbcRuntimeType::shape)
+                };
+                if !projection.valid_traversal_contract(
+                    |id| match shape(id)? {
+                        AwbcRuntimeTypeShape::Sequence { item, .. }
+                        | AwbcRuntimeTypeShape::Array { item, .. } => Some(*item),
+                        _ => None,
+                    },
+                    |id| match shape(id)? {
+                        AwbcRuntimeTypeShape::Function {
+                            parameters, result, ..
+                        } => Some((parameters.as_slice(), *result)),
+                        _ => None,
+                    },
+                    |id| match shape(id)? {
+                        AwbcRuntimeTypeShape::Need(payload) => Some(*payload),
+                        _ => None,
+                    },
+                    |id| {
+                        matches!(
+                            shape(id),
+                            Some(AwbcRuntimeTypeShape::Variant {
+                                owner: crate::awbc::schema::AwbcVariantIdentity::Builtin(
+                                    crate::pattern::RuntimeBuiltinVariantIdentity::Result
+                                ),
+                                ..
+                            })
+                        )
+                    },
+                ) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "invalid traversal collection or callback contract".to_owned(),
+                    });
+                }
+            }
             AwbcRuntimeTypeShape::Map { key, value, .. }
             | AwbcRuntimeTypeShape::Stream {
                 item: key,

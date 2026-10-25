@@ -168,6 +168,7 @@ fn executable(plan: &RuntimePlan) -> AwbcProgram {
             P::Sequence { kind, item } => A::Sequence { kind, item },
             P::Array { item, length } => A::Array { item, length },
             P::Map { kind, key, value } => A::Map { kind, key, value },
+            P::Traversal { source, mapping } => A::Traversal { source, mapping },
             P::Stream { item, error } => A::Stream { item, error },
             P::Tuple(items) => A::Tuple(items.into_vec()),
             P::Choice(items) => A::Choice(items.into_vec()),
@@ -294,13 +295,68 @@ fn original_awbc_type_relation_accepts_the_complete_algebra_in_a_different_row_o
         RuntimeTaskPlanSealLimits::default(),
         &mut work,
     );
-    let mut kinds = [false; 37];
+    let mut kinds = [false; 38];
     for (ty, row) in plan.type_table().declarations_with_ids() {
         kinds[row.projection().executable_semantic_kind() as usize] = true;
         relation.admit(ty, id(&plan, ty)).unwrap();
     }
     assert!(kinds.into_iter().all(|kind| kind));
     assert_eq!(relation.seen.len(), plan.type_table().len());
+}
+
+#[test]
+fn traversal_type_survives_awbc_wire_round_trip_and_rejects_foreign_shape_edges() {
+    let plan = original();
+    let code = executable(&plan);
+    let bytes = code.encode_canonical().unwrap();
+    let decoded =
+        AwbcProgram::decode_canonical(&bytes, crate::awbc::codec::AwbcDecodeBudget::default())
+            .unwrap();
+    decoded
+        .verify(AwbcVerifyBudget::default(), context())
+        .unwrap();
+    assert_eq!(decoded.encode_canonical().unwrap(), bytes);
+    let (traversal, _) = plan
+        .type_table()
+        .declarations_with_ids()
+        .find(|(_, row)| {
+            matches!(
+                row.projection(),
+                RuntimePlanTypeProjection::Traversal { .. }
+            )
+        })
+        .unwrap();
+    let traversal_id = id(&plan, traversal);
+    let row = &decoded.runtime_types[traversal_id.index()];
+    let AwbcRuntimeTypeShape::Traversal { source, mapping } = row.shape() else {
+        panic!("wire codec must retain the traversal head")
+    };
+    let source = *source;
+    let mapping = *mapping;
+    assert_ne!(source, mapping);
+    assert!(
+        RuntimeAwbcSourceTypeRelation::new(
+            &plan,
+            &decoded,
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter()
+        )
+        .admit(traversal, traversal_id)
+        .is_ok()
+    );
+    for (source, mapping) in [(mapping, mapping), (source, source)] {
+        let mut candidate = decoded.clone();
+        candidate.runtime_types[traversal_id.index()] = AwbcRuntimeType::new(
+            row.semantic_identity(),
+            AwbcRuntimeTypeShape::Traversal { source, mapping },
+        )
+        .with_scope(row.scope().clone());
+        assert!(
+            candidate
+                .verify(AwbcVerifyBudget::default(), context())
+                .is_err()
+        );
+    }
 }
 
 #[test]
