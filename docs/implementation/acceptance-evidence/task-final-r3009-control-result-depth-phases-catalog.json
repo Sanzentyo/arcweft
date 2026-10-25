@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "name": "task-final-r3009-control-result-depth-phases-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(=final_analysis::tests::control_results::inferred_control_result_preserves_polymorphic_prefix_schemes)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3009-control-result-depth-phases-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T11:44:47.7686731Z",
+  "finishedAt": "2026-10-25T11:45:57.4555578Z"
+}

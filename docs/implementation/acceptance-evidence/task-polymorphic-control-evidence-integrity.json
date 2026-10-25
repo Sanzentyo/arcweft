@@ -1,0 +1,293 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-checkpoint.verified.json",
+      "bytes": 19280,
+      "sha256": "afb2aae933a87dc3bb4535fd7b0f426000f8d744d6fd48a0cc1ca9f9aa06c04c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler-acceptance.json",
+      "bytes": 4793,
+      "sha256": "d4a49c3ffbfe1e8918d71229e342a44e2017d1d1bdfc5af3ed6447bd27877fd1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler-executables-after.json",
+      "bytes": 6424,
+      "sha256": "7da8b9785b21385bcb5e01d589786b17e142c1a1e13c8757f17d7b05e887abf4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler-executables-before.json",
+      "bytes": 6425,
+      "sha256": "c440cb42f9eff721a4374da31af724d45c29cc84de04c3e4a8aaef4736894241"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler.graph.json",
+      "bytes": 1142,
+      "sha256": "f218285e9617a65dbc5bc5927b62681202538896dcac897c5f3609ecd3c1e0fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler.source-freeze.json",
+      "bytes": 779111,
+      "sha256": "5b3a84048375832eaf84bb344bc4e8b055855dfac8e77d7368061c3960fa96b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-public-evidence-audit.json",
+      "bytes": 148,
+      "sha256": "3789807d81f886e6bc00177203e006146a3890209cf99fd8388d5069fb9a5a31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3007-control-result-closure-catalog.inventory.json",
+      "bytes": 153156,
+      "sha256": "882674b6d845328c39ff66482aa8744b894a68dc5db35af9cdc461776bc5d226"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3007-control-result-closure-catalog.json",
+      "bytes": 587,
+      "sha256": "97ab6d7c815d281830a90aadb4fb129354e0efef19516c9bc581c7666319eda7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3007-control-result-closure-catalog.log",
+      "bytes": 185391,
+      "sha256": "9929e5b6503dcee99ca5eacb78112037be5fb54c8b59909433671fd2ccea65e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3008-control-result-closure-runtime.json",
+      "bytes": 681,
+      "sha256": "a85bdec344c33522ed1b64299640dd2bf9059a04c4a892c239d83800bf4fb73f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3008-control-result-closure-runtime.log",
+      "bytes": 264356,
+      "sha256": "16b2e78acae50be6b382cc771e11cb28f232472adc9192375425028cbd4d4547"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3008-control-result-closure-runtime.terminal-audit.json",
+      "bytes": 1081,
+      "sha256": "4cbfab52a3b8b305c22100ab32301a7193c55834afa6f4f6b8ca1b4ed8054cdf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3009-control-result-depth-phases-catalog.inventory.json",
+      "bytes": 351945,
+      "sha256": "d2251c575982092571859f2781e62e74655f9cb94c9bc8dd967e63d000523f9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3009-control-result-depth-phases-catalog.json",
+      "bytes": 717,
+      "sha256": "47502694a0abfd13d5c0fdc697a53340f81483002cc2f1834542e7ac098a89a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3009-control-result-depth-phases-catalog.log",
+      "bytes": 335088,
+      "sha256": "4047d06ac5e3f809f0c2fc864ca2e956c8941ed72d19c3c8608fcc6197fca961"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3010-control-result-depth-phases-runtime.json",
+      "bytes": 811,
+      "sha256": "727a739e38899272a820eb5e72d396d1949c6c6ebe1180b00495b24491c4429e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3010-control-result-depth-phases-runtime.log",
+      "bytes": 495498,
+      "sha256": "c655330d4deb580bb9614250d4cbeb81e0221bfc2978c63c8e1b85f3ad444a6f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3010-control-result-depth-phases-runtime.terminal-audit.json",
+      "bytes": 788,
+      "sha256": "d0e497f6ee73c6adf5a058b087a0f4e4788c890ca88e60b03e77378db6df347a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3011-control-result-depth-phases-catalog.inventory.json",
+      "bytes": 351945,
+      "sha256": "ac237b3064fd748699f8bbeea6ed409906e5e744154f112d5cf43cfa9c9c7a6e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3011-control-result-depth-phases-catalog.json",
+      "bytes": 717,
+      "sha256": "28b83eba93172fffe72f552967f6dc33be47ac22f0a0dfac102268d758543cce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3011-control-result-depth-phases-catalog.log",
+      "bytes": 335088,
+      "sha256": "894a8099797beff9e3a22258e4ae3039aacaf36bb1d4e71adf30e266dfa7200c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3012-control-result-depth-phases-runtime.json",
+      "bytes": 809,
+      "sha256": "8d9de98aa2f51d9f7af5bdee131823b27ed832f3f5669fc7046ad0bbbfda18fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3012-control-result-depth-phases-runtime.log",
+      "bytes": 494027,
+      "sha256": "4820d83ebee17df421de39d90650a14315b79e04db516b89bf0ce63f22277b0e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3012-control-result-depth-phases-runtime.terminal-audit.json",
+      "bytes": 576,
+      "sha256": "b0817eb12e90a62c4db821df44b6ade4d3df496c44918cb52a8e335590193025"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3013-control-result-closure-catalog.inventory.json",
+      "bytes": 46584,
+      "sha256": "fca0de44c4555c67e2f9a4377b76936004fbfdf34d7d6279ef723487772c2832"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3013-control-result-closure-catalog.json",
+      "bytes": 660,
+      "sha256": "6e3f9bc7b025904b544ca775926a3ec388e5e4c95db43c57cb0955e1b7fa902d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3013-control-result-closure-catalog.log",
+      "bytes": 108896,
+      "sha256": "b92320eb4c5b3ed56ef22f9a2268e6d09dea200b64970cd4b58c26a5ab81d0ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3014-control-result-closure-runtime.json",
+      "bytes": 752,
+      "sha256": "cd006f16a87d82ba7f22e5de3ce6cccdd5b6225858942457785373dc686b1bbd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3014-control-result-closure-runtime.log",
+      "bytes": 133343,
+      "sha256": "7ee4b63619cbbb8f6b15b0e272f76696d4eeea10fbecee6aa2fa7d8112ce5680"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3014-control-result-closure-runtime.terminal-audit.json",
+      "bytes": 574,
+      "sha256": "e3f6a624929db3df38ba20b2adff4cae9d1ed274417bd5afb535d6ff86440e8e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3015-control-result-closure-catalog.inventory.json",
+      "bytes": 356322,
+      "sha256": "03eb3b617ad8d321bff386aa4e3b4fe6eb952a7116f5595f92c8e28acc4fdc82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3015-control-result-closure-catalog.json",
+      "bytes": 588,
+      "sha256": "90e93eb9d477772bdf07f3b6a15fc0f8d2ce228d2370e94bdf7a04a14a72bba0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3015-control-result-closure-catalog.log",
+      "bytes": 315555,
+      "sha256": "e4411704c4db0ed7037348ba8170cc8f84bab9e9da0dfca889fb414a176abd9c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3016-control-result-closure-runtime.json",
+      "bytes": 682,
+      "sha256": "b7a588d0627e2267a0e5adb4a05942dd6db15f11cb551379b286178d834b6dbc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3016-control-result-closure-runtime.log",
+      "bytes": 507179,
+      "sha256": "d857b0c739a2ff0791bce611a16c84269cf5ad3e61bdb6da3b772b28e5df8f46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3016-control-result-closure-runtime.terminal-audit.json",
+      "bytes": 806,
+      "sha256": "2fbf13f1e4fb76425022f5506dd412cd96b65d05d955f9a44c09252164a045a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3017-polymorphic-control-clippy.input-audit.json",
+      "bytes": 338,
+      "sha256": "ab7b52b1c57cd29bea05dc2b52d3d6bd8b16b678f284b407dcc4ea26ce4acb53"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3017-polymorphic-control-clippy.json",
+      "bytes": 528,
+      "sha256": "f82aa6b0030e42c0fec6d311cdebc73a196bb97b5568c60dfc22d4cb48417811"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3017-polymorphic-control-clippy.log",
+      "bytes": 4784803,
+      "sha256": "40773747a25de2fa017cc63fa9e2eaee969b0ece735896aaa069f2ebb22a86fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-acceptance.json",
+      "bytes": 55248,
+      "sha256": "b5e34ad01684f952d7f9cb4d9693aaa26ad9611f2f00ca2ef8fd8b2271ebe974"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-compiler-executables-after.json",
+      "bytes": 747,
+      "sha256": "52fa44586db706c7ac5501a1ed1c46b0d74cb0dfa13962c5f272620bc8c5eb7f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-compiler-executables-before.json",
+      "bytes": 748,
+      "sha256": "0053ba8c21840fd8e913b4d2414345a7ce8257c01eb55c2784a1a00b883a6ef0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-compiler.graph.json",
+      "bytes": 1311,
+      "sha256": "46662346bb73e5d7348247f3d9a8c6e9d55972a403294d61bfb064d2a8c2166f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-compiler.source-freeze.json",
+      "bytes": 779283,
+      "sha256": "c4ade9606b6799a7245f7a1fe5a7431eabc76e805ba1372167b574180db57fe9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-executables-after.json",
+      "bytes": 491,
+      "sha256": "335b270de5654cb8747fa28d6d1750a886d941941e672fad61a4fd60234bd520"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-executables-before.json",
+      "bytes": 492,
+      "sha256": "8a5005aa1681bf8f0c8b98f18e3c4e6c3324878834b8f66aba2a14eeac13edb5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-fixed-executables-after.json",
+      "bytes": 491,
+      "sha256": "0a34d3d5ffabc9c39a3055fe646de44ac6acaf5e01028665dbfad081d69c5773"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-fixed-executables-before.json",
+      "bytes": 492,
+      "sha256": "facabe64a7584f7cc46d90a990d414404a3d761553648420b695f48276b9cccd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-fixed.graph.json",
+      "bytes": 1311,
+      "sha256": "46662346bb73e5d7348247f3d9a8c6e9d55972a403294d61bfb064d2a8c2166f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-fixed.source-freeze.json",
+      "bytes": 779283,
+      "sha256": "f0c7b7feecc5be8aab3d55400c594633770c2b7f21e322ddac83a548540b5454"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-sema-executables-after.json",
+      "bytes": 1487,
+      "sha256": "df563b752cd9f741d6e3ee9bc9a2dbe7448d4d87f2e904484b2a32da7d7c5915"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-sema-executables-before.json",
+      "bytes": 1488,
+      "sha256": "2a583c4a13994906f63e7f0698f0380abec085bcc2317d50cb842a6b426404c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-sema.graph.json",
+      "bytes": 1311,
+      "sha256": "46662346bb73e5d7348247f3d9a8c6e9d55972a403294d61bfb064d2a8c2166f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-sema.source-freeze.json",
+      "bytes": 779283,
+      "sha256": "28411ac4ebd5edde09239545c5502b654eacf307901873a659fb5f24f9999961"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control.graph.json",
+      "bytes": 1220,
+      "sha256": "5e1e03351f382edd2a63d093b95f9f6ccbecf5ee3c893502077a3556ddf4f36a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control.source-freeze.json",
+      "bytes": 779191,
+      "sha256": "54fe0e991347c6ef4a180010e2530700bf05a00cfa253bdb8d5303ddab002d1f"
+    }
+  ],
+  "drift": 0,
+  "artifactCopyMove": false
+}

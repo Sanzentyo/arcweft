@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "run": "task-final-r3014-control-result-closure-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  12.617s] 195 tests run: 195 passed, 0 skipped",
+  "executed": 195,
+  "passed": 195,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T11:49:32.0981049Z"
+}

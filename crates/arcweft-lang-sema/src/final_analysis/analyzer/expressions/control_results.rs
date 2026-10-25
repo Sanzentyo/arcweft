@@ -61,6 +61,11 @@ impl Analyzer<'_, '_, '_> {
         if saw_branch && joined.is_none() {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
-        Ok(joined)
+        // A polymorphic function owns its binder. Its synthesized scheme
+        // may join another branch, but is not a monomorphic function-use
+        // requirement to reopen against every branch origin. Preserve each
+        // original scheme and let the final common-type check join them.
+        Ok(joined
+            .filter(|ty| !matches!(ty, TypeKind::Function { binder, .. } if !binder.is_empty())))
     }
 }

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3011-control-result-depth-phases-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83922944,
+      "nonTest": false,
+      "sha256": "f86623cc3db7fe560f1d04cc3825d4756dceeada64bf0821d1b5073c5a87f9d8"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T11:47:39.2536916Z"
+}

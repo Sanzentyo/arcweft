@@ -129,3 +129,48 @@ fn deeply_nested_unannotated_diverging_branches_keep_the_never_result() {
             .all(|(_, call)| call.selected_application().is_some())
     );
 }
+
+#[test]
+fn inferred_control_result_preserves_polymorphic_prefix_schemes() {
+    let world = fixture(
+        r#"
+entry cli @entry.main { goto @flow.main }
+fn left<A, B>(first: A)(second: B) -> i64 { 1i64 }
+fn right<A, B>(first: A)(second: B) -> i64 { 42i64 }
+fn identity<T>(value: T) -> T { value }
+fn apply(handler: i64 -> i64 effects {}, value: i64) -> i64 { handler(value) }
+fn selected(pick: bool) -> i64 {
+    let prefix = if pick { left("left") } else { right("right") }
+    return apply(identity(prefix), 9i64)
+}
+flow main() -> bool {
+    let left_result = selected(identity(true))
+    let right_result = selected(identity(false))
+    return left_result == 1i64 && right_result == 42i64
+}
+"#,
+        None,
+    );
+    let project = world.project.analysis_view().unwrap();
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let analysis = analyze(&world).unwrap_or_else(|error| {
+        if let FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } = &error {
+            panic!(
+                "{error:?}; source expression: {:?}",
+                module.resolve_expr(*owner).unwrap()
+            );
+        }
+        panic!("{error:?}");
+    });
+    let (owner, _) = module
+        .expressions()
+        .find(|(_, expression)| matches!(expression.kind(), HirExprKind::If(_)))
+        .expect("prefix branch");
+    assert!(matches!(analysis.expression(owner).unwrap().value_type(),
+        Some(TypeKind::Function { binder, .. }) if !binder.is_empty()));
+    assert!(
+        analysis
+            .calls()
+            .all(|(_, call)| call.selected_application().is_some())
+    );
+}

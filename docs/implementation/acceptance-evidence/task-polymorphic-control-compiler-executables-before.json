@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3013-control-result-closure-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-6f0f9fd90f0abf3c.exe",
+      "bytes": 122509824,
+      "nonTest": false,
+      "sha256": "abe5dee1ca8a8541c77f3474b5350d4a86af34877fe5b43a3fb5646e6045f2d5"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\generic_continuation_snapshot-b9d07783a860445b.exe",
+      "bytes": 174787584,
+      "nonTest": false,
+      "sha256": "3e94a1385a6be7b9123890df01b13144aaceb6d935d38720ece5155f0a09d61b"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T11:49:13.2870424Z"
+}

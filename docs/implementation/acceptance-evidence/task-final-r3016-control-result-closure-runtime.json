@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "name": "task-final-r3016-control-result-closure-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3016-control-result-closure-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T11:50:45.9641898Z",
+  "finishedAt": "2026-10-25T11:52:43.4227000Z"
+}

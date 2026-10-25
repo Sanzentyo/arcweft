@@ -1,0 +1,427 @@
+{
+  "version": 1,
+  "commit": "832369122067e326587734200e553b0a89180509",
+  "parent": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "tree": "491047c99f4428a58db8e75d4211856a18fde2f9",
+  "remote": "832369122067e326587734200e553b0a89180509",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/tests/callable_cases/control_results.rs",
+      "blob": "5b0e8572200449d6667d383ef8b619c973d1341c"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+      "blob": "b1a4dee10e869fc4dbadf651d152c582106fae38"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/constraints.rs",
+      "blob": "214993264a6941b7794af4aea090e407aaa4796d"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+      "blob": "d16e623738ea5f3fe3bed4b3c0cec08ac1158a3d"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "blob": "322e878d574fc1666d568aa4ecdb384cbec39082"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/control_results.rs",
+      "blob": "d021becc43bd1351544d0829206849ba79a0a009"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/tests.rs",
+      "blob": "bc00a712733d9e7463e08d376e806c5b6ee9448e"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+      "blob": "7ca651fa8d1ced49ce1e15ffdf7c9264ac38ef49"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/control_results.rs",
+      "blob": "15385b48ec3bbbe818db0777c94e62569b14677d"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/generic_calls.rs",
+      "blob": "2cdf5c6df6e9f7ee46e87287985a75bc3be37248"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types/constraints/transaction.rs",
+      "blob": "1ff55f52fada7b46120c423165320e878ecdbc57"
+    },
+    {
+      "path": "docs/01-language/expression-control-flow.md",
+      "blob": "6a132157ccfc1894f87dd5edc51bb04fa18ef466"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-checkpoint.graph.json",
+      "blob": "a670b4297ae5aa64fc50fe5c77811929eff239e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-checkpoint.source-freeze.json",
+      "blob": "3afb876ba33232f505445bfec0b6f8338ac95c9a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-closure-executables-after.json",
+      "blob": "2cc50b9aafcc1712b832130ee034b30aff771499"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-closure-executables-before.json",
+      "blob": "8193a711ddc79b16aa0a3d8cc4fe972e3c1556e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-closure.graph.json",
+      "blob": "a670b4297ae5aa64fc50fe5c77811929eff239e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-closure.source-freeze.json",
+      "blob": "bdbb66ed1085917206072611637f86a60c59c366"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-diagnostic.graph.json",
+      "blob": "a670b4297ae5aa64fc50fe5c77811929eff239e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-diagnostic.source-freeze.json",
+      "blob": "d41e8e6661c5ebaeaa0400199aa4098190ed44b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-fixture-executables-after.json",
+      "blob": "a4caca307992e20360b6efbe52a5eb194bada8c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-fixture-executables-before.json",
+      "blob": "7562d46c7370c47dd0ba4c8027870e2832429fbb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-fixture.graph.json",
+      "blob": "a670b4297ae5aa64fc50fe5c77811929eff239e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-fixture.source-freeze.json",
+      "blob": "b7d30aaa741fa5c6796582837ba45904ffcb86d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-phases-executables-after.json",
+      "blob": "690b34c6ee456930a16d86590c7cb6b0350a7ed5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-phases-executables-before.json",
+      "blob": "e2389df15d6ba41b036fe6c9a203274658db3777"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-phases.graph.json",
+      "blob": "a670b4297ae5aa64fc50fe5c77811929eff239e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-phases.source-freeze.json",
+      "blob": "ac9a490294cd19c4c0bed64bf70a877f6c5452e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-inference-acceptance.json",
+      "blob": "c39fc54e00cbfd174ae63cbb849e5f16c75593b3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-inference-evidence-integrity.json",
+      "blob": "36926305146ed5001272cf99c7c1f41c12326d90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-diagnostic-executables-after.json",
+      "blob": "95a10f8a3331d93fc64ef21f249c933c1e1be94c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-diagnostic-executables-before.json",
+      "blob": "a3762a60772d61d36f7431a83ecf2d6506613cff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-diagnostic.graph.json",
+      "blob": "720ff20974ecb73e0deb32042e53a5bbe78cdfed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-diagnostic.source-freeze.json",
+      "blob": "304d62e5c5b7c4dc90bea90e5678e55e843f2877"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-ordered-executables-after.json",
+      "blob": "92087bed92cb10102efaea381f57a0c632bb4203"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-ordered-executables-before.json",
+      "blob": "a1274c6ff8f49c0485e71eaf3fa5a889f8f09747"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-ordered.graph.json",
+      "blob": "26bf4e6d410276dbd86f755f07c1477d56204938"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-ordered.source-freeze.json",
+      "blob": "31f0ab4ad49a6efc2a26fa12da42a4f27ad9787d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-path-executables-after.json",
+      "blob": "347c261da6fb2fc322cb6158337a628388223ae1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-path-executables-before.json",
+      "blob": "031291910c9d30d538536bdc7133476e003a04f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-path.graph.json",
+      "blob": "720ff20974ecb73e0deb32042e53a5bbe78cdfed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-path.source-freeze.json",
+      "blob": "a3d94d9373b72d0459f76c1fa3fa9d67d695fd38"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join.graph.json",
+      "blob": "720ff20974ecb73e0deb32042e53a5bbe78cdfed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join.source-freeze.json",
+      "blob": "2640b6d9e4c405ec9c5fd19ddca6775d4ec1f78c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2988-traversal-await-result-catalog.inventory.json",
+      "blob": "2dd56deee1946cf59bfc0a4fa85926b69dbb432b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2988-traversal-await-result-catalog.json",
+      "blob": "d3d56de98b7440f02c3865225d646724de75d934"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2988-traversal-await-result-catalog.log",
+      "blob": "d7296c30d8819bed5a2d4f0c88554b8da397ae25"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2989-traversal-await-result-runtime.json",
+      "blob": "75801b362258cc23685f63d616534af7943da693"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2989-traversal-await-result-runtime.log",
+      "blob": "e76a4b7601a792ec2b79af3077f3aae0e13b43e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2989-traversal-await-result-runtime.terminal-audit.json",
+      "blob": "5adc7198bc68d4ef26c885e7086a91291018888f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2990-control-result-join-catalog.input-audit.json",
+      "blob": "37785676434381e71ebd52511688c945bfa2a501"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2990-control-result-join-catalog.json",
+      "blob": "d89c3ed434e2781f5816e26c289e08bac1f02630"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2990-control-result-join-catalog.log",
+      "blob": "04cf51af86986fd3c992c3be8644cf7ea537a9c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2992-control-result-join-path-catalog.inventory.json",
+      "blob": "7868fc7e3b4f36a371139c29dd7993122e3cf973"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2992-control-result-join-path-catalog.json",
+      "blob": "3e23643c6dfdf224a46b2ab3d69122052b77940c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2992-control-result-join-path-catalog.log",
+      "blob": "1d3d15857f9bdcf1f24393fedd4f66036b099e8c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2993-control-result-join-path-runtime.json",
+      "blob": "8fde2271b020d623bfe5df6f4b5be3b13b1bc7c4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2993-control-result-join-path-runtime.log",
+      "blob": "1e5b72192cc21b90078cd22e44cd9e8cc726d37c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2993-control-result-join-path-runtime.terminal-audit.json",
+      "blob": "142bac0f4dfba1212a93b081c450e421617d3d1a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2994-control-result-join-diagnostic-catalog.inventory.json",
+      "blob": "397ec52487191b1fe0d5a15ab5a2d3fdb2303753"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2994-control-result-join-diagnostic-catalog.json",
+      "blob": "de6bb505d09aa5c5ef0ed8085243502ea227bda2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2994-control-result-join-diagnostic-catalog.log",
+      "blob": "0958509add8f9a6be0ab2f56c4be6d0047e96d7f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2995-control-result-join-diagnostic-runtime.json",
+      "blob": "da6e9ededba1d89320d1acd9354dd2fcc861d1a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2995-control-result-join-diagnostic-runtime.log",
+      "blob": "c2edf9102f45ffdcb56303ef45a3b8e494ae5fe8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2995-control-result-join-diagnostic-runtime.terminal-audit.json",
+      "blob": "3a473294696adcd99c6aa545484969eda66719af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2996-control-result-join-ordered-catalog.inventory.json",
+      "blob": "172398321bdcc68875a69288d169b1e0263aabb1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2996-control-result-join-ordered-catalog.json",
+      "blob": "1ee9fd70617c23a9f9e61eacedb231f92834526d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2996-control-result-join-ordered-catalog.log",
+      "blob": "0d7cfd808d4d8e7c7df4fea32b0f409aa181f938"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2997-control-result-join-ordered-runtime.json",
+      "blob": "294a8e1151c722d38ed4ab59597b981599f3c426"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2997-control-result-join-ordered-runtime.log",
+      "blob": "2443451510dc5703719da839d172205d150053c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2997-control-result-join-ordered-runtime.terminal-audit.json",
+      "blob": "34fac3c29825118fab0ea2e2b7b96f4a07b33782"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2998-control-result-closure-catalog.inventory.json",
+      "blob": "9cdee6777f12ec28612284f9ae96cda1c8b6f3e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2998-control-result-closure-catalog.json",
+      "blob": "c3556e638af6e7da8da4d2dd46364ab575264c43"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2998-control-result-closure-catalog.log",
+      "blob": "fcf94c155ebd04bb0fad5953b05b0b0f04a528ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2999-control-result-closure-runtime.json",
+      "blob": "00c6e4b6aa3653897eb5feda8f9b324633b04dbb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2999-control-result-closure-runtime.log",
+      "blob": "9a55aa3bfdbb12bbc27fcd9d5895a7c05b9e00ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2999-control-result-closure-runtime.terminal-audit.json",
+      "blob": "ab1d5e32a30afad5f8ada2c877e2f8e10ff7bc79"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3000-control-result-depth-diagnostic-catalog.input-audit.json",
+      "blob": "b578cc3f8636ef890485bb7773ea1def0dfac454"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3000-control-result-depth-diagnostic-catalog.json",
+      "blob": "64ca8490f1dd72eb711d720c686bb8477ec7a513"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3000-control-result-depth-diagnostic-catalog.log",
+      "blob": "7bc954b075003e07b7500a73fbc1c3fc29032921"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3002-control-result-depth-phases-catalog.inventory.json",
+      "blob": "6e4a1e818a44ca06f5c532358d8d8b7a577c9260"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3002-control-result-depth-phases-catalog.json",
+      "blob": "59772ec24ad9e9c52139d46872484c94e413530d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3002-control-result-depth-phases-catalog.log",
+      "blob": "fa87f0bd3b1d3a0b70b2160d31b8e6fec8722a9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3003-control-result-depth-phases-runtime.json",
+      "blob": "88b0e4d12f01fa994f197cc70d1aec30e0a7a316"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3003-control-result-depth-phases-runtime.log",
+      "blob": "ec8c615554bf3239dd0b06530a4710e444228646"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3003-control-result-depth-phases-runtime.terminal-audit.json",
+      "blob": "fa9efaa7f922169e5852d5d95deb5e80b4e6b2d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3004-control-result-depth-phases-catalog.inventory.json",
+      "blob": "60a9045981f4c77ce57390afd7fcc7d8eef6296c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3004-control-result-depth-phases-catalog.json",
+      "blob": "e271fd6f0d55603af5c20215dab81854f18d5bdf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3004-control-result-depth-phases-catalog.log",
+      "blob": "20517ffe747582076bfd249a93e7efd2eaac30a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3005-control-result-depth-phases-runtime.json",
+      "blob": "684fa58c411efefc93889ffadae984e99b7bf601"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3005-control-result-depth-phases-runtime.log",
+      "blob": "a220c875c0309aaa12b8d05baf2e93f7b3489c1b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3005-control-result-depth-phases-runtime.terminal-audit.json",
+      "blob": "7654a7042ffddb356ece23ecdb89f8f0a21fc1bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3006-control-result-owner-clippy.input-audit.json",
+      "blob": "04ec2ee9df51396bf0a3efc9de23b486ee6a84df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3006-control-result-owner-clippy.json",
+      "blob": "12124a81ddee660e30f81e3b57ac711e98b34bae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3006-control-result-owner-clippy.log",
+      "blob": "9969c77c8d4ece14942e3832f1a51a7d7c8983d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-reverse-public-evidence-audit.json",
+      "blob": "3cc9b6627085926ba375d5935b5416f4e79e6e19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-reverse-status-checkpoint.verified.json",
+      "blob": "dd0329961494296374bc42e6c5153e1c86893611"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-await-result-executables-after.json",
+      "blob": "dc35588318aea86e15e3eece1d21c77f4a68fbfd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-await-result-executables-before.json",
+      "blob": "a1cc29630b04d1203191243e7f4a7ea479811e62"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-await-result.graph.json",
+      "blob": "82b85eaa466a63d4029b22d01b6933f5ebd0912f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-await-result.source-freeze.json",
+      "blob": "72f6abc48735a1248289ace38c6580cda248b922"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "dd96370c6856511b6ae5f5db2c1a568d15ca16aa"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "e9f3708fe858ed5b9fc09a0b501310016a013ec6"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "9de0edb2c6b98c913207a0877e8bc319e1d71b9da0663f6415743c860dd1f684",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T11:29:55.7370507Z"
+}

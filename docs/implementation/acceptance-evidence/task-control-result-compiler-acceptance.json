@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "run": "task-final-r3008-control-result-closure-runtime",
+  "executed": 622,
+  "passed": 619,
+  "failed": 3,
+  "exitCode": 100,
+  "seconds": 243.888,
+  "excluded": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "executableInputs": 25,
+  "executableDrift": 0,
+  "newNativeAwbcCases": [
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::control_branch_generic_capture_runs_native_and_decoded_awbc"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::control_branch_context_runs_both_orders_in_native_and_decoded_awbc"
+    }
+  ],
+  "acceptedBackend": [
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awbc_verifier_rejects_a_generic_bound_type_at_a_forged_depth"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awbc_callable_snapshot_rejects_a_forged_retained_type"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awfb_session_save_preserves_a_live_local_before_nested_replacement"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "empty_never_statement_match_preserves_let_else_in_native_and_awbc"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "inhabited_empty_statement_match_cannot_publish_a_native_plan"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awfb_session_save_restores_the_generic_prefix_into_its_pinned_program"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "native_generic_continuation_keeps_its_scheme_origin_position_and_prefix"
+    }
+  ],
+  "allGenericContinuationSnapshot": [
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awbc_verifier_rejects_a_generic_bound_type_at_a_forged_depth"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "authored_formatter_transaction_restores_its_original_staging_and_completes"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awbc_callable_snapshot_rejects_a_forged_retained_type"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "authored_lazy_context_executes_in_native_and_restores_the_awbc_callback_cause"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awfb_session_save_preserves_a_live_local_before_nested_replacement"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "empty_never_statement_match_preserves_let_else_in_native_and_awbc"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "inhabited_empty_statement_match_cannot_publish_a_native_plan"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awfb_session_save_restores_the_generic_prefix_into_its_pinned_program"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "native_generic_continuation_keeps_its_scheme_origin_position_and_prefix"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "standard_map::captured_map_restores_its_original_callback_and_continues_remaining_rows"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "standard_map::retained_map_prefix_restores_its_mapping_and_original_captured_callback"
+    }
+  ],
+  "failures": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_origin_branch::awbc"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_origin_branch::native"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_origin_branch_has_deterministic_canonical_awbc_bytes"
+    }
+  ],
+  "scope": "Pre-HIR-change Compiler consumer verification of the contextual control-result checkpoint"
+}

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "name": "task-final-r3013-control-result-closure-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--test",
+    "generic_continuation_snapshot",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3013-control-result-closure-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T11:48:15.9205030Z",
+  "finishedAt": "2026-10-25T11:49:11.8538986Z"
+}

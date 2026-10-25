@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "run": "task-final-r3008-control-result-closure-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 243.888s] 622 tests run: 619 passed (3 slow), 3 failed, 0 skipped",
+  "executed": 622,
+  "passed": 619,
+  "failed": 3,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_origin_branch::awbc"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_origin_branch::native"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_origin_branch_has_deterministic_canonical_awbc_bytes"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T11:43:54.7059736Z"
+}

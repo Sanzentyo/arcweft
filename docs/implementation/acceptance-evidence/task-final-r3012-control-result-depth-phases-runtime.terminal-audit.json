@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "run": "task-final-r3012-control-result-depth-phases-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.187s] 1 test run: 1 passed, 1332 skipped",
+  "executed": 1,
+  "passed": 1,
+  "failed": 0,
+  "skipped": 1332,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T11:47:43.8304949Z"
+}

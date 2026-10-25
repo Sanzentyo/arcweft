@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "run": "task-final-r3010-control-result-depth-phases-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.196s] 1 test run: 0 passed, 1 failed, 1332 skipped",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 1332,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::control_results::inferred_control_result_preserves_polymorphic_prefix_schemes"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T11:46:04.2306992Z"
+}

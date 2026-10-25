@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "name": "task-final-r3017-polymorphic-control-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3017-polymorphic-control-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T11:53:21.5451253Z",
+  "finishedAt": "2026-10-25T11:55:10.9238409Z"
+}

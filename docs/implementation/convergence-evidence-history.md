@@ -11597,3 +11597,41 @@ R3006のSema／Compiler全target・全feature・locked Clippyは終了0・警告
 診断print除去後の3,986非文書入力の前後hash差分0。
 大きい既存ownerの責任・state・private delegationと各pathのphysical LOC／増加は
 [本cutのownership disposition](acceptance-evidence/task-control-result-inference-acceptance.json)へ記録した。
+
+## Polymorphic prefix分岐の回帰修復 — 2026-10-25
+
+照合基点は公開main `832369122067e326587734200e553b0a89180509`。前段の途中cutは103 pathを通常公開した。
+parent `674c6f5ae45743e6ea45f45dbf75e18c94b760a5`、tree `491047c99f4428a58db8e75d4211856a18fde2f9`、
+full patch SHA256 `9de0edb2c6b98c913207a0877e8bc319e1d71b9da0663f6415743c860dd1f684`。
+全103公開blob差分0、検証原本87件の公開byte hash差分0、元tracked WIP 14件不変、index空を確認した。
+[前段公開照合](acceptance-evidence/task-control-result-checkpoint.verified.json)、
+[原本の公開byte照合](acceptance-evidence/task-control-result-public-evidence-audit.json)。
+
+R3007／R3008のCompiler全target・全feature・lockedは622実行、**619 PASS／3 FAIL**、除外0、終了100、243.888秒。
+全25 executable・3,986非文書入力の前後hash差分0。追加の条件分岐2ケースはNative／decoded AWBCでPASSしたが、
+既存prefix分岐のNative／AWBC／canonical byteの3件が最終型未確定（ExprId slot70）でFAILした。
+同じ3識別子は前段R2987でPASSしており、当該cutによる回帰として扱った。Generic Matchの継続・保存7件は全PASSだった。
+
+同じCompiler fixtureをSemaへ切り出したR3009／R3010も、1実行0 PASS／1 FAIL、終了100。
+実HIRはvalue calleeを持つCallで、分岐の合成schemeを文脈として再適用した後に最終型を失っていた。
+polymorphic関数は自分のbinderと元のcallable originを保ち、合成schemeを他の分岐のfunction-use要求として再利用しない。
+最終common-type joinは同じownerで行い、他の型の文脈供給、rollback、資源課金、physical source検査は維持した。
+HIRのproduction実装は変更していない。修正後R3011／R3012の同入力1件はPASS、終了0、0.187秒。
+
+R3013／R3014はCompiler callable_execution全184件とgeneric_continuation_snapshot全11件を選択し、
+**195／195 PASS**、除外0、終了0、12.617秒。回帰3件、追加2件、元の継続・保存ケースをすべて含む。
+全2 executable・3,986入力の前後hash差分0。R3015／R3016の全Semaは**1,357実行／1,356 PASS／1 ABORT**、
+除外0、終了100、115.206秒。全5 executable・3,986入力のhash差分0。残るABORTは同じ32階層Never fixtureで、
+階層数・stack設定・budget・assertionを変更していない。
+
+R3014／R3016の非文書入力3,986件は互いにもhash一致する。受入済みの全151識別子を終端へ照合し、
+115 transcript・24 coverage・5公開query・7 Native／decoded-AWBC継続／保存が全PASSだった。
+これは同入力の2実行を照合した結果で、151件を一つの新しいrunで実行したとは呼ばない。
+R3008の622件を修正後の全件PASSへ書き換えず、後続195件の選択範囲を区別する。
+[回帰前後・package／ケース・151件の照合](acceptance-evidence/task-polymorphic-control-acceptance.json)。
+
+R3017のSema全target・全feature・locked Clippyは終了0・警告あり、Cargo表示1m49s。
+3,986非文書入力の前後hash差分0。元のSema 1,348識別子とSema／Source必須17件も全PASSへ照合した。
+変更は既存branch推論ownerのbinder保管条件と同じ意味境界のテストで、Cargo edge・公開API・I/O・独立solverを追加していない。
+全22逆依存runtime・最新workspace check／Clippy・包括構造gateは本cutで未実行。
+[本cutの検証原本保全一覧](acceptance-evidence/task-polymorphic-control-evidence-integrity.json)。
