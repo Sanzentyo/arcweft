@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "base": "197c80372c737d0e8a4cbbf81e32c5635d5f1f19",
+  "purpose": "Terminal complete Core reverse-dependency runtime; actual 51 failures retained. HIR Tier 2 is still running.",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.log",
+      "bytes": 5380684,
+      "sha256": "03b01e7ae77a4be90a1d7a163d67537dfa977c77fa01b5a0844e958911f552b5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.json",
+      "bytes": 2717,
+      "sha256": "f61713ba35a93422f9d0660ebe92aa03c002670ae2236c354753dbe11061ce78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.terminal-audit.json",
+      "bytes": 9144,
+      "sha256": "055c2ef2130a5c04b3e0ae9147652de6fd7e051337894c67bf9dfb76daf60f83"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.failure-recon.json",
+      "bytes": 3429499,
+      "sha256": "abcf4127323840928578e7a63c547d34050beddddad1259f2fe4c6e899700e88"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-reverse-executables-after.json",
+      "bytes": 56284,
+      "sha256": "0d567820e613577773e00869197ab907f909ce5cda96c68a37ec1356d1f63aac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-reverse-acceptance.json",
+      "bytes": 54636,
+      "sha256": "d6317f24d6eb2a57a2038ce85e037bcf7b1081e714fef1abdd444aaccaa43b13"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-gates.verified.json",
+      "bytes": 6220,
+      "sha256": "eec86119e7eef54f46cf90734271b3b310beb6afae53d6d6d2b8f3296c46509f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-gates-public-evidence-audit.json",
+      "bytes": 135,
+      "sha256": "61a44cda97a84c0db88b11d3822cc8349c6abaf385576f157713fd41b7db10c4"
+    }
+  ],
+  "totalBytes": 8939319,
+  "artifactCopyMove": false
+}

@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "commit": "197c80372c737d0e8a4cbbf81e32c5635d5f1f19",
+  "parent": "19c68836a06c5668d1d4a99db20c698d61483565",
+  "tree": "8f249233d47c01c0bc080566ee851c0de7a355cf",
+  "remote": "197c80372c737d0e8a4cbbf81e32c5635d5f1f19",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3119-handle-codec-reverse-catalog.inventory.json",
+      "blob": "aef98935d8ac3956e38f50f4c3ce936f851196c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3119-handle-codec-reverse-catalog.json",
+      "blob": "f067e7f553e367899859ae0073611e64ed10a873"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3119-handle-codec-reverse-catalog.log",
+      "blob": "124bd6a53c9490f0c8523e4fd454613e8075406f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3120-handle-codec-consumer-catalog.inventory.json",
+      "blob": "5c9b8f625f26a4be05a99fe2b2a15c0cf625e052"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3120-handle-codec-consumer-catalog.json",
+      "blob": "8b5efe24be690d0c6e6a3d7d29ebd5a1c0792e4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3120-handle-codec-consumer-catalog.log",
+      "blob": "54809594f8ca78a9d7a39df405c9caa8816b1999"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3122-handle-codec-workspace-check.input-audit.json",
+      "blob": "8763d12a3d952f9aee5f572a99edf07b832a38fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3122-handle-codec-workspace-check.json",
+      "blob": "a9978818b1a43b0291d545a6ce89369db48b1ec5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3122-handle-codec-workspace-check.log",
+      "blob": "c04f88763992e81b855a6c6f628e42dc9159d5cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3123-handle-codec-workspace-clippy.input-audit.json",
+      "blob": "69837e77c4341329777e3559f3e62c71b0841276"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3123-handle-codec-workspace-clippy.json",
+      "blob": "a387cfdc0a4bd1ddd40676c33ed13dbd1fcb3ed9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3123-handle-codec-workspace-clippy.log",
+      "blob": "fcd821bc15563a10cc70673d33f60bf61e19714d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3125-handle-codec-core-doctest.input-audit.json",
+      "blob": "d014b78002abdd6f089bff8743b0b4a90bc9cc7f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3125-handle-codec-core-doctest.json",
+      "blob": "d2425ef90a8eec18e9a8e5626be8113665ae82c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3125-handle-codec-core-doctest.log",
+      "blob": "4d249002bec8cbce042f51a97da49137cd1bb1a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3126-hir-tier2-production-catalog.inventory.json",
+      "blob": "a38c831e184368a672055134e0be96948c46da57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3126-hir-tier2-production-catalog.json",
+      "blob": "0f358e7620e8892467b9991cf81eda1a397affc6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3126-hir-tier2-production-catalog.log",
+      "blob": "d489c2d08b80457b66ad4efebc2aa5d90210f0ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-gates-evidence-integrity.json",
+      "blob": "b078fd5ade2630651367a5999cdd91ea8de01558"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-gates.json",
+      "blob": "9e943218b9541c5440fdf5b4d55bc7209fda48b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair-public-evidence-audit.json",
+      "blob": "caf111711566e989ca872e9ea63787f24056def7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-repair.verified.json",
+      "blob": "26cf8c91bd9e363fe71b54406896196d09634ea1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-required-cases.json",
+      "blob": "e537e2e19da358bc76bf122b76a2026ea485a856"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-reverse-executables-before.json",
+      "blob": "a4490f0f986aaf09354ddd0fdaa5ec164e188bc7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-runtime-driver.ps1",
+      "blob": "957782317a6d4d2fba6ca42241dcd5878ef88165"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-codec-runtime-selection.json",
+      "blob": "bd02d4081f7af3f3e0af3be838996ff2c34017a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-driver.ps1",
+      "blob": "2fd4753a1cda968517e048fed28a2cb1676d4714"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-executables-before.json",
+      "blob": "6176946d304411aab1c25c0fec858ae883a06d8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current-input-audit.json",
+      "blob": "904f2a21ec3cccbef7e255eaee9e94508209bc87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-tier2-current.binaries.json",
+      "blob": "f8f874e2c83942a57ed6a74845b7d30b307cb26c"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "cfb82a21130be61966fbab43e14f1c800fb946c8"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "fa124d9c61c9d5def4f49cabcbf3e97d0b5a4daf"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "db3b0ee1d7ed29ab0e9994c831cd820663ec7693516e6360a8ae99e02b8e2bc5",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T18:37:18.0806322Z"
+}

@@ -11940,3 +11940,55 @@ workspace packageと関連globalを含む1,322入力・元の37,315,072-byteバ�
 再利用した。[入力・バイナリ照合](acceptance-evidence/task-hir-tier2-current-input-audit.json)を保持する。
 4–8 GiBと見積もられたproduction世代保持を含むため、test threads 1で全8件を逐次実行する。
 この時点で全Tier 2、当該8件の終端、Native-Web capture parityの成功を主張しない。
+
+## carrier修復後の全53逆依存runtime終端 — 2026-10-26
+
+公開 `197c80372c737d0e8a4cbbf81e32c5635d5f1f19` のparentは
+`19c68836a06c5668d1d4a99db20c698d61483565`、treeは
+`8f249233d47c01c0bc080566ee851c0de7a355cf`、full patch SHA256は
+`db3b0ee1d7ed29ab0e9994c831cd820663ec7693516e6360a8ae99e02b8e2bc5`。
+全32公開blob・原本等29件の公開byte hash差分0、index空・元WIP 14件を保持した。
+
+R3121はCore全53逆依存の全target・全feature・lockedで終端し、7,349件中
+7,298 PASS（64 slow）／51 FAIL／39 skipped、2,454.113秒、実際のnextest終了100。
+監督scriptのexit 1と、nextest本体のexit 100を区別する。全catalog集合・3,987非文書入力・
+227実行ファイルの前後hash差分0。named caseは50 package、残るarcweft／
+arcweft-bundle-assets／arcweft-render-webはbuildのみ。
+[全package・case集合・前段比較](acceptance-evidence/task-handle-codec-reverse-acceptance.json)。
+
+統合Coreは2,080／2,080、Compilerは622／622、Semaは1,357／1,357 PASS。
+Generic Matchの受入済み151件と必須Sema／Source 17件も全PASSとして終端照合した。
+Core単体と異なる13実行ファイルを含む統合runで、carrier修復後の型・codec・資源計測を確認した。
+この成功をSource parallel、typed Presentation ABI、全14 familyの最終受入へ広げない。
+
+CLIは641 PASS／50 FAILで、R3095の50失敗識別子と一致。識別子一致を同一原因の証明には使わず、
+今回の全原診断を保持する。新しい1件はLSPのstamp matrixで、baseline cache hitが
+DeadlineExceededとなった。10秒deadlineを持つprepared requestの後でdisk-backed alternate
+environmentを構築していた。fixture入力をrequest admissionより前へ準備する候補を作成したが、
+この終端証拠の入力には適用していない。timeout値・19 mutation×2地点のassertionを維持する。
+[51件の原診断](acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.failure-recon.json)。
+
+HIR Tier 2はこの時点で6件PASS、attached Flow／Threadの2件を実行中。
+全Tier 2／Native-Web capture parity／全体goalの最終受入は未完了。
+原本等8件をbyte不変で保持した。[保全一覧](acceptance-evidence/task-handle-codec-reverse-evidence-integrity.json)。
+
+### 現状一覧から退役したR3095のCLI分類
+
+以下は数値・診断引用を変えていないR3095の旧分類表と、移動時点の参照説明。R3121の識別子一致だけでは
+現在も同じ根本原因と証明できないため、現状一覧の重複した原因表から履歴へ移した。
+最新の全失敗と診断のauthorityは上のR3121原本とする。
+
+R3121のCLI 50失敗はR3095と識別子が一致した。最新の[全原診断](acceptance-evidence/task-final-r3121-handle-codec-consumer-runtime.failure-recon.json)を保持する。下表はR3095の原診断による分類であり、識別子一致だけで現在も同じ根本原因とは断定しない。これは未実装機能の一覧ではなく、fixtureの現行契約との整合も含めて確認する観測結果である。[R3095の診断索引](acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.failure-recon.json)に全識別子・原ログ行・上限付き抜粋を置き、[原ログ](acceptance-evidence/task-final-r3095-traversal-sema-reverse-runtime.log)をbyte不変で保持する。以前の[分類](acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json)と[診断](acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.failure-recon.json)は履歴として保持する。
+
+| 観測した境界 | 件数 | 具体的な診断・期待値 |
+|---|---:|---|
+| typed Presentation ABI | 9 | 画像sampleの `Background` をCompilerが「typed Presentation command ABI待ち」と拒否する。 |
+| JLREQ geometry／raw crop | 8 | 後続本文が左へ進まない、hyphen後のcolumnが1169／1127に分かれるという診断を再現する。 |
+| View文法／観測 | 6 | typed View grammar／action名の拒否、rich-text object／run／depthの期待値不一致。 |
+| 意味解析の入口 | 5 | HIR recovery 2件、final semantic analysis 3件。loop target、最終型、名前解決の具体的な拒否を保持する。 |
+| Source parallel のruntime投影 | 2 | run／benchはSemaを通過し、CompilerがCollectionMethodにtyped runtime intrinsicがないと拒否する。以前の「最終型を確定できない」という現在形を訂正した。 |
+| SourceのSemanticWork上限 | **0（旧1件は修復検証済み）** | 要素数分のlocals／命令展開をiteratorとVec蓄積値へ置換し、exact Arrayを構築する。4,096要素fixtureは製品既定上限のままPASSし、4096 callback／1 batch等の条件を維持した。低予算Native-AWBC parity、融合・copy・capture、途中保存復元を含む対象46件がPASS。[修復と実行証拠](convergence-evidence-history.md#array-map反復化の検証--2026-10-24)。 |
+| verify出力の期待値 | 6 | solver／proof／promotion／thread-join／dependency／deferのreport期待値と一致しない。 |
+| bench／profile／plan／scenario等の期待値 | 14 | 計測counter、task graph、scenario/assertion、unsafe一覧等が期待値と一致しない。 |
+
+過去の52 FAILや単独再確認の条件は[履歴](convergence-evidence-history.md)と原本に保持し、後続の成功で書き換えない。
