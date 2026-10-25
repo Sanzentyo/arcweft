@@ -1,0 +1,267 @@
+{
+  "version": 1,
+  "commit": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "parent": "832369122067e326587734200e553b0a89180509",
+  "tree": "438a958ef3d09234a1d1f7231c8c86a90c4c80c8",
+  "remote": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "paths": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/control_results.rs",
+      "blob": "03c349f375eff0d2dabef55648d6d7066df4dd2d"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/control_results.rs",
+      "blob": "c8c5604eff2a4a1c2fbece61063b15b396fb52d9"
+    },
+    {
+      "path": "docs/01-language/expression-control-flow.md",
+      "blob": "484a12cf0ebe8373c1b37d5e4273646952ed79bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-checkpoint.verified.json",
+      "blob": "ae55234eb3ba97b86442a047646e783ee10f22d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler-acceptance.json",
+      "blob": "e368c4c440302c3a68a151fa3423723e55e8340a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler-executables-after.json",
+      "blob": "55b83e5fa896365121ae55825a0f7784265bde90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler-executables-before.json",
+      "blob": "55da2f1571e2518e2691ecfd76b6fd71228cf274"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler.graph.json",
+      "blob": "4fb06e84b4b3b0837310b20bcf974118097ff7e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-compiler.source-freeze.json",
+      "blob": "3bd2a2b4df3e9c53ca627a04b627bcf057ac8949"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-public-evidence-audit.json",
+      "blob": "de6dd6e4d2c546129c459ad9fbfd943b2a0939c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3007-control-result-closure-catalog.inventory.json",
+      "blob": "5aea98c9c1fb65f6df4802ae3d4355ea7cbc0286"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3007-control-result-closure-catalog.json",
+      "blob": "40f25cfa7fa939cc177ca8bf4cf577dc0890ed78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3007-control-result-closure-catalog.log",
+      "blob": "f1fe3c27cc4bd5d7e8711bd3621b6a50d52091ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3008-control-result-closure-runtime.json",
+      "blob": "a649688c70b326fa969d2d27bfe0d2e54872fbde"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3008-control-result-closure-runtime.log",
+      "blob": "ab61844e930f6c236fffefd61527a87025723463"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3008-control-result-closure-runtime.terminal-audit.json",
+      "blob": "58887599621c2f93d3f00de280eb69e134421eb5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3009-control-result-depth-phases-catalog.inventory.json",
+      "blob": "dde7b45fed6af6bf245ec4f78342207ffc7c2e8c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3009-control-result-depth-phases-catalog.json",
+      "blob": "144d5811a897cc4f21f76e2bc04c0b647f697ec6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3009-control-result-depth-phases-catalog.log",
+      "blob": "8afc04950b99ed0339785fee9b7428421ad9adf0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3010-control-result-depth-phases-runtime.json",
+      "blob": "880540ce6af9eb0426d3026e53cc19d218c6ab72"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3010-control-result-depth-phases-runtime.log",
+      "blob": "7930b5ab67a16d0484d770e9c38aa7b8dacd0873"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3010-control-result-depth-phases-runtime.terminal-audit.json",
+      "blob": "0bd9d2548f813b9134364fe188b1699642438aef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3011-control-result-depth-phases-catalog.inventory.json",
+      "blob": "d4bf32719f9223ab4d241316c01185408a44ddb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3011-control-result-depth-phases-catalog.json",
+      "blob": "63c516f7cd958ab2e8ce1a2306810c1976bef097"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3011-control-result-depth-phases-catalog.log",
+      "blob": "c9d8ea9236cc69efa9bdeed47ff286b0e106d82b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3012-control-result-depth-phases-runtime.json",
+      "blob": "c60fd5a1b86efed857f5e5990ab1f502c5ce29ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3012-control-result-depth-phases-runtime.log",
+      "blob": "765701981da4b0b418dd220faa8fa4432f2f7089"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3012-control-result-depth-phases-runtime.terminal-audit.json",
+      "blob": "1fdc5371f0e2d4d5aaaa41e9d300ca0183b2e633"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3013-control-result-closure-catalog.inventory.json",
+      "blob": "d88fa8741d4de9161b662f78233cbbddb0f4b6a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3013-control-result-closure-catalog.json",
+      "blob": "5b0eac3a86123b45b2490137b119791f7ed2fdcf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3013-control-result-closure-catalog.log",
+      "blob": "91658c8286273d9160228c07f9d170d89faed9fa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3014-control-result-closure-runtime.json",
+      "blob": "9cdbfa169f98b1a987e1c8c59c8dedeec638172d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3014-control-result-closure-runtime.log",
+      "blob": "ab1489acde3e269f6a611d70223dbd823a1268a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3014-control-result-closure-runtime.terminal-audit.json",
+      "blob": "2d6e6116719fca171dda76465a6adea662e81ac5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3015-control-result-closure-catalog.inventory.json",
+      "blob": "4bdc0be6dba954205006b773952fb8dc259f174e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3015-control-result-closure-catalog.json",
+      "blob": "59803d4e71d81b50cce28ddca776b58371e8ad35"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3015-control-result-closure-catalog.log",
+      "blob": "545d155b7ba5f3d6c297c1577aae69259ea3553f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3016-control-result-closure-runtime.json",
+      "blob": "057cffb5781e40e18804dba496bdc5caa9d0a62d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3016-control-result-closure-runtime.log",
+      "blob": "ea14ea9c93fe05805df3ccd21b2b0450a7789d28"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3016-control-result-closure-runtime.terminal-audit.json",
+      "blob": "5147ed1ef0104324bafeb60df52747ca42ec8c27"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3017-polymorphic-control-clippy.input-audit.json",
+      "blob": "e3d0369ac9f7935bae7c85a29ea149d4be76b7cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3017-polymorphic-control-clippy.json",
+      "blob": "7da84b11eb76252924916456c83194a876085ed3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3017-polymorphic-control-clippy.log",
+      "blob": "7946650c99fa65d6a9494a7ce9b49e41e8fe8e14"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-acceptance.json",
+      "blob": "7202a92444d3b95e0e879a71d9515484154e24a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-compiler-executables-after.json",
+      "blob": "ba0b0a54919338ce0da6ec0bb6230c9ad7c13a27"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-compiler-executables-before.json",
+      "blob": "0fa49d86547c2f1c88396c83144fe809ce76318e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-compiler.graph.json",
+      "blob": "de9bb1acef3494225bb802a6de0ea486c3ed0646"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-compiler.source-freeze.json",
+      "blob": "466b8b4720d96e429a5c8696424b670abcfd987b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-evidence-integrity.json",
+      "blob": "b75ff04ff8a61154304097dad5a1ae9c7a8e1974"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-executables-after.json",
+      "blob": "7aa7867a82d929c99736fe723c98209ccd4ce888"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-executables-before.json",
+      "blob": "8fd0ec230261b6ce973b11b0f1135b9c8f1810bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-fixed-executables-after.json",
+      "blob": "1a77200a83ee7d93feee20b1620f136a98df7873"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-fixed-executables-before.json",
+      "blob": "f5444fd3ed1544087545fdfb8db23c084c698222"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-fixed.graph.json",
+      "blob": "de9bb1acef3494225bb802a6de0ea486c3ed0646"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-fixed.source-freeze.json",
+      "blob": "cb1a652376563c312998dc9080e1319792336b4b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-sema-executables-after.json",
+      "blob": "4d6491ec5eec896154bd13d4268e0cba55d2dcea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-sema-executables-before.json",
+      "blob": "a28328a3c3a0e4f3cad4548dddbbd133c6e749b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-sema.graph.json",
+      "blob": "de9bb1acef3494225bb802a6de0ea486c3ed0646"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-sema.source-freeze.json",
+      "blob": "86bebce6c462c9f08be167211aaee7204c581038"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control.graph.json",
+      "blob": "97eec3dbfdd66f4f9fcd0dd169c199f1b06600a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control.source-freeze.json",
+      "blob": "f2c48b92ed6138c1cfd8f5ee28847ea22939e097"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "ede067cc7eea8deeee2b80b11d76af4a9486901c"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "7bdd2decd2aeaf0f55e22d80d23f74b36475cd67"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "a0a5ffca9e423d6c7c64e8985fc9f3f950d6e682db28754c3bf57a8273f9145d",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T11:57:48.3799644Z"
+}

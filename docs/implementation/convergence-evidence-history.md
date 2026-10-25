@@ -11635,3 +11635,44 @@ R3017のSema全target・全feature・locked Clippyは終了0・警告あり、Ca
 変更は既存branch推論ownerのbinder保管条件と同じ意味境界のテストで、Cargo edge・公開API・I/O・独立solverを追加していない。
 全22逆依存runtime・最新workspace check／Clippy・包括構造gateは本cutで未実行。
 [本cutの検証原本保全一覧](acceptance-evidence/task-polymorphic-control-evidence-integrity.json)。
+
+## HIRの再帰frame分離とNamedBlock修復 — 2026-10-25
+
+基点は公開main `9c605ebf917c7dbe705a09680c3cf10483c0e35a`。前段は63 pathを通常公開した。
+parent `832369122067e326587734200e553b0a89180509`、tree `438a958ef3d09234a1d1f7231c8c86a90c4c80c8`、
+full patch SHA256 `a0a5ffca9e423d6c7c64e8985fc9f3f950d6e682db28754c3bf57a8273f9145d`。
+全63公開blob差分0、原本57件の公開byte hash差分0、元tracked WIP 14件不変、index空を確認した。
+[前段公開照合](acceptance-evidence/task-polymorphic-control-checkpoint.verified.json)、
+[公開原本byte照合](acceptance-evidence/task-polymorphic-control-public-evidence-audit.json)。
+
+元の32階層Never入力はR3005のHIR公開中にABORTしていた。cached debug rlibをread-onlyで観測すると、
+HIRの巨大なprojection関数は47,936 byteのframeを持っていた。最初のfamily分離後もR3018／R3019は
+2実行0 PASS／2 ABORT、終了100だった。R3020／R3021のHIR診断1件もABORTしたが、attachment前後のmarkerを通り、
+lowering完了markerには到達しなかった。これはassembly観測だけを全stackの証明とせず、実行段階を切り分けた結果である。
+
+familyのpayloadを直接返すdispatchと最終recoveryの組立てを分け、conditional／scoped／NamedBlock等の一時値を
+別のprivate呼出しへ置いた。source予約・scope・回復診断・arena公開は元transactionの唯一のauthorityに残す。
+source再解析、別traversal、I/O、crate edge、公開API、wire versionやstack／budgetの変更は追加していない。
+R3022／R3023は2実行1 PASS／1 ABORT、終了100。HIRの通常Ifの両方向32階層・64 blockはPASSし、Sema側だけがABORTした。
+R3024／R3025のSema診断ではfixture前後のmarkerを通り、分析完了markerに未到達。HIR修復後は意味解析に障害が残ると確認した。
+前段の「HIR公開中」はその入力での観測として保持し、現在の診断へ無条件に転記しない。診断printは公開前に除去した。
+
+R3026／R3027の全HIR target・全feature・lockedは**959実行／952 PASS／7 FAIL／8 ignored**、終了100、479.868秒。
+全4 executable・3,986非文書入力の前後hash差分0。分割時にNamedBlock armを落とした不備があり、
+E28/E29の回復・reuse、test/bench、project scope等の既存7件が実際に失敗した。元の名前・回復・scope・payload処理を
+型付きの専用private関数として復旧した。既存assertionは変更していない。
+さらに32階層NamedBlockで各名前、32個の一意scope、tailのscope関係と最後のliteralを確認するケースを追加した。
+
+R3028／R3029は深い2ケースと前段の7失敗をすべて明示選択し、**9／9 PASS**、終了0、0.147秒。
+catalogは全961件中9選択・952除外で、全HIRを修復後に再実行した結果ではない。1 executable・3,986入力のhash差分0。
+通常のdefault stackと32階層を維持し、起動前にAST構造を省略するfixtureへ変更していない。
+[実行行列・7失敗の対応・現在の範囲](acceptance-evidence/task-hir-control-acceptance.json)。
+
+R3030のHIR全target・全feature・locked Clippyは終了0・警告あり、Cargo表示1m08s。
+R3031の正規 `just structure-audit-gate` も終了0。両者の3,986非文書入力の前後hash差分0。
+production ownerは2,555 physical LOC（基点2,422、増加133）、test ownerは2,939（基点2,885、増加54）。
+同じtransaction内でstack lifetimeを分ける責任、state不変、依存方向、private API、テスト境界を
+[owner実測とdisposition](acceptance-evidence/task-hir-control-structure-review.json)へ記録した。
+最新の全23逆依存runtime・workspace check／Clippy、Semaの32階層受入はこのcutの結果に含めない。
+Generic Matchの受入・公開済み状態を維持する。
+[検証原本の保全一覧](acceptance-evidence/task-hir-control-evidence-integrity.json)。

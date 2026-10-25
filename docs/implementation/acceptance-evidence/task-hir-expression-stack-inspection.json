@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "base": "832369122067e326587734200e553b0a89180509",
+  "artifact": "D:/git/arcweft/target/debug/deps/libarcweft_lang_hir-e4df9fe7e23fccbc.rlib",
+  "artifactSha256": "ef58e29d2a245ebb40a692c97ce6227a68abcfb16e9ccfb22b898bff5a6aa798",
+  "tool": "C:/Program Files/LLVM/bin/llvm-objdump.exe",
+  "observations": [
+    {
+      "symbol": "_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering18statement_loweringNtB6_26StagedHirModuleTransaction17lower_value_block",
+      "stackAllocation": 10272,
+      "prologue": "<_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering18statement_loweringNtB6_26StagedHirModuleTransaction17lower_value_block>:\n       0: 55                           \tpushq\t%rbp\n       1: b8 20 28 00 00               \tmovl\t$0x2820, %eax           # imm = 0x2820\n       6: e8 00 00 00 00               \tcallq\t0xb <_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering18statement_loweringNtB6_26StagedHirModuleTransaction17lower_value_block+0xb>\n       b: 48 29 c4                     \tsubq\t%rax, %rsp\n       e: 48 8d ac 24 80 00 00 00      \tleaq\t0x80(%rsp), %rbp\n      16: 48 c7 85 98 27 00 00 fe ff ff ff     \tmovq\t$-0x2, 0x2798(%rbp)\n      21: 4c 89 45 40                  \tmovq\t%r8, 0x40(%rbp)\n      25: 48 89 55 48                  \tmovq\t%rdx, 0x48(%rbp)"
+    },
+    {
+      "symbol": "_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction18project_expression",
+      "stackAllocation": 47936,
+      "prologue": "<_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction18project_expression>:\n       0: 55                           \tpushq\t%rbp\n       1: b8 40 bb 00 00               \tmovl\t$0xbb40, %eax           # imm = 0xBB40\n       6: e8 00 00 00 00               \tcallq\t0xb <_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction18project_expression+0xb>\n       b: 48 29 c4                     \tsubq\t%rax, %rsp\n       e: 48 8d ac 24 80 00 00 00      \tleaq\t0x80(%rsp), %rbp\n      16: 48 c7 85 b8 ba 00 00 fe ff ff ff     \tmovq\t$-0x2, 0xbab8(%rbp)\n      21: 4c 89 8d b8 01 00 00         \tmovq\t%r9, 0x1b8(%rbp)\n      28: 4c 89 85 c8 01 00 00         \tmovq\t%r8, 0x1c8(%rbp)"
+    },
+    {
+      "symbol": "_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction24lower_composite_children",
+      "stackAllocation": 5744,
+      "prologue": "<_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction24lower_composite_children>:\n       0: 55                           \tpushq\t%rbp\n       1: b8 70 16 00 00               \tmovl\t$0x1670, %eax           # imm = 0x1670\n       6: e8 00 00 00 00               \tcallq\t0xb <_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction24lower_composite_children+0xb>\n       b: 48 29 c4                     \tsubq\t%rax, %rsp\n       e: 48 8d ac 24 80 00 00 00      \tleaq\t0x80(%rsp), %rbp\n      16: 48 c7 85 e8 15 00 00 fe ff ff ff     \tmovq\t$-0x2, 0x15e8(%rbp)\n      21: 4c 89 4d f8                  \tmovq\t%r9, -0x8(%rbp)\n      25: 4c 89 45 20                  \tmovq\t%r8, 0x20(%rbp)"
+    },
+    {
+      "symbol": "_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction43lower_attached_expression_inner_with_family",
+      "stackAllocation": 8048,
+      "prologue": "<_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction43lower_attached_expression_inner_with_family>:\n       0: 55                           \tpushq\t%rbp\n       1: b8 70 1f 00 00               \tmovl\t$0x1f70, %eax           # imm = 0x1F70\n       6: e8 00 00 00 00               \tcallq\t0xb <_RNvMs_NtNtCs3mUMXuDYuup_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction43lower_attached_expression_inner_with_family+0xb>\n       b: 48 29 c4                     \tsubq\t%rax, %rsp\n       e: 48 8d ac 24 80 00 00 00      \tleaq\t0x80(%rsp), %rbp\n      16: 48 c7 85 e8 1e 00 00 fe ff ff ff     \tmovq\t$-0x2, 0x1ee8(%rbp)\n      21: 4c 89 4d 18                  \tmovq\t%r9, 0x18(%rbp)\n      25: 4c 89 45 20                  \tmovq\t%r8, 0x20(%rbp)"
+    }
+  ],
+  "artifactCopyMove": false,
+  "scope": "Read-only inspection of a cached debug rlib; not a timing or full stack-depth proof"
+}

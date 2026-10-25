@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "name": "task-final-r3027-hir-control-stack-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-hir",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3027-hir-control-stack-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T12:16:07.6386821Z",
+  "finishedAt": "2026-10-25T12:24:08.9244483Z"
+}

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "name": "task-final-r3029-hir-control-stack-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-hir",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(nested_control_projection_publishes_both_branch_directions_on_the_default_stack) | test(nested_named_block_projection_retains_each_name_scope_and_tail) | test(e28_e29_reuse_and_name_limit_failure_are_atomic) | test(e29_named_block_preserves_valid_and_invalid_present_name_but_normalizes_omission) | test(bench_assert_sections_publish_clean_named_blocks_and_exact_expectation_bodies) | test(clean_test_and_bench_retain_typed_id_kind_statement_scope_and_goto) | test(dialogue_namespace_combines_statement_and_expression_scopes) | test(language_expression_partition_keeps_test_body_owned_by_the_script_manifest) | test(project_item_entries_retain_rooted_paths_in_source_order)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3029-hir-control-stack-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T12:29:34.7250115Z",
+  "finishedAt": "2026-10-25T12:29:36.5938587Z"
+}

@@ -2883,3 +2883,57 @@ fn e32_match_scope_limit_exact_and_one_over_are_atomic() {
     assert!(transaction.finish(&mut database).is_err());
     assert!(database.current(&module_key(&one_over)).is_none());
 }
+
+#[test]
+fn nested_control_projection_publishes_both_branch_directions_on_the_default_stack() {
+    for nested_then in [false, true] {
+        let mut source = "()".to_owned();
+        for _ in 0..32 {
+            source = if nested_then {
+                format!("if true {{ {source} }} else {{ () }}")
+            } else {
+                format!("if true {{ () }} else {{ {source} }}")
+            };
+        }
+        let parsed = parsed_source("nested-control-stack", &[source]);
+        let (module, _, _) = lower_and_publish(&parsed);
+        assert!(module.is_analysis_ready());
+        let branches = module
+            .expressions()
+            .filter(|(_, expression)| matches!(expression.kind(), HirExprKind::If(_)))
+            .count();
+        assert_eq!(branches, 32);
+        let blocks = module
+            .expressions()
+            .filter(|(_, expression)| matches!(expression.kind(), HirExprKind::Block(_)))
+            .count();
+        assert_eq!(blocks, 64);
+    }
+}
+
+#[test]
+fn nested_named_block_projection_retains_each_name_scope_and_tail() {
+    let mut source = "41i64".to_owned();
+    for ordinal in 0..32 {
+        source = format!("(scope level_{ordinal} {{ {source} }})");
+    }
+    let parsed = parsed_source("nested-named-control-stack", &[source]);
+    let (module, roots, _) = lower_and_publish(&parsed);
+    assert!(module.is_analysis_ready());
+    let mut owner = roots[0];
+    let mut scopes = BTreeSet::new();
+    for ordinal in (0..32).rev() {
+        let block = typed_named_block(&module, owner);
+        assert!(matches!(block.name(), HirNamedBlockName::Resolved(name)
+            if name.as_str() == format!("level_{ordinal}")));
+        assert!(block.statements().is_empty());
+        assert!(scopes.insert(block.scope()));
+        assert_eq!(expression(&module, block.tail()).scope(), block.scope());
+        owner = block.tail();
+    }
+    assert_eq!(scopes.len(), 32);
+    assert!(matches!(
+        expression(&module, owner).kind(),
+        HirExprKind::Literal(_)
+    ));
+}

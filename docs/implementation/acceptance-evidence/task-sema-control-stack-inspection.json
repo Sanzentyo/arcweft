@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "artifact": "D:/git/arcweft/target/debug/deps/libarcweft_lang_sema-7369b04f7c12ecf9.rlib",
+  "artifactSha256": "20bae0415856afa9d13d70aa3c7e0ffa7a8e52dbbee41bdaaeac6d9ebb4332e6",
+  "frames": [
+    {
+      "symbol": "_RNvMs0_NtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressionsNtB7_8Analyzer29check_control_expression_kind",
+      "stackAllocation": 43600,
+      "prologue": "0000000000000000 <_RNvMs0_NtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressionsNtB7_8Analyzer29check_control_expression_kind>:\n       0:      \tpushq\t%rbp\n       1:      \tmovl\t$0xaa50, %eax           # imm = 0xAA50\n       6:      \tcallq\t0xb <_RNvMs0_NtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressionsNtB7_8Analyzer29check_control_expression_kind+0xb>\n       b:      \tsubq\t%rax, %rsp\n       e:      \tleaq\t0x80(%rsp), %rbp\n      16:      \tmovq\t$-0x2, 0xa9c8(%rbp)\n      21:      \tmovq\t%r9, 0x418(%rbp)\n      28:      \tmovq\t%r8, 0x420(%rbp)"
+    },
+    {
+      "symbol": "_RNvMs0_NtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressionsNtB7_8Analyzer36evaluate_expression_with_expectation",
+      "stackAllocation": 9680,
+      "prologue": "0000000000000000 <_RNvMs0_NtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressionsNtB7_8Analyzer36evaluate_expression_with_expectation>:\n       0:      \tpushq\t%rbp\n       1:      \tmovl\t$0x25d0, %eax           # imm = 0x25D0\n       6:      \tcallq\t0xb <_RNvMs0_NtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressionsNtB7_8Analyzer36evaluate_expression_with_expectation+0xb>\n       b:      \tsubq\t%rax, %rsp\n       e:      \tleaq\t0x80(%rsp), %rbp\n      16:      \tmovq\t$-0x2, 0x2548(%rbp)\n      21:      \tmovq\t%r9, 0x90(%rbp)\n      28:      \tmovq\t%r8, 0x98(%rbp)"
+    },
+    {
+      "symbol": "_RINvMNtNtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressions15control_resultsNtB7_8Analyzer25infer_control_branch_typeANtNtCs8Yw2RB4Aal9_16arcweft_lang_hir8identity6ExprIdj2_EBb_",
+      "stackAllocation": null,
+      "prologue": "0000000000000000 <_RINvMNtNtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressions15control_resultsNtB7_8Analyzer25infer_control_branch_typeANtNtCs8Yw2RB4Aal9_16arcweft_lang_hir8identity6ExprIdj2_EBb_>:\n       0:      \tpushq\t%rbp\n       1:      \tsubq\t$0xf60, %rsp            # imm = 0xF60\n       8:      \tleaq\t0x80(%rsp), %rbp\n      10:      \tmovq\t$-0x2, 0xed8(%rbp)\n      1b:      \tmovq\t%r9, -0x38(%rbp)\n      1f:      \tmovq\t%r8, -0x30(%rbp)\n      23:      \tmovq\t%rdx, -0x28(%rbp)\n      27:      \tmovq\t%rcx, -0x20(%rbp)"
+    },
+    {
+      "symbol": "_RINvMs0_NtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressionsNtB8_8Analyzer21check_expression_kindNtNtB8_5state29CandidateFactOperationFailureEBc_",
+      "stackAllocation": 5936,
+      "prologue": "0000000000000000 <_RINvMs0_NtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressionsNtB8_8Analyzer21check_expression_kindNtNtB8_5state29CandidateFactOperationFailureEBc_>:\n       0:      \tpushq\t%rsi\n       1:      \tmovl\t$0x1730, %eax           # imm = 0x1730\n       6:      \tcallq\t0xb <_RINvMs0_NtNtNtCs18x3B9Hapy_17arcweft_lang_sema14final_analysis8analyzer11expressionsNtB8_8Analyzer21check_expression_kindNtNtB8_5state29CandidateFactOperationFailureEBc_+0xb>\n       b:      \tsubq\t%rax, %rsp\n       e:      \tmovq\t%r9, 0x48(%rsp)\n      13:      \tmovq\t%r8, 0x50(%rsp)\n      18:      \tmovq\t%rdx, 0x58(%rsp)\n      1d:      \tmovq\t%rcx, 0x60(%rsp)"
+    }
+  ],
+  "diagnosticRun": "task-final-r3025-hir-control-stack-runtime",
+  "phase": "after fixture / before analysis completion",
+  "artifactCopyMove": false
+}

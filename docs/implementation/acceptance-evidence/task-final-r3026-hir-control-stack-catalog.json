@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "name": "task-final-r3026-hir-control-stack-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-hir",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3026-hir-control-stack-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T12:14:52.8414667Z",
+  "finishedAt": "2026-10-25T12:16:07.0042900Z"
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "name": "task-final-r3030-hir-control-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-lang-hir",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3030-hir-control-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T12:31:02.6739924Z",
+  "finishedAt": "2026-10-25T12:32:11.2507915Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3024-hir-control-stack-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83924480,
+      "nonTest": false,
+      "sha256": "d1b68b03193de5b6df5e9686a58bdc452bb609f3d08c92e08ee9c059d50d8833"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T12:12:47.0403382Z"
+}

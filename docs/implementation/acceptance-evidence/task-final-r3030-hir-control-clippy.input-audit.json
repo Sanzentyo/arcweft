@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3030-hir-control-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "-p",
+    "arcweft-lang-hir",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T12:32:15.3742339Z"
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "name": "task-final-r3031-hir-control-structure",
+  "command": [
+    "just",
+    "structure-audit-gate"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3031-hir-control-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T12:32:15.4226226Z",
+  "finishedAt": "2026-10-25T12:32:21.0468226Z"
+}

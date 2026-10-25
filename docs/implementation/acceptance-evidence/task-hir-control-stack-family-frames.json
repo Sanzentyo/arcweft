@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "artifact": "D:/git/arcweft/target/debug/deps/libarcweft_lang_hir-983309bde594e265.rlib",
+  "artifactSha256": "54b39798fe7f671d4e4c5d6238d3404d5561530a4f1f66ba86f3e8cb7a0ea577",
+  "frames": [
+    {
+      "symbol": "_RNvMs_NtNtCs8Yw2RB4Aal9_16arcweft_lang_hir14final_lowering18statement_loweringNtB6_26StagedHirModuleTransaction17lower_value_block",
+      "stackAllocation": 10272
+    },
+    {
+      "symbol": "_RNvMs_NtNtCs8Yw2RB4Aal9_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction18project_expression",
+      "stackAllocation": 8400
+    },
+    {
+      "symbol": "_RNvMs_NtNtCs8Yw2RB4Aal9_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction26project_control_expression",
+      "stackAllocation": 12128
+    },
+    {
+      "symbol": "_RNvMs_NtNtCs8Yw2RB4Aal9_16arcweft_lang_hir14final_lowering19expression_loweringNtB6_26StagedHirModuleTransaction43lower_attached_expression_inner_with_family",
+      "stackAllocation": 8048
+    }
+  ],
+  "scope": "Read-only cached debug rlib inspection; actual 32-level tests still abort"
+}

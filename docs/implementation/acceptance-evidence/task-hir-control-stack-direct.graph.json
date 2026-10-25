@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "metadataSource": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r2285.metadata.json",
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "changed": [
+    "arcweft-lang-hir"
+  ],
+  "reverseWorkspace": [
+    "arcweft-adapter-sema",
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-lang-hir",
+    "arcweft-lang-sema",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-web",
+    "arcweft-project-loader",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-test",
+    "arcweft-tooling",
+    "arcweft-verify",
+    "arcweft-verify-lsp",
+    "arcweft-verify-oxiz",
+    "arcweft-verify-z3"
+  ],
+  "packageCount": 23,
+  "owned": [
+    "crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs",
+    "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests/control.rs"
+  ],
+  "temporaryDiagnostics": false,
+  "sourceCuts": [
+    "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+    "843947a2c595368e323bbc4d57981053e1fb5e6c"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "run": "task-final-r3029-hir-control-stack-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.147s] 9 tests run: 9 passed, 952 skipped",
+  "executed": 9,
+  "passed": 9,
+  "failed": 0,
+  "skipped": 952,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T12:29:39.2900008Z"
+}

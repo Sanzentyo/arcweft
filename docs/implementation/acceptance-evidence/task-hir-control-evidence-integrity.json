@@ -1,0 +1,373 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3018-hir-control-stack-catalog.inventory.json",
+      "bytes": 601286,
+      "sha256": "9ea9c7029cfc7e9e0dae305f0aa89b75893f6c5e3eff52ae6ca105a5e18ff5f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3018-hir-control-stack-catalog.json",
+      "bytes": 786,
+      "sha256": "11f246fe3fdf95970db7ef065ba8d904f2a661920915db524ee7a6d707bf66cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3018-hir-control-stack-catalog.log",
+      "bytes": 519673,
+      "sha256": "711e75530bdff6434249131bc9a558d66f735c693e4cdf7244cf49029245d7c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3019-hir-control-stack-runtime.json",
+      "bytes": 880,
+      "sha256": "cabe1fe9f0bd1ad848c67d1ba38264959c8f3b2f4b6fc13b1ae4498a51b96370"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3019-hir-control-stack-runtime.log",
+      "bytes": 790361,
+      "sha256": "d9b38ff6ebfc4f4239cd1975279a452ef99d57b6a2052d20649467ddcd4b76ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3019-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 1014,
+      "sha256": "979ae2dcc8d5c9f7ff9867f495afa430906b3f12ec786e9a728b77d3c1c34cf7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3020-hir-control-stack-catalog.inventory.json",
+      "bytes": 249500,
+      "sha256": "478413d16d1992117719bda2a2d4967cb12ce30d0f5a8d068a0af68d9db4df19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3020-hir-control-stack-catalog.json",
+      "bytes": 674,
+      "sha256": "568efb4d804e8ffb1da9e3e7332125f6568c13b513d8b8869af08dd872a1d8a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3020-hir-control-stack-catalog.log",
+      "bytes": 187356,
+      "sha256": "095b963804c12fce90c5f895edb254df3f10aac1aec1c15515a193f8f1be3f5b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3021-hir-control-stack-runtime.json",
+      "bytes": 768,
+      "sha256": "6514fac9e7763d7d5fbc27849ea443dc157f7a78fd74a2202b23b4dc633de0f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3021-hir-control-stack-runtime.log",
+      "bytes": 297593,
+      "sha256": "b28c4e575759825bbb30a15a3d63b176f6464f20858fde3071de57031226a48b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3021-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 808,
+      "sha256": "639a9328e26b7f575f05f1bbd18df835511b64113defb3dde963ba872b5bae69"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3022-hir-control-stack-catalog.inventory.json",
+      "bytes": 601286,
+      "sha256": "a4d32af49e8d92a5383ee74da1dbc6e868789176e19d969458c79a9d02396b6a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3022-hir-control-stack-catalog.json",
+      "bytes": 786,
+      "sha256": "b32daaa4e74526d5759fece30da50625a2e8c2acfd5c9f99de4cd1301e0b93b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3022-hir-control-stack-catalog.log",
+      "bytes": 520478,
+      "sha256": "b30c037c452b1ab3f55e1835f2eb3164f0dcaf2cc23ef836516b9d54a0785805"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3023-hir-control-stack-runtime.json",
+      "bytes": 880,
+      "sha256": "30d04bae1fdeb7b634cbf43dff59cfa779d290764ae493d1dd57a10a75b7c054"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3023-hir-control-stack-runtime.log",
+      "bytes": 790636,
+      "sha256": "8978a4f41a9583e56caf902d7fdee4b728e70ede2ee3517e83df335348b4d740"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3023-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 786,
+      "sha256": "1fec94a638f4d0f0cb52d9fe9cbc1456e66840a21977d5fc8793c88ffba93132"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3024-hir-control-stack-catalog.inventory.json",
+      "bytes": 351935,
+      "sha256": "a2ec745abbb3e8471f376689e06f12c299fae2c3c9ff9ad4f011bfa04c19c663"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3024-hir-control-stack-catalog.json",
+      "bytes": 662,
+      "sha256": "01e373daae5fb366eecdce1fbea1749438bfeb56f3a87c011028a6b7cee7f66c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3024-hir-control-stack-catalog.log",
+      "bytes": 335476,
+      "sha256": "edeced21d0defe4b6741227dfb42f79ace124ff1c35626340000b82675a39bc6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3025-hir-control-stack-runtime.json",
+      "bytes": 756,
+      "sha256": "b78e8fc199696c87edf13fdeae9e33ffa751b284c6893573a4f0c1891a0e1ea6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3025-hir-control-stack-runtime.log",
+      "bytes": 495028,
+      "sha256": "3eecd15468ae3800ada388c25732a234dbe2a20e69a227d16449705c1d9c8f5b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3025-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 785,
+      "sha256": "c4053d6a89324900cc7e738f491cd75938666cf7d6336426ee059df1d93b933c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3026-hir-control-stack-catalog.inventory.json",
+      "bytes": 250168,
+      "sha256": "6f03b311e9e499493913cc09b16d8d6d02226ae2f60a60027fb001a3da277cbc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3026-hir-control-stack-catalog.json",
+      "bytes": 577,
+      "sha256": "a535dc7cb33bab57c861c1dbe663a5318228219c0dc36c7072dbeb6bf92b6504"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3026-hir-control-stack-catalog.log",
+      "bytes": 167872,
+      "sha256": "cd60b9f955d7b322fb18198ad8762e281c90e1490cd13c47141efa8202c67bbc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3027-hir-control-stack-runtime.json",
+      "bytes": 671,
+      "sha256": "377786bd0239ec0bc74d3a9cd34cdf054ab2003c069d2bd889bc04fd687d3978"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3027-hir-control-stack-runtime.log",
+      "bytes": 303213,
+      "sha256": "f2b0c9f62e1e7d7314cdc31ef97f76c0595065a9031368f03b36d36ec3b36cf4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3027-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 1972,
+      "sha256": "62234dc7883b80e963ca988c93f94372e0bd043452588ef6e20a9bd3643df48d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3028-hir-control-stack-catalog.inventory.json",
+      "bytes": 249769,
+      "sha256": "d3eb29d38011068073786bbb0e7f5daa3fbb9fbbff7cff335c0aec1c664fd1a6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3028-hir-control-stack-catalog.json",
+      "bytes": 1267,
+      "sha256": "6d53366761c2968f0c6d2380cdbe97311ab0db12aa52182b5052660b117b1c0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3028-hir-control-stack-catalog.log",
+      "bytes": 186709,
+      "sha256": "c37dde4a4b8fabe30813f5d0b2a5afe05754d1d74683a784f83ce4132df4f650"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3029-hir-control-stack-runtime.json",
+      "bytes": 1359,
+      "sha256": "23b0c3d61e737c8b723c310bf3df70b3048426d927c2ed96b5a491ee48e8ac76"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3029-hir-control-stack-runtime.log",
+      "bytes": 297198,
+      "sha256": "a6d00292640ad0e26fbba2ae095d2637066640a97fbfd24a8c6d868070b6a40e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3029-hir-control-stack-runtime.terminal-audit.json",
+      "bytes": 565,
+      "sha256": "30ca4ae029003702235b3e04460451ac01993812eb70ef075c897cece9360b6b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3030-hir-control-clippy.input-audit.json",
+      "bytes": 329,
+      "sha256": "c8b7b712003f967e77ad14e0f877b073d8398dc2b9c8c6b57b7835fe68dcef75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3030-hir-control-clippy.json",
+      "bytes": 511,
+      "sha256": "8bf2f69a92867fc9115c1c7d350eb7d0f76f8330bbafdc3686e497dd158d770c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3030-hir-control-clippy.log",
+      "bytes": 199711,
+      "sha256": "e58ff18d3b56bd6d2e044989b288225823ee9c93509a02a42931b6bd5fac9e0e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3031-hir-control-structure.input-audit.json",
+      "bytes": 261,
+      "sha256": "7f69498cfce565377f677c6deb932267e28a7a7fe53f17321c33a8b4f0aaf213"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3031-hir-control-structure.json",
+      "bytes": 446,
+      "sha256": "21b381ea28a60c10f728dc8d6e9d86a5f83483e16702e2beb34343dab137f294"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3031-hir-control-structure.log",
+      "bytes": 64531,
+      "sha256": "6aac57f144a921acc0ff91a582fb99645492166a6a7543c1e6bcdf7921fe8bc7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-acceptance.json",
+      "bytes": 6780,
+      "sha256": "f9fae476459c5836a3a0b6f06c5dcb6546edc12ebb512e231b2b74e08920ff41"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-named-repair-executables-after.json",
+      "bytes": 480,
+      "sha256": "8d0e42a801683d5b9bdb8a3b71c3b4c8df44f22cff25599ec5219c8290c28214"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-named-repair-executables-before.json",
+      "bytes": 481,
+      "sha256": "fdd5c2b42b6eae378f9ba09358e1595e549a9f3941cfe96f446ce29b1b9bb249"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-named-repair.graph.json",
+      "bytes": 1303,
+      "sha256": "8e63c8783a30e052b662716dc6ea93708159d521c719828e33b384c84b74246e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-named-repair.source-freeze.json",
+      "bytes": 779276,
+      "sha256": "4b962b544b0154724d157570bc27b3c12441c7db0b6abfa5b6a1d3dd02ae3112"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-owner-executables-after.json",
+      "bytes": 1210,
+      "sha256": "09ed9329c93010c4152c9266cbc03ce8d7d3add83162cc9ff070c0bc3d344159"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-owner-executables-before.json",
+      "bytes": 1211,
+      "sha256": "1c6c0abcd3097c30fbdc20fc2b154747425d6691a3d8b8af6f8257d704172ad4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-owner.graph.json",
+      "bytes": 1303,
+      "sha256": "8e63c8783a30e052b662716dc6ea93708159d521c719828e33b384c84b74246e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-owner.source-freeze.json",
+      "bytes": 779276,
+      "sha256": "59435bbbfb89c8220a3443cf5c60c256a0fa2115a1cb989401a09ccd7154590b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-direct-executables-after.json",
+      "bytes": 726,
+      "sha256": "2d46709fd0ba77a0fe4c8931d4d0c46cc34a8c5e35d9af072fd00f2e4f225086"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-direct-executables-before.json",
+      "bytes": 727,
+      "sha256": "7caa4ebf3591250c2b2c55edefbb3388a3a55e26565312219eac922227c8bda0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-direct.graph.json",
+      "bytes": 1303,
+      "sha256": "8e63c8783a30e052b662716dc6ea93708159d521c719828e33b384c84b74246e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-direct.source-freeze.json",
+      "bytes": 779276,
+      "sha256": "05217732cae7732815a99533930afebedfbb3f8e281f4128e6126a81714334ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-executables-after.json",
+      "bytes": 726,
+      "sha256": "bee12b3e7649fe2d1028d8a16b24a8adf74edd767dc7b426f45837969f9e7591"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-executables-before.json",
+      "bytes": 727,
+      "sha256": "569253ab83e043b7d5fcced0210f5a5432504c316f288311de402fa7b75639f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-family-frames.json",
+      "bytes": 1176,
+      "sha256": "1cfb7a4d3fcf4ff588808e5696f6be9a7bf6e2a59efe2c29e379b390afdb9675"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-phase-executables-after.json",
+      "bytes": 480,
+      "sha256": "bd1c63b206adfd5df76e8a0526547513b6e93f4ab0538533d7e6669411636a0c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-phase-executables-before.json",
+      "bytes": 481,
+      "sha256": "64217a436c4e93248af4f017685a175cbbc1b0bf5532637f66a7b790933a329e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-phase.graph.json",
+      "bytes": 1381,
+      "sha256": "5a7c5b2210c68587344f46e07359556ec1b8e6ab94a77f7e7553e0dedcbcdfab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack-phase.source-freeze.json",
+      "bytes": 779356,
+      "sha256": "b2b96e5839a69377bbaa20208b62afe79b69c9fcb34a33c35baf218dc3db27d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack.graph.json",
+      "bytes": 1303,
+      "sha256": "8e63c8783a30e052b662716dc6ea93708159d521c719828e33b384c84b74246e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-stack.source-freeze.json",
+      "bytes": 779276,
+      "sha256": "3076f00ba823e87c64d0364347fd6c36da72956dbff0a57aede6ab5e14d7a47d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-control-structure-review.json",
+      "bytes": 2397,
+      "sha256": "fd004a081e24aa0da31112dc730bea331ae3d0b30126a63861b2853cef460064"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-expression-stack-inspection.json",
+      "bytes": 4616,
+      "sha256": "6ec60448494d6593ca26af01559baa92a932449788104765d7c2ff3baee17961"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-sema-depth-phase-executables-after.json",
+      "bytes": 481,
+      "sha256": "670d5e685f46a0312a6fc754b8bb78dc9af16259fb7f2b9f23481a21dc2e0ef2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-sema-depth-phase-executables-before.json",
+      "bytes": 482,
+      "sha256": "f25947451f889fc587af370bd7f85b13a847a0cd0b5c5cf8bf4a3bab1bb10379"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-sema-depth-phase.graph.json",
+      "bytes": 1403,
+      "sha256": "8374bf1b4df09d080d1443d54b115dd0799d7ba2151ddc1bdf547fab4a959ea7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-hir-sema-depth-phase.source-freeze.json",
+      "bytes": 779353,
+      "sha256": "c3b7e60f51c59275a6f7939591ba50ba30137a1b1a5bd7be7c14253cc10e418c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-checkpoint.verified.json",
+      "bytes": 12022,
+      "sha256": "77400c36a7e9b4861456f83f6df3c730001e3f226b25e7bfccdc23b70476871f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-polymorphic-control-public-evidence-audit.json",
+      "bytes": 148,
+      "sha256": "0894edf4b10b11bb2135f0faeb3c80288aefc8240f41c9d5620c4746a925f79a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-control-stack-inspection.json",
+      "bytes": 3881,
+      "sha256": "51607177cf26f121b21f19c5c45899ab3d98f80bc393dccffea46b7f6acdb046"
+    }
+  ],
+  "drift": 0,
+  "artifactCopyMove": false
+}

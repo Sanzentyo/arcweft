@@ -1,0 +1,4282 @@
+   Compiling serde_core v1.0.228
+    Checking thiserror v2.0.18
+    Checking num-bigint v0.4.6
+    Checking serde v1.0.228
+    Checking serde_spanned v1.1.1
+    Checking toml_datetime v1.1.1+spec-1.1.0
+    Checking serde_json v1.0.150
+    Checking toml v1.1.2+spec-1.1.0
+    Checking arcweft-id v0.1.0 (D:\git\arcweft\crates\arcweft-id)
+    Checking trybuild v1.0.116
+    Checking arcweft-source v0.1.0 (D:\git\arcweft\crates\arcweft-source)
+warning: using `chunks_exact` with a constant chunk size
+   --> crates\arcweft-source\src\document.rs:558:45
+    |
+558 |     for (index, pair) in encoded.as_bytes().chunks_exact(2).enumerate() {
+    |                                             ^^^^^^^^^^^^^^^ help: consider using `as_chunks` instead: `as_chunks::<2>().0.iter()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#chunks_exact_to_as_chunks
+    = note: `#[warn(clippy::chunks_exact_to_as_chunks)]` on by default
+
+warning: `arcweft-source` (lib) generated 1 warning (run `cargo clippy --fix --lib -p arcweft-source -- ` to apply 1 suggestion)
+    Checking arcweft-lang-syntax v0.1.0 (D:\git\arcweft\crates\arcweft-lang-syntax)
+warning: this pattern is unneeded as the `..` pattern can match that element
+   --> crates\arcweft-lang-syntax\src\parser\type_ref.rs:411:13
+    |
+411 | /             return_type: _,
+412 | |             ..
+    | |____________^ help: remove it
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unneeded_wildcard_pattern
+    = note: `#[warn(clippy::unneeded_wildcard_pattern)]` on by default
+
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-syntax\src\attachment\snapshot.rs:47:14
+   |
+47 |             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |              ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+47 -             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+47 +             .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: large size difference between variants
+   --> crates\arcweft-lang-syntax\src\attachment\callable.rs:164:1
+    |
+164 | /   pub enum AttachedContentPresenceSyntax {
+165 | |       Required,
+166 | | /     Optional {
+167 | | |         question: AstNode<QuestionKind>,
+168 | | |     },
+    | | |_____- the second-largest variant contains at least 40 bytes
+169 | | /     Defaulted {
+170 | | |         equals: AstNode<EqualsKind>,
+171 | | |         value: AttachedExpressionNode,
+172 | | |     },
+    | | |_____- the largest variant contains at least 736 bytes
+173 | |   }
+    | |___^ the entire enum is at least 736 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#large_enum_variant
+    = note: `#[warn(clippy::large_enum_variant)]` on by default
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+171 -         value: AttachedExpressionNode,
+171 +         value: Box<AttachedExpressionNode>,
+    |
+
+warning: large size difference between variants
+   --> crates\arcweft-lang-syntax\src\attachment\extern_capability.rs:196:1
+    |
+196 | / pub enum AttachedCapabilityMember {
+197 | |     AssociatedType(AttachedCapabilityAssociatedType),
+    | |     ------------------------------------------------ the second-largest variant contains at least 448 bytes
+198 | |     Function(AttachedCapabilityFunction),
+    | |     ------------------------------------ the largest variant contains at least 1624 bytes
+199 | |     Error {
+...   |
+202 | |     },
+203 | | }
+    | |_^ the entire enum is at least 1624 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+198 -     Function(AttachedCapabilityFunction),
+198 +     Function(Box<AttachedCapabilityFunction>),
+    |
+
+warning: large size difference between variants
+   --> crates\arcweft-lang-syntax\src\attachment\statement.rs:103:1
+    |
+103 | / pub enum AttachedDeferBlockBody {
+104 | |     Expression(AttachedExpressionNode),
+    | |     ---------------------------------- the largest variant contains at least 696 bytes
+105 | |     Missing(AstNode<MissingBodyKind>),
+    | |     --------------------------------- the second-largest variant contains at least 40 bytes
+106 | | }
+    | |_^ the entire enum is at least 696 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+104 -     Expression(AttachedExpressionNode),
+104 +     Expression(Box<AttachedExpressionNode>),
+    |
+
+warning: large size difference between variants
+   --> crates\arcweft-lang-syntax\src\attachment\trait_impl.rs:313:1
+    |
+313 | / pub enum AttachedTraitMember {
+314 | |     AssociatedType(AttachedTraitAssociatedType),
+    | |     ------------------------------------------- the second-largest variant contains at least 448 bytes
+315 | |     Function(AttachedTraitFunction),
+    | |     ------------------------------- the largest variant contains at least 1632 bytes
+316 | |     Error {
+...   |
+319 | |     },
+320 | | }
+    | |_^ the entire enum is at least 1632 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+315 -     Function(AttachedTraitFunction),
+315 +     Function(Box<AttachedTraitFunction>),
+    |
+
+warning: large size difference between variants
+   --> crates\arcweft-lang-syntax\src\attachment\trait_impl.rs:350:1
+    |
+350 | / pub enum AttachedImplMember {
+351 | |     AssociatedType(AttachedImplAssociatedType),
+    | |     ------------------------------------------ the second-largest variant contains at least 448 bytes
+352 | |     Function(AttachedImplFunction),
+    | |     ------------------------------ the largest variant contains at least 1632 bytes
+353 | |     Error {
+...   |
+356 | |     },
+357 | | }
+    | |_^ the entire enum is at least 1632 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+352 -     Function(AttachedImplFunction),
+352 +     Function(Box<AttachedImplFunction>),
+    |
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-syntax\src\attachment\view.rs:232:13
+    |
+232 |             AttachedViewFragmentEntry::Statement(_) => None,
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+233 |             AttachedViewFragmentEntry::MisplacedExport(_) => None,
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+    = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise merge the patterns into a single arm
+    |
+232 ~             AttachedViewFragmentEntry::Statement(_) | AttachedViewFragmentEntry::MisplacedExport(_) => None,
+233 ~             })
+    |
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-syntax\src\attachment\view.rs:239:13
+    |
+239 |             AttachedViewFragmentEntry::Value(_) => None,
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+240 |             AttachedViewFragmentEntry::Statement(_) => None,
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+239 -             AttachedViewFragmentEntry::Value(_) => None,
+240 -             AttachedViewFragmentEntry::Statement(_) => None,
+239 +             AttachedViewFragmentEntry::Value(_) | AttachedViewFragmentEntry::Statement(_) => None,
+    |
+
+warning: called `.ok().is_some_and(..)` on a `Result` value
+   --> crates\arcweft-lang-syntax\src\expressions\pending.rs:797:9
+    |
+797 | /         u32::try_from(ordinal)
+798 | |             .ok()
+799 | |             .is_some_and(|ordinal| roles.contains(&role(ordinal)))
+    | |__________________________________________________________________^ help: use `is_ok_and` instead: `u32::try_from(ordinal).is_ok_and(|ordinal| roles.contains(&role(ordinal)))`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#manual_is_variant_and
+    = note: `-W clippy::manual-is-variant-and` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::manual_is_variant_and)]`
+
+warning: used `debug_assert!` to check that a value is empty
+   --> crates\arcweft-lang-syntax\src\parser\pattern_projection.rs:461:9
+    |
+461 |         debug_assert!(binding_issues.is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+    = note: `-W clippy::assert-is-empty` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::assert_is_empty)]`
+help: use `debug_assert_eq!` to show the value on failure
+    |
+461 -         debug_assert!(binding_issues.is_empty());
+461 +         debug_assert_eq!(binding_issues, [] as [patterns::PatternRecoveryIssue; 0]);
+    |
+
+warning: called `map(<f>).unwrap_or(<a>)` on an `Option` value
+   --> crates\arcweft-lang-syntax\src\parser\rich_text_grammar.rs:699:5
+    |
+699 | /     (next..end)
+700 | |         .filter_map(|index| parser.token_at(index))
+701 | |         .find(|token| {
+702 | |             let start = token.range().start();
+...   |
+707 | |         .map(|token| token.range().start())
+708 | |         .unwrap_or(content_end)
+    | |_______________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#map_unwrap_or
+    = note: `-W clippy::map-unwrap-or` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::map_unwrap_or)]`
+help: use `map_or(<a>, <f>)` instead
+    |
+707 -         .map(|token| token.range().start())
+708 -         .unwrap_or(content_end)
+707 +         .map_or(content_end, |token| token.range().start())
+    |
+
+warning: this function has too many lines (102/100)
+   --> crates\arcweft-lang-syntax\src\parser\statement.rs:259:1
+    |
+259 | / fn emit_block_sequence(
+260 | |     parser: &mut DocumentParser<'_, '_>,
+261 | |     close: usize,
+262 | |     item_kind: SyntaxKind,
+263 | |     sequence_kind: BlockSequenceKind,
+264 | | ) {
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+    = note: `-W clippy::too-many-lines` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::too_many_lines)]`
+
+warning: match expression looks like `matches!` macro
+    --> crates\arcweft-lang-syntax\src\parser\statement.rs:2062:23
+     |
+2062 |           let outcome = match parser.current_text() {
+     |  _______________________^
+2063 | |             Some("completed" | "cancelled" | "failed") => true,
+2064 | |             _ => false,
+2065 | |         };
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_like_matches_macro
+     = note: `#[warn(clippy::match_like_matches_macro)]` on by default
+help: use `matches!` directly
+     |
+2062 -         let outcome = match parser.current_text() {
+2063 -             Some("completed" | "cancelled" | "failed") => true,
+2064 -             _ => false,
+2065 -         };
+2062 +         let outcome = matches!(parser.current_text(), Some("completed" | "cancelled" | "failed"));
+     |
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-syntax\src\text\dialogue_surface.rs:466:13
+    |
+466 |             (ContentBracketRegion::Content, '"') => quote = Some(character),
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+467 |             (ContentBracketRegion::PointHead, '"' | '\'') => quote = Some(character),
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+466 -             (ContentBracketRegion::Content, '"') => quote = Some(character),
+467 -             (ContentBracketRegion::PointHead, '"' | '\'') => quote = Some(character),
+466 +             (ContentBracketRegion::Content, '"') | (ContentBracketRegion::PointHead, '"' | '\'') => quote = Some(character),
+    |
+
+warning: `arcweft-lang-syntax` (lib) generated 15 warnings (run `cargo clippy --fix --lib -p arcweft-lang-syntax -- ` to apply 5 suggestions)
+    Checking arcweft-lang-hir v0.1.0 (D:\git\arcweft\crates\arcweft-lang-hir)
+warning: this pattern is unneeded as the `..` pattern can match that element
+  --> crates\arcweft-lang-hir\src\source_index\expression_manifest\candidate_projection\block\keyword.rs:81:17
+   |
+81 | /                 arrow_recovery: _,
+82 | |                 ..
+   | |________________^ help: remove it
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unneeded_wildcard_pattern
+   = note: `#[warn(clippy::unneeded_wildcard_pattern)]` on by default
+
+warning: this pattern is unneeded as the `..` pattern can match that element
+   --> crates\arcweft-lang-hir\src\stmt\child_edges.rs:341:17
+    |
+341 | /                 locals: _,
+342 | |                 ..
+    | |________________^ help: remove it
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unneeded_wildcard_pattern
+
+warning: binding's name is too similar to existing binding
+    --> crates\arcweft-lang-hir\src\expr\tests.rs:2109:9
+     |
+2109 |     let owned = kind
+     |         ^^^^^
+     |
+note: existing binding defined here
+    --> crates\arcweft-lang-hir\src\expr\tests.rs:2064:9
+     |
+2064 |     let owner = id::<ExprId>(module, 2);
+     |         ^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#similar_names
+     = note: `-W clippy::similar-names` implied by `-W clippy::pedantic`
+     = help: to override `-W clippy::pedantic` add `#[allow(clippy::similar_names)]`
+
+warning: unnested or-patterns
+  --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_point_recovery.rs:46:13
+   |
+46 | /             (HirDialoguePointActionIdentity::RecoveredMark(_), _)
+47 | |                 | (HirDialoguePointActionIdentity::Invalid(_), _)
+48 | |                 | (_, HirDialoguePointActionPayload::MissingCall(_))
+49 | |                 | (_, HirDialoguePointActionPayload::MissingTimedCue(_))
+   | |________________________________________________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unnested_or_patterns
+   = note: `-W clippy::unnested-or-patterns` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::unnested_or_patterns)]`
+help: nest the patterns
+   |
+46 ~             (HirDialoguePointActionIdentity::RecoveredMark(_) |
+47 + HirDialoguePointActionIdentity::Invalid(_), _) |
+48 + (_,
+49 + HirDialoguePointActionPayload::MissingCall(_) |
+50 + HirDialoguePointActionPayload::MissingTimedCue(_))
+   |
+
+warning: unnecessary hashes around raw string literal
+  --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\function.rs:18:9
+   |
+18 | /         r#"
+19 | | fn observe(need: Need<i64>) -> i64 {
+20 | |     await need with {
+21 | |         pending progress => {
+...  |
+29 | | "#,
+   | |__^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_raw_string_hashes
+   = note: `-W clippy::needless-raw-string-hashes` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_raw_string_hashes)]`
+help: remove all the hashes around the string literal
+   |
+18 ~         r"
+19 | fn observe(need: Need<i64>) -> i64 {
+...
+28 | }
+29 ~ ",
+   |
+
+warning: unnecessary hashes around raw string literal
+  --> crates\arcweft-lang-hir\src\final_lowering\tests\closure_calls.rs:28:5
+   |
+28 | /     r#"
+29 | | flow main() -> i64 {
+30 | |     let mut offset = 1i64
+31 | |     return (|value: i64| value + offset)(41i64)
+32 | | }
+33 | | "#
+   | |__^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+   |
+28 ~     r"
+29 | flow main() -> i64 {
+...
+32 | }
+33 ~ "
+   |
+
+warning: unnecessary hashes around raw string literal
+  --> crates\arcweft-lang-hir\src\final_lowering\tests\closure_calls.rs:38:5
+   |
+38 | /     r#"
+39 | | flow main() -> i64 {
+40 | |     return (|value: i64| value)({ 42i64 })
+41 | | }
+42 | | "#
+   | |__^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+   |
+38 ~     r"
+39 | flow main() -> i64 {
+40 |     return (|value: i64| value)({ 42i64 })
+41 | }
+42 ~ "
+   |
+
+warning: unnecessary hashes around raw string literal
+  --> crates\arcweft-lang-hir\src\final_lowering\tests\closure_calls.rs:47:5
+   |
+47 | /     r#"
+48 | | fn identity(value: i64) -> i64 { value }
+49 | | flow main() -> i64 {
+50 | |     let mut offset = 1i64
+...  |
+57 | | "#
+   | |__^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+   |
+47 ~     r"
+48 | fn identity(value: i64) -> i64 { value }
+...
+56 | }
+57 ~ "
+   |
+
+warning: unnecessary hashes around raw string literal
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:1519:9
+     |
+1519 | /         r#"
+1520 | | fn add(left: i64, right: i64) -> i64 { left + right }
+1521 | |
+1522 | | fn nested(input: i64) -> i64 {
+...    |
+1529 | | "#,
+     | |__^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+     |
+1519 ~         r"
+1520 | fn add(left: i64, right: i64) -> i64 { left + right }
+ ...
+1528 | }
+1529 ~ ",
+     |
+
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-hir\src\identity.rs:26:10
+   |
+26 |         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |          ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+26 -         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+26 +         .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: this argument is passed by value, but not consumed in the function body
+   --> crates\arcweft-lang-hir\src\dialogue_application\content.rs:438:22
+    |
+438 |         mark_inputs: Box<[(HirDialogueNodeId, HirDialogueMarkName)]>,
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_pass_by_value
+    = note: `-W clippy::needless-pass-by-value` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+    |
+438 |         mark_inputs: &Box<[(HirDialogueNodeId, HirDialogueMarkName)]>,
+    |                      +
+
+warning: this `if` statement can be collapsed
+   --> crates\arcweft-lang-hir\src\dialogue_application\content.rs:730:9
+    |
+730 | /         if let HirDialogueNodeKind::PointAction(action) = node.kind() {
+731 | |             if action.id() != node.id {
+732 | |                 return Err(HirDialogueInvariantError::InvalidArgumentReference);
+733 | |             }
+734 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+730 ~         if let HirDialogueNodeKind::PointAction(action) = node.kind()
+731 ~             && action.id() != node.id {
+732 |                 return Err(HirDialogueInvariantError::InvalidArgumentReference);
+733 ~             }
+    |
+
+warning: used `debug_assert!` to check that a value is not empty
+  --> crates\arcweft-lang-hir\src\expr\child_edges.rs:84:9
+   |
+84 |         debug_assert!(!segments.is_empty());
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+   = note: `-W clippy::assert-is-empty` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::assert_is_empty)]`
+help: use `debug_assert_ne!` to show the value on failure
+   |
+84 -         debug_assert!(!segments.is_empty());
+84 +         debug_assert_ne!(segments, [] as [expr::child_edges::HirNestedExpressionPathSegment; 0]);
+   |
+
+warning: this function has too many lines (118/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue\candidate.rs:169:5
+    |
+169 | /     fn lower_dialogue_candidate(
+170 | |         &mut self,
+171 | |         input: DialogueCandidateInput<'_>,
+172 | |         cursor: &mut CandidateCursor,
+173 | |     ) -> Result<ExprId, HirLowerFailure> {
+    | |________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+    = note: `-W clippy::too-many-lines` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::too_many_lines)]`
+
+warning: this function has too many lines (414/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue\candidate.rs:458:5
+    |
+458 | /     fn lower_candidate_expression_with_family(
+459 | |         &mut self,
+460 | |         node: AttachedCandidateNode<'_>,
+461 | |         scope: ScopeId,
+462 | |         cursor: &mut CandidateCursor,
+463 | |         application_family: HirAttachedContentApplicationFamilyKind,
+464 | |     ) -> Result<ExprId, HirLowerFailure> {
+    | |________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+    --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue\candidate.rs:1021:20
+     |
+1021 |       let boundary = match content {
+     |  ____________________^
+1022 | |         Some(content) => content.source_span().range().start(),
+1023 | |         None => {
+1024 | |             let Some(ExpressionProjection::AttachedContentApplication(application)) =
+...    |
+1046 | |     };
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_match_else
+     = note: `-W clippy::single-match-else` implied by `-W clippy::pedantic`
+     = help: to override `-W clippy::pedantic` add `#[allow(clippy::single_match_else)]`
+help: try
+     |
+1021 ~     let boundary = if let Some(content) = content { content.source_span().range().start() } else {
+1022 +         let Some(ExpressionProjection::AttachedContentApplication(application)) =
+1023 +             node.expression_projection()
+1024 +         else {
+1025 +             return Err(HirInvariantFailure::InvalidSourceSpan.into());
+1026 +         };
+1027 +         if !matches!(
+1028 +             application.form(),
+1029 +             SyntaxAttachedContentApplicationForm::Hash
+1030 +         ) || !matches!(
+1031 +             application.content(),
+1032 +             SyntaxDialogueContentProjection::Missing {
+1033 +                 boundary: SyntaxDialogueContentRecoveryBoundary::Inline { .. }
+1034 +             }
+1035 +         ) {
+1036 +             return Err(HirInvariantFailure::InvalidSourceSpan.into());
+1037 +         }
+1038 +         node.expression_components()
+1039 +             .ok_or(HirInvariantFailure::InvalidSourceSpan)?
+1040 +             .find(|component| component.role() == ExpressionComponentRole::Target)
+1041 +             .map(|component| component.source_span().range().end())
+1042 +             .ok_or(HirInvariantFailure::InvalidSourceSpan)?
+1043 ~     };
+     |
+
+warning: this function has too many lines (148/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue.rs:113:5
+    |
+113 | /     pub(super) fn lower_dialogue_content_application(
+114 | |         &mut self,
+115 | |         attached: &AttachedExpressionNode,
+116 | |         owner: ExprId,
+...   |
+119 | |         application_family: HirAttachedContentApplicationFamilyKind,
+120 | |     ) -> Result<(HirAttachedContentApplication, Option<HirRecoveryIssue>), HirLowerFailure> {
+    | |___________________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue.rs:137:17
+    |
+137 | /                 match target_attached.projection() {
+138 | |                     arcweft_lang_syntax::expressions::ExpressionProjection::Call(call) => {
+139 | |                         let (invocation, recovery) =
+140 | |                             self.lower_call_expression(&target_attached, owner, scope, call)?;
+...   |
+152 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_match_else
+help: try
+    |
+137 ~                 if let arcweft_lang_syntax::expressions::ExpressionProjection::Call(call) = target_attached.projection() {
+138 +                     let (invocation, recovery) =
+139 +                         self.lower_call_expression(&target_attached, owner, scope, call)?;
+140 +                     let target = invocation
+141 +                         .callee()
+142 +                         .value_expression()
+143 +                         .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+144 +                     (target, Some(invocation), recovery)
+145 +                 } else {
+146 +                     let target =
+147 +                         self.lower_attached_expression_inner(&target_attached, scope)?;
+148 +                     (target, Some(HirCallInvocation::bare_value(target)), None)
+149 +                 }
+    |
+
+warning: this function has too many lines (104/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue.rs:503:5
+    |
+503 | /     fn lower_dialogue_nested_expressions(
+504 | |         &mut self,
+505 | |         attached: &AttachedExpressionNode,
+506 | |         owner: ExprId,
+...   |
+509 | |         recovery: &mut Option<HirRecoveryIssue>,
+510 | |     ) -> Result<LoweredDialogueNested, HirLowerFailure> {
+    | |_______________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this function has too many arguments (8/7)
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue.rs:617:5
+    |
+617 | /     fn lower_dialogue_nested_expression(
+618 | |         &mut self,
+619 | |         projection: &arcweft_lang_syntax::expressions::ExpressionProjection,
+620 | |         owner: ExprId,
+...   |
+625 | |         recovery: &mut Option<HirRecoveryIssue>,
+626 | |     ) -> Result<ExprId, HirLowerFailure> {
+    | |________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: this function's return value is unnecessarily wrapped by `Result`
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue.rs:668:1
+    |
+668 | / fn project_mark_inputs(
+669 | |     content: HirDialogueContentId,
+670 | |     nodes: &[HirDialogueNode],
+671 | | ) -> Result<Box<[(HirDialogueNodeId, HirDialogueMarkName)]>, HirLowerFailure> {
+    | |_____________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unnecessary_wraps
+    = note: `-W clippy::unnecessary-wraps` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::unnecessary_wraps)]`
+help: remove `Result` from the return type...
+    |
+671 - ) -> Result<Box<[(HirDialogueNodeId, HirDialogueMarkName)]>, HirLowerFailure> {
+671 + ) -> std::boxed::Box<[(dialogue_application::content::HirDialogueNodeId, dialogue_application::content::HirDialogueMarkName)]> {
+    |
+help: ...and then remove the surrounding `Ok()` from returning expressions
+    |
+683 -     Ok(inputs.into_boxed_slice())
+683 +     inputs.into_boxed_slice()
+    |
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue.rs:698:74
+    |
+698 |           SyntaxDialogueActionArgumentProjection::Named { name, value } => match name {
+    |  __________________________________________________________________________^
+699 | |             Ok(name) => HirDialoguePointActionArgument::named(
+700 | |                 id,
+701 | |                 name.as_str().into(),
+...   |
+711 | |         },
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_match_else
+help: try
+    |
+698 ~         SyntaxDialogueActionArgumentProjection::Named { name, value } => if let Ok(name) = name { HirDialoguePointActionArgument::named(
+699 +             id,
+700 +             name.as_str().into(),
+701 +             crate::dialogue_application::HirRichTextValue::new(value.decoded().into()),
+702 +         ) } else {
+703 +             let issue = HirRichTextArgumentIssue::InvalidKey;
+704 +             recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(
+705 +                 HirRichTextIssue::Argument(issue),
+706 +             ));
+707 +             HirDialoguePointActionArgument::invalid(id, issue)
+708 ~         },
+    |
+
+warning: this function has too many lines (115/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue.rs:723:5
+    |
+723 | /     fn project_node(
+724 | |         &mut self,
+725 | |         scope: ScopeId,
+726 | |         owner: ExprId,
+...   |
+730 | |         id: HirDialogueNodeId,
+731 | |     ) -> Result<HirDialogueNodeKind, HirLowerFailure> {
+    | |_____________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: item in documentation is missing backticks
+  --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering.rs:86:26
+   |
+86 | /// path is the ordinary DialogueLine context; no target or source re-parsing
+   |                          ^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#doc_markdown
+   = note: `-W clippy::doc-markdown` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::doc_markdown)]`
+help: try
+   |
+86 - /// path is the ordinary DialogueLine context; no target or source re-parsing
+86 + /// path is the ordinary `DialogueLine` context; no target or source re-parsing
+   |
+
+warning: this function has too many lines (104/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering.rs:543:5
+    |
+543 | /     fn project_application_expression(
+544 | |         &mut self,
+545 | |         attached: &AttachedExpressionNode,
+546 | |         owner: ExprId,
+547 | |         scope: ScopeId,
+548 | |         application_family: HirAttachedContentApplicationFamilyKind,
+549 | |     ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+    | |_________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: using `clone` on type `HirIdRefRecovery` which implements the `Copy` trait
+  --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\style.rs:44:21
+   |
+44 | /                     reference
+45 | |                         .recovery()
+46 | |                         .ok_or(HirInvariantFailure::InvalidArenaCommit)?
+47 | |                         .clone(),
+   | |________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#clone_on_copy
+   = note: `#[warn(clippy::clone_on_copy)]` on by default
+help: try dereferencing it
+   |
+44 ~                     *reference
+45 +                         .recovery()
+46 ~                         .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
+   |
+
+warning: using `chunks_exact` with a constant chunk size
+   --> crates\arcweft-lang-hir\src\final_lowering\literal_projection.rs:284:49
+    |
+284 |     for chunk in digits.as_bytes()[first_len..].chunks_exact(CHUNK_DIGITS) {
+    |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `as_chunks` instead: `as_chunks::<CHUNK_DIGITS>().0`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#chunks_exact_to_as_chunks
+    = note: `#[warn(clippy::chunks_exact_to_as_chunks)]` on by default
+
+warning: using `chunks_exact` with a constant chunk size
+   --> crates\arcweft-lang-hir\src\final_lowering\literal_projection.rs:400:38
+    |
+400 |     for chunk in digits[first_len..].chunks_exact(CHUNK_DIGITS) {
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `as_chunks` instead: `as_chunks::<CHUNK_DIGITS>().0`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#chunks_exact_to_as_chunks
+
+warning: this function has too many arguments (8/7)
+   --> crates\arcweft-lang-hir\src\final_lowering\pattern_lowering.rs:732:5
+    |
+732 | /     fn project_typed_binding(
+733 | |         &mut self,
+734 | |         owner: PatternId,
+735 | |         attached: &PatternInput<'_>,
+...   |
+740 | |         context: &mut PatternLoweringContext<'_>,
+741 | |     ) -> Result<HirPatternKind, HirLowerFailure> {
+    | |________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many lines (406/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\statement_lowering.rs:558:5
+    |
+558 | /     fn lower_attached_statement_with_mark_catalog(
+559 | |         &mut self,
+560 | |         attached: &StatementNode,
+561 | |         scope: ScopeId,
+562 | |         context: HirStatementContext,
+563 | |         mark_catalog: Option<&HirDialogueContent>,
+564 | |     ) -> Result<LoweredStatement, HirLowerFailure> {
+    | |__________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> crates\arcweft-lang-hir\src\final_lowering\statement_lowering.rs:990:10
+    |
+990 |     ) -> Result<(HirStmtKind, Box<[LocalId]>, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#type_complexity
+    = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+    --> crates\arcweft-lang-hir\src\final_lowering\statement_lowering.rs:1051:10
+     |
+1051 |     ) -> Result<(HirStmtKind, Box<[LocalId]>, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
+     |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#type_complexity
+
+warning: this function has too many lines (112/100)
+    --> crates\arcweft-lang-hir\src\final_lowering\statement_lowering.rs:1085:5
+     |
+1085 | /     fn lower_attached_trigger(
+1086 | |         &mut self,
+1087 | |         attached: &AttachedTriggerPattern,
+1088 | |         owner: StmtId,
+1089 | |         scope: ScopeId,
+1090 | |         mark_catalog: Option<&HirDialogueContent>,
+1091 | |     ) -> Result<(HirTrigger, Box<[LocalId]>, bool), HirLowerFailure> {
+     | |____________________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this function has too many lines (101/100)
+    --> crates\arcweft-lang-hir\src\final_lowering.rs:1335:5
+     |
+1335 | /     fn require(
+1336 | |         &mut self,
+1337 | |         requirement: HirDialogueTransactionRequirement,
+1338 | |     ) -> Result<(), Self::Error> {
+     | |________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-hir\src\identity.rs:715:13
+    |
+715 | /             Self::ClosureCapture
+716 | |             | Self::PostfixIndexCandidateExpression
+717 | |             | Self::DialogueContentCandidateExpression
+718 | |             | Self::DialogueRubyTarget
+719 | |             | Self::DialogueRubyReading
+720 | |             | Self::DialogueRubyApplication => matches!(owner_kind, Expr),
+    | |_________________________________________________________________________^
+...
+726 |               Self::ContentCallNominalType => matches!(owner_kind, Expr),
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+    = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise merge the patterns into a single arm
+    |
+715 |             Self::ClosureCapture
+...
+719 |             | Self::DialogueRubyReading
+720 ~             | Self::DialogueRubyApplication | Self::ContentCallNominalType => matches!(owner_kind, Expr),
+721 |             Self::PredicateBoolReturn
+...
+725 |             Self::ElidedRegion => matches!(owner_kind, Type),
+726 ~             Self::RecoveryOperand
+    |
+
+warning: this function has too many arguments (8/7)
+   --> crates\arcweft-lang-hir\src\item\host.rs:152:5
+    |
+152 | /     pub(crate) fn try_new(
+153 | |         prefix: HirItemPrefix,
+154 | |         name: HirRequiredName,
+155 | |         generic_parameters: Box<[HirGenericParameter]>,
+...   |
+160 | |         effects: Box<[ExprId]>,
+161 | |     ) -> Result<Self, HirItemInvariantError> {
+    | |____________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: it is more concise to loop over references to containers instead of using explicit iteration methods
+  --> crates\arcweft-lang-hir\src\item\nominal.rs:62:34
+   |
+62 |                     for field in fields.iter() {
+   |                                  ^^^^^^^^^^^^^ help: to write this more concisely, try: `fields`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#explicit_iter_loop
+   = note: `-W clippy::explicit-iter-loop` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::explicit_iter_loop)]`
+
+warning: docs for function which may panic missing `# Panics` section
+   --> crates\arcweft-lang-hir\src\item.rs:470:5
+    |
+470 | /     pub fn attached_content_callable_parameters(
+471 | |         &self,
+472 | |     ) -> impl Iterator<Item = (HirCallableSourceOwner, HirCallableAttachedContentParameter)> {
+    | |____________________________________________________________________________________________^
+    |
+note: first possible panic found here
+   --> crates\arcweft-lang-hir\src\item.rs:485:34
+    |
+485 |                       let member = u16::try_from(member)
+    |  __________________________________^
+486 | |                         .expect("accepted Trait member count fits callable source owner");
+    | |_________________________________________________________________________________________^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_panics_doc
+    = note: `-W clippy::missing-panics-doc` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_panics_doc)]`
+
+warning: docs for function which may panic missing `# Panics` section
+   --> crates\arcweft-lang-hir\src\item.rs:547:5
+    |
+547 | /     pub fn callable_attached_content_interface(
+548 | |         &self,
+549 | |         owner: HirCallableSourceOwner,
+550 | |     ) -> Option<HirCallableAttachedContentInterface> {
+    | |____________________________________________________^
+    |
+note: first possible panic found here
+   --> crates\arcweft-lang-hir\src\item.rs:607:13
+    |
+607 |             u32::try_from(group).expect("accepted callable group count fits u32"),
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_panics_doc
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-hir\src\line_identity\builder.rs:123:9
+    |
+123 |         HirIdRef::Absolute(_) => return None,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+141 |         HirIdRef::FamilyRelative(_) => return None,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+123 ~         HirIdRef::Relative(relative) => {
+124 |             let prefix = explicit_relative_prefix(module, site, relative.parent_depth())?;
+...
+139 |         }
+140 ~         HirIdRef::Absolute(_) | HirIdRef::FamilyRelative(_) => return None,
+    |
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\arcweft-lang-hir\src\line_identity\builder.rs:469:24
+    |
+469 |                   return match resolve_explicit_text_key(self.module, site, reference) {
+    |  ________________________^
+470 | |                     Some(key) => Ok(Some((key, DialogueTextKeyOrigin::Explicit))),
+471 | |                     None => {
+472 | |                         self.push_diagnostic(DialogueLineDiagnostic::InvalidTextKeyFamily {
+...   |
+478 | |                 };
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_match_else
+help: try
+    |
+469 ~                 return if let Some(key) = resolve_explicit_text_key(self.module, site, reference) { Ok(Some((key, DialogueTextKeyOrigin::Explicit))) } else {
+470 +                     self.push_diagnostic(DialogueLineDiagnostic::InvalidTextKeyFamily {
+471 +                         found: None,
+472 +                         span: span.clone(),
+473 +                     })?;
+474 +                     Ok(None)
+475 ~                 };
+    |
+
+warning: item in documentation is missing backticks
+  --> crates\arcweft-lang-hir\src\module\scope_namespace.rs:54:28
+   |
+54 |     /// Scope statement or NamedBlock expression. Anonymous scopes add no segment.
+   |                            ^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#doc_markdown
+help: try
+   |
+54 -     /// Scope statement or NamedBlock expression. Anonymous scopes add no segment.
+54 +     /// Scope statement or `NamedBlock` expression. Anonymous scopes add no segment.
+   |
+
+warning: called `.ok().is_some_and(..)` on a `Result` value
+    --> crates\arcweft-lang-hir\src\module.rs:1834:66
+     |
+1834 |                   HirThreadBodySourceRole::Item { ordinal, .. } => usize::try_from(*ordinal)
+     |  __________________________________________________________________^
+1835 | |                     .ok()
+1836 | |                     .is_some_and(|ordinal| ordinal < body.items().len()),
+     | |________________________________________________________________________^ help: use `is_ok_and` instead: `usize::try_from(*ordinal).is_ok_and(|ordinal| ordinal < body.items().len())`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#manual_is_variant_and
+     = note: `-W clippy::manual-is-variant-and` implied by `-W clippy::pedantic`
+     = help: to override `-W clippy::pedantic` add `#[allow(clippy::manual_is_variant_and)]`
+
+warning: binding to `_` prefixed variable with no side-effect
+   --> crates\arcweft-lang-hir\src\final_project\dialogue_lines.rs:750:13
+    |
+750 |         let _semantic_exprs = semantic_exprs;
+    |             ^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#no_effect_underscore_binding
+    = note: `-W clippy::no-effect-underscore-binding` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::no_effect_underscore_binding)]`
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners\validation.rs:147:9
+    |
+147 |           (HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { .. }, _) => false,
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+183 | /         (
+184 | |             HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. }
+185 | |             | HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod { .. }
+186 | |             | HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
+187 | |             _,
+188 | |         ) => false,
+    | |__________________^
+...
+193 |           (HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { .. }, _) => false,
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+147 ~         (
+148 |             HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall {
+...
+181 |         }
+182 ~         (
+183 |             HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure },
+184 |             HirRuntimeExecutableOwner::CallableBody(target),
+185 |         ) => closure == target,
+186 ~         (HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { .. }, _) | (
+187 +             HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. }
+188 +             | HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod { .. }
+189 +             | HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
+190 +             _,
+191 ~         ) | (HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { .. }, _) => false,
+    |
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners\validation.rs:159:9
+    |
+159 | /         (
+160 | |             HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod {
+161 | |                 implementation,
+162 | |                 member,
+...   |
+169 | |                 && selected_trait_method_matches(project, *implementation, *member, method)
+170 | |         }
+    | |_________^
+171 | /         (
+172 | |             HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
+173 | |                 implementation,
+174 | |                 member,
+...   |
+181 | |                 && selected_trait_method_matches(project, *implementation, *member, method)
+182 | |         }
+    | |_________^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+159 |         (
+...
+166 |             HirRuntimeExecutableOwner::ImplMethod(target),
+167 ~         ) | (
+168 +             HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
+169 +                 implementation,
+170 +                 member,
+171 +                 method,
+172 +                 ..
+173 +             },
+174 +             HirRuntimeExecutableOwner::ImplMethod(target),
+175 ~         ) => {
+176 |             method == target
+177 |                 && selected_trait_method_matches(project, *implementation, *member, method)
+178 |         }
+179 ~         (
+    |
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners\validation.rs:301:9
+    |
+301 | /         (
+302 | |             HirRuntimeReachabilityRootKind::CheckedProgram,
+303 | |             HirRuntimeExecutableOwner::CallableBody(owner),
+304 | |         ) => resolve_expression_kind(project, *owner).is_some(),
+    | |_______________________________________________________________^
+305 | /         (
+306 | |             HirRuntimeReachabilityRootKind::CheckedProgram,
+307 | |             HirRuntimeExecutableOwner::Value(owner),
+308 | |         ) => resolve_expression_kind(project, *owner).is_some(),
+    | |_______________________________________________________________^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+301 |         (
+302 |             HirRuntimeReachabilityRootKind::CheckedProgram,
+303 |             HirRuntimeExecutableOwner::CallableBody(owner),
+304 ~         ) | (
+305 +             HirRuntimeReachabilityRootKind::CheckedProgram,
+306 +             HirRuntimeExecutableOwner::Value(owner),
+307 ~         ) => resolve_expression_kind(project, *owner).is_some(),
+308 ~         (
+    |
+
+warning: this function has too many arguments (8/7)
+   --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners.rs:652:5
+    |
+652 | /     fn selected_executable_owners(
+653 | |         &self,
+654 | |         executable: &HirRuntimeExecutableOwner,
+655 | |         index: &StructuralIndex<'_>,
+...   |
+666 | |         expression_projection: &mut impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
+667 | |     ) -> Result<HirRuntimeExecutableSemanticOwners, HirRuntimeReachabilityError> {
+    | |________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many lines (176/100)
+    --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners.rs:1608:1
+     |
+1608 | / fn execution_roots(
+1609 | |     project: HirAnalysisProjectView<'_>,
+1610 | |     topology: &super::HirProjectEvaluationTopology,
+1611 | |     owner: &HirRuntimeExecutableOwner,
+1612 | | ) -> Result<HirRuntimeExecutionRoots, HirRuntimeReachabilityError> {
+     | |__________________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: unnecessary closure used to substitute value for `Option::None`
+    --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners.rs:1680:26
+     |
+1680 |               let module = project
+     |  __________________________^
+1681 | |                 .modules()
+1682 | |                 .find(|(_, module)| module.module_id() == owner.module())
+1683 | |                 .map(|(_, module)| module)
+1684 | |                 .ok_or_else(|| HirRuntimeReachabilityError::UnknownRoot {
+1685 | |                     owner: HirRuntimeExecutableOwner::IterationBindings(*owner),
+1686 | |                 })?;
+     | |__________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unnecessary_lazy_evaluations
+     = note: `#[warn(clippy::unnecessary_lazy_evaluations)]` on by default
+help: use `ok_or` instead
+     |
+1684 ~                 .ok_or(HirRuntimeReachabilityError::UnknownRoot {
+1685 +                     owner: HirRuntimeExecutableOwner::IterationBindings(*owner),
+1686 ~                 })?;
+     |
+
+warning: unnecessary closure used to substitute value for `Option::None`
+    --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners.rs:1708:26
+     |
+1708 |               let module = project
+     |  __________________________^
+1709 | |                 .modules()
+1710 | |                 .find_map(|(_, module)| {
+1711 | |                     (module.module_id() == owner.module()).then_some(module.as_ref())
+...    |
+1714 | |                     owner: HirRuntimeExecutableOwner::MatchSelection(*owner),
+1715 | |                 })?;
+     | |__________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unnecessary_lazy_evaluations
+help: use `ok_or` instead
+     |
+1713 ~                 .ok_or(HirRuntimeReachabilityError::UnknownRoot {
+1714 +                     owner: HirRuntimeExecutableOwner::MatchSelection(*owner),
+1715 ~                 })?;
+     |
+
+warning: redundant closure
+    --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners.rs:1724:54
+     |
+1724 |                     .chain(matched.arms().filter_map(|arm| arm.guard()))
+     |                                                      ^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `super::match_owner::HirMatchArmView::guard`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+     = note: `-W clippy::redundant-closure-for-method-calls` implied by `-W clippy::pedantic`
+     = help: to override `-W clippy::pedantic` add `#[allow(clippy::redundant_closure_for_method_calls)]`
+
+warning: redundant closure
+    --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners.rs:1726:46
+     |
+1726 |                 patterns: matched.arms().map(|arm| arm.pattern()).collect(),
+     |                                              ^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `super::match_owner::HirMatchArmView::pattern`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: unused `self` argument
+   --> crates\arcweft-lang-hir\src\final_project\selected_expressions.rs:436:9
+    |
+436 |         self,
+    |         ^^^^
+    |
+    = help: consider refactoring to an associated function
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unused_self
+    = note: `-W clippy::unused-self` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::unused_self)]`
+
+warning: this function has too many lines (121/100)
+   --> crates\arcweft-lang-hir\src\final_project\selected_expressions.rs:814:5
+    |
+814 | /     pub fn selected_expression_graph_in_partition_with_select_target_disposition(
+815 | |         self,
+816 | |         topology: &Arc<HirProjectEvaluationTopology>,
+817 | |         root_partition: HirSelectedExpressionRootPartition,
+...   |
+820 | |         selected_select_target: impl FnMut(ExprId) -> Option<HirSelectedSelectTargetDisposition>,
+821 | |     ) -> Result<HirSelectedExpressionGraph, HirSelectedExpressionInventoryError> {
+    | |________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this function has too many arguments (8/7)
+   --> crates\arcweft-lang-hir\src\final_project\selected_expressions.rs:945:5
+    |
+945 | /     pub(super) fn selected_runtime_expression_owners(
+946 | |         self,
+947 | |         topology: &HirProjectEvaluationTopology,
+948 | |         outer_owners: &BTreeSet<ExprId>,
+...   |
+953 | |         expression_disposition: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
+954 | |     ) -> Result<HirSelectedRuntimeExpressionOwners, HirSelectedExpressionInventoryError> {
+    | |________________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: these match arms have identical bodies
+    --> crates\arcweft-lang-hir\src\final_project\selected_expressions.rs:1153:17
+     |
+1153 | /                 (_, HirRuntimeExpressionProjection::Call { .. }) => {
+1154 | |                     return Err(
+1155 | |                         HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+1156 | |                             expression: owner,
+1157 | |                         },
+1158 | |                     );
+1159 | |                 }
+     | |_________________^
+1160 | /                 (_, HirRuntimeExpressionProjection::ResidualValue) => {
+1161 | |                     return Err(
+1162 | |                         HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+1163 | |                             expression: owner,
+1164 | |                         },
+1165 | |                     );
+1166 | |                 }
+     | |_________________^
+     |
+     = help: if this is unintentional make the arms return different values
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+     |
+1153 ~                 (_, HirRuntimeExpressionProjection::Call { .. }) | (_, HirRuntimeExpressionProjection::ResidualValue) => {
+1154 |                     return Err(
+ ...
+1159 |                 }
+1160 ~                 (_, HirRuntimeExpressionProjection::Structural { value }) => value,
+     |
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+    --> crates\arcweft-lang-hir\src\final_project\selected_expressions.rs:1186:13
+     |
+1186 | /             match kind {
+1187 | |                 HirExprKind::PostfixBracket(postfix) => {
+1188 | |                     let candidate = selected_postfix(owner).ok_or(
+1189 | |                         HirSelectedExpressionInventoryError::MissingPostfixSelection {
+...    |
+1211 | |             }
+     | |_____________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_match_else
+help: try
+     |
+1186 ~             if let HirExprKind::PostfixBracket(postfix) = kind {
+1187 +                 let candidate = selected_postfix(owner).ok_or(
+1188 +                     HirSelectedExpressionInventoryError::MissingPostfixSelection {
+1189 +                         expression: owner,
+1190 +                     },
+1191 +                 )?;
+1192 +                 SelectedPostfixContext {
+1193 +                     topology,
+1194 +                     owner,
+1195 +                     postfix,
+1196 +                     domain,
+1197 +                     value,
+1198 +                     pending: &mut pending,
+1199 +                     selected: &mut selected,
+1200 +                     followed: &mut followed_edges,
+1201 +                 }
+1202 +                 .apply(candidate)?;
+1203 +             } else {
+1204 +                 if value == HirRuntimeValueRetention::Retain {
+1205 +                     selected.insert(owner);
+1206 +                 }
+1207 +                 enqueue_expression_edges(topology, owner, &mut pending, &mut followed_edges);
+1208 +             }
+     |
+
+warning: this function has too many arguments (8/7)
+    --> crates\arcweft-lang-hir\src\final_project\selected_expressions.rs:1533:1
+     |
+1533 | / fn append_selected_call_expression_edges(
+1534 | |     topology: &HirProjectEvaluationTopology,
+1535 | |     owner: ExprId,
+1536 | |     invocation: &HirCallInvocation,
+...    |
+1541 | |     required_semantic_owners: &mut BTreeSet<ExprId>,
+1542 | | ) -> Result<(), HirSelectedExpressionInventoryError> {
+     | |____________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many lines (161/100)
+    --> crates\arcweft-lang-hir\src\final_project\selected_expressions.rs:1533:1
+     |
+1533 | / fn append_selected_call_expression_edges(
+1534 | |     topology: &HirProjectEvaluationTopology,
+1535 | |     owner: ExprId,
+1536 | |     invocation: &HirCallInvocation,
+...    |
+1541 | |     required_semantic_owners: &mut BTreeSet<ExprId>,
+1542 | | ) -> Result<(), HirSelectedExpressionInventoryError> {
+     | |____________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this function has too many arguments (9/7)
+    --> crates\arcweft-lang-hir\src\final_project\selected_expressions.rs:1758:1
+     |
+1758 | / fn append_selected_call_invocation_operands(
+1759 | |     topology: &HirProjectEvaluationTopology,
+1760 | |     modules: &BTreeMap<HirModuleId, &HirModule>,
+1761 | |     owner: ExprId,
+...    |
+1767 | |     required_semantic_owners: &mut BTreeSet<ExprId>,
+1768 | | ) -> Result<(), HirSelectedExpressionInventoryError> {
+     | |____________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: these match arms have identical bodies
+    --> crates\arcweft-lang-hir\src\final_project\semantic_paths.rs:2274:17
+     |
+2274 |                 Some(HirExpressionChildRole::PipeLeft) => {}
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2280 |                 Some(HirExpressionChildRole::PipeRight) => {}
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2281 |                 Some(_) | None => {}
+     |                 ^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: if this is unintentional make the arms return different values
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+     |
+2274 ~                 Some(HirExpressionChildRole::PipeRight)
+2275 |                     if right.replace(row.expression()).is_some() =>
+ ...
+2278 |                 }
+2279 ~                 Some(HirExpressionChildRole::PipeLeft) | Some(HirExpressionChildRole::PipeRight) | Some(_) | None => {}
+     |
+
+warning: this function has too many arguments (8/7)
+    --> crates\arcweft-lang-hir\src\final_project\semantic_paths.rs:4747:5
+     |
+4747 | /     fn walk_declaration_topology(
+4748 | |         &mut self,
+4749 | |         declaration: CallableDeclarationKey,
+4750 | |         item: ItemId,
+...    |
+4755 | |         roots: &[HirDeclarationBodyRoot],
+4756 | |     ) -> Result<HirDeclarationBodyTopology, HirSemanticPathError> {
+     | |_________________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+   --> crates\arcweft-lang-hir\src\source_index\block_projection\thread_control.rs:417:1
+    |
+417 | / fn for_evidence(
+418 | |     parsed: &ParsedSource,
+419 | |     slots: &SlotSnapshot,
+420 | |     arenas: &BlockValidationArenas<'_>,
+...   |
+425 | |     statement: &HirForStmt,
+426 | | ) -> Option<StatementEvidence> {
+    | |______________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many lines (127/100)
+   --> crates\arcweft-lang-hir\src\source_index\block_projection\thread_control.rs:417:1
+    |
+417 | / fn for_evidence(
+418 | |     parsed: &ParsedSource,
+419 | |     slots: &SlotSnapshot,
+420 | |     arenas: &BlockValidationArenas<'_>,
+...   |
+425 | |     statement: &HirForStmt,
+426 | | ) -> Option<StatementEvidence> {
+    | |______________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this `if` statement can be collapsed
+   --> crates\arcweft-lang-hir\src\source_index\block_projection\thread_control.rs:538:5
+    |
+538 | /     if let (Some(key), Some(owner_key)) = (attached.key(), statement.key()) {
+539 | |         if let Some(expected) = missing_operand_key(key, owner_key, |insertion| {
+540 | |             HirStmtRecoveryOperandSlot::ForKey { insertion }
+541 | |         }) {
+...   |
+544 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+538 ~     if let (Some(key), Some(owner_key)) = (attached.key(), statement.key())
+539 ~         && let Some(expected) = missing_operand_key(key, owner_key, |insertion| {
+540 |             HirStmtRecoveryOperandSlot::ForKey { insertion }
+541 |         }) {
+542 |             expected_synthetics.push(expected);
+543 ~         }
+    |
+
+warning: use of `Option<Option<T>>`
+   --> crates\arcweft-lang-hir\src\source_index\block_projection\thread_control.rs:571:6
+    |
+571 | ) -> Option<Option<HirStmtRecoveryIssue>> {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using `Option<HirStmtRecoveryIssue>`, or a custom enum if you need to distinguish all 3 cases
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#option_option
+    = note: `-W clippy::option-option` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::option_option)]`
+
+warning: unnecessary boolean `not` operation
+    --> crates\arcweft-lang-hir\src\source_index\block_projection.rs:1468:13
+     |
+1468 | /             if !source_expression_matches(slots, arenas.expressions, *expression, attached, scope) {
+1469 | |                 None
+1470 | |             } else {
+1471 | |                 Some((
+...    |
+1477 | |                 ))
+1478 | |             }
+     | |_____________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#if_not_else
+     = note: `-W clippy::if-not-else` implied by `-W clippy::pedantic`
+     = help: to override `-W clippy::pedantic` add `#[allow(clippy::if_not_else)]`
+help: try
+     |
+1468 ~             if source_expression_matches(slots, arenas.expressions, *expression, attached, scope) {
+1469 +                 Some((
+1470 +                     Box::<[LocalId]>::from([]),
+1471 +                     arenas
+1472 +                         .expressions
+1473 +                         .resolve_prepared(slots, *expression)
+1474 +                         .is_ok_and(HirExpr::is_poisoned),
+1475 +                 ))
+1476 +             } else {
+1477 +                 None
+1478 +             }
+     |
+
+warning: unnecessary boolean `not` operation
+    --> crates\arcweft-lang-hir\src\source_index\block_projection.rs:1558:13
+     |
+1558 | /             if !source_expression_matches(slots, arenas.expressions, expression, &attached, scope) {
+1559 | |                 None
+1560 | |             } else {
+1561 | |                 Some((
+...    |
+1567 | |                 ))
+1568 | |             }
+     | |_____________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#if_not_else
+help: try
+     |
+1558 ~             if source_expression_matches(slots, arenas.expressions, expression, &attached, scope) {
+1559 +                 Some((
+1560 +                     Box::<[LocalId]>::from([]),
+1561 +                     arenas
+1562 +                         .expressions
+1563 +                         .resolve_prepared(slots, expression)
+1564 +                         .is_ok_and(HirExpr::is_poisoned),
+1565 +                 ))
+1566 +             } else {
+1567 +                 None
+1568 +             }
+     |
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-hir\src\source_index\expr_projection.rs:724:9
+    |
+724 |         HirExprSourceRole::Hash => not_applicable(owner, role),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+732 |         HirExprSourceRole::Plan => not_applicable(owner, role),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+867 |         _ => not_applicable(owner, role),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise remove the non-wildcard arms
+    |
+724 ~         HirExprSourceRole::Target
+725 |         | HirExprSourceRole::OpenBracket
+...
+730 |         HirExprSourceRole::Plan if expression.is_dialogue_line() => Ok(()),
+731 ~         HirExprSourceRole::ConfigurationArgument { argument, part } => {
+    |
+
+warning: this function has too many arguments (8/7)
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\call.rs:332:1
+    |
+332 | / pub(super) fn call_invocation_children_match(
+333 | |     parsed: &ParsedSource,
+334 | |     slots: &SlotSnapshot,
+335 | |     expressions: &ArenaSnapshot<HirExpr, ExprId>,
+...   |
+340 | |     attached: &AttachedExpressionNode,
+341 | | ) -> bool {
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many lines (136/100)
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\call.rs:359:1
+    |
+359 | / fn call_children_match_inner(
+360 | |     parsed: &ParsedSource,
+361 | |     slots: &SlotSnapshot,
+362 | |     expressions: &ArenaSnapshot<HirExpr, ExprId>,
+...   |
+368 | |     validate_root_state: bool,
+369 | | ) -> bool {
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this function has too many lines (104/100)
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\candidate_projection.rs:560:5
+    |
+560 | /     fn validate_dialogue_root(
+561 | |         &mut self,
+562 | |         target: ExprId,
+563 | |         graph: AttachedCandidateGraph<'_>,
+...   |
+566 | |         ordinal: u32,
+567 | |     ) -> Option<ExprId> {
+    | |_______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this could be rewritten as `let...else`
+  --> crates\arcweft-lang-hir\src\source_index\expression_manifest\dialogue_projection.rs:32:5
+   |
+32 | /     let expected = match attached.dialogue_line_plan() {
+33 | |         Ok(expected) => expected,
+34 | |         Err(_) => return false,
+35 | |     };
+   | |______^ help: consider writing: `let Ok(expected) = attached.dialogue_line_plan() else { return false };`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#manual_let_else
+   = note: `-W clippy::manual-let-else` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::manual_let_else)]`
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\dialogue_projection.rs:187:9
+    |
+187 | /         (HirDialogueNodeKind::Interpolation(_), SyntaxDialogueNodeProjection::Interpolation(_))
+188 | |         | (
+189 | |             HirDialogueNodeKind::ContentApplication(_),
+190 | |             SyntaxDialogueNodeProjection::ContentApplication(_),
+191 | |         ) => true,
+    | |_________________^
+...
+205 | /         (HirDialogueNodeKind::ContentApplication(_), SyntaxDialogueNodeProjection::Ruby { .. }) => {
+206 | |             true
+207 | |         }
+    | |_________^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+187 |         (HirDialogueNodeKind::Interpolation(_), SyntaxDialogueNodeProjection::Interpolation(_))
+...
+190 |             SyntaxDialogueNodeProjection::ContentApplication(_),
+191 ~         ) | (HirDialogueNodeKind::ContentApplication(_), SyntaxDialogueNodeProjection::Ruby { .. }) => true,
+192 |         (
+...
+204 |         // content-call path as `#ruby("reading")[body]`.
+205 ~         _ => false,
+    |
+
+warning: this function has too many arguments (8/7)
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\projection.rs:742:1
+    |
+742 | / fn dialogue_application_children_match(
+743 | |     parsed: &ParsedSource,
+744 | |     slots: &SlotSnapshot,
+745 | |     expressions: &ArenaSnapshot<HirExpr, ExprId>,
+...   |
+750 | |     attached: &AttachedExpressionNode,
+751 | | ) -> bool {
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many lines (148/100)
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\projection.rs:742:1
+    |
+742 | / fn dialogue_application_children_match(
+743 | |     parsed: &ParsedSource,
+744 | |     slots: &SlotSnapshot,
+745 | |     expressions: &ArenaSnapshot<HirExpr, ExprId>,
+...   |
+750 | |     attached: &AttachedExpressionNode,
+751 | | ) -> bool {
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this `if` statement can be collapsed
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\requirements.rs:322:13
+    |
+322 | /             if target_is_call {
+323 | |                 if let crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+324 | |                     invocation,
+325 | |                     ..
+...   |
+330 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+322 ~             if target_is_call
+323 ~                 && let crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+324 |                     invocation,
+...
+328 |                     add_call_requirements(&mut requirements, invocation);
+329 ~                 }
+    |
+
+warning: this function has too many lines (159/100)
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\requirements.rs:586:1
+    |
+586 | / fn add_call_requirements(
+587 | |     requirements: &mut BTreeMap<HirExprSourceRole, HirSourceRequirement>,
+588 | |     expression: &crate::expr::HirCallInvocation,
+589 | | ) {
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: consider adding a `;` to the last statement for consistent formatting
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\requirements.rs:594:13
+    |
+594 |             add_expression_requirement(requirements, HirExprSourceRole::CallCallee, Required)
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: add a `;` here: `add_expression_requirement(requirements, HirExprSourceRole::CallCallee, Required);`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#semicolon_if_nothing_returned
+    = note: `-W clippy::semicolon-if-nothing-returned` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::semicolon_if_nothing_returned)]`
+
+warning: this `let...else` may be rewritten with the `?` operator
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest.rs:291:9
+    |
+291 | /         let Some(local_resolver) =
+292 | |             crate::module::HirLocalResolver::prepared(slots, scopes, locals, statements)
+293 | |         else {
+294 | |             return None;
+295 | |         };
+    | |__________^ help: replace it with: `let local_resolver = crate::module::HirLocalResolver::prepared(slots, scopes, locals, statements)?;`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#question_mark
+    = note: `#[warn(clippy::question_mark)]` on by default
+
+warning: this `let...else` may be rewritten with the `?` operator
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest.rs:377:9
+    |
+377 | /         let Some(retained_style_expressions) =
+378 | |             super::item_projection::retained_style_expression_owners(items, slots)
+379 | |         else {
+380 | |             return None;
+381 | |         };
+    | |__________^ help: replace it with: `let retained_style_expressions = super::item_projection::retained_style_expression_owners(items, slots)?;`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#question_mark
+
+warning: this `let...else` may be rewritten with the `?` operator
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest.rs:382:9
+    |
+382 | /         let Some(candidate_projection::CandidateExpressionAdmission {
+383 | |             provenance,
+384 | |             source_components,
+385 | |             mut desugared,
+...   |
+402 | |             return None;
+403 | |         };
+    | |__________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#question_mark
+help: replace it with
+    |
+382 ~         let candidate_projection::CandidateExpressionAdmission {
+383 +             provenance,
+384 +             source_components,
+385 +             mut desugared,
+386 +         } = candidate_projection::validate_candidate_expressions(
+387 +             self,
+388 +             &expression_rows,
+389 +             parsed,
+390 +             slots,
+391 +             expressions,
+392 +             statements,
+393 +             types,
+394 +             scopes,
+395 +             locals,
+396 +             patterns,
+397 +             &local_resolver,
+398 +             &retained_style_expressions,
+399 +             &mut capture_validation,
+400 +         )?;
+    |
+
+warning: returning the result of a `let` binding from a block
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest.rs:501:13
+    |
+409 | /             let valid = match metadata.origin() {
+410 | |                 HirOrigin::Source(source) => match parsed.attached_expression(source.syntax()) {
+411 | |                     Ok(attached) => {
+412 | |                         if let (
+...   |
+500 | |             };
+    | |______________- unnecessary `let` binding
+501 |               valid
+    |               ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#let_and_return
+    = note: `#[warn(clippy::let_and_return)]` on by default
+help: return the expression directly
+    |
+409 ~             
+410 ~             match metadata.origin() {
+411 +                 HirOrigin::Source(source) => match parsed.attached_expression(source.syntax()) {
+412 +                     Ok(attached) => {
+413 +                         if let (
+414 +                             HirExprKind::AttachedContentApplication(application),
+415 +                             ExpressionProjection::AttachedContentApplication(source),
+416 +                         ) = (payload.kind(), attached.projection())
+417 +                         {
+418 +                             let Some(generated) = desugaring::dialogue_desugared_expressions(
+419 +                                 slots,
+420 +                                 expressions,
+421 +                                 application.content(),
+422 +                                 source.content(),
+423 +                             ) else {
+424 +                                 return false;
+425 +                             };
+426 +                             desugared.extend(generated);
+427 +                         }
+428 +                         self.syntax_owners
+429 +                             .get(&SyntheticOwner::Expr(owner))
+430 +                             .is_some_and(|syntax| *syntax == attached.id())
+431 +                             && metadata.source_site()
+432 +                                 == &HirSourceSite::Span(attached.whole_source_span())
+433 +                             && expression_payload_matches(payload.kind(), &attached)
+434 +                             && match payload.kind() {
+435 +                                 HirExprKind::AttachedContentApplication(application) => {
+436 +                                     dialogue_line_plan_sources_match(
+437 +                                         application,
+438 +                                         owner,
+439 +                                         payload.scope(),
+440 +                                         &attached,
+441 +                                         slots,
+442 +                                         block_arenas.scopes,
+443 +                                         block_arenas.statements,
+444 +                                     )
+445 +                                 }
+446 +                                 _ => true,
+447 +                             }
+448 +                             && expression_manifest_matches(
+449 +                                 &expression_rows,
+450 +                                 parsed,
+451 +                                 owner,
+452 +                                 payload.kind(),
+453 +                                 &attached,
+454 +                             )
+455 +                             && capture_validation
+456 +                                 .attached(owner, payload, &attached)
+457 +                                 .is_some()
+458 +                             && expression_children_match(
+459 +                                 self,
+460 +                                 parsed,
+461 +                                 slots,
+462 +                                 &block_arenas,
+463 +                                 &local_resolver,
+464 +                                 types,
+465 +                                 owner,
+466 +                                 payload,
+467 +                                 &attached,
+468 +                             )
+469 +                     }
+470 +                     Err(_) => parsed
+471 +                         .typed_node::<MissingExpressionKind>(source.syntax())
+472 +                         .is_ok_and(|attached| {
+473 +                             let Ok(expected_site) = HirSourceSite::from_attached_span(
+474 +                                 parsed.document(),
+475 +                                 &attached.source_span(),
+476 +                             ) else {
+477 +                                 return false;
+478 +                             };
+479 +                             self.syntax_owners
+480 +                                 .get(&SyntheticOwner::Expr(owner))
+481 +                                 .is_some_and(|syntax| *syntax == attached.id())
+482 +                                 && metadata.source_site() == &expected_site
+483 +                                 && matches!(expected_site, HirSourceSite::Insertion(_))
+484 +                                 && missing_expression_payload_matches(payload)
+485 +                                 && expression_rows.owner_has_no_rows(owner)
+486 +                         }),
+487 +                 },
+488 +                 HirOrigin::Synthetic(key) => {
+489 +                     let candidate_role = matches!(
+490 +                         key.role(),
+491 +                         SyntheticRole::PostfixIndexCandidateExpression
+492 +                             | SyntheticRole::DialogueContentCandidateExpression
+493 +                     );
+494 +                     let candidate_dialogue_source = key.role()
+495 +                         == SyntheticRole::DialogueContentCandidateExpression
+496 +                         && key.ordinal() == 0
+497 +                         && matches!(payload.kind(), HirExprKind::AttachedContentApplication(_));
+498 +                     (!candidate_role || provenance.contains(SyntheticOwner::Expr(owner)))
+499 +                         && (expression_rows.has_owner(owner) == candidate_dialogue_source)
+500 +                 }
+501 +             }
+    |
+
+warning: this function has too many arguments (8/7)
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\callable.rs:323:1
+    |
+323 | / pub(super) fn function_parameter_groups_match(
+324 | |     attached: &[AttachedFixedParameterGroup],
+325 | |     retained: &[HirFunctionParameterGroup],
+326 | |     callable_scope: ScopeId,
+...   |
+331 | |     attached_content_local: Option<LocalId>,
+332 | | ) -> Option<ParameterState> {
+    | |___________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many lines (115/100)
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\callable_source.rs:120:5
+    |
+120 | /     pub(crate) fn validate_callable_source_role(
+121 | |         &self,
+122 | |         item: ItemId,
+123 | |         role: HirCallableSourceRole,
+124 | |     ) -> Result<(), HirSourceQueryError> {
+    | |________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: redundant closure
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\callable_source.rs:968:18
+    |
+968 |             .map(|question| question.source_span()),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `arcweft_lang_syntax::attachment::AstNode::source_span`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: redundant closure
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\callable_source.rs:986:18
+    |
+986 |             .map(|equals| equals.source_span()),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `arcweft_lang_syntax::attachment::AstNode::source_span`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: redundant closure
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\extern_capability.rs:251:18
+    |
+251 |             .map(|attached| attached.binding()),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `crate::item::callable::HirCallableAttachedContentParameter::binding`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: this function has too many lines (107/100)
+  --> crates\arcweft-lang-hir\src\source_index\item_projection\function.rs:31:1
+   |
+31 | / pub(super) fn payload_matches(
+32 | |     owner: ItemId,
+33 | |     attached: &AttachedFunctionDeclaration,
+34 | |     item: &HirItem,
+...  |
+38 | |     arenas: &ItemValidationContext<'_>,
+39 | | ) -> bool {
+   | |_________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: redundant closure
+  --> crates\arcweft-lang-hir\src\source_index\item_projection\function.rs:82:18
+   |
+82 |             .map(|attached| attached.binding()),
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `crate::item::callable::HirCallableAttachedContentParameter::binding`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: redundant closure
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\function.rs:239:21
+    |
+239 |         .filter_map(|parameter| parameter.default())
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `crate::item::callable::HirParameter::default`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: redundant closure
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\function.rs:238:19
+    |
+238 |         .flat_map(|group| group.parameters())
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `crate::item::callable::HirFunctionParameterGroup::parameters`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: redundant closure
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\trait_impl.rs:570:58
+    |
+570 |     if let Some(binding) = retained.attached_content.map(|attached| attached.binding()) {
+    |                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `crate::item::callable::HirCallableAttachedContentParameter::binding`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: called `.ok().is_some_and(..)` on a `Result` value
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\use_declaration.rs:163:33
+    |
+163 |                   let in_bounds = usize::try_from(ordinal)
+    |  _________________________________^
+164 | |                     .ok()
+165 | |                     .is_some_and(|ordinal| ordinal < self.bindings().len());
+    | |___________________________________________________________________________^ help: use `is_ok_and` instead: `usize::try_from(ordinal).is_ok_and(|ordinal| ordinal < self.bindings().len())`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#manual_is_variant_and
+
+warning: called `.ok().is_some_and(..)` on a `Result` value
+   --> crates\arcweft-lang-hir\src\source_index\item_projection\view_source.rs:146:20
+    |
+146 |                   if usize::try_from(ordinal)
+    |  ____________________^
+147 | |                     .ok()
+148 | |                     .is_some_and(|ordinal| ordinal < self.exports().len()) =>
+    | |__________________________________________________________________________^ help: use `is_ok_and` instead: `usize::try_from(ordinal).is_ok_and(|ordinal| ordinal < self.exports().len())`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#manual_is_variant_and
+
+warning: this function has too many lines (105/100)
+  --> crates\arcweft-lang-hir\src\source_index\stmt_projection.rs:33:5
+   |
+33 | /     pub(crate) fn stage_attached_stmt(
+34 | |         &mut self,
+35 | |         parsed: &ParsedSource,
+36 | |         owner: StmtId,
+37 | |         attached: &StatementNode,
+38 | |         statement: &HirStmt,
+39 | |     ) -> Result<(), HirSourceCommitInvariantError> {
+   | |__________________________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: unnecessary closure used to substitute value for `Option::None`
+  --> crates\arcweft-lang-hir\src\source_index\stmt_projection.rs:81:41
+   |
+81 |               let (requirement, source) = cancel_selector_source(trigger, selector.as_ref())
+   |  _________________________________________^
+82 | |                 .ok_or_else(
+83 | |                     || HirSourceCommitInvariantError::AttachedPayloadStateMismatch {
+84 | |                         owner: semantic_owner,
+85 | |                     },
+86 | |                 )?;
+   | |_________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unnecessary_lazy_evaluations
+help: use `ok_or` instead
+   |
+82 ~                 .ok_or(HirSourceCommitInvariantError::AttachedPayloadStateMismatch {
+83 +                         owner: semantic_owner,
+84 ~                     })?;
+   |
+
+warning: these match arms have identical bodies
+   --> crates\arcweft-lang-hir\src\source_index\stmt_projection.rs:195:13
+    |
+195 | /             HirStmtSourceRole::UnsafeAuditInsertion => {
+196 | |                 Err(HirSourceQueryError::StmtRoleNotApplicable { owner, role })
+197 | |             }
+    | |_____________^
+...
+209 | /             HirStmtSourceRole::CancelInputActionSelector => {
+210 | |                 Err(HirSourceQueryError::StmtRoleNotApplicable { owner, role })
+211 | |             }
+    | |_____________^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+195 ~             HirStmtSourceRole::CancelInputActionSelector
+196 |                 if matches!(
+...
+205 |             }
+206 ~             HirStmtSourceRole::UnsafeAuditInsertion | HirStmtSourceRole::CancelInputActionSelector => {
+    |
+
+warning: this function has too many lines (124/100)
+   --> crates\arcweft-lang-hir\src\source_index\type_projection.rs:338:5
+    |
+338 | /     pub(crate) fn validated_content_call_types(
+339 | |         &self,
+340 | |         slots: &SlotSnapshot,
+341 | |         expressions: &ArenaSnapshot<HirExpr, ExprId>,
+342 | |         types: &ArenaSnapshot<HirType, TypeId>,
+343 | |     ) -> Option<Box<[(TypeId, ExprId)]>> {
+    | |________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this `let...else` may be rewritten with the `?` operator
+   --> crates\arcweft-lang-hir\src\source_index\type_projection.rs:378:13
+    |
+378 | /             let Some(argument) = invocation
+379 | |                 .arguments()
+380 | |                 .get(usize::from(discriminator.argument().get()))
+381 | |             else {
+382 | |                 return None;
+383 | |             };
+    | |______________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#question_mark
+help: replace it with
+    |
+378 ~             let argument = invocation
+379 +                 .arguments()
+380 +                 .get(usize::from(discriminator.argument().get()))?;
+    |
+
+warning: this `let...else` may be rewritten with the `?` operator
+   --> crates\arcweft-lang-hir\src\source_index\type_projection.rs:387:13
+    |
+387 | /             let Some(source_expression) = expressions.get(&discriminator.source()) else {
+388 | |                 return None;
+389 | |             };
+    | |______________^ help: replace it with: `let source_expression = expressions.get(&discriminator.source())?;`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#question_mark
+
+warning: this `let...else` may be rewritten with the `?` operator
+   --> crates\arcweft-lang-hir\src\source_index\type_projection.rs:436:13
+    |
+436 | /             let Some(expected) = expected.get(type_id) else {
+437 | |                 return None;
+438 | |             };
+    | |______________^ help: replace it with: `let expected = expected.get(type_id)?;`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#question_mark
+
+warning: redundant closure
+   --> crates\arcweft-lang-hir\src\symbol\table\nominal.rs:159:60
+    |
+159 | ...                   types.extend(fields.iter().map(|field| field.ty()));
+    |                                                      ^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `crate::item::nominal::HirEnumVariantField::ty`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: this function has too many arguments (17/7)
+   --> crates\arcweft-lang-hir\src\symbol\table\publication.rs:589:5
+    |
+589 | /     pub(super) fn insert_callable_symbol(
+590 | |         &mut self,
+591 | |         module_path: &CanonicalModulePath,
+592 | |         module: ProjectSymbolModuleView<'_, '_>,
+...   |
+606 | |         work: &mut u64,
+607 | |     ) -> bool {
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: these match arms have identical bodies
+    --> crates\arcweft-lang-hir\src\symbol\table.rs:1391:21
+     |
+1391 |                     ProjectSymbolTargetId::Trait(_) => None,
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1401 |                     ProjectSymbolTargetId::Module(_) => None,
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: if this is unintentional make the arms return different values
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+     |
+1391 ~                     ProjectSymbolTargetId::Trait(_) | ProjectSymbolTargetId::Module(_) => None,
+1392 |                     ProjectSymbolTargetId::External(id) => self
+ ...
+1400 |                         .map(|symbol| symbol.declaration_span().clone()),
+1401 ~                     };
+     |
+
+warning: useless use of `vec!`
+   --> crates\arcweft-lang-hir\src\symbol\table\retained.rs:117:29
+    |
+117 |         let binding_names = vec![name.as_str()];
+    |                             ^^^^^^^^^^^^^^^^^^^ help: you can use an array directly: `[name.as_str()]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_vec
+    = note: `#[warn(clippy::useless_vec)]` on by default
+
+warning: this lint expectation is unfulfilled
+    --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners.rs:1036:9
+     |
+1036 |         clippy::too_many_lines,
+     |         ^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: one atomic transaction validates the generation, closes structural owners, and records deterministic paths
+     = note: `#[warn(unfulfilled_lint_expectations)]` on by default
+
+warning: `arcweft-lang-hir` (lib) generated 101 warnings (run `cargo clippy --fix --lib -p arcweft-lang-hir -- ` to apply 39 suggestions)
+warning: the following explicit lifetimes could be elided: 'project
+  --> crates\arcweft-lang-hir\tests\final_hir_public_api.rs:18:57
+   |
+18 |     fn public_executable_owner_partition<'reachability, 'project>(
+   |                                                         ^^^^^^^^
+19 |         reachability: &'reachability HirRuntimeSemanticReachability<'project>,
+   |                                                                     ^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#elidable_lifetime_names
+   = note: `-W clippy::elidable-lifetime-names` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::elidable_lifetime_names)]`
+help: elide the lifetimes
+   |
+18 ~     fn public_executable_owner_partition<'reachability>(
+19 ~         reachability: &'reachability HirRuntimeSemanticReachability<'_>,
+   |
+
+warning: binding to `_` prefixed variable with no side-effect
+  --> crates\arcweft-lang-hir\tests\final_hir_public_api.rs:25:9
+   |
+25 |     let _public_api = public_executable_owner_partition;
+   |         ^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#no_effect_underscore_binding
+   = note: `-W clippy::no-effect-underscore-binding` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::no_effect_underscore_binding)]`
+
+warning: `arcweft-lang-hir` (test "final_hir_public_api") generated 2 warnings (run `cargo clippy --fix --test "final_hir_public_api" -p arcweft-lang-hir -- ` to apply 1 suggestion)
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\database\tests.rs:335:5
+    |
+335 |     assert!(output.invalidations().retired_items().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+    = note: `-W clippy::assert-is-empty` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::assert_is_empty)]`
+help: use `assert_eq!` to show the value on failure
+    |
+335 -     assert!(output.invalidations().retired_items().is_empty());
+335 +     assert_eq!(output.invalidations().retired_items(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\database\tests.rs:377:5
+    |
+377 |     assert!(changed.invalidations().retired_items().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+377 -     assert!(changed.invalidations().retired_items().is_empty());
+377 +     assert_eq!(changed.invalidations().retired_items(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\database\tests.rs:404:5
+    |
+404 |     assert!(retired.invalidations().changed_items().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+404 -     assert!(retired.invalidations().changed_items().is_empty());
+404 +     assert_eq!(retired.invalidations().changed_items(), []);
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\database\tests.rs:414:5
+    |
+414 |     assert!(!recovered.diagnostics().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+414 -     assert!(!recovered.diagnostics().is_empty());
+414 +     assert_ne!(recovered.diagnostics(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\database\tests.rs:433:5
+    |
+433 |     assert!(output.invalidations().changed_items().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+433 -     assert!(output.invalidations().changed_items().is_empty());
+433 +     assert_eq!(output.invalidations().changed_items(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\database\tests.rs:434:5
+    |
+434 |     assert!(output.invalidations().retired_items().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+434 -     assert!(output.invalidations().retired_items().is_empty());
+434 +     assert_eq!(output.invalidations().retired_items(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\dialogue_application\tests.rs:145:5
+    |
+145 |     assert!(content.nodes().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+145 -     assert!(content.nodes().is_empty());
+145 +     assert_eq!(content.nodes(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\dialogue_application\tests.rs:147:5
+    |
+147 |     assert!(content.marks().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+147 -     assert!(content.marks().is_empty());
+147 +     assert_eq!(content.marks(), []);
+    |
+
+warning: used `debug_assert!` to check that a value is not empty
+  --> crates\arcweft-lang-hir\src\expr\child_edges.rs:84:9
+   |
+84 |         debug_assert!(!segments.is_empty());
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `debug_assert_ne!` to show the value on failure
+   |
+84 -         debug_assert!(!segments.is_empty());
+84 +         debug_assert_ne!(segments, [] as [expr::child_edges::HirNestedExpressionPathSegment; 0]);
+   |
+
+warning: this function has too many lines (102/100)
+   --> crates\arcweft-lang-hir\src\expr\tests.rs:147:1
+    |
+147 | fn child_edges_project_direct_children_and_preserve_recovery_source_gaps() {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+    = note: `-W clippy::too-many-lines` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::too_many_lines)]`
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\expr\tests.rs:274:5
+    |
+274 |     assert!(choice.child_edges().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+274 -     assert!(choice.child_edges().is_empty());
+274 +     assert_eq!(choice.child_edges(), [] as [expr::child_edges::HirExpressionChildEdge; 0]);
+    |
+
+warning: this function has too many lines (118/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue\candidate.rs:169:5
+    |
+169 | /     fn lower_dialogue_candidate(
+170 | |         &mut self,
+171 | |         input: DialogueCandidateInput<'_>,
+172 | |         cursor: &mut CandidateCursor,
+173 | |     ) -> Result<ExprId, HirLowerFailure> {
+    | |________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\choice.rs:103:5
+    |
+103 |     assert!(choice.body().items().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+103 -     assert!(choice.body().items().is_empty());
+103 +     assert_eq!(choice.body().items(), []);
+    |
+
+warning: this function has too many lines (146/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\choice.rs:249:1
+    |
+249 | fn choice_source_roles_keep_exact_id_arm_and_goto_coordinates() {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\control.rs:584:5
+    |
+584 |     assert!(closure.captures().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+584 -     assert!(closure.captures().is_empty());
+584 +     assert_eq!(closure.captures(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\control.rs:774:5
+    |
+774 |     assert!(typed_closure(&module, shadowed_id).captures().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+774 -     assert!(typed_closure(&module, shadowed_id).captures().is_empty());
+774 +     assert_eq!(typed_closure(&module, shadowed_id).captures(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\control.rs:2508:5
+     |
+2508 |     assert!(matched.arms()[1].locals().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+2508 -     assert!(matched.arms()[1].locals().is_empty());
+2508 +     assert_eq!(matched.arms()[1].locals(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\control.rs:2594:5
+     |
+2594 |     assert!(typed_match(&module, missing_body_owner).arms().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+2594 -     assert!(typed_match(&module, missing_body_owner).arms().is_empty());
+2594 +     assert_eq!(typed_match(&module, missing_body_owner).arms(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\control.rs:2929:9
+     |
+2929 |         assert!(block.statements().is_empty());
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+2929 -         assert!(block.statements().is_empty());
+2929 +         assert_eq!(block.statements(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_candidate_block.rs:161:5
+    |
+161 |     assert!(scope.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+161 -     assert!(scope.locals().is_empty());
+161 +     assert_eq!(scope.locals(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_candidate_control.rs:474:5
+    |
+474 |     assert!(second.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+474 -     assert!(second.locals().is_empty());
+474 +     assert_eq!(second.locals(), []);
+    |
+
+warning: the borrowed expression implements the required traits
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_candidate_control.rs:570:65
+    |
+570 |         .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
+    |                                                                 ^^^^^^^^^^^^^^^^^ help: change this to: `candidate_origin`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_borrows_for_generic_args
+    = note: `#[warn(clippy::needless_borrows_for_generic_args)]` on by default
+
+warning: the borrowed expression implements the required traits
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_candidate_control.rs:577:65
+    |
+577 |         .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
+    |                                                                 ^^^^^^^^^^^^^^^^^ help: change this to: `candidate_origin`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_borrows_for_generic_args
+
+warning: the borrowed expression implements the required traits
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_candidate_control.rs:584:65
+    |
+584 |         .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
+    |                                                                 ^^^^^^^^^^^^^^^^^ help: change this to: `candidate_origin`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_borrows_for_generic_args
+
+warning: the borrowed expression implements the required traits
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_candidate_control.rs:591:65
+    |
+591 |         .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
+    |                                                                 ^^^^^^^^^^^^^^^^^ help: change this to: `candidate_origin`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_borrows_for_generic_args
+
+warning: the borrowed expression implements the required traits
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_candidate_control.rs:598:65
+    |
+598 |         .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
+    |                                                                 ^^^^^^^^^^^^^^^^^ help: change this to: `candidate_origin`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_borrows_for_generic_args
+
+warning: it is more concise to loop over references to containers instead of using explicit iteration methods
+  --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_init.rs:41:22
+   |
+41 |     for statement in statements.iter() {
+   |                      ^^^^^^^^^^^^^^^^^ help: to write this more concisely, try: `statements`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#explicit_iter_loop
+   = note: `-W clippy::explicit-iter-loop` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::explicit_iter_loop)]`
+
+warning: consider adding a `;` to the last statement for consistent formatting
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\dialogue_init.rs:116:13
+    |
+116 | /             arenas
+117 | |                 .expressions()
+118 | |                 .revise_finalized(slots, owner, payload)
+119 | |                 .expect("transactionally revise the staged expression")
+    | |_______________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#semicolon_if_nothing_returned
+    = note: `-W clippy::semicolon-if-nothing-returned` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::semicolon_if_nothing_returned)]`
+help: add a `;` here
+    |
+116 |             arenas
+117 |                 .expressions()
+118 |                 .revise_finalized(slots, owner, payload)
+119 ~                 .expect("transactionally revise the staged expression");
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\select.rs:266:5
+    |
+266 |     assert!(parsed.diagnostics().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+266 -     assert!(parsed.diagnostics().is_empty());
+266 +     assert_eq!(parsed.diagnostics(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\select_limits.rs:822:5
+    |
+822 |     assert!(module.diagnostics().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+822 -     assert!(module.diagnostics().is_empty());
+822 +     assert_eq!(module.diagnostics(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\statements.rs:272:5
+    |
+272 |     assert!(else_scope.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+272 -     assert!(else_scope.locals().is_empty());
+272 +     assert_eq!(else_scope.locals(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\statements.rs:607:9
+    |
+607 |         assert!(scope.children().is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+607 -         assert!(scope.children().is_empty());
+607 +         assert_eq!(scope.children(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\statements.rs:618:9
+    |
+618 |         assert!(nested.items().is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+618 -         assert!(nested.items().is_empty());
+618 +         assert_eq!(nested.items(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\statements.rs:1490:5
+     |
+1490 |     assert!(body.statements().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1490 -     assert!(body.statements().is_empty());
+1490 +     assert_eq!(body.statements(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\statements.rs:1961:5
+     |
+1961 |     assert!(second.locals().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1961 -     assert!(second.locals().is_empty());
+1961 +     assert_eq!(second.locals(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests\statements.rs:2220:5
+     |
+2220 |     assert!(matched.arms().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+2220 -     assert!(matched.arms().is_empty());
+2220 +     assert_eq!(matched.arms(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\tests.rs:2654:5
+     |
+2654 |     assert!(attached[0].children().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+2654 -     assert!(attached[0].children().is_empty());
+2654 +     assert_eq!(attached[0].children(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\activity.rs:162:5
+    |
+162 |     assert!(requires.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+162 -     assert!(requires.locals().is_empty());
+162 +     assert_eq!(requires.locals(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\activity.rs:163:5
+    |
+163 |     assert!(ensures.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+163 -     assert!(ensures.locals().is_empty());
+163 +     assert_eq!(ensures.locals(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\activity.rs:233:5
+    |
+233 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+233 -     assert!(item.members().is_empty());
+233 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\activity.rs:234:5
+    |
+234 |     assert!(activity.inputs().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+234 -     assert!(activity.inputs().is_empty());
+234 +     assert_eq!(activity.inputs(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\activity.rs:235:5
+    |
+235 |     assert!(activity.outputs().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+235 -     assert!(activity.outputs().is_empty());
+235 +     assert_eq!(activity.outputs(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\activity.rs:236:5
+    |
+236 |     assert!(activity.requires().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+236 -     assert!(activity.requires().is_empty());
+236 +     assert_eq!(activity.requires(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\activity.rs:237:5
+    |
+237 |     assert!(activity.ensures().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+237 -     assert!(activity.ensures().is_empty());
+237 +     assert_eq!(activity.ensures(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\activity.rs:255:5
+    |
+255 |     assert!(callable.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+255 -     assert!(callable.locals().is_empty());
+255 +     assert_eq!(callable.locals(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+  --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\entry.rs:90:5
+   |
+90 |     assert!(item.members().is_empty());
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+   |
+90 -     assert!(item.members().is_empty());
+90 +     assert_eq!(item.members(), []);
+   |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\entry.rs:562:5
+    |
+562 |     assert!(declaration.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+562 -     assert!(declaration.members().is_empty());
+562 +     assert_eq!(declaration.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\entry.rs:1218:5
+     |
+1218 |     assert!(item.members().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1218 -     assert!(item.members().is_empty());
+1218 +     assert_eq!(item.members(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\extern_capability.rs:225:5
+    |
+225 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+225 -     assert!(item.members().is_empty());
+225 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\extern_capability.rs:364:5
+    |
+364 |     assert!(missing_body_payload.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+364 -     assert!(missing_body_payload.members().is_empty());
+364 +     assert_eq!(missing_body_payload.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\extern_capability.rs:452:5
+    |
+452 |     assert!(finish.effects().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+452 -     assert!(finish.effects().is_empty());
+452 +     assert_eq!(finish.effects(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\extern_capability.rs:970:5
+    |
+970 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+970 -     assert!(item.members().is_empty());
+970 +     assert_eq!(item.members(), []);
+    |
+
+warning: this could be rewritten as `let...else`
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:97:5
+    |
+ 97 | /     let plan = match application.family() {
+ 98 | |         crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+ 99 | |             plan: Some(plan),
+100 | |             ..
+101 | |         } => plan,
+102 | |         _ => panic!("Dialogue application owns its line plan"),
+103 | |     };
+    | |______^ help: consider writing: `let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine { plan: Some(plan), .. } = application.family() else { panic!("Dialogue application owns its line plan") };`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#manual_let_else
+    = note: `-W clippy::manual-let-else` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::manual_let_else)]`
+
+warning: it is more concise to loop over references to containers instead of using explicit iteration methods
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:337:26
+    |
+337 |         for statement in body.iter() {
+    |                          ^^^^^^^^^^^ help: to write this more concisely, try: `body`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#explicit_iter_loop
+
+warning: this function has too many lines (150/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:403:1
+    |
+403 | fn dialogue_line_cancel_rule_retains_typed_trigger_and_nested_thread_scope() {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:486:5
+    |
+486 |     assert!(body_scope.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+486 -     assert!(body_scope.locals().is_empty());
+486 +     assert_eq!(body_scope.locals(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:706:5
+    |
+706 | /     assert!(
+707 | |         module
+708 | |             .resolve_scope(body.scope())
+709 | |             .unwrap()
+710 | |             .locals()
+711 | |             .is_empty()
+712 | |     );
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+706 ~     assert_eq!(
+707 ~         module
+708 +             .resolve_scope(body.scope())
+709 +             .unwrap()
+710 +             .locals(), []
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:748:5
+    |
+748 |     assert!(!parsed.diagnostics().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+748 -     assert!(!parsed.diagnostics().is_empty());
+748 +     assert_ne!(parsed.diagnostics(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:784:5
+    |
+784 |     assert!(body.items().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+784 -     assert!(body.items().is_empty());
+784 +     assert_eq!(body.items(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:1268:5
+     |
+1268 |     assert!(flow.body().items().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1268 -     assert!(flow.body().items().is_empty());
+1268 +     assert_eq!(flow.body().items(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:1293:5
+     |
+1293 |     assert!(requires.locals().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1293 -     assert!(requires.locals().is_empty());
+1293 +     assert_eq!(requires.locals(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:1669:5
+     |
+1669 | /     assert!(
+1670 | |         module
+1671 | |             .resolve_scope(counted.callable_scope())
+1672 | |             .unwrap()
+1673 | |             .locals()
+1674 | |             .is_empty()
+1675 | |     );
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1669 ~     assert_eq!(
+1670 ~         module
+1671 +             .resolve_scope(counted.callable_scope())
+1672 +             .unwrap()
+1673 +             .locals(), []
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:1676:5
+     |
+1676 | /     assert!(
+1677 | |         module
+1678 | |             .resolve_scope(counted.requires_scope())
+1679 | |             .unwrap()
+1680 | |             .locals()
+1681 | |             .is_empty()
+1682 | |     );
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1676 ~     assert_eq!(
+1677 ~         module
+1678 +             .resolve_scope(counted.requires_scope())
+1679 +             .unwrap()
+1680 +             .locals(), []
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:1683:5
+     |
+1683 | /     assert!(
+1684 | |         module
+1685 | |             .resolve_scope(counted.body_scope())
+1686 | |             .unwrap()
+1687 | |             .locals()
+1688 | |             .is_empty()
+1689 | |     );
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1683 ~     assert_eq!(
+1684 ~         module
+1685 +             .resolve_scope(counted.body_scope())
+1686 +             .unwrap()
+1687 +             .locals(), []
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:1752:5
+     |
+1752 | /     assert!(
+1753 | |         module
+1754 | |             .resolve_scope(no_postcondition.ensures_scope())
+1755 | |             .unwrap()
+1756 | |             .locals()
+1757 | |             .is_empty()
+1758 | |     );
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1752 ~     assert_eq!(
+1753 ~         module
+1754 +             .resolve_scope(no_postcondition.ensures_scope())
+1755 +             .unwrap()
+1756 +             .locals(), []
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow.rs:1876:5
+     |
+1876 |     assert!(flow.body().items().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1876 -     assert!(flow.body().items().is_empty());
+1876 +     assert_eq!(flow.body().items(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\flow_transaction.rs:479:5
+    |
+479 |     assert!(thread.body().items().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+479 -     assert!(thread.body().items().is_empty());
+479 +     assert_eq!(thread.body().items(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\function.rs:870:5
+    |
+870 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+870 -     assert!(item.members().is_empty());
+870 +     assert_eq!(item.members(), []);
+    |
+
+warning: this function has too many lines (167/100)
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\item_sources.rs:245:1
+    |
+245 | fn attached_content_roles_preserve_every_typed_callable_component() {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: redundant closure
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\item_sources.rs:305:22
+    |
+305 |                 .map(|equals| equals.source_span()),
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `arcweft_lang_syntax::attachment::AstNode::source_span`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+    = note: `-W clippy::redundant-closure-for-method-calls` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::redundant_closure_for_method_calls)]`
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\layer.rs:267:5
+    |
+267 |     assert!(background.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+267 -     assert!(background.members().is_empty());
+267 +     assert_eq!(background.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\layer.rs:268:5
+    |
+268 |     assert!(background_item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+268 -     assert!(background_item.members().is_empty());
+268 +     assert_eq!(background_item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\layer.rs:355:9
+    |
+355 |         assert!(item.members().is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+355 -         assert!(item.members().is_empty());
+355 +         assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\metric.rs:228:5
+    |
+228 |     assert!(histogram.labels().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+228 -     assert!(histogram.labels().is_empty());
+228 +     assert_eq!(histogram.labels(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\metric.rs:264:5
+    |
+264 |     assert!(counter_item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+264 -     assert!(counter_item.members().is_empty());
+264 +     assert_eq!(counter_item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\metric.rs:266:5
+    |
+266 |     assert!(counter.labels().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+266 -     assert!(counter.labels().is_empty());
+266 +     assert_eq!(counter.labels(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\metric.rs:400:5
+    |
+400 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+400 -     assert!(item.members().is_empty());
+400 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\metric.rs:402:5
+    |
+402 |     assert!(metric.labels().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+402 -     assert!(metric.labels().is_empty());
+402 +     assert_eq!(metric.labels(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\predicate.rs:147:5
+    |
+147 |     assert!(parameter.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+147 -     assert!(parameter.locals().is_empty());
+147 +     assert_eq!(parameter.locals(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\predicate.rs:175:5
+    |
+175 | /     assert!(
+176 | |         module
+177 | |             .arenas()
+178 | |             .scopes()
+...   |
+182 | |             .is_empty()
+183 | |     );
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+175 ~     assert_eq!(
+176 ~         module
+177 +             .arenas()
+178 +             .scopes()
+179 +             .resolve(module.slots(), predicate.callable_scope())
+180 +             .unwrap()
+181 +             .locals(), []
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\predicate.rs:329:5
+    |
+329 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+329 -     assert!(item.members().is_empty());
+329 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\predicate.rs:351:5
+    |
+351 |     assert!(requires.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+351 -     assert!(requires.locals().is_empty());
+351 +     assert_eq!(requires.locals(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\proof.rs:509:5
+    |
+509 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+509 -     assert!(item.members().is_empty());
+509 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\proof.rs:1172:5
+     |
+1172 |     assert!(parameter.locals().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1172 -     assert!(parameter.locals().is_empty());
+1172 +     assert_eq!(parameter.locals(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\proof.rs:1200:5
+     |
+1200 | /     assert!(
+1201 | |         module
+1202 | |             .arenas()
+1203 | |             .scopes()
+...    |
+1207 | |             .is_empty()
+1208 | |     );
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1200 ~     assert_eq!(
+1201 ~         module
+1202 +             .arenas()
+1203 +             .scopes()
+1204 +             .resolve(module.slots(), proof.callable_scope())
+1205 +             .unwrap()
+1206 +             .locals(), []
+     |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\resource.rs:202:5
+    |
+202 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+202 -     assert!(item.members().is_empty());
+202 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\resource.rs:280:5
+    |
+280 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+280 -     assert!(item.members().is_empty());
+280 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\resource.rs:376:9
+    |
+376 |         assert!(item.members().is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+376 -         assert!(item.members().is_empty());
+376 +         assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\resource.rs:412:5
+    |
+412 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+412 -     assert!(item.members().is_empty());
+412 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\style.rs:215:5
+    |
+215 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+215 -     assert!(item.members().is_empty());
+215 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\style.rs:876:5
+    |
+876 |     assert!(missing_body.tokens().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+876 -     assert!(missing_body.tokens().is_empty());
+876 +     assert_eq!(missing_body.tokens(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\style.rs:877:5
+    |
+877 |     assert!(missing_body.body().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+877 -     assert!(missing_body.body().is_empty());
+877 +     assert_eq!(missing_body.body(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\test_bench.rs:211:9
+    |
+211 |         assert!(assertion.statements().is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+211 -         assert!(assertion.statements().is_empty());
+211 +         assert_eq!(assertion.statements(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\test_bench.rs:264:5
+    |
+264 |     assert!(missing_body.body().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+264 -     assert!(missing_body.body().is_empty());
+264 +     assert_eq!(missing_body.body(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\test_bench.rs:271:5
+    |
+271 |     assert!(scope.locals().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+271 -     assert!(scope.locals().is_empty());
+271 +     assert_eq!(scope.locals(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\test_bench.rs:284:5
+    |
+284 |     assert!(bench_missing_body.body().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+284 -     assert!(bench_missing_body.body().is_empty());
+284 +     assert_eq!(bench_missing_body.body(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\trait_impl.rs:253:5
+    |
+253 |     assert!(trait_item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+253 -     assert!(trait_item.members().is_empty());
+253 +     assert_eq!(trait_item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\trait_impl.rs:308:5
+    |
+308 |     assert!(impl_item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+308 -     assert!(impl_item.members().is_empty());
+308 +     assert_eq!(impl_item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\trait_impl.rs:955:5
+    |
+955 |     assert!(item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+955 -     assert!(item.members().is_empty());
+955 +     assert_eq!(item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\view.rs:432:5
+    |
+432 |     assert!(missing.parameters().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+432 -     assert!(missing.parameters().is_empty());
+432 +     assert_eq!(missing.parameters(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\view.rs:433:5
+    |
+433 |     assert!(missing.exports().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+433 -     assert!(missing.exports().is_empty());
+433 +     assert_eq!(missing.exports(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests\view.rs:434:5
+    |
+434 |     assert!(missing.body().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+434 -     assert!(missing.body().is_empty());
+434 +     assert_eq!(missing.body(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:566:5
+    |
+566 |     assert!(alias_item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+566 -     assert!(alias_item.members().is_empty());
+566 +     assert_eq!(alias_item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:600:5
+    |
+600 |     assert!(record_item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+600 -     assert!(record_item.members().is_empty());
+600 +     assert_eq!(record_item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:646:5
+    |
+646 |     assert!(choice_item.members().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+646 -     assert!(choice_item.members().is_empty());
+646 +     assert_eq!(choice_item.members(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:865:5
+    |
+865 |     assert!(item.prefix().attributes().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+865 -     assert!(item.prefix().attributes().is_empty());
+865 +     assert_eq!(item.prefix().attributes(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:1072:9
+     |
+1072 |         assert!(item.members().is_empty());
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1072 -         assert!(item.members().is_empty());
+1072 +         assert_eq!(item.members(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:1215:9
+     |
+1215 |         assert!(item.members().is_empty());
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1215 -         assert!(item.members().is_empty());
+1215 +         assert_eq!(item.members(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:1232:9
+     |
+1232 |         assert!(scope.children().is_empty());
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1232 -         assert!(scope.children().is_empty());
+1232 +         assert_eq!(scope.children(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:1467:5
+     |
+1467 |     assert!(parsed.diagnostics().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1467 -     assert!(parsed.diagnostics().is_empty());
+1467 +     assert_eq!(parsed.diagnostics(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:1879:5
+     |
+1879 |     assert!(attribute.arguments().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1879 -     assert!(attribute.arguments().is_empty());
+1879 +     assert_eq!(attribute.arguments(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:1900:5
+     |
+1900 |     assert!(item.prefix().attributes().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1900 -     assert!(item.prefix().attributes().is_empty());
+1900 +     assert_eq!(item.prefix().attributes(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:1934:5
+     |
+1934 |     assert!(item.prefix().attributes().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1934 -     assert!(item.prefix().attributes().is_empty());
+1934 +     assert_eq!(item.prefix().attributes(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:1936:5
+     |
+1936 |     assert!(item.members().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1936 -     assert!(item.members().is_empty());
+1936 +     assert_eq!(item.members(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:1998:5
+     |
+1998 |     assert!(parsed.diagnostics().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1998 -     assert!(parsed.diagnostics().is_empty());
+1998 +     assert_eq!(parsed.diagnostics(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_lowering\item_lowering\tests.rs:2169:5
+     |
+2169 |     assert!(parsed.diagnostics().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+2169 -     assert!(parsed.diagnostics().is_empty());
+2169 +     assert_eq!(parsed.diagnostics(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_lowering\pattern_lowering\tests\attached_matrix.rs:287:9
+    |
+287 |         assert!(diagnostics.is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+287 -         assert!(diagnostics.is_empty());
+287 +         assert_eq!(diagnostics, [] as [&diagnostic::HirRecoveryDiagnostic; 0]);
+    |
+
+warning: it is more concise to loop over references to containers instead of using explicit iteration methods
+  --> crates\arcweft-lang-hir\src\item\nominal.rs:62:34
+   |
+62 |                     for field in fields.iter() {
+   |                                  ^^^^^^^^^^^^^ help: to write this more concisely, try: `fields`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#explicit_iter_loop
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\leaf\tests.rs:286:9
+    |
+286 |         assert!(path.segments().is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+286 -         assert!(path.segments().is_empty());
+286 +         assert_eq!(path.segments(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\leaf\tests.rs:320:5
+    |
+320 |     assert!(zero.limbs_le().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+320 -     assert!(zero.limbs_le().is_empty());
+320 +     assert_eq!(zero.limbs_le(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\module\tests.rs:194:5
+    |
+194 |     assert!(parsed.diagnostics().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+194 -     assert!(parsed.diagnostics().is_empty());
+194 +     assert_eq!(parsed.diagnostics(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\module\tests.rs:503:5
+    |
+503 |     assert!(module.diagnostics().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+503 -     assert!(module.diagnostics().is_empty());
+503 +     assert_eq!(module.diagnostics(), []);
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\module\tests.rs:509:5
+    |
+509 |     assert!(!parsed.diagnostics().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+509 -     assert!(!parsed.diagnostics().is_empty());
+509 +     assert_ne!(parsed.diagnostics(), []);
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\module\resolution_tests.rs:388:5
+    |
+388 |     assert!(!items.is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+388 -     assert!(!items.is_empty());
+388 +     assert_ne!(items, [] as [(identity::ItemId, &item::HirItem); 0]);
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\module\resolution_tests.rs:399:5
+    |
+399 |     assert!(!scopes.is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+399 -     assert!(!scopes.is_empty());
+399 +     assert_ne!(scopes, [] as [(identity::ScopeId, &scope::HirScope); 0]);
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\module\resolution_tests.rs:410:5
+    |
+410 |     assert!(!locals.is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+410 -     assert!(!locals.is_empty());
+410 +     assert_ne!(locals, [] as [(identity::LocalId, &scope::HirLocal); 0]);
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\module\resolution_tests.rs:421:5
+    |
+421 |     assert!(!expressions.is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+421 -     assert!(!expressions.is_empty());
+421 +     assert_ne!(expressions, [] as [(identity::ExprId, &expr::HirExpr); 0]);
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\module\resolution_tests.rs:432:5
+    |
+432 |     assert!(!statements.is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+432 -     assert!(!statements.is_empty());
+432 +     assert_ne!(statements, [] as [(identity::StmtId, &stmt::HirStmt); 0]);
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\module\resolution_tests.rs:443:5
+    |
+443 |     assert!(!types.is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+443 -     assert!(!types.is_empty());
+443 +     assert_ne!(types, [] as [(identity::TypeId, &type_ref::HirType); 0]);
+    |
+
+warning: used `assert!` to check that a value is not empty
+   --> crates\arcweft-lang-hir\src\module\resolution_tests.rs:454:5
+    |
+454 |     assert!(!patterns.is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+    |
+454 -     assert!(!patterns.is_empty());
+454 +     assert_ne!(patterns, [] as [(identity::PatternId, &pattern::HirPattern); 0]);
+    |
+
+warning: this function has too many lines (101/100)
+   --> crates\arcweft-lang-hir\src\pattern\tests.rs:337:1
+    |
+337 | fn exact_pattern_families_construct_through_one_typed_owner() {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: redundant closure
+    --> crates\arcweft-lang-hir\src\final_project\runtime_semantic_owners.rs:1724:54
+     |
+1724 |                     .chain(matched.arms().filter_map(|arm| arm.guard()))
+     |                                                      ^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `super::match_owner::HirMatchArmView::guard`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: this function's return value is unnecessarily wrapped by `Option`
+   --> crates\arcweft-lang-hir\src\final_project\tests.rs:280:1
+    |
+280 | / fn structural_projection(
+281 | |     value: HirRuntimeValueRetention,
+282 | | ) -> Option<HirRuntimeExpressionProjection> {
+    | |___________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unnecessary_wraps
+help: remove `Option` from the return type...
+    |
+282 - ) -> Option<HirRuntimeExpressionProjection> {
+282 + ) -> project::selected_expressions::HirRuntimeExpressionProjection {
+    |
+help: ...and then remove the surrounding `Some()` from returning expressions
+    |
+283 -     Some(HirRuntimeExpressionProjection::Structural { value })
+283 +     HirRuntimeExpressionProjection::Structural { value }
+    |
+
+warning: this function's return value is unnecessarily wrapped by `Option`
+   --> crates\arcweft-lang-hir\src\final_project\tests.rs:286:1
+    |
+286 | / fn call_projection(
+287 | |     result: HirRuntimeValueRetention,
+288 | |     callee: HirRuntimeCallCalleeDisposition,
+289 | | ) -> Option<HirRuntimeExpressionProjection> {
+    | |___________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unnecessary_wraps
+help: remove `Option` from the return type...
+    |
+289 - ) -> Option<HirRuntimeExpressionProjection> {
+289 + ) -> project::selected_expressions::HirRuntimeExpressionProjection {
+    |
+help: ...and then remove the surrounding `Some()` from returning expressions
+    |
+290 -     Some(HirRuntimeExpressionProjection::Call { result, callee })
+290 +     HirRuntimeExpressionProjection::Call { result, callee }
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_project\tests.rs:613:5
+    |
+613 |     assert!(thread_row.children().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+613 -     assert!(thread_row.children().is_empty());
+613 +     assert_eq!(thread_row.children(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_project\tests.rs:652:5
+    |
+652 |     assert!(item_row.children().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+652 -     assert!(item_row.children().is_empty());
+652 +     assert_eq!(item_row.children(), []);
+    |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\final_project\tests.rs:687:5
+    |
+687 |     assert!(await_rows[0].children().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+687 -     assert!(await_rows[0].children().is_empty());
+687 +     assert_eq!(await_rows[0].children(), []);
+    |
+
+warning: this function has too many lines (111/100)
+   --> crates\arcweft-lang-hir\src\final_project\tests.rs:820:1
+    |
+820 | fn nested_postfix_dialogue_candidates_publish_each_expression_once() {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this function has too many lines (104/100)
+   --> crates\arcweft-lang-hir\src\final_project\tests.rs:936:1
+    |
+936 | fn semantic_owner_hops_survive_closure_block_statement_and_initializer_walkers() {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: redundant closure
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:1154:18
+     |
+1154 |             .map(|root| root.role())
+     |                  ^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `super::semantic_paths::HirDeclarationAttachedContentRoot::role`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: redundant closure
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:1168:45
+     |
+1168 |             (function.name().resolved().map(|name| name.as_str()) == Some("accepted"))
+     |                                             ^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `super::super::leaf::HirName::as_str`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: this function has too many lines (161/100)
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:1516:1
+     |
+1516 | fn pipe_expression_use_index_seals_nearest_nested_owner_and_closure_cut() {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: used `assert!` to check that a value is not empty
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:2125:5
+     |
+2125 |     assert!(!module.diagnostics().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+     |
+2125 -     assert!(!module.diagnostics().is_empty());
+2125 +     assert_ne!(module.diagnostics(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:2244:9
+     |
+2244 |         assert!(topology.body().roots().is_empty());
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+2244 -         assert!(topology.body().roots().is_empty());
+2244 +         assert_eq!(topology.body().roots(), []);
+     |
+
+warning: this function has too many lines (186/100)
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:2715:1
+     |
+2715 | fn language_expression_partition_keeps_test_body_owned_by_the_script_manifest() {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: used `assert!` to check that a value is not empty
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:3203:5
+     |
+3203 |     assert!(!thread_edges.is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_ne!` to show the value on failure
+     |
+3203 -     assert!(!thread_edges.is_empty());
+3203 +     assert_ne!(thread_edges, []);
+     |
+
+warning: usage of `bool::then` in `filter_map`
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:3417:10
+     |
+3417 |           .filter_map(|(owner, expression)| {
+     |  __________^
+3418 | |             matches!(expression.kind(), HirExprKind::Call(_))
+3419 | |                 .then(|| (owner, topology.expression_edges(owner).to_vec()))
+3420 | |         })
+     | |__________^ help: use `filter` then `map` instead: `filter(|&(owner, expression)| matches!(expression.kind(), HirExprKind::Call(_))).map(|(owner, expression)| (owner, topology.expression_edges(owner).to_vec()))`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#filter_map_bool_then
+     = note: `#[warn(clippy::filter_map_bool_then)]` on by default
+
+warning: this function has too many lines (123/100)
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:4087:1
+     |
+4087 | fn selected_trait_method_edge_reaches_implicit_expression_method_body() {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: unnecessary use of `clone` to create a slice from a reference
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:4191:5
+     |
+4191 |     assert_eq!(reached.first_path(&target).unwrap().steps(), [edge.clone()]);
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#cloned_ref_to_slice_refs
+     = note: `#[warn(clippy::cloned_ref_to_slice_refs)]` on by default
+
+warning: this function has too many lines (102/100)
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:4332:1
+     |
+4332 | fn checked_callable_value_edges_retain_latent_bodies_and_reject_nonfunction_targets() {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this function has too many lines (227/100)
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:4438:1
+     |
+4438 | fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targets() {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: this function has too many lines (105/100)
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:4673:1
+     |
+4673 | fn program_roots_distinguish_value_creation_body_invocation_and_declaration_layout() {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: redundant closure
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:4720:19
+     |
+4720 |         .flat_map(|module| module.entries())
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `super::semantic_paths::HirModuleEvaluationTopology::entries`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:5561:5
+     |
+5561 |     assert!(root_source.diagnostics().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+5561 -     assert!(root_source.diagnostics().is_empty());
+5561 +     assert_eq!(root_source.diagnostics(), []);
+     |
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:5562:5
+     |
+5562 |     assert!(child_source.diagnostics().is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+5562 -     assert!(child_source.diagnostics().is_empty());
+5562 +     assert_eq!(child_source.diagnostics(), []);
+     |
+
+warning: this function has too many lines (108/100)
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:5693:1
+     |
+5693 | fn unselected_call_inventory_validates_source_without_admitting_callback_operands() {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: used `assert!` to check that a value is empty
+    --> crates\arcweft-lang-hir\src\final_project\tests.rs:5765:5
+     |
+5765 |     assert!(graph.expression_edges(call).is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+5765 -     assert!(graph.expression_edges(call).is_empty());
+5765 +     assert_eq!(graph.expression_edges(call), []);
+     |
+
+warning: this could be rewritten as `let...else`
+  --> crates\arcweft-lang-hir\src\source_index\expression_manifest\dialogue_projection.rs:32:5
+   |
+32 | /     let expected = match attached.dialogue_line_plan() {
+33 | |         Ok(expected) => expected,
+34 | |         Err(_) => return false,
+35 | |     };
+   | |______^ help: consider writing: `let Ok(expected) = attached.dialogue_line_plan() else { return false };`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#manual_let_else
+
+warning: consider adding a `;` to the last statement for consistent formatting
+   --> crates\arcweft-lang-hir\src\source_index\expression_manifest\requirements.rs:594:13
+    |
+594 |             add_expression_requirement(requirements, HirExprSourceRole::CallCallee, Required)
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: add a `;` here: `add_expression_requirement(requirements, HirExprSourceRole::CallCallee, Required);`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#semicolon_if_nothing_returned
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\source_index\style_role.rs:136:9
+    |
+136 |         assert!(root.ordinals().is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+136 -         assert!(root.ordinals().is_empty());
+136 +         assert_eq!(root.ordinals(), []);
+    |
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> crates\arcweft-lang-hir\src\source_index\tests.rs:644:6
+    |
+644 |   ) -> (
+    |  ______^
+645 | |     ParsedSource,
+646 | |     Arc<SlotSnapshot>,
+647 | |     ArenaSnapshot<HirPattern, PatternId>,
+648 | |     ArenaSnapshot<HirType, TypeId>,
+649 | |     HirSourceIndex,
+650 | | ) {
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#type_complexity
+
+warning: this function has too many lines (121/100)
+   --> crates\arcweft-lang-hir\src\symbol\tests.rs:338:1
+    |
+338 | / fn assert_nominal_source_records(
+339 | |     project: &HirProject,
+340 | |     model_source: &str,
+341 | |     model_document: &SourceDocument,
+...   |
+344 | |     alias: &ProjectNominalDeclaration,
+345 | | ) {
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+warning: used `assert!` to check that a value is empty
+  --> crates\arcweft-lang-hir\src\symbol\tests\direct_bindings.rs:82:5
+   |
+82 |     assert!(seed.canonical_path().qualifiers().is_empty());
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+   |
+82 -     assert!(seed.canonical_path().qualifiers().is_empty());
+82 +     assert_eq!(seed.canonical_path().qualifiers(), []);
+   |
+
+warning: used `assert!` to check that a value is empty
+   --> crates\arcweft-lang-hir\src\symbol\tests\symbol_projection.rs:845:5
+    |
+845 |     assert!(local_record.id().owner_path().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+845 -     assert!(local_record.id().owner_path().is_empty());
+845 +     assert_eq!(local_record.id().owner_path(), []);
+    |
+
+warning: `arcweft-lang-hir` (lib test) generated 266 warnings (95 duplicates) (run `cargo clippy --fix --lib -p arcweft-lang-hir --tests -- ` to apply 148 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 08s

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "run": "task-final-r3021-hir-control-stack-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   5.991s] 1 test run: 0 passed, 1 failed, 959 skipped",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 959,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "ABORT",
+      "binary": "arcweft-lang-hir",
+      "test": "final_lowering::expression_lowering::tests::control::nested_control_projection_publishes_both_branch_directions_on_the_default_stack"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T12:07:48.8969474Z"
+}

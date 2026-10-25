@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "changed": [
+    "crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs",
+    "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests/control.rs"
+  ],
+  "sourceInputs": 3986,
+  "reverseWorkspace": [
+    "arcweft-adapter-sema",
+    "arcweft-agent-mcp",
+    "arcweft-agent-mcp-client",
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-cli",
+    "arcweft-compiler",
+    "arcweft-lang-hir",
+    "arcweft-lang-sema",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-web",
+    "arcweft-project-loader",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-plan",
+    "arcweft-test",
+    "arcweft-tooling",
+    "arcweft-verify",
+    "arcweft-verify-lsp",
+    "arcweft-verify-oxiz",
+    "arcweft-verify-z3"
+  ],
+  "reversePackages": 23,
+  "manifestInputs": 99,
+  "manifestDrift": 0,
+  "hirDepth": {
+    "run": "task-final-r3029-hir-control-stack-runtime",
+    "passed": 9,
+    "failed": 0,
+    "exitCode": 0,
+    "seconds": 0.147,
+    "cases": [
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::item_lowering::tests::test_bench::clean_test_and_bench_retain_typed_id_kind_statement_scope_and_goto"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-hir",
+        "test": "project::tests::dialogue_namespace_combines_statement_and_expression_scopes"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::expression_lowering::tests::control::nested_named_block_projection_retains_each_name_scope_and_tail"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-hir",
+        "test": "project::tests::language_expression_partition_keeps_test_body_owned_by_the_script_manifest"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::item_lowering::tests::test_bench::bench_assert_sections_publish_clean_named_blocks_and_exact_expectation_bodies"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-hir",
+        "test": "project::tests::project_item_entries_retain_rooted_paths_in_source_order"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::expression_lowering::tests::control::e29_named_block_preserves_valid_and_invalid_present_name_but_normalizes_omission"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::expression_lowering::tests::control::e28_e29_reuse_and_name_limit_failure_are_atomic"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::expression_lowering::tests::control::nested_control_projection_publishes_both_branch_directions_on_the_default_stack"
+      }
+    ],
+    "executableInputs": 1,
+    "executableDrift": 0,
+    "sourceDrift": 0,
+    "depth": 32,
+    "branchDirections": [
+      "then",
+      "else"
+    ],
+    "ordinaryBlocks": 64,
+    "namedDepth": 32,
+    "namedScopes": 32,
+    "stackOverride": false,
+    "budgetOverride": false
+  },
+  "fullOwnerBeforeRepair": {
+    "version": 1,
+    "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+    "run": "task-final-r3027-hir-control-stack-runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [ 479.868s] 959 tests run: 952 passed (3 slow), 7 failed, 8 skipped",
+    "executed": 959,
+    "passed": 952,
+    "failed": 7,
+    "skipped": 8,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3986,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::expression_lowering::tests::control::e28_e29_reuse_and_name_limit_failure_are_atomic"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::expression_lowering::tests::control::e29_named_block_preserves_valid_and_invalid_present_name_but_normalizes_omission"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::item_lowering::tests::test_bench::bench_assert_sections_publish_clean_named_blocks_and_exact_expectation_bodies"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-lang-hir",
+        "test": "final_lowering::item_lowering::tests::test_bench::clean_test_and_bench_retain_typed_id_kind_statement_scope_and_goto"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-lang-hir",
+        "test": "project::tests::dialogue_namespace_combines_statement_and_expression_scopes"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-lang-hir",
+        "test": "project::tests::language_expression_partition_keeps_test_body_owned_by_the_script_manifest"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-lang-hir",
+        "test": "project::tests::project_item_entries_retain_rooted_paths_in_source_order"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-25T12:24:13.2105238Z",
+    "seconds": 479.868,
+    "executableInputs": 4,
+    "executableDrift": 0
+  },
+  "knownRegression": "The intermediate extraction omitted NamedBlock. All seven observed failures were preserved and selected by exact identifiers in the repaired run; the actual original name/recovery/scope/payload logic was restored as a private typed family.",
+  "semaDiagnostic": {
+    "run": "task-final-r3025-hir-control-stack-runtime",
+    "exitCode": 100,
+    "status": "ABORT",
+    "beforeFixture": true,
+    "afterFixture": true,
+    "analysisCompleted": false,
+    "diagnosticPrintsRemoved": true
+  },
+  "currentClippy": {
+    "run": "task-final-r3030-hir-control-clippy",
+    "exitCode": 0,
+    "warnings": true,
+    "cargoDuration": "1m 08s",
+    "sourceDrift": 0
+  },
+  "structureGate": {
+    "run": "task-final-r3031-hir-control-structure",
+    "command": [
+      "just",
+      "structure-audit-gate"
+    ],
+    "exitCode": 0,
+    "sourceDrift": 0
+  },
+  "scope": {
+    "newestFullOwnerRuntime": "Not rerun after NamedBlock repair; R3027 remains 952 PASS / 7 FAIL, followed by the 9-case repaired selection",
+    "all23ReverseRuntime": "Not run after this change",
+    "sema32": "Still aborts after HIR fixture construction; no Sema production fix in this cut",
+    "genericMatch": "Existing accepted/published state retained; no blanket reopening",
+    "sourceParallel": "First-class aggregate Need still unconnected"
+  },
+  "artifactCopyMove": false
+}

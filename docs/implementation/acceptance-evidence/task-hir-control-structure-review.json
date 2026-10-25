@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "base": "9c605ebf917c7dbe705a09680c3cf10483c0e35a",
+  "dirty": "two HIR paths plus original held WIP",
+  "measurements": [
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs",
+      "crate": "arcweft-lang-hir",
+      "classification": "production",
+      "bytes": 110009,
+      "physicalLoc": 2555,
+      "basePhysicalLoc": 2422,
+      "growth": 133
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests/control.rs",
+      "crate": "arcweft-lang-hir",
+      "classification": "test",
+      "bytes": 109906,
+      "physicalLoc": 2939,
+      "basePhysicalLoc": 2885,
+      "growth": 54
+    }
+  ],
+  "dependencies": {
+    "fanIn": 11,
+    "fanInPackages": [
+      "arcweft-adapter-sema",
+      "arcweft-agent-repl",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-lang-sema",
+      "arcweft-lsp",
+      "arcweft-project-loader",
+      "arcweft-runtime-plan",
+      "arcweft-test",
+      "arcweft-tooling",
+      "arcweft-verify"
+    ],
+    "fanOut": 9,
+    "reverseWorkspace": [
+      "arcweft-adapter-sema",
+      "arcweft-agent-mcp",
+      "arcweft-agent-mcp-client",
+      "arcweft-agent-repl",
+      "arcweft-agent-runner",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-lang-hir",
+      "arcweft-lang-sema",
+      "arcweft-lsp",
+      "arcweft-player-native",
+      "arcweft-player-scene",
+      "arcweft-player-web",
+      "arcweft-project-loader",
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-runtime-plan",
+      "arcweft-test",
+      "arcweft-tooling",
+      "arcweft-verify",
+      "arcweft-verify-lsp",
+      "arcweft-verify-oxiz",
+      "arcweft-verify-z3"
+    ],
+    "graphManifestLockInputs": 99,
+    "manifestLockDrift": 0
+  },
+  "disposition": "The staged HIR transaction remains the sole owner of source reservation, scopes, recovery, final payloads and atomic publication. Private projection calls partition stack lifetimes by typed expression family and the NamedBlock name/recovery boundary. They do not add state, a second traversal, source reparsing, I/O, facade APIs or Cargo edges. The root projection is exhaustive. Existing recovery/reuse/bench/project cases retain their original assertions; two depth tests exercise ordinary branch directions and each NamedBlock name/scope/tail.",
+  "artifactCopyMove": false
+}

@@ -1,8 +1,8 @@
-//! Direct attached leaf-expression lowering into the final expression arena.
+//! Direct attached expression lowering into the final expression arena.
 //!
-//! This first expression slice consumes only parser-owned typed projections.
-//! It never reopens source text, constructs a detached expression, or admits a
-//! second leaf payload owner.
+//! One transaction owns reservation, typed family projection, source components,
+//! recovery, and publication. Family payloads use separate calls so recursively
+//! nested source does not retain unrelated projection temporaries.
 
 mod choice;
 mod dialogue;
@@ -124,7 +124,7 @@ pub(super) fn lower_associated_separator(
 }
 
 impl StagedHirModuleTransaction<'_> {
-    /// Lowers one attached E01-E11 expression through the transaction's sole
+    /// Lowers one attached expression through the transaction's sole
     /// expression, slot, source, and diagnostic authority.
     pub(crate) fn lower_attached_expression(
         &mut self,
@@ -275,10 +275,6 @@ impl StagedHirModuleTransaction<'_> {
         }
     }
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "this is the exhaustive one-pass projection from every attached expression family into its final HIR payload"
-    )]
     fn project_expression(
         &mut self,
         attached: &AttachedExpressionNode,
@@ -286,7 +282,118 @@ impl StagedHirModuleTransaction<'_> {
         scope: ScopeId,
         application_family: HirAttachedContentApplicationFamilyKind,
     ) -> Result<(HirExprKind, HirPoisonState, bool), HirLowerFailure> {
-        let (kind, recovery) = match attached.projection() {
+        let (kind, recovery) =
+            self.project_expression_payload(attached, owner, scope, application_family)?;
+        let parent_diagnostic_required = match attached.projection() {
+            ExpressionProjection::Select(member) => {
+                matches!(member, SyntaxSelectedMember::Missing)
+            }
+            // Owner-only content/delimiter recovery needs its own diagnostic.
+            // A retained missing operand already owns the diagnostic for its
+            // exact source role, as it does in other expression families.
+            ExpressionProjection::AttachedContentApplication(_) => !matches!(
+                &recovery,
+                Some(HirRecoveryIssue::MissingOperand { role }) if attached.children().iter().any(|child| {
+                    child.missing().is_some()
+                        && expression_component_role(attached.projection(), child.component_role()) == Some(*role)
+                        && matches!(kind.recovery_operand_slot(child.ordinal(), *role), Some(crate::expr::HirRecoveryOperandSlot::Retained(_)))
+                })
+            ),
+            _ => !matches!(
+                &recovery,
+                Some(
+                    HirRecoveryIssue::MissingOperand { .. } | HirRecoveryIssue::MissingRequiredTail
+                )
+            ),
+        };
+        Ok((
+            kind,
+            recovery.map_or(HirPoisonState::Clean, HirPoisonState::Poisoned),
+            parent_diagnostic_required,
+        ))
+    }
+
+    // Separate family dispatch from final recovery assembly so recursion does
+    // not retain intermediate results from every projection family.
+    fn project_expression_payload(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        owner: ExprId,
+        scope: ScopeId,
+        application_family: HirAttachedContentApplicationFamilyKind,
+    ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+        match attached.projection() {
+            ExpressionProjection::Unit
+            | ExpressionProjection::Literal(_)
+            | ExpressionProjection::EntityReference(_)
+            | ExpressionProjection::LifetimePath(_)
+            | ExpressionProjection::Path
+            | ExpressionProjection::ShortVariant(_)
+            | ExpressionProjection::Placeholder(_)
+            | ExpressionProjection::NumericBracketSequence(_) => {
+                self.project_leaf_expression(attached, owner, scope)
+            }
+            ExpressionProjection::Tuple(_)
+            | ExpressionProjection::BracketSequence(_)
+            | ExpressionProjection::ArrayRepeat(_)
+            | ExpressionProjection::Range { .. }
+            | ExpressionProjection::Record(_)
+            | ExpressionProjection::RecordLiteral(_) => {
+                self.project_collection_expression(attached, owner, scope)
+            }
+            ExpressionProjection::Call(_)
+            | ExpressionProjection::Select(_)
+            | ExpressionProjection::Index(_)
+            | ExpressionProjection::AttachedContentApplication(_)
+            | ExpressionProjection::PostfixBracket(_)
+            | ExpressionProjection::Pipe(_)
+            | ExpressionProjection::Try { .. }
+            | ExpressionProjection::Await { .. }
+            | ExpressionProjection::Thread(_)
+            | ExpressionProjection::Choice => {
+                self.project_application_expression(attached, owner, scope, application_family)
+            }
+            ExpressionProjection::Binary { .. }
+            | ExpressionProjection::Borrow { .. }
+            | ExpressionProjection::Dereference { .. }
+            | ExpressionProjection::Unary { .. } => {
+                self.project_operator_expression(attached, owner, scope)
+            }
+            ExpressionProjection::If { .. }
+            | ExpressionProjection::IfLet { .. }
+            | ExpressionProjection::Match(_) => {
+                self.project_conditional_expression(attached, owner, scope)
+            }
+            ExpressionProjection::Loop
+            | ExpressionProjection::Closure(_)
+            | ExpressionProjection::Block
+            | ExpressionProjection::ComputationBlock(_) => {
+                self.project_scoped_expression(attached, owner, scope)
+            }
+            ExpressionProjection::NamedBlock(source_name) => {
+                self.project_named_block_expression(attached, owner, scope, source_name)
+            }
+            ExpressionProjection::Error => {
+                self.lower_error_recovery_prefix(attached, scope)?;
+                Ok((
+                    HirExprKind::Error(HirExprError::new(HirGenericExprIssue::UnclassifiedSyntax)),
+                    Some(HirRecoveryIssue::InvalidExpression(
+                        HirExpressionRecoveryIssue::Generic(
+                            HirGenericExprIssue::UnclassifiedSyntax,
+                        ),
+                    )),
+                ))
+            }
+        }
+    }
+
+    fn project_leaf_expression(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        owner: ExprId,
+        scope: ScopeId,
+    ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+        Ok(match attached.projection() {
             ExpressionProjection::Unit => (HirExprKind::Unit, None),
             ExpressionProjection::Literal(value) => {
                 let value = literal(value)?;
@@ -359,6 +466,26 @@ impl StagedHirModuleTransaction<'_> {
                 }),
                 None,
             ),
+            ExpressionProjection::NumericBracketSequence(sequence) => {
+                let recovery = sequence
+                    .has_recovery()
+                    .then_some(HirRecoveryIssue::InvalidNumericSequence);
+                (
+                    HirExprKind::NumericBracketSequence(project_numeric_sequence(sequence)?),
+                    recovery,
+                )
+            }
+            _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
+        })
+    }
+
+    fn project_collection_expression(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        owner: ExprId,
+        scope: ScopeId,
+    ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+        Ok(match attached.projection() {
             ExpressionProjection::Tuple(_) => {
                 let (elements, recovery) = self.lower_composite_children(attached, owner, scope)?;
                 (HirExprKind::Tuple(HirTupleExpr::new(elements)), recovery)
@@ -367,15 +494,6 @@ impl StagedHirModuleTransaction<'_> {
                 let (elements, recovery) = self.lower_composite_children(attached, owner, scope)?;
                 (
                     HirExprKind::BracketSequence(HirBracketSequenceExpr::new(elements)),
-                    recovery,
-                )
-            }
-            ExpressionProjection::NumericBracketSequence(sequence) => {
-                let recovery = sequence
-                    .has_recovery()
-                    .then_some(HirRecoveryIssue::InvalidNumericSequence);
-                (
-                    HirExprKind::NumericBracketSequence(project_numeric_sequence(sequence)?),
                     recovery,
                 )
             }
@@ -389,6 +507,47 @@ impl StagedHirModuleTransaction<'_> {
                     recovery,
                 )
             }
+            ExpressionProjection::Range { inclusive, .. } => {
+                let (start, end, recovery) = self.lower_range_children(attached, owner, scope)?;
+                (
+                    HirExprKind::Range(HirRangeExpr::new(start, end, *inclusive)),
+                    recovery,
+                )
+            }
+            ExpressionProjection::Record(fields) => {
+                let path = attached
+                    .path()
+                    .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+                let TypedPathProjection::Resolved(path) = project_attached_path(path)? else {
+                    return Err(HirInvariantFailure::InvalidArenaCommit.into());
+                };
+                let (fields, recovery) =
+                    self.lower_record_fields(attached, owner, scope, fields)?;
+                (
+                    HirExprKind::Record(HirRecordExpr::new(path, fields)),
+                    recovery,
+                )
+            }
+            ExpressionProjection::RecordLiteral(fields) => {
+                let (fields, recovery) =
+                    self.lower_record_fields(attached, owner, scope, fields)?;
+                (
+                    HirExprKind::RecordLiteral(HirRecordLiteralExpr::new(fields)),
+                    recovery,
+                )
+            }
+            _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
+        })
+    }
+
+    fn project_application_expression(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        owner: ExprId,
+        scope: ScopeId,
+        application_family: HirAttachedContentApplicationFamilyKind,
+    ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+        Ok(match attached.projection() {
             ExpressionProjection::Call(call) => {
                 let (call, recovery) = self.lower_call_expression(attached, owner, scope, call)?;
                 (HirExprKind::Call(call), recovery)
@@ -490,35 +649,17 @@ impl StagedHirModuleTransaction<'_> {
                     self.lower_attached_choice_expression(attached, owner, scope)?;
                 (HirExprKind::Choice(choice), recovery)
             }
-            ExpressionProjection::Range { inclusive, .. } => {
-                let (start, end, recovery) = self.lower_range_children(attached, owner, scope)?;
-                (
-                    HirExprKind::Range(HirRangeExpr::new(start, end, *inclusive)),
-                    recovery,
-                )
-            }
-            ExpressionProjection::Record(fields) => {
-                let path = attached
-                    .path()
-                    .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
-                let TypedPathProjection::Resolved(path) = project_attached_path(path)? else {
-                    return Err(HirInvariantFailure::InvalidArenaCommit.into());
-                };
-                let (fields, recovery) =
-                    self.lower_record_fields(attached, owner, scope, fields)?;
-                (
-                    HirExprKind::Record(HirRecordExpr::new(path, fields)),
-                    recovery,
-                )
-            }
-            ExpressionProjection::RecordLiteral(fields) => {
-                let (fields, recovery) =
-                    self.lower_record_fields(attached, owner, scope, fields)?;
-                (
-                    HirExprKind::RecordLiteral(HirRecordLiteralExpr::new(fields)),
-                    recovery,
-                )
-            }
+            _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
+        })
+    }
+
+    fn project_operator_expression(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        owner: ExprId,
+        scope: ScopeId,
+    ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+        Ok(match attached.projection() {
             ExpressionProjection::Binary { operator, .. } => {
                 let (children, recovery) = self.lower_composite_children(attached, owner, scope)?;
                 let [left, right] = children.as_ref() else {
@@ -532,51 +673,6 @@ impl StagedHirModuleTransaction<'_> {
                     )),
                     recovery,
                 )
-            }
-            ExpressionProjection::If { else_branch, .. } => {
-                let (children, recovery) = self.lower_composite_children(attached, owner, scope)?;
-                let (condition, then_branch, else_branch) = match (children.as_ref(), else_branch) {
-                    ([condition, then_branch, else_branch], Some(_)) => {
-                        (*condition, *then_branch, *else_branch)
-                    }
-                    ([condition, then_branch], None) => {
-                        let source = attached
-                            .component(ExpressionComponentRole::ElseBranch)
-                            .ok_or(HirInvariantFailure::InvalidSourceSpan)?;
-                        let else_branch = self.lower_implicit_unit_tail(owner, scope, &source)?;
-                        (*condition, *then_branch, else_branch)
-                    }
-                    _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
-                };
-                (
-                    HirExprKind::If(HirIfExpr::new(condition, then_branch, else_branch)),
-                    recovery,
-                )
-            }
-            ExpressionProjection::IfLet { .. } => {
-                let (if_let, recovery) = self.lower_if_let_expression(attached, owner, scope)?;
-                (HirExprKind::IfLet(if_let), recovery)
-            }
-            ExpressionProjection::Loop => {
-                let block = self.lower_attached_value_block_parts(
-                    attached,
-                    owner,
-                    scope,
-                    OmittedValueTail::ImplicitUnit,
-                )?;
-                (
-                    HirExprKind::Loop(HirLoopExpr::new(block.scope, block.statements, block.tail)),
-                    block.recovery,
-                )
-            }
-            ExpressionProjection::Match(projection) => {
-                let (match_expression, recovery) =
-                    self.lower_match_expression(attached, owner, scope, projection)?;
-                (HirExprKind::Match(match_expression), recovery)
-            }
-            ExpressionProjection::Closure(_) => {
-                let (closure, recovery) = self.lower_closure_expression(attached, owner, scope)?;
-                (HirExprKind::Closure(closure), recovery)
             }
             ExpressionProjection::Borrow { kind, .. } => {
                 let (children, recovery) = self.lower_composite_children(attached, owner, scope)?;
@@ -607,6 +703,73 @@ impl StagedHirModuleTransaction<'_> {
                     HirExprKind::Unary(HirUnaryExpr::new(unary_operator(*operator), *operand)),
                     recovery,
                 )
+            }
+            _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
+        })
+    }
+
+    fn project_conditional_expression(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        owner: ExprId,
+        scope: ScopeId,
+    ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+        Ok(match attached.projection() {
+            ExpressionProjection::If { else_branch, .. } => {
+                let (children, recovery) = self.lower_composite_children(attached, owner, scope)?;
+                let (condition, then_branch, else_branch) = match (children.as_ref(), else_branch) {
+                    ([condition, then_branch, else_branch], Some(_)) => {
+                        (*condition, *then_branch, *else_branch)
+                    }
+                    ([condition, then_branch], None) => {
+                        let source = attached
+                            .component(ExpressionComponentRole::ElseBranch)
+                            .ok_or(HirInvariantFailure::InvalidSourceSpan)?;
+                        let else_branch = self.lower_implicit_unit_tail(owner, scope, &source)?;
+                        (*condition, *then_branch, else_branch)
+                    }
+                    _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
+                };
+                (
+                    HirExprKind::If(HirIfExpr::new(condition, then_branch, else_branch)),
+                    recovery,
+                )
+            }
+            ExpressionProjection::IfLet { .. } => {
+                let (if_let, recovery) = self.lower_if_let_expression(attached, owner, scope)?;
+                (HirExprKind::IfLet(if_let), recovery)
+            }
+            ExpressionProjection::Match(projection) => {
+                let (match_expression, recovery) =
+                    self.lower_match_expression(attached, owner, scope, projection)?;
+                (HirExprKind::Match(match_expression), recovery)
+            }
+            _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
+        })
+    }
+
+    fn project_scoped_expression(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        owner: ExprId,
+        scope: ScopeId,
+    ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+        Ok(match attached.projection() {
+            ExpressionProjection::Loop => {
+                let block = self.lower_attached_value_block_parts(
+                    attached,
+                    owner,
+                    scope,
+                    OmittedValueTail::ImplicitUnit,
+                )?;
+                (
+                    HirExprKind::Loop(HirLoopExpr::new(block.scope, block.statements, block.tail)),
+                    block.recovery,
+                )
+            }
+            ExpressionProjection::Closure(_) => {
+                let (closure, recovery) = self.lower_closure_expression(attached, owner, scope)?;
+                (HirExprKind::Closure(closure), recovery)
             }
             ExpressionProjection::Block => {
                 let (block, recovery) = self.lower_attached_value_block(attached, owner, scope)?;
@@ -642,75 +805,45 @@ impl StagedHirModuleTransaction<'_> {
                     block.recovery,
                 )
             }
-            ExpressionProjection::NamedBlock(source_name) => {
-                let (name, name_recovery) = match source_name {
-                    Ok(source_name) => (HirNamedBlockName::Resolved(name(source_name)?), None),
-                    Err(SyntaxNameIssue::Missing) => {
-                        return Err(HirInvariantFailure::InvalidArenaCommit.into());
-                    }
-                    Err(issue) => {
-                        require_attempted_name_limit(issue)?;
-                        let issue = name_issue(issue);
-                        (
-                            HirNamedBlockName::InvalidPresent(issue),
-                            Some(HirRecoveryIssue::InvalidName(issue)),
-                        )
-                    }
-                };
-                let block = self.lower_attached_value_block_parts(
-                    attached,
-                    owner,
-                    scope,
-                    OmittedValueTail::ImplicitUnit,
-                )?;
-                (
-                    HirExprKind::NamedBlock(HirNamedBlockExpr::new(
-                        name,
-                        block.scope,
-                        block.statements,
-                        block.tail,
-                    )),
-                    name_recovery.or(block.recovery),
-                )
+            _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
+        })
+    }
+
+    fn project_named_block_expression(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        owner: ExprId,
+        scope: ScopeId,
+        source_name: &Result<arcweft_lang_syntax::name::SyntaxName, SyntaxNameIssue>,
+    ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+        let (name, name_recovery) = match source_name {
+            Ok(source_name) => (HirNamedBlockName::Resolved(name(source_name)?), None),
+            Err(SyntaxNameIssue::Missing) => {
+                return Err(HirInvariantFailure::InvalidArenaCommit.into());
             }
-            ExpressionProjection::Error => {
-                self.lower_error_recovery_prefix(attached, scope)?;
+            Err(issue) => {
+                require_attempted_name_limit(issue)?;
+                let issue = name_issue(issue);
                 (
-                    HirExprKind::Error(HirExprError::new(HirGenericExprIssue::UnclassifiedSyntax)),
-                    Some(HirRecoveryIssue::InvalidExpression(
-                        HirExpressionRecoveryIssue::Generic(
-                            HirGenericExprIssue::UnclassifiedSyntax,
-                        ),
-                    )),
+                    HirNamedBlockName::InvalidPresent(issue),
+                    Some(HirRecoveryIssue::InvalidName(issue)),
                 )
             }
         };
-        let parent_diagnostic_required = match attached.projection() {
-            ExpressionProjection::Select(member) => {
-                matches!(member, SyntaxSelectedMember::Missing)
-            }
-            // Owner-only content/delimiter recovery needs its own diagnostic.
-            // A retained missing operand already owns the diagnostic for its
-            // exact source role, as it does in other expression families.
-            ExpressionProjection::AttachedContentApplication(_) => !matches!(
-                &recovery,
-                Some(HirRecoveryIssue::MissingOperand { role }) if attached.children().iter().any(|child| {
-                    child.missing().is_some()
-                        && expression_component_role(attached.projection(), child.component_role()) == Some(*role)
-                        && matches!(kind.recovery_operand_slot(child.ordinal(), *role), Some(crate::expr::HirRecoveryOperandSlot::Retained(_)))
-                })
-            ),
-            _ => !matches!(
-                &recovery,
-                Some(
-                    HirRecoveryIssue::MissingOperand { .. } | HirRecoveryIssue::MissingRequiredTail
-                )
-            ),
-        };
+        let block = self.lower_attached_value_block_parts(
+            attached,
+            owner,
+            scope,
+            OmittedValueTail::ImplicitUnit,
+        )?;
         Ok((
-            kind,
-            recovery.map_or(HirPoisonState::Clean, HirPoisonState::Poisoned),
-            parent_diagnostic_required,
+            HirExprKind::NamedBlock(HirNamedBlockExpr::new(
+                name,
+                block.scope,
+                block.statements,
+                block.tail,
+            )),
+            name_recovery.or(block.recovery),
         ))
     }
 
