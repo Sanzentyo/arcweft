@@ -2826,6 +2826,29 @@ struct PreparedCallTypeConstraint {
     acceptance: ConstraintAcceptance,
 }
 
+/// A direct result equation guides source probing. Function-value use must
+/// retain the selected source/projection before closing its specialization.
+enum PreparedCallResultConstraint {
+    Type(PreparedCallTypeConstraint),
+    FunctionUse(PreparedCallTypeConstraint),
+}
+
+impl PreparedCallResultConstraint {
+    fn new(constraint: PreparedCallTypeConstraint) -> Self {
+        if matches!(&constraint.actual, TypeKind::Function { binder, .. } if binder.is_empty()) {
+            Self::FunctionUse(constraint)
+        } else {
+            Self::Type(constraint)
+        }
+    }
+
+    const fn expected_type(&self) -> &TypeKind {
+        match self {
+            Self::Type(constraint) | Self::FunctionUse(constraint) => &constraint.actual,
+        }
+    }
+}
+
 struct PreparedCallProjectionRequest {
     key: AnalyzerCallProjection,
     value: TypeKind,
@@ -2975,7 +2998,7 @@ pub(crate) struct PreparedCallConstraintSet {
     next_application_constraints: Box<[PreparedCallTypeConstraint]>,
     type_application_constraints: Box<[PreparedCallTypeConstraint]>,
     receiver_constraints: Box<[PreparedCallTypeConstraint]>,
-    result_constraint: Option<PreparedCallTypeConstraint>,
+    result_constraint: Option<PreparedCallResultConstraint>,
     result_schema: CallableResultSchema,
     projection_requests: Box<[PreparedCallProjectionRequest]>,
     initialization: PreparedCallConstraintInitialization,
@@ -5120,13 +5143,15 @@ pub(crate) fn validate_and_prepare_call_constraints(
         } else {
             expected_result
         };
-        expected.map(|expected| PreparedCallTypeConstraint {
-            source: AnalyzerCallConstraintSource::Result {
-                source: result_source,
-            },
-            pattern,
-            actual: expected.clone(),
-            acceptance: ConstraintAcceptance::ActualAcceptsPattern,
+        expected.map(|expected| {
+            PreparedCallResultConstraint::new(PreparedCallTypeConstraint {
+                source: AnalyzerCallConstraintSource::Result {
+                    source: result_source,
+                },
+                pattern,
+                actual: expected.clone(),
+                acceptance: ConstraintAcceptance::ActualAcceptsPattern,
+            })
         })
     } else {
         None
@@ -5531,7 +5556,7 @@ pub(crate) fn run_prepared_candidate(
         .collect::<Vec<_>>();
     let expected_result = result_constraint
         .as_ref()
-        .map(|constraint| constraint.actual.clone());
+        .map(|constraint| constraint.expected_type().clone());
     let alternatives = session
         .with_driver(
             CallableConstraintApplication::Call(application),
@@ -5547,10 +5572,24 @@ pub(crate) fn run_prepared_candidate(
                         );
                     }
                 }
-                for constraint in base_constraints.iter().chain(receiver_constraints.iter()).chain(next_application_constraints.iter()) {
+                for constraint in base_constraints
+                    .iter()
+                    .chain(receiver_constraints.iter())
+                    .chain(next_application_constraints.iter())
+                {
                     let _ = constraint.source;
                     if constraint.pattern != constraint.actual {
                         driver.constrain(
+                            &constraint.pattern,
+                            &constraint.actual,
+                            constraint.acceptance,
+                        );
+                    }
+                }
+                if let Some(PreparedCallResultConstraint::Type(constraint)) = &result_constraint {
+                    let _ = constraint.source;
+                    if constraint.pattern != constraint.actual {
+                        driver.constrain_result(
                             &constraint.pattern,
                             &constraint.actual,
                             constraint.acceptance,
@@ -5566,24 +5605,25 @@ pub(crate) fn run_prepared_candidate(
                 for request in projection_requests {
                     driver.request_projection(request.key, &request.value, request.closure);
                 }
-                if let Some(constraint) = result_constraint {
+                if let Some(PreparedCallResultConstraint::FunctionUse(constraint)) =
+                    result_constraint
+                {
                     let _ = constraint.source;
-                    if matches!(&constraint.actual, TypeKind::Function { binder, .. } if binder.is_empty()) {
-                        driver.constrain_function_result_use(
-                            CallableConstraintApplication::Specialize(application),
-                            AnalyzerCallProjection::Result,
-                            &constraint.actual,
-                            &enclosing,
-                            &limits,
-                            |error| AnalyzerCallClientInvariant::constraint(AnalyzerCallConstraintSource::Result { source: application }, error),
-                        )?;
-                    } else if constraint.pattern != constraint.actual {
-                        driver.constrain(
-                            &constraint.pattern,
-                            &constraint.actual,
-                            constraint.acceptance,
-                        );
-                    }
+                    driver.constrain_function_result_use(
+                        CallableConstraintApplication::Specialize(application),
+                        AnalyzerCallProjection::Result,
+                        &constraint.actual,
+                        &enclosing,
+                        &limits,
+                        |error| {
+                            AnalyzerCallClientInvariant::constraint(
+                                AnalyzerCallConstraintSource::Result {
+                                    source: application,
+                                },
+                                error,
+                            )
+                        },
+                    )?;
                 }
                 driver.finish_alternatives()
             },
@@ -6431,13 +6471,25 @@ pub(crate) fn run_prepared_child_candidate(
                         );
                     }
                 }
+                if let Some(PreparedCallResultConstraint::Type(constraint)) = &result_constraint {
+                    let _ = constraint.source;
+                    if constraint.pattern != constraint.actual {
+                        driver.constrain_result(
+                            &constraint.pattern,
+                            &constraint.actual,
+                            constraint.acceptance,
+                        );
+                    }
+                }
                 for prepared in receiver_sources {
                     driver.probe_source(prepared, ConstraintAcceptance::PatternAcceptsActual)?;
                 }
                 for group in source_groups {
                     driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
                 }
-                if let Some(constraint) = result_constraint {
+                if let Some(PreparedCallResultConstraint::FunctionUse(constraint)) =
+                    result_constraint
+                {
                     let _ = constraint.source;
                     if constraint.pattern != constraint.actual {
                         driver.constrain(

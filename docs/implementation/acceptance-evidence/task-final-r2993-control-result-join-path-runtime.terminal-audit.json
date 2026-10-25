@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "run": "task-final-r2993-control-result-join-path-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 103.734s] 1352 tests run: 1350 passed, 2 failed, 0 skipped",
+  "executed": 1352,
+  "passed": 1350,
+  "failed": 2,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3985,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::control_results::control_result_inference_rejects_conflicts_and_missing_element_evidence"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::control_results::control_result_inference_replays_generic_calls_with_the_original_capture"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T10:36:52.7010378Z"
+}

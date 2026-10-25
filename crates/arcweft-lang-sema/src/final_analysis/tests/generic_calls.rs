@@ -1029,3 +1029,48 @@ fn root(values: Vec<String>, prefix: String) -> Traversal<Vec<String>, String ->
         )
     );
 }
+
+#[test]
+fn traversal_await_match_infers_an_empty_error_branch_without_a_result_annotation() {
+    let world = fixture(
+        r#"
+extern capability fs {
+    fn read_text(path: String) -> Need<Result<String, String>> effects { fs.read }
+}
+flow main() -> String effects { fs.read } {
+    let paths = ["a.txt", "b.txt"]
+    let values = match (await paths.traverse(fs.read_text).parallel(limit = 2)) {
+        .Ok(values) => values
+        .Err(_) => []
+    }
+    "done"
+}
+"#,
+        None,
+    );
+    let project = world.project.analysis_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let analysis = analyze(&world).expect("traversal result arms share their collection type");
+    assert_selected_calls(&analysis, 2);
+    let (owner, _) = module
+        .expressions()
+        .find(|(_, expression)| matches!(expression.kind(), HirExprKind::Match(_)))
+        .expect("result Match");
+    assert_eq!(
+        analysis.expression(owner).unwrap().value_type(),
+        Some(&TypeKind::Vec(Box::new(TypeKind::String)))
+    );
+    let checked = analysis
+        .checked_match_with_control(
+            project,
+            &world.symbols,
+            owner,
+            CheckedMatchLimits::PRODUCTION,
+            FinalSemanticAnalysisControl::new(&AtomicBool::new(false)),
+        )
+        .expect("exhaustive result transcript");
+    assert!(checked.coverage().exhaustive());
+    assert_eq!(checked.arms().len(), 2);
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3006-control-result-owner-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "-p",
+    "arcweft-lang-sema",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3986,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T11:29:23.2508462Z"
+}

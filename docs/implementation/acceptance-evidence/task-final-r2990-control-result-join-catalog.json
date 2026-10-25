@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "name": "task-final-r2990-control-result-join-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2990-control-result-join-catalog.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-25T10:31:14.9689027Z",
+  "finishedAt": "2026-10-25T10:31:32.6584053Z"
+}

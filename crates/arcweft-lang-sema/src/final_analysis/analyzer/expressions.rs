@@ -2,6 +2,8 @@
 
 #[path = "expressions/completion.rs"]
 mod completion;
+#[path = "expressions/control_results.rs"]
+mod control_results;
 #[path = "dialogue_line_plan.rs"]
 pub(super) mod dialogue_line_plan;
 #[path = "expressions/records.rs"]
@@ -938,34 +940,39 @@ impl Analyzer<'_, '_, '_> {
                     result: expected_result.cloned(),
                     placeholders: placeholders.clone(),
                 });
-            let body = match self.check_prepared_expression_kind(
-                context,
-                module,
-                owner,
-                expression,
-                &body_expectation,
-            )? {
-                Some(body @ PreparedExpressionFact::OwnerBound(_)) => body,
-                Some(other) => {
-                    PreparedExpressionFact::from(other.into_complete().map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?)
-                }
-                None => PreparedExpressionFact::from(self.check_expression_kind::<E>(
-                    context,
-                    module,
-                    owner,
-                    expression,
-                    &body_expectation,
-                    transaction_authority,
-                )?),
-            };
+            let body: Result<PreparedExpressionFact, E> = (|| {
+                Ok(
+                    match self.check_prepared_expression_kind(
+                        context,
+                        module,
+                        owner,
+                        expression,
+                        &body_expectation,
+                    )? {
+                        Some(body @ PreparedExpressionFact::OwnerBound(_)) => body,
+                        Some(other) => {
+                            PreparedExpressionFact::from(other.into_complete().map_err(|_| {
+                                AnalyzerExpressionError::fatal(
+                                    FinalSemanticAnalysisError::WrongPayloadFamily,
+                                )
+                            })?)
+                        }
+                        None => PreparedExpressionFact::from(self.check_expression_kind::<E>(
+                            context,
+                            module,
+                            owner,
+                            expression,
+                            &body_expectation,
+                            transaction_authority,
+                        )?),
+                    },
+                )
+            })();
             let context = self
                 .implicit_callable_stack
                 .pop()
                 .expect("implicit callable context was just pushed");
+            let body = body?;
             let body_type = body.value_type().cloned().ok_or_else(|| {
                 AnalyzerExpressionError::fatal(
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
@@ -2455,10 +2462,21 @@ impl Analyzer<'_, '_, '_> {
             }
             HirExprKind::If(conditional) => {
                 self.evaluate_expression(context, conditional.condition(), Some(&TypeKind::Bool))?;
+                let inferred = self.infer_control_branch_type(
+                    context,
+                    owner,
+                    expectation,
+                    [conditional.then_branch(), conditional.else_branch()],
+                )?;
+                let branch_expectation = if let Some(inferred) = inferred.as_ref() {
+                    expectation.project_checked(owner, Some(inferred))?
+                } else {
+                    expectation.clone()
+                };
                 let then_value = self.evaluate_expression_with_expectation(
                     context,
                     conditional.then_branch(),
-                    expectation.clone(),
+                    branch_expectation.clone(),
                 )?;
                 let then_type = then_value.value_type().cloned().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
@@ -2470,7 +2488,7 @@ impl Analyzer<'_, '_, '_> {
                 let else_value = self.evaluate_expression_with_expectation(
                     context,
                     conditional.else_branch(),
-                    expectation.clone(),
+                    branch_expectation.clone(),
                 )?;
                 let else_type = else_value.value_type().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
@@ -2497,10 +2515,21 @@ impl Analyzer<'_, '_, '_> {
                 if let Some(guard) = conditional.guard() {
                     self.evaluate_expression(context, guard, Some(&TypeKind::Bool))?;
                 }
+                let inferred = self.infer_control_branch_type(
+                    context,
+                    owner,
+                    expectation,
+                    [conditional.then_branch(), conditional.else_branch()],
+                )?;
+                let branch_expectation = if let Some(inferred) = inferred.as_ref() {
+                    expectation.project_checked(owner, Some(inferred))?
+                } else {
+                    expectation.clone()
+                };
                 let then_value = self.evaluate_expression_with_expectation(
                     context,
                     conditional.then_branch(),
-                    expectation.clone(),
+                    branch_expectation.clone(),
                 )?;
                 let then_type = then_value.value_type().cloned().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
@@ -2512,7 +2541,7 @@ impl Analyzer<'_, '_, '_> {
                 let else_value = self.evaluate_expression_with_expectation(
                     context,
                     conditional.else_branch(),
-                    expectation.clone(),
+                    branch_expectation.clone(),
                 )?;
                 let else_type = else_value.value_type().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
@@ -2534,18 +2563,31 @@ impl Analyzer<'_, '_, '_> {
                         },
                     )
                 })?;
-                let mut values = Vec::new();
-                let mut arms = Vec::with_capacity(match_expr.arms().len());
                 for arm in match_expr.arms() {
                     self.seed_contextual_pattern_locals(module, arm.pattern(), scrutinee_type)
                         .map_err(AnalyzerExpressionError::fatal)?;
+                }
+                let inferred = self.infer_control_branch_type(
+                    context,
+                    owner,
+                    expectation,
+                    match_expr.arms().iter().map(|arm| arm.value()),
+                )?;
+                let branch_expectation = if let Some(inferred) = inferred.as_ref() {
+                    expectation.project_checked(owner, Some(inferred))?
+                } else {
+                    expectation.clone()
+                };
+                let mut values = Vec::new();
+                let mut arms = Vec::with_capacity(match_expr.arms().len());
+                for arm in match_expr.arms() {
                     if let Some(guard) = arm.guard() {
                         self.evaluate_expression(context, guard, Some(&TypeKind::Bool))?;
                     }
                     values.push(self.evaluate_expression_with_expectation(
                         context,
                         arm.value(),
-                        expectation.clone(),
+                        branch_expectation.clone(),
                     )?);
                     arms.push(crate::final_analysis::CheckedMatchArmFact::new(
                         arm.guard(),

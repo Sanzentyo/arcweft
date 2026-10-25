@@ -1,0 +1,442 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-checkpoint.graph.json",
+      "bytes": 1929,
+      "sha256": "97e96b5d603b61d629e3fae6990eded9421426f0d4cf3944a82f96caee25f392"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-checkpoint.source-freeze.json",
+      "bytes": 779910,
+      "sha256": "d6bc36d41917f6b64712bc03963a7c5fce7c3e0fcf914ee84b205ac40785fa42"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-closure-executables-after.json",
+      "bytes": 1487,
+      "sha256": "b83d80ecbdf6881eb25f2ea9ce3c31c786edbe2d673783af1ae88ea9db285f1d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-closure-executables-before.json",
+      "bytes": 1488,
+      "sha256": "cd59e8011e130e68e1b147e7b1bb619335be994bda298aeb19f993caf6c33690"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-closure.graph.json",
+      "bytes": 1929,
+      "sha256": "97e96b5d603b61d629e3fae6990eded9421426f0d4cf3944a82f96caee25f392"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-closure.source-freeze.json",
+      "bytes": 779910,
+      "sha256": "2e8e668708e33ebc7fe24df9b970f534b5ee7871fb5600b56541db033e01ab36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-diagnostic.graph.json",
+      "bytes": 1929,
+      "sha256": "97e96b5d603b61d629e3fae6990eded9421426f0d4cf3944a82f96caee25f392"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-diagnostic.source-freeze.json",
+      "bytes": 779910,
+      "sha256": "ffd1176c36df4a6dc5d8882ae02980b94bc269f347b1fdb40ca9b17bec502476"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-fixture-executables-after.json",
+      "bytes": 491,
+      "sha256": "50cc6b21d927231edc0af4f7e81a81af5026d0b3d5ab49b27413d8720b2cfdee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-fixture-executables-before.json",
+      "bytes": 492,
+      "sha256": "2c97ae9c3dcf025632d5a7ee0108da726f2467cef3dd7a2956d6fb3ad2e8de56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-fixture.graph.json",
+      "bytes": 1929,
+      "sha256": "97e96b5d603b61d629e3fae6990eded9421426f0d4cf3944a82f96caee25f392"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-fixture.source-freeze.json",
+      "bytes": 779910,
+      "sha256": "e0562af1aea7840ca87628976863554253e7e624bcf0eef728cde2a767feb142"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-phases-executables-after.json",
+      "bytes": 491,
+      "sha256": "6a3ffdd2829b2e792644888a2f6c47cc479bd90078afafd08007cdb2a78f344a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-phases-executables-before.json",
+      "bytes": 492,
+      "sha256": "ad19c93d5898f5c6b9163b5f0a4cb99c96451984cffce4c8d41b0bc9a4c1e13d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-phases.graph.json",
+      "bytes": 1929,
+      "sha256": "97e96b5d603b61d629e3fae6990eded9421426f0d4cf3944a82f96caee25f392"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-depth-phases.source-freeze.json",
+      "bytes": 779910,
+      "sha256": "68f31c23c79a916ddf69f065594612fc5b5d96feddbed5affef4d9dabe080387"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-diagnostic-executables-after.json",
+      "bytes": 494,
+      "sha256": "265fd505dc86eb18cd860eae356ffd278d2c14f6e0ff3fcb63edf15987bf2075"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-diagnostic-executables-before.json",
+      "bytes": 495,
+      "sha256": "0d3e01cfec09afc332fac5fc2d94f261925f1444ad1545a4c6dc9421b2c635bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-diagnostic.graph.json",
+      "bytes": 1520,
+      "sha256": "153e15682ac158d4915e222af87f69be6aab072280b88d0573bea9a2743d01c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-diagnostic.source-freeze.json",
+      "bytes": 779292,
+      "sha256": "05296e7547286d671eeb0763449d6fa0f373aa3ae19f8248a5d3097197810b3a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-ordered-executables-after.json",
+      "bytes": 1492,
+      "sha256": "a93e0c87e5a80af395f3b1dbd4570e8ebfa914f854fa9d5ff08dcfceb04e83d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-ordered-executables-before.json",
+      "bytes": 1493,
+      "sha256": "703806da16f45baba8c59456edc99f7aad32ef61ff8831256d6bce5607f645e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-ordered.graph.json",
+      "bytes": 1601,
+      "sha256": "1e5d0449b950b1de77410a6e6ff3ae7ee714bca9c7d6b48c4effef984112a7f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-ordered.source-freeze.json",
+      "bytes": 779374,
+      "sha256": "e796b24b6a6aa3dc109cd0272fa6789a071ce79643274d86097d2e4ee5b49c2c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-path-executables-after.json",
+      "bytes": 1489,
+      "sha256": "162ce7325063a856b085f12b77f23b9b05f11fe56970071d8598a16a8597bb5b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-path-executables-before.json",
+      "bytes": 1490,
+      "sha256": "6689db83f0aaaf05725da5111caab53636581bcf9bad9d3917266e8d6c1c622e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-path.graph.json",
+      "bytes": 1520,
+      "sha256": "153e15682ac158d4915e222af87f69be6aab072280b88d0573bea9a2743d01c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join-path.source-freeze.json",
+      "bytes": 779292,
+      "sha256": "ba345d4a0077141070f1bcf833573027d435b779a3cacf2e1b2357ca4687f34c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join.graph.json",
+      "bytes": 1520,
+      "sha256": "153e15682ac158d4915e222af87f69be6aab072280b88d0573bea9a2743d01c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-control-result-join.source-freeze.json",
+      "bytes": 779292,
+      "sha256": "0991fef8f3d9e70f0c44a6be27b76f4d94a155226c8e2c20e070964389577571"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2988-traversal-await-result-catalog.inventory.json",
+      "bytes": 349751,
+      "sha256": "eaa6d59d718ed1026947b668deedd94b65f00692b7b4e76d9cdfdb64521099bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2988-traversal-await-result-catalog.json",
+      "bytes": 723,
+      "sha256": "1594c952a64377afabf090c6e8af103dfe335dce69dac5e3596296dcc86baec5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2988-traversal-await-result-catalog.log",
+      "bytes": 333459,
+      "sha256": "dce6eb8ca3148e9fa1ea3b855e84679cf4ec2f31d27fb7cbb462750c72cd0dcc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2989-traversal-await-result-runtime.json",
+      "bytes": 817,
+      "sha256": "68a92c6cdb208dbb0d15bc16924bec8c42daad36ace4db178fc3a39a1dcf24e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2989-traversal-await-result-runtime.log",
+      "bytes": 492420,
+      "sha256": "113ba384cbd2d892f41d0ae7a865778c329db9adabe17aacdf50b1a0be011730"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2989-traversal-await-result-runtime.terminal-audit.json",
+      "bytes": 799,
+      "sha256": "78b95e544bd5a6cf07b6948716f1d1dcd8c4b0183225e5aed61dd12dc7919007"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2990-control-result-join-catalog.input-audit.json",
+      "bytes": 393,
+      "sha256": "5ce8c90d8bdfe7638956fc06ba2dbe06696401b6217d992c01457c980312f827"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2990-control-result-join-catalog.json",
+      "bytes": 584,
+      "sha256": "fd90c495731710ac5d7885ca98076e9cbde184aa5d945c18c5191e760b521cac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2990-control-result-join-catalog.log",
+      "bytes": 74543,
+      "sha256": "2b6fda99b3d34d9d68eac4f4433f50893577fae0b6782c804819caf61fe1aafd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2992-control-result-join-path-catalog.inventory.json",
+      "bytes": 354958,
+      "sha256": "7a6ab61d6165df47b21ce6b6952493850b1e092966d881607191b581695ec981"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2992-control-result-join-path-catalog.json",
+      "bytes": 592,
+      "sha256": "a19c1f88d953a2e0e8f591dc2562528a3e593f448e71a93918417087d1f709b5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2992-control-result-join-path-catalog.log",
+      "bytes": 314641,
+      "sha256": "a79c867648a85ec22517ef6e04cdd38e6cf45fbda853714e18411e06654f43db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2993-control-result-join-path-runtime.json",
+      "bytes": 686,
+      "sha256": "44cd647e8bfcb77dc2f292ca206b22737afde9fb55c27c2a26a8fb5b0e31db3d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2993-control-result-join-path-runtime.log",
+      "bytes": 506782,
+      "sha256": "0cd53eb8355039e1e25dfe1c2b03bca59aa88763972046dd268fd1747759f2c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2993-control-result-join-path-runtime.terminal-audit.json",
+      "bytes": 1011,
+      "sha256": "6669c284475c29e17d0f9c888aa0acaac0b0b3e022c111d0f16c2d19ac84f854"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2994-control-result-join-diagnostic-catalog.inventory.json",
+      "bytes": 350576,
+      "sha256": "42f2984bdf10607a06d2db79b3741612a820f48bef34ebbdfac9b86bbab1ca18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2994-control-result-join-diagnostic-catalog.json",
+      "bytes": 687,
+      "sha256": "cf0670af74b8f7c5059f10d599d1b84ec7cb083d383fef3c0f055751eb93dc31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2994-control-result-join-diagnostic-catalog.log",
+      "bytes": 334044,
+      "sha256": "8b407096c4e8357c523a8d7508c47fbdd5f11db2e5e5630e527c9cfb06eff193"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2995-control-result-join-diagnostic-runtime.json",
+      "bytes": 781,
+      "sha256": "88f485fce83d15b69308caf9f37f95ea1308ce4a441165fbb20e6cc5b4256987"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2995-control-result-join-diagnostic-runtime.log",
+      "bytes": 494219,
+      "sha256": "d5a03819d1685333fa24feaf65d12c2feb14b09e66380ebf4d0c8d5caa9a82c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2995-control-result-join-diagnostic-runtime.terminal-audit.json",
+      "bytes": 804,
+      "sha256": "34351479cc83c148688cf9db351bb06d21714fd3c3162436c9abcdbdef47cf75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2996-control-result-join-ordered-catalog.inventory.json",
+      "bytes": 355243,
+      "sha256": "33f98b07aa8800cf56a3521bb558bac3e5776786603dbd2c9e2d7036fe6589ad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2996-control-result-join-ordered-catalog.json",
+      "bytes": 598,
+      "sha256": "0b2bf7cae1ff42d4e3fc04f8e58d675c3f41d7df00edc6890522fda3ea40828a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2996-control-result-join-ordered-catalog.log",
+      "bytes": 314831,
+      "sha256": "bec5fd65404c6ff80d9036c9ccb8ba95ad7503e6b0e88b6efb2fae30d50d8a15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2997-control-result-join-ordered-runtime.json",
+      "bytes": 692,
+      "sha256": "8cd774a138eb36a8ab96038576b81610f5e083761aa647f1f13ff4b1e07060de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2997-control-result-join-ordered-runtime.log",
+      "bytes": 505938,
+      "sha256": "92960edc479e027729a6288aef539e0cbc0cac9a8c17118b093a721ce5f840ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2997-control-result-join-ordered-runtime.terminal-audit.json",
+      "bytes": 775,
+      "sha256": "d9b806bd2ba1cac2ca9ee687a679d40d824e9e30b2acbfde794dbfa4dc76b551"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2998-control-result-closure-catalog.inventory.json",
+      "bytes": 356059,
+      "sha256": "07892f14c1c1f38a0245d48a63c60412912a68a0b2b315ad7df14bb6cf14e5b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2998-control-result-closure-catalog.json",
+      "bytes": 588,
+      "sha256": "b10394265d18fce770e0dc975c620a9dbe3e2cc4c96a87a7d44c3429aa3fa819"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2998-control-result-closure-catalog.log",
+      "bytes": 315376,
+      "sha256": "2540efbcdd4dad4e6e74f153fcbee31629e88f7aa74e4fb3a8e365ba3ae3a7be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2999-control-result-closure-runtime.json",
+      "bytes": 682,
+      "sha256": "9412841a29e7bcc0e6099ca51c9956a4fd1b3eac07abe26dbc50d2362d3258e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2999-control-result-closure-runtime.log",
+      "bytes": 506719,
+      "sha256": "e786d844036872cd8290d76952e34c508dbdf78fef2a9a03e48d0cdee42512e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2999-control-result-closure-runtime.terminal-audit.json",
+      "bytes": 797,
+      "sha256": "3f37dbdaa46c17407d72fdd02fab9ee32658950281a70f39967a59bc8cc3f667"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3000-control-result-depth-diagnostic-catalog.input-audit.json",
+      "bytes": 530,
+      "sha256": "3c1ebc24c8e17a2019c3b193e903bbc4050f2fe940588c4dc21553a94939c4df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3000-control-result-depth-diagnostic-catalog.json",
+      "bytes": 733,
+      "sha256": "20658ce925d31edcadc1fa18590e71a4b403b832d904236a791eae1b05b7065a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3000-control-result-depth-diagnostic-catalog.log",
+      "bytes": 72846,
+      "sha256": "564a9899ce9694ee8fd6331c73cc2e7e01ddae4f4b998c8c6d01166f9f02db2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3002-control-result-depth-phases-catalog.inventory.json",
+      "bytes": 351681,
+      "sha256": "151ee43aa18bd416035a0f8d48477eb35c7ce2b5a446d098ce1820beddb1bb76"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3002-control-result-depth-phases-catalog.json",
+      "bytes": 723,
+      "sha256": "28b4152c3d1906fac5904b6d8730f4133fe55a36d7e6fd4bb0eb59aea425e2cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3002-control-result-depth-phases-catalog.log",
+      "bytes": 334894,
+      "sha256": "baf8254be3a088473d5990cf6ae71e9ff52bd7eda70c5fa716af406a4248dff5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3003-control-result-depth-phases-runtime.json",
+      "bytes": 817,
+      "sha256": "4caf37ebd0ed5ad5a9bddb36981dff8539158a4aa02d0220b0cced7124a84048"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3003-control-result-depth-phases-runtime.log",
+      "bytes": 494291,
+      "sha256": "ebee71b02d73ef4a64ea3f1f9b105ab87d18f1df72d24e211264c0135554e607"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3003-control-result-depth-phases-runtime.terminal-audit.json",
+      "bytes": 795,
+      "sha256": "e9b4d34c54357f58642fff475c75fe211d0874c228c5cee64933c5211e78e8c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3004-control-result-depth-phases-catalog.inventory.json",
+      "bytes": 351681,
+      "sha256": "3cb01c1f48903ddb1c2bf9a90ee5ae3ef494c43441abb2e17bf2461f5fcb17c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3004-control-result-depth-phases-catalog.json",
+      "bytes": 723,
+      "sha256": "c112ede1dee4df9cb7dbe5338d067e4b8804b69c028b715f5e03f9a5d8e56c42"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3004-control-result-depth-phases-catalog.log",
+      "bytes": 334894,
+      "sha256": "a678f4a4d724e13c2acefa9a3b0dee86301878aab87e0fd117adaf517a7845a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3005-control-result-depth-phases-runtime.json",
+      "bytes": 817,
+      "sha256": "58d0c10cf24b289131305e26be7d22c398658d24068c41ac3534f1dab78a100e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3005-control-result-depth-phases-runtime.log",
+      "bytes": 494410,
+      "sha256": "9e47305d0c4e4078fc6f4bd8c6421e9b0523e917e99789d77cd5314bfe825b29"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3005-control-result-depth-phases-runtime.terminal-audit.json",
+      "bytes": 795,
+      "sha256": "63ded6c95bf9ed23d4dfb88747bf50806f686e76c85958aef99b12e938838e52"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-await-result-executables-after.json",
+      "bytes": 486,
+      "sha256": "d4f41cdef19a9989ffe232374253f3631532a97d7ec6691cafbe7cc22b600de6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-await-result-executables-before.json",
+      "bytes": 487,
+      "sha256": "a73ef5fc8478407553cf13b6484e657cceba3db9c87ffcc127cf18a5342ef2f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-await-result.graph.json",
+      "bytes": 1218,
+      "sha256": "0a60b959348d6e4bb302d47869c2d9baee52c02de8511ca879ed392a4156f275"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-await-result.source-freeze.json",
+      "bytes": 778555,
+      "sha256": "b99a075e1d672290e01dbed339b0455e4264ce033afb2a9f6891095130956f23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-reverse-status-checkpoint.verified.json",
+      "bytes": 3906,
+      "sha256": "da96dd14c9d86efa27fffddbe2dfbecf21a82d442894382cdd6b57d2b9d54d4e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-reverse-public-evidence-audit.json",
+      "bytes": 163,
+      "sha256": "eba1d2996b947d90e2a4639eadc82a74ab488b640234fb7ca673a04629ccfd3d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3006-control-result-owner-clippy.log",
+      "bytes": 5903096,
+      "sha256": "751adba94467a3ddbc51d08138d4aa6ada706a130a1b896eda35b08c659c44a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3006-control-result-owner-clippy.json",
+      "bytes": 566,
+      "sha256": "2c52dbd48596f838f322d2d18136184b4f4df37ce1c29a63e17da8d31c9386b2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3006-control-result-owner-clippy.input-audit.json",
+      "bytes": 375,
+      "sha256": "75280bc25629cedc24b6f82a3c9db9bd847af545a36e0ea9a26b7b9b3e2bea88"
+    }
+  ],
+  "drift": 0
+}

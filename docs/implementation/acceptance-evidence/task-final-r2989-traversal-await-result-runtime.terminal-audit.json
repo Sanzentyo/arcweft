@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "run": "task-final-r2989-traversal-await-result-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.102s] 1 test run: 0 passed, 1 failed, 1324 skipped",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 1324,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3983,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::generic_calls::traversal_await_match_infers_an_empty_error_branch_without_a_result_annotation"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T10:23:11.6830738Z"
+}

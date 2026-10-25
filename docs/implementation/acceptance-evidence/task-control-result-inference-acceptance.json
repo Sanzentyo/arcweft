@@ -1,0 +1,218 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "sourceInputs": 3986,
+  "ownedRust": 11,
+  "reversePackages": 22,
+  "manifestInputs": 99,
+  "manifestDrift": 0,
+  "sourceHashDrift": 0,
+  "fullSemaRun": {
+    "catalog": "task-final-r2998-control-result-closure-catalog",
+    "run": "task-final-r2999-control-result-closure-runtime",
+    "executed": 1356,
+    "passed": 1355,
+    "failed": 0,
+    "aborted": 1,
+    "exitCode": 100,
+    "skipped": 0,
+    "seconds": 97.015,
+    "originalCases": 1348,
+    "originalPassed": 1348,
+    "newCases": [
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::analyzer::semantic_fact_transaction_tests::failed_implicit_branch_synthesis_restores_scope_before_contextual_recheck"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::control_results::contextual_results_constrain_direct_and_nested_generic_arguments_before_probing"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::control_results::control_result_inference_replays_generic_calls_with_the_original_capture"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::control_results::control_result_inference_rejects_conflicts_and_missing_element_evidence"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::control_results::unannotated_control_results_share_context_in_both_branch_orders"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::generic_calls::traversal_await_match_infers_an_empty_error_branch_without_a_result_annotation"
+      },
+      {
+        "status": "PASS",
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::generic_nested_result_mismatch_still_checks_each_outer_candidate_source"
+      },
+      {
+        "status": "ABORT",
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result"
+      }
+    ],
+    "executableInputs": 5,
+    "executableHashDrift": 0
+  },
+  "depthDiagnostic": {
+    "sourceDepth": 32,
+    "depthUnchanged": true,
+    "stackOverride": false,
+    "run": "task-final-r3005-control-result-depth-phases-runtime",
+    "exitCode": 100,
+    "rawStatus": "ABORT",
+    "code": "0xc00000fd",
+    "passedPhases": [
+      "parse"
+    ],
+    "lastPhase": "before publish HIR",
+    "notReached": [
+      "after publish HIR",
+      "final analysis"
+    ],
+    "rootCause": "not yet localized within HIR project staging/publication"
+  },
+  "publicationInputChangesSinceR2999": {
+    "productionChanges": [],
+    "changes": [
+      "Removal of temporary diagnostic output in test fixtures",
+      "Compiler backend tests were already frozen in R2999 but not selected by the Sema-only command"
+    ],
+    "notClaimedRerun": true
+  },
+  "acceptance": {
+    "genericMatch": "Existing acceptance/publication retained; this additional empty-collection inference condition does not reopen the accepted boundary",
+    "parallelNeed": "Not accepted; first-class Source aggregate Need still unconnected",
+    "newCompilerTests": "Not run at this checkpoint",
+    "workspaceCheck": "Not run on the changed Rust source",
+    "reverseRuntime": "Not run on the changed Rust source",
+    "structureGate": "Not run on the changed owner boundary"
+  },
+  "artifactCopyMove": false,
+  "structure": {
+    "gate": "Not run at this intermediate checkpoint",
+    "measurements": [
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+        "crate": "arcweft-lang-sema",
+        "classification": "production",
+        "bytes": 242486,
+        "physicalLoc": 5586,
+        "basePhysicalLoc": 5544,
+        "growth": 42
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/control_results.rs",
+        "crate": "arcweft-lang-sema",
+        "classification": "production",
+        "bytes": 2911,
+        "physicalLoc": 66,
+        "basePhysicalLoc": 0,
+        "growth": 66
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+        "crate": "arcweft-lang-sema",
+        "classification": "test",
+        "bytes": 386487,
+        "physicalLoc": 11028,
+        "basePhysicalLoc": 11004,
+        "growth": 24
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/tests/control_results.rs",
+        "crate": "arcweft-lang-sema",
+        "classification": "test",
+        "bytes": 4654,
+        "physicalLoc": 131,
+        "basePhysicalLoc": 0,
+        "growth": 131
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/tests/generic_calls.rs",
+        "crate": "arcweft-lang-sema",
+        "classification": "test",
+        "bytes": 36426,
+        "physicalLoc": 1076,
+        "basePhysicalLoc": 1031,
+        "growth": 45
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+        "crate": "arcweft-lang-sema",
+        "classification": "production",
+        "bytes": 292374,
+        "physicalLoc": 7075,
+        "basePhysicalLoc": 7023,
+        "growth": 52
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/types/constraints/transaction.rs",
+        "crate": "arcweft-lang-sema",
+        "classification": "production",
+        "bytes": 91796,
+        "physicalLoc": 2414,
+        "basePhysicalLoc": 2354,
+        "growth": 60
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/callable/constraints.rs",
+        "crate": "arcweft-lang-sema",
+        "classification": "production",
+        "bytes": 111994,
+        "physicalLoc": 2728,
+        "basePhysicalLoc": 2718,
+        "growth": 10
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/tests.rs",
+        "crate": "arcweft-lang-sema",
+        "classification": "test",
+        "bytes": 69236,
+        "physicalLoc": 1836,
+        "basePhysicalLoc": 1795,
+        "growth": 41
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+        "crate": "arcweft-compiler",
+        "classification": "test",
+        "bytes": 48765,
+        "physicalLoc": 1720,
+        "basePhysicalLoc": 1718,
+        "growth": 2
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/control_results.rs",
+        "crate": "arcweft-compiler",
+        "classification": "test",
+        "bytes": 1722,
+        "physicalLoc": 53,
+        "basePhysicalLoc": 0,
+        "growth": 53
+      }
+    ],
+    "disposition": "The existing expression owner retains contextual checking and final fact publication. The new private branch-result module owns only rollback type synthesis and delegates joining to common_type. Candidate constraint preparation retains source coordinates and function specialization. The sole TypeConstraintTransaction owns equation timing, inference rows, metered forks and final validation; the callable driver only delegates. No Cargo edge, I/O, facade or independent unifier was added. The large test owner retains actual candidate evaluation protocol assertions; new branch fixtures follow the same inference boundary."
+  },
+  "ownerClippy": {
+    "run": "task-final-r3006-control-result-owner-clippy",
+    "exitCode": 0,
+    "warnings": true,
+    "cargoDuration": "3m 20s",
+    "allTargets": true,
+    "allFeatures": true,
+    "locked": true,
+    "sourceInputs": 3986,
+    "sourceDrift": 0
+  }
+}

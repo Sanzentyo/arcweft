@@ -858,6 +858,16 @@ where
             .constrain(self.context, pattern, actual, acceptance);
     }
 
+    pub(crate) fn constrain_result(
+        &mut self,
+        pattern: &TypeKind,
+        actual: &TypeKind,
+        acceptance: ConstraintAcceptance,
+    ) {
+        self.lower
+            .constrain_result(self.context, pattern, actual, acceptance);
+    }
+
     pub(crate) fn constrain_effect_equality(
         &mut self,
         left: &crate::effect_row::EffectRow,

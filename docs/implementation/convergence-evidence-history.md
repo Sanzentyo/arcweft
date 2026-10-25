@@ -11549,3 +11549,51 @@ Native-Web capture parityの包括受入とはしない。Source Traverse構築�
 現状一覧の重複説明はLuna／maxの縮約を親が照合し、現在の判定を唯一の一覧へ反映した。
 [前段Semaの終端](acceptance-evidence/task-final-r2979-traversal-registered-sema-runtime.terminal-audit.json)も履歴として保持する。
 [保全一覧](acceptance-evidence/task-traversal-sema-reverse-evidence-integrity.json)。
+
+## 条件分岐の結果型とgeneric引数文脈の途中検証 — 2026-10-25
+
+基点は公開main `674c6f5ae45743e6ea45f45dbf75e18c94b760a5`。前段は資料・証拠19 pathを通常公開した。
+parent `843947a2c595368e323bbc4d57981053e1fb5e6c`、tree `552f5688e9fc6da32899bd0598b155a3fd3d45cd`、
+full patch SHA256 `88ae61870699b0f6ee59ab6949948d0ebe831602691faf8393e2999c58b8bcca`。
+全19公開blobと原本14件のbyte差分0、元tracked WIP 14件不変、index空を確認した。
+[公開照合](acceptance-evidence/task-sema-reverse-status-checkpoint.verified.json)、
+[原本の公開byte照合](acceptance-evidence/task-sema-reverse-public-evidence-audit.json)。
+
+R2987で観測したtraverse利用のCLI最終型未確定から、外側の結果型注釈がないResult Matchの空配列分岐を切り出した。
+R2989の1件は実際にFAILした。修復はif／if-let／Matchの独立に定まるbranch型を既存common_typeで結び、
+全branchを同じ期待型で最終検査する。試行中のfact／call／captureは元transactionでrollbackする。
+全branchが型を供給できない場合は型注釈を要求し、矛盾・Abort・Invariantを成功へ変換しない。
+Neverも有効な結果型として保持する。implicit callableのbody失敗でも元scopeをpopしてから伝播する。
+
+呼出しの通常result equationは同じconstraint ownerで引数のprobe前に登録し、generic空配列へ型文脈を供給する。
+型推論が不成立でも同じ最終equationを残してauthored sourceの検査を完了し、close時の正規検査で拒否する。
+独立unifierや成功fallbackは追加していない。試行用forkは既存のmetered forkを使い、work／branchを返還しない。
+Function-value specializationは従来のsource検査・projection後に閉じる。
+
+| 実行 | 実際の結果 | 診断・修正 |
+|---|---|---|
+| R2988／R2989 | 1実行、0 PASS／1 FAIL、終了100 | Result Matchの空BracketSequenceの型が未確定。 |
+| R2990 | catalog build終了101、runtime未開始 | path-loaded moduleの明示path不足。修正した。 |
+| R2992／R2993 | 1,352実行、1,350 PASS／2 FAIL、終了100 | 新fixtureの宣言区切りとgeneric identity空配列。旧1,348件はPASS。 |
+| R2994／R2995 | 2実行、1 PASS／1 FAIL、終了100 | 宣言区切りを修正。generic Matchの型文脈不足を再現。 |
+| R2996／R2997 | 1,353実行、1,352 PASS／1 FAIL、終了100 | result mismatchがsource probeを省略し、既存のphysical回数が3から2へ減った。assertionを保持してownerを修正した。 |
+| R2998／R2999 | 1,356実行、1,355 PASS／1 ABORT、終了100、97.015秒 | 既存1,348件と追加7件はPASS。追加32階層Never入力が0xc00000fdで異常終了。 |
+| R3000 | catalog build終了101、runtime未開始 | 診断用size_ofの型qualification不足。修正した。 |
+| R3002／R3003 | 1実行、0 PASS／1 ABORT、終了100 | fixtureより前のmarkerだけを出力。意味解析に未到達。 |
+| R3004／R3005 | 1実行、0 PASS／1 ABORT、終了100、5.577秒 | parseの前後を通過し、HIR公開前marker後に異常終了。HIR公開後・final analysisには未到達。 |
+
+32階層・stack設定・資源上限を変えず、診断用printだけを公開前に削除した。R2999以降のproduction Rustは同一。
+一方、診断printを含めたテスト入力のhashが異なるため、別入力の再実行成功とは呼ばない。
+R2999の3,986非文書入力・5 executable、各診断実行のsource入力は前後hash差分0。99 manifest／lockは不変。
+ABORTを通常のassertion FAILやPASSに置換していない。build失敗2回の原logと実exit101も保全した。
+新Compiler 2件はR2999のsource freezeに含むが、Sema-only選択では実行されていない。
+
+本cutはユーザーの途中commit方針に従い、未解決の再現テストと未実行のconsumer検証を明示して公開する。
+既存Generic Matchの受入・公開full SHAは維持し、Source parallelのaggregate Need実行を成立したとはしない。
+[case・実行範囲](acceptance-evidence/task-control-result-inference-acceptance.json)、
+[全原本のbyte保全一覧](acceptance-evidence/task-control-result-inference-evidence-integrity.json)。
+
+R3006のSema／Compiler全target・全feature・locked Clippyは終了0・警告あり、Cargo表示3m20s。
+診断print除去後の3,986非文書入力の前後hash差分0。
+大きい既存ownerの責任・state・private delegationと各pathのphysical LOC／増加は
+[本cutのownership disposition](acceptance-evidence/task-control-result-inference-acceptance.json)へ記録した。

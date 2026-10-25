@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "name": "task-final-r2988-traversal-await-result-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(=final_analysis::tests::generic_calls::traversal_await_match_infers_an_empty_error_branch_without_a_result_annotation)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2988-traversal-await-result-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T10:22:09.8330766Z",
+  "finishedAt": "2026-10-25T10:23:06.1680436Z"
+}

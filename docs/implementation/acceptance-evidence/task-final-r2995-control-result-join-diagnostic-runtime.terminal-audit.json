@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "run": "task-final-r2995-control-result-join-diagnostic-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.220s] 2 tests run: 1 passed, 1 failed, 1326 skipped",
+  "executed": 2,
+  "passed": 1,
+  "failed": 1,
+  "skipped": 1326,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3985,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::control_results::control_result_inference_replays_generic_calls_with_the_original_capture"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T10:39:03.5150389Z"
+}

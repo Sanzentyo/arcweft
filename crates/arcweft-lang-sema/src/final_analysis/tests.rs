@@ -85,6 +85,8 @@ mod collections;
 mod compile_time_scalars;
 #[path = "tests/content_callables.rs"]
 mod content_callables;
+#[path = "tests/control_results.rs"]
+mod control_results;
 #[path = "tests/data_callables.rs"]
 mod data_callables;
 #[path = "tests/dialogue_mark_authority.rs"]
@@ -8979,7 +8981,30 @@ fn caller() { choose(identity(1i64)); }
             TestCallableOverload::strict([TypeKind::U64], TypeKind::U64),
         ],
     );
-    let report = analyze(&fixture).expect("nested contextual call analysis");
+    assert_nested_call_candidate_rechecks(&fixture);
+}
+
+#[test]
+fn generic_nested_result_mismatch_still_checks_each_outer_candidate_source() {
+    let fixture = typed_overload_fixture(
+        r"
+fn wrap<T>(value: T) -> Vec<T> { [value] }
+fn caller() { choose(wrap(1i64)); }
+",
+        "choose",
+        vec![
+            TestCallableOverload::strict([TypeKind::Vec(Box::new(TypeKind::I64))], TypeKind::I64),
+            TestCallableOverload::strict(
+                [TypeKind::Option(Box::new(TypeKind::I64))],
+                TypeKind::I64,
+            ),
+        ],
+    );
+    assert_nested_call_candidate_rechecks(&fixture);
+}
+
+fn assert_nested_call_candidate_rechecks(fixture: &Fixture) {
+    let report = analyze(fixture).expect("nested contextual call analysis");
     let outer = report
         .calls()
         .map(|(_, facts)| facts)
@@ -9003,9 +9028,8 @@ fn caller() { choose(identity(1i64)); }
         .filter(|evaluation| evaluation.call_expression() == inner.expression())
         .collect::<Vec<_>>();
     assert_eq!(outer_physical.len(), 3);
-    // Each exact outer attempt evaluates the singleton inner call once: the
-    // I64 probe, the U64 probe, and the selected outer replay. The inner call
-    // itself remains a singleton probe in all three attempts.
+    // Both outer probes and the selected replay check the singleton inner
+    // source once, including an incompatible expected result.
     assert_eq!(inner_physical.len(), 3);
     assert_eq!(
         outer_physical[2].pass(),

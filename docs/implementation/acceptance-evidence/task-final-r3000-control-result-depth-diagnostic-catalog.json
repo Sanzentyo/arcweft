@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "name": "task-final-r3000-control-result-depth-diagnostic-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(=final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3000-control-result-depth-diagnostic-catalog.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-25T11:08:16.5150758Z",
+  "finishedAt": "2026-10-25T11:09:18.1006103Z"
+}

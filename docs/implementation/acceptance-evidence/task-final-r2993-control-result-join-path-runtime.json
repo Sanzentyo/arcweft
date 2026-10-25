@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "name": "task-final-r2993-control-result-join-path-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2993-control-result-join-path-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T10:35:04.7327170Z",
+  "finishedAt": "2026-10-25T10:36:50.0787306Z"
+}

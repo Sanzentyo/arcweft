@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "name": "task-final-r3006-control-result-owner-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-lang-sema",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3006-control-result-owner-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T11:25:05.0657646Z",
+  "finishedAt": "2026-10-25T11:28:28.1042268Z"
+}

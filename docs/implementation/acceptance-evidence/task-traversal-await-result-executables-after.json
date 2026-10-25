@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2988-traversal-await-result-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83844608,
+      "nonTest": false,
+      "sha256": "89392f8572ba3e5473c48aa5296b3d017f4e8e7f1d3b01432048f1c9e6494a6a"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T10:23:09.3834255Z"
+}

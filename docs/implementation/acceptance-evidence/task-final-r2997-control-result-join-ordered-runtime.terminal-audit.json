@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "run": "task-final-r2997-control-result-join-ordered-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  94.282s] 1353 tests run: 1352 passed, 1 failed, 0 skipped",
+  "executed": 1353,
+  "passed": 1352,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3985,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::nested_call_is_rechecked_inside_each_outer_candidate_pass"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T10:49:22.9121776Z"
+}

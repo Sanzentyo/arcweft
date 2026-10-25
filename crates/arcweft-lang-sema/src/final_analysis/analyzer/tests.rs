@@ -1793,3 +1793,44 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
         ));
     }
 }
+
+#[test]
+fn failed_implicit_branch_synthesis_restores_scope_before_contextual_recheck() {
+    let fixture = crate::final_analysis::tests::fixture(
+        "fn root() { let callback = if _ { [] } else { [] }; }\n",
+        None,
+    );
+    let project = fixture.project.analysis_view().expect("executable HIR");
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::If(_)).then_some(owner)
+        })
+        .expect("implicit callable control body");
+    let cancellation = AtomicBool::new(false);
+    let mut analyzer = Analyzer::new(
+        project,
+        &fixture.symbols,
+        FinalSemanticCatalogs::production(&fixture.registered),
+        FinalSemanticAnalysisControl::new(&cancellation),
+    )
+    .unwrap();
+    let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+    assert!(matches!(
+        analyzer.evaluate_expression(&context, owner, None),
+        Err(AnalyzerExpressionError::Rejected(_))
+    ));
+    assert!(analyzer.implicit_callable_stack.is_empty());
+    assert!(!analyzer.facts.expressions().contains_key(&owner));
+    let expected = TypeKind::function_with_effects(
+        [TypeKind::Bool],
+        TypeKind::Vec(Box::new(TypeKind::I64)),
+        crate::effect_row::EffectRow::closed(EffectSet::new()),
+    );
+    let checked = analyzer
+        .evaluate_expression(&context, owner, Some(&expected))
+        .expect("the same source can be checked with its real function context");
+    assert_eq!(checked.value_type(), Some(&expected));
+    assert!(analyzer.implicit_callable_stack.is_empty());
+}

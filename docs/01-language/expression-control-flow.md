@@ -141,6 +141,14 @@ Rules:
 - guards use `when`.
 ```
 
+An enclosing expected result type constrains every branch of `if`, `if let`,
+and `match`. Without that outer context, independently determined branch types
+provide context for branches that need it, including empty collections and
+generic calls. Swapping branch order does not change the inferred common type.
+Every branch must still type-check; incompatible results are rejected. If no
+branch or enclosing context determines the element type of an empty collection,
+a type annotation is required.
+
 ## `loop` expression with `break expr`
 
 `loop` can return a value.

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2994-control-result-join-diagnostic-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83883520,
+      "nonTest": false,
+      "sha256": "06b7c1a5286277ea5ed6b9e243fdefabc5f59ac9f6813537d9e7364e5975a6ff"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T10:39:01.3701461Z"
+}

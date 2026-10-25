@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "commit": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "parent": "843947a2c595368e323bbc4d57981053e1fb5e6c",
+  "tree": "552f5688e9fc6da32899bd0598b155a3fd3d45cd",
+  "remote": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-current-status-luna-compaction.audit.json",
+      "blob": "f7b8c74501527eb532ca273d31c35ff5cf54ae0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2986-traversal-sema-reverse-catalog.inventory.json",
+      "blob": "7b4e83fea1b3e20ee37478f8d82ad50dee1f536b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2986-traversal-sema-reverse-catalog.json",
+      "blob": "c9fb8bd90cb1fe8e5cd856df041cfe1194f82433"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2986-traversal-sema-reverse-catalog.log",
+      "blob": "4d031dc99e2e8c146dffc328c741b8ac0743a644"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2987-traversal-sema-reverse-runtime.failure-recon.json",
+      "blob": "454ecd10abf76789cebe176aaed457e78286d780"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2987-traversal-sema-reverse-runtime.json",
+      "blob": "7c2f5e0f929ff5bef2d77dd561a91492a4901175"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2987-traversal-sema-reverse-runtime.log",
+      "blob": "7a1b3bd7e354c15b476ed6a666ae8b9dcefc03e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2987-traversal-sema-reverse-runtime.terminal-audit.json",
+      "blob": "3badcb6e302d071bb7e4d4d27252ceeaf85564cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-public-evidence-audit.json",
+      "blob": "5a2d3a1e6be375644ff8925331a361369474642b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-registered-source-checkpoint.verified.json",
+      "blob": "ec4f858dd8017cfb5f5acf1487df6b5d485800b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-reverse-acceptance.json",
+      "blob": "a7a7fd41a24584b311eb15432178bc2c8e99df68"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-reverse-evidence-integrity.json",
+      "blob": "f416cebc9fe22723616a334753cf48aa1b2d65ea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-reverse-executables-after.json",
+      "blob": "0c4ba05a7c17d2b6da4d19b409a41615d050f406"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-reverse-executables-before.json",
+      "blob": "6a0cc461dd1401d85bf71d453112c1a5f7b256d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-reverse.graph.json",
+      "blob": "29538b61e704d824168a7acd2849c41893f449d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-reverse.source-freeze.json",
+      "blob": "95a86498dd0d2e92ab60ca9c18ce6f0abd362495"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "c2094f986cffee33936df4202ea3e395f1e15e69"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "d398bdb111cb543cf14e94cd4a78d97595b438af"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "89fbb29b8858a1bebb6a49247c167b4d6b902a38"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "88ae61870699b0f6ee59ab6949948d0ebe831602691faf8393e2999c58b8bcca",
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-25T10:18:08.9334119Z"
+}

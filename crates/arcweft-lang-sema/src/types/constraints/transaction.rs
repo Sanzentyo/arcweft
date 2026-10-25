@@ -41,6 +41,12 @@ pub(crate) struct PendingEquation {
     pub(crate) final_expected: Option<TypeKind>,
 }
 
+#[derive(Clone, Copy)]
+enum ConstraintEquationTiming {
+    Immediate,
+    ResultContext,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ChoiceForkRole {
     ExpectedAlternative,
@@ -844,40 +850,64 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         }
     }
 
-    pub(crate) fn constrain<A>(
+    pub(crate) fn constrain<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
         pattern: &TypeKind,
         actual: &TypeKind,
         acceptance: ConstraintAcceptance,
-    ) where
-        A: TypeConstraintAccounting,
-    {
-        if self.first_failure.is_some() || self.closed {
-            return;
+    ) {
+        if let Err(error) = self.constrain_equation(
+            context,
+            pattern,
+            actual,
+            acceptance,
+            ConstraintEquationTiming::Immediate,
+        ) {
+            self.first_failure = Some(error.into());
         }
-        let ordinal = match self.next_equation.checked_add(1) {
-            Some(next) => {
-                self.next_equation = next;
-                next - 1
-            }
-            None => {
-                self.first_failure = Some(
-                    TypeConstraintError::Abort(TypeConstraintAbort::ArithmeticOverflow).into(),
-                );
-                return;
-            }
-        };
+    }
+
+    /// Retains one result equation for final validation while using a
+    /// satisfiable relation to guide source inference. A contradictory result
+    /// does not skip the candidate's authored source-checking protocol.
+    pub(crate) fn constrain_result<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        pattern: &TypeKind,
+        actual: &TypeKind,
+        acceptance: ConstraintAcceptance,
+    ) {
+        if let Err(error) = self.constrain_equation(
+            context,
+            pattern,
+            actual,
+            acceptance,
+            ConstraintEquationTiming::ResultContext,
+        ) {
+            self.first_failure = Some(error.into());
+        }
+    }
+
+    fn constrain_equation<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        pattern: &TypeKind,
+        actual: &TypeKind,
+        acceptance: ConstraintAcceptance,
+        timing: ConstraintEquationTiming,
+    ) -> Result<(), TypeConstraintError> {
+        if self.first_failure.is_some() || self.closed {
+            return Ok(());
+        }
+        let ordinal = self.next_equation;
+        self.next_equation = ordinal.checked_add(1).ok_or(TypeConstraintError::Abort(
+            TypeConstraintAbort::ArithmeticOverflow,
+        ))?;
         let frontier = core::mem::take(&mut self.frontier);
         let mut advanced = Vec::new();
         for mut path in frontier {
-            let pattern = match context.open_template_type(pattern, &path, self.application) {
-                Ok(pattern) => pattern,
-                Err(error) => {
-                    self.first_failure = Some(error.into());
-                    return;
-                }
-            };
+            let pattern = context.open_template_type(pattern, &path, self.application)?;
             path.equations.push(PendingEquation {
                 ordinal: ConstraintEquationId {
                     application: self.application,
@@ -889,20 +919,50 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 source_ordinal: None,
                 final_expected: None,
             });
-            match relate_selected_call(&pattern, actual, path, context, acceptance) {
-                Ok(paths) => advanced.extend(paths),
-                Err(error) => {
-                    self.first_failure = Some(error.into());
-                    return;
+            let retained = match timing {
+                ConstraintEquationTiming::Immediate => None,
+                ConstraintEquationTiming::ResultContext => {
+                    let pattern_hint = project_type(
+                        &pattern,
+                        path.projection_view(),
+                        ConstraintClosurePolicy::Hint,
+                        context,
+                    )?;
+                    let actual_hint = project_type(
+                        actual,
+                        path.projection_view(),
+                        ConstraintClosurePolicy::Hint,
+                        context,
+                    )?;
+                    if pattern_hint.remaining.is_empty() && actual_hint.remaining.is_empty() {
+                        advanced.push(path);
+                        continue;
+                    }
+                    // The same metered fork used by source alternatives
+                    // protects the pre-inference row. No source authority is
+                    // copied through an independent path or key constructor.
+                    let inference = context.fork_path(&path)?;
+                    Some(core::mem::replace(&mut path, inference))
                 }
+            };
+            match relate_selected_call(&pattern, actual, path, context, acceptance) {
+                Ok(paths) if !paths.is_empty() => advanced.extend(paths),
+                Ok(_) => {
+                    if let Some(original) = retained {
+                        advanced.push(original);
+                    }
+                }
+                Err(TypeConstraintError::Rejected(_)) if retained.is_some() => {
+                    advanced.push(retained.expect("a result inference row retains its obligation"));
+                }
+                Err(error) => return Err(error),
             }
         }
         if advanced.is_empty() {
-            self.first_failure =
-                Some(TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch).into());
-        } else {
-            self.frontier = advanced;
+            return Err(TypeConstraintRejection::Mismatch.into());
         }
+        self.frontier = advanced;
+        Ok(())
     }
 
     /// Adds fixed row evidence to the same path-local effect environment used

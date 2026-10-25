@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "674c6f5ae45743e6ea45f45dbf75e18c94b760a5",
+  "name": "task-final-r2989-traversal-await-result-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(=final_analysis::tests::generic_calls::traversal_await_match_infers_an_empty_error_branch_without_a_result_annotation)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2989-traversal-await-result-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T10:23:07.3291533Z",
+  "finishedAt": "2026-10-25T10:23:09.0617311Z"
+}
