@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "commit": "c985b52c024f049113be24933e683428920e53b6",
+  "parent": "b29ece5177278a7638220116d2c7eaa7908776df",
+  "tree": "2ac4d96f141837f982a2ca23963b4d0d3e5d5d0e",
+  "remote": "c985b52c024f049113be24933e683428920e53b6",
+  "advertised": "c985b52c024f049113be24933e683428920e53b6",
+  "paths": [
+    {
+      "path": "docs/02-runtime/core.md",
+      "blob": "0d7f0fc41898aaf0dc1d367492428e6ea9d7cbf6",
+      "workingBlob": "0d7f0fc41898aaf0dc1d367492428e6ea9d7cbf6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-core-contract-doc-audit.json",
+      "blob": "44536d9cf7ceda8a22240093e336a6c081813d35",
+      "workingBlob": "44536d9cf7ceda8a22240093e336a6c081813d35"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-owner-reverse-checkpoint.verified.json",
+      "blob": "8afc70394778842f4bf21c543cae15772b849402",
+      "workingBlob": "8afc70394778842f4bf21c543cae15772b849402"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "a5b80b4de1e2eedcb338bb9612b54c46d246b48c",
+      "workingBlob": "a5b80b4de1e2eedcb338bb9612b54c46d246b48c"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "5e0c079582215fd82404ff77223b4740649e3c2b",
+      "workingBlob": "5e0c079582215fd82404ff77223b4740649e3c2b"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "blob": "a9ed7e8ed05e7a8face31b79505f9d00cfd30ece",
+      "workingBlob": "a9ed7e8ed05e7a8face31b79505f9d00cfd30ece"
+    }
+  ],
+  "sourceCount": 6519,
+  "sourceDrift": 0,
+  "heldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc",
+  "patchSha256": "a0cafbe57178d950c363903d8d5d3bfb62e07695999b3dcccc13a41d1a2a0094",
+  "indexEmpty": true,
+  "verifiedAt": "2026-10-25T01:50:06.2657457Z"
+}

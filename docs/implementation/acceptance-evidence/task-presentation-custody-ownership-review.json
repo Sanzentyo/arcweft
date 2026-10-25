@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "workingTree": "dirty; original 14 tracked WIP and 6 untracked files preserved",
+  "sourcePaths": [
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "package": "arcweft-core",
+      "classification": "production; cfg(test) assertions separately identified",
+      "baseLines": 5736,
+      "physicalLines": 5703,
+      "bytes": 229362
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "baseLines": 353,
+      "physicalLines": 354,
+      "bytes": 12361
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "baseLines": 0,
+      "physicalLines": 290,
+      "bytes": 10774
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation.rs",
+      "package": "arcweft-core",
+      "classification": "production; cfg(test) assertions separately identified",
+      "baseLines": 176,
+      "physicalLines": 191,
+      "bytes": 7548
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/rollback.rs",
+      "package": "arcweft-core",
+      "classification": "production; cfg(test) assertions separately identified",
+      "baseLines": 1122,
+      "physicalLines": 1159,
+      "bytes": 47019
+    },
+    {
+      "path": "crates/arcweft-core/src/entry/schema.rs",
+      "package": "arcweft-core",
+      "classification": "production; cfg(test) assertions separately identified",
+      "baseLines": 1393,
+      "physicalLines": 1401,
+      "bytes": 45199
+    },
+    {
+      "path": "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+      "package": "arcweft-core",
+      "classification": "production; cfg(test) assertions separately identified",
+      "baseLines": 1875,
+      "physicalLines": 1938,
+      "bytes": 71642
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "package": "arcweft-core",
+      "classification": "production; cfg(test) assertions separately identified",
+      "baseLines": 465,
+      "physicalLines": 465,
+      "bytes": 15831
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+      "package": "arcweft-core",
+      "classification": "production; cfg(test) assertions separately identified",
+      "baseLines": 283,
+      "physicalLines": 336,
+      "bytes": 12168
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "package": "arcweft-core",
+      "classification": "production; cfg(test) assertions separately identified",
+      "baseLines": 677,
+      "physicalLines": 676,
+      "bytes": 25024
+    },
+    {
+      "path": "crates/arcweft-core/src/value/ownership.rs",
+      "package": "arcweft-core",
+      "classification": "production; cfg(test) assertions separately identified",
+      "baseLines": 599,
+      "physicalLines": 605,
+      "bytes": 22964
+    }
+  ],
+  "authority": "PresentationLedger owns issuance, dynamic scopes and bodies. Its non-clone admission contour is moved with the existing ValueResourceAdmission; the canonical bounded visitor checks every retained opaque handle, including partial places, without another graph walk or allowance.",
+  "nativeOwner": "Engine live capture and rollback share admit_live_retained_values. All headers precede body admission. Retired bodies retain their existing typed owner; its token header does not issue a live lease. Failed registration returns the candidate before scope/slot/cursor mutation.",
+  "cohesion": "Existing engine/rollback, presentation storage and canonical value visitor retain their named responsibilities; no new production file, facade, Cargo edge, I/O or unsafe. Tests use actual typed frame storage and inert rollback candidates.",
+  "workspaceGateReuse": "R2922/R2923 predate only the two cfg(test) assertion updates recorded in task-presentation-custody-rejection-scope.json. Production is unchanged; final R2927 checks Core all-targets/all-features. R2924 structural ownership and graph are unchanged by those assertions.",
+  "scopeLimit": "Source Presentation commands, View construction/mount authority, Dialogue activation bank, AWBC ledger/command execution and driver connection remain outside this cut."
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "name": "task-final-r2915-presentation-custody-core-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2915-presentation-custody-core-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-25T01:57:22.3810283Z",
+  "finishedAt": "2026-10-25T01:58:19.8874882Z"
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "name": "task-final-r2927-presentation-custody-final-core-clippy",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2927-presentation-custody-final-core-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T02:20:13.4156109Z",
+  "finishedAt": "2026-10-25T02:22:07.6381892Z"
+}

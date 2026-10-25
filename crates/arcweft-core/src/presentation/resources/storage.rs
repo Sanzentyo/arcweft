@@ -76,15 +76,45 @@ impl Clone for PresentationRetirement<PresentationBody<AwbcRuntimeValueSnapshot>
     }
 }
 
-/// Read-only evidence minted after the complete ledger passed the original
-/// retained bank. It cannot issue a grant or mutate live resource ownership.
-pub(crate) struct PresentationScopeAdmission {
+/// One admission contour created after all ledger headers pass the original
+/// bank, before their bodies are traversed. Observing each owning value consumes
+/// its occurrence here; the contour cannot issue grants or live handles.
+pub(crate) struct PresentationAdmission {
     program: RuntimeProgramOwner,
     scopes: BTreeMap<RuntimeScopeInstanceId, (ExecutionInstanceId, RuntimePersistentFiberId)>,
     unseen: std::collections::BTreeSet<RuntimeScopeInstanceId>,
+    handles: std::collections::BTreeSet<RuntimePresentationHandleToken>,
+    seen_handles: std::collections::BTreeSet<RuntimePresentationHandleToken>,
+    detached: std::collections::BTreeSet<RuntimePresentationHandleToken>,
 }
 
-impl PresentationScopeAdmission {
+impl PresentationAdmission {
+    pub(crate) fn admit_handle(
+        &mut self,
+        token: &RuntimePresentationHandleToken,
+    ) -> Result<(), crate::entry::RuntimeSchemaError> {
+        use crate::entry::RuntimeSchemaError;
+        if !self.handles.contains(token) {
+            return Err(RuntimeSchemaError::PresentationHandleCustody {
+                path: String::new(),
+                token: token.clone(),
+                duplicate: false,
+            });
+        }
+        if !self.seen_handles.insert(token.clone()) {
+            return Err(RuntimeSchemaError::PresentationHandleCustody {
+                path: String::new(),
+                token: token.clone(),
+                duplicate: true,
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn include_retirement(&mut self, token: &RuntimePresentationHandleToken) {
+        self.handles.insert(token.clone());
+    }
+
     pub(crate) fn accepts(&mut self, binding: &PresentationScopeBinding) -> bool {
         self.program.same_program(&binding.program)
             && self.scopes.get(&binding.owner.scope)
@@ -93,17 +123,17 @@ impl PresentationScopeAdmission {
     }
 
     pub(crate) fn complete(&self) -> bool {
-        self.unseen.is_empty()
+        self.unseen.is_empty() && self.detached.is_subset(&self.seen_handles)
     }
 }
 
 impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
-    pub(crate) fn admit_retained(
+    pub(crate) fn admit_ownership(
         &self,
         owner: &RuntimeProgramOwner,
         artifact: RuntimeArtifactFingerprint,
         admission: &mut RuntimeRetainedValueAdmission,
-    ) -> Result<PresentationScopeAdmission, AwbcRuntimeValueSnapshotError> {
+    ) -> Result<PresentationAdmission, AwbcRuntimeValueSnapshotError> {
         let invalid =
             || AwbcRuntimeValueSnapshotError::from(RuntimePresentationError::InvalidState);
         if !self.program.same_program(owner)
@@ -145,7 +175,7 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
             {
                 return Err(invalid());
             }
-            if let Some(body) = &lease.body {
+            if lease.body.is_some() {
                 if let PresentationRegistrationSite::Slot(address) = &lease.site {
                     admission
                         .validate_metadata(&(address.target.as_str(), address.slot.as_str()))?;
@@ -153,14 +183,37 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
                         return Err(invalid());
                     }
                 }
-                body.admit_retained(admission)?;
             }
         }
-        Ok(PresentationScopeAdmission {
+        Ok(PresentationAdmission {
             program: self.program.clone(),
             unseen: self.scopes.keys().copied().collect(),
             scopes: self.scopes.clone(),
+            handles: self
+                .leases
+                .values()
+                .map(|lease| lease.token.clone())
+                .collect(),
+            seen_handles: Default::default(),
+            detached: self
+                .leases
+                .values()
+                .filter(|lease| lease.owner.is_none())
+                .map(|lease| lease.token.clone())
+                .collect(),
         })
+    }
+
+    pub(crate) fn admit_bodies(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        for lease in self.leases.values() {
+            if let Some(body) = &lease.body {
+                body.admit_retained(admission)?;
+            }
+        }
+        Ok(())
     }
 }
 

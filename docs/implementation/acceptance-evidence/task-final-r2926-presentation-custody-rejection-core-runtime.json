@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "name": "task-final-r2926-presentation-custody-rejection-core-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2926-presentation-custody-rejection-core-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T02:20:13.4261083Z",
+  "finishedAt": "2026-10-25T02:30:37.2621136Z"
+}

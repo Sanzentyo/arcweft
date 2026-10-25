@@ -11104,3 +11104,56 @@ R2908ではその失敗50識別子がすべて選択され再び失敗し、追�
 build生成物の移動・コピーはしていない。
 [原本保全一覧](acceptance-evidence/task-presentation-owner-reverse-evidence-integrity.json)。
 元のtracked WIP 14件とuntracked実ファイル6件を保持した。
+
+## Presentation Handle保持グラフとbodyへの所有権移動 — 2026-10-25
+
+基点は公開main `c985b52c024f049113be24933e683428920e53b6`。Core 11 source pathを変更し、
+従来のscope grant照合に加えて、元ledgerと回収待ちheaderに対するHandleの完全一致・
+owning value間の一意性を、既存のbounded value visitorへ接続した。
+これはSource実行ABIの公開前に必要な保持値境界で、先行のscope／cleanup受入を取り消すものではない。
+ledger headerの事前検査後に作るnon-clone contourは、body、環境の完全／部分place、継続・rootの
+資源検査と同じbankで移動し、停止・再開で観測済みHandleを再発行しない。
+scopeが暗黙cleanupを所有するleaseと、明示Handleを要するdetached leaseを区別した。
+
+Native body登録の候補も既存live状態と同じbankで検査するようにし、rollbackと共通の
+`admit_live_retained_values` を使用する。元の型・function binding・custodyの検査より前に
+scope束縛・slot置換・cursor更新を行わない。失敗時は候補bodyを返す。
+新規production file、Cargo edge、I/O、unsafeは追加していない。
+[所有責務と実測](acceptance-evidence/task-presentation-custody-ownership-review.json)。
+
+R2915 Core checkは新しいschema errorの網羅分岐不足で終了101。
+R2916も新fixtureのbuilder import・local ID参照・inert環境にlive用get/setを使った点で終了101だった。
+修正後のR2917 catalogは途中入力の2,073件、後続R2918 catalogは4件の新規testを含む2,074件。
+R2919はPresentation対象30件を実行し、**29 PASS／1 FAIL**、終了100、0.360秒、2,044非選択。
+新規4件はすべてPASSしたが、ledgerを持たないtokenの既存fixtureが一般的な `AffineValue` を
+期待しており、新しい厳密なcustody拒否と不一致だった。Copy観測とcustody検査の順序を調整した
+R2920 catalog／R2921全Coreでも、**2,073 PASS／1 FAIL**、終了100、256.702秒、非選択0。
+ownership observerはAffineを記録して全体walk後に拒否するため、この調整だけでは解決しなかった。
+いずれも原結果を保持し、成功として上書きしていない。
+
+最終修復はfixtureの拒否期待値を、実際のtokenと `$[0]` を持つmissing-custody errorへ更新した。
+同時に、正しいledgerを付けてもCopy要求は `AffineValue` で拒否するassertionを追加した。
+拒否条件、予算、timeout、実行量は弱めていない。変更した2箇所はcfg(test)のみでproductionは不変。
+R2925の実行ファイル照合ではintegration 12本も前回とhashが変わっていたため、前回の成功分を
+流用せず、R2926で全2,074件を新規実行した。
+結果は **2,074／2,074 PASS**、終了0、441.912秒、非選択0、slow 2件。
+実際のtyped frameに保持したHandleのrollback、inert候補の二重owner、解放済みlease、
+bank再開時の二重観測とsticky failure、bodyへのHandle移動と回収後rollback、
+重複候補の拒否前後で既存image・cursorが不変であることを確認した。
+3,981非文書入力と13実行ファイルの前後hash差分0。
+[最終全件の終端](acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-presentation-custody-rejection-runtime.audit.json)。
+
+R2922 workspace check／R2923 workspace Clippyはall-targets／all-features／lockedで終了0・警告あり。
+上記cfg(test) assertion更新はこれらの後段にあり、その最終入力はR2927 Core Clippy全targetで
+終了0・警告ありを確認した。workspace gateを最終test bytesの新規実行とは記さない。
+R2924構造gateは3,219 files／3,089 Rust files／97 packages、review trigger 378、blocking 0。
+原本・catalog・照合・公開receipt等47件／18,417,412 bytesをbyte／SHA256一致で保持した。
+[原本保全](acceptance-evidence/task-presentation-custody-evidence-integrity.json)、
+[適用範囲・gate](acceptance-evidence/task-presentation-custody-acceptance.json)。
+
+manifest／lock 99入力は不変で、元のCargo metadataによるCore全53逆依存は同じ閉包だった。
+R2928 catalogを開始した。この記録時点で新入力の横断runtimeは未完了であり、
+前段R2908の151件やCLI失敗を新入力の結果へ読み替えていない。
+Source Presentation命令、View構築／mount authority、Dialogue activationの独立bank、
+AWBC ledger／命令とdriverへの接続の受入は含めない。元14 tracked WIP／6 untracked実ファイルを保持した。

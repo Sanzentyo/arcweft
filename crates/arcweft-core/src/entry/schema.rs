@@ -318,6 +318,14 @@ impl RuntimeSchemaLimits {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum RuntimeSchemaError {
+    #[error(
+        "presentation handle {token:?} at {path} has invalid retained custody (duplicate: {duplicate})"
+    )]
+    PresentationHandleCustody {
+        path: String,
+        token: crate::runtime_id::RuntimePresentationHandleToken,
+        duplicate: bool,
+    },
     #[error(transparent)]
     ValueNesting(#[from] crate::value::RuntimeValueNestingError),
     #[error("runtime builtin variant at `{path}` has owner {actual:?}, expected {expected:?}")]

@@ -16,7 +16,7 @@ use arcweft_interaction_model::presentation::PresentationResourceKind;
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 mod storage;
-pub(crate) use storage::{PresentationBody, PresentationScopeAdmission};
+pub(crate) use storage::{PresentationAdmission, PresentationBody};
 
 /// Dynamic owner, never a scope name or a reusable static instruction coordinate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

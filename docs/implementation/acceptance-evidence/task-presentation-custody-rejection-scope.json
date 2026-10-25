@@ -1,0 +1,9 @@
+{
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "changedSinceR2921": [
+    "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+    "crates/arcweft-core/src/value/ownership.rs"
+  ],
+  "productionChange": "none; reviewed cfg(test)-only diff",
+  "finalInputs": 3981
+}

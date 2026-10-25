@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "name": "task-final-r2922-presentation-custody-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2922-presentation-custody-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T02:12:18.7799754Z",
+  "finishedAt": "2026-10-25T02:14:49.3836575Z"
+}

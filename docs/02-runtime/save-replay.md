@@ -256,6 +256,20 @@ admission で検証する。Root の phase・entry・role と実際の継続 fra
 完全な image の検証に含める。public restore と rollback は同じ所有単位を置き換え、
 Root だけを後置で復元する入口は持たない。
 save 変換の公開入口も同じ image owner の検証を通してから inert 値を複製する。
+
+Native の private rollback に含まれる Presentation ledger は、元 program／artifact、
+発行cursor、動的scope grantとlease headerを先に検証する。その同じ admission contour で、
+body、回収待ちbody、環境の完全／部分place、継続と保持値の `PresentationHandle` を検査する。
+tokenは元のleaseまたは回収待ちの所有headerに完全一致し、同じHandleを複数のowning valueへ
+保持できない。scopeが暗黙のcleanupを所有するleaseは明示Handle値なしでも保持できるが、
+scopeからdetachしたleaseは、保持値のグラフに一意なHandleを必要とする。
+contourと既に観測したHandleはbankの一時停止・再開で移動し、再発行しない。
+
+Presentation bodyへの所有権移動も既存のlive保持状態と同じbankで検査し、元の型・
+function binding・候補body・Handle custodyがすべて成立してからscope束縛と発行へ進む。
+失敗時は候補bodyを呼出側へ返し、既存のbody・slot・発行cursorを変更しない。
+inert tokenのcodec読取りは、このledgerへの取付けやlive Handleの発行権限にはならない。
+
 対話 frame と phase／closing／pending operation は live／inert 共通の owning grammar
 を使い、inert specialization だけが Clone と serde reader を持つ。registry の元の
 activation key、phase と結果、元 activation signature の capture、reveal 後の input、

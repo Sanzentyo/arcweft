@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "finalRun": "task-final-r2926-presentation-custody-rejection-core-runtime",
+  "executed": 2074,
+  "passed": 2074,
+  "failed": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "testBinaries": 13,
+  "binaryDrift": 0,
+  "reusedCases": 0,
+  "newTests": 4,
+  "priorFailedCase": "value::ownership::presentation_custody_tests::presentation_custody_preserves_family_token_and_path_in_live_and_inert_storage",
+  "repair": "Preserve the stricter missing-ledger rejection with exact token/path; separately assert that a valid ledger still grants no Copy entitlement. No timeout, quota, assertion of rejection, or workload was removed.",
+  "gateNames": [
+    "task-final-r2922-presentation-custody-workspace-check",
+    "task-final-r2923-presentation-custody-workspace-clippy",
+    "task-final-r2924-presentation-custody-structure",
+    "task-final-r2927-presentation-custody-final-core-clippy"
+  ],
+  "gateWarnings": "Workspace check, workspace Clippy and final Core Clippy exited 0 with warnings; no zero-warning claim",
+  "reverseClosure": 53,
+  "reverseCatalog": "task-final-r2928-presentation-custody-reverse-catalog",
+  "reverseRuntime": "not yet executed by this receipt",
+  "genericAcceptance": "Accepted/published unchanged; last full 151-case execution remains R2908, not rerun by the Core-only result",
+  "at": "2026-10-25T02:34:13.9593819Z"
+}

@@ -472,15 +472,22 @@ pub(crate) fn validate_admitted_view<V: ValueValidation>(
     )
 }
 
-/// Resource ownership for an admission containing several complete values and
-/// partial places. One owner accumulates logical nodes, value/descriptor bytes,
-/// retained metadata bytes and relation work without refreshing either byte limit.
+// Raw codec walks may inspect inert identity without authorizing retention.
+// A retained owner requires its ledger before any presentation handle is copied.
+enum PresentationCustodyAdmission {
+    Unobserved,
+    Required,
+    Bound(crate::presentation::resources::PresentationAdmission),
+}
+
+/// One allowance and custody contour for complete values and partial places.
 pub(crate) struct ValueResourceAdmission<Work = ValidationWork> {
     budget: ValueBudget,
     work: Work,
     origin: ValueAdmissionOrigin,
     encoding: ValueEncoding,
     program_storage_obligations: bool,
+    presentation: PresentationCustodyAdmission,
 }
 
 /// The same allowance between validation calls, with no shared local handle.
@@ -494,6 +501,7 @@ impl<Work> ValueResourceAdmission<Work> {
             origin: self.origin,
             encoding: self.encoding,
             program_storage_obligations: self.program_storage_obligations,
+            presentation: self.presentation,
         }
     }
 }
@@ -519,6 +527,7 @@ impl ValueResourceAdmission {
             origin,
             encoding,
             program_storage_obligations,
+            presentation,
         } = self;
         match work.try_into_state() {
             Ok(work) => Ok(ValueResourceAdmission {
@@ -527,6 +536,7 @@ impl ValueResourceAdmission {
                 origin,
                 encoding,
                 program_storage_obligations,
+                presentation,
             }),
             Err(work) => Err(Self {
                 budget,
@@ -534,6 +544,7 @@ impl ValueResourceAdmission {
                 origin,
                 encoding,
                 program_storage_obligations,
+                presentation,
             }),
         }
     }
@@ -560,11 +571,38 @@ impl ValueResourceAdmission {
             origin,
             encoding,
             program_storage_obligations: false,
+            presentation: PresentationCustodyAdmission::Unobserved,
         }
     }
 
     pub(crate) fn work(&self) -> ValidationWork {
         self.work.clone()
+    }
+
+    pub(crate) fn require_presentation_custody(&mut self) {
+        self.presentation = PresentationCustodyAdmission::Required;
+    }
+
+    pub(crate) fn bind_presentation(
+        &mut self,
+        proof: crate::presentation::resources::PresentationAdmission,
+    ) -> Result<(), crate::presentation::RuntimePresentationError> {
+        if !matches!(self.presentation, PresentationCustodyAdmission::Required) {
+            return Err(crate::presentation::RuntimePresentationError::InvalidState);
+        }
+        self.presentation = PresentationCustodyAdmission::Bound(proof);
+        Ok(())
+    }
+
+    pub(crate) fn presentation_mut(
+        &mut self,
+    ) -> Option<&mut crate::presentation::resources::PresentationAdmission> {
+        match &mut self.presentation {
+            PresentationCustodyAdmission::Bound(proof) => Some(proof),
+            PresentationCustodyAdmission::Unobserved | PresentationCustodyAdmission::Required => {
+                None
+            }
+        }
     }
 
     pub(crate) fn origin(&self) -> ValueAdmissionOrigin {
@@ -641,10 +679,34 @@ impl ValueResourceAdmission {
         let mut program_storage = false;
         let mut inspect = |value: RuntimeValueView<'_>| {
             program_storage |= value.requires_program_storage_admission();
-            match &mut observer {
-                Some(observer) => observer(value),
-                None => Ok(()),
+            if let Some(observer) = &mut observer {
+                observer(value)?;
             }
+            if !matches!(self.presentation, PresentationCustodyAdmission::Unobserved)
+                && let RuntimeValueView::Opaque(opaque) = value
+                && opaque.value_class() == RuntimeOpaqueValueClass::PresentationHandle
+            {
+                let token = crate::runtime_id::RuntimePresentationHandleToken::try_decode_view(
+                    opaque.payload(),
+                )
+                .map_err(|error| RuntimeSchemaError::Encoding {
+                    message: error.to_string(),
+                })?;
+                match &mut self.presentation {
+                    PresentationCustodyAdmission::Bound(proof) => proof.admit_handle(&token)?,
+                    PresentationCustodyAdmission::Required => {
+                        return Err(RuntimeSchemaError::PresentationHandleCustody {
+                            path: String::new(),
+                            token,
+                            duplicate: false,
+                        });
+                    }
+                    PresentationCustodyAdmission::Unobserved => {
+                        unreachable!("inspection selected a retained bank")
+                    }
+                }
+            }
+            Ok(())
         };
         let mut validation = NoSchemaValidation {
             resources: Some(self.work.clone()),
@@ -869,6 +931,7 @@ impl RuntimeSchemaError {
     fn value_path_mut(&mut self) -> Option<&mut String> {
         match self {
             Self::Arity { path, .. }
+            | Self::PresentationHandleCustody { path, .. }
             | Self::ArrayLength { path, .. }
             | Self::RecordField { path, .. }
             | Self::OpaqueOwner { path }

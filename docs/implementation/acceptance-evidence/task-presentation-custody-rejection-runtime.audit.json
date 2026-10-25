@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "run": "task-final-r2926-presentation-custody-rejection-core-runtime",
+  "testBinaries": 13,
+  "binaryDrift": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "executed": 2074,
+  "passed": 2074,
+  "reusedCases": 0,
+  "at": "2026-10-25T02:32:49.3068821Z"
+}

@@ -1965,45 +1965,12 @@ impl Engine {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        self.admit_presentation_state(&mut admission)
+        self.admit_live_retained_values(&mut admission)
             .map_err(|error| error.to_string())?;
-        self.admit_metadata(&mut admission)
-            .map_err(|error| error.to_string())?;
-        self.need_producers
-            .admit_retained(&mut admission)
-            .map_err(|error| error.to_string())?;
-        self.admit_publications(&mut admission)
-            .map_err(|error| error.to_string())?;
-        if let Some(root) = &self.root {
-            root.admit_retained(&mut admission)
-                .map_err(|error| error.to_string())?;
-        }
-        self.admit_root_execution()?;
-        self.validate_scheduled_scope_state(&mut admission)?;
-        for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
-            fiber
-                .frame
-                .admit_owned_values(&mut admission)
-                .map_err(|error| error.to_string())?;
-            fiber
-                .frame
-                .env
-                .validate_presentation_context(
-                    &fiber.frame.program,
-                    fiber.execution,
-                    fiber.persistent_id,
-                )
-                .map_err(|error| error.to_string())?;
-        }
-        self.expected_deferred_children(|activation| {
-            self.dialogue_activations
-                .active_line(activation)
-                .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
-        })?;
         let publication_image =
             |publication: &RuntimeNeedPublication| publication.snapshot_admitted(&owner);
         admission
-            .finish_presentation_scopes()
+            .finish_presentation_custody()
             .map_err(|error| error.to_string())?;
         Ok(NativeEngineRollbackImage {
             evaluation_stats: self.evaluation_stats.clone(),

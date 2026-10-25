@@ -13,14 +13,15 @@ impl<N, P: RuntimeStoredValue, R, F, D> Engine<N, P, R, F, D> {
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
-        if let Some(ledger) = &self.presentation {
+        let mut proof = if let Some(ledger) = &self.presentation {
             let artifact = self
                 .plan
                 .artifact()
                 .ok_or(RuntimePresentationError::MissingArtifact)?;
-            let proof = ledger.admit_retained(&owner, artifact, admission)?;
-            admission.bind_presentation_scopes(proof);
-        }
+            Some(ledger.admit_ownership(&owner, artifact, admission)?)
+        } else {
+            None
+        };
         admission.validate_metadata_collection(self.presentation_retirements.len())?;
         let mut retired_ids = BTreeSet::new();
         for retired in &self.presentation_retirements {
@@ -36,6 +37,18 @@ impl<N, P: RuntimeStoredValue, R, F, D> Engine<N, P, R, F, D> {
             if Some(*retired.token.artifact()) != self.plan.artifact() {
                 return Err(RuntimePresentationError::InvalidState.into());
             }
+            proof
+                .as_mut()
+                .ok_or(RuntimePresentationError::InvalidState)?
+                .include_retirement(&retired.token);
+        }
+        if let Some(proof) = proof {
+            admission.bind_presentation_custody(proof)?;
+        }
+        if let Some(ledger) = &self.presentation {
+            ledger.admit_bodies(admission)?;
+        }
+        for retired in &self.presentation_retirements {
             retired.body.admit_retained(admission)?;
         }
         Ok(())
@@ -80,6 +93,7 @@ impl Engine {
                 .ok_or(RuntimePresentationError::MissingArtifact)?;
             let mut admission =
                 crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+            self.admit_live_retained_values(&mut admission)?;
             let binding = self.fiber.frame.env.function_instantiation_lease();
             admission.validate_metadata(&(expected, binding))?;
             admission.validate_owned_typed_borrowed_in_invocation(
@@ -87,6 +101,7 @@ impl Engine {
                 expected,
                 binding.map(Arc::as_ref),
             )?;
+            admission.finish_presentation_custody()?;
             let ledger = self.presentation.get_or_insert_with(|| {
                 PresentationLedger::new(
                     owner.clone(),

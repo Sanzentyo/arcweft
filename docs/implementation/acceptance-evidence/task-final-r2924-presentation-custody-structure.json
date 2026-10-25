@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "name": "task-final-r2924-presentation-custody-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2924-presentation-custody-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T02:12:18.7663155Z",
+  "finishedAt": "2026-10-25T02:12:27.1364698Z"
+}

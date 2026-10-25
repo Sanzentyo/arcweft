@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "at": "2026-10-25T02:38:46.5427466Z",
+  "scope": "Documentation reconciliation only; no new Cargo/runtime execution",
+  "owned": [
+    "docs/02-runtime/save-replay.md",
+    "docs/implementation/acceptance-evidence/task-core-contract-checkpoint.verified.json",
+    "docs/implementation/acceptance-evidence/task-final-r2915-presentation-custody-core-check.json",
+    "docs/implementation/acceptance-evidence/task-final-r2915-presentation-custody-core-check.log",
+    "docs/implementation/acceptance-evidence/task-final-r2916-presentation-custody-core-check.json",
+    "docs/implementation/acceptance-evidence/task-final-r2916-presentation-custody-core-check.log",
+    "docs/implementation/acceptance-evidence/task-final-r2917-presentation-custody-owner-catalog.json",
+    "docs/implementation/acceptance-evidence/task-final-r2917-presentation-custody-owner-catalog.log",
+    "docs/implementation/acceptance-evidence/task-final-r2918-presentation-custody-final-owner-catalog.inventory.json",
+    "docs/implementation/acceptance-evidence/task-final-r2918-presentation-custody-final-owner-catalog.json",
+    "docs/implementation/acceptance-evidence/task-final-r2918-presentation-custody-final-owner-catalog.log",
+    "docs/implementation/acceptance-evidence/task-final-r2919-presentation-custody-owner-runtime.json",
+    "docs/implementation/acceptance-evidence/task-final-r2919-presentation-custody-owner-runtime.log",
+    "docs/implementation/acceptance-evidence/task-final-r2919-presentation-custody-owner-runtime.terminal-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2920-presentation-custody-core-catalog.inventory.json",
+    "docs/implementation/acceptance-evidence/task-final-r2920-presentation-custody-core-catalog.json",
+    "docs/implementation/acceptance-evidence/task-final-r2920-presentation-custody-core-catalog.log",
+    "docs/implementation/acceptance-evidence/task-final-r2921-presentation-custody-core-runtime.json",
+    "docs/implementation/acceptance-evidence/task-final-r2921-presentation-custody-core-runtime.log",
+    "docs/implementation/acceptance-evidence/task-final-r2921-presentation-custody-core-runtime.terminal-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2922-presentation-custody-workspace-check.json",
+    "docs/implementation/acceptance-evidence/task-final-r2922-presentation-custody-workspace-check.log",
+    "docs/implementation/acceptance-evidence/task-final-r2923-presentation-custody-workspace-clippy.json",
+    "docs/implementation/acceptance-evidence/task-final-r2923-presentation-custody-workspace-clippy.log",
+    "docs/implementation/acceptance-evidence/task-final-r2924-presentation-custody-structure.json",
+    "docs/implementation/acceptance-evidence/task-final-r2924-presentation-custody-structure.log",
+    "docs/implementation/acceptance-evidence/task-final-r2925-presentation-custody-rejection-core-catalog.inventory.json",
+    "docs/implementation/acceptance-evidence/task-final-r2925-presentation-custody-rejection-core-catalog.json",
+    "docs/implementation/acceptance-evidence/task-final-r2925-presentation-custody-rejection-core-catalog.log",
+    "docs/implementation/acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.json",
+    "docs/implementation/acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.log",
+    "docs/implementation/acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.terminal-audit.json",
+    "docs/implementation/acceptance-evidence/task-final-r2927-presentation-custody-final-core-clippy.json",
+    "docs/implementation/acceptance-evidence/task-final-r2927-presentation-custody-final-core-clippy.log",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-acceptance.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-core-runtime.audit.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-doc-audit.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-evidence-integrity.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-final-core.executables.before.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-final.graph.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-final.source-freeze.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-owner.executables.before.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-ownership-review.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-rejection-core.executables.before.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-rejection-runtime.audit.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-rejection-scope.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-rejection.graph.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody-rejection.source-freeze.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody.graph.json",
+    "docs/implementation/acceptance-evidence/task-presentation-custody.source-freeze.json",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "deleted": [],
+  "markdown": [
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "sha256": "ac87c56506a0f61400f082e87f317d1b31ff849a4265ade04f28fd0182c62d24",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "sha256": "c76794d27d42b0a620fddca38f50e40337367365aad2c9941babaa0347ecde7c",
+      "checkedSurface": "added hunks",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "sha256": "b9776d35a485dc3e80c8b27986f1276f9917d26bf2f27acfbcb38fdfa3b8c13c",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    }
+  ],
+  "checkedRelativeLinks": 39,
+  "relativeLinks": [
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-custody-ownership-review.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-custody-rejection-runtime.audit.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-custody-evidence-integrity.json"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "target": "acceptance-evidence/task-presentation-custody-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../README.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-c3-c5-closure-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-phase-note-publication.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-handle-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-custody-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/vertical-break-validation-2026-07-14.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../03-presentation/text-typesetting.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.acceptance-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-native-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-fanout-child-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md#traversable"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#awaitmanyのresult集約と消費前検査--2026-10-25"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2908-presentation-owner-reverse-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-custody-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-custody-ownership-review.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.failure-recon.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-stdio-readiness-recheck.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-diagnostic-recheck.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "documentation-cleanup.md"
+    }
+  ],
+  "unclosedFences": 0,
+  "priorFullShaIdentifiers": 1090,
+  "lostFullShaIdentifiers": [],
+  "untrackedHeld": 6,
+  "untrackedHeldDrift": 0,
+  "genericAcceptance": "Preserved; existing151/151PASS and published acceptance unchanged",
+  "validationReuse": "Existing runtime results remain historical evidence, not rerun by this cut"
+}

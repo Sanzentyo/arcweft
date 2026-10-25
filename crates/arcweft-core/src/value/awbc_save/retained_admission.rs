@@ -39,7 +39,6 @@ pub struct RuntimeRetainedValueAdmission {
     task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
     resources: ValueResourceAdmission,
     failure: Option<AwbcRuntimeValueSnapshotError>,
-    presentation_scopes: Option<crate::presentation::resources::PresentationScopeAdmission>,
 }
 
 struct RetainedProgramOwnerScope<'a> {
@@ -62,7 +61,6 @@ pub(crate) struct RuntimeRetainedValueAdmissionState {
     task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
     resources: ValueResourceAdmissionState,
     failure: Option<AwbcRuntimeValueSnapshotError>,
-    presentation_scopes: Option<crate::presentation::resources::PresentationScopeAdmission>,
 }
 
 impl RuntimeRetainedValueAdmissionState {
@@ -72,17 +70,20 @@ impl RuntimeRetainedValueAdmissionState {
             task_source: self.task_source,
             resources: self.resources.resume(),
             failure: self.failure,
-            presentation_scopes: self.presentation_scopes,
         }
     }
 }
 
 impl RuntimeRetainedValueAdmission {
-    pub(crate) fn bind_presentation_scopes(
+    pub(crate) fn bind_presentation_custody(
         &mut self,
-        proof: crate::presentation::resources::PresentationScopeAdmission,
-    ) {
-        self.presentation_scopes = Some(proof);
+        proof: crate::presentation::resources::PresentationAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        self.resources
+            .bind_presentation(proof)
+            .map_err(AwbcRuntimeValueSnapshotError::from)
+            .inspect_err(|error| self.retain_failure(error.clone()))
     }
 
     pub(crate) fn validate_presentation_scope(
@@ -91,8 +92,8 @@ impl RuntimeRetainedValueAdmission {
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.status()?;
         if self
-            .presentation_scopes
-            .as_mut()
+            .resources
+            .presentation_mut()
             .is_some_and(|proof| proof.accepts(binding))
         {
             return Ok(());
@@ -107,13 +108,13 @@ impl RuntimeRetainedValueAdmission {
         Err(error)
     }
 
-    pub(crate) fn finish_presentation_scopes(
+    pub(crate) fn finish_presentation_custody(
         &mut self,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.status()?;
         if self
-            .presentation_scopes
-            .as_ref()
+            .resources
+            .presentation_mut()
             .is_some_and(|proof| !proof.complete())
         {
             let error: AwbcRuntimeValueSnapshotError =
@@ -167,7 +168,6 @@ impl RuntimeRetainedValueAdmission {
             task_source,
             resources,
             failure,
-            presentation_scopes,
         } = self;
         match resources.try_into_state() {
             Ok(resources) => Ok(RuntimeRetainedValueAdmissionState {
@@ -175,14 +175,12 @@ impl RuntimeRetainedValueAdmission {
                 task_source,
                 resources,
                 failure,
-                presentation_scopes,
             }),
             Err(resources) => Err(Self {
                 owner,
                 task_source,
                 resources,
                 failure,
-                presentation_scopes,
             }),
         }
     }
@@ -218,12 +216,13 @@ impl RuntimeRetainedValueAdmission {
     }
 
     fn new(owner: Option<RuntimeProgramOwner>, limits: RuntimeSchemaLimits) -> Self {
+        let mut resources = ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::Live);
+        resources.require_presentation_custody();
         Self {
             owner,
             task_source: None,
-            resources: ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::Live),
+            resources,
             failure: None,
-            presentation_scopes: None,
         }
     }
 

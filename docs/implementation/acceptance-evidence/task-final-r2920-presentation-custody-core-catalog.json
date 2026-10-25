@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "name": "task-final-r2920-presentation-custody-core-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2920-presentation-custody-core-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T02:09:36.7880455Z",
+  "finishedAt": "2026-10-25T02:10:50.9341389Z"
+}

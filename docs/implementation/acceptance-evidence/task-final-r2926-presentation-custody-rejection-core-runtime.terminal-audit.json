@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "run": "task-final-r2926-presentation-custody-rejection-core-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 441.912s] 2074 tests run: 2074 passed (2 slow), 0 skipped",
+  "executed": 2074,
+  "passed": 2074,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T02:32:08.6808255Z"
+}

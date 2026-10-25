@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "run": "task-final-r2919-presentation-custody-owner-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.360s] 30 tests run: 29 passed, 1 failed, 2044 skipped",
+  "executed": 30,
+  "passed": 29,
+  "failed": 1,
+  "skipped": 2044,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "value::ownership::presentation_custody_tests::presentation_custody_preserves_family_token_and_path_in_live_and_inert_storage"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T02:09:35.6817491Z"
+}

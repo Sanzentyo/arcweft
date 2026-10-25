@@ -438,7 +438,13 @@ mod presentation_custody_tests {
             ));
             assert_eq!(
                 image.into_unrestricted_runtime_value_for_program(&program),
-                Err(crate::value::AwbcRuntimeValueSnapshotError::AffineValue)
+                Err(crate::value::AwbcRuntimeValueSnapshotError::Resource(
+                    crate::entry::RuntimeSchemaError::PresentationHandleCustody {
+                        path: "$[0]".into(),
+                        token,
+                        duplicate: false,
+                    }
+                ))
             );
         }
     }

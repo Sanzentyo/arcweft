@@ -1,0 +1,293 @@
+{
+  "version": 1,
+  "base": "c985b52c024f049113be24933e683428920e53b6",
+  "records": 47,
+  "bytes": 18417412.0,
+  "artifactCopyMove": false,
+  "scope": "Only raw logs, receipts, catalogs, hashes and review records; no build artifacts copied",
+  "files": [
+    {
+      "file": "task-core-contract-checkpoint.verified.json",
+      "bytes": 1893,
+      "sha256": "c4fe906985b4a1ba904917d6448f5144f2634f46d093dddb22c4b66a76f35f98",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2915-presentation-custody-core-check.json",
+      "bytes": 534,
+      "sha256": "b1e48796e99c580893e332e652e81ac2fd23d4bf5dade2fcf6c3f8ff53c018ef",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2915-presentation-custody-core-check.log",
+      "bytes": 13424,
+      "sha256": "4074c37d53750de182d3790bb1b7b34f295c72ad644257eb3f8654c19bb1e6b8",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2916-presentation-custody-core-check.json",
+      "bytes": 534,
+      "sha256": "69d25b198d406cbb006dc83035de8fd4ec6798b286a650269293516c6284f07a",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2916-presentation-custody-core-check.log",
+      "bytes": 77387,
+      "sha256": "485c167dddb2a93521f193bef0b53a4d97737e226f3006378f1298d947e37e85",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2917-presentation-custody-owner-catalog.json",
+      "bytes": 629,
+      "sha256": "385aef8be8376302f2c357eca23a56341cd21769cbf8c39a424e37a137908569",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2917-presentation-custody-owner-catalog.log",
+      "bytes": 486013,
+      "sha256": "dfaaf40ccff79690082729cc19ce66cb0de94f6709b7640dee42019754e474e2",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2918-presentation-custody-final-owner-catalog.inventory.json",
+      "bytes": 526613,
+      "sha256": "c0cc068ab4eb156c1c7866a48a8604aa3dc05e55ae66d397298a12ea2ac4779f",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2918-presentation-custody-final-owner-catalog.json",
+      "bytes": 641,
+      "sha256": "9dac0e07ba751f3710542d5eafef9abd0ad90433235107722a10fbb69196ae82",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2918-presentation-custody-final-owner-catalog.log",
+      "bytes": 486148,
+      "sha256": "4954841f767acf03c4300c623cc2f8609340bbe0217b3aa3fa1afc83ec50973b",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2919-presentation-custody-owner-runtime.json",
+      "bytes": 700,
+      "sha256": "d07b696a332829bc0d8626584cfbecab0a8fb929b18e1027b92dbedfdd41f766",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2919-presentation-custody-owner-runtime.log",
+      "bytes": 735275,
+      "sha256": "a7fe2713caef9ccd160ab3355bb33c20b6d60399e4f936447ebc15f2317b4315",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2919-presentation-custody-owner-runtime.terminal-audit.json",
+      "bytes": 811,
+      "sha256": "6ce3f0bd63adecfd4e82452c02a639d013f5abcf97919aa9c0b57eb2d4b6c59a",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2920-presentation-custody-core-catalog.inventory.json",
+      "bytes": 524561,
+      "sha256": "dd57d92a4094237cb228b9329509bacbb41d5a11850031cbb0419289c96f3089",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2920-presentation-custody-core-catalog.json",
+      "bytes": 589,
+      "sha256": "ca7c9afd38b9b043da984dd8b0f70d61cad6767d8f97c6ab43328fb1f7bc44c9",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2920-presentation-custody-core-catalog.log",
+      "bytes": 439136,
+      "sha256": "9338a694d993f4fcbf12a5b8dedad90f1ed09dd0b6564a0ca2e4004f36b8ad6c",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2921-presentation-custody-core-runtime.json",
+      "bytes": 683,
+      "sha256": "1893753527578c83d9e42ad578e3fb48fecaf089c953d0d6876afbcb9a7ffb39",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2921-presentation-custody-core-runtime.log",
+      "bytes": 711359,
+      "sha256": "f2c2baf8d0caea13cef83f3ea0bb8dd31dc4fe67597024d53a887390f9fd77d1",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2921-presentation-custody-core-runtime.terminal-audit.json",
+      "bytes": 821,
+      "sha256": "2fd8396f3cc015851c40cefbd44e260af5bd16149dc719eee12aa162603070f5",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2922-presentation-custody-workspace-check.json",
+      "bytes": 530,
+      "sha256": "659c19fec5574c411971b33333570268400c8a7647f208912ed7e460bfc9f55f",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2922-presentation-custody-workspace-check.log",
+      "bytes": 105654,
+      "sha256": "e8a6225bfb2c2f77b0d9e906ce30cebba8fba21d9e3c08167e775221180b8b8d",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2923-presentation-custody-workspace-clippy.json",
+      "bytes": 533,
+      "sha256": "bc6f3bce8689f932ba664816dc0593abc2041427f4135a5b8bee2cacf0ec861d",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2923-presentation-custody-workspace-clippy.log",
+      "bytes": 7403527,
+      "sha256": "e7fe22bdffb6c0805df45455a4c6344733963f4e69e31abf5548498b92e1426b",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2924-presentation-custody-structure.json",
+      "bytes": 541,
+      "sha256": "8eab2f5654d56077fc886f0d5f3309df792eacb1ae18f15ee809ce9cd6b16ca4",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2924-presentation-custody-structure.log",
+      "bytes": 64139,
+      "sha256": "1200378959f6fda38d1c9b2123b4f86e571035aafc3ad09e442aa4e42216928b",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2925-presentation-custody-rejection-core-catalog.inventory.json",
+      "bytes": 524571,
+      "sha256": "f9cc18bec9cfceede0f1eb03d19c5a5b7e6a308896b3c55562b3ce738bd04e62",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2925-presentation-custody-rejection-core-catalog.json",
+      "bytes": 609,
+      "sha256": "8fc0d52ef0485c22d4d8eb64ce5494bdb5d70d2f1d3fa4f5a782f77dc8a81082",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2925-presentation-custody-rejection-core-catalog.log",
+      "bytes": 439191,
+      "sha256": "09358e7ad692690a1e07c415f78e8684065cd186b6118e27262e3894cec25d15",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2926-presentation-custody-rejection-core-runtime.json",
+      "bytes": 701,
+      "sha256": "b8f92b5e0e49d0402e5bf4614a8feaa4a27866731652ae710ccbddcb333f7e22",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2926-presentation-custody-rejection-core-runtime.log",
+      "bytes": 710645,
+      "sha256": "6c027eb88852d6560327eabcd2f05d8a278b636fc313eff5a83884784e790440",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2926-presentation-custody-rejection-core-runtime.terminal-audit.json",
+      "bytes": 600,
+      "sha256": "619844bf27bdac185a10c8c721160f038b4b8f57055e683dccfe7a2ee253ec1b",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2927-presentation-custody-final-core-clippy.json",
+      "bytes": 547,
+      "sha256": "2812e3ed726ee9101cc5745d723afeef97f66fbdcd25836673eafe2dd40c314a",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-final-r2927-presentation-custody-final-core-clippy.log",
+      "bytes": 2794415,
+      "sha256": "af3350941f6993219f2a2c092abeae940957efa69815fdcbe4cc2add17872174",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-acceptance.json",
+      "bytes": 1444,
+      "sha256": "eadeef63cb45730e81e106be5bffe021e017af66bd7b112c9f371bd494701b2f",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-core-runtime.audit.json",
+      "bytes": 188,
+      "sha256": "9b194d6f13ea6748e4111fb4e4cada3c6e310bac5a7b0d2bee9d65f7b97ae2c0",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-final-core.executables.before.json",
+      "bytes": 3448,
+      "sha256": "c3025fe837a26e8c34cf481fcb6caa9bdf3a3051bb7a3d8249de2a3aced15093",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-final.graph.json",
+      "bytes": 3325,
+      "sha256": "97b82f7b5a28c78b0269fc206891b934e6af4c684687fd2c13aa3e8358032022",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-final.source-freeze.json",
+      "bytes": 778757,
+      "sha256": "50407703b4958a78c98264c5dc0491e8b065d521c85af2011cbc20a9e9a43d15",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-owner.executables.before.json",
+      "bytes": 3455,
+      "sha256": "32f4add6cd02705db9f87459a246c8f5e92665b029630765754b9a044238476e",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-ownership-review.json",
+      "bytes": 4458,
+      "sha256": "40fe895edf04cd74ba44c512c7bdf34268880eb8f44d50dfffc56ec4aa743319",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-rejection-core.executables.before.json",
+      "bytes": 3458,
+      "sha256": "b24910f7dea05e19d57c3c2da18cc916c101f0cf2010c72b11d1f85e6f7919e8",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-rejection-runtime.audit.json",
+      "bytes": 288,
+      "sha256": "1adfd0d240afda16146d0b6fdc8be450c01db6060211dc85779a90baf0ed5a68",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-rejection-scope.json",
+      "bytes": 296,
+      "sha256": "5093f0fcd1bfbd4ff7b940fa8b6a3164dc2c53b1a75c6ef3f13e9561d98b77b6",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-rejection.graph.json",
+      "bytes": 3415,
+      "sha256": "49dcd152db7e4a77c6621d9dc00c9fc0bd9047150f717bda6773988cbb5d3471",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody-rejection.source-freeze.json",
+      "bytes": 778859,
+      "sha256": "95a5cdbc427856dce63497625c55422fa4401679953169fa210c2f7de02208c3",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody.graph.json",
+      "bytes": 3325,
+      "sha256": "97b82f7b5a28c78b0269fc206891b934e6af4c684687fd2c13aa3e8358032022",
+      "byteIdentical": true
+    },
+    {
+      "file": "task-presentation-custody.source-freeze.json",
+      "bytes": 778742,
+      "sha256": "2938cdd8b7fdfffbfcb2aa674eeba958a7fbc2a20d3d3255aa8cffd37675e3e0",
+      "byteIdentical": true
+    }
+  ],
+  "at": "2026-10-25T02:34:18.8342654Z"
+}

@@ -1030,6 +1030,43 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
     }
 }
 
+impl Engine {
+    /// The full live owning contour also admits a moved presentation capture
+    /// before registration. Metadata, values and custody share this same bank.
+    pub(super) fn admit_live_retained_values(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        use crate::value::AwbcRuntimeValueSnapshotError;
+        self.admit_presentation_state(admission)?;
+        self.admit_metadata(admission)?;
+        self.need_producers.admit_retained(admission)?;
+        self.admit_publications(admission)?;
+        if let Some(root) = &self.root {
+            root.admit_retained(admission)?;
+        }
+        self.admit_root_execution()
+            .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
+        self.validate_scheduled_scope_state(admission)
+            .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
+        for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
+            fiber.frame.admit_owned_values(admission)?;
+            fiber.frame.env.validate_presentation_context(
+                &fiber.frame.program,
+                fiber.execution,
+                fiber.persistent_id,
+            )?;
+        }
+        self.expected_deferred_children(|activation| {
+            self.dialogue_activations
+                .active_line(activation)
+                .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
+        })
+        .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
+        Ok(())
+    }
+}
+
 impl NativeEngineRollbackImage {
     pub(super) fn admit_rollback_values(
         &self,
@@ -1115,7 +1152,7 @@ impl NativeEngineRollbackImage {
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
         })?;
         admission
-            .finish_presentation_scopes()
+            .finish_presentation_custody()
             .map_err(|error| error.to_string())?;
         Ok(expected_deferred_children)
     }
