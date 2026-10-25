@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "f7841d517c0bf5fe7a6ca8e667072dff2e701219",
+  "checked": [
+    {
+      "path": "docs/01-language/traits-seq-ranges.md",
+      "links": 9,
+      "sha256": "9da3c635c53c78d490e7ef4bf16d6d0d31b34d306aafa54f3342a8842206effd",
+      "scope": "complete file"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "links": 34,
+      "sha256": "7b9bbaeaa4b8cbb51e7cd1f9af222b7866e9b50a796cd43a680a8968b891a36c",
+      "scope": "complete file"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "links": 2,
+      "sha256": "0c2f7a1a56e39080065a2a5a4d152e244d6e3f866c767bd9c78dde961e6c1b82",
+      "scope": "added passage"
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "links": 0,
+      "sha256": "807f9e7381d21c10729bbc5ad9e4830789e715a8c4c6a0709e13d89b5bf048a4",
+      "scope": "added passage"
+    }
+  ],
+  "checkedRelativeLinks": 45,
+  "unclosedFences": 0,
+  "at": "2026-10-25T05:19:56.585Z"
+}

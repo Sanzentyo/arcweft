@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "run": "task-final-r2946-traversal-sema-final-full-runtime",
+  "actualExitCode": 0,
+  "binaries": 5,
+  "binaryDrift": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "sourceAudit": "task-final-r2946-traversal-sema-final-full-runtime.terminal-audit.json",
+  "at": "2026-10-25T05:18:35.740Z"
+}

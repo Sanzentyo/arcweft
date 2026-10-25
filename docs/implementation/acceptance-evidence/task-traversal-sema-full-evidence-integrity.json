@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "base": "f7841d517c0bf5fe7a6ca8e667072dff2e701219",
+  "records": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2945-traversal-sema-final-full-catalog.inventory.json",
+      "bytes": 351494,
+      "sha256": "0097941779fe1aa097e7f6f6bc1a41cd2c14617db72d29a13399f348a8fc164c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2945-traversal-sema-final-full-catalog.json",
+      "bytes": 594,
+      "sha256": "4facfc54ab774103ecb28c4db6d3c503d44fef27543adf0269e2eaedb2ed68fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2945-traversal-sema-final-full-catalog.log",
+      "bytes": 312290,
+      "sha256": "c35088a6aed9ea896f3621b17430303c27b78556f42982d930ecd363f8c974e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2946-traversal-sema-final-full-runtime.json",
+      "bytes": 686,
+      "sha256": "391fdb3f2ffc7c3e0c9d2d691abfe08f0ca1e35cfa3b60a6b3ba8cba123c6309"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2946-traversal-sema-final-full-runtime.log",
+      "bytes": 502410,
+      "sha256": "6ef6002642bc1fddb68bcfc6c220e361d4968083f6351cbe225a1744316c7de4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2946-traversal-sema-final-full-runtime.terminal-audit.json",
+      "bytes": 590,
+      "sha256": "39673f487f3310ea7ee651a2714613e95de03249608a9e9c8dd58947e30fa5d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-final-full-binaries-before.json",
+      "bytes": 1491,
+      "sha256": "1a91ba49532d2d0d6c97478ac910cd2a0dfb10fe3e02d730965b54f917338b93"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-final-full-runtime.audit.json",
+      "bytes": 313,
+      "sha256": "dcb8ab9c3e1c71fdb87515e5ee4f1db00e919c428d5f5cf1b022da1950750f89"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-checkpoint.verified.json",
+      "bytes": 21010,
+      "sha256": "1d0921297da82c3d88ffd82635052cec017e7756ada96b0bf4bca11b8f16a610"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-doc-link-audit.json",
+      "bytes": 559,
+      "sha256": "04b44d3d3e1c6d5654649e78dac1aa2c30a503217b27fe6156c1107d31314ed5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-sema-full-doc-audit.json",
+      "bytes": 1007,
+      "sha256": "ed14c183d8a5e05334ba437899838b761e46a94fda72dca52b7569e6c8d5afe2"
+    }
+  ],
+  "recordCount": 11,
+  "bytes": 1192444,
+  "buildArtifactsCopied": false,
+  "at": "2026-10-25T05:19:05.411Z"
+}

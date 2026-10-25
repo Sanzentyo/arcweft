@@ -427,3 +427,8 @@ Semaに型・schema・Source関数値入口が加わったため、現状一覧�
 過去のcheck／Clippy成功は履歴へ残し、直近workspace checkの終了101を現状のgate欄へ反映した。
 Generic Matchの受入を取り消す新規根拠はなく、受入・公開済みを維持する。
 実際の結果・full SHAは削除せず、重複する新しい残作業一覧や設計計画は追加していない。
+
+R2946の終端後は、現状一覧の実行中表示を1,339／1,339 PASSへ更新した。
+意味解析の公開SHAは `f7841d517c0bf5fe7a6ca8e667072dff2e701219`。
+実Compilerの失敗とSource実行の未接続は残し、旧入力の横断成功へ読み替えていない。
+原log／receipt、catalog、公開照合とhashは別々の原本として保持する。

@@ -11248,3 +11248,22 @@ R2930以降の原log／receipt、catalog、入力hash、実行ファイルhash�
 [原本保全一覧](acceptance-evidence/task-traversal-sema-evidence-integrity.json)。
 生成物の移動・コピーはなく、元tracked WIP 14件とuntracked実ファイル6件を保持した。
 全体goalやSource後段の未接続から、Generic Matchと既存AwaitMany集約の受入を取り消していない。
+
+### Traversal意味解析の公開と全件終端
+
+型・schema・Source関数値入口、途中の失敗と原本は
+`f7841d517c0bf5fe7a6ca8e667072dff2e701219` で通常commit／non-forced pushした。
+parentは `d6326baa4bfa917c61a4d260c31c0d0169dcddf9`、treeは
+`ce3fc04c285225c5e9af6c9009f51b1ecb90b516`、full patchのSHA256は
+`348237145daaf0d932c62f7b15f861e84b2762b21c5da2fc7fd0029fba8f21b2`。
+86 pathの公開blobと全6,640保持入力、元14件のWIP patchが一致し、indexは空だった。
+
+上記の「R2946実行中」は記録時点の観測であり、次の終端で置き換わる。
+R2945 catalogは全1,339件を選択し、R2946は**1,339／1,339 PASS**、終了0、
+740.996秒、2 slow、非選択0で完了した。API compileの613.378秒と82.624秒を含む実結果で、
+観測の遅延を理由とする停止・再起動は行っていない。
+catalogと終端case集合が一致し、3,981非文書入力・5実行ファイルのhash差分0。
+[全件の終端照合](acceptance-evidence/task-final-r2946-traversal-sema-final-full-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-traversal-sema-final-full-runtime.audit.json)。
+R2938のCompiler網羅漏れ2件は修復しておらず、このSema成功をworkspace／逆依存runtime成功へ
+読み替えていない。Source lowering／Need値の実構築と実行の包括受入も、この結果には含めない。

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "checked": [
+    {
+      "path": "docs/01-language/traits-seq-ranges.md",
+      "links": 9,
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "links": 3,
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "links": 33,
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "links": 0,
+      "unclosedFences": 0
+    }
+  ],
+  "links": 45,
+  "at": "2026-10-25T05:10:47.831Z"
+}
