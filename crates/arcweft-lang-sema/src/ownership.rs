@@ -1171,6 +1171,9 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     }),
                 ))
             }
+            TypeKind::Traversal { .. } => {
+                rejected(RuntimeOwnershipRejection::FunctionValueRequiresCertificate)
+            }
             TypeKind::Stream { .. } | TypeKind::Parser { .. } => {
                 rejected(RuntimeOwnershipRejection::StreamValue)
             }

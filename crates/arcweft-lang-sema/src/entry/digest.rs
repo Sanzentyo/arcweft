@@ -95,6 +95,7 @@ pub(super) enum CanonicalConstructor {
     Result,
     Option,
     Need,
+    Traversal,
     Stream,
     Reduction,
     Ref,
@@ -222,6 +223,7 @@ impl CanonicalConstructor {
             Self::Result => "Result",
             Self::Option => "Option",
             Self::Need => "Need",
+            Self::Traversal => "Traversal",
             Self::Stream => "Stream",
             Self::Reduction => "Reduction",
             Self::Ref => "Ref",
@@ -750,6 +752,7 @@ const fn canonical_constructor_tag(constructor: CanonicalConstructor) -> u8 {
         CanonicalConstructor::ThreadHandle => 18,
         CanonicalConstructor::Shared => 19,
         CanonicalConstructor::DataShape => 20,
+        CanonicalConstructor::Traversal => 21,
     }
 }
 

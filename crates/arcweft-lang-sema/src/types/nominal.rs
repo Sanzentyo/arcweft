@@ -33,6 +33,7 @@ pub enum LanguageIntrinsicGenericOwner {
     ResultConstructor,
     StandardMap(StandardMapFamily),
     CollectionCollect,
+    CollectionTraverse,
     FxExists,
     AgentSignal,
     AgentMetric,
@@ -49,7 +50,7 @@ pub enum LanguageIntrinsicGenericOwner {
 }
 
 impl LanguageIntrinsicGenericOwner {
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 26] = [
         Self::OptionConstructor,
         Self::ResultConstructor,
         Self::StandardMap(StandardMapFamily::Vec),
@@ -62,6 +63,7 @@ impl LanguageIntrinsicGenericOwner {
         Self::StandardMap(StandardMapFamily::Parser),
         Self::StandardMap(StandardMapFamily::Stream),
         Self::CollectionCollect,
+        Self::CollectionTraverse,
         Self::FxExists,
         Self::AgentSignal,
         Self::AgentMetric,
@@ -84,6 +86,7 @@ impl LanguageIntrinsicGenericOwner {
             Self::ResultConstructor => 1,
             Self::StandardMap(family) => family.intrinsic_owner_tag(),
             Self::CollectionCollect => 23,
+            Self::CollectionTraverse => 25,
             Self::FxExists => 11,
             Self::AgentSignal => 12,
             Self::AgentMetric => 13,
@@ -117,8 +120,15 @@ impl LanguageIntrinsicGenericOwner {
             | Self::DataEncode
             | Self::DataDecode
             | Self::ViewHandlerResult => (1, 0),
-            Self::ResultConstructor => (2, 0),
+            Self::ResultConstructor | Self::CollectionTraverse => (2, 0),
             Self::StandardMap(family) => family.generic_arity(),
+        }
+    }
+
+    pub(crate) const fn generic_effect_arity(self) -> u32 {
+        match self {
+            Self::CollectionTraverse => 1,
+            _ => 0,
         }
     }
 
@@ -128,6 +138,7 @@ impl LanguageIntrinsicGenericOwner {
             Self::ResultConstructor => "language.result-constructor",
             Self::StandardMap(family) => family.intrinsic_owner_label(),
             Self::CollectionCollect => "language.collection-collect",
+            Self::CollectionTraverse => "language.collection-traverse",
             Self::FxExists => "language.fx-exists",
             Self::AgentSignal => "language.agent-signal",
             Self::AgentMetric => "language.agent-metric",

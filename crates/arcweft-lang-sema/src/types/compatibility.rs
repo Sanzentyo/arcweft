@@ -599,6 +599,16 @@ where
             accepts_node(expected, actual, policy, control, meter, structural)
         }
         (
+            TypeKind::Traversal {
+                source: expected_item,
+                mapping: expected_error,
+            },
+            TypeKind::Traversal {
+                source: actual_item,
+                mapping: actual_error,
+            },
+        )
+        | (
             TypeKind::Stream {
                 item: expected_item,
                 error: expected_error,
@@ -1190,7 +1200,11 @@ where
         TypeKind::BorrowRef { inner, .. } => {
             return validate_strict_tree(inner, side, control);
         }
-        TypeKind::Stream { item, error }
+        TypeKind::Traversal {
+            source: item,
+            mapping: error,
+        }
+        | TypeKind::Stream { item, error }
         | TypeKind::Parser { item, error }
         | TypeKind::Result { ok: item, error } => {
             if let Some(kind) = validate_strict_tree(item, side, control)? {

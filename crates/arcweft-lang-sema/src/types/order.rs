@@ -97,6 +97,18 @@ impl TypeKind {
                     .then_with(|| left_lifetime.cmp(right_lifetime))
                     .then_with(|| left_inner.stable_ordering(right_inner)),
                 (
+                    Self::Traversal {
+                        source: left_source,
+                        mapping: left_mapping,
+                    },
+                    Self::Traversal {
+                        source: right_source,
+                        mapping: right_mapping,
+                    },
+                ) => left_source
+                    .stable_ordering(right_source)
+                    .then_with(|| left_mapping.stable_ordering(right_mapping)),
+                (
                     Self::Stream {
                         item: left_item,
                         error: left_error,
@@ -493,5 +505,6 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::DataMapKind => 99,
         TypeKind::PresentationResource(_) => 101,
         TypeKind::SlotRef(_) => 102,
+        TypeKind::Traversal { .. } => 103,
     }
 }

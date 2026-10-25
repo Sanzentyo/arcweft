@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "run": "task-final-r2935-traversal-source-sema-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.472s] 3 tests run: 3 passed, 1334 skipped",
+  "executed": 3,
+  "passed": 3,
+  "failed": 0,
+  "skipped": 1334,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T04:29:30.3991786Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "name": "task-final-r2938-traversal-source-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2938-traversal-source-workspace-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-25T04:32:57.4408081Z",
+  "finishedAt": "2026-10-25T04:35:24.1731238Z"
+}

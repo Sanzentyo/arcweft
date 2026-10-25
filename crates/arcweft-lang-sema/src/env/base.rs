@@ -2662,6 +2662,10 @@ fn map_named_type_kind(ty: TypeKind, resolve_named: &impl Fn(String) -> TypeKind
             inner: Box::new(map_named_type_kind(*inner, resolve_named)),
         },
         TypeKind::Need(item) => TypeKind::Need(Box::new(map_named_type_kind(*item, resolve_named))),
+        TypeKind::Traversal { source, mapping } => TypeKind::Traversal {
+            source: Box::new(map_named_type_kind(*source, resolve_named)),
+            mapping: Box::new(map_named_type_kind(*mapping, resolve_named)),
+        },
         TypeKind::Stream { item, error } => TypeKind::Stream {
             item: Box::new(map_named_type_kind(*item, resolve_named)),
             error: Box::new(map_named_type_kind(*error, resolve_named)),

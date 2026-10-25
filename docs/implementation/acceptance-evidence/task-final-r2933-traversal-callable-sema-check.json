@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "name": "task-final-r2933-traversal-callable-sema-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2933-traversal-callable-sema-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T04:16:54.1592156Z",
+  "finishedAt": "2026-10-25T04:17:13.8955591Z"
+}

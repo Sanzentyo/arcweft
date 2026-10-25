@@ -1,6 +1,141 @@
 use super::*;
 
 #[test]
+fn traversal_retains_the_callback_effect_and_builds_a_first_class_need() {
+    let world = fixture(
+        r"
+fn schedule(paths: Vec<String>, read: String -> Need<Result<i64, String>> effects { fs.read }) -> Need<Result<Vec<i64>, String>> effects { fs.read } {
+    let pending = paths.traverse(read)
+    pending.parallel(limit = 2)
+}
+",
+        None,
+    );
+    let analysis = analyze(&world).expect("a stored traversal retains its callback contract");
+    let callback = TypeKind::function_with_effects(
+        [TypeKind::String],
+        TypeKind::Need(Box::new(TypeKind::Result {
+            ok: Box::new(TypeKind::I64),
+            error: Box::new(TypeKind::String),
+        })),
+        crate::effect_row::EffectRow::closed(
+            crate::effects::EffectSet::from_labels(&["fs.read"]).unwrap(),
+        ),
+    );
+    let expected = TypeKind::Need(Box::new(TypeKind::Result {
+        ok: Box::new(TypeKind::Vec(Box::new(TypeKind::I64))),
+        error: Box::new(TypeKind::String),
+    }));
+    let mut constructed = 0;
+    let mut scheduled = 0;
+    for (_, facts) in analysis.calls() {
+        let application = facts
+            .selected_application()
+            .expect("selected traversal call");
+        match application.core().candidates().selected().id() {
+            crate::callable::CallableCandidateId::CollectionMethod(
+                crate::callable::CollectionMethodId::Traverse { .. },
+            ) => {
+                assert_eq!(
+                    application.result().value_type(),
+                    Some(&TypeKind::Traversal {
+                        source: Box::new(TypeKind::Vec(Box::new(TypeKind::String))),
+                        mapping: Box::new(callback.clone()),
+                    })
+                );
+                constructed += 1;
+            }
+            crate::callable::CallableCandidateId::CollectionMethod(
+                crate::callable::CollectionMethodId::Parallel { .. },
+            ) => {
+                assert_eq!(application.result().value_type(), Some(&expected));
+                scheduled += 1;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!((constructed, scheduled), (1, 1));
+}
+
+#[test]
+fn traversal_preserves_rigid_child_types_and_a_dynamic_parallel_limit() {
+    let world = fixture(
+        r"
+fn schedule<T, E>(paths: Vec<String>, read: String -> Need<Result<T, E>> effects { fs.read }, limit: u32) -> Need<Result<Vec<T>, E>> effects { fs.read } {
+    let pending = paths.traverse(read)
+    pending.parallel(limit = limit)
+}
+",
+        None,
+    );
+    let analysis = analyze(&world).expect("traversal preserves the enclosing generic identities");
+    assert_selected_calls(&analysis, 2);
+}
+
+#[test]
+fn traversal_accepts_authored_capability_references_and_array_sources() {
+    let world = fixture(
+        r#"
+extern capability fs {
+    fn read_text(path: String) -> Need<Result<String, String>> effects { fs.read }
+}
+fn schedule(paths: Vec<String>) -> Need<Result<Vec<String>, String>> effects { fs.read } {
+    let work = paths.traverse(fs.read_text).parallel(limit = 2)
+    work
+}
+fn schedule_array() -> Need<Result<Vec<String>, String>> effects { fs.read } {
+    let read = fs.read_text
+    let work = ["a.txt", "b.txt"].traverse(read).parallel(limit = 2)
+    work
+}
+"#,
+        None,
+    );
+    let analysis =
+        analyze(&world).expect("authored capability callbacks retain their source owner");
+    assert_selected_calls(&analysis, 4);
+}
+
+#[test]
+fn traversal_respects_a_lexical_receiver_shadowing_a_capability_namespace() {
+    let world = fixture(
+        r"
+extern capability fs {
+    fn read_text(path: String) -> Need<Result<String, String>> effects { fs.read }
+}
+struct Reader {
+    read_text: String -> Need<Result<i64, String>> effects { fs.read },
+}
+fn schedule(paths: Vec<String>, fs: Reader) -> Need<Result<Vec<i64>, String>> effects { fs.read } {
+    paths.traverse(fs.read_text).parallel(limit = 2)
+}
+",
+        None,
+    );
+    let analysis = analyze(&world).expect("the actual lexical receiver owns the callback type");
+    assert_selected_calls(&analysis, 2);
+}
+
+#[test]
+fn traversal_rejects_callbacks_outside_its_need_result_contract() {
+    for callback in [
+        "i64",
+        "String -> i64 effects {}",
+        "String -> Need<i64> effects {}",
+        "i64 -> Need<Result<i64, String>> effects {}",
+    ] {
+        let source = format!(
+            "fn schedule(paths: Vec<String>, read: {callback}) -> Need<Result<Vec<i64>, String>> {{ paths.traverse(read).parallel(limit = 2) }}"
+        );
+        let world = fixture(&source, None);
+        assert!(
+            analyze(&world).is_err(),
+            "invalid traversal callback: {callback}"
+        );
+    }
+}
+
+#[test]
 fn generic_result_constructor_retains_enclosing_parameter_identity() {
     let fixture = fixture(
         r"

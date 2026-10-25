@@ -941,6 +941,7 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::SortedMap
             | BuiltinTypeConstructor::BTreeMap
             | BuiltinTypeConstructor::Result
+            | BuiltinTypeConstructor::Traversal
             | BuiltinTypeConstructor::Stream
             | BuiltinTypeConstructor::Parser => {
                 self.apply_binary_builtin(context, constructor, arguments, child_causes)
@@ -1114,6 +1115,10 @@ impl Resolver<'_, '_> {
             BuiltinTypeConstructor::Result => TypeKind::Result {
                 ok: Box::new(first),
                 error: Box::new(second),
+            },
+            BuiltinTypeConstructor::Traversal => TypeKind::Traversal {
+                source: Box::new(first),
+                mapping: Box::new(second),
             },
             BuiltinTypeConstructor::Stream => TypeKind::Stream {
                 item: Box::new(first),

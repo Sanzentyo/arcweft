@@ -4151,6 +4151,14 @@ impl CheckedCallCanonicalEncoder {
                         self.tag(5);
                         self.type_kind(item)?;
                     }
+                    CollectionMethodId::Traverse { source } => {
+                        self.tag(6);
+                        self.type_kind(source)?;
+                    }
+                    CollectionMethodId::Parallel { traversal } => {
+                        self.tag(7);
+                        self.type_kind(traversal)?;
+                    }
                 }
             }
             CheckedLanguageCallableIdentity::PresentationHandle(id) => {

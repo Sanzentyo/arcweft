@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "name": "task-final-r2942-traversal-project-reference-sema-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all",
+    "-E",
+    "test(traversal_)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2942-traversal-project-reference-sema-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-25T05:02:07.6600641Z",
+  "finishedAt": "2026-10-25T05:02:09.6258413Z"
+}

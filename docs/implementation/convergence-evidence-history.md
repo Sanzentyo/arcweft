@@ -11197,3 +11197,54 @@ Need全14・C6・Tier2・Native-Web parityの包括受入を、この逆依存ru
 原log・receipt・catalog・hash・公開照合11件／8,718,565 bytesをbyte／SHA256一致で保全した。
 [原本保全一覧](acceptance-evidence/task-presentation-custody-reverse-evidence-integrity.json)。
 現状の項目別判定はcurrent-status.mdへ集約し、古い予定や重複した残作業表は追加していない。
+
+## Traversalの型・schemaとSource関数値入口 — 2026-10-25
+
+基点は公開main `d6326baa4bfa917c61a4d260c31c0d0169dcddf9`。
+既存checkoutでSemaの26 Rust pathと、保持するsource／callbackのDSL契約を変更した。
+`Traversal<S,F>`は元のcollection型と完全なFn型を保持し、`traverse`のgeneric result／errorと
+callback効果を既存の宣言owner／solverで推論する。`parallel(limit: u32)`の意味結果は
+`Need<Result<Vec<U>,E>>`である。名前付き必須引数、rigid generic、exact Arrayを保持する。
+型・entry digestの既存tagは変えず、Traversalに固有tagを与えた。すべてversion 1を維持する。
+
+Sourceの`fs.read_text`等の選択式は、元HIRのbounded referenceと既存project symbol tableで
+宣言ownerを得て、通常の名前付き関数値と同じ完全な型／効果認証を通す。
+namespaceをruntime receiverとして評価せず、実際のlocal receiverは先に選ぶ。
+最終payload照合も認証済みProjectCallableを選択式で受理するよう移行した。
+型だけからcallback captureへCopyを与えず、既存のFunctionValueRequiresCertificateを維持する。
+新しいruntime値authorityや仮のHost requestは導入していない。
+
+R2930 Sema checkはentry constructor tagの漏れで終了101。修正後のR2931は終了0・警告あり。
+R2932は観測toolのtimeout後に終了receiptがなく、元PIDの不在、0 byte log、終了code不明を記録した。
+成功や未実行とはしない。PID不在を確認した後のR2933 Sema checkは終了0・警告あり。
+R2934 catalog／R2935の初期3件は3／3 PASS。R2936 catalog／R2937 Sema全件は
+**1,337／1,337 PASS**、170.524秒、終了0。これは後段のSource関数値修正より前の入力である。
+3,981非文書入力と5実行ファイルの前後hash差分0を確認した。
+
+R2938 workspace checkは全target／全feature／lockedで終了101。
+Compiler `lower.rs`の型投影に`TypeKind::Traversal`、collection intrinsic照合に
+`Traverse`／`Parallel`の網羅漏れがあり、E0004が2件だった。
+この記録時点でCompiler／runtime-plan／Coreのproducer loweringには接続していない。
+Sema単独の成功をfirst-class Needの実構築・Native/AWBC実行・保存復元の受入へ広げない。
+実Cargo graphはSema全22逆依存。manifest／lock 99入力は不変で、Compilerの失敗を残したまま
+この新入力の逆依存runtimeを成功とは記していない。
+
+実capability参照を追加したR2939 catalog／R2940は4実行／3 PASS／1 FAIL、終了100、0.237秒。
+選択式がnamespace prefixを値として評価し、ValueResolutionFailedとなった。
+関数値解決を接続しlocal receiver優先のcaseも加えたR2941 catalog／R2942では、
+**5実行／4 PASS／1 FAIL**、終了100、0.239秒。関数値は解決されたが最終payload照合が
+ProjectCallableの選択式を拒否し、WrongPayloadFamilyだった。
+各runのcatalog／終端caseは一致し、3,981非文書入力・5実行ファイルの前後hash差分0。
+元の失敗を削除・成功扱いにせず、その後の修正と区別する。
+
+最終照合を移行したR2943 catalog／R2944は**5／5 PASS**、終了0、0.236秒、1,334非選択。
+実capabilityの直接／local参照とArray source、callback効果の保持、rigid genericと動的limit、
+local receiver優先、Need／Result外callbackの拒否を通過した。
+[終端case・入力照合](acceptance-evidence/task-final-r2944-traversal-callable-seal-sema-runtime.terminal-audit.json)、
+[実行ファイル照合](acceptance-evidence/task-traversal-callable-seal-runtime.audit.json)。
+同じ最終入力のR2945 catalogは全1,339件を選択し、R2946全Semaはこの記録時点で実行中。
+
+R2930以降の原log／receipt、catalog、入力hash、実行ファイルhashと終端照合をbyte／SHA256不変で保持した。
+[原本保全一覧](acceptance-evidence/task-traversal-sema-evidence-integrity.json)。
+生成物の移動・コピーはなく、元tracked WIP 14件とuntracked実ファイル6件を保持した。
+全体goalやSource後段の未接続から、Generic Matchと既存AwaitMany集約の受入を取り消していない。

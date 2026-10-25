@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "catalog": "task-final-r2941-traversal-project-reference-sema-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-de1f834205c1fd25.exe",
+      "bytes": 3202560,
+      "nonTest": false,
+      "sha256": "66dc277e95a6a102947fc3140fc5512e9962f042b7de119e6c49c4e8a116aded"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+      "bytes": 83608064,
+      "nonTest": false,
+      "sha256": "6906e76b650210de10ea0143587a9b90d191a6f142ef9c9c0c6db3170c519cff"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\character_nominal_mismatch-c08b7d97df49d27d.exe",
+      "bytes": 1118208,
+      "nonTest": false,
+      "sha256": "0fb328d0a2e27335ee9fe6afc2bff7946f50e18c5c62231ec837f2bbb3685766"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_match_query-63fa5713132b656b.exe",
+      "bytes": 54988800,
+      "nonTest": false,
+      "sha256": "2c213c96d6791f3b28688abd4386162f8c56d537c9c8c4eee25c69df63a8b9ad"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_statement_read_only_views-c0167fe9a9e46364.exe",
+      "bytes": 740352,
+      "nonTest": false,
+      "sha256": "68f27c243b870ae82580c4f4fc51503dfbad8fef881146a3176fdc7849c74219"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-25T05:02:07.5926543Z"
+}

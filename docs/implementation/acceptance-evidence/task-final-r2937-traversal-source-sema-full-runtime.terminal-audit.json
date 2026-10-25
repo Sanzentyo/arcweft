@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "run": "task-final-r2937-traversal-source-sema-full-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 170.524s] 1337 tests run: 1337 passed (1 slow), 0 skipped",
+  "executed": 1337,
+  "passed": 1337,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-25T04:35:13.6410356Z"
+}

@@ -116,7 +116,11 @@ pub(crate) fn visit_project_nominals<E>(
             visit_project_nominals(ScopedTypeView::sealed(key, scope), visitor)?;
             visit_project_nominals(ScopedTypeView::sealed(value, scope), visitor)
         }
-        TypeKind::Stream { item, error }
+        TypeKind::Traversal {
+            source: item,
+            mapping: error,
+        }
+        | TypeKind::Stream { item, error }
         | TypeKind::Parser { item, error }
         | TypeKind::Result { ok: item, error } => {
             visit_project_nominals(ScopedTypeView::sealed(item, scope), visitor)?;

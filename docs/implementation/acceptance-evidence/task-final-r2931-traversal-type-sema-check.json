@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "name": "task-final-r2931-traversal-type-sema-check",
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "startedAt": "2026-10-25T04:05:19.108Z",
+  "pid": 32416,
+  "state": "terminal",
+  "exitCode": 0,
+  "signal": null,
+  "finishedAt": "2026-10-25T04:07:25.690Z"
+}

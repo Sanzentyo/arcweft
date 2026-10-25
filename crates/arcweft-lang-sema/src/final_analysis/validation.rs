@@ -944,7 +944,10 @@ fn expression_resolution_matches(
         | (HirExprKind::Select(_), CheckedExpressionResolution::Select(_))
         | (
             HirExprKind::Select(_),
-            CheckedExpressionResolution::Value(CheckedValueResolution::EnvironmentCallable(_)),
+            CheckedExpressionResolution::Value(
+                CheckedValueResolution::EnvironmentCallable(_)
+                | CheckedValueResolution::ProjectCallable(_),
+            ),
         )
         | (
             HirExprKind::Record(_) | HirExprKind::RecordLiteral(_) | HirExprKind::Path(_),

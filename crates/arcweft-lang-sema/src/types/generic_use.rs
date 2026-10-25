@@ -426,7 +426,11 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
                 self.visit_at(value, position)
             }
             TypeKind::BorrowRef { inner, .. } => self.visit_at(inner, position),
-            TypeKind::Stream { item, error }
+            TypeKind::Traversal {
+                source: item,
+                mapping: error,
+            }
+            | TypeKind::Stream { item, error }
             | TypeKind::Parser { item, error }
             | TypeKind::Result { ok: item, error } => {
                 self.visit_at(item, position)?;

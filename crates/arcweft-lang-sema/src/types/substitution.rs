@@ -104,7 +104,12 @@ fn contains_generic_parameter_where(
             contains_generic_parameter_where(left, predicate)
                 || contains_generic_parameter_where(right, predicate)
         }
-        TypeKind::Stream { item, error } | TypeKind::Parser { item, error } => {
+        TypeKind::Traversal {
+            source: item,
+            mapping: error,
+        }
+        | TypeKind::Stream { item, error }
+        | TypeKind::Parser { item, error } => {
             contains_generic_parameter_where(item, predicate)
                 || contains_generic_parameter_where(error, predicate)
         }
@@ -237,6 +242,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::Need(_)
         | TypeKind::Parser { .. }
         | TypeKind::Result { .. }
+        | TypeKind::Traversal { .. }
         | TypeKind::Stream { .. }
         | TypeKind::Function { .. }
         | TypeKind::ProjectNominal(_)
@@ -301,6 +307,10 @@ impl TypeKind {
             Self::Need(value) => {
                 Self::Need(Box::new(value.substitute_type_parameters(substitutions)))
             }
+            Self::Traversal { source, mapping } => Self::Traversal {
+                source: Box::new(source.substitute_type_parameters(substitutions)),
+                mapping: Box::new(mapping.substitute_type_parameters(substitutions)),
+            },
             Self::Stream { item, error } => Self::Stream {
                 item: Box::new(item.substitute_type_parameters(substitutions)),
                 error: Box::new(error.substitute_type_parameters(substitutions)),
@@ -455,6 +465,10 @@ impl TypeKind {
                 kind: *kind,
                 key: Box::new(recurse(key)?),
                 value: Box::new(recurse(value)?),
+            },
+            Self::Traversal { source, mapping } => Self::Traversal {
+                source: Box::new(recurse(source)?),
+                mapping: Box::new(recurse(mapping)?),
             },
             Self::Stream { item, error } => Self::Stream {
                 item: Box::new(recurse(item)?),
@@ -752,7 +766,11 @@ fn observe_composite_type_parameters(
                     .all(|(declared, actual)| observe_type_parameters(declared, actual, bindings))
         }
         (
-            TypeKind::Stream {
+            TypeKind::Traversal {
+                source: declared_first,
+                mapping: declared_second,
+            }
+            | TypeKind::Stream {
                 item: declared_first,
                 error: declared_second,
             }
@@ -764,7 +782,11 @@ fn observe_composite_type_parameters(
                 ok: declared_first,
                 error: declared_second,
             },
-            TypeKind::Stream {
+            TypeKind::Traversal {
+                source: actual_first,
+                mapping: actual_second,
+            }
+            | TypeKind::Stream {
                 item: actual_first,
                 error: actual_second,
             }
@@ -826,6 +848,7 @@ fn observe_composite_type_parameters(
         }
         (
             TypeKind::Need(_)
+            | TypeKind::Traversal { .. }
             | TypeKind::Stream { .. }
             | TypeKind::Parser { .. }
             | TypeKind::Result { .. }

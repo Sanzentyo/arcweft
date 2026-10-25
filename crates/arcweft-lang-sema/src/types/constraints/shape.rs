@@ -176,6 +176,11 @@ impl TypeKind {
                 lifetime,
                 inner,
             },
+            Self::Traversal { source, mapping } => TypeConstraintShape::Pair {
+                kind: PairShape::Traversal,
+                first: source,
+                second: mapping,
+            },
             Self::Stream { item, error } => TypeConstraintShape::Pair {
                 kind: PairShape::Stream,
                 first: item,
@@ -547,6 +552,7 @@ impl UnaryShape<'_> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PairShape {
+    Traversal,
     Stream,
     Parser,
     Result,
@@ -555,6 +561,10 @@ pub(crate) enum PairShape {
 impl PairShape {
     fn rebuild(self, first: TypeKind, second: TypeKind) -> TypeKind {
         match self {
+            Self::Traversal => TypeKind::Traversal {
+                source: Box::new(first),
+                mapping: Box::new(second),
+            },
             Self::Stream => TypeKind::Stream {
                 item: Box::new(first),
                 error: Box::new(second),

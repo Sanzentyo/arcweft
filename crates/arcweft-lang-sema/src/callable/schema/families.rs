@@ -832,6 +832,26 @@ impl CollectionMethodId {
         method: &CallableName,
         arity: usize,
     ) -> Option<Self> {
+        if method.as_str() == "traverse" {
+            return (arity == 1
+                && matches!(
+                    receiver,
+                    TypeKind::Vec(_)
+                        | TypeKind::Array { .. }
+                        | TypeKind::Slice(_)
+                        | TypeKind::Seq(_)
+                ))
+            .then(|| Self::Traverse {
+                source: receiver.clone(),
+            });
+        }
+        if method.as_str() == "parallel" {
+            return (arity == 1 && matches!(receiver, TypeKind::Traversal { .. })).then(|| {
+                Self::Parallel {
+                    traversal: receiver.clone(),
+                }
+            });
+        }
         if method.as_str() == "collect" {
             if arity != 0 {
                 return None;
@@ -848,6 +868,102 @@ impl CollectionMethodId {
 
     pub(crate) fn signature_schema(&self, receiver: &TypeKind) -> Option<CallableSignatureSchema> {
         let validator = CallableValidator::Collection(self.clone());
+        if let Self::Traverse { source } = self {
+            if source != receiver {
+                return None;
+            }
+            let input = sequence_item(source)?;
+            let owner = LanguageIntrinsicGenericOwner::CollectionTraverse;
+            let generic_owner = GenericParameterOwnerId::LanguageIntrinsic(owner);
+            let output = generic(generic_owner.clone(), 0);
+            let error = generic(generic_owner.clone(), 1);
+            let effects = EffectRow::open(
+                EffectSet::new(),
+                crate::types::GenericEffectParameterId::new(generic_owner, 0).into(),
+            );
+            let mapping = TypeKind::function_with_effects(
+                [input],
+                TypeKind::Need(Box::new(TypeKind::Result {
+                    ok: Box::new(output),
+                    error: Box::new(error),
+                })),
+                effects,
+            );
+            return Some(one_positional_with_issuer(
+                "mapping",
+                mapping.clone(),
+                TypeKind::Traversal {
+                    source: Box::new(source.clone()),
+                    mapping: Box::new(mapping),
+                },
+                &[],
+                validator,
+                CallableGenericParameterIssuer::language_intrinsic(owner, 2, 0)
+                    .expect("traverse owns its result, error and callback effect parameters"),
+            ));
+        }
+        if let Self::Parallel { traversal } = self {
+            if traversal != receiver {
+                return None;
+            }
+            let TypeKind::Traversal { source, mapping } = traversal else {
+                return None;
+            };
+            if !matches!(
+                source.as_ref(),
+                TypeKind::Vec(_) | TypeKind::Array { .. } | TypeKind::Slice(_) | TypeKind::Seq(_)
+            ) {
+                return None;
+            }
+            let TypeKind::Function {
+                params,
+                return_type,
+                effects,
+                ..
+            } = mapping.as_ref()
+            else {
+                return None;
+            };
+            if params.len() != 1 {
+                return None;
+            }
+            let TypeKind::Need(payload) = return_type.as_ref() else {
+                return None;
+            };
+            let TypeKind::Result { ok, error } = payload.as_ref() else {
+                return None;
+            };
+            let group = CallableParameterGroup::try_new(
+                crate::callable::CallableGroupIndex::ZERO,
+                CallableGroupKind::Initial,
+                vec![parameter(
+                    0,
+                    Some("limit"),
+                    CallableParameterAdmission::checked(TypeKind::U32),
+                    CallableParameterPassing::NamedOnly,
+                    CallableParameterPresence::Required,
+                )],
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("parallel has one required named limit");
+            return Some(
+                CallableSignatureSchema::try_new(
+                    vec![group],
+                    TypeKind::Need(Box::new(TypeKind::Result {
+                        ok: Box::new(TypeKind::Vec(ok.clone())),
+                        error: error.clone(),
+                    })),
+                    CallableEffectSchema::fixed(effects.clone()),
+                    closed(),
+                    validator,
+                    CallableGenericParameterIssuer::empty(),
+                    &PRODUCTION_CALLABLE_LIMITS,
+                )
+                .expect(
+                    "parallel retains the receiver's exact callback effect and result contract",
+                ),
+            );
+        }
         if let Self::Collect { item } = self {
             let receiver_item = match receiver {
                 TypeKind::Vec(receiver_item) | TypeKind::Seq(receiver_item) => {
@@ -886,7 +1002,9 @@ impl CollectionMethodId {
             Self::Sum if item.is_integer() => empty(TypeKind::I64, &[], validator),
             Self::Contains => one_positional("item", item, TypeKind::Bool, &[], validator),
             Self::Len | Self::Sum => return None,
-            Self::Collect { .. } => unreachable!("collect schema returned above"),
+            Self::Collect { .. } | Self::Traverse { .. } | Self::Parallel { .. } => {
+                unreachable!("parameterized collection schemas returned above")
+            }
         })
     }
 }

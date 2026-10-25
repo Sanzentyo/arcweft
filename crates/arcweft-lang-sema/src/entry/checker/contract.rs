@@ -544,6 +544,10 @@ impl<'a> EntryContractBuilder<'a> {
             TypeKind::Need(item) => {
                 self.canonical_application(CanonicalConstructor::Need, [item.as_ref()])?
             }
+            TypeKind::Traversal { source, mapping } => self.canonical_application(
+                CanonicalConstructor::Traversal,
+                [source.as_ref(), mapping.as_ref()],
+            )?,
             TypeKind::Stream { item, error } => self.canonical_application(
                 CanonicalConstructor::Stream,
                 [item.as_ref(), error.as_ref()],

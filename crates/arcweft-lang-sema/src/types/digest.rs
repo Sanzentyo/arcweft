@@ -757,6 +757,11 @@ impl Encoder {
                 self.tag(54);
                 tasks.push(EncodingTask::Type(value, child_depth));
             }
+            TypeKind::Traversal { source, mapping } => {
+                self.tag(103);
+                tasks.push(EncodingTask::Type(mapping, child_depth));
+                tasks.push(EncodingTask::Type(source, child_depth));
+            }
             TypeKind::Stream { item, error } => {
                 self.tag(55);
                 tasks.push(EncodingTask::Type(error, child_depth));

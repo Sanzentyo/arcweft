@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "name": "task-final-r2943-traversal-callable-seal-sema-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json",
+    "-E",
+    "test(traversal_)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2943-traversal-callable-seal-sema-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T05:03:37.9846220Z",
+  "finishedAt": "2026-10-25T05:04:21.7282883Z"
+}

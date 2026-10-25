@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "artifactCopyMove": false,
+  "scope": "validation records, source-input hashes, catalogs and executable hashes; no build artifacts copied",
+  "records": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2930-traversal-type-sema-check.json",
+      "bytes": 418,
+      "sha256": "ada5c36383bbd53944be519cdf12847fed2c7b0d4f5ffa175efe96f698611110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2930-traversal-type-sema-check.log",
+      "bytes": 72068,
+      "sha256": "dc7d32e09e61b3bcc0c3a0b1766e79946bb72b9c42768e562430f7d58e1df074"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2931-traversal-type-sema-check.json",
+      "bytes": 416,
+      "sha256": "d3af6bb625cc866bec3e704b560a62128b35c43b125a3091bc7a4530c50dc27e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2931-traversal-type-sema-check.log",
+      "bytes": 79809,
+      "sha256": "d06b5600e21cd7bafdb2051c0dfa4c12081e3fc2c6d8efef20bbbf0160572921"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2932-traversal-callable-sema-check.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2932-traversal-callable-sema-check.observation.json",
+      "bytes": 384,
+      "sha256": "8ed8351c4471e992c7617890cb74d95eef58aed2097b3c3f8b5ac565f7251f3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2933-traversal-callable-sema-check.json",
+      "bytes": 533,
+      "sha256": "a5cfd91dd45ad78dd6ff723fed73b21fd2e0738817711724cfb1a33a8be22370"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2933-traversal-callable-sema-check.log",
+      "bytes": 81660,
+      "sha256": "6bf18f97b453d49abc5ceb84612a72575be1669a270bab42d4cd80448a873d1e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2934-traversal-source-sema-catalog.inventory.json",
+      "bytes": 352286,
+      "sha256": "ffdefe765ebee74c6bff4ad1948f2caa60a2442be9cc283f265d9a8835181744"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2934-traversal-source-sema-catalog.json",
+      "bytes": 823,
+      "sha256": "e4fadfb25a8543c3550853b34d9cb551ac5db5359cd6d44cdc8ac674dc400954"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2934-traversal-source-sema-catalog.log",
+      "bytes": 343196,
+      "sha256": "b08f1ed5b0e81c600c8ad3a186e78a33b281f7c4ca562be6ad991c1f8fca4b5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2935-traversal-source-sema-runtime.json",
+      "bytes": 915,
+      "sha256": "fd9d7811b103b9667666dcdea53032c669a646a9a3f3171bc61d8745611edffc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2935-traversal-source-sema-runtime.log",
+      "bytes": 499976,
+      "sha256": "68c6f084e0f2651c8f71b6700c95cdf195f3a19de02f989055d22078c58e5903"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2935-traversal-source-sema-runtime.terminal-audit.json",
+      "bytes": 571,
+      "sha256": "1c21a65f3b24460f75c606bd0028a957e2deac05d42236a2ddf22329250ace7a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2936-traversal-source-sema-full-catalog.inventory.json",
+      "bytes": 350957,
+      "sha256": "844a51484dee79afc0799499a989b84a1c94ca5ef20505aa8be68ad688e082d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2936-traversal-source-sema-full-catalog.json",
+      "bytes": 596,
+      "sha256": "1f9245048e55b74f14c45c70e286c42d014eaaa421cacaa000a1f264cd185f1d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2936-traversal-source-sema-full-catalog.log",
+      "bytes": 311936,
+      "sha256": "7dfa77892dad19dce667bc001f9427c5d58fbe6505dcc7c0076152f71aa827ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2937-traversal-source-sema-full-runtime.json",
+      "bytes": 688,
+      "sha256": "c7bcb79f036677db2748b14a694c2340d45cf146621638a73b6f1a22bec79d83"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2937-traversal-source-sema-full-runtime.log",
+      "bytes": 500143,
+      "sha256": "0e24438ca72d24880ef1a90122506400abb1c68d533cce2f9c9710149a2476d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2937-traversal-source-sema-full-runtime.terminal-audit.json",
+      "bytes": 591,
+      "sha256": "c0599dcd47b86311b00194bed60147b4127f7004eab02aba6d0d836cdce04e5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2938-traversal-source-workspace-check.json",
+      "bytes": 524,
+      "sha256": "aea314c062147386b9ec447a4442f4f960951e678aba70229c39f5708baf9d01"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2938-traversal-source-workspace-check.log",
+      "bytes": 102830,
+      "sha256": "f7b4c9647a70dfc52e6cf266dbb3b41fec82f81011304ca34216c690a8074ada"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2939-traversal-capability-sema-catalog.inventory.json",
+      "bytes": 352557,
+      "sha256": "a865a6c7c5b0b400e426970148180cb945276c8adce0a1cdea1a23972d3353bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2939-traversal-capability-sema-catalog.json",
+      "bytes": 668,
+      "sha256": "b2b03dc90b4b1045a051dd48a64c25bc0c06b46d637aaf4ccf4c9d9917a8b925"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2939-traversal-capability-sema-catalog.log",
+      "bytes": 342875,
+      "sha256": "ece674de2ecc64b2e24b797d7d915509a837417ae5fe255c2cac3b209670dfe0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2940-traversal-capability-sema-runtime.json",
+      "bytes": 762,
+      "sha256": "204114ac6f92508775beb8a701b632dacc5020ae6cb5f0209d9863b1aa7d1074"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2940-traversal-capability-sema-runtime.log",
+      "bytes": 501264,
+      "sha256": "81fa86570e5002945a7f5d0af82a6b8cf97578c3ffba9b8d36dcdaa81be1d5c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2940-traversal-capability-sema-runtime.terminal-audit.json",
+      "bytes": 791,
+      "sha256": "3c4d64358990a198f6ed99f6f7c5e8afd6826c073a161c50fdd292bb3efc427b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source.source-freeze.json",
+      "bytes": 779513,
+      "sha256": "9296469c7be1863505b980fcc22ed53aa8a283d37fe29c7b9ee7edfc12a3357d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source.graph.json",
+      "bytes": 3236,
+      "sha256": "87356df5c8e3657e4356413ebc86172d405654bdb0a33c1bfbf56db12bff702a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-capability.source-freeze.json",
+      "bytes": 779404,
+      "sha256": "3c8c8bcea8bb09de64cd146f5ac8a521e5ff995c913fe2a67434d23113eda8aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-capability.graph.json",
+      "bytes": 3282,
+      "sha256": "3b5e174080b1188cd6eb2a9bcbd40c30550acdbe773f69da2c1124d974451dbf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-sema-runtime.audit.json",
+      "bytes": 232,
+      "sha256": "61b4c4c638ac8d4341ae1259031cb53353afaca98b892e2e0e8195cd9f6fa7c7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-sema-full-runtime.audit.json",
+      "bytes": 237,
+      "sha256": "b990515414b321e6c2582ae899ec27577bdf356790528f49ac81ced45b1a44ad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-source-capability-sema-runtime.audit.json",
+      "bytes": 238,
+      "sha256": "f546ae6bc1ff4eb9694f4f46284567b459c640f51285fdc7697c8f4135982179"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2941-traversal-project-reference-sema-catalog.inventory.json",
+      "bytes": 352835,
+      "sha256": "35a4ff3221f07d8c1d23c0529a73b0920c2431e1a0714c197be6ba33ebd360f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2941-traversal-project-reference-sema-catalog.json",
+      "bytes": 644,
+      "sha256": "92c58835f3161a674f89e0be3b3cefe61a601c58bfcf89ea09b47a70de7360ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2941-traversal-project-reference-sema-catalog.log",
+      "bytes": 343054,
+      "sha256": "8fa23e4878dea5b0782d3339d0183e84852c2c8b30e94423825626847a586886"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2942-traversal-project-reference-sema-runtime.json",
+      "bytes": 738,
+      "sha256": "cb798158b357d09eb224f7d9dbde7efca7b7fa6f8bf94bbe82bed7cb3476f0c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2942-traversal-project-reference-sema-runtime.log",
+      "bytes": 517533,
+      "sha256": "b5dd1dd7107e12175806259019fb302884cf19408f5e754766c250896f059379"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2942-traversal-project-reference-sema-runtime.terminal-audit.json",
+      "bytes": 798,
+      "sha256": "d53a087687562f3811716fb65b4ad5b6caf4ae52a720930d5d934bf278a388c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-project-reference.source-freeze.json",
+      "bytes": 779560,
+      "sha256": "37149ca9cb9a80a19f63e869e74e542159c10617bfe0a7eb22f3d082a154677f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-project-reference.graph.json",
+      "bytes": 3438,
+      "sha256": "7ea2ce295b0ab57bc13df5daddda0d4841e3c5d6731c861b8123b382a1c6ff72"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-project-reference-binaries-before.json",
+      "bytes": 1498,
+      "sha256": "37968bd8839f2e45a87383868a32433727b37fc6d78931d7e4c7112f0ff51831"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-project-reference-runtime.audit.json",
+      "bytes": 306,
+      "sha256": "f0ecc17ffccc6942525e6dcf98a77889d751f14a0ed25658084a6a9734cec466"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2943-traversal-callable-seal-sema-catalog.inventory.json",
+      "bytes": 352831,
+      "sha256": "a184eafe8f8a2f8b50e007ba1e3d0225c637cfb5026091d68eca7c420dac14e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2943-traversal-callable-seal-sema-catalog.json",
+      "bytes": 636,
+      "sha256": "0e50bd5fd91fa03adf729704a0c6eb4517f2c429329a33f10e4ee3059be342ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2943-traversal-callable-seal-sema-catalog.log",
+      "bytes": 343054,
+      "sha256": "357375b4e0097e90bbaf067b83f3c551f09c6a6f24e216ecfab09c4eed41faba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2944-traversal-callable-seal-sema-runtime.json",
+      "bytes": 728,
+      "sha256": "513cf7c55043f20dd0564725e53c3b39f1f6062dad51b9f961a1d73e71cc8ee9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2944-traversal-callable-seal-sema-runtime.log",
+      "bytes": 516660,
+      "sha256": "1e0c4d36bf8f649759a53f39dd04925f93b7b2a60471685a4683bcc36e71f6d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r2944-traversal-callable-seal-sema-runtime.terminal-audit.json",
+      "bytes": 578,
+      "sha256": "20c99c754aef39a71b008fe6aa4bc924a76ebad438c13a16def952e4c5a9c57e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-callable-seal.source-freeze.json",
+      "bytes": 779626,
+      "sha256": "dfc5a2df8f765794e696f54a16ee23721907eb4418143e9c6ca3026762e1f197"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-callable-seal.graph.json",
+      "bytes": 3504,
+      "sha256": "f75a3e335dbad98b36ab003f5c97da42ee10e4776b00a6bf989c99096feb64fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-callable-seal-binaries-before.json",
+      "bytes": 1494,
+      "sha256": "9c1606c46fbb3e814c28801fc18dad030b8286f502370fbcba377b6be70a50da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-callable-seal-runtime.audit.json",
+      "bytes": 181,
+      "sha256": "65f058e4c6bc3f3ca1eb4be7951e512bb29937ece078a1a63ab93cf5d12b13ca"
+    }
+  ],
+  "recordCount": 55,
+  "bytes": 9466075,
+  "at": "2026-10-25T05:06:36.941Z"
+}

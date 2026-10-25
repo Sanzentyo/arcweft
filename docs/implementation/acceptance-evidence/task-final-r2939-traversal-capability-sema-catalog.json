@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "name": "task-final-r2939-traversal-capability-sema-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json",
+    "-E",
+    "test(final_analysis::tests::generic_calls::traversal_)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2939-traversal-capability-sema-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T04:46:02.8366976Z",
+  "finishedAt": "2026-10-25T04:47:06.8393984Z"
+}

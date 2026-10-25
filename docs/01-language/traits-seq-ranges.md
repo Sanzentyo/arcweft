@@ -272,6 +272,25 @@ let images =
 
 The bounded traversal contract is `Vec<T>.traverse(capability.fn).parallel(limit = N)`, where the capability function returns `Need<Result<U, E>>`. The limit bounds in-flight child requests, and the aggregate preserves source order. Awaiting produces `Result<Vec<U>, E>`; `try await` applies the `Need` and `Result` rules described in [Result / Option, `try`, and Context](result-option-context.md). Runtime fanout details are in [Async scheduler and Need](../02-runtime/async-scheduler.md#need-handling).
 
+`traverse` captures its collection and unary callback in `Traversal<S, F>`;
+it does not invoke the callback. `S` retains the exact collection type and `F`
+retains the callback's parameter, `Need<Result<U, E>>` result, and effect row.
+Vec, Array, Slice, and Seq use the same checked element/callback relation.
+The intermediate value owns its captured values; type-level function identity
+alone does not grant permission to copy captures.
+
+`parallel` consumes this intermediate value and constructs the ordinary
+`Need<Result<Vec<U>, E>>`. Its required named `limit` is a positive `u32` value
+and may be evaluated at runtime. Invalid configuration is rejected before any
+child starts. Starting follows the producer's checked start policy; `await`
+removes only the temporal layer. The callback's effect row is preserved at the
+scheduled operation. The Need can be bound or passed before it is awaited:
+
+```arcw
+let work = paths.traverse(fs.read_text).parallel(limit = limit)
+let texts = try await work
+```
+
 Empty traversal produces `.Ok([])`. Domain results are collected at their source
 positions; after collection, all `.Ok` payloads form the ordered vector, or the
 lowest source position containing `.Err` supplies the aggregate error. Host

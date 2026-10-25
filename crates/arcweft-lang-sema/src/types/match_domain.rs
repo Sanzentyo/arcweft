@@ -196,7 +196,11 @@ impl TypeKind {
             | Self::Shared(inner)
             | Self::BorrowRef { inner, .. } => MatchDomainInput::OpenChild(inner),
             Self::IteratorState { item, .. } => MatchDomainInput::OpenChild(item),
-            Self::Map { key, value, .. }
+            Self::Traversal {
+                source: key,
+                mapping: value,
+            }
+            | Self::Map { key, value, .. }
             | Self::Stream {
                 item: key,
                 error: value,

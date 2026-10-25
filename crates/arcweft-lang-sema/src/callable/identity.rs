@@ -922,6 +922,8 @@ pub enum CollectionMethodId {
     Sum,
     Contains,
     Collect { item: TypeKind },
+    Traverse { source: TypeKind },
+    Parallel { traversal: TypeKind },
 }
 
 impl CollectionMethodId {

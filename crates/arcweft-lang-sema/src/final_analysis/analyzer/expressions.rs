@@ -1376,7 +1376,7 @@ impl Analyzer<'_, '_, '_> {
                     return Ok(Some(variant));
                 }
                 if let Some(callable) =
-                    self.prepare_environment_callable_value(module, owner, expected)?
+                    self.prepare_declared_callable_value(module, owner, expected)?
                 {
                     return Ok(Some(callable));
                 }
@@ -1686,7 +1686,7 @@ impl Analyzer<'_, '_, '_> {
             )
             .into());
         }
-        if let Some(callable) = self.prepare_environment_callable_value(module, owner, expected)? {
+        if let Some(callable) = self.prepare_declared_callable_value(module, owner, expected)? {
             return Ok(callable);
         }
         let (ty, variant_owner, ordinal, selection) = if let (

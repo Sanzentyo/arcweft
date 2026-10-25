@@ -34,6 +34,8 @@ pub enum TypeMismatchPathSegment {
     BorrowLifetime,
     BorrowInner,
     NeedItem,
+    TraversalSource,
+    TraversalMapping,
     StreamItem,
     StreamError,
     ParserItem,
@@ -703,6 +705,28 @@ impl TypeKind {
                 expected_item
                     .first_mismatch(actual_item)
                     .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::NeedItem))
+            }
+            Self::Traversal {
+                source: expected_source,
+                mapping: expected_mapping,
+            } => {
+                let Self::Traversal {
+                    source: actual_source,
+                    mapping: actual_mapping,
+                } = actual
+                else {
+                    unreachable!("equal discriminants")
+                };
+                expected_source
+                    .first_mismatch(actual_source)
+                    .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::TraversalSource))
+                    .or_else(|| {
+                        expected_mapping
+                            .first_mismatch(actual_mapping)
+                            .map(|mismatch| {
+                                mismatch.prepend(TypeMismatchPathSegment::TraversalMapping)
+                            })
+                    })
             }
             Self::Stream {
                 item: expected_item,

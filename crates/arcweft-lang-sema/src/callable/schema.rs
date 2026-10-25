@@ -624,17 +624,20 @@ impl CallableGenericParameterIssuer {
         type_count: u16,
         const_count: u16,
     ) -> Result<Self, CallableSchemaError> {
-        if let CallableGenericIssuerOwner::LanguageIntrinsic(owner) = &owner {
+        let effect_count = if let CallableGenericIssuerOwner::LanguageIntrinsic(owner) = &owner {
             if (type_count, const_count) != owner.generic_arity() {
                 return Err(CallableSchemaError::InvalidCandidateIssuer);
             }
-        }
+            owner.generic_effect_arity()
+        } else {
+            0
+        };
         Ok(Self {
             authority: CallableGenericParameterAuthority::Declaration {
                 owner,
                 type_count,
                 const_count,
-                effect_count: 0,
+                effect_count,
             },
             predicate: crate::effect_row::EffectPredicate::unconstrained(),
         })

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "name": "task-final-r2934-traversal-source-sema-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json",
+    "-E",
+    "test(traversal_retains_the_callback_effect_and_builds_a_first_class_need) | test(traversal_preserves_rigid_child_types_and_a_dynamic_parallel_limit) | test(traversal_rejects_callbacks_outside_its_need_result_contract)"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r2934-traversal-source-sema-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T04:18:56.6570970Z",
+  "finishedAt": "2026-10-25T04:25:08.5786762Z"
+}

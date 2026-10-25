@@ -1018,6 +1018,12 @@ pub enum TypeKind {
         inner: Box<TypeKind>,
     },
     Need(Box<TypeKind>),
+    /// An unstarted traversal retaining the complete source and callback type.
+    /// Scheduling produces a unary Need; constructing this value invokes no callback.
+    Traversal {
+        source: Box<TypeKind>,
+        mapping: Box<TypeKind>,
+    },
     Stream {
         item: Box<TypeKind>,
         error: Box<TypeKind>,
@@ -1226,6 +1232,13 @@ impl TypeKind {
                 )
             }
             Self::Need(value) => format!("Need<{}>", value.source_label()),
+            Self::Traversal { source, mapping } => {
+                format!(
+                    "Traversal<{}, {}>",
+                    source.source_label(),
+                    mapping.source_label()
+                )
+            }
             Self::Stream { item, error } => {
                 format!("Stream<{}, {}>", item.source_label(), error.source_label())
             }

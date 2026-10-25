@@ -67,6 +67,7 @@ pub enum BuiltinTypeConstructor {
     BTreeMap,
     Result,
     Need,
+    Traversal,
     Stream,
     Parser,
     Ref,
@@ -423,6 +424,7 @@ impl BuiltinTypeConstructor {
         Self::BTreeMap,
         Self::Result,
         Self::Need,
+        Self::Traversal,
         Self::Stream,
         Self::Parser,
         Self::Ref,
@@ -484,6 +486,7 @@ impl BuiltinTypeConstructor {
             Self::BTreeMap => "BTreeMap",
             Self::Result => "Result",
             Self::Need => "Need",
+            Self::Traversal => "Traversal",
             Self::Stream => "Stream",
             Self::Parser => "Parser",
             Self::Ref => "Ref",
@@ -539,6 +542,7 @@ impl BuiltinTypeConstructor {
             | Self::SortedMap
             | Self::BTreeMap
             | Self::Result
+            | Self::Traversal
             | Self::Stream
             | Self::Parser => 2,
         }

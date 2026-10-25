@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "run": "task-final-r2932-traversal-callable-sema-check",
+  "pid": 26116,
+  "state": "process_missing",
+  "actualExitCode": null,
+  "receiptPresent": false,
+  "rawLogBytes": 0,
+  "observedAt": "2026-10-25T04:15:46.5806713Z",
+  "note": "Observation context reset; no terminal receipt or executable output available. No success or test execution claim."
+}

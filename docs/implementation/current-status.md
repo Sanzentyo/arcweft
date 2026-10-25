@@ -1,10 +1,11 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-25。今回の照合基点は公開main `35f9580a2e483dc23a6597611ab9d347466c0eae`。
-Rust入力はCore公開 `763a7cdd54afc31b3697e40572797323e5384638` と保持WIPで、
-その後の文書変更を除く3,981入力と227実行ファイルの前後hash差分は0だった。
-最新の終了済み横断実行R2929は、全53逆依存で7,314実行／7,264 PASS／50 FAIL／39 ignored。
-Generic Matchの受入151件もすべてPASSした。全体の50 FAILは保持し、全体成功とは扱わない。
+確認日: 2026-10-25。照合基点は公開main `d6326baa4bfa917c61a4d260c31c0d0169dcddf9`。
+その後のSema 26 Rust pathとDSL契約の変更を既存checkoutで確認した。
+新しい関数値入口を含むR2944は5／5 PASSで、3,981非文書入力・5実行ファイルの差分0。
+同じ入力のSema全1,339件はR2946で実行中。Compilerへの型・callable移行は未完了である。
+前段入力の横断R2929は全53逆依存で7,314実行／7,264 PASS／50 FAIL／39 ignored、
+Generic Matchの受入151件は全PASS。これは後続Sema変更の横断成功を示す結果ではない。
 元のtracked WIP 14件／untracked実ファイル6件を保持している。
 この文書を項目別の現状の唯一の一覧とする。現行の契約は
 [仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
@@ -45,18 +46,18 @@ Generic Match の後続メモにあった「未完了」「C3/C5 が残る」と
 | Native AwaitMany の Source／operand admission | **起動経路を接続し、Core owner検証済み** | baseは元Source、完全なcapture群と評価済みsourceを検査してからcaptureを複製する。childも実際のitem／indexとcaptureを検査してから一時bindingを作る。TaskSpecのclass／priority／scope／policy／outcomeは元のtemplateが所有する。別lease・別endpoint・失敗済みbankの拒否をNative／AWBCのSource carrierで確認し、Core library全1,977件がPASS。未使用になった直接生成APIは削除した。実際のAWBC launch／restoreの切替と、全14 familyの最終受入はこの結果に含めない。[検証範囲と原本](acceptance-evidence/task-await-many-native-source-acceptance.json)。 |
 | AWBC AwaitMany の Source起動／save／checkpoint | **元Sourceへの接続を公開済み・owner／逆依存検証済み** | 公開 `dec74c879c651705e41d23cfcf9b6b0f8dc50f71`。base／childを元Sourceで認証し、実際のframeの型bindingとoperandからproducerを導出してからrequest kernelを実行する。digestだけで生成・照合する旧3 APIは削除した。live／inertの保持値を同じbankで検査し、元型とexpected-keyの照合でnodesを二重課金しない。公開saveとsession復元はadmitted ProductのSourceを保持し、private checkpointは同じexecutable Arcでも別Source leaseや型を保ったitem改変を拒否する。debug labelはcapture参照前に検査する。前cutの53 package選択でCore library 1,982／1,982 PASSを実行し、横断実行に新規失敗0、Core単独doctest 75／75 PASS。[初回owner検証](acceptance-evidence/task-await-many-awbc-source-acceptance.json)、[後続の横断・doctest検証](acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json)。全14 family・Tier2の最終受入は別。 |
 | AwaitManyのResult集約／消費前検査 | **通常・独立Program childをowner／全53逆依存で検証済み** | 元のaggregate／child型からsequence保持とResult転置を選び、同じbankで型・資源・pattern／所有権を検査してからslotを消費する。Source位置によるErr選択、空入力、payload移動、scoped Resultのowner検査を維持した。前段のCore cutで、実際のProgram起動・子の結果binding／return・親のawaitをNative／AWBC／各step公開save/restore付きAWBCで実行した。Nativeのイベント消失とAWBCの初期化漏れは新しい具体的な再現から修復し、通常の集約受入やGeneric Matchを未実装に戻していない。Nativeのqueued progress／Readyはprivate rollback後も成立し、progressの再通知と未来cursorを拒否する。Core全件・Clippyに加え、R2843で新しい統合テストとNative rollbackテストもPASS。[失敗・修復・原本](acceptance-evidence/task-fanout-child-acceptance.json)。後続R2864の全62逆依存でも当該ケースはPASS。横断範囲とworkspace gateは各行を参照。scoped genericの独立childと異なる親子generationは今回の統合fixtureでは別途実行していない。 |
-| DSL `traverse(...).parallel(...)` | **意味解析・lowering・first-class Need構築は未接続** | [採用されたDSL契約](../01-language/traits-seq-ranges.md#traversable)に対し、現cutでも意味解析／lowering／Need値の構築は未接続。最新R2929でも対象2件は `sema.call.unknown_target`／unknown method `traverse` で失敗した。R2800型検査の8 PASS／1 FAIL、fixture訂正と後続のCore全件成功は[履歴](convergence-evidence-history.md#awaitmanyのresult集約と消費前検査--2026-10-25)に保持する。Core内のResult集約受入は、このDSL契約の実行受入を意味しない。 |
+| DSL `traverse(...).parallel(...)` | **型・schema・関数値入口は対象検証済み。lowering・first-class Need値の構築／実行は未接続** | `Traversal<S,F>`は元source型と完全なcallback型・効果を保持し、Vec／Array／Slice／Seqのtraverseと必須のnamed `limit: u32`を意味解析する。R2944の5／5 PASSで、実capabilityの直接／local参照、Array、rigid generic、callback効果と動的limit、local receiverの優先順位、Need／Result外callbackの拒否を確認した。Sema全件の最終入力はR2946実行中。R2938 workspace checkはCompilerの新しい型・callableの網羅漏れ2件で終了101。前段R2929で実CLIの2件がunknown method `traverse`だった事実、途中のR2940／R2942失敗、修正と原本は[履歴](convergence-evidence-history.md#traversalの型schemaとsource関数値入口--2026-10-25)へ保持する。[採用DSL契約](../01-language/traits-seq-ranges.md#traversable)。Core内のResult集約受入と、このSource入口全体の実行受入を区別する。 |
 | 公開 executor save | **バックエンドごとに異なる** | `crates/arcweft-core/src/executor.rs` の `snapshot_for_save` は Product AWBC を扱う一方、RuntimePlanVm／StructuredAot は `UnsupportedTier` を返す。Product の既存 save/restore の成功は保持し、Native 公開 save の未対応を別項目として扱う。 |
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、実際に受理されたProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗した。checkpointに元executable leaseを保持し、復元先は同じleaseのadmitted Productに限定する。元Sourceと同一admissionを値mapperへ渡し、Product・activation・codegenの呼出側を移行した。R2535の新規Coreケースでhandleを取り出して破棄した候補から元状態へ復元でき、同内容の別leaseは元fiberを変えず拒否する。private checkpointは非Serde、公開wire DTOのJSON／cleanup検証は維持し、R2531のcompile-fail 2件もPASS。既存のdetached Bool入力rollbackも通過している。private checkpointの受入と、公開saveの全資源境界の包括的な受入は分ける。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
 | CLI・全 consumer の統合受入 | **最新CLIは641 PASS／50 FAIL。前回追加2件は今回の横断でもPASS** | R2929では従来のCLI失敗50識別子が再現した。Core 2,074／2,074、Sema 1,334／1,334、Compiler 617／617、runtime-plan 158／158、runtime-driver 177／177がPASS。前段R2908から追加の失敗識別子はなく、stdio起動待ちとCompiler拒否診断fixtureは今回PASSした。[全package・失敗集合](acceptance-evidence/task-presentation-custody-reverse-acceptance.json)。50件の原因・修復範囲は個別の診断で判断する。 |
 | Coreの全53逆依存runtime | **R2929終端：7,314実行／7,264 PASS／50 FAIL／39 ignored** | Cargo逆依存53 packageの全target／全feature／locked、終了100、2,158.248秒。221 test binariesと6 non-test binariesを構築し、named caseは50 packageで選択、`arcweft`／`arcweft-bundle-assets`／`arcweft-render-web` はbuildのみ。catalogと終端case集合が一致し、3,981非文書入力・227実行ファイルのhash差分0。前段R2908の52失敗はすべて選択され、2件がPASS、残る50識別子がFAIL、新規失敗識別子0。[終端照合](acceptance-evidence/task-final-r2929-presentation-custody-reverse-runtime.terminal-audit.json)、[範囲・package集計・Generic 151件](acceptance-evidence/task-presentation-custody-reverse-acceptance.json)。識別子一致を同一の根本原因の証明には使わない。 |
-| Workspace gate／Tier 2／Native-Web capture parity | **Handle custody追加後のworkspace check／Clippyは終了0・警告あり。包括受入は未確認** | R2922 check／R2923 Clippyはworkspace／all-targets／all-features／lockedで終了0。その後の差分はCoreのcfg(test) assertion 2箇所に限り、最終入力のR2927 Core Clippy全targetも終了0・警告あり。R2924構造gateは3,219 files／97 packages、blocking 0・review trigger 378。[範囲・再利用の限界](acceptance-evidence/task-presentation-custody-acceptance.json)、[所有境界](acceptance-evidence/task-presentation-custody-ownership-review.json)。最終入力のR2929全53逆依存runtimeは7,264 PASS／50 FAILで終了し、包括成功ではない。過去のCore doctest等を新入力の実行へ転用せず、Tier2／Native-Web capture parityの包括受入とも分ける。 |
+| Workspace gate／Tier 2／Native-Web capture parity | **直近workspace checkは新しいTraversal型・callableのCompiler移行漏れで失敗。包括受入は未確認** | R2938はworkspace／all-targets／all-features／lockedで終了101。`lower.rs`の型投影とcollection intrinsic照合に2件のE0004があり、Sema単独の成功をworkspace成功へ広げない。[原ログ](acceptance-evidence/task-final-r2938-traversal-source-workspace-check.log)。前段Core cutで成功したcheck／Clippy・構造gateは[当時の範囲](acceptance-evidence/task-presentation-custody-acceptance.json)へ保持する。Tier2／Native-Web capture parityの包括受入は別途未確認。 |
 
 ## CLIの具体的な観測
 
-最新R2929でも同じ識別子で再現した50件を、診断／期待値の種類で分類する。下記の診断分類は以前の原ログに基づき、今回の失敗識別子との一致を確認した。根本原因や修復方針の確定ではなく、
+前段R2929の入力で同じ識別子で再現した50件を、診断／期待値の種類で分類する。後続Sema変更を実CLIで再確認した結果ではない。下記の診断分類は以前の原ログに基づき、今回の失敗識別子との一致を確認した。根本原因や修復方針の確定ではなく、
 fixtureの現行契約との整合も含めて調べる。全識別子と診断は
 [分類](acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json) と
 [原診断への対応](acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.failure-recon.json) に保持する。

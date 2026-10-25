@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "d6326baa4bfa917c61a4d260c31c0d0169dcddf9",
+  "run": "task-final-r2942-traversal-project-reference-sema-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.239s] 5 tests run: 4 passed, 1 failed, 1334 skipped",
+  "executed": 5,
+  "passed": 4,
+  "failed": 1,
+  "skipped": 1334,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::generic_calls::traversal_accepts_authored_capability_references_and_array_sources"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-25T05:02:20.3422555Z"
+}

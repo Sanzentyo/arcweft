@@ -33,7 +33,7 @@ impl TypeCompatibilityControl for ReferenceTypeControl<'_> {
 }
 
 impl Analyzer<'_, '_, '_> {
-    pub(super) fn prepare_environment_callable_value(
+    pub(super) fn prepare_declared_callable_value(
         &mut self,
         module: &HirModule,
         owner: ExprId,
@@ -55,6 +55,55 @@ impl Analyzer<'_, '_, '_> {
         else {
             return Ok(None);
         };
+        let expression = module.resolve_expr(owner).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+        })?;
+        let source = super::statements::expression_span(module, owner)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        // A lexical receiver shadows a project namespace before the complete
+        // HIR reference is queried. Namespace prefixes themselves are not values.
+        let mut root = reference.path().clone();
+        while let Some((prefix, _)) = root.split_terminal_segment() {
+            root = prefix;
+        }
+        match module
+            .lookup_path_local(expression.scope(), &root, &source)
+            .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
+        {
+            arcweft_lang_hir::scope::LocalLookup::Found(_) => return Ok(None),
+            arcweft_lang_hir::scope::LocalLookup::AmbiguousPoisoned(_) => {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::ValueResolutionFailed { owner },
+                ));
+            }
+            arcweft_lang_hir::scope::LocalLookup::NotFound => {}
+        }
+        if let arcweft_lang_hir::symbol::ProjectValueLookup::Present(callable) = self
+            .symbols
+            .resolve_hir_value_target(module.key().path(), reference.path(), source)
+            .map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
+                    owner,
+                })
+            })?
+        {
+            let callable = crate::final_analysis::CheckedProjectCallable::new(
+                callable.declaration().clone(),
+                callable.source_item(),
+            );
+            let ty = self.prepare_named_callable_value_type(owner, &callable)?;
+            return Ok(Some(
+                CheckedExpression::value(
+                    ty,
+                    CheckedTypeSelection::Inferred,
+                    EffectSet::new(),
+                    CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
+                        callable,
+                    )),
+                )
+                .into(),
+            ));
+        }
         if self
             .catalogs
             .world
@@ -65,9 +114,6 @@ impl Analyzer<'_, '_, '_> {
         {
             return Ok(None);
         }
-        let expression = module.resolve_expr(owner).map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-        })?;
         // Real lexical/project/environment values retain precedence over a
         // free declaration at every prefix. No receiver is evaluated here.
         let mut prefix = reference.path().clone();

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "run": "task-final-r2937-traversal-source-sema-full-runtime",
+  "actualExitCode": 0,
+  "sourceInputs": 3981,
+  "sourceDrift": 0,
+  "binaries": 5,
+  "binaryDrift": 0,
+  "at": "2026-10-25T04:35:14.5486792Z"
+}
