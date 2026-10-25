@@ -1,0 +1,479 @@
+{
+  "generatedAt": "2026-10-26",
+  "scope": "Bounded pruning of historical structural-audit prose and repeated status-only paragraphs in convergence-evidence-history.md.",
+  "changedStructureAuditCompanions": 24,
+  "totalDeletedDiffLines": 1330,
+  "companionDeletedDiffLines": 1288,
+  "historyDeletedDiffLines": 42,
+  "historyUniqueFullShaBefore": 1147,
+  "historyUniqueFullShaAfter": 1147,
+  "historyFullShaSetUnchanged": true,
+  "structureUniqueFullShaBefore": 10,
+  "structureUniqueFullShaAfter": 10,
+  "structureFullShaSetUnchanged": true,
+  "retainedCounts": {
+    "csvArtifacts": 738,
+    "generatedFindingsAndViolations": 235,
+    "nativeDialogueInitReview": "retained verbatim",
+    "changedRustMetricsCsv": "retained and linked",
+    "validationEvidence": "dialogue-view-hardening pass/failure paragraph retained verbatim",
+    "deletedFileMeasurements": "2 proof id_context files and 12 text-layout files preserved in compact tables"
+  },
+  "deletions": [
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "reason": "Removed repeated standalone historical current-status/remaining-work and next-step prose; retained actual validation outcomes and failures, scoped limitations, accepted boundaries, the exact 277 failed-ID inventory and R1946 failure-classification tail, and every full Git identity.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 1314,
+          "end": 1314
+        },
+        {
+          "start": 1568,
+          "end": 1568
+        },
+        {
+          "start": 1602,
+          "end": 1602
+        },
+        {
+          "start": 1624,
+          "end": 1624
+        },
+        {
+          "start": 1706,
+          "end": 1706
+        },
+        {
+          "start": 2699,
+          "end": 2699
+        },
+        {
+          "start": 3645,
+          "end": 3645
+        },
+        {
+          "start": 3807,
+          "end": 3807
+        },
+        {
+          "start": 4689,
+          "end": 4689
+        },
+        {
+          "start": 4831,
+          "end": 4831
+        },
+        {
+          "start": 5001,
+          "end": 5001
+        },
+        {
+          "start": 5031,
+          "end": 5031
+        },
+        {
+          "start": 5195,
+          "end": 5195
+        },
+        {
+          "start": 5207,
+          "end": 5207
+        },
+        {
+          "start": 5215,
+          "end": 5215
+        },
+        {
+          "start": 5223,
+          "end": 5223
+        },
+        {
+          "start": 5235,
+          "end": 5235
+        },
+        {
+          "start": 5245,
+          "end": 5245
+        },
+        {
+          "start": 5251,
+          "end": 5251
+        },
+        {
+          "start": 5261,
+          "end": 5261
+        },
+        {
+          "start": 5293,
+          "end": 5293
+        },
+        {
+          "start": 5361,
+          "end": 5361
+        },
+        {
+          "start": 5589,
+          "end": 5589
+        },
+        {
+          "start": 5613,
+          "end": 5613
+        },
+        {
+          "start": 5623,
+          "end": 5623
+        },
+        {
+          "start": 5681,
+          "end": 5681
+        },
+        {
+          "start": 5729,
+          "end": 5729
+        },
+        {
+          "start": 5750,
+          "end": 5750
+        },
+        {
+          "start": 5766,
+          "end": 5766
+        },
+        {
+          "start": 5780,
+          "end": 5780
+        },
+        {
+          "start": 6020,
+          "end": 6020
+        },
+        {
+          "start": 6030,
+          "end": 6030
+        },
+        {
+          "start": 6158,
+          "end": 6158
+        },
+        {
+          "start": 6166,
+          "end": 6166
+        },
+        {
+          "start": 6176,
+          "end": 6176
+        },
+        {
+          "start": 6184,
+          "end": 6184
+        },
+        {
+          "start": 6194,
+          "end": 6194
+        },
+        {
+          "start": 6214,
+          "end": 6214
+        },
+        {
+          "start": 6222,
+          "end": 6222
+        },
+        {
+          "start": 6310,
+          "end": 6311
+        },
+        {
+          "start": 6569,
+          "end": 6569
+        },
+        {
+          "start": 6868,
+          "end": 6868
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/adhoc-audit-implementation-ready-2026-07-13/audit-context.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 18,
+          "end": 83
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/dialogue-view-hardening-vertical-style-2026-07-13/README.md",
+      "reason": "Removed historical responsibility/disposition tables; retained audit provenance/result, exact validation pass/fail paragraph, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 17,
+          "end": 46
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/function-stack-function-type-effect-rows-2026-07-09/error-exception.md",
+      "reason": "Removed obsolete rationale/required-follow-up plan; retained recorded audit command/error result, actual resolution, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 12,
+          "end": 31
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/fx-function-presentation-graph-2026-07-11/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 10,
+          "end": 13
+        },
+        {
+          "start": 15,
+          "end": 31
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/lang-01-1-1-1-try-syntax-cut-1/audit-context.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 12,
+          "end": 15
+        },
+        {
+          "start": 17,
+          "end": 88
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/lang-01-5-1-1-nominal-manifest-2026-07-21/audit-context.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 20,
+          "end": 90
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/lang-01-5-1-2-safe-binary-2026-07-22/audit-context.md",
+      "reason": "Removed historical owner-size and split-boundary design discussion; retained scan scope/result and measured repository error/warning outcome.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 8,
+          "end": 33
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/proof-raw-id-materializer-deletion-2026-07-26/README.md",
+      "reason": "Removed historical changed-file/design narrative; retained audit provenance/result and unique last pre-deletion measurements for both deleted id_context.rs files.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 8,
+          "end": 9
+        },
+        {
+          "start": 16,
+          "end": 54
+        },
+        {
+          "start": 56,
+          "end": 62
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/proof-runtime-assertion-guard-seed-2026-07-26/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 12,
+          "end": 33
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/removed-borrow-block-2026-07-16/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 9,
+          "end": 31
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/seq06-11d-1-typed-style-2026-07-13/audit-context.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 18,
+          "end": 61
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-builtin-fx-compiler-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 18,
+          "end": 44
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-canonical-batch-only-2026-07-12/README.md",
+      "reason": "Removed changed-file/design tables; retained provenance/result and the three deleted paths absent from current-size metrics.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 21,
+          "end": 138
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-dialogue-staging-removal-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 18,
+          "end": 67
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-dialogue-view-final-2026-07-13/README.md",
+      "reason": "Removed duplicated manual ownership/measurement tables; retained audit provenance/result and changed-rust-files.csv with parent/growth metrics.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 23,
+          "end": 174
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-fx-contracts-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 20,
+          "end": 64
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-layer-capture-identity-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 20,
+          "end": 33
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-legacy-layout-removal-2026-07-12/README.md",
+      "reason": "Removed historical architecture/responsibility narrative; retained audit provenance/result and exact pre-deletion measurements for all deleted Rust paths.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 15,
+          "end": 31
+        },
+        {
+          "start": 35,
+          "end": 83
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-shaped-vertical-regression-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 17,
+          "end": 78
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-textbox-height-removal-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 21,
+          "end": 38
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-textbox-view-composition-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 19,
+          "end": 61
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-view-definitions-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 19,
+          "end": 68
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-view-prepared-sources-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 18,
+          "end": 125
+        }
+      ]
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-visual-parity-2026-07-12/README.md",
+      "reason": "Removed historical responsibility tables and design/status explanations duplicated by retained structured CSV/findings/violations; retained audit provenance, command, result, and generated evidence links.",
+      "removedOriginalLineRanges": [
+        {
+          "start": 20,
+          "end": 90
+        }
+      ]
+    }
+  ],
+  "noChange": [
+    "2026-09-10-conditional-recovery/README.md was restored byte-for-byte to HEAD.",
+    "No generated findings/violations, CSV evidence, source, current-status.md, convergence identity index, or actual test records were deleted.",
+    "Canonical-batch-only retains the three deleted paths absent from current-size metrics."
+  ],
+  "ambiguities": [
+    "The conditional-recovery ownership-review link is pre-existing and was not changed.",
+    "The 2026-09-25 native dialogue Init owner review was retained in full because it contains distinct test results, a full SHA, and an accepted ownership disposition."
+  ],
+  "checks": {
+    "gitDiffCheck": "passed",
+    "changedMarkdownRelativeLinks": "0 broken",
+    "cargoOrBehavioralTests": "not run per delegated scope",
+    "historyFullShaSetSame": true,
+    "structureFullShaSetSame": true
+  },
+  "model": "gpt-6-luna",
+  "reasoningEffort": "max",
+  "reportVersion": 1,
+  "version": 1,
+  "parentReview": "Reviewed full meaningful changes; preserved R1946 failure classification and unique deleted-file measurements, normalized spacing before/after new evidence headings. Counts are the final delegated prose pruning before the parent adds the R3154 historical failure record."
+}

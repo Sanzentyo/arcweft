@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "946bdf08e48d81e7db88b51a8cd919a356f5ca6b",
+  "name": "task-final-r3154-program-capture-transfer-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3154-program-capture-transfer-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-25T22:55:34.4791279Z",
+  "finishedAt": "2026-10-25T22:56:58.2516739Z"
+}

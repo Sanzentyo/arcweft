@@ -1311,7 +1311,6 @@ Focused nextest28/28 passes (Syntax20,Hir8), including exact success/recovery/so
 
 Actual nextest lists50594/90609 are terminal0 (6m26s/8m40s builds). Final full run17411,CLI14506 and workspace check/Clippy/fmt95105 are live; do not restart or edit Rust after compaction. Structure passes2709files/97packages/0blocking.
 
-Await actual results, repair failures, reconcile frozen hashes, review exactly13 Rust plus maintained language chapter and this note, commit/non-force push main, then restore pending state-command regression and continue implementation.
 
 Final acceptance: full17411 terminal0,4514/4514 passes (5 slow),8 configured skips,381.081s; exact CLI14506 terminal0,195/195 passes,0 skips,28.987s. Thus4709 unique tests pass in all25 actual transitive consumer packages; the earlier28/2 focused receipts overlap and are not added. Workspace95105 terminal0: all-target/all-feature locked check10m04s,Clippy1m52s under configured warning policy,fmt-check pass. Clippy reports the added mutable argument at the existing staged typed-pattern helper as8/7; no warning suppression or claim of warning-free validation. Structural scanner2709files/97packages/0blocking passes.
 
@@ -1565,7 +1564,6 @@ Canonical structure scanner terminal0:2730files/2600Rust/97packages/354review tr
 
 Every22 package actually executes in full nextest36952/bbb92fa3-9123-4512-b665-674346366575, --workspace --all-features --locked --no-fail-fast -E 'rdeps(=arcweft-lang-sema)'. Build1.75s/run264.020s:3445executed/3115pass/330fail/23skipped,105selected binaries. TEMP receipts arcweft-1006-closure-origin-{tree.txt,check-err.txt,final-check-err.txt,focused*-err.txt,clippy-err.txt,final-clippy-err.txt,structure-out.txt,full-run.txt,failures.txt}.
 
-Before further Core migration, repair concrete validation blockers retained in the goal's330 CLI failures.
 
 Validation/repaired warnings: list16006 terminal0 (37.97s build) selected85 JLREQ/strict-JLREQ tests; it exposed an unused newly generated entry in the already-authored preset. Check71948 terminal0 2m05 and Clippy49049 terminal0 2m00 include that historical warning. Focused63089/264c9f6a-8ece-4ef8-9bd6-aecd60b7357b terminal100:85executed/35pass/50fail/542skipped,64.298s run after35.24s build. Every50 failed ID is from the prior330. Final workspace/all-target/all-feature/locked check15101 terminal0 30.53s, final CLI/all-target/all-feature/locked Clippy34828 terminal0 25.54s. Final2 CLI Clippy9581 terminal0 confirms these exact final Rust bytes; only lint expectations changed after the broad behavior run, so behavioral evidence is reused rather than rerun.
 
@@ -1599,7 +1597,7 @@ Previous turn was progress: typed dialogue phase repair, broad5397/5116pass/281f
 
 Focused nextest89000 terminal0:4/4pass,14.444s,624skipped after3m24sbuild, covering both geometry cases and both raw-crop cases. Final list51686 terminal0 after5m58sbuild selects605 tests in the one executing package. Final cargo nextest run --workspace --all-features --locked --no-fail-fast -E rdeps(=arcweft-cli),95844/604d86d9-e532-4f20-8c8f-b38f87950f95 terminal native100:605executed/328pass/277fail/23skipped,10selected binaries,131.396srun/1m08sbuild. All4changed tests pass; unique277 failed IDs are a strict subset of dialogue-phase-failures.txt:4resolved/0new. CLI all-target/all-feature/locked check59414 terminal0,7m03s; Clippy76698 terminal0,8m13s with configured existing warnings and no added helper warnings; rustfmt and diff-check pass. Structure68520 terminal0:2730files/2600Rust/97packages/354review triggers/0blocking. TEMP receipts arcweft-1006-sideways-cells-{focused.txt,tree.txt,list.json,list-err.txt,check-out.txt,check-err.txt,clippy-out.txt,clippy-err.txt,structure.txt,full-run.txt,failures.txt}; disposable explicit-size renderer probes arcweft-1006-word-geometry-{kg,kg48,Web}.arcw(.json) are outside the repo.
 
-Supersedes281 with277 as the current remaining CLI failed-ID inventory. Full original convergence goal remains ACTIVE/INCOMPLETE, including all other word/numeric/punctuation/View observation failures, final function definition/capture/parameter metadata, body semantic transcript/F/Q/E/common whole-image sealing/private expected/View authority, retained UI/nominal/scheduler/restore/observer/affine/Tier2/legacy deletion/full acceptance.
+Supersedes281 with277 as the current remaining CLI failed-ID inventory.
 
 Previous turn was progress: grouped-sideways fixture/capture repair committed, current277 CLI failed IDs.
 
@@ -1621,7 +1619,6 @@ Initial focused39528 terminal101 failed during compiler test build: the first pu
 
 Final workspace/all-target/all-feature/locked check52242 terminal0,58.09s; Clippy62414 terminal0,1m54s with configured existing warnings. Read-only structure48449 terminal0:2730files/2600Rust/97packages/355review triggers/0blocking. rustfmt/diff-check pass. Final list82338 terminal0,1m54sbuild selects3451; all22 actually execute, none missing. Broad cargo nextest run --workspace --all-features --locked --no-fail-fast -E rdeps(=arcweft-lang-sema),81034/41bcae0d-bbe4-4fdf-a94e-e27249b68065 terminal native100:3451executed/3174pass/277fail/23skipped,105selected binaries,297.207srun/1.33sbuild. All4 changed cases pass; unique277 failed IDs exactly equal implicit-definition-failures.txt,0new/0resolved,allCLI. TEMP arcweft-1006-binding-digest-{focused.txt,focused2.txt,check-out.txt,check-err.txt,clippy-out.txt,clippy-err.txt,list.json,list-err.txt,structure.txt,full-run.txt,failures.txt}.
 
-Full original convergence goal remains ACTIVE/INCOMPLETE: complete definition identity/capture origins and selected Copy/SnapshotClone/Move/parameter passing metadata across every Ordinary/Closure/Dialogue/Effect/Line/Stream producer into Core/AWBC, actual body transcript/F/Q/E/common whole-image seal/private expected/View authority, all retained UI/nominal/scheduler/restore/observer/affine/remaining277CLI/Tier2/legacy/full acceptance.
 
 Initial workspace check67924 terminal101 found ambiguous Result error inference in the new capture map; annotated Result<_,String> and deleted the obsolete helper. Focused79298/94653 terminal100:4 existing cases pass and new generic keep(value,_) fixture rejected at final type admission before capture projection; replacing Vec::new with supported with_capacity did not fix that generic expression. Final supported implicit tuple fixture passed49645/74b76ad4-8a66-41c2-a153-792392eea020:5/5,0.224s after11.82sbuild. Added foreign-authority and actual root-ingress cases; final focus42481/b2162072-5833-4f9f-baab-5fc474045a77 terminal0:6/6pass,0.224s after14.29sbuild.
 
@@ -1703,7 +1700,6 @@ Final pre-permission-repair check71367 passed16.30s, focus86973/74dd91fe-38b4-4d
 
 Current live validation at this note write: final focused nextest72653 (same exact handle, source bytes frozen) rebuilds the fixed semantic producer and runs the20 authority/diagnostic tests plus existing Flow effect suite and all7 change-caused failure IDs. TEMP arcweft-1006-flow-definition-* preserves initial/final check/focus/Clippy/tree/metadata/rdeps/list/structure/broad/failure receipts.
 
-Continue the full original goal: complete typed function definition/capture/passing transport to Core/AWBC, actual exhaustive body/F/Q/E transcript and common builder/decode whole-image seal/private expected/View authority, all retained UI/nominal/scheduler/restore/observer/affine/277CLI/Tier2/legacy/full acceptance requirements.
 
 Focus72653/bdaa549c-417b-4b18-b303-e7aba25a45f9 terminal0:31/31pass in9.350s after5m42sbuild,1422skip; all7 initially introduced failures pass, with the existing Flow scoped/unused/inferred/curried permissions suite and the new unused affine formal test. Final list63700 terminal0 after7.72sbuild:3465runnable cases/102runnable binaries/all22packages,none missing. A bounded reader attempted JSON while that list handle was still live and got Unexpected end of JSON; no process restart or source change, waited for the same handle's terminal0 then parsed successfully. Broad34237/64a6182e-a875-4f10-b30b-44b9aa9f0621, workspace/all-feature/locked nextest --no-fail-fast --no-tests fail -E rdeps(=arcweft-lang-sema), terminalnative100:3465executed/3188pass(1slow)/277fail/23skip in312.416s after2.46sbuild. Unique277 failed IDs exactly equal the prior Core parameter-passing baseline,0new/0resolved,allCLI; full green unestablished. Final fmt57284 terminal0 and diff-check pass.
 
@@ -2696,7 +2692,6 @@ Validation receipts TEMP arcweft-1009-control-pass-*:
 
 Validation receipts TEMP arcweft-1009-request-template-*: initial focused test build failed E0618 from a fixture name shadow, fixed before execution; repaired focused29/29 PASS/0.139s. Full Core lib/all-feature locked nextest TERMINAL0:1062/1062 PASS/6.627s,0skip. First final Core all-target/all-feature locked Clippy TERMINAL0/16.81s; removed the sole new ordinary default-access style diagnostic.
 
-CLI277 failures remain open;605-test CLI surface is not green.
 
 Final style-only dependent nextest TERMINAL0:1/1 PASS/0.026s,1061 filter skips; Core all-target/all-feature locked Clippy-styled TERMINAL0/15.11s.
 
@@ -3642,7 +3637,6 @@ new4focused4PASSは同じ入力の早期owner証拠として再利用し、r10�
 
 One fresh r10 full50 `62d8d415-84ae-4ddf-93d6-2e23abab088c`:955.431s、5949PASS/86exact-retainedFAIL/39ignored、6035normal/6074inventory/199binaries、new4PASS、audit new/missing/unexpected/prior-ID/ignore/source0. Final fixture-only cleanup uses r12 current2PASS `ad9186da-7402-4a40-8323-25b1f1010c85` and r10 unchanged6033normal/39ignored REUSED with exact inverse proof/all production8+other3607inputs/held14 unchanged. Current driver Clippy/structure(default blocking0)/defaultwasm/fmt PASS; original-byte workspacecheck/globalClippy/Core2+Dialogue4compilefail docs appropriately REUSED. Prior ICE/OS1455 list failures, argument-parse failure, initial audit/refactor proof failures, focused4, original CLI645544/101 and277/153 ledger remain distinct historical evidence.
 
-Whole C5 remains open: complete aggregate encoded-size/work/count and per-site program expected-key/capture joins, full shared whole-session failure-atomic activation and actual Native/AWBC product/root/session stop-restore. Existing86 failures retain exact IDs/causes/acceptance; zeroing them is not a Generic prerequisite.
 
 ## 2026-10-12 aggregate snapshot admission — implementation in progress
 
@@ -3804,7 +3798,6 @@ Fresh full5993P88F39ignored remains its actual FAIL receipt; stale affine snapsh
 
 ## 2026-10-13 JST — Windows main で shared borrowed view の検証を再開
 
-Remaining shared work/type-instantiation/Need descriptor/frame/session budgets, per-site expected-key/capture/layout, whole-session failure atomicity, C1-C6, retained View, task14 atomic switch, scheduler A-F, Native/AWBC stop-restore, Native/Web parity and final workspace/Tier2 acceptance remain required.
 
 ## 2026-10-13 JST — inert expected-type admission と検証入力の固定
 
@@ -4686,7 +4679,6 @@ R485 workspace/all-target/all-feature Clippy exits 0 in 3m49s, with warnings ret
 
 R490 owner doctests (Core/sema/runtime-plan/compiler/accelerator, all features) are running at this publication cut; their result is pending, not a pass claim.
 
-Generated/public-API/Tier2/final workspace and full Native/Web display parity, retained View products and replacement, all fourteen-family Need/task-plan atomic authority migration, presentation ABI and the retained CLI acceptance failures remain required.
 
 ## 2026-10-17 — owner doctests and publication evidence close
 
@@ -4828,7 +4820,6 @@ R640 executes all 6,338 cases in 646.064s: 6,298 pass, forty fail, 372 filtered,
 
 R641 is now terminal: the final workspace/all-target/all-feature locked Clippy exits 0, started 2026-10-17T07:04:53Z and finished 07:07:01Z.
 
-All original goal requirements remain active, including the forty recorded CLI failures and the separate R626 external-function-value rejection.
 
 Core runs all 66 doctests and Sema runs both doctests, all 68 pass with zero ignored; the other four selected packages have no doctests. A structured scan of the final R641 Clippy output confirms zero warnings in the new shared provider, external declaration/wire and Sema runtime-target modules.
 
@@ -4998,7 +4989,6 @@ R802 passes in 6.94s: 2,973 files, 2,843 Rust files, 1,648,925 physical Rust LOC
 
 R803 final workspace formatting passes. R801 full-workspace/all-target/all-feature locked Clippy passes in 3m34s, with zero primary warning locations in the new Id owner; other visible workspace warnings remain. R799 was queued during R798 and waited for Cargo's ordinary build-directory lock; the read-only canonical scan runs independently of Clippy. R804 has been launched for their complete all-feature lib/test/bin surface, locked and no fail-fast, with the exact Id rdeps predicate.
 
-The previous 55 CLI failures, fourteen-family task/View atomic public migration, retained View, Native serialized save, generated/public API/Tier2/final workspace and actual Native/Web visual acceptance remain open.
 
 ## 2026-10-17 — presentation identity publication and full-consumer build resource failure
 
@@ -5028,7 +5018,6 @@ Diagnostics include E0463 missing crates, E0786 mmap of `libarcweft_bundle-e9615
 
 R823 workspace all-target/all-feature locked check passed (1m07); R824 matching workspace Clippy passed (42.08 s); R825 canonical structure gate passed; R826 workspace fmt passed. R827 complete 22-package nextest inventory and R829 retained-View owner inventory are running at this checkpoint, not passed test execution.
 
-The complete closed command/result/lifecycle contract, all 11 source operations, per-field provenance/default/range inventory, canonical bounded AWBC transport, ordinary-host-call separation, scope cleanup, failure-atomic state joins and deletion of RuntimeCall presentation readers remain required. All other full-goal requirements, failed CLI evidence and unavailable checks remain open; all Arcweft-owned version markers stay 1.
 
 ## 2026-10-18 — borrowed asset payload admission before owned materialization
 
@@ -5192,7 +5181,6 @@ R997 failed compilation on a new test's incorrect type-table iterator API; it wa
 
 Final R1003 Core all-target/all-feature locked Clippy, R1004 matching Core library wasm32 check, R1005 explicit owned-source formatting and R1006 canonical structural gate passed. Earlier R1000 Clippy is retained as intermediate evidence. The older R955 consumer failures are not relabeled as current acceptance; wasm compilation is not browser execution or capture parity.
 
-Both selected-Need original-program-key failures, raw key constructors/Deserialize removal, typed Presentation, complete Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture parity remain required. The known 55 CLI and two Need failures are not claimed fixed.
 
 ## 2026-10-18 — original function declarations reserve the actual typed ABI before bodies
 
@@ -5204,7 +5192,6 @@ R1007 failed compilation on the new source-prepared type's visibility; its size 
 
 R1021 Core all-target/all-feature locked Clippy, R1022 matching Core library wasm32 check, R1023 owned-source format and R1024 canonical structural gate passed; warnings and nonblocking size/layout triggers remain visible. The actual reverse graph remains 53 packages, all 99 manifest/lock inputs unchanged; Core normal fan-in/out is 31/7 and development 4/5. It does not relabel the older R955 consumer failures or prove Native/Web execution/parity.
 
-Typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture parity remain required. The known 55 CLI and two Need failures are not claimed fixed.
 
 ## 2026-10-18 — original callable graphs enter the actual construction without source reconstruction
 
@@ -5212,7 +5199,6 @@ R1025 compiled the initial 1,582-case catalog and R1026 passed all 1,582, zero s
 
 R1034 failed the consumer catalog build before test execution (actual 101): rustc 1.98.1 reported delayed import-resolution ICEs and an arcweft_bundle rlib-format resolution error.
 
-Typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture parity remain required. The older R955 55 CLI and two Need failures are not claimed fixed.
 
 ## 2026-10-18 — original specialization sources share the real effect grammar and construction issuer
 
@@ -5220,7 +5206,6 @@ R1039 compiled 1,592 and R1040 passed all 1,592, zero skips, 16.353 s, actual ex
 
 R1044 passes all 1,594, zero skips, 16.725 s, actual exit 0. R1045 Core all-target/all-feature/locked Clippy, R1046 matching Core library wasm32 check, R1047 owned-source fmt and R1048 canonical structural gate passed; warnings and nonblocking review triggers remain visible.
 
-Selected-Need original-program keys, raw key constructor/Deserialize deletion, typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture parity remain required. The older R955 55 CLI and two Need failures are not claimed fixed.
 
 ## 2026-10-18 — content effects retain original callable states through Native and AWBC
 
@@ -5232,7 +5217,6 @@ All 758 selected names agree with the independently inspected prior catalog cand
 
 Callable construction is 523, state grammar 878, transaction construction 4,258 (837 embedded test lines), expression lowering 6,099 (281), AWBC fiber 6,718 (1,669), VM 5,360 and runtime-plan expression/flow lowering 3,595/10,316 (the latter 599 embedded test lines). Core normal fan-in/out remains 31/7 and development 4/5; runtime-plan remains 5/10 and 5/0.
 
-Typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture parity remain required. The older R955 55 CLI and two Need failures are not claimed fixed by this cut.
 
 ## 2026-10-18 — original pure callable declarations reserve genuine targets before bodies
 
@@ -5242,13 +5226,11 @@ Other cases exercise exact/one-less combined caps, every truncation, malformed t
 
 R1065 compiled 1,610 and R1066 passed all 1,610, zero skips, 15.163 s, actual 0; its original execution freeze is retained. R1067 Core all-target/all-feature/locked Clippy, R1068 wasm32 library check, R1069 fmt and R1070 structural gate passed. Adding the original finite-bank prelude and shared-meter replay tests produced R1071's 1,611-case catalog and R1072's 1,611 passes, zero skips, 14.686 s, actual 0, followed by R1073/R1074/R1075 lint/fmt/structure passes. R1077 passes all 1,612, zero skips, 15.074 s, actual 0. R1078 current all-target/all-feature/locked Core Clippy (20.99 s), R1079 current wasm32 library check (12.35 s), R1080 all eight explicit Rust paths/Git whitespace and R1081 canonical structural gate pass; warnings remain visible.
 
-Selected-Need original-program keys, raw constructor/Deserialize removal, typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture parity remain required. The older R955 55 CLI and two Need failures are not claimed fixed.
 
 ## 2026-10-18 — original content and formatter declarations enter the same construction
 
 R1083 passes all 1,624, zero skips, 14.995 s, actual exit 0. R1084 Core all-target/all-feature/locked Clippy (45.97 s), R1085 matching wasm32 library check (28.73 s), R1086 all seven explicit Rust paths/Git whitespace and R1087 canonical structural gate pass; warnings remain visible.
 
-Selected-Need original-program keys and raw constructor/Deserialize removal, typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture parity remain required. The older R955 55 CLI and two Need failures are not claimed fixed.
 
 ## 2026-10-18 — complete original expression source algebra enters genuine body construction
 
@@ -5258,7 +5240,6 @@ R1095 passes all 1,638 cases, zero skips, 15.267 s, actual exit 0. R1096 Core al
 
 Modified callable-state, specialization, pure-callable and content fixtures are 941/582/817/929 respectively. Core normal fan-in/out remains 31/7 and development 4/5.
 
-Selected-Need original-program keys and raw key constructor/Deserialize removal, typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture parity remain required. The older R955 55 CLI and two Need failures are not claimed fixed.
 
 ## 2026-10-18 — original invocation declarations and inhabited Entry executable bindings
 
@@ -5290,7 +5271,6 @@ R1128 workspace all-target/all-feature/locked check passes (123.296 s), R1129 ma
 
 Core normal/development fan-in/out remains 31/7 and 4/5; runtime-plan 5/10 and 5/0; runtime-host 4/13 and 0/8; native-player 1/22 and 0/6.
 
-Selected-Need original-program keys and raw key constructor/Deserialize removal, typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture parity remain open. The older R955 55 CLI and two Need failures are not claimed fixed.
 
 ## 2026-10-18 — original content-plan applications through genuine construction owners
 
@@ -5358,7 +5338,6 @@ R1199 passes all 1,699, zero skips, 17.646 s, actual 0. R1200 Core all-target/al
 
 Canonical Core normal fan-in/out remains 31/7 and development 4/5; no changed Cargo edge or blocking structural finding exists.
 
-Selected-Need original-program keys and raw key constructor/Deserialize removal, the concrete accepted state.write CLI defect, typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture/image parity remain open. The older R955 failures are not claimed fixed.
 
 ## 2026-10-18 — Lifetime registry semantic migration checkpoint
 
@@ -5586,7 +5565,6 @@ Seven new cases cover mixed bodies, scoped permission subsets, actual Native pro
 
 R1388 canonical structural gate passes, actual 0. Ownership review retains one function-body table codec: coordinator 10127 bytes/288 physical lines, reader 5029/147, writer 6794/193, reconstruction 5764/130, and behavioral tests 18978/587. The existing construction owner is 174278/4260 and seed owner 100151/3052; the narrow additions own the actual reservation law and body-kind projection. Core normal fan-in/out stays 31/7, development 4/5.
 
-The original-inventory task decoder, atomic public switch, R1349's two known selected-Need key failures, lifetime registry execution, retained View, restore, and real Native/AWBC/Web/display acceptance remain unfinished.
 
 ## 2026-10-19 — Function-body publication and current workspace gates
 
@@ -5610,7 +5588,6 @@ R1410 builds and inspects the same 2298 library cases, actual 0, 28.16s, none ex
 
 R1412 canonical structural gate passes, actual 0. Program coordinator is 9449 bytes/297 physical lines, reader 12267/297, writer 14523/367, bounds 10169/263 and tests 8210/233.
 
-The known R1349 selected- Need integration failures, full fourteen-family switch, registry lifetime, restore, retained View and Native/Web display acceptance remain open.
 
 ## 2026-10-19 — Admit Task request mapping storage and reservation work
 
@@ -5620,7 +5597,6 @@ R1415 Core all-target/all-feature locked Clippy passes, actual 0, 45.65s. R1416/
 
 Request codec is 22598 bytes/657 physical lines and its tests 14018/398; program reader is 12408/300 and program tests 281 physical lines.
 
-The fourteen-family public switch and known R1349 selected-Need failures remain open, as do the other full-goal runtime/restore/registry/View/display acceptance conditions.
 
 ## 2026-10-19 — Task Source reconstructs its own complete original program
 
@@ -5678,7 +5654,6 @@ R1485 final matching Core Clippy passes, actual 0, Cargo 18.07s. R1486 inspects 
 
 No new structural trigger requires repeating that scanner: the production codec is 31293 bytes/866 physical LOC (804 at base, growth 62), and its tests are 27679/772 (643 at base, growth 129), both in arcweft-core.
 
-R1438's two Native/decoded-AWBC completed-key failures, all fourteen-family public migration and old issuer deletion, restore/replacement, retained View and complete Native/ Web/CLI/Tier 2/workspace acceptance remain open.
 
 ## 2026-10-19 — Carry complete original Source in actual AWBC artifacts
 
@@ -5726,7 +5701,6 @@ R1516 final matching Clippy passes, actual 0, Cargo 19.58s; warnings remain and 
 
 Owner measurements, bytes/physical LOC: plan facade 55472/1610 (growth 11), coordinate owner 5479/159 (growth 12, 16 lines from its embedded test module), common preparation 17692/450 (growth 3), Source boundary 5083/135 (growth 37), Source tests 10403/307 (growth 76), preparation tests 56910/1453 (growth 32).
 
-R1507's 58 broad failures, View/restore/replacement/display and the full final acceptance remain open.
 
 ## 2026-10-19 — Pair admitted original Source with its actual execution lease
 
@@ -5747,7 +5721,6 @@ R1529 `cargo clippy -p arcweft-core --all-targets --all-features --locked` passe
 
 Current canonical bytes/physical LOC are Source facade 5208/139, Source producer factory 8443/190, new HostCall tests 18921/577 and existing producer owner 147206/3923 (777 embedded test lines).
 
-The full fourteen-request construction/codec/runtime/restore public switch, real View authority, obsolete issuer/reader deletion, 58 broad R1507 failures and remaining Native/AWBC/Native-Web/workspace/Tier 2 acceptance remain open.
 
 ## 2026-10-19 — bind AWBC HostCall assertions and executable type graphs to Source
 
@@ -5763,7 +5736,6 @@ R1544 runs the final frozen Rust: actual nextest 100, 1973 pass, two fail, zero 
 
 Canonical bytes/physical LOC are Source facade 5275/142, program owner 4826/138, HostCall join 10444/287, join tests 17688/499, type relation 25202/689, relation tests 19543/546 and existing HostCall tests 18973/579. Existing type codec and its tests are 22783/632 and 28684/818; only their test fixture visibility changes. New >300-line owners remain cohesive: one ordered code/Source binding, and one borrowed type-graph relation with its own assertions, policy comparison, memo and resource failure state.
 
-The two selected-key failures, R1507's 58 broader failures, real View authority, all fourteen request kinds, old issuer/reader deletion, Native/AWBC stop/restore, Native/Web capture parity and final workspace/Tier 2 acceptance remain open.
 
 ## 2026-10-19 — join AWBC template assertions with original request and capture ABI
 
@@ -5777,7 +5749,6 @@ R1554 executes them all: actual nextest 100, 1983 pass/two fail, zero skip, 21.7
 
 Canonical bytes/physical LOC are template admission 20112/561 and child tests 31976/879, Source facade 5339/142, program context 4931/140, original function source 36915/937 and existing AWBC schema 125388/3863.
 
-Real View authority, all fourteen request kinds, old issuer/reader deletion, the two selected-key failures, R1507's 58 broader failures, Native/AWBC stop/restore, Native/Web capture parity and final workspace/Tier 2 acceptance remain open.
 
 ## 2026-10-19 — require checked code-row bindings before retaining Task Source
 
@@ -6017,7 +5988,6 @@ It completed with exit0, one passed case in 726.001s.
 
 R1721 independently listed that same compiled binary through nextest's metadata reuse, using retained Cargo metadata whose digest and unchanged manifest/lock footprint were checked. R1722 is the fixed-source execution of that complete one-case inventory: exit0, one passed in 383.616s, zero skipped.
 
-Strict lint, the remaining implementation/public migrations, semantic/execution failures, Tier2 and Native/Web capture/parity remain open.
 
 ## 2026-10-20 — Executable owns its admitted plain-text context fact
 
@@ -6027,7 +5997,6 @@ R1732 ran all 191: exit0, 191 passed, zero skipped, 11.083s. R1733 passed all 73
 
 R1731 completed that full selection: exit0, all 1934 passed (two slow), zero skipped, 235.277s. R1723 is still live (handle 98788); its dynamic API compile tests overlapped this migration and already show a mixed old-Core/new- Bundle E0599 failure.
 
-Original shared resource allowance, complete Source/public switching and all14 families, Presentation, remaining semantic/execution failures, strict lint, Tier2 and Native/Web capture/parity remain required.
 
 ## 2026-10-20 — Complete execution context crosses nested calls
 
@@ -6155,7 +6124,6 @@ R1793 Core check passed on the preceding staging shape; it is not final-shape ex
 
 At this intermediate publication R1795 workspace check is live at55012 and R1798 full Core nextest is live at84980, waiting on the ordinary build lock; neither is passing evidence yet.
 
-The earlier56 CLI failures and the complete original convergence acceptance remain required; this cut does not complete or narrow the active goal.
 
 ## 2026-10-20 — reducer boundary publication and terminal evidence
 
@@ -6163,7 +6131,6 @@ R1795 workspace check passed in4m35s including lock wait. R1798 executed the exa
 
 R1801 passed all12 selected cases in0.103s, with those1931 intentional filter exclusions. R1800 ordinary Core all-target/all-feature Clippy passed in49.34s: 2915 warnings/2391 duplicates; the introduced begin_reduction panic diagnostic is gone, without an allow.
 
-All other original acceptance, including the56 CLI failures, remains open.
 
 ## 2026-10-20 — state-free Root initialization phase and save grammar
 
@@ -6173,7 +6140,6 @@ R1813 passed all16 in0.360s; exact case keys and all3933 current hashes matched.
 
 R1808 structural gate passed:3155 files/3025 Rust files/1720450 physical Rust LOC/ 97 packages/376 review triggers/zero blocking violations.
 
-The earlier56 CLI failures and every other original acceptance remain open; the goal is active.
 
 ## 2026-10-20: executable Root initialization checkpoint
 
@@ -6181,7 +6147,6 @@ R1814, R1817 and R1818 were development compile failures for newly exhaustive co
 
 At this publication cut R1822 owner catalogue, R1823 ordinary workspace Clippy, and R1825 foreign-initializer execution are still running/queued, not passes.
 
-Recorder pre-copy admission and failure-atomic recording, complete restore failure atomicity, the56 earlier CLI failures, typed Presentation ABI, and all other original acceptance remain open.
 
 ## 2026-10-20: Root initializer completion and ordinary Drain continuation
 
@@ -6191,7 +6156,6 @@ R1825 executed the exact two foreign-initializer cases and failed both during lo
 
 R1828 and R1832 ordinary owner Clippy passed on successive development shapes; R1831 workspace all-target/all-feature/locked check passed in4m38s before the final Drain changes. R1835 structure passed before those two added Drain tests: 3156/3026/1721602 physical Rust LOC/97 packages/376 review triggers/zero blocking.
 
-Next: execute the exact37-case integration and2124-case Core/driver catalogues against the fixed final inputs, repair any failures, and publish the completion repair with actual results. Their ordinary-frame migration, Native foreign-call cold rollback, recorder pre-copy/failure atomicity, full restore failure atomicity, complete reverse consumers, earlier56 CLI failures, Presentation ABI, cross-tier/visual acceptance and every other original requirement remain open.
 
 ## 2026-10-20: initializer execution evidence and recorder generation ownership
 
@@ -6211,7 +6175,6 @@ R1851 development driver/compiler all-target/all-feature/locked check passed. R1
 
 R1852 final Core/driver catalogue, R1853 owner execution, R1854 all37 compiler project_cache_transaction cases and R1856 ordinary workspace Clippy are running or queued at this checkpoint.
 
-Full bounded trace decoding/metadata admission, returning owned step output on post-step recording failure, Native foreign-call cold rollback, Root reducer ordinary frames/shared budget/backend and full restore failure atomicity remain open, as do complete reverse consumers, the earlier56 CLI failures, Presentation ABI, cross-tier/visual acceptance and every original unfinished requirement.
 
 ## 2026-10-20: replay snapshot acceptance and owned recording failures
 
@@ -6219,7 +6182,6 @@ R1853 passed that exact set:2129 passed, zero failed/skipped,312.833s; the API c
 
 R1858 selected all39 compiler project_cache_transaction cases, including both new failures and the original successful record/replay lifecycle. R1859 passed all39, zero skipped,2.031s. R1860 workspace all-target/all-feature/locked check passed in29.16s; R1861 ordinary workspace Clippy passed in1m14s. R1862 structural audit passed:3156 files,3026 Rust files,1722366 physical Rust LOC, 97 packages,376 review triggers and zero blocking violations.
 
-Native foreign-call cold rollback, full restore failure atomicity, complete reverse consumers, earlier56 CLI failures, Presentation ABI, strict Clippy, cross-tier/visual acceptance and all other original unfinished requirements remain open.
 
 ## 2026-10-20: shared replay metadata admission across the executed step
 
@@ -6307,7 +6269,6 @@ R1953 `task-final-r1953-owned-restore-clippy` is live session13396,waiting on th
 
 R1954 structural gate passed:3160 files,3030 Rust files,1724274 physical Rust LOC, 97 packages,376 review triggers,zero blocking violations.
 
-Once R1951 terminates,inspect the exact selected catalog including both formerly failing AwaitMany regressions and the compiler Root-initializer no-repeat case, then execute that same filter with nextest. R1946's other four driver failures remain open:generation storage versus finished execution pin,Fiber diagnostic preservation,and staged resource/catalog/executable admission.
 
 ## 2026-10-21 — finish the consuming restore API consumers
 
@@ -6324,6 +6285,8 @@ R1959 ordinary Clippy is live session45283.
 No passing R1956/R1957 or current runtime result is claimed yet.
 
 The last full runtime result remains R1946:2289/2295 passed,six failed;the two AwaitMany and ContentOnly fixes have not yet received their new runtime proof.
+
+R1946’s other four driver failures concerned generation storage versus finished execution pin, Fiber diagnostic preservation, and staged resource/catalog/executable admission.
 
 R1956 catalog completed0:2449 named cases across the selected libraries/four integration binaries,186 matched,2263 excluded. R1957 completed actual100:186 run,179 passed,seven failed,2263 skipped,4.199s. Seven failures were three compiler Root replay cases reporting MissingOutcome(transition0),two misclassified Fiber refusals, the generation-pin refusal field,and catalog-before-executable validation. R1959 ordinary four-package all-target/all-feature Clippy completed0 with warnings, 15m29s including its lock wait;all3938 final runtime/spec inputs match. R1956/57/59 handles98123/59317/45283 are all now closed.
 
@@ -6566,7 +6529,6 @@ R2071 passed nine cases but showed that the new eight-step hypothesis was insuff
 
 R2074 final workspace all-target/all-feature/locked check passed in 54.14s. R2075 workspace Clippy and R2076 canonical structural gate are in progress or pending; no result is assumed.
 
-Presentation11, voice-resource preconditions, remaining pre-copy frame/session/data boundaries and the other original-goal failures remain active.
 
 R2075 workspace Clippy completed actual0 in 1m03s. R2076 canonical structural gate completed actual0: 3182 files, 3052 Rust files, 1728318 Rust physical LOC, 97 packages, 376 review triggers, zero blocking findings.
 
@@ -6865,7 +6827,6 @@ R2352 corrected eight-library catalog passed (Cargo 7m25s). R2353 executed all 2
 
 R2354 repair catalog passed (Cargo 1m55s). R2355 then executed all 2,463 cases across the same eight named library consumers: 2,463 passed, zero failed, zero skipped, 33.903s, actual and outer exit 0. The fallthrough regression retains its original Native/AOT executed_ops=2 and all failure/cleanup/repeated-rollback assertions. Workspace check, Clippy and the structure gate are running as R2356–58; no completed result is claimed for those checks here.
 
-The wider goal and previously recorded full-suite failures, returned Thread lowering, real Native/AWBC/save, View/Presentation/limits and final Tier 2/workspace/visual acceptance remain open; these root-position passes do not complete them.
 
 R2356 workspace all-target/all-feature locked check passed (Cargo 2m53s). R2357 workspace all-target/all-feature locked Clippy passed (Cargo 6m05s), with existing warnings retained. R2358 canonical structure gate passed with no blocking violation; existing size/test-layout review triggers remain visible. The quality queue is terminal (outer exit 0), and no Cargo/nextest process or executable pin from these validation queues remains live.
 
@@ -12299,3 +12260,14 @@ launchと保存の所有境界、RuntimePlanのsemantic projection、既存Pure 
 carrierごとの並行モデル、I/O、追加のpublic split APIは導入していない。既存大規模ownerはこの単一grammarと
 state contextの結合を理由に維持し、無関係なsize警告を分割の根拠にしていない。
 [所有境界と実測](acceptance-evidence/task-program-body-carrier-structure-review.json)。
+
+## Program capture移行中のコンパイル失敗 — 2026-10-26
+
+公開main `946bdf08e48d81e7db88b51a8cd919a356f5ca6b` 後の未公開Copy／Move capture変更に対し、
+R3154はCore／runtime-planのall-target／all-feature／locked checkを実行し、終了101となった。
+`value.rs`の`semantic_tag`重複定義と複数候補、AWBC fixtureのcapture型不一致を原ログに保持する。
+これは移行中の作業ツリーの失敗であり、直前の公開cutで合格したCopy captureの受入を取り消さない。
+実行前の入力freezeはなく、このreceiptから正確な事前入力集合やruntimeの成否を推定しない。
+この資料整理でCargoを再実行せず、元receipt／logをbyte不変で保存した。
+[失敗receipt](acceptance-evidence/task-final-r3154-program-capture-transfer-check.json)、
+[原ログ](acceptance-evidence/task-final-r3154-program-capture-transfer-check.log)。

@@ -9,29 +9,17 @@ cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs\implement
 Result:
 
 - 1 error / 152 warnings.
-- Error: `crates/arcweft-lang-sema/src/checker/expr.rs` has 2510 physical LOC,
-  exceeding the production-file error threshold by 10 LOC.
-
-Rationale for not splitting in this slice:
-
-- This slice changes semantic function-type representation and effect-row
-  propagation; it does not edit `checker/expr.rs`.
-- `checker/expr.rs` already delegates substantial behavior to child modules
-  such as `callable`, `closure`, `partial`, `pipe`, and `signature_call`.
-- Splitting the remaining expression dispatcher in the same commit would mix a
-  structural refactor with a semantic type-model change and make validation
-  harder to read.
-
-Required follow-up:
-
-- Split `checker/expr.rs` by cohesive expression-dispatch responsibilities in a
-  separate structure slice before adding more expression-checking behavior to
-  that file.
-- Candidate boundaries include literal/path dispatch, call/select dispatch,
-  control-expression checking, and statement/block expression checking.
+- Error: `crates/arcweft-lang-sema/src/checker/expr.rs` has 2510 physical LOC, exceeding the production-file error threshold by 10 LOC.
 
 Resolution:
 
 - The literal/path/short-variant expression checker was split into
   `checker/expr/path.rs` in the follow-up recorded by
   `docs/implementation/function-stack-expr-path-split-2026-07-09.md`.
+
+## Structured audit evidence
+
+- [File measurements](file_metrics.csv)
+- [Dependency edges](dependency_edges.csv)
+- [Public type name screening](public_type_duplicates.csv)
+- [Structural findings](violations.md)

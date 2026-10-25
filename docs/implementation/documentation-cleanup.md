@@ -513,3 +513,24 @@ LSP修復の公開後も古い基点SHAと統合結果の説明が重複して�
 今回の資料整理ではRust／Cargoの再実行やsource編集をせず、進行中のHIR Tier 2も継続した。
 現状一覧の相対link 35種は欠落0、変更前のfull Git識別子25種は現状一覧または履歴に保全した。
 既存36ファイルのhash差分0、文書差分の空白検査は成功。[資料照合](acceptance-evidence/task-doc-status-reconcile.audit.json)。
+
+## 公開済みの受入と作業中入力の分離 — 2026-10-26
+
+照合基点は公開main `946bdf08e48d81e7db88b51a8cd919a356f5ca6b`。
+現状一覧の基点とProgram Need検証の公開SHAを訂正し、公開cutの合格を後続の未公開capture変更へ
+適用していたように読める冒頭を整理した。既存のCopy capture受入と、明示的Copy／Moveの移行作業を
+別項目にした。後者のR3154コンパイル失敗はreceipt／logをbyte不変で保持し、実行前の入力freezeが
+ないという限界も記した。Generic Matchを含む既存の受入を取り消す判断ではない。
+
+共有gate、HIR Tier 2、他ownerのTier 2／画像parityを一つの状態欄へ混在させていた説明を分けた。
+「最終受入未確認」を未実装の意味へ読み替えない判定規則へ集約し、同じ留保の繰り返しを減らした。
+今回の作業ではRustソースを編集せず、資料のためのCargo再実行も行っていない。
+既存の失敗を新しい成功で上書きせず、[資料照合](acceptance-evidence/task-docs-current-evidence-refresh.audit.json)へ
+リンク・full SHA・元WIP・原本の保全確認を残す。
+
+GPT-6 Luna／maxに範囲を委ね、構造監査の補足24文書から、古い設計・責任分割案とCSVに重複する
+計測表を削除した。実行コマンド、測定revision、監査結果、検証の成功／失敗、固有の削除前計測は
+残した。現在のCSVに存在しない削除済みファイルの値を、単なる重複と扱って消していない。
+収束履歴でも、全体goalを繰り返す残作業列挙と当時の次の実行指示を削除した。
+元の実行結果・失敗分類・受入範囲とfull Git識別子は保持し、古い現在形を別の現状一覧にしない。
+対象ごとの[削除理由と保全先](acceptance-evidence/task-docs-history-luna-pruning.json)を残す。

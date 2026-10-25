@@ -1,0 +1,367 @@
+{
+  "version": 1,
+  "base": "946bdf08e48d81e7db88b51a8cd919a356f5ca6b",
+  "observedAt": "2026-10-25T23:23:19.6291121Z",
+  "sourceEdited": false,
+  "cargoRerunForDocumentation": false,
+  "preservedWorkingFiles": 52,
+  "sourceDrift": [],
+  "currentStatusCommits": [
+    "01af81001e1a7a2ac7ed70e2846371ad1cdb3c08",
+    "0403def0b856ddbb4ab19b43e822d0bcc8de1ce7",
+    "0b5ac5491d245a5386ca1b44547091e50bcb1955",
+    "1be0eb4d09a958b099225a1c7fbbd506afe39d26",
+    "1c994218a25444e14b58e1111f65581f8bbdd73a",
+    "3c7bae39d31250647811a4e2c0b91a08dfd99374",
+    "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+    "4c8844d70baf81ae7bb031766360738050875b35",
+    "5931e15eb9bf92c8b849216406687c44e348497b",
+    "6a86816246cd8e1bfae8f8250324cdbf0a2c559a",
+    "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+    "80e4845d9a23d097a4e60b6a46071c3d2545da93",
+    "843947a2c595368e323bbc4d57981053e1fb5e6c",
+    "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+    "86958911833f2509f391b70962773236e46a124e",
+    "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+    "946bdf08e48d81e7db88b51a8cd919a356f5ca6b",
+    "a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117",
+    "a74957e455597a0d3160af11c914e2e93f58d144",
+    "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+    "c4ec6d1109ca37b222f7238fd345b3a17caea612",
+    "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+    "dd7ce52715d3beda046ad465063623ece4ea5092",
+    "dec74c879c651705e41d23cfcf9b6b0f8dc50f71",
+    "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+    "faff95041f0d36bd492918cce57bc65c0ef428e2",
+    "fb04fd878622fac57a22db7e2c005ee6daa829ea"
+  ],
+  "markdown": [
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "relativeLinks": 518,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "relativeLinks": 51,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "relativeLinks": 19,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/adhoc-audit-implementation-ready-2026-07-13/audit-context.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/dialogue-view-hardening-vertical-style-2026-07-13/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/function-stack-function-type-effect-rows-2026-07-09/error-exception.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/fx-function-presentation-graph-2026-07-11/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/lang-01-1-1-1-try-syntax-cut-1/audit-context.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/lang-01-5-1-1-nominal-manifest-2026-07-21/audit-context.md",
+      "relativeLinks": 8,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/lang-01-5-1-2-safe-binary-2026-07-22/audit-context.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/proof-raw-id-materializer-deletion-2026-07-26/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/proof-runtime-assertion-guard-seed-2026-07-26/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/removed-borrow-block-2026-07-16/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/seq06-11d-1-typed-style-2026-07-13/audit-context.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-builtin-fx-compiler-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-canonical-batch-only-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-dialogue-staging-removal-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-dialogue-view-final-2026-07-13/README.md",
+      "relativeLinks": 5,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-fx-contracts-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-layer-capture-identity-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-legacy-layout-removal-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-shaped-vertical-regression-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-textbox-height-removal-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-textbox-view-composition-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-view-definitions-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-view-prepared-sources-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-visual-parity-2026-07-12/README.md",
+      "relativeLinks": 4,
+      "missing": [],
+      "unclosedFences": 0
+    }
+  ],
+  "retainedHistoryFullIdentities": 1147,
+  "currentHistoryFullIdentities": 1148,
+  "missingHistoryFullIdentities": [],
+  "structuralCompanions": [
+    {
+      "path": "docs/implementation/structure-audits/adhoc-audit-implementation-ready-2026-07-13/audit-context.md",
+      "originalFullIdentities": 1,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/dialogue-view-hardening-vertical-style-2026-07-13/README.md",
+      "originalFullIdentities": 1,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/function-stack-function-type-effect-rows-2026-07-09/error-exception.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/fx-function-presentation-graph-2026-07-11/README.md",
+      "originalFullIdentities": 1,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/lang-01-1-1-1-try-syntax-cut-1/audit-context.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/lang-01-5-1-1-nominal-manifest-2026-07-21/audit-context.md",
+      "originalFullIdentities": 2,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/lang-01-5-1-2-safe-binary-2026-07-22/audit-context.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/proof-raw-id-materializer-deletion-2026-07-26/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/proof-runtime-assertion-guard-seed-2026-07-26/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/removed-borrow-block-2026-07-16/README.md",
+      "originalFullIdentities": 1,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/seq06-11d-1-typed-style-2026-07-13/audit-context.md",
+      "originalFullIdentities": 1,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-builtin-fx-compiler-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-canonical-batch-only-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-dialogue-staging-removal-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-dialogue-view-final-2026-07-13/README.md",
+      "originalFullIdentities": 1,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-fx-contracts-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-layer-capture-identity-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-legacy-layout-removal-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-shaped-vertical-regression-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-textbox-height-removal-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-textbox-view-composition-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-view-definitions-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-view-prepared-sources-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    },
+    {
+      "path": "docs/implementation/structure-audits/unified-text-visual-parity-2026-07-12/README.md",
+      "originalFullIdentities": 0,
+      "missingFullIdentities": []
+    }
+  ],
+  "structuredMeasurementEvidenceChanged": [],
+  "existingRawEvidenceChanged": [],
+  "rawEvidence": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3154-program-capture-transfer-check.json",
+      "bytes": 572,
+      "sha256": "1109b8142a3f1efee82078079bd365553f3a5520b969f0d3994868f61a06e83a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3154-program-capture-transfer-check.log",
+      "bytes": 19126,
+      "sha256": "f04cdac6f3ba8274dfb9f4356a18822a6ee9f3086e0db0fc603dd7de083cf8e9"
+    }
+  ],
+  "runtimeFailure": {
+    "run": "task-final-r3154-program-capture-transfer-check",
+    "actualExitCode": 101,
+    "preRunInputFreeze": false
+  },
+  "reusedEvidence": [
+    {
+      "run": "task-final-r3139-awbc-task-carrier-reverse-runtime",
+      "boundary": "Generic Match",
+      "executed": 151,
+      "passed": 151
+    },
+    {
+      "run": "task-final-r3149-program-body-carrier-flow-id-runtime",
+      "boundary": "Program Need owner libraries",
+      "executed": 2161,
+      "passed": 2161
+    },
+    {
+      "run": "task-final-r3127-hir-tier2-production-runtime",
+      "boundary": "HIR Tier 2",
+      "executed": 8,
+      "passed": 8
+    }
+  ],
+  "statusAuthority": "docs/implementation/current-status.md"
+}
