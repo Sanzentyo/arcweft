@@ -48,7 +48,7 @@ impl AwbcFlowLowerer<'_, '_> {
             .plan
             .type_table()
             .id_for_semantic(arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes(
-                *producer.payload_type.as_bytes(),
+                *producer.handle_type.payload_type().as_bytes(),
             ))
             .expect("original Program Source owns its payload type");
         let result_type = self.close_executable_body(&mut frame, &mut body, result, false);

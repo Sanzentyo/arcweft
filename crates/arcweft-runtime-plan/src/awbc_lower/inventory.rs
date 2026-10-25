@@ -1699,7 +1699,7 @@ impl AwbcInventory {
         }
         let producer = source.producer();
         let Some(payload_type) = self.semantic_type(RuntimeSemanticTypeId::from_bytes(
-            *producer.payload_type.as_bytes(),
+            *producer.handle_type.payload_type().as_bytes(),
         )) else {
             self.diagnostic(AwbcLowerDiagnostic::error(
                 path,
@@ -1816,7 +1816,7 @@ impl AwbcInventory {
         let signature = self.intern_signature(params, None, AwbcEffectSetId(0));
         let arguments = self.intern_host_arguments(&template.request.args);
         let Some(payload_type) = self.semantic_type(RuntimeSemanticTypeId::from_bytes(
-            *template.definition.payload_type.as_bytes(),
+            *template.definition.handle_type.payload_type().as_bytes(),
         )) else {
             self.diagnostic(AwbcLowerDiagnostic::error(
                 "task.payload",

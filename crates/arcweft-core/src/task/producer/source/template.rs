@@ -236,7 +236,7 @@ impl RuntimeTaskSourceRef<'_> {
             producer.family,
             producer.contract,
             producer.producer_site,
-            producer.payload_type,
+            producer.handle_type,
             &producer.class,
             producer.priority,
             &producer.cancel_scope,
@@ -411,7 +411,7 @@ impl RuntimeTaskSourceRef<'_> {
             contract: producer.contract,
             plan: source,
             producer_site: producer.producer_site,
-            payload_type: producer.payload_type,
+            handle_type: producer.handle_type,
             arguments: digest,
             binding: binding.cloned(),
         })

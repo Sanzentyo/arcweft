@@ -62,6 +62,9 @@ impl RuntimeNeedHandleSaveSnapshot {
     }
 
     pub(crate) fn validate_admitted_identity(&self) -> Result<(), RuntimeNeedHandleError> {
+        self.spec
+            .validate_outcome()
+            .map_err(|_| RuntimeNeedHandleError::CorrelationMismatch)?;
         self.origin.validate(
             self.correlation,
             self.spec.generation,
@@ -265,6 +268,8 @@ impl RuntimeNeedHandle {
         handle: TaskHandle,
     ) -> Result<Self, RuntimeNeedHandleError> {
         spec.validate_need_descriptor()?;
+        spec.validate_outcome()
+            .map_err(|_| RuntimeNeedHandleError::CorrelationMismatch)?;
         RuntimeNeedHandleOrigin::AcceptedLaunch.validate(
             handle.correlation,
             spec.generation,

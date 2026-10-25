@@ -9,7 +9,7 @@ fn producer_definition(
     coordinate: RuntimeTaskPlanBuildCoordinate,
     marker: u8,
     family: NeedProducerFamily,
-    payload: RuntimeSemanticTypeId,
+    handle_type: TaskHandleType,
 ) -> NeedProducerDefinition {
     NeedProducerDefinition {
         function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([marker; 32]),
@@ -17,7 +17,7 @@ fn producer_definition(
         contract: NeedProducerContractDigest::from_bytes([marker; 32]),
         plan: coordinate,
         producer_site: NeedProducerSiteDigest::from_bytes([marker; 32]),
-        payload_type: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+        handle_type,
         class: TaskClass::Cpu,
         priority: TaskPriority::default(),
         cancel_scope: CancelScopeId("test".to_owned()),
@@ -34,7 +34,14 @@ fn producer(
     arguments: Vec<RuntimeHostArgumentSeed>,
 ) -> RuntimeNeedProducerTemplateSeed {
     RuntimeNeedProducerTemplateSeed {
-        definition: producer_definition(coordinate, marker, family, payload),
+        definition: producer_definition(
+            coordinate,
+            marker,
+            family,
+            TaskHandleType::Need {
+                payload: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+            },
+        ),
         request: RuntimeHostTaskRequestTemplateSeed {
             capability: HostCapabilityId("test".to_owned()),
             operation: "request".to_owned(),
@@ -177,7 +184,9 @@ fn fixture(
                 builder.task_coordinate_owner(1).resolve(0).unwrap(),
                 74,
                 NeedProducerFamily::StructuredTaskPlan,
-                unit,
+                TaskHandleType::ThreadHandle {
+                    payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+                },
             ),
             body: vec![RuntimeFlowOpSeed::ReturnExpr(returned.clone())],
         }

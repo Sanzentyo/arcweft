@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "11f79c7d482c8146f4b86c458224b0a112d4f1da",
+  "overlap": "crates/arcweft-runtime-host/src/native_task.rs",
+  "normalization": "LF only for comparing the original import-edit hunks. The original backup bytes are retained separately in the task temp directory.",
+  "originalHeldHunks": "@@ -2129,8 +2129,8 @@ mod tests {\n     };\n     use arcweft_core::task::{\n         CancelScopeId, GenerationId, HostTaskRequest, LogicalEpoch, Progress, SystemInfoKind,\n-        SystemInfoRequest, TaskClass, TaskDispatchIdentity, TaskDispatchStart, TaskId, TaskKey,\n-        TaskOutcomeContract, TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSequence,\n+        SystemInfoRequest, TaskClass, TaskDispatchIdentity, TaskDispatchStart, TaskOutcomeContract,\n+        TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSequence,\n     };\n     use arcweft_core::value::runtime_sequence_dense_u8;\n     use std::sync::Mutex;\n",
+  "pendingAfterPublishingCarrierHunks": "@@ -2129,8 +2129,8 @@ mod tests {\n     };\n     use arcweft_core::task::{\n         CancelScopeId, GenerationId, HostTaskRequest, LogicalEpoch, Progress, SystemInfoKind,\n-        SystemInfoRequest, TaskClass, TaskDispatchIdentity, TaskDispatchStart, TaskId, TaskKey,\n-        TaskOutcomeContract, TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSequence,\n+        SystemInfoRequest, TaskClass, TaskDispatchIdentity, TaskDispatchStart, TaskOutcomeContract,\n+        TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSequence,\n     };\n     use arcweft_core::value::runtime_sequence_dense_u8;\n     use std::sync::Mutex;\n",
+  "heldHunkDrift": 0,
+  "otherHeldFiles": 13,
+  "otherHeldByteDrift": 0,
+  "originalBackupSha256": "1e962fd479135a01556377100b38be94770a92f3565923fb5e776843a1eaca0c",
+  "publishCandidateSha256": "1d29a148077d910b9272875a1a47c665492ab9bacf4f33051ff4906e00779d07",
+  "workingSha256": "1565a2fb349d8871e1cd4e6561ea0e4b0e233509c07ed0c0ec76a6ba387dfa8a",
+  "heldFullDiffBeforeStagingSha256": "b8df8666156e2617fc0674616c72ceb1418734193e9ed81a20dab8a7647d9217",
+  "originalHeldPatchSha256": "a93b087fc4c816f82f228d7eb52c3ddf35ceaa1fae4f95cfedaec0e62bb942cc"
+}

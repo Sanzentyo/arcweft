@@ -7078,9 +7078,11 @@ fn await_many_original_program_with_thread(
                 contract: NeedProducerContractDigest::from_bytes([0x95; 32]),
                 plan: coordinate,
                 producer_site: NeedProducerSiteDigest::from_bytes([site; 32]),
-                payload_type: crate::task::RuntimeTypeSemanticDigest::from_bytes(
-                    *payload.as_bytes(),
-                ),
+                handle_type: crate::task::TaskHandleType::Need {
+                    payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(
+                        *payload.as_bytes(),
+                    ),
+                },
                 class: TaskClass::Io,
                 priority: TaskPriority(0),
                 cancel_scope: CancelScopeId("flow".into()),
@@ -7180,9 +7182,11 @@ fn await_many_original_program_with_thread(
                     contract: NeedProducerContractDigest::from_bytes([0xb7; 32]),
                     plan: coordinate,
                     producer_site: NeedProducerSiteDigest::from_bytes([0xb8; 32]),
-                    payload_type: crate::task::RuntimeTypeSemanticDigest::from_bytes(
-                        *aggregate_result.as_bytes(),
-                    ),
+                    handle_type: crate::task::TaskHandleType::ThreadHandle {
+                        payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(
+                            *aggregate_result.as_bytes(),
+                        ),
+                    },
                     class: TaskClass::Cpu,
                     priority: TaskPriority(0),
                     cancel_scope: CancelScopeId("flow".into()),

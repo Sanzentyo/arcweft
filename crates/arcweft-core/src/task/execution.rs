@@ -405,6 +405,10 @@ impl<S> TaskRequest<crate::value::RuntimePayload, S> {
 /// An assertion admits metadata; only the live role can retain an execution
 /// lease. Restore must resolve the assertion through its enclosing executable.
 pub(crate) trait TaskExecutionSource {
+    fn validate_handle_type(
+        &self,
+        expected: super::TaskHandleType,
+    ) -> Result<(), super::TaskEnsureError>;
     fn expected_key_bytes(&self) -> [u8; 32];
     fn with_owner<T>(
         &self,
@@ -425,6 +429,18 @@ pub(crate) trait TaskExecutionSource {
 }
 
 impl TaskExecutionSource for RuntimeTaskSource {
+    fn validate_handle_type(
+        &self,
+        expected: super::TaskHandleType,
+    ) -> Result<(), super::TaskEnsureError> {
+        if self.execution_kind() != TaskExecutionKind::Program {
+            return Err(super::TaskEnsureError::ProgramSourceMismatch);
+        }
+        if self.handle_type() != expected {
+            return Err(super::TaskEnsureError::OutcomeContractMismatch);
+        }
+        Ok(())
+    }
     fn with_owner<T>(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
@@ -473,6 +489,14 @@ impl TaskExecutionSource for RuntimeTaskSource {
 }
 
 impl TaskExecutionSource for RuntimeTaskSourceAssertion {
+    fn validate_handle_type(
+        &self,
+        _expected: super::TaskHandleType,
+    ) -> Result<(), super::TaskEnsureError> {
+        // Metadata admission grants no live handle. Restore must bind the actual
+        // original Source, whose implementation above checks its attested type.
+        Ok(())
+    }
     fn with_owner<T>(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
@@ -507,6 +531,17 @@ impl TaskExecutionSource for RuntimeTaskSourceAssertion {
 }
 
 impl<P, S: TaskExecutionSource> TaskRequest<P, S> {
+    pub(super) fn validate_handle_type(
+        &self,
+        expected: super::TaskHandleType,
+    ) -> Result<(), super::TaskEnsureError> {
+        match self {
+            Self::Host(_) if matches!(expected, super::TaskHandleType::Need { .. }) => Ok(()),
+            Self::Host(_) => Err(super::TaskEnsureError::OutcomeContractMismatch),
+            Self::Program(source) => source.validate_handle_type(expected),
+        }
+    }
+
     pub(super) fn matches_plan(&self, plan: TaskPlanSemanticDigest) -> bool {
         match self {
             Self::Host(_) => true,

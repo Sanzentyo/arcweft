@@ -11,7 +11,9 @@ fn producer_spec(seed: u8) -> NeedProducerSpec {
         NeedProducerContractDigest::from_bytes([seed; 32]),
         TaskPlanSemanticDigest::from_bytes([2; 32]),
         NeedProducerSiteDigest::from_bytes([3; 32]),
-        RuntimeTypeSemanticDigest::from_bytes([4; 32]),
+        crate::task::TaskHandleType::Need {
+            payload: RuntimeTypeSemanticDigest::from_bytes([4; 32]),
+        },
         RuntimeValueDigest::from_bytes([5; 32]),
     )
 }
@@ -20,6 +22,36 @@ fn producer(seed: u8) -> NeedProducerInstanceKey {
     producer_spec(seed)
         .instance_key()
         .expect("complete producer instance")
+}
+
+#[test]
+fn equal_payloads_with_different_carriers_have_distinct_task_and_need_identities() {
+    let need = producer_spec(1);
+    let thread = NeedProducerSpec::new(
+        need.family(),
+        need.contract(),
+        need.plan(),
+        need.producer_site(),
+        crate::task::TaskHandleType::ThreadHandle {
+            payload: need.payload_type(),
+        },
+        need.arguments(),
+    );
+    assert_eq!(need.payload_type(), thread.payload_type());
+    let need = crate::task::NeedProducerInstance::try_from(&need).unwrap();
+    let thread = crate::task::NeedProducerInstance::try_from(&thread).unwrap();
+    assert_ne!(need.key(), thread.key());
+    for policy in [TaskPolicy::JoinSameKey, TaskPolicy::AlwaysStart] {
+        let ordinal =
+            TaskLaunchOrdinal::try_for_policy(policy, u64::from(policy == TaskPolicy::AlwaysStart))
+                .unwrap();
+        let generation = GenerationId::new(7);
+        let need = TaskCorrelation::try_for(generation, &need, policy, ordinal).unwrap();
+        let thread = TaskCorrelation::try_for(generation, &thread, policy, ordinal).unwrap();
+        assert_ne!(need.need, thread.need);
+        assert_ne!(need.task_key, thread.task_key);
+        assert_ne!(need.task_id, thread.task_id);
+    }
 }
 
 #[test]

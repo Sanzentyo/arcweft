@@ -50,7 +50,9 @@ impl HostCallProducerDefinition {
             self.contract,
             self.plan,
             self.site,
-            RuntimeTypeSemanticDigest::from_bytes(*result.as_bytes()),
+            crate::task::TaskHandleType::Need {
+                payload: RuntimeTypeSemanticDigest::from_bytes(*result.as_bytes()),
+            },
             arguments,
         );
         Ok(TaskSpec {
@@ -74,9 +76,9 @@ pub struct NeedProducerDefinition<Plan = crate::plan::RuntimeTaskPlanBuildCoordi
     pub contract: NeedProducerContractDigest,
     pub plan: Plan,
     pub producer_site: NeedProducerSiteDigest,
-    /// Sole payload declaration, resolved against the original program's types.
-    /// Every launch derives its Program outcome from this same identity.
-    pub payload_type: RuntimeTypeSemanticDigest,
+    /// Sole language carrier and payload declaration. Every launch derives its
+    /// outcome from this same original-program type.
+    pub handle_type: super::TaskHandleType,
     pub class: TaskClass,
     pub priority: TaskPriority,
     pub cancel_scope: CancelScopeId,
@@ -98,7 +100,7 @@ impl<Plan> NeedProducerDefinition<Plan> {
     pub const fn outcome(&self) -> TaskOutcomeContract {
         TaskOutcomeContract::Program {
             payload: crate::pattern::RuntimeSemanticTypeId::from_bytes(
-                *self.payload_type.as_bytes(),
+                *self.handle_type.payload_type().as_bytes(),
             ),
         }
     }
@@ -113,7 +115,8 @@ impl NeedProducerDefinition {
         encoder.tag(self.family.semantic_tag());
         encoder.digest(self.contract.as_bytes());
         encoder.digest(self.producer_site.as_bytes());
-        encoder.digest(self.payload_type.as_bytes());
+        encoder.tag(self.handle_type.semantic_tag());
+        encoder.digest(self.handle_type.payload_type().as_bytes());
         encoder.tag(self.class.semantic_tag());
         encoder.ordinal(self.priority.0.cast_unsigned());
         encoder.string(&self.cancel_scope.0);

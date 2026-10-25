@@ -204,12 +204,13 @@ impl NeedProducerFamily {
 /// }
 /// ```
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NeedProducerSpec<Plan = TaskPlanSemanticDigest> {
     family: NeedProducerFamily,
     contract: NeedProducerContractDigest,
     plan: Plan,
     producer_site: NeedProducerSiteDigest,
-    payload_type: RuntimeTypeSemanticDigest,
+    handle_type: super::TaskHandleType,
     arguments: RuntimeValueDigest,
     // Only Source admission supplies this live declaration solution. A
     // digest-only Serde specification cannot construct an invocation binding.
@@ -224,7 +225,7 @@ impl NeedProducerSpec {
         contract: NeedProducerContractDigest,
         plan: TaskPlanSemanticDigest,
         producer_site: NeedProducerSiteDigest,
-        payload_type: RuntimeTypeSemanticDigest,
+        handle_type: super::TaskHandleType,
         arguments: RuntimeValueDigest,
     ) -> Self {
         Self {
@@ -232,7 +233,7 @@ impl NeedProducerSpec {
             contract,
             plan,
             producer_site,
-            payload_type,
+            handle_type,
             arguments,
             binding: None,
         }
@@ -259,7 +260,8 @@ impl<Plan> NeedProducerSpec<Plan> {
         hasher.update(self.contract.as_bytes());
         hasher.update(plan.as_bytes());
         hasher.update(self.producer_site.as_bytes());
-        hasher.update(self.payload_type.as_bytes());
+        hasher.update(&[self.handle_type.semantic_tag()]);
+        hasher.update(self.handle_type.payload_type().as_bytes());
         hasher.update(self.arguments.as_bytes());
         match &self.binding {
             None => {
@@ -308,8 +310,12 @@ impl<Plan> NeedProducerSpec<Plan> {
         self.producer_site
     }
 
+    pub const fn handle_type(&self) -> super::TaskHandleType {
+        self.handle_type
+    }
+
     pub const fn payload_type(&self) -> RuntimeTypeSemanticDigest {
-        self.payload_type
+        self.handle_type.payload_type()
     }
 
     pub const fn arguments(&self) -> RuntimeValueDigest {
@@ -333,7 +339,7 @@ impl NeedProducerSpec<crate::plan::task_source::RuntimeTaskSource> {
             && self.contract == other.contract
             && self.plan.task_plan().key() == other.plan.task_plan().key()
             && self.producer_site == other.producer_site
-            && self.payload_type == other.payload_type
+            && self.handle_type == other.handle_type
             && self.arguments == other.arguments
             && self.binding == other.binding
     }
@@ -3816,7 +3822,9 @@ mod identity_tests {
             NeedProducerContractDigest::from_bytes([1; 32]),
             TaskPlanSemanticDigest::from_bytes([2; 32]),
             NeedProducerSiteDigest::from_bytes([7; 32]),
-            RuntimeTypeSemanticDigest::from_bytes([3; 32]),
+            crate::task::TaskHandleType::Need {
+                payload: RuntimeTypeSemanticDigest::from_bytes([3; 32]),
+            },
             RuntimeValueDigest::from_bytes([4; 32]),
         );
         let changed = NeedProducerSpec::new(
@@ -3824,7 +3832,9 @@ mod identity_tests {
             NeedProducerContractDigest::from_bytes([1; 32]),
             TaskPlanSemanticDigest::from_bytes([2; 32]),
             NeedProducerSiteDigest::from_bytes([8; 32]),
-            RuntimeTypeSemanticDigest::from_bytes([3; 32]),
+            crate::task::TaskHandleType::Need {
+                payload: RuntimeTypeSemanticDigest::from_bytes([3; 32]),
+            },
             RuntimeValueDigest::from_bytes([4; 32]),
         );
         assert_ne!(

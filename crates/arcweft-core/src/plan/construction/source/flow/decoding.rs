@@ -394,8 +394,16 @@ impl Reader<'_, '_, '_> {
             .zero_based("task", self.counts.limits.task_count)?;
         let plan = self.handles.tasks[coordinate as usize].clone();
         let producer_site = NeedProducerSiteDigest::from_bytes(self.metadata.digest()?);
+        let handle_tag = self.metadata.byte()?;
         let payload = self.ty()?;
-        let payload_type = RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes());
+        let handle_type = crate::task::TaskHandleType::from_semantic_tag(
+            handle_tag,
+            RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+        )
+        .ok_or(Error::Tag {
+            kind: "task handle type",
+            tag: handle_tag,
+        })?;
         let tag = self.metadata.byte()?;
         let class = TaskClass::from_semantic_tag(tag).ok_or(Error::Tag {
             kind: "task class",
@@ -415,7 +423,7 @@ impl Reader<'_, '_, '_> {
             contract,
             plan,
             producer_site,
-            payload_type,
+            handle_type,
             class,
             priority,
             cancel_scope,

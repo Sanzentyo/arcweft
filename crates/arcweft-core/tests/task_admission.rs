@@ -13,11 +13,13 @@ fn specification(policy: TaskPolicy) -> TaskSpec {
         NeedProducerContractDigest::from_bytes([1; 32]),
         TaskPlanSemanticDigest::from_bytes([2; 32]),
         NeedProducerSiteDigest::from_bytes([3; 32]),
-        RuntimeTypeSemanticDigest::from_bytes(
-            *RuntimeCheckedType::Bool
-                .semantic_identity_digest()
-                .as_bytes(),
-        ),
+        arcweft_core::task::TaskHandleType::Need {
+            payload: RuntimeTypeSemanticDigest::from_bytes(
+                *RuntimeCheckedType::Bool
+                    .semantic_identity_digest()
+                    .as_bytes(),
+            ),
+        },
         RuntimeValue::Tuple(Vec::new()).try_digest(1024).unwrap(),
     );
     TaskSpec {

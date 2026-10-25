@@ -16,11 +16,13 @@ fn producer_input() -> NeedProducerSpec {
         NeedProducerContractDigest::from_bytes([1; 32]),
         TaskPlanSemanticDigest::from_bytes([2; 32]),
         NeedProducerSiteDigest::from_bytes([3; 32]),
-        RuntimeTypeSemanticDigest::from_bytes(
-            *RuntimeCheckedType::Bool
-                .semantic_identity_digest()
-                .as_bytes(),
-        ),
+        crate::task::TaskHandleType::Need {
+            payload: RuntimeTypeSemanticDigest::from_bytes(
+                *RuntimeCheckedType::Bool
+                    .semantic_identity_digest()
+                    .as_bytes(),
+            ),
+        },
         RuntimeValue::Tuple(Vec::new()).try_digest(1024).unwrap(),
     )
 }
@@ -52,6 +54,44 @@ fn accepted(spec: TaskSpec, ordinal: u64) -> RuntimeNeedHandle {
         correlation: spec.correlation(ordinal).unwrap(),
     };
     RuntimeNeedHandle::try_from_accepted_launch(spec, handle).unwrap()
+}
+
+#[test]
+fn host_requests_cannot_issue_or_restore_thread_handles_with_the_same_payload() {
+    let input = producer_input();
+    let wrong_carrier = NeedProducerSpec::new(
+        input.family(),
+        input.contract(),
+        input.plan(),
+        input.producer_site(),
+        crate::task::TaskHandleType::ThreadHandle {
+            payload: input.payload_type(),
+        },
+        input.arguments(),
+    );
+    let wrong_producer = NeedProducerInstance::try_from(&wrong_carrier).unwrap();
+    let original = specification(TaskPolicy::JoinSameKey);
+    let mut changed = original.clone();
+    changed.producer = wrong_producer.clone();
+    assert!(matches!(
+        RuntimeNeedHandle::try_from(changed.clone()),
+        Err(RuntimeNeedHandleError::CorrelationMismatch)
+    ));
+    let mut registry = crate::task::NeedProducerRegistry::default();
+    let before = registry.launch_frontiers();
+    assert_eq!(
+        registry.ensure_task(changed).unwrap_err(),
+        crate::task::TaskEnsureError::OutcomeContractMismatch
+    );
+    assert_eq!(registry.launch_frontiers(), before);
+    assert!(registry.task_admissions().next().is_none());
+
+    let mut image = RuntimeNeedHandleSaveSnapshot::from_live(&accepted(original, 0), None).unwrap();
+    image.spec.producer = wrong_producer;
+    assert_eq!(
+        image.validate_identity(),
+        Err(RuntimeNeedHandleError::CorrelationMismatch)
+    );
 }
 
 #[test]
@@ -190,7 +230,7 @@ fn need_handle_environment_move_preserves_complete_specification_without_startin
             spec.producer.contract(),
             spec.producer.plan(),
             producer_input().producer_site(),
-            spec.producer.payload_type(),
+            spec.producer.handle_type(),
             RuntimeValue::Tuple(vec![RuntimeValue::String("owned argument".to_owned())])
                 .try_digest(1024)
                 .unwrap(),
@@ -331,7 +371,7 @@ fn need_handle_preparation_rejects_changed_producer_instance_on_restore() {
             base.contract(),
             base.plan(),
             base.producer_site(),
-            base.payload_type(),
+            base.handle_type(),
             base.arguments(),
         ),
         NeedProducerSpec::new(
@@ -339,7 +379,7 @@ fn need_handle_preparation_rejects_changed_producer_instance_on_restore() {
             NeedProducerContractDigest::from_bytes([9; 32]),
             base.plan(),
             base.producer_site(),
-            base.payload_type(),
+            base.handle_type(),
             base.arguments(),
         ),
         NeedProducerSpec::new(
@@ -347,7 +387,7 @@ fn need_handle_preparation_rejects_changed_producer_instance_on_restore() {
             base.contract(),
             TaskPlanSemanticDigest::from_bytes([9; 32]),
             base.producer_site(),
-            base.payload_type(),
+            base.handle_type(),
             base.arguments(),
         ),
         NeedProducerSpec::new(
@@ -355,7 +395,7 @@ fn need_handle_preparation_rejects_changed_producer_instance_on_restore() {
             base.contract(),
             base.plan(),
             NeedProducerSiteDigest::from_bytes([9; 32]),
-            base.payload_type(),
+            base.handle_type(),
             base.arguments(),
         ),
         NeedProducerSpec::new(
@@ -363,7 +403,9 @@ fn need_handle_preparation_rejects_changed_producer_instance_on_restore() {
             base.contract(),
             base.plan(),
             base.producer_site(),
-            RuntimeTypeSemanticDigest::from_bytes([9; 32]),
+            crate::task::TaskHandleType::Need {
+                payload: RuntimeTypeSemanticDigest::from_bytes([9; 32]),
+            },
             base.arguments(),
         ),
         NeedProducerSpec::new(
@@ -371,7 +413,7 @@ fn need_handle_preparation_rejects_changed_producer_instance_on_restore() {
             base.contract(),
             base.plan(),
             base.producer_site(),
-            base.payload_type(),
+            base.handle_type(),
             RuntimeValueDigest::from_bytes([9; 32]),
         ),
     ] {

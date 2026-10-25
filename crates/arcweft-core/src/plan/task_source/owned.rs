@@ -15,6 +15,9 @@ pub struct RuntimeTaskSource {
     program: RuntimeTaskSourceProgram,
     coordinate: RuntimeTaskPlanBuildCoordinate,
     execution: Option<RuntimeTaskExecutionRow>,
+    // Attested with this immutable original Source; never supplied by an inert locator.
+    handle_type: crate::task::TaskHandleType,
+    execution_kind: crate::task::TaskExecutionKind,
 }
 
 /// Inert locator for an already completed Source and its exact execution row.
@@ -92,14 +95,55 @@ impl RuntimeTaskSource {
             return None;
         }
         let coordinate = source.owner.resolve(source.task.index().0)?;
+        use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
+        use crate::task::TaskExecutionKind;
+        let (execution_kind, handle_type) = match source.request_endpoint().task_source()? {
+            RuntimeBodyTaskSource::Producer(template) => {
+                (TaskExecutionKind::Host, template.definition.handle_type)
+            }
+            RuntimeBodyTaskSource::ProgramProducer(producer) => {
+                (TaskExecutionKind::Program, producer.handle_type)
+            }
+            RuntimeBodyTaskSource::Start(target) => (
+                TaskExecutionKind::Host,
+                crate::task::TaskHandleType::Need {
+                    payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(
+                        *target.plan().payload_type().as_bytes(),
+                    ),
+                },
+            ),
+            RuntimeBodyTaskSource::Host(target) => (
+                TaskExecutionKind::Host,
+                crate::task::TaskHandleType::Need {
+                    payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(
+                        *program
+                            .original()
+                            .type_table()
+                            .get(target.result)?
+                            .semantic_identity()
+                            .as_bytes(),
+                    ),
+                },
+            ),
+        };
         Some(Self {
             program: program.clone(),
             coordinate,
+            handle_type,
+            execution_kind,
             execution: source
                 .execution
                 .as_ref()
                 .map(super::program::RuntimeTaskExecutionRef::row),
         })
+    }
+
+    pub(crate) const fn handle_type(&self) -> crate::task::TaskHandleType {
+        self.handle_type
+    }
+
+    pub(crate) const fn execution_kind(&self) -> crate::task::TaskExecutionKind {
+        self.execution_kind
     }
 
     pub fn task_plan(&self) -> RuntimeTaskPlanRef<'_> {
@@ -136,6 +180,8 @@ impl PartialEq for RuntimeTaskSource {
         self.program == other.program
             && self.coordinate == other.coordinate
             && self.execution == other.execution
+            && self.handle_type == other.handle_type
+            && self.execution_kind == other.execution_kind
     }
 }
 impl Eq for RuntimeTaskSource {}

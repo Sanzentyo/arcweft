@@ -988,7 +988,9 @@ mod tests {
             NeedProducerContractDigest::from_bytes([1; 32]),
             TaskPlanSemanticDigest::from_bytes([2; 32]),
             NeedProducerSiteDigest::from_bytes([3; 32]),
-            RuntimeTypeSemanticDigest::from_bytes(*result_type.as_bytes()),
+            arcweft_core::task::TaskHandleType::Need {
+                payload: RuntimeTypeSemanticDigest::from_bytes(*result_type.as_bytes()),
+            },
             RuntimeValue::Tuple(vec![
                 RuntimeValue::String(kind.into()),
                 RuntimeValue::String(id.into()),

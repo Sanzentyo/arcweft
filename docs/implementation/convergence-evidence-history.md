@@ -11781,3 +11781,49 @@ local-use ownerは3,603 physical LOC（基点3,375）、元のstate／graphを�
 元のtracked WIP 14件／untracked実ファイル6件を保持したcheckoutでの検証であり、別のclean入力の実行とは呼ばない。
 最新Core全53逆依存・Tier 2・Native-Web capture parity、Source parallelの実行・全体goalは未完了のまま区別する。
 検証原本等125件をbyte不変で保全した。[保全一覧](acceptance-evidence/task-sema-local-use-evidence-integrity.json)。
+
+## producerのcarrierとpayload型契約の分離 — 2026-10-26
+
+基点は公開main `11f79c7d482c8146f4b86c458224b0a112d4f1da`。前段136 pathのparentは
+`408fb789ff68c0e1e0cbfb19b40ba4397242f8e7`、treeは
+`44f899cf60640334fb33f03d9fd25aea281d84a0`、full patch SHA256は
+`fea2faebaa7523057336a1b02d156900dddf9333c6ea876ed4c6361faaa6b704`。
+全136公開blobと検証原本等125件の公開byte hashは差分0。
+[前段公開照合](acceptance-evidence/task-sema-local-use-checkpoint.verified.json)、
+[公開原本照合](acceptance-evidence/task-sema-local-use-public-evidence-audit.json)。
+
+通常NeedとThreadHandleの区別を、Host／Program実行方式から切り離した。
+CoreのTaskHandleTypeがcarrierとpayloadを一つの型として保持し、Definition／Spec／Instanceの
+payloadだけのフィールドを直接置換する。39 constructor、Source materialization、Native／AWBCの
+値admission、producer-instance identity、descriptor visitor、保存assertionとversion 1 Source codecを同じ契約へ移行した。
+TaskOutcomeContractのStandalone／Programは、従来どおりpayload検証authorityを表す。
+
+実Sourceは元のborrowed endpointから実行種別と同じ返却型を認証して保持する。この私有の不変factにより、
+registryの変更前に型を検査でき、検査のためにSource allowanceを新設したり、別のresolverを通したりしない。
+inert locatorは認証を与えず、restore時は元Sourceの型と再照合する。Host requestのThreadHandle偽装と、
+元Threadを通常Needへ付け替えたProgram launchを拒否する。source／codec／digestの契約versionは1を維持する。
+これはSource parallelのaggregate生成・callback実行・保存復元の受入ではない。
+
+初回Core checkは実際に終了101。保存検査の旧PayloadType名1件とintegration testのcrate参照2件が残っていたため、
+consumerを最終型へ揃えた。この失敗を後続成功へ書き換えない。
+[初回診断](acceptance-evidence/task-handle-carrier-initial-check.json)。
+R3099のworkspace checkは全target・全feature・lockedで終了0・警告あり、Cargo表示4m32s。
+3,987非文書入力の前後hash差分0、99 manifest／lock不変のため既存の解決済みmetadataを再使用した。
+[check原本](acceptance-evidence/task-final-r3099-handle-carrier-workspace-check.json)、
+[入力照合](acceptance-evidence/task-final-r3099-handle-carrier-workspace-check.input-audit.json)。
+
+既存Native hostのimport整理は今回のAPI変更と別のhunkであり、公開候補にはAPI変更だけを含める。
+元のhunkとの照合と、他13 held pathのbyte比較は差分0。
+[重なる変更の保全照合](acceptance-evidence/task-handle-carrier-held-intent.json)。
+
+公開前レビューで、carrierだけの検査ではHost template SourceをTaskRequest::Programへ付け替えられる欠落を確認した。
+R3100のcatalog buildを意図して中断し、実際のSource実行種別を認証する検査とNative／AWBCの拒否ケースを追加した。
+停止したビルドはruntime失敗・成功のどちらにも数えない。
+[中断記録](acceptance-evidence/task-handle-carrier-catalog-interruption.json)。
+
+修正後のR3108 workspace checkは全target・全feature・lockedで終了0・警告あり、Cargo表示1m51s。
+3,987非文書入力の前後hash差分0。この結果をユーザー指定の中間commitの検証範囲とし、
+runtime・Clippy・正規構造gate・doctestの成功はまだ記録していない。
+[修正後check](acceptance-evidence/task-final-r3108-handle-execution-workspace-check.json)、
+[中間範囲](acceptance-evidence/task-handle-carrier-checkpoint.json)、
+[owner実測・disposition](acceptance-evidence/task-handle-carrier-structure-review.json)。

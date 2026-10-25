@@ -130,7 +130,11 @@ pub(crate) fn reusable_need_with_outcome(
         NeedProducerContractDigest::from_bytes([1; 32]),
         TaskPlanSemanticDigest::from_bytes([2; 32]),
         NeedProducerSiteDigest::from_bytes([3; 32]),
-        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        crate::task::TaskHandleType::Need {
+            payload: RuntimeTypeSemanticDigest::from_bytes(
+                *outcome.payload_semantic_identity().as_bytes(),
+            ),
+        },
         arguments
             .try_digest(4096)
             .expect("fixture arguments encode"),
@@ -165,7 +169,11 @@ pub(crate) fn task_spec(
         NeedProducerContractDigest::from_bytes([1; 32]),
         TaskPlanSemanticDigest::from_bytes([2; 32]),
         NeedProducerSiteDigest::from_bytes([3; 32]),
-        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        crate::task::TaskHandleType::Need {
+            payload: RuntimeTypeSemanticDigest::from_bytes(
+                *outcome.payload_semantic_identity().as_bytes(),
+            ),
+        },
         arguments,
     );
     TaskSpec {

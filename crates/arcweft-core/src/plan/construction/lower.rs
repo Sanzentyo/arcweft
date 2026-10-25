@@ -3866,10 +3866,19 @@ impl RuntimePlanBodyConstruction<'_> {
             } => {
                 let binding = self.lower_pattern_seed(binding)?;
                 let producer = self.lower_producer_definition(producer)?;
+                let expected = crate::task::TaskHandleType::ThreadHandle {
+                    payload: producer.handle_type.payload_type(),
+                };
+                if producer.handle_type != expected {
+                    return Err(RuntimePlanBuildError::ProducerHandleType {
+                        expected,
+                        actual: producer.handle_type,
+                    });
+                }
                 let payload = self.resolve_seed_type(
                     "Thread result payload",
                     crate::pattern::RuntimeSemanticTypeId::from_bytes(
-                        *producer.payload_type.as_bytes(),
+                        *producer.handle_type.payload_type().as_bytes(),
                     ),
                 )?;
                 match self.projection(binding.ty())? {
@@ -4709,8 +4718,18 @@ impl RuntimePlanBodyConstruction<'_> {
         template: super::RuntimeNeedProducerTemplateSeed,
         bound: &[super::RuntimeLocalSeedId],
     ) -> Result<crate::task::NeedProducerTemplate, RuntimePlanBuildError> {
+        let definition = self.lower_producer_definition(template.definition)?;
+        let expected = crate::task::TaskHandleType::Need {
+            payload: definition.handle_type.payload_type(),
+        };
+        if definition.handle_type != expected {
+            return Err(RuntimePlanBuildError::ProducerHandleType {
+                expected,
+                actual: definition.handle_type,
+            });
+        }
         Ok(crate::task::NeedProducerTemplate {
-            definition: self.lower_producer_definition(template.definition)?,
+            definition,
             request: self.lower_host_task_request(template.request, bound)?,
         })
     }
@@ -4721,7 +4740,9 @@ impl RuntimePlanBodyConstruction<'_> {
     ) -> Result<crate::task::NeedProducerDefinition, RuntimePlanBuildError> {
         self.resolve_seed_type(
             "producer payload",
-            crate::pattern::RuntimeSemanticTypeId::from_bytes(*definition.payload_type.as_bytes()),
+            crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                *definition.handle_type.payload_type().as_bytes(),
+            ),
         )?;
         Ok(definition)
     }

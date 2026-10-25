@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "11f79c7d482c8146f4b86c458224b0a112d4f1da",
+  "command": [
+    "cargo",
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "actualExitCode": 101,
+  "log": "task-handle-carrier-initial-check.log",
+  "scope": "Preliminary compile diagnosis during migration. Sources were subsequently repaired; not acceptance evidence.",
+  "recordedAt": "2026-10-25T15:57:23.038Z"
+}

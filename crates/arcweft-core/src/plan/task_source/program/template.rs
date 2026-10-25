@@ -391,8 +391,9 @@ impl<'program> TemplateAdmission<'program, '_> {
                     | (AwbcTaskPolicy::AlwaysStart, TaskPolicy::AlwaysStart)
             ),
         )?;
-        let payload =
-            crate::pattern::RuntimeSemanticTypeId::from_bytes(*producer.payload_type.as_bytes());
+        let payload = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+            *producer.handle_type.payload_type().as_bytes(),
+        );
         let payload = original
             .type_table()
             .id_for_semantic(payload)

@@ -233,7 +233,7 @@ impl RuntimeTaskSourceProgram {
         let payload = original
             .type_table()
             .id_for_semantic(RuntimeSemanticTypeId::from_bytes(
-                *producer.payload_type.as_bytes(),
+                *producer.handle_type.payload_type().as_bytes(),
             ))
             .ok_or_else(|| mismatch(Field::Payload))?;
         // Extracting an original body retains external bindings. It does not

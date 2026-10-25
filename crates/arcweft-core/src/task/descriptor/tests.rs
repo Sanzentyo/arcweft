@@ -13,11 +13,13 @@ fn specification(request: HostTaskRequest) -> TaskSpec {
         NeedProducerContractDigest::from_bytes([1; 32]),
         TaskPlanSemanticDigest::from_bytes([2; 32]),
         NeedProducerSiteDigest::from_bytes([3; 32]),
-        RuntimeTypeSemanticDigest::from_bytes(
-            *RuntimeCheckedType::Bool
-                .semantic_identity_digest()
-                .as_bytes(),
-        ),
+        crate::task::TaskHandleType::Need {
+            payload: RuntimeTypeSemanticDigest::from_bytes(
+                *RuntimeCheckedType::Bool
+                    .semantic_identity_digest()
+                    .as_bytes(),
+            ),
+        },
         RuntimeValue::Tuple(Vec::new()).try_digest(1024).unwrap(),
     );
     TaskSpec {
@@ -216,7 +218,9 @@ fn original_outcome_row_precedes_request_construction() {
         saved.producer.contract(),
         saved.producer.plan(),
         NeedProducerSiteDigest::from_bytes([3; 32]),
-        RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+        crate::task::TaskHandleType::Need {
+            payload: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+        },
         saved.producer.arguments(),
     );
     saved.producer = NeedProducerInstance::try_from(&producer).unwrap();

@@ -1,0 +1,236 @@
+[
+  {
+    "path": "crates/arcweft-adapter-desktop/tests/native_integration.rs",
+    "line": 89,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-agent-mcp/tests/repl_command.rs",
+    "line": 272,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-adapter-desktop/src/codec.rs",
+    "line": 396,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-agent-repl/tests/repl_task_adapter.rs",
+    "line": 171,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-host-adapter/src/lib.rs",
+    "line": 1277,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-compiler/tests/view_product.rs",
+    "line": 5779,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-cli/src/app/agent/native/repl_command_format.rs",
+    "line": 509,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-core/tests/direct_suspension.rs",
+    "line": 462,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-core/tests/task_admission.rs",
+    "line": 11,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(\n            *RuntimeCheckedType::Bool\n                .semantic_identity_digest()\n                .as_bytes(),\n        )"
+  },
+  {
+    "path": "crates/arcweft-runtime-scheduler/src/lib.rs",
+    "line": 499,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(\n                *RuntimeCheckedType::String\n                    .semantic_identity_digest()\n                    .as_bytes(),\n            )"
+  },
+  {
+    "path": "crates/arcweft-runtime-plan/tests/awbc_product_parity.rs",
+    "line": 1000,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+    "line": 221,
+    "count": 6,
+    "payload": "base_metadata.definition.payload_type"
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+    "line": 238,
+    "count": 6,
+    "payload": "child_metadata.definition.payload_type"
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+    "line": 1061,
+    "count": 6,
+    "payload": "original.payload_type"
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/task_source/producer_tests.rs",
+    "line": 135,
+    "count": 6,
+    "payload": "spec.payload_type()"
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/task_source/host_tests.rs",
+    "line": 167,
+    "count": 6,
+    "payload": "spec.payload_type()"
+  },
+  {
+    "path": "crates/arcweft-player-web/src/host.rs",
+    "line": 986,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*result_type.as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-core/src/tests.rs",
+    "line": 128,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-core/src/tests.rs",
+    "line": 163,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-runtime-host/src/native_task.rs",
+    "line": 3915,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-runtime-host/src/bundle_runner.rs",
+    "line": 1110,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/template.rs",
+    "line": 48,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*result.as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-runtime-driver/src/task.rs",
+    "line": 840,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/producer.rs",
+    "line": 3819,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes([3; 32])"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/producer.rs",
+    "line": 3827,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes([3; 32])"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/journal.rs",
+    "line": 433,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(\n                *RuntimeCheckedType::Bool\n                    .semantic_identity_digest()\n                    .as_bytes(),\n            )"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/descriptor/tests.rs",
+    "line": 11,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(\n            *RuntimeCheckedType::Bool\n                .semantic_identity_digest()\n                .as_bytes(),\n        )"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/descriptor/tests.rs",
+    "line": 214,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes())"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/need_handle/tests.rs",
+    "line": 14,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(\n            *RuntimeCheckedType::Bool\n                .semantic_identity_digest()\n                .as_bytes(),\n        )"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/need_handle/tests.rs",
+    "line": 188,
+    "count": 6,
+    "payload": "spec.producer.payload_type()"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/need_handle/tests.rs",
+    "line": 329,
+    "count": 6,
+    "payload": "base.payload_type()"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/need_handle/tests.rs",
+    "line": 337,
+    "count": 6,
+    "payload": "base.payload_type()"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/need_handle/tests.rs",
+    "line": 345,
+    "count": 6,
+    "payload": "base.payload_type()"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/need_handle/tests.rs",
+    "line": 353,
+    "count": 6,
+    "payload": "base.payload_type()"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/need_handle/tests.rs",
+    "line": 361,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes([9; 32])"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/need_handle/tests.rs",
+    "line": 369,
+    "count": 6,
+    "payload": "base.payload_type()"
+  },
+  {
+    "path": "crates/arcweft-core/src/task/identity/tests.rs",
+    "line": 9,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes([4; 32])"
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/body_semantic/task_image/preparation/tests.rs",
+    "line": 1006,
+    "count": 6,
+    "payload": "crate::task::RuntimeTypeSemanticDigest::from_bytes([62; 32])"
+  },
+  {
+    "path": "crates/arcweft-runtime-driver/src/session/hot_swap/presentation_generation_tests.rs",
+    "line": 489,
+    "count": 6,
+    "payload": "RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes())"
+  }
+]

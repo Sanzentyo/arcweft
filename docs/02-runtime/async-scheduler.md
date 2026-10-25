@@ -27,7 +27,10 @@ blocks execute as program-owned fibers whose task requests retain their original
 Source. They do not require an adapter host-call declaration.
 
 `NeedProducerDefinition` owns the shared original function, family, contract,
-task-plan coordinate, site, payload type and scheduling policy. A Thread stores
+task-plan coordinate, site, handle type and scheduling policy. `TaskHandleType`
+contains the language carrier (`Need` or `ThreadHandle`) and its exact payload
+identity. The producer-instance transcript and version-one source codec commit
+both fields. A Thread stores
 that definition directly. `NeedProducerTemplate` combines the same definition
 with a Host request only for producers that actually construct Host arguments.
 Thread semantic endpoints and private source encoding contain no synthetic Host
@@ -93,9 +96,16 @@ then publishes the prepared child, parent bindings, quota and continuation.
 The result pattern participates in the common operation traversal and the
 version-one source grammar, including counted preflight and materialization.
 
-The value boundary requires a Host request for `Need<T>` and an accepted Program
-launch with producer custody for `ThreadHandle<T>`; both require the exact
-payload type. Await projects the payload from either checked source type.
+The value boundary checks the producer's `TaskHandleType` for `Need<T>` or
+`ThreadHandle<T>`, independently of Host or Program execution. A Host request
+can issue only an ordinary Need. A Program launch requires an actual program
+body Source and must agree with its attested handle type; the Thread operation declares a
+ThreadHandle. A ThreadHandle also requires accepted-launch producer custody.
+An inert Source locator grants no such authority: restoration must resolve the
+original Source and check its declared handle type before a value becomes live.
+`TaskOutcomeContract::Standalone` and `Program` select payload validation
+authority, rather than the executor or language carrier. Both carriers require
+the exact payload type. Await projects the payload from either checked source type.
 Native rollback resolves a saved Program handle through its retained original
 plan lease and source namespace.
 

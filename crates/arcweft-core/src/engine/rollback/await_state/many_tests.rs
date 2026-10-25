@@ -58,7 +58,9 @@ fn fanout_plan() -> (RuntimePlan, FlowRuntimeId) {
                 contract: NeedProducerContractDigest::from_bytes([11; 32]),
                 plan: coordinate,
                 producer_site: NeedProducerSiteDigest::from_bytes([identity; 32]),
-                payload_type: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+                handle_type: crate::task::TaskHandleType::Need {
+                    payload: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+                },
                 class: TaskClass::Cpu,
                 priority: TaskPriority(0),
                 cancel_scope: CancelScopeId("native-await-many".into()),

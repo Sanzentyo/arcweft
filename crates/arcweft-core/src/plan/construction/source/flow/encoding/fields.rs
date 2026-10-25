@@ -200,8 +200,10 @@ impl Writer {
         self.raw(definition.contract.as_bytes())?;
         self.u32(definition.plan.ordinal())?;
         self.raw(definition.producer_site.as_bytes())?;
-        let semantic =
-            crate::pattern::RuntimeSemanticTypeId::from_bytes(*definition.payload_type.as_bytes());
+        self.byte(definition.handle_type.semantic_tag())?;
+        let semantic = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+            *definition.handle_type.payload_type().as_bytes(),
+        );
         let payload = plan
             .type_table()
             .id_for_semantic(semantic)

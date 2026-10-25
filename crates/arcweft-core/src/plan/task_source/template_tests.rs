@@ -159,6 +159,56 @@ fn template_materialization_keeps_original_metadata_and_rejects_foreign_or_faile
 }
 
 #[test]
+fn host_template_sources_cannot_be_relabelled_as_program_work() {
+    for program in [native(), compiled()] {
+        let original = source(&program, false);
+        let captures = values();
+        let input = input();
+        let mut admission = bank(&program, RuntimeSchemaLimits::engine_default());
+        let checked = original
+            .template_producer_spec(
+                &program,
+                RuntimeTaskTemplateArguments::AwaitManyBase {
+                    captures: &captures,
+                    source: RuntimeValueSource::Live(&input),
+                },
+                None,
+                &mut admission,
+            )
+            .unwrap();
+        let request = HostTaskRequest::custom_with_named_args(
+            "source",
+            "request",
+            [crate::value::RuntimePayload(captures[0].clone())],
+            [(
+                "条件".into(),
+                crate::value::RuntimePayload(captures[1].clone()),
+            )],
+        );
+        let mut spec = original
+            .template_task_spec(&checked, GenerationId::new(13), request, &mut admission)
+            .unwrap();
+        assert!(matches!(
+            spec.producer.handle_type(),
+            TaskHandleType::Need { .. }
+        ));
+        spec.request = TaskRequest::Program(checked.source().clone());
+        let mut registry = NeedProducerRegistry::default();
+        let before = registry.launch_frontiers();
+        assert_eq!(
+            registry
+                .ensure_program_task_with_binding::<(), TaskEnsureError>(spec, |_| {
+                    panic!("a Host template grants no original program body")
+                })
+                .unwrap_err(),
+            TaskEnsureError::ProgramSourceMismatch,
+        );
+        assert_eq!(registry.launch_frontiers(), before);
+        assert!(registry.task_admissions().next().is_none());
+    }
+}
+
+#[test]
 fn template_sources_keep_original_keys_and_exact_nested_argument_transcripts() {
     let native = native();
     let code = compiled();
@@ -223,7 +273,7 @@ fn template_sources_keep_original_keys_and_exact_nested_argument_transcripts() {
             base_metadata.definition.contract,
             base.task_plan().key(),
             base_metadata.definition.producer_site,
-            base_metadata.definition.payload_type,
+            base_metadata.definition.handle_type,
             base_arguments,
         );
         assert_eq!(
@@ -240,7 +290,7 @@ fn template_sources_keep_original_keys_and_exact_nested_argument_transcripts() {
             child_metadata.definition.contract,
             child.task_plan().key(),
             child_metadata.definition.producer_site,
-            child_metadata.definition.payload_type,
+            child_metadata.definition.handle_type,
             child_arguments,
         );
         assert_eq!(
@@ -855,7 +905,9 @@ fn thread_context(lexical_context: bool, capture_count: usize) -> RuntimeTaskSou
             contract: NeedProducerContractDigest::from_bytes([21; 32]),
             plan: coordinate,
             producer_site: NeedProducerSiteDigest::from_bytes([22; 32]),
-            payload_type: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+            handle_type: crate::task::TaskHandleType::ThreadHandle {
+                payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+            },
             class: TaskClass::Cpu,
             priority: TaskPriority(0),
             cancel_scope: CancelScopeId("thread".into()),
@@ -1063,7 +1115,7 @@ fn thread_source_uses_original_capture_order_and_retains_only_an_admitted_source
         original.contract,
         key,
         original.producer_site,
-        original.payload_type,
+        original.handle_type,
         digest,
     );
     assert_eq!(
@@ -1084,6 +1136,28 @@ fn thread_source_uses_original_capture_order_and_retains_only_an_admitted_source
     };
     let mut registry = NeedProducerRegistry::default();
     let before = registry.launch_frontiers();
+    let mut wrong_carrier = task.clone();
+    let changed = NeedProducerSpec::new(
+        spec.family(),
+        spec.contract(),
+        key,
+        spec.producer_site(),
+        crate::task::TaskHandleType::Need {
+            payload: spec.payload_type(),
+        },
+        spec.arguments(),
+    );
+    wrong_carrier.producer = NeedProducerInstance::try_from(&changed).unwrap();
+    assert_eq!(
+        registry
+            .ensure_program_task_with_binding::<(), TaskEnsureError>(wrong_carrier, |_| {
+                panic!("an original Thread cannot be relabelled as an ordinary Need")
+            })
+            .unwrap_err(),
+        TaskEnsureError::OutcomeContractMismatch
+    );
+    assert_eq!(registry.launch_frontiers(), before);
+    assert!(registry.task_admissions().next().is_none());
     let mut standalone = task.clone();
     standalone.outcome = TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::Unit);
     assert_eq!(

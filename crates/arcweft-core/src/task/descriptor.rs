@@ -134,6 +134,7 @@ impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest
         ] {
             visitor.fixed(digest, next)?;
         }
+        visitor.fixed(&[self.producer.handle_type().semantic_tag()], next)?;
         // The issued key already commits the invocation's presence. Absent
         // metadata has no rows, nodes or bytes in this logical descriptor.
         if let Some(binding) = self.producer.binding() {

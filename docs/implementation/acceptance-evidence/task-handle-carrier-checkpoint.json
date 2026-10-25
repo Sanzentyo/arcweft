@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "11f79c7d482c8146f4b86c458224b0a112d4f1da",
+  "sourceInputs": 3987,
+  "manifestInputs": 99,
+  "manifestLockDrift": 0,
+  "ownedRustPaths": 53,
+  "workspaceCheck": "task-final-r3108-handle-execution-workspace-check",
+  "actualCheckExit": 0,
+  "runtime": "not yet executed after fixing Host Source -> Program relabelling; R3100 catalog interrupted, revised validation prepared",
+  "runtimeAcceptance": false,
+  "clippy": "not run",
+  "structureGate": "not run",
+  "ownerReview": "task-handle-carrier-structure-review.json",
+  "originalHeld": "14 paths retained, one partially owned Native host path staged through a separate reviewed candidate; original import hunks preserved",
+  "genericMatch": "accepted/published, unchanged status; latest completed 151-case evidence is pre-carrier R3095",
+  "scope": "User-authorized intermediate commit, not acceptance of Program-backed aggregate Need, Source parallel, all fourteen families or the full goal.",
+  "sourceFreeze": "task-handle-execution.source-freeze.json",
+  "initialWorkspaceCheck": "task-final-r3099-handle-carrier-workspace-check",
+  "sourceRouteRegression": "host_template_sources_cannot_be_relabelled_as_program_work"
+}

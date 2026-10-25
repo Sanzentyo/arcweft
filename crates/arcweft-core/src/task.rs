@@ -50,7 +50,9 @@ pub use identity::{
     NeedId, TaskCorrelation, TaskCorrelationError, TaskId, TaskIdentityError, TaskIdentityKind,
     TaskKey,
 };
+mod handle_type;
 mod need_handle;
+pub use handle_type::TaskHandleType;
 mod specification;
 pub use need_handle::{RuntimeNeedHandle, RuntimeNeedHandleError, RuntimeNeedHandleSaveSnapshot};
 pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};

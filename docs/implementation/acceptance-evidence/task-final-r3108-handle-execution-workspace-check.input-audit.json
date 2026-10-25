@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "run": "task-final-r3108-handle-execution-workspace-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3987,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-25T16:36:11.8396749Z"
+}

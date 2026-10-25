@@ -8372,9 +8372,11 @@ impl<'a> FinalFlowLowerer<'a> {
                 .reserve_original_source()
                 .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
             producer_site: admission.site(),
-            payload_type: arcweft_core::task::RuntimeTypeSemanticDigest::from_bytes(
-                *identity.as_bytes(),
-            ),
+            handle_type: arcweft_core::task::TaskHandleType::ThreadHandle {
+                payload: arcweft_core::task::RuntimeTypeSemanticDigest::from_bytes(
+                    *identity.as_bytes(),
+                ),
+            },
             class: arcweft_core::task::TaskClass::Cpu,
             priority: arcweft_core::task::TaskPriority(0),
             cancel_scope: arcweft_core::task::CancelScopeId("flow".into()),

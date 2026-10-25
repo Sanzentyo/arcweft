@@ -1008,7 +1008,9 @@ fn saved_producer_metadata_is_recovered_only_from_the_original_derivation_input(
         crate::task::NeedProducerContractDigest::from_bytes([1; 32]),
         key,
         crate::task::NeedProducerSiteDigest::from_bytes([3; 32]),
-        crate::task::RuntimeTypeSemanticDigest::from_bytes([62; 32]),
+        crate::task::TaskHandleType::Need {
+            payload: crate::task::RuntimeTypeSemanticDigest::from_bytes([62; 32]),
+        },
         arguments,
     );
     let issued = crate::task::NeedProducerInstance::try_from(&original).unwrap();
@@ -1017,29 +1019,40 @@ fn saved_producer_metadata_is_recovered_only_from_the_original_derivation_input(
         serde_json::from_slice(&bytes).unwrap();
     assert_eq!(decoded.admit_original_spec(&original).unwrap(), issued);
     for (name, field) in [
-        ("plan", crate::task::NeedProducerAssertionField::Plan),
+        ("/plan/0", crate::task::NeedProducerAssertionField::Plan),
         (
-            "contract",
+            "/contract/0",
             crate::task::NeedProducerAssertionField::Contract,
         ),
         (
-            "payload_type",
-            crate::task::NeedProducerAssertionField::PayloadType,
+            "/handle_type/Need/payload/0",
+            crate::task::NeedProducerAssertionField::HandleType,
         ),
         (
-            "arguments",
+            "/arguments/0",
             crate::task::NeedProducerAssertionField::Arguments,
         ),
-        ("key", crate::task::NeedProducerAssertionField::Key),
+        ("/key/0", crate::task::NeedProducerAssertionField::Key),
     ] {
         let mut data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let byte = data[name][0].as_u64().unwrap() ^ 1;
-        data[name][0] = serde_json::Value::from(byte);
+        let byte = data.pointer(name).unwrap().as_u64().unwrap() ^ 1;
+        *data.pointer_mut(name).unwrap() = serde_json::Value::from(byte);
         let decoded: crate::task::NeedProducerInstance<crate::task::ExpectedTaskPlanKey> =
             serde_json::from_value(data).unwrap();
         assert!(matches!(decoded.admit_original_spec(&original),
             Err(crate::task::NeedProducerAssertionError::Mismatch { field: actual }) if actual == field));
     }
+    let mut relabelled: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let payload = relabelled["handle_type"]["Need"]["payload"].clone();
+    relabelled["handle_type"] = serde_json::json!({"ThreadHandle": {"payload": payload}});
+    let decoded: crate::task::NeedProducerInstance<crate::task::ExpectedTaskPlanKey> =
+        serde_json::from_value(relabelled).unwrap();
+    assert!(matches!(
+        decoded.admit_original_spec(&original),
+        Err(crate::task::NeedProducerAssertionError::Mismatch {
+            field: crate::task::NeedProducerAssertionField::HandleType
+        })
+    ));
 }
 
 #[test]

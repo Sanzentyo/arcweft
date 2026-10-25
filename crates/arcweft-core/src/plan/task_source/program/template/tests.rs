@@ -135,7 +135,9 @@ fn original_with_other_child(other: bool) -> RuntimePlan {
                     contract: NeedProducerContractDigest::from_bytes([marker; 32]),
                     plan: plan,
                     producer_site: NeedProducerSiteDigest::from_bytes([marker; 32]),
-                    payload_type: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+                    handle_type: crate::task::TaskHandleType::Need {
+                        payload: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+                    },
                     class: TaskClass::Cpu,
                     priority: TaskPriority(-3),
                     cancel_scope: CancelScopeId("元scope".into()),

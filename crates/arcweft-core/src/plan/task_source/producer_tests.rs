@@ -137,7 +137,7 @@ fn source_bound_selected_specs_use_the_completed_key_and_canonical_request() {
             spec.contract(),
             source.task_plan().key(),
             spec.producer_site(),
-            spec.payload_type(),
+            spec.handle_type(),
             spec.arguments(),
         );
         assert_eq!(

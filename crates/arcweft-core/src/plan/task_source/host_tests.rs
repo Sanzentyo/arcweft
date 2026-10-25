@@ -169,7 +169,7 @@ fn host_source_uses_the_completed_key_and_every_original_operand_before_spread()
                 spec.contract(),
                 source.task_plan().key(),
                 spec.producer_site(),
-                spec.payload_type(),
+                spec.handle_type(),
                 digest
             )
             .instance_key()

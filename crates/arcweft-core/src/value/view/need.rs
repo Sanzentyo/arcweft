@@ -86,11 +86,8 @@ impl<'a> RuntimeNeedView<'a> {
         }
     }
 
-    pub(crate) fn execution_kind(self) -> crate::task::TaskExecutionKind {
-        match self {
-            Self::Live(value) => value.spec().request.kind(),
-            Self::Snapshot(value) => value.spec().request.kind(),
-        }
+    pub(crate) fn handle_type(self) -> crate::task::TaskHandleType {
+        self.producer().handle_type()
     }
 
     pub(crate) fn visit_descriptor(

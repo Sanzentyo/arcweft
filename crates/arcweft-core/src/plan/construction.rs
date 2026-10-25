@@ -151,6 +151,11 @@ pub enum RuntimePlanTable {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanBuildError {
+    #[error("producer handle type is {actual:?}, expected {expected:?}")]
+    ProducerHandleType {
+        expected: crate::task::TaskHandleType,
+        actual: crate::task::TaskHandleType,
+    },
     #[error("audio operation metadata is invalid: {0}")]
     AudioMetadata(#[from] arcweft_interaction_model::audio::AudioValueError),
     #[error("invalid static effect literal: {0}")]

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "11f79c7d482c8146f4b86c458224b0a112d4f1da",
+  "name": "task-final-r3099-handle-carrier-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3099-handle-carrier-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-25T15:58:38.5343155Z",
+  "finishedAt": "2026-10-25T16:03:14.8732214Z"
+}

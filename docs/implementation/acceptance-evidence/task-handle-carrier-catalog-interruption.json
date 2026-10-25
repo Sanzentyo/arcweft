@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "base": "11f79c7d482c8146f4b86c458224b0a112d4f1da",
+  "session": 22833,
+  "observedSessionExitCode": 1,
+  "catalog": "task-final-r3100-handle-carrier-full-catalog",
+  "terminalCatalogReceiptPresent": false,
+  "runtimeStarted": false,
+  "reason": "Intentionally interrupted before changing frozen sources to close a newly identified Host Source -> Program request relabelling gap. Not a runtime result and not a restart after an observation timeout.",
+  "recordedAt": "2026-10-25T16:30:13.167Z"
+}

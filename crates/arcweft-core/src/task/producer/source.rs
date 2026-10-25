@@ -126,9 +126,11 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
             contract: self.metadata.contract(),
             plan: source,
             producer_site: self.metadata.site(),
-            payload_type: crate::task::RuntimeTypeSemanticDigest::from_bytes(
-                *self.metadata.payload_type().as_bytes(),
-            ),
+            handle_type: crate::task::TaskHandleType::Need {
+                payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(
+                    *self.metadata.payload_type().as_bytes(),
+                ),
+            },
             arguments,
             binding: binding.cloned(),
         })
@@ -341,7 +343,9 @@ impl RuntimeTaskSourceRef<'_> {
             contract: target.producer.contract,
             plan: source,
             producer_site: target.producer.site,
-            payload_type: crate::task::RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+            handle_type: crate::task::TaskHandleType::Need {
+                payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+            },
             arguments,
             binding: binding.cloned(),
         })

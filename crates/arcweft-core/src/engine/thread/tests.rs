@@ -108,9 +108,9 @@ fn engine(explicit_return: bool) -> Engine {
                             contract: NeedProducerContractDigest::from_bytes([0xdc; 32]),
                             plan: coordinate,
                             producer_site: NeedProducerSiteDigest::from_bytes([0xdd; 32]),
-                            payload_type: RuntimeTypeSemanticDigest::from_bytes(
-                                *boolean.as_bytes(),
-                            ),
+                            handle_type: crate::task::TaskHandleType::ThreadHandle {
+                                payload: RuntimeTypeSemanticDigest::from_bytes(*boolean.as_bytes()),
+                            },
                             class: TaskClass::Cpu,
                             priority: TaskPriority(0),
                             cancel_scope: CancelScopeId("program.result".into()),

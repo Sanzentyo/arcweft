@@ -91,7 +91,11 @@ fn task(capability: &str, operation: &str) -> TaskSpec {
         NeedProducerContractDigest::from_bytes([1; 32]),
         TaskPlanSemanticDigest::from_bytes([2; 32]),
         NeedProducerSiteDigest::from_bytes([3; 32]),
-        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        arcweft_core::task::TaskHandleType::Need {
+            payload: RuntimeTypeSemanticDigest::from_bytes(
+                *outcome.payload_semantic_identity().as_bytes(),
+            ),
+        },
         RuntimeValue::Tuple(vec![]).try_digest(1024).unwrap(),
     );
     TaskSpec {

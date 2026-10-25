@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "base": "11f79c7d482c8146f4b86c458224b0a112d4f1da",
+  "scope": "Intermediate checkpoint; check/diagnosis evidence, explicitly interrupted non-terminal catalog log, actual source/ownership/WIP inputs. No runtime success is claimed.",
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3099-handle-carrier-workspace-check.input-audit.json",
+      "bytes": 324,
+      "sha256": "b29050cf2977143652b2752b7d9d49c09fbffececa21de6b0b2d6dd996392cd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3099-handle-carrier-workspace-check.json",
+      "bytes": 518,
+      "sha256": "20c81259919dc8278c2e89312a0383edc12bd5e53ccd6317fa12bbfcc5323d37"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3099-handle-carrier-workspace-check.log",
+      "bytes": 106154,
+      "sha256": "9afb22df123443d15d57ff0e6551c604e8a4cb8544370c4147549b25236f9ddd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3100-handle-carrier-full-catalog.log",
+      "bytes": 103024,
+      "sha256": "3c0c7a808633b2c8f0579b40c23d1159fdb93053b698c85d13de594d5a752f54"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3108-handle-execution-workspace-check.input-audit.json",
+      "bytes": 326,
+      "sha256": "f59a639803f84a40e2f40994383bfb70d4c1cae2764d1324455329d689393888"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3108-handle-execution-workspace-check.json",
+      "bytes": 522,
+      "sha256": "152aab03a8cc6a5b1535206b814c29e5238909d1622a9810afdc375806a8ef9c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3108-handle-execution-workspace-check.log",
+      "bytes": 106154,
+      "sha256": "567a96d3bd850eeb5f95f15267c6221a206fe38ee90d5d438fc5c6ddf5a5fb4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-catalog-interruption.json",
+      "bytes": 516,
+      "sha256": "9706e3908c8939796ab78f9f0aba4ed57969af8718595c604278a6ef9a45b68e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-checkpoint-prepare.ps1",
+      "bytes": 4161,
+      "sha256": "86d24b26e704cd4b7bb0229a82b11942ca72420e7e07353904f431e02b394293"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-checkpoint-publish.ps1",
+      "bytes": 3319,
+      "sha256": "173907599f616fd6dabc9c95f166d4dba8e07bd43fef9c0a63f709a4f2dc957c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-checkpoint.json",
+      "bytes": 1206,
+      "sha256": "f6c2cdb1d2204df978d972115eba4eadd344e100a23fff8eea3286fc21794b8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-constructors.json",
+      "bytes": 7690,
+      "sha256": "e7eeaeb04867778b35f6c56e0cf040cdd77d452efdc6f67b1d4b276231167a78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-freeze.ps1",
+      "bytes": 2003,
+      "sha256": "0da0e606607d6479d59443d2609b7492b1495ed15253e6158d0b5f659751ac99"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-held-intent.json",
+      "bytes": 2189,
+      "sha256": "1af6cb4473c4afaefbf28b24cd2b673e8cd907a540ea0575daad7dfaf788b939"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-initial-check.json",
+      "bytes": 449,
+      "sha256": "7f1d58b9b334f0a9af9665c89652a9661d8aa45853f07d2421808f0294889add"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-initial-check.log",
+      "bytes": 75026,
+      "sha256": "f685c464e2d80e28e939cceb348a32e1aad76a7a39d86c2b6d07d72d80d8097c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-owned-source.txt",
+      "bytes": 2725,
+      "sha256": "10a22c0e86758cd622a155331c6864a6ff268ade29c64f1c896c289e6383dd36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-owner-measurements.json",
+      "bytes": 17078,
+      "sha256": "07fd7c43961bfdf015a1b22836da28fe73626f2777fd4e88f7178394df06f039"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-run.ps1",
+      "bytes": 3684,
+      "sha256": "38b163d23e99353dc3b61c5130cd1384b78cd2db60ecd01a236bd57570dc8b2d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier-structure-review.json",
+      "bytes": 20112,
+      "sha256": "a25c5da97d03efc5f70f1713fde53824597e9b8e173cef35f8456fd678ac9604"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier.graph.json",
+      "bytes": 5311,
+      "sha256": "eb051a42c31878da8aa962336d0f2d2bf35f619890509ca17c7a131d3c9ffde5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-carrier.source-freeze.json",
+      "bytes": 782489,
+      "sha256": "f5c7207585a2b71e97d614d8b120e4d1a540cc761a86956b833744e1a307bfb8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-execution-freeze.ps1",
+      "bytes": 2007,
+      "sha256": "675251258db6c10bd4e4fac700a38b2abec7fdc7c71bacedd3e6c03b28a914dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-execution.graph.json",
+      "bytes": 5363,
+      "sha256": "e7b42b38ff08189a82ef11fda2955b3b250e9d57c1e1b2f79e8b43a56125fe86"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-handle-execution.source-freeze.json",
+      "bytes": 782489,
+      "sha256": "a0202504f844019902791d7c3d829edb12c26425bca31b45199ef1a3cec58ab7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-checkpoint.verified.json",
+      "bytes": 24719,
+      "sha256": "2a932da8da6e50c7f137e0a6aec6a3ca2281024f4a25b077dd46218969442ac6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-sema-local-use-public-evidence-audit.json",
+      "bytes": 136,
+      "sha256": "8d88b2b4e87b8f55bb2af007cc381a9e450b5d552b2ae5d193cc29174f6d8c94"
+    }
+  ],
+  "totalBytes": 2059694,
+  "artifactCopyMove": false
+}

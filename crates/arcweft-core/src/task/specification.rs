@@ -14,7 +14,7 @@ use crate::entry::RuntimeValueDigest;
 pub(crate) enum NeedProducerAssertionField {
     Plan,
     Contract,
-    PayloadType,
+    HandleType,
     Arguments,
     Invocation,
     Key,
@@ -45,7 +45,7 @@ pub struct NeedProducerInstance<Plan = TaskPlanSemanticDigest> {
     key: NeedProducerInstanceKey,
     contract: NeedProducerContractDigest,
     plan: Plan,
-    payload_type: RuntimeTypeSemanticDigest,
+    handle_type: super::TaskHandleType,
     arguments: RuntimeValueDigest,
     binding: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
 }
@@ -58,7 +58,7 @@ impl TryFrom<&NeedProducerSpec> for NeedProducerInstance {
             key: input.instance_key()?,
             contract: input.contract(),
             plan: input.plan(),
-            payload_type: input.payload_type(),
+            handle_type: input.handle_type(),
             arguments: input.arguments(),
             binding: input.binding().cloned(),
         })
@@ -75,7 +75,7 @@ impl TryFrom<&NeedProducerSpec<crate::plan::RuntimeTaskSource>> for NeedProducer
             key: input.instance_key()?,
             contract: input.contract(),
             plan: input.source().task_plan().key(),
-            payload_type: input.payload_type(),
+            handle_type: input.handle_type(),
             arguments: input.arguments(),
             binding: input.binding().cloned(),
         })
@@ -90,7 +90,7 @@ impl NeedProducerInstance {
             key: self.key,
             contract: self.contract,
             plan: super::ExpectedTaskPlanKey::new(*self.plan.as_bytes()),
-            payload_type: self.payload_type,
+            handle_type: self.handle_type,
             arguments: self.arguments,
             binding: self.binding.clone(),
         }
@@ -104,8 +104,12 @@ impl NeedProducerInstance {
     pub const fn plan(&self) -> TaskPlanSemanticDigest {
         self.plan
     }
+    pub const fn handle_type(&self) -> super::TaskHandleType {
+        self.handle_type
+    }
+
     pub const fn payload_type(&self) -> RuntimeTypeSemanticDigest {
-        self.payload_type
+        self.handle_type.payload_type()
     }
     pub const fn arguments(&self) -> RuntimeValueDigest {
         self.arguments
@@ -128,8 +132,8 @@ impl NeedProducerInstance<super::ExpectedTaskPlanKey> {
             Some(NeedProducerAssertionField::Plan)
         } else if self.contract != original.contract() {
             Some(NeedProducerAssertionField::Contract)
-        } else if self.payload_type != original.payload_type() {
-            Some(NeedProducerAssertionField::PayloadType)
+        } else if self.handle_type != original.handle_type() {
+            Some(NeedProducerAssertionField::HandleType)
         } else if self.arguments != original.arguments() {
             Some(NeedProducerAssertionField::Arguments)
         } else if self.binding.as_ref() != original.binding() {
@@ -201,6 +205,8 @@ impl<P, S> TaskSpec<P, TaskPlanSemanticDigest, S> {
 
 impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
     pub(crate) fn validate_outcome(&self) -> Result<(), super::TaskEnsureError> {
+        self.request
+            .validate_handle_type(self.producer.handle_type())?;
         if !self.request.matches_plan(self.producer.plan()) {
             return Err(super::TaskEnsureError::ProgramSourceMismatch);
         }
