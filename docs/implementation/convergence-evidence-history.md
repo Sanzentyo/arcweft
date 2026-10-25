@@ -11024,3 +11024,12 @@ R2904 workspace check／R2905 workspace Clippyはall-targets／all-features／lo
 [gate・範囲の集計](acceptance-evidence/task-presentation-owner-acceptance.json)、
 [byte／SHA256保全](acceptance-evidence/task-presentation-owner-evidence-integrity.json)。
 全53逆依存のR2907 catalog構築を開始した。終了済みruntimeとして加算していない。
+
+上記Engine所有・通常Native cleanup／private rollbackのcutは
+`4a626c6fd1ef3c43a400b983fc118623d689b18f` で通常commit／non-forced pushした。
+parentは `9038c82a7a0aff5650bc635d74ff21f7e7cba69e`、treeは
+`9160288676de2c5be4a835a51748fc7596484fe1`、公開patch SHA256は
+`7d2dfcb775e2d81f27cba6391dda52fd0bff54503f31b2f889f44d07b7746c9a`。
+公開ref／全60 pathのblob／6,481保持入力、元14 tracked WIPのpatch、空indexを照合した。
+[公開照合原本](acceptance-evidence/task-presentation-owner-checkpoint.verified.json)。
+この公開後の文書更新ではCargo／runtimeを再実行せず、検証済みsourceと公開sourceの一致を使った。
