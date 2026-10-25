@@ -231,8 +231,8 @@ arcw agent observe game/routes/opening.arcw --image raw-rgba --object object.dia
 arcw agent observe --manifest arcw.toml --profile game.dev --json
 ```
 
-The current CLI image resources use the same observation `images` slots planned
-for MCP. `--image overlay` emits `kind = "overlay_svg"` and embeds the SVG body
+CLI and MCP image resources use the same observation `images` slots.
+`--image overlay` emits `kind = "overlay_svg"` and embeds the SVG body
 when requested. `--out` paths must match the selected image format:
 `.svg` for `--image overlay`, `.png` for `--image png`, and `.rgba` for
 `--image raw-rgba`, so an overlay SVG is not accidentally written to a PNG

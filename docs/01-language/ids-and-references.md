@@ -386,11 +386,6 @@ references omit only the family prefix, so the implicit declaration above is
 referenced as `@flow:.game.routes.opening.opening`; the shorter `@flow.opening`
 does not resolve to it. Visibility still follows the declaration module.
 
-Planned lint policy: add an ID policy lint pass that can compare module path,
-flow ID, named scopes, and generated relative IDs. It should report
-IDs that do not follow a configured hierarchy, while keeping the core parser/HIR
-Sans I/O and policy-neutral.
-
 ```arcw
 alice(id=@.greeting):
     おはよう。[p]

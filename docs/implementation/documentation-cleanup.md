@@ -385,3 +385,22 @@ Luna監査もframe／queueの所有構造のずれを確認した。
 Sans-I/O、ID domain、元program authority、nominal value admission、assertion identity、
 scope／defer／cancellation、保存復元・決定性の契約は保持した。削除範囲に実検証結果やfull SHAはない。
 文書整理のみで、Rust／Cargo／runtimeは新たに実行していない。
+
+## 現行章の残存計画表現の整理 — 2026-10-25
+
+照合基点は公開main `763a7cdd54afc31b3697e40572797323e5384638`。
+GPT-6 Luna／maxによる範囲を絞った読み取り監査の後、親が現在のソースと差分を照合した。
+`ids-and-references.md` のID lint追加計画4行は削除した。`lint_id_policy` は既にSyntaxが
+所有し、CompilerとLSPが利用しており、古い追加指示を現行契約に残す理由がない。
+ID／relative-IDの規則は保持した。
+
+`agent-debug-mcp-cli.md` と `cli.md` に重複していた「将来のMCP画像resource」という
+表現は、既存の一覧・read経路と共有するresourceの説明へ訂正した。現在のMCP実装は
+`agent_observe_list_resources` と `agent_observe_cached_image_resource` を利用する。
+画像slot・形式・URIの規則は保持した。Generic Matchの現行契約、及び実ソースにも残る
+別機能の `planned` 表示は削除していない。削除部分に実検証結果やfull SHAはない。
+
+現状一覧の前段基点 `c985b52c024f049113be24933e683428920e53b6` を、Core保持グラフの
+公開SHAへ更新し、R2928 catalogの終端を反映した。
+R2929 runtimeはこの記録時点で実行中であり、途中結果を最終受入やGeneric 151件の
+新しい全件成功として扱っていない。この資料変更のためにRust／Cargoを再実行していない。

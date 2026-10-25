@@ -661,8 +661,7 @@ the runtime binding snapshot and returns an `arcweft-agent-protocol`
 observation:
 
 - `viewport`, `state_hash`, and `render_hash`
-- `images` with a color PNG/raw RGBA or overlay SVG resource URI suitable for
-  future MCP resources
+- `images` with a color PNG/raw RGBA or overlay SVG resource URI shared with MCP
 - `layers` for visible render layers, including viewport bbox, object count, and
   layer-local color/object-id/mask capture refs in PNG and raw RGBA forms
 - `objects` for visible dialogue View mounts, including viewport bbox, polygon,

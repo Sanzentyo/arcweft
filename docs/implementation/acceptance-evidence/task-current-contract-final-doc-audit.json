@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "base": "763a7cdd54afc31b3697e40572797323e5384638",
+  "at": "2026-10-25T03:18:16.5487908Z",
+  "scope": "Documentation reconciliation only; no new Cargo/runtime execution",
+  "owned": [
+    "docs/01-language/ids-and-references.md",
+    "docs/04-tooling/agent-debug-mcp-cli.md",
+    "docs/04-tooling/cli.md",
+    "docs/implementation/acceptance-evidence/task-current-contract-final-doc-audit.json",
+    "docs/implementation/current-status.md",
+    "docs/implementation/documentation-cleanup.md"
+  ],
+  "deleted": [],
+  "markdown": [
+    {
+      "path": "docs/01-language/ids-and-references.md",
+      "sha256": "1b2617b1ea1c8a6ed8a1f30e2e02a1b26f2ae9ea060fc632417f674cc1439453",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/04-tooling/agent-debug-mcp-cli.md",
+      "sha256": "4f0644bd7f8d2d013667ed1b47eaaae2c800dd0786c8da4f44554996321afdc8",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/04-tooling/cli.md",
+      "sha256": "c0ef8d842a09909e534a129a5e6df8da7cdf9f2bb02f9c6b6e574f29940a1166",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "sha256": "40d27df4971a303670c93934e7d889f26615d4c0062b4e5648affa8da70142fc",
+      "checkedSurface": "complete file",
+      "fencesBalanced": true
+    },
+    {
+      "path": "docs/implementation/documentation-cleanup.md",
+      "sha256": "11d56d93bb24a8b9503e1607cbe5ec77ca1ec0db16fbae01659f8755bce7450f",
+      "checkedSurface": "added hunks",
+      "fencesBalanced": true
+    }
+  ],
+  "checkedRelativeLinks": 38,
+  "relativeLinks": [
+    {
+      "path": "docs/04-tooling/agent-debug-mcp-cli.md",
+      "target": "agent-observe-capture-contract.md"
+    },
+    {
+      "path": "docs/04-tooling/agent-debug-mcp-cli.md",
+      "target": "cli.md"
+    },
+    {
+      "path": "docs/04-tooling/cli.md",
+      "target": "verification.md"
+    },
+    {
+      "path": "docs/04-tooling/cli.md",
+      "target": "../05-build-and-security/authored-resource-storage.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../README.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "evidence-history.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-c3-c5-closure-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/accepted-generic-phase-note-publication.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-role-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-handle-owner-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-custody-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2926-presentation-custody-rejection-core-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/vertical-break-validation-2026-07-14.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../03-presentation/text-typesetting.md"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.acceptance-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-native-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-source-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-await-many-awbc-reverse-combined-execution.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-fanout-child-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "../01-language/traits-seq-ranges.md#traversable"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#awaitmanyのresult集約と消費前検査--2026-10-25"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2908-presentation-owner-reverse-runtime.terminal-audit.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-reverse-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-custody-acceptance.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-custody-ownership-review.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-array-map-reverse-cli-current-failure-classification.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-final-r2759-array-map-cli-final-runtime.failure-recon.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "convergence-evidence-history.md#array-map反復化の検証--2026-10-24"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-owner-stdio-readiness-recheck.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "acceptance-evidence/task-presentation-diagnostic-recheck.json"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "target": "documentation-cleanup.md"
+    }
+  ],
+  "unclosedFences": 0,
+  "priorFullShaIdentifiers": 39,
+  "lostFullShaIdentifiers": [],
+  "untrackedHeld": 6,
+  "untrackedHeldDrift": 0,
+  "genericAcceptance": "Preserved; existing151/151PASS and published acceptance unchanged",
+  "validationReuse": "Existing runtime results remain historical evidence, not rerun by this cut"
+}
