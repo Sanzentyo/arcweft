@@ -3717,70 +3717,7 @@ under
 Source date from filename: 2026-07-20
 Full Git SHA: the source note recorded none.
 
-Verbatim paragraphs carrying observed validation, test, or audit outcomes:
-
-`````text
-### Observed validation paragraph
-| Stage 1 row | Current production state | Final-direction evidence | Decision |
-| --- | --- | --- | --- |
-| `extern mod` | `item.rs` recognizes `ExternModuleItem`; `document.rs` deliberately leaves it a generic logical-line wrapper. | Lang 01.5 moves concrete adapter/module binding to generated metadata and the build profile.  Lang 01.5.1 records that old launch/profile readers are still live; adding the final manifest decoder first would create a dual reader, while deleting them first would lose runtime inputs. | Do not add a private `ExternModuleItem` shadow node.  Implement only as part of the atomic single-manifest decoder and consumer migration. |
-| `dialogue defaults`, source `content`, and concrete Activity origin | `item.rs` recognizes `DialogueDefaultsItem`; source `content` and Activity declarations remain in the old public entity path and have no typed private descendant. | Lang 01.5 assigns dialogue selection, content units, and concrete Activity implementation binding to the typed manifest/profile while retaining ordinary root entities and the abstract Activity interface. The current Lang 01.5.1 note records that the one decoder/consumer migration remains open. | Do not add private nodes for the forms that are being removed. Delete them only with the atomic metadata/profile migration. This does not authorize deletion of the abstract Activity identity declaration. |
-| live `source` | `item.rs` recognizes `SourceItem`; the accepted private document grammar does not model it as a typed descendant. | Lang 01.3.1 fixes the destination as ordinary `fn -> Stream<T, E>` and removes both the keyword and `Source<T, E>`.  Lang 01.3.1.2.1 records unresolved mutually inconsistent callable, instance, replay, policy, save/AWBC, and adapter-wire shapes. | Do not add a private `SourceItem` shadow node.  It would commit an obsolete surface just before its removal.  Wait for the corrected typed Stream runtime/wire contract. |
-| configured resource families | Lang 01.4 Cut 1a already provides the sole private `res` grammar: typed nominal head, explicit ref, fields, diagnostics, and recovery. | Lang 01.4 replaces only `image`, `voice`, `voice profile`, `se`, `bgm`, `audio bus`, `mixer snapshot`, `ducking`, `motion`, and `rig`. Its public AST/HIR/registry/runtime migration remains open. | The private `res` Stage 1 row is complete. Do not add parallel shadow nodes for those configured-resource family keywords. |
-| retained global identity declarations | The public AST still accepts `EntityDeclKind::{Asset, Character, View, Action, Activity, Signal, Metric, Layer}`. The private `item.rs` has no declaration classifier for those heads, so they fall through the generic top-level path rather than owning typed declaration descendants. | The top-level reduction keeps dedicated declarations when they own stable global identity, an execution/host boundary, or a dedicated body. Lang 01.4 says `res` is not an owner for assets, actions, or other unrelated identity-bearing declarations. | Stage 1 is not complete for these rows. Do not force them into `res` and do not freeze the current stringly `EntityDeclItem` as the final grammar. A final typed grammar/ownership reconciliation is still required. |
-| regular-project top-level statements | **Implemented.** `TopLevelFlowItem`, public `Item::FlowItem`, HIR root executable items, downstream consumers, and persistent counts are removed. Bare flow text uses generic recovery and fixtures have explicit owners. | Ordinary project source is declaration-only. REPL statement fragments remain separately owned and no script dialect was added. See the implementation note (`2026-07-20-regular-project-top-level-statement-removal.md`). | Complete. No removed-spelling diagnostic, compatibility dialect, dual reader, or source gate remains. |
-`````
-
-`````text
-### Observed validation paragraph
-| Proof v6.1.1 stage | Status at this audit | Direct repository evidence |
-| --- | --- | --- |
-| Stage 0 — baseline and final enum/event substrate | **Implemented** | `grammar/{kinds,event,build,budget}.rs`, syntax/HIR limit enums, `SyntheticRole`, `AssertionMode::is_runtime_capable`, and callable-owner policy methods; completion evidence is in `2026-07-16-proof-concurrency-v6-1-1-stage-0-event-builder.md`. Later View and extern-capability work legitimately extends the callable-owner enum and must not be deleted to recreate the package-era inventory. |
-| Stage 1 — private one-pass lossless grammar | **Partial; gate not met** | Structured private descendants exist for module/use, flow, ordinary function, predicate/proof, nominal types, trait/impl, `res`, entry, extern capability, test/bench, and Style, plus shared statement/expression/type/pattern families. Regular-project top-level statements are removed. The remaining obsolete wrappers and retained-identity rows above remain unresolved. |
-| Stage 2 — private grammar reconciliation and typed attachment | **Not started** | `GrammarBuild` still exposes an `UnattachedGrammarIndex`. The production incremental database still assigns `SyntaxNodeId(NonZeroU64)` to the old CST and has no `SyntaxDatabaseId`, `SyntaxLineageId`, snapshot-owned `AstNode<K>`, attachment table, or typed round trip. |
-| Stage 3 — atomic public syntax switch | **Not started** | Public `TypedSyntaxTree` owns a source `String` and `Vec<Item>`; public `ParsedSource` still separately owns the old Rowan tree and detached typed tree. Compiler/HIR callers consume `typed_tree()`. |
-| Stage 4 — final predicate/proof surface and exact `ProofBlock` | **Private shadow only** | The private parser covers ordinary-name predicate/proof headers, bodies, recovery, and limits. Public `ProofItem` still owns `IdRef`, raw `body: String`, and `Vec<ProofClause>` and stable proof documentation still shows the provisional entity-ID form. Trusted-proof policy is implemented, but it remains attached to the provisional public proof representation until this switch. |
-| Stage 5 — private `HirDatabase`, arenas, scopes, locals, captures | **Identity vocabulary only** | Module-qualified typed ID, limit, and synthetic-role enums exist. There is no `HirDatabase`, immutable paged arena/module snapshot implementation, liveness ledger, final scope/local/capture arenas, or direct attached-node lowering. |
-| Stage 6 — atomic HIR/project/symbol switch | **Not started beyond reusable symbol substrate** | `HirModule` remains a `Vec`/clone model that stores syntax values. `lower_to_hir(&TypedSyntaxTree)`, `HirProject::linked_module`, and `HirModule::append_module_body` remain. `ProjectSymbolTable` exists and owns later View/extern-capability callables, but current registration iterates ordinary functions only; predicate/proof registration and `ProofArtifactId` are absent. |
-| Stage 7 — runtime assertion identity/persistence boundary | **Policy substrate only** | Check/Debug/Prove disposition and release omission exist. Core `RuntimeAssertion` still has only public `condition`, `message`, and `profile` fields; guard/fingerprint newtypes, condition index, session inventory/fault identity, execution diagnostic context, and the atomic codec migration are absent. |
-| Stage 8 — migration, deletion, docs, tests, structural closure | **Partial cleanup only** | Borrow-block, hook, memo, parser, separate trusted-axiom, state, reducer, Agent declaration, and regular-project top-level-statement removals are complete or supersede package-era rows. Provisional proof, detached AST, clone/linked HIR, obsolete metadata/source/function/resource paths, public callers, final direct/compile-fail suites, and final structural evidence remain. |
-`````
-
-`````text
-### Observed validation paragraph
-On a stage-gate basis, the original package is approximately **25–30%**
-complete. After removing rows that later user decisions deliberately
-superseded, the still-valid requirement set is approximately **30–35%**
-complete. These are planning estimates, not test-pass percentages: Stage 2
-through Stage 7 contain the majority of the public migration and runtime
-boundary work.
-`````
-
-`````text
-### Observed validation paragraph
-- The ownership/borrow block is permanently deleted. Current `&`, `&mut`,
-  prefix borrow/dereference, lexical bindings, and explicit `drop` are the
-  authority; no historical recognizer or diagnostic returns.
-- `trusted axiom` remains deleted. Trust is
-  `#[verify.trusted(reason = "...")]` metadata on an ordinary proof, with
-  policy-controlled acceptance and transitive verifier reporting. The final
-  proof switch replaces the provisional proof carrier without creating a
-  second trust model.
-- Package-era `AgentItem`, `StateItem`, `HookItem`, `MemoFunctionItem`,
-  `ParserItem`, `MemoBlockExpression`, and source-visible task/dialogue/stream
-  callable families are not implementation targets. Later Lang contracts
-  either removed them or selected ordinary declarations.
-- Later View and accepted-callable contracts added valid
-  `CallableDeclarationOwner::View` and `ExternCapability` responsibilities.
-  Proof integration extends that one owner/table; it must not shrink the enum
-  back to the package-era three-row example.
-- The package's statement that Tier 2 is optional is superseded by current
-  repository policy. Any broad public syntax/HIR cut that spans multiple
-  crates and affects runtime, Agent, MCP, or capture paths must run
-  `just test-tier2` and reconcile stale expectations rather than preserving an
-  obsolete production shape.
-`````
-
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `2026-07-20-proof-style-shadow-grammar.md`
 Source date from filename: 2026-07-20
@@ -4264,35 +4201,7 @@ level findings in
 `structure-audits/lang-01-1-1-1-try-syntax-cut-1/` (`structure-audits/lang-01-1-1-1-try-syntax-cut-1/`).
 `````
 
-`````text
-### Observed validation paragraph
-1. Finish and validate the active View integration cut so this work starts
-   from one stable owner graph.
-2. Land the isolated AW-AH-009.3 callable-catalog correction so callable IDs,
-   accepted declarations, and source evidence have one authority.
-3. Settle the Lang-01.1 ordinary-function role deletion and typed own-scope
-   generator classification. The Try syntax migration may be prepared in
-   parallel, but semantic terminals must consume this final fact.
-4. Atomically introduce the selected Try AST/source types, migrate all
-   exhaustive consumers, and delete the dialogue-specific parser path.
-5. Add Flow/closure/method source evidence, the SourceSpan-only propagation
-   frame stack, Try/Await rules, and exactly four diagnostics.
-6. Reconcile tooling, documentation, focused tests, workspace validation,
-   structural audit, and Tier 2 expectations.
-7. Only after this selected contract is stable, selectively rebase the useful
-   Lang-01.1 direct-suspension and AWBC pieces from the rejected WIP.
-`````
-
-`````text
-### Observed validation paragraph
-This audit does not complete Lang-01.1.1.1 and does not authorize implementation
-from the rejected WIP. Completion requires the exact selected types and
-semantics, deletion of the old Try representation and dialogue special path,
-ordinary-function/generator integration, migration of all current consumers,
-the required negative and span tests, documentation reconciliation, workspace
-validation, structural audit, and successful Tier 2 reconciliation.
-`````
-
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `2026-07-21-lang-01-5-1-1-dialogue-profile-admission-substrate.md`
 Source date from filename: 2026-07-21
@@ -11123,25 +11032,7 @@ Source date from filename: 2026-08-21
 Full 40-hex references recorded in source:
 - `dec4f6c2de3be87d28a2f976b1ae51e3b40dd3fd`
 
-Verbatim paragraphs carrying observed validation, test, or audit outcomes:
-
-`````text
-### Observed validation paragraph
-- Corrected package classification: `ACCEPTED_DESIGN_CONTRACT`
-- Language/lifecycle decisions: accepted
-- Product/runtime implementation readiness: `BLOCKED_PENDING_CORRECTION`
-- Independently safe work: generic checked Match semantic authority only
-- Production changes made by this audit: none
-`````
-
-`````text
-### Observed validation paragraph
-The post-intake implementation audit found two result-changing ABI gaps that
-the returned design-validation package describes inconsistently with current
-production. Implementing either by convention would create a new authority
-rather than project the accepted one.
-`````
-
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `2026-08-21-lang-01-5-1-1-2-1-1-1-generic-match-typed-need-return-intake.md`
 Source date from filename: 2026-08-21
@@ -11151,50 +11042,21 @@ Full 40-hex references recorded in source:
 Verbatim paragraphs carrying observed validation, test, or audit outcomes:
 
 `````text
-### Intake result
+### Intake validation
 - Archive integrity: `PASS`
 - Internal package validator: `PASS`
 - Repository reconciliation: `FAIL`
-- Classification: `DESIGN_NOT_READY`
-- Production implementation: `BLOCKED_PENDING_CORRECTION`
-- Open questions claimed by package: none
-- Production code changed or validated by package: none
 `````
 
-`````text
-### Intake result
-The return successfully selects a frame-safe single-Variant selector result,
-core-independent View coordinates, explicit guard Branch lowering, a dedicated
-typed Need runtime value, a resource-registry input route, and strict
-version-1 deletion. It cannot be implemented as returned because its opcode
-allocation conflicts with two accepted owners, its global task-plan identity
-deletion has no non-View replacement, and its checked coverage/ownership/digest
-owners remain underdefined.
 
-`````
-
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `2026-08-21-lang-01-5-1-1-2-1-1-reactive-unary-need-correction-intake.md`
 Source date from filename: 2026-08-21
 Full 40-hex references recorded in source:
 - `a1a098976b39cbba09c527369193a5c5d4fc816a`, `cec30b57fa734efb059d7b846b397ac7d2b0701a`
 
-Verbatim paragraphs carrying observed validation, test, or audit outcomes:
-
-`````text
-### Intake result
-Post-intake implementation reconciliation found that product/runtime readiness
-was overstated: the returned generic-Match output schema exports a
-function-local AWBC register across a destroyed callee frame, and its typed
-Need producer claim conflicts with the current string-backed NeedHandle path.
-The language/lifecycle contract remains accepted, but product/runtime work is
-now `BLOCKED_PENDING_CORRECTION` by
-`Lang-01.5.1.1.2.1.1.1` (`../reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1.1-generic-match-and-typed-need-producer-abi-correction.md`).
-Only the generic checked Match semantic-authority cut is independently safe;
-see the
-implementation blocker (`2026-08-21-lang-01-5-1-1-2-1-1-1-generic-match-and-typed-need-producer-abi-blocker.md`).
-`````
-
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `2026-08-21-lang-01-5-1-1-2-1-reactive-unary-need-return-intake.md`
 Source date from filename: 2026-08-21
@@ -11940,103 +11802,19 @@ Full 40-hex references recorded in source:
 Verbatim paragraphs carrying observed validation, test, or audit outcomes:
 
 `````text
-### Observed validation paragraph
-- Read the accepted C2 schemas, cut/deletion matrix, and machine source
-  inventory.
-- Inspected current typed definitions, constructors, readers, validation,
-  transcript consumers, compiler/runtime-plan consumers, and representative
-  tests for project items, Entry references, variants, record patterns, typed
-  bindings, every Select family, StageLook, Effect, View calls, Style values,
-  dialogue rich text, and PostfixBracket.
-- Compared the final-analysis phase with checked Entry catalog construction and
-  compiler publication order.
-- Inspected the existing checked callable join, project runtime nominal
-  projection, environment nominal records, Character definition index,
-  rich-text report, View element owner, and `ViewSpecifiedValue` owner.
-- Verified the initial branch/revision/clean-state tuple and performed a final
-  documentation diff check after authoring this note and the request.
-`````
-
-`````text
-### Observed validation paragraph
-- Initial `git status --short`: empty.
-- `git rev-parse HEAD`:
+### Read-only review validation
+- Initial worktree was clean on branch `main` at HEAD and `origin/main`
   `c23dddb439b8ecf45b6161791ceb1e4e281ca9b6`.
-- `git rev-parse origin/main`:
-  `c23dddb439b8ecf45b6161791ceb1e4e281ca9b6`.
-- `git branch --show-current`: `main`.
-- `git diff --check`: passed; the working tree contains no tracked diff.
-- Both new Markdown files passed `git diff --no-index --check`, have no
-  trailing whitespace, and end with a newline.
-- Typed inventory established all current producers and compile fanout needed
-  to formulate the linked request without editing production.
+- `git diff --check` and `git diff --no-index --check` passed.
+- No executed validation command failed; this was a read-only production
+  audit, not an implementation attempt.
+- Cargo format, check, test, Clippy, workspace, Tier 2, generated-artifact,
+  structure gates, the package validator, and negative corpus were not run
+  because no production or test change was in scope. The follow-up request
+  had not been answered at that time.
 `````
 
-`````text
-### Observed validation paragraph
-No executed validation command failed. This was a read-only production audit,
-not an implementation attempt.
-`````
-
-`````text
-### Observed validation paragraph
-1. final analysis cannot retain `CheckedEntryBindingDigest` because the checked
-   Entry catalog is currently constructed after final analysis and
-   verification;
-2. the canonical runtime nominal projection is exposed only on sealed
-   `FinalSemanticAnalysis`, while C2 field/case construction needs that evidence
-   before sealing; directly calling it from construction would create a phase
-   cycle;
-3. environment record fields have no declaration-ordered typed owner;
-4. View modifier success has no accepted catalog and compiler lowering rejects
-   it;
-5. removing the Postfix selected `ExprId` would break compiler runtime-plan
-   lowering in `arcweft-compiler/src/lower.rs` and runtime reachability in
-   `arcweft-compiler/src/lower/reachability.rs` unless private lookup evidence
-   is retained;
-6. parent text says 27 current Style variants while production has 26;
-7. the parent selected-case sketch duplicates a case row instead of using one
-   owner table plus ordinal accessor, and its proposed family/receiver names
-   duplicate existing types; and
-8. complete rich-text and Postfix semantic digests depend on C3 checked child
-   digest closure and cannot honestly be credited to C2.
-`````
-
-`````text
-### Observed validation paragraph
-- Cargo format, check, test, Clippy, workspace, Tier 2, generated-artifact, and
-  structure gates were not run because no production Rust or test change was
-  authorized.
-- No returned package validator or negative corpus was run; the follow-up
-  request has not yet been answered.
-`````
-
-`````text
-### Observed validation paragraph
-1. private two-phase final-analysis/Entry seal, atomic publication, and exact
-   error precedence;
-2. one private runtime nominal projection context;
-3. ordered typed environment record authority or explicit scope removal;
-4. fail-closed View modifier deletion, preferably, or a real catalog;
-5. exact reuse of `DeclarationIdentityFamily`, `CallableReceiverMode`, the
-   checked callable join digest owner, one shared field identity, and selected
-   variant owner-plus-ordinal access;
-6. C2 fact construction versus C3 rich-text/Postfix digest sequencing; and
-7. deletion-driven subcuts and executable acceptance tests.
-`````
-
-`````text
-### Observed validation paragraph
-The linked request also fixes these constraints: `ViewSpecifiedValue` uses an
-owner-defined exhaustive encoder and pairwise uniqueness tests without a
-literal count gate; Postfix keeps its selected `ExprId` lookup-only until C3
-adds the typed child digest; `RecordElement` is deleted while `0x0406` remains
-reserved; same-cut opaque IDs require exact typed inputs, trailing-NUL BLAKE3
-domains, private construction, and generation validation; rich-text pairing
-uses stable accepted token ordinals rather than raw tag IDs; and accepted C1 is
-not redesigned absent a concrete flaw.
-`````
-
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `2026-08-23-lang-01-5-1-1-2-1-1-1-1-1-1-1-1-accepted-structural-nominal-carrier-return-intake.md`
 Source date from filename: 2026-08-23
@@ -12174,24 +11952,14 @@ Full 40-hex references recorded in source:
 Verbatim paragraphs carrying observed validation, test, or audit outcomes:
 
 `````text
-### Intake result
+### Intake validation
 - Archive safety and byte integrity: `PASS`
-- Package's own mechanical validation: `FAIL`
+- Package mechanical validation: `FAIL`
 - Repository/source reconciliation: `NOT PERFORMABLE BY THE RETURN`
-- Classification: `RETURN_REJECTED / DESIGN_NOT_READY`
-- Next action: `DISPATCH THE IN-PLACE HARDENED .1.2 REQUEST`
-- `.1.4` dispatch: `BLOCKED`
-- Production implementation: not authorized
 `````
 
-`````text
-### Intake result
-The archive is a safely retained failed delivery, not a partial final contract.
-It contains neither a complete design nor a repository-verified semantic
-subset that can be implemented independently.
 
-`````
-
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `2026-08-23-lang-01-5-1-1-2-1-1-1-1-1-1-1-2-generic-match-redispatch-return-intake.md`
 Source date from filename: 2026-08-23
@@ -12201,18 +11969,16 @@ Full 40-hex references recorded in source:
 Verbatim paragraphs carrying observed validation, test, or audit outcomes:
 
 `````text
-### Intake result
+### Intake validation
 - Archive safety and byte integrity: `PASS`
 - Hardened request mirror: `PASS`
 - Mandatory repository preflight: `FAIL`
 - Required returned-archive contract: `FAIL`
 - Repository/source reconciliation: `FAIL`
-- Classification: `RETURN_REJECTED / DESIGN_NOT_READY`
-- Further dispatch to the same repository-inaccessible executor: prohibited
-- `.1.4` dispatch: `BLOCKED`
-- Production implementation: not authorized
 `````
 
+
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `2026-08-28-checked-statement-transcript-prerequisites.md`
 Source date from filename: 2026-08-28
@@ -12448,54 +12214,7 @@ Source date from filename: 2026-09-01
 Full 40-hex references recorded in source:
 - `fed4102e50c90b06e2dbabf1e7259ee09352008d`, `e67ab0972e319a635b5ee06100eb823d6b90fa36`, `14e0ad4fd7ea510ac437533107a9bdfe4afaa825`, `4c92d24d0fb90345a875c004b616aba80376b08e`
 
-Verbatim paragraphs carrying observed validation, test, or audit outcomes:
-
-`````text
-### Remaining result-changing boundary
-- final function semantic identity, parameter/receiver modes, result, capture,
-  endpoint, effect, and body authority;
-- exact task request-template semantics for positional/named/spread,
-  receiver/capture, AwaitMany, timeout, and line roles;
-- one constructible control/effect contract;
-- exact accepted record-field and variant-case projection;
-- stable lower-layer View task-plan binding;
-- one RuntimePlan construction coordinate and one consumed builder;
-- trusted core-prefix plus upper-layer digest completion without a public sink
-  or raw digest constructor; and
-- atomic one-time seal/publication with deterministic first-error precedence.
-`````
-
-`````text
-### Validation ledger for future implementation cuts
-Each reviewable Rust cut records the commands actually run and distinguishes
-passed, failed, blocked, and not run. The selected scope is derived from current
-test execution policy (`test-execution-policy.md`) and
-structural audit policy (`structural-audit-policy.md`).
-`````
-
-`````text
-### Validation ledger for future implementation cuts
-- `cargo fmt --all -- --check`;
-- workspace/all-target/all-feature compile checks;
-- focused and changed-crate test suites;
-- workspace tests;
-- workspace Clippy at the selected gate;
-- canonical structure audit and fail-on-blocking gate;
-- deterministic version-one codec and whole-product goldens;
-- wrong-version, noncanonical-varint, duplicate, stale-generation, foreign
-  owner, and transactional rollback negatives;
-- applicable runtime/View/bundle/native/Web/Agent Tier 2 tests; and
-- a deletion audit showing no old reader, alias, fallback, parallel catalog,
-  provisional owner, or version-not-`1` marker remains.
-`````
-
-`````text
-### Validation ledger for future implementation cuts
-Environment failures such as linker or paging-file exhaustion remain failures
-or blocked validation; they are never reported as passed.
-
-`````
-
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `2026-09-07-content-callable-continuation.md`
 Source date from filename: 2026-09-07
@@ -19617,40 +19336,7 @@ Verbatim paragraphs carrying observed validation, test, or audit outcomes:
 Full 40-hex references recorded in source:
 - `db1aafe0151350312c6cdfc53afbd856120efc90`
 
-Verbatim paragraphs carrying observed validation, test, or audit outcomes:
-
-`````text
-### Observed validation paragraph
-1. Inventory current executor construction and dependency edges.
-2. Add facade types and telemetry without rewiring callers.
-3. Add structured legacy adapter behind `ArcweftExecutionTier::StructuredLegacy`.
-4. Add compact AWBC adapter using `AwbcProgram` + `FiberState` + `awbc::vm`.
-5. Add baseline compiled adapter using `awbc_region` and transactional fallback.
-6. Rewire runtime-driver and runtime-host to the facade.
-7. Rewire native player smoke paths.
-8. Add parity smoke tests at runtime-driver/runtime-host boundary.
-9. Remove direct product-player `BytecodeVmExecutor` construction after parity gates pass.
-`````
-
-`````text
-### Observed validation paragraph
-- New builders produce AWBC-only by default only after 01.4 compact runtime passes parity gates.
-- Old structured products are accepted only through an explicitly named inspection/migration path, for example `arcw bundle inspect --allow-legacy-structured-bytecode`.
-- Product players reject structured-only products unless a dev/test compatibility flag is explicitly set.
-- No product path silently chooses structured execution for new AWBC-capable products.
-`````
-
-`````text
-### Observed validation paragraph
-1. 01.4 facade is default for product runtime selection.
-2. Compact VM parity fixtures pass for the required corpus.
-3. AWBC-only AWFB fixture corpus decodes and executes.
-4. Patch/generation identity tests use AWBC digest.
-5. No product path calls `BytecodeVmExecutor` directly.
-6. No product encoder writes structured `BytecodeProgram` into AWFB.
-7. No product decoder requires `arcweft-core::compact_bytecode`.
-`````
-
+Superseded design/status excerpts omitted; source path and recorded Git identifiers are retained above, and the original source remains recoverable from Git history.
 
 ### Source path: `seq-02-1-common-resource-wire-codec-2026-06-27.md`
 Full 40-hex references recorded in source:
@@ -22456,7 +22142,7 @@ Result: all passed locally on Windows; structural audit dry-run reported
 `````
 
 
-Record count: 571; full 40-hex references retained: 471; result excerpts retained: 1293.
+Record count: 571; full 40-hex references retained: 471; result excerpts retained: 1269.
 
 ## Explicitly superseded Style design records removed in the same cleanup
 Eleven design notes explicitly stated that their CSS/Takumi Style premise had been superseded on 2026-07-13 and that their bodies were historical, not current product contracts. They were removed rather than retargeted as live specifications. Current typed Style and rendering contracts remain in the maintained presentation chapters. These notes reported design expectations rather than new implementation test runs.

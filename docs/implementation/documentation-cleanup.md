@@ -534,3 +534,18 @@ GPT-6 Luna／maxに範囲を委ね、構造監査の補足24文書から、古�
 収束履歴でも、全体goalを繰り返す残作業列挙と当時の次の実行指示を削除した。
 元の実行結果・失敗分類・受入範囲とfull Git識別子は保持し、古い現在形を別の現状一覧にしない。
 対象ごとの[削除理由と保全先](acceptance-evidence/task-docs-history-luna-pruning.json)を残す。
+
+## 検証履歴に混在した旧設計・残作業の追加整理 — 2026-10-26
+
+公開main `d2d87bb67f64892a433aff8c13257263e9ecafe4` を基点に、GPT-6 Luna／maxへ
+対象範囲の削除裁量を委ねた。`evidence-history.md` に結果として混入していた旧proof段階表、
+Try移行の手順、過去のGeneric Match blocker、旧critical path／AWBC移行案の24抜粋を削除した。
+これらは実行結果ではなく当時の設計・作業順・未完了判断であり、現在の仕様や残作業を
+重複して説明するためである。Generic Matchの受入・公開済み判定は維持する。
+
+元資料のパスと40桁識別子の一意集合366個を保持した。package検証のPASS／FAIL・照合不能、
+C2監査時のclean main／HEADとoriginの一致・両diff checkのPASS・実行失敗なし・Rust等の
+未実行範囲も残した。旧設計を消す際に実際の検証結果まで消さないよう親が差分を確認した。
+レビュー原本を含む基準の凍結証拠3,991ファイルは全hash一致、変更・欠落0。
+この資料整理のためにRust検証を再実行していない。進行中の実装とその検証は別cutで扱う。
+[対象・削除理由・識別子と証拠の保全照合](acceptance-evidence/task-documentation-obsolete-prose-luna-audit.json)。
