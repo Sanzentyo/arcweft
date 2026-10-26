@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "inspectedHead": "351e982ac60961add4d05e1a739325290627d8a1",
+  "recordedAt": "2026-10-26T14:27:12.5511205Z",
+  "scope": "Documentation-only current-state reconciliation and obsolete prose/example pruning",
+  "statusAuthority": "docs/implementation/current-status.md",
+  "genericMatch": {
+    "accepted": "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+    "published": "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+    "status": "accepted-and-published",
+    "reopened": false,
+    "retainedExecuted": 151,
+    "retainedPassed": 151,
+    "retainedUnique": 151,
+    "retainedNonPass": 0
+  },
+  "delegation": [
+    {
+      "model": "gpt-6-luna",
+      "effort": "max",
+      "scope": "Read-only acceptance/source/evidence audit"
+    },
+    {
+      "model": "gpt-6-luna",
+      "effort": "max",
+      "scope": "Prune obsolete language/runtime chapters with owner review"
+    }
+  ],
+  "dispositions": [
+    {
+      "paths": [
+        "docs/01-language/syntax.md",
+        "docs/01-language/types-and-effects.md",
+        "docs/02-runtime/memory-ipc.md"
+      ],
+      "action": "deleted",
+      "reason": "Duplicate grammar/Need/borrow owners and obsolete syntax or layout/lease DTO sketches"
+    },
+    {
+      "paths": [
+        "docs/02-runtime/cranelift-jit.md",
+        "docs/02-runtime/device-streams.md",
+        "docs/02-runtime/streams-generators.md",
+        "docs/02-runtime/plugins.md"
+      ],
+      "action": "pruned",
+      "reason": "Remove pseudo backend/DSL/CLI surfaces and duplicate type models; retain source-backed conformance, deterministic comparison and owning capability/security contracts"
+    },
+    {
+      "paths": [
+        "docs/examples/device-io-usb.md",
+        "docs/examples/device-usb-virtual-controller.md",
+        "docs/examples/touch-virtual-controller.md",
+        "docs/examples/usb-and-virtual-controller.md",
+        "docs/examples/usb-devices-and-virtual-controller.md",
+        "docs/examples/virtual-controller.md"
+      ],
+      "action": "deleted",
+      "reason": "Mutually inconsistent historical authoring and Agent/generator sketches; device policy remains in schemas/security/layered-input"
+    },
+    {
+      "paths": [
+        "docs/implementation/current-status.md"
+      ],
+      "action": "reconciled",
+      "reason": "Distinguish current inspected HEAD and uncompiled Fanout WIP from published R3215-R3217 evidence without reopening accepted boundaries"
+    }
+  ],
+  "rustValidation": "not-run-for-this-documentation-only-cut",
+  "sourceState": {
+    "heldTracked": 37,
+    "heldUntracked": 7,
+    "heldFiles": 44,
+    "heldHashDrift": 0,
+    "uncommittedFanoutRustPaths": 24,
+    "allDirtyRustPaths": 29,
+    "validationOfFanoutWip": "not-run"
+  },
+  "checks": {
+    "changedTrackedDocs": 20,
+    "existingChangedMarkdown": 11,
+    "relativeLinks": 228,
+    "fullGitIdentityCounts": [
+      {
+        "path": "docs/01-language/README.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/01-language/dialogue-calls-scopes-cancellation.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/01-language/syntax.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/01-language/types-and-effects.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/02-runtime/README.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/02-runtime/cranelift-jit.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/02-runtime/device-streams.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/02-runtime/memory-ipc.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/02-runtime/plugins.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/02-runtime/streams-generators.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/README.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/examples/README.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/examples/device-io-usb.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/examples/device-usb-virtual-controller.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/examples/touch-virtual-controller.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/examples/usb-and-virtual-controller.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/examples/usb-devices-and-virtual-controller.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/examples/virtual-controller.md",
+        "before": 0,
+        "after": 0,
+        "lost": 0
+      },
+      {
+        "path": "docs/implementation/current-status.md",
+        "before": 30,
+        "after": 31,
+        "lost": 0
+      },
+      {
+        "path": "docs/implementation/documentation-cleanup.md",
+        "before": 33,
+        "after": 34,
+        "lost": 0
+      }
+    ],
+    "currentStatusCommitIds": 31,
+    "historicalRawEvidenceEdits": 0,
+    "whitespaceExit": 0,
+    "problems": []
+  },
+  "changedPaths": [
+    "docs/01-language/README.md",
+    "docs/01-language/dialogue-calls-scopes-cancellation.md",
+    "docs/01-language/syntax.md",
+    "docs/01-language/types-and-effects.md",
+    "docs/02-runtime/README.md",
+    "docs/02-runtime/cranelift-jit.md",
+    "docs/02-runtime/device-streams.md",
+    "docs/02-runtime/memory-ipc.md",
+    "docs/02-runtime/plugins.md",
+    "docs/02-runtime/streams-generators.md",
+    "docs/README.md",
+    "docs/examples/README.md",
+    "docs/examples/device-io-usb.md",
+    "docs/examples/device-usb-virtual-controller.md",
+    "docs/examples/touch-virtual-controller.md",
+    "docs/examples/usb-and-virtual-controller.md",
+    "docs/examples/usb-devices-and-virtual-controller.md",
+    "docs/examples/virtual-controller.md",
+    "docs/implementation/current-status.md",
+    "docs/implementation/documentation-cleanup.md"
+  ],
+  "newPaths": [
+    "docs/implementation/acceptance-evidence/task-documentation-current-state-and-prune-audit.json"
+  ]
+}

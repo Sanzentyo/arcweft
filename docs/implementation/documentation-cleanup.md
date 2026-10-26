@@ -572,3 +572,25 @@ GPT-6 Luna／maxの3担当へ言語・runtime章、presentation・tooling章、�
 追加整理の12 Markdownでは相対link 90件が解決し、未閉鎖fence・full Git識別子の欠落・
 既存検証原本の変更は0。現状一覧の29 full commit SHAはGit objectとmainのancestorを照合した。
 元のuntracked実ファイル6件はhash差分0、文書の`git diff --check`も終了0だった。
+
+## 現在の作業差分と旧サンプルの最終照合 — 2026-10-26
+
+公開main `351e982ac60961add4d05e1a739325290627d8a1` を照合基点とし、
+GPT-6 Luna／maxの2担当へ現状の根拠監査と残存章の削除判断を委ねた。親が差分を確認した。
+現状一覧の冒頭を実際のHEADと作業状態へ訂正した。公開cutの4 Rustファイルに対する
+R3215–R3217と、その後の未検証Program fanout変更24ファイルは別入力である。
+過去の合格を取り消さず、現在の作業差分に転用しない。
+
+- `syntax.md`、`types-and-effects.md`、`memory-ipc.md`を削除した。文法・Need・borrow・
+  descriptorの所有章と重複し、古い構文や現在の型にないlayout／lease DTOも混在していたため。
+- JITの仮backend enum、lazy-JIT構文、未公開dumpコマンドとproperty例を削除した。
+  現行accelerator、source-backed conformance、純粋関数境界と決定性の契約は保持した。
+  device streamとpluginの重複DTO・backend案も所有契約への参照へ統合した。
+- USB／仮想controllerの旧サンプル6件を削除した。互いに異なる宣言、旧signal操作、
+  生成／Agentコマンドを現行例として重複掲載していたため。権限、manifest、入力routing、
+  fixture、privacyの契約はschema・security・layered-inputの所有章に保持している。
+
+削除対象に実行済みの検証結果やfull Git識別子はなく、既存の検証原本は変更していない。
+開始時のtracked変更37件とuntracked実ファイル7件はhash一致で保持した。
+資料のためのRust／Cargo再実行は行っていない。
+[差分・リンク・識別子・作業差分の保全照合](acceptance-evidence/task-documentation-current-state-and-prune-audit.json)。

@@ -25,7 +25,8 @@ Related:
 - [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
 - [Hooks and Memoization](hooks-and-memoization.md)
-- [Option / Result / Need / lifetime](types-and-effects.md)
+- [Await, Need, Result, and try](await-need-result.md)
+- [Block scopes and lifetimes](block-scopes.md)
 
 ---
 

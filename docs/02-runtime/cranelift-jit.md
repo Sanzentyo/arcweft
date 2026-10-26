@@ -7,45 +7,9 @@ optimization level; VM conformance remains mandatory for every compiled helper.
 `arcweft-core` は Cranelift に依存せず、`jit-cranelift` feature も持たない。product feature 名は `native-jit` とし、native player が `arcweft-lang-jit-cranelift` adapter を選択する。
 `native-jit` は `arcweft-runtime-accelerator` 側でも native-only の target-specific dependency であり、`wasm32` build では同じ backend mode enum を保持したまま Cranelift をリンクしない。ブラウザ実行は VM/AOT CPU 経路を使い、runtime JIT は有効化しない。
 
-## 対象
-
-JIT対象:
-
-- easing 関数
-- 数値計算
-- animation sampling
-- layout 式
-- filter/map pipeline fusion
-- pure helper function
-- shader param precompute
-- audio envelope / automation curve
-
-JIT対象外:
-
-- flow controlそのもの
-- dialogue line execution
-- choice / select
-- `Need` / `await` / cancellation
-- effect発行
-- asset/audio/shader load
-- wasm call
-- UI操作
-- plugin call
-- save / load
-- string-heavy処理
-- debug build中の複雑な関数
-
-## Backend
-
-```rust
-pub enum ExecBackend {
-    Vm(BytecodeVm),
-    #[cfg(feature = "native-jit")]
-    Cranelift(arcweft_lang_jit_cranelift::CraneliftBackend),
-}
-```
-
-The VM remains available when JIT compilation is pending, rejected, or fails before execution.
+The VM remains the semantic reference and is used whenever an accelerator
+cannot compile a helper. The runtime accelerator owns backend selection; Core
+does not depend on Cranelift.
 
 `arcweft-core` exposes the stable pure-helper execution boundary without taking
 a Cranelift dependency:
@@ -239,76 +203,8 @@ local-`let` statement body with either a final value expression or tail
 `return` to the runtime pure-helper request, and uses the VM as the conformance
 reference before timing the Cranelift function. The current source-backed check
 supports the same 0-to-4-input integer subset as the native adapter.
-
-## IR lowering
-
-```text
-Typed IR function
-  → Purity/effect check
-  → Type layout check
-  → Cranelift Signature
-  → CLIF generation
-  → compile
-  → function pointer cache
-```
-
-## 同値性検査
-
-JIT対象関数は、dev/test profile で VM と比較する。
-
-The comparison must use deterministic input values and must not write host
-absolute paths into snapshots, profile JSON, benchmark JSON, or CLIF/assembly
-dump metadata.
-
-```bash
-arcw jit check --json
-arcw jit dump-clif fn.logic.affection_score
-arcw jit dump-asm fn.logic.affection_score
-```
-
-```arcw
-property @test.jit_vm_equivalence_affection_score {
-    for_all input in gen<AffectionInput>() {
-        let vm = eval_vm(@fn.affection_score, input)
-        let jit = eval_jit(@fn.affection_score, input)
-        assert_eq vm, jit
-    }
-}
-```
-
-## JIT と lazy
-
-関数は初回使用時に JIT できる。
-
-```arcw
-lazy jit fn @fn.layout_choices
-```
-
-flow 内で必要なら `Need` として扱う。ただし通常は VM fallback を使い、JIT 完了後に差し替える。
-
-```text
-JIT pending:
-  VMで実行
-JIT ready:
-  frame boundaryでJITへ切替
-JIT failed:
-  VM継続 + diagnostic
-```
-
-## 契約
-
-JIT は契約済み pure subset のみ。
-
-```arcw
-fn score(choice: ChoiceDef)(state: GameState) -> i32
-requires choice.is_valid()
-ensures result >= 0
-pure
-jit
-{
-    ...
-}
-```
+Conformance checks use deterministic inputs, and snapshots, profile/benchmark
+JSON, and any dump metadata must not contain host absolute paths.
 
 ## safety
 

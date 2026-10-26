@@ -70,7 +70,6 @@
 - [USB Device Manifest](schemas/usb-device-manifest.md)
 - [Virtual Controller Manifest](schemas/virtual-controller-manifest.md)
 - [Owner-local events and derived values example](examples/hooks-memoization.md)
-- [USB and Virtual Controller example](examples/usb-and-virtual-controller.md)
 
 ## エージェント運用
 

@@ -1,13 +1,4 @@
-# Rust / WASM plugin
-
-## 実行形態
-
-| 形態 | 用途 | 長所 | 短所 |
-|---|---|---|---|
-| static Rust Activity | 公式ゲーム、Web対応 | 最速、型安全 | hot reloadしにくい |
-| native dylib | 開発中hot reload、信頼済みmod | 高速 | ABI管理が必要 |
-| out-of-process | 重いActivity、クラッシュ隔離 | 安全 | IPC設計が重い |
-| WASM component | mod、sandbox | 配布しやすい | zero-copy制約 |
+# Rust exports and plugin boundary
 
 ## Rust export
 
@@ -187,36 +178,11 @@ These declarations require no arguments and a concrete result type. A generic
 record field binds to the corresponding concrete wrapper after instantiation;
 missing, wrong-result, or duplicate constructor declarations fail admission.
 
-## WASM plugin
+## WASM plugin boundary
 
-WASM is a plugin/activity sandbox format, not Arcweft's primary script runtime.
-Arcweft scripts lower to Typed IR / bytecode and run on the VM. A native player may
-use `arcweft-wasm-wasmtime` for sandboxed plugin calls; a browser player uses its
-own Wasm player build and browser APIs, not Wasmtime.
-
-The plugin ABI is described with WIT in `arcweft-wasm-abi`. Validation,
-component generation, and inspection live in `arcweft-wasm-tools`; host execution
-adapters stay outside `arcweft-core`.
-
-```rust
-wasm plugin affection_ai from "plugins/affection_ai.wasm" {
-    abi = "wit:arcweft:plugin/affection@0.1.0"
-    sandbox {
-        memory = 8MiB
-        fuel_per_call = 2_000_000
-        wasi = false
-        network = false
-        filesystem = false
-    }
-    import fn score(state: GameState, event: ChoiceEvent) -> i32
-}
-```
-
-## Security
-
-- filesystem/network は deny by default。
-- host import whitelist。
-- fuel / memory / call time limit。
-- WASI preopen なしがデフォルト。
-- Activity から直接 engine state を mutate しない。
+WASM is an optional plugin/activity sandbox format, not Arcweft's script
+runtime. Its accepted adapter and tooling boundary is summarized in the
+[crate map](../00-overview/crate-map.md); it does not add a `wasm plugin`
+declaration to the language grammar. The [security policy](../05-build-and-security/security.md)
+owns sandbox permissions and resource limits.
 

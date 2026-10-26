@@ -1,8 +1,8 @@
 # Streams, Generators, and External Capabilities
 
-Arcweft supports live microphone, camera, USB, HID, gamepad, touch, and virtual-controller input. These sources are timing-sensitive, permissioned, and often backed by host callbacks or device queues. They must not be modelled as ordinary lazy values that can be implicitly forced.
-
-This chapter defines when to use `Need`, `Stream`, `Watch`, and generator syntax.
+This chapter defines the language boundary for `Need`, `Stream`, `Watch`, and
+generator syntax. Device access and its policy are owned by external capability
+manifests and hosts; see [Device Stream Runtime Boundary](device-streams.md).
 
 Related chapters:
 
@@ -35,46 +35,10 @@ Generator syntax
 
 This keeps capture and USB handling deterministic, permission-aware, replayable, and testable.
 
-## Why not make devices plain generators?
-
-A microphone, camera, USB endpoint, or HID report stream has host-level constraints:
-
-- permission prompts,
-- device unplug,
-- callback lifetime,
-- buffering/backpressure,
-- platform-specific errors,
-- product privacy policy,
-- replay and headless substitution.
-
-If a DSL generator could directly open a device, those concerns would leak into game logic and would be hard to sandbox. Therefore generators may **consume granted ports**, but may not enumerate or open devices by themselves.
-
-## Core types
-
-```rust
-pub enum Need<T> {
-    NotStarted,
-    Pending(Progress),
-    Ready(T),
-    Cancelled,
-}
-
-pub struct Stream<T, E> {
-    source: StreamSourceId,
-    policy: StreamPolicy,
-    item: PhantomData<T>,
-    error: PhantomData<E>,
-}
-
-pub struct Watch<T> {
-    signal: SignalId,
-    value: Option<T>,
-}
-```
-
-`Need<T>` never coerces into `T`. A visible `flow` or `view` must describe what
-to show while it is pending. Domain failure is carried in a payload such as
-`Need<Result<T, E>>`; cancellation is a separate control outcome.
+`Need<T>` is the one-shot temporal carrier and `Stream<T, E>` is the ordered
+asynchronous sequence descriptor. Their type and suspension rules are owned by
+[Await and Need](../01-language/await-need-result.md) and the
+[standard prelude](../01-language/standard-types-and-prelude.md).
 
 ```arcw
 let usb =
@@ -187,64 +151,9 @@ fn ok(bytes: Bytes) -> Stream<u8, Unit> {
 }
 ```
 
-## Stream backpressure
-
-Each stream declares a backpressure policy.
-
-```rust
-pub enum BackpressurePolicy {
-    LatestOnly,
-    BoundedQueue { capacity: usize, on_overflow: OverflowPolicy },
-    BlockingNotAllowed,
-}
-
-pub enum OverflowPolicy {
-    DropOldest,
-    DropNewest,
-    Error,
-    Coalesce,
-}
-```
-
-Camera preview typically uses `LatestOnly`. USB protocol streams usually use `BoundedQueue` and error on overflow.
-
-## Replay and virtual streams
-
-Live sources are recorded as summaries or deterministic fixtures.
-
-```text
-product/dev live stream:
-  device callback -> stream events
-
-test/headless stream:
-  fixture stream -> same Stream<T, E> interface
-```
-
-A trace records:
-
-- stream identity,
-- event timestamps/ticks,
-- hashes or selected payload summaries,
-- permission outcomes,
-- device identity redacted by policy.
-
-## DSL sugar
-
-The following are equivalent:
-
-```rust
-let levels = mic.frames().stream_map(rms)
-```
-
-```arcw
-let levels = stream {
-    for frame in mic.frames() {
-        yield rms(frame)
-    }
-}
-```
-
-The block form is useful for complex stream transforms but is not required for most game code.
+Backpressure, replay, and privacy are selected at the device/capture capability
+boundary by its manifest and host; see [Device Stream Runtime
+Boundary](device-streams.md) and the linked device schemas there.
 
 ## Design rule
 

@@ -1,6 +1,6 @@
 # 01-language
 
-- [構文概要](syntax.md)
+- [文法サマリ](grammar.md)
 - [Converged Language, Content, and Presentation Surface](converged-language-surface.md)
 - [Flow-Integrated Scenario Syntax / Dialogue Sugar](scenario-surface-syntax.md)
 - [CharacterDialogue authoring](character-dialogue.md)
@@ -27,7 +27,6 @@
 - [Error, Trace, `try`, and Context](error-trace-context.md)
 - [Block scopes](block-scopes.md)
 - [mod / use / pub](modules.md)
-- [Option / Result / Need / lifetime](types-and-effects.md)
 - [State / Event / Reducer / Flow / View](state-flow-reducer.md)
 - [ADT と pattern matching](adt.md)
 - [契約プログラミング](contracts.md)
@@ -35,4 +34,3 @@
 - [入力パース](parsing.md)
 - [macro / template / precompile](macros-precompile.md)
 - [Event Ownership and Caching](hooks-and-memoization.md)
-- [文法サマリ](grammar.md)
