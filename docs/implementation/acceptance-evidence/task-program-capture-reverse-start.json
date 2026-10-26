@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "sourcePublication": "e08b0f3cf2d0739a0b2223c30c12029fa428c31d",
+  "phase": "catalog-building-runtime-not-started",
+  "catalog": "task-final-r3176-program-capture-reverse-catalog",
+  "runtime": "task-final-r3177-program-capture-reverse-runtime",
+  "sourceInputs": 3989,
+  "manifestInputs": 99,
+  "manifestLockDrift": 0,
+  "selectedPackages": 53,
+  "requiredGeneric": 151,
+  "requiredPreviousOwnerAndSource": 17,
+  "requiredCurrentCapture": 8,
+  "runtimeResult": "not-terminal",
+  "observationRehash": {
+    "status": "interrupted",
+    "reason": "Redundant start-record rehash waited; original freeze and required catalog/runtime terminal guards are retained",
+    "processExitCode": -1,
+    "cargoInterrupted": false
+  },
+  "temporaryDriver": "run-program-capture-reverse.ps1",
+  "temporarySession": 93098,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owner.verified.json",
+      "bytes": 16794,
+      "sha256": "69bd8b64ba54471694c30f5acdc941eb2b48599070df51772b618fa84cbe546f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse.graph.json",
+      "bytes": 1987,
+      "sha256": "6c09cc22f9de5d203b89ee2c3259b5b6ab9434498ab10f48098813aebf0f1960"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse.source-freeze.json",
+      "bytes": 779778,
+      "sha256": "cf6f2b33cb96492afacec5089baf584a6e45635b7ab1230c39aee3b4d36670f8"
+    }
+  ],
+  "observedAt": "2026-10-26T01:16:41.1525363Z"
+}

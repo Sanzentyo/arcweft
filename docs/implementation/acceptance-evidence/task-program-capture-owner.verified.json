@@ -1,0 +1,363 @@
+{
+  "version": 1,
+  "commit": "e08b0f3cf2d0739a0b2223c30c12029fa428c31d",
+  "parent": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "tree": "2727c86014068c47ea0df9719d0150ee47c26765",
+  "remote": "e08b0f3cf2d0739a0b2223c30c12029fa428c31d",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+      "blob": "08dca75075d94398ecff152c72673b5d023cc067"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+      "blob": "574b6a5760a73ec344c1cac3c21efd4b7b523906"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+      "blob": "2bbd528531658838ca5a39588a5066192dd5018a"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "blob": "1b9492cf6210a261631998961296f1112f137f94"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer/source/template.rs",
+      "blob": "f5cd30ab3cc137c2cd8ce8be00800cb10a78ae5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3160-program-capture-published-catalog.input-audit.json",
+      "blob": "e6ee26c2faec793ac772730e837aecda4cfa8fac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3160-program-capture-published-catalog.inventory.json",
+      "blob": "aecbf30a33c495b0149c77f2aba991de755ead36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3160-program-capture-published-catalog.json",
+      "blob": "0b5fd4320ecf64d9e4b3ab232d69a9e6cc9eb23c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3160-program-capture-published-catalog.log",
+      "blob": "6d73612373103ab0693c6aea82583f9545349d05"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3161-program-capture-published-runtime.json",
+      "blob": "cfb48e1f3d7bf47bc9085b68388b9192ddcbcbbd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3161-program-capture-published-runtime.log",
+      "blob": "c2f7a23ebac38dd70695be59ace6c7de00db6d46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3161-program-capture-published-runtime.terminal-audit.json",
+      "blob": "7f188e45cb7d152e8a3deabb6a22ab297a25f134"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3162-program-capture-source-owner-catalog.input-audit.json",
+      "blob": "06925e84f3e560ce7c5de932344fbf44de5ba6ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3162-program-capture-source-owner-catalog.inventory.json",
+      "blob": "479f5d2b333d1a847d0b4e1d651a6e188f864c85"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3162-program-capture-source-owner-catalog.json",
+      "blob": "1bcc932216a6439e995cf9a6db32e74207e772e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3162-program-capture-source-owner-catalog.log",
+      "blob": "8a79d422c83476ee7a14ead0d29dba272b40a64a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3163-program-capture-source-owner-runtime.json",
+      "blob": "e1cf674d6205d6aba61b44fa2e7beffb357c036e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3163-program-capture-source-owner-runtime.log",
+      "blob": "ec313e332dcccf95a32f3fc7e71346a01f75a59a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3163-program-capture-source-owner-runtime.terminal-audit.json",
+      "blob": "004b11e7a71cde6cbd69c2ddbcf632c527ca73a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3164-program-capture-owned-admission-catalog.input-audit.json",
+      "blob": "ad8c6237a38b23ca005f8c52543c20a1e3603d78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3164-program-capture-owned-admission-catalog.inventory.json",
+      "blob": "f9060722ce6eec3f0fba36bcb8125ed45c23746e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3164-program-capture-owned-admission-catalog.json",
+      "blob": "18fa396dd7c4eb5ec8d53b779918aee535145951"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3164-program-capture-owned-admission-catalog.log",
+      "blob": "256f1efe49512ddd2c5f62cab0176104485425db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3165-program-capture-owned-admission-runtime.json",
+      "blob": "c45611eddc6b3ad97cebe3e2d7d00639a8fe50e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3165-program-capture-owned-admission-runtime.log",
+      "blob": "a715e9f98fc39c5783063e7979a0721f071bf4b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3165-program-capture-owned-admission-runtime.terminal-audit.json",
+      "blob": "3acc966e9c03fd8126d5f14f4f9db2e3506edbed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3166-program-capture-rejection-catalog.input-audit.json",
+      "blob": "4330d1345fb9b5adad14054f09023283248379bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3166-program-capture-rejection-catalog.inventory.json",
+      "blob": "b6d84999e3fe99b295911443d9cb9f75a3e952ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3166-program-capture-rejection-catalog.json",
+      "blob": "8636f7f159c187e4c295655d637e90ba5b24ddd2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3166-program-capture-rejection-catalog.log",
+      "blob": "f9e82ce73a30f3e0fc813921326f2d8af1398805"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3167-program-capture-rejection-runtime.json",
+      "blob": "055b27e46c8338aac2c03cfffc5730f7a017d7cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3167-program-capture-rejection-runtime.log",
+      "blob": "d61d31c56790282e146b9ed8ddcb2a9a5eb43244"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3167-program-capture-rejection-runtime.terminal-audit.json",
+      "blob": "2dfe48cb5bb252977aada74d42e8d5e60da76b33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3168-program-capture-duplicate-diagnostic-catalog.input-audit.json",
+      "blob": "cfd955a24ddb4b046482d6187aa57223bc6eefe1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3168-program-capture-duplicate-diagnostic-catalog.inventory.json",
+      "blob": "bf66f3abd407432b1ad848a8c0b080bf79b26fc7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3168-program-capture-duplicate-diagnostic-catalog.json",
+      "blob": "0eead903a187e898b4250982f47463f0cfdc3359"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3168-program-capture-duplicate-diagnostic-catalog.log",
+      "blob": "93150fff8bc53348bc22a677b3bdb02e6c95a8aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3169-program-capture-duplicate-diagnostic-runtime.json",
+      "blob": "424dd2116341e9266feb5c8b7ce9edb5cec6e58f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3169-program-capture-duplicate-diagnostic-runtime.log",
+      "blob": "642aa4a9b91fc0f55fec314716ad75c16bd33354"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3169-program-capture-duplicate-diagnostic-runtime.terminal-audit.json",
+      "blob": "92a9d60b8a749fbba9c4d50891c56e2eae0f856d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3170-program-capture-verified-catalog.input-audit.json",
+      "blob": "2fa6e8df6a5c50366a35b85f480ec94d048250a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3170-program-capture-verified-catalog.inventory.json",
+      "blob": "d963629f363276b4a737e8171f2f4cc2999f0fc9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3170-program-capture-verified-catalog.json",
+      "blob": "e0fe76f3174568c547ec83648e01d6a1f198fd13"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3170-program-capture-verified-catalog.log",
+      "blob": "421ec49175f5ed1d19bda73d862cb2b7c73d808c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3171-program-capture-verified-runtime.json",
+      "blob": "1d52d0976338ede0d6450be8a199a2a2877c2876"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3171-program-capture-verified-runtime.log",
+      "blob": "1c4a533749021e8252c079de15f6fa277826b94c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3171-program-capture-verified-runtime.terminal-audit.json",
+      "blob": "e4beb2bc9d62c9b1b3168aea26aa8c1c5e6df8c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3172-program-capture-workspace-check.input-audit.json",
+      "blob": "82ccbe160b4fe07a01ced43040b5df4422fac2e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3172-program-capture-workspace-check.json",
+      "blob": "6a64b46cc1f4d48fe0bb07835350ca32d8df1e83"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3172-program-capture-workspace-check.log",
+      "blob": "c4c866e511db6eabeb47d5f585aca3d9bfab73b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3173-program-capture-workspace-clippy.input-audit.json",
+      "blob": "1d4a28d18108b7530cd9d2abd4a015b57d988a1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3173-program-capture-workspace-clippy.json",
+      "blob": "a82700ad7cf7c38d9cbc9ea0870ee8912992960c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3173-program-capture-workspace-clippy.log",
+      "blob": "9bf551d01b83de4892cb7af6ee7b3574fdd4e400"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3174-program-capture-core-doctest.input-audit.json",
+      "blob": "207c7a70e63e528b0f27d8e515a967b67c0a1d11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3174-program-capture-core-doctest.json",
+      "blob": "db8078d70befda53f9c62b85eeab6ac1253db254"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3174-program-capture-core-doctest.log",
+      "blob": "3e394c733b0f83592397eedfbfb9514a1a08ae78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3175-program-capture-structure.input-audit.json",
+      "blob": "38cd9481605b66d2dbfff214220420d72bd5be34"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3175-program-capture-structure.json",
+      "blob": "ccce2c1db468941895070929c416e2ec9d75d7fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3175-program-capture-structure.log",
+      "blob": "e4ba0467f8131b92de909f4e2e7c1197fbe89bec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-duplicate-diagnostic.executables-after.json",
+      "blob": "6be07f6fa5ee3cd54f043b19b76623fd9e7a972e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-duplicate-diagnostic.executables-before.json",
+      "blob": "a6cf98275ef9b0d43b6a31b230ce56c3065fa66e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-duplicate-diagnostic.source-freeze.json",
+      "blob": "3fc9541f418c388de47e0536e850a61ebc34577d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owned-admission.executables-after.json",
+      "blob": "db58fb9990d18714690c96f9f188924cc9f817eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owned-admission.executables-before.json",
+      "blob": "4b834e4d340bd90532cacb9ba2d439683ad67f76"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owned-admission.source-freeze.json",
+      "blob": "a5534101a1347ae8e91d5b06e02a3dcef4783d4d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owner-acceptance.json",
+      "blob": "cce4941112b65c74a836b1d2bcf94811cd34b8dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-published.executables-after.json",
+      "blob": "adb300fab29ea85115baa42e8808ba983dfb9420"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-published.executables-before.json",
+      "blob": "0deffa83e34fd5915ce189b5956b6541137c152d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-published.source-freeze.json",
+      "blob": "36a1336d0176d37410678fdf847c023ece71d8a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-rejection.executables-after.json",
+      "blob": "2cf16c0ed1048adfa19f633d81136549e1df535f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-rejection.executables-before.json",
+      "blob": "53a5377c85e52b63ed808863947a8aa83d8a35a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-rejection.source-freeze.json",
+      "blob": "8809c76d5439b41aeda249e82bd651abe076b46e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-source-checkpoint.verified.json",
+      "blob": "7ec5d3357ed59a372eedf0478cb497758eea3efc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-source-owner.executables-after.json",
+      "blob": "f602b0497f19bef156dc1f312bc6211a8058bae5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-source-owner.executables-before.json",
+      "blob": "82e0a2e1c11627e8062ad6bcf6805969f0ce93fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-source-owner.source-freeze.json",
+      "blob": "6634fecc3c398a0147df7fb5187b089f990d2d9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-file_metrics.csv",
+      "blob": "4f8d9b898f492f295b858abfb2e83a33a88290b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-findings.md",
+      "blob": "4331271d5f2bb01521a813b05db1f128bc029194"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-public_type_duplicates.csv",
+      "blob": "fab85daee814afd8b831696cecd29df03c95af75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-review.json",
+      "blob": "0f44f6e54ffaec29591507584c9c7bcb6e6683bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-verified.executables-after.json",
+      "blob": "8a8af6c510b449b1045bb611cc3a548ffe1d5921"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-verified.executables-before.json",
+      "blob": "125002e2c6cb6a8977dbcb48d287d2398d245fb0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-verified.source-freeze.json",
+      "blob": "a85b0b2a394acf5822c7d805048ce59720838f96"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "bfd61c0fae11da6580b34d7f6183731bd0ec5725"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "f7a5c1f4a72428991b272cb5ff7f4ec554b2756d"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "aac70dc638f92977c09cef12ee5d46ac769b513f69c8d9d30348823f01b47b8b",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-26T00:58:22.4144043Z"
+}

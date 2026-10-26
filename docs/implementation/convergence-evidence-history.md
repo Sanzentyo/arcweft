@@ -12338,3 +12338,12 @@ size警告だけを理由とした分割やpublic API拡張は行っていない
 元ログ・receipt・freeze・実行ファイルhash・前checkpointの公開記録の79原本をbyte差分0で保存した。
 [構造・所有境界](acceptance-evidence/task-program-capture-structure-review.json)、
 [checkpoint公開照合](acceptance-evidence/task-program-capture-source-checkpoint.verified.json)。
+
+このowner修復と検証記録は `e08b0f3cf2d0739a0b2223c30c12029fa428c31d` としてmainへ公開した。
+親 `af3684d752c9530b698844b56f50d04d4cc8585f`、tree
+`2727c86014068c47ea0df9719d0150ee47c26765`、patch SHA-256
+`aac70dc638f92977c09cef12ee5d46ac769b513f69c8d9d30348823f01b47b8b`。
+公開87 blob・原本79件のbyte差分0、元tracked WIP 14件を保持し、公開後のindexは空だった。
+この公開後のSourceを変更せず、R3176／R3177で全53逆依存を別途確認する。
+[owner公開照合](acceptance-evidence/task-program-capture-owner.verified.json)、
+[逆依存の開始・入力記録](acceptance-evidence/task-program-capture-reverse-start.json)。
