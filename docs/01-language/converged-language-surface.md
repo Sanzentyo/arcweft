@@ -1,10 +1,10 @@
 # Converged Language, Content, and Presentation Surface
 
-This chapter is the maintained authority for the final Arcweft authoring
-surface shared by expressions, Dialogue/RichText, View construction, and
-presentation lifecycle. More specialized chapters retain their detailed
-runtime and layout contracts, but conflicting source examples or aliases in
-those chapters are obsolete and must be migrated to this surface.
+This chapter is the maintained authority for the shared Arcweft authoring
+surface across expressions, Dialogue/RichText, View construction, and
+presentation lifecycle. Specialized chapters remain the detailed authorities
+for their language, runtime, and layout contracts. Keep their source examples
+consistent with the shared surface defined here.
 
 ## One syntax owner per operation
 

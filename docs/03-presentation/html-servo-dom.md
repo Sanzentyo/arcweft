@@ -10,16 +10,11 @@ Web:
   Browser DOM backend
 ```
 
-## HtmlViewHost
+## Host boundary
 
-```rust
-pub trait HtmlViewHost {
-    fn create_panel(&mut self, spec: HtmlPanelSpec) -> Result<HtmlPanelId>;
-    fn destroy_panel(&mut self, id: HtmlPanelId);
-    fn set_props(&mut self, id: HtmlPanelId, props: serde_json::Value);
-    fn poll_events(&mut self) -> Vec<HtmlViewEvent>;
-}
-```
+Native and Web provide host adapters for HTML panels. Core stays independent
+of Servo and browser DOM; panel placement, input policy, and Agent projection
+follow the shared [Layer System](layers.md) contract.
 
 ## DSL
 
@@ -68,5 +63,3 @@ DOM 版は `data-arcweft-entity` / `data-arcweft-action` を使い、Agent 観�
 ## Headless
 
 headless では実 Servo/DOM がなくても、`HtmlPanelSpec` と View metadata から仮想 View tree を返す。
-
-

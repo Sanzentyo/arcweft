@@ -79,31 +79,6 @@ Arcweft runtime:
 
 This is intentionally a policy boundary: scripts ask for `capture.microphone`, not for arbitrary browser APIs.
 
-## Native camera backend comparison
-
-| Topic | `shiguredo_video_device` | `nokhwa` |
-|---|---|---|
-| Primary role | Native video device library | Simple cross-platform webcam capture library |
-| Native platforms | macOS AVFoundation, Linux V4L2/PipeWire, Windows Media Foundation | Cross-platform backends through `input-*` features |
-| Web target | No; use `web-sys` for Web | Not the primary Web path for Arcweft |
-| API style | Device list, config, callback capture | `Camera` abstraction, frame/frame_raw, optional callback camera |
-| Frame lifetime | Callback frame memory valid only during callback; copy via owned frame if retained | `frame()` returns processed buffer, `frame_raw()` returns raw borrowed/Cow data |
-| Blocking behavior | Callback based; backend details still matter | Docs note many capture backends are blocking |
-| Linux choices | V4L2 default, optional PipeWire; mutually exclusive features | Backend feature selection; order generally native -> UVC -> GStreamer |
-| Arcweft default | Preferred native backend | Optional compatibility backend |
-
-### Recommendation
-
-Use `shiguredo_video_device` as the default native camera backend for Arcweft because it has explicit AVFoundation/V4L2/PipeWire/Media Foundation coverage and a clear device/config/callback model. Use `nokhwa` as an optional backend for cases where its simple `Camera` abstraction, raw frame access, or existing ecosystem examples are useful.
-
-```toml
-[features]
-capture-audio-cpal = ["dep:cpal"]
-capture-video-shiguredo = ["dep:shiguredo_video_device"]
-capture-video-nokhwa = ["dep:nokhwa"]
-capture-web-media = ["dep:web-sys", "dep:wasm-bindgen", "dep:js-sys"]
-```
-
 ## Capture architecture
 
 ```text
@@ -333,31 +308,6 @@ agent_raw_frames = false
 show_indicator = true
 ```
 
-## Crate layout
-
-```text
-arcweft-capture-core
-  CaptureRequest, CaptureEvent, CaptureStream, constraints, permissions
-
-arcweft-capture-audio-cpal
-  CPAL adapter for microphone/speaker streams
-
-arcweft-capture-video-shiguredo
-  shiguredo_video_device native camera adapter
-
-arcweft-capture-video-nokhwa
-  optional nokhwa adapter
-
-arcweft-capture-web
-  web-sys MediaDevices / MediaStream / MediaStreamTrack adapter
-
-arcweft-capture-virtual
-  deterministic fixtures, test patterns, generated audio/video
-
-arcweft-capture-agent
-  MCP/CLI observation and controlled test capture tools
-```
-
 ## Implementation notes
 
 - Keep device callbacks short and non-panicking.
@@ -383,46 +333,15 @@ pub device @device.depth_camera: UsbRaw {
 watch signal @signal.depth_frame from device.latest(@device.depth_camera)
 ```
 
-## Generator / Stream policy
-
-Capture devices do not require a general-purpose generator as their primary abstraction. Arcweft uses:
-
-```text
-Result<Need<Result<CaptureHandle, CaptureError>>, AdmissionError>
-  for permission/startup
-
-Stream<AudioFrame, AudioError> / Stream<VideoFrame, VideoError>
-  for ordered frame delivery
-
-Watch<VideoFrameHandle> / Watch<f32>
-  for latest camera frame, audio level, VAD, pose, etc.
-```
-
-Generator syntax is still useful as a **stream transform**:
-
-```arcw
-fn microphone_level(
-    frames: Stream<AudioFrame, AudioError>,
-) -> Stream<f32, AudioError> {
-    for frame in frames {
-        yield frame.rms()
-    }
-}
-```
-
-A generator cannot open microphone or camera devices. It must consume a granted capture port. See [Streams and generators](../02-runtime/streams-generators.md).
-
 ## USB-adjacent cameras and microphones
 
 If a camera or microphone appears as a standard OS media device, Arcweft treats it as capture and uses the capture backends in this chapter. If it is a vendor-specific USB/HID device, Arcweft treats it as [device I/O](../schemas/device-io-manifest.md) and requires a typed protocol parser.
 
 
-## Device stream policy
+## Device stream boundary
 
-Camera and microphone frames are represented as typed `Stream<T, E>` values
-returned by ordinary external capability operations after permissioned
-acquisition. Arcweft does not use a source declaration or a general-purpose
-generator to open capture devices. Callbacks and browser events are normalized
-by the capability/host boundary before they reach the typed stream. See
-[Device Streams](../02-runtime/device-streams.md).
-
+Capture admission, frame stream lifecycle, generator transforms, replay,
+backpressure, and callback normalization are owned by
+[Device Streams](../02-runtime/device-streams.md) and
+[Streams, Generators, and External Capabilities](../02-runtime/streams-generators.md).
+This chapter owns capture-specific permission, privacy, and device constraints.

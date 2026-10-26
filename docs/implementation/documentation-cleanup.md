@@ -318,10 +318,6 @@ version-one AWFB/AWBC契約とresource・patch・signature要件は残した。
 前段sourceの全62逆依存結果を、新sourceの実行結果と誤読できる表現も訂正した。
 受入の取消しや新しい不具合認定ではなく、証拠を適用できる入力と境界の明確化である。
 
-Generic Matchの受入・公開済み状態を維持し、新規不具合のない完了項目を残作業へ戻していない。
-数値・失敗・full SHAは表または検証履歴・原本に保持した。削除済みの歴史的設計や
-旧ロードマップを現状のauthorityとして復活させていない。
-
 最終の資料確認では相対link 34件、fenceと40桁識別子の保全、保持WIPを照合した。
 通常の `git diff --cached --check` は、byte不変で取り込んだCRLFのJSON原本等を
 trailing whitespaceと判定して終了1だった。原本を改行変換せず、既述の
@@ -425,9 +421,6 @@ Semaに型・schema・Source関数値入口が加わったため、現状一覧�
 新入力の対象5件の成功と、前段全1,337件の成功、途中失敗、Compiler移行漏れを分けて記した。
 全53逆依存とCLIの集計はR2929の旧入力の観測であり、新Sema入力の横断成功へ転用しない。
 過去のcheck／Clippy成功は履歴へ残し、直近workspace checkの終了101を現状のgate欄へ反映した。
-Generic Matchの受入を取り消す新規根拠はなく、受入・公開済みを維持する。
-実際の結果・full SHAは削除せず、重複する新しい残作業一覧や設計計画は追加していない。
-
 R2946の終端後は、現状一覧の実行中表示を1,339／1,339 PASSへ更新した。
 意味解析の公開SHAは `f7841d517c0bf5fe7a6ca8e667072dff2e701219`。
 実Compilerの失敗とSource実行の未接続は残し、旧入力の横断成功へ読み替えていない。
@@ -439,7 +432,7 @@ R2946の終端後は、現状一覧の実行中表示を1,339／1,339 PASSへ更
 現状一覧の「直近workspace checkはCompiler移行漏れで失敗」を、修復後R2949の終了0へ置換した。
 R2938／R2947／R2948の実際の失敗とfull SHAは履歴・原本に保持する。
 型・codecとIR product構築の実装を、SourceのNeed構築・実行受入と区別した。
-新しいCore入力へ先行Sema／横断runの成功を転用せず、Generic Matchの受入は維持した。
+新しいCore入力へ先行Sema／横断runの成功を転用していない。
 
 ## 現行ツール章の旧API案と現状説明の重複を整理 — 2026-10-25
 
@@ -549,3 +542,33 @@ C2監査時のclean main／HEADとoriginの一致・両diff checkのPASS・実�
 レビュー原本を含む基準の凍結証拠3,991ファイルは全hash一致、変更・欠落0。
 この資料整理のためにRust検証を再実行していない。進行中の実装とその検証は別cutで扱う。
 [対象・削除理由・識別子と証拠の保全照合](acceptance-evidence/task-documentation-obsolete-prose-luna-audit.json)。
+
+## 残存する設計スケッチと現状説明の集約 — 2026-10-26
+
+公開main `173e4a69b1fb2a9375175874f6491001c9d030b6` を照合基点とし、
+GPT-6 Luna／maxの3担当へ言語・runtime章、presentation・tooling章、検証履歴の
+削除・縮約判断を委ねた。親が差分と所有APIを確認した。追加整理の理由は次のとおり。
+
+- 音声章の`AudioDesiredState`／旧`AudioCommand`スケッチと段階的crate案を削除した。
+  現在の`AudioGraph`とinteraction-modelの`AudioCommandEnvelope`へ参照を統一した。
+  HTMLの未所有host traitとSVGのbackend enumも、共有layer／renderer契約への参照に置換した。
+- capture章のbackend比較・feature例・crate配置案と重複するstream説明を削除した。
+  permission付き取得、現行backend選択、Stream／Watchとdevice境界の契約は保持した。
+- Agent章のCLI例・画像取得の重複をCLI／captureの所有章へ集約した。
+  旧「将来fit/containを設計する」という作業説明を除き、現在の出力`scale_policy = "raw"`
+  とoutput viewport座標へ訂正した。
+- 言語共通章の「他章は移行待ち」という一括宣言と、timeoutの仮のlegacy診断説明を削除した。
+  詳細契約の所有章と通常combinatorの規則を残し、構文や実行仕様を変更していない。
+- 検証履歴の古い担当者割当・設計指示・次回gateの指示を削除した。
+  失敗の原因記述・件数、実行済みworkspace check、出典とfull Git識別子は保持した。
+  この整理記録のGeneric Match受入維持という重複文も冒頭の訂正理由へ集約した。
+
+現状一覧では37の機能境界と横断検証を分けた。R3095の旧逆依存runとcapture共有gateは、
+後続runがあるため独立した現状項目から外し、結果と原本への参照を検証履歴に保持した。
+直近checkpointの16 Rustファイルが検証freezeと一致することを確認し、
+その2 library・共有gateの結果を以前の全53逆依存runと混ぜていない。
+今回の資料整理によるRust／Cargoの新規実行は行っていない。
+
+追加整理の12 Markdownでは相対link 90件が解決し、未閉鎖fence・full Git識別子の欠落・
+既存検証原本の変更は0。現状一覧の29 full commit SHAはGit objectとmainのancestorを照合した。
+元のuntracked実ファイル6件はhash差分0、文書の`git diff --check`も終了0だった。

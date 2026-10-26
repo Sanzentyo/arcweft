@@ -16041,17 +16041,13 @@ full failure diagnostics in
    `crates/arcweft-cli/src/app/jit.rs::jit_check_source_target` reads
    `plan.pure_helpers()`. Current `final_flow` lowering emits ordinary pure
    functions as admitted `RuntimeFunctionSite` expression bodies; it creates no
-   source helper row. The same source-site authority must reach VM/AOT/native
-   requests and runtime/batch acceleration. Copying source bodies into a second
-   helper authority or changing acceleration expectations to zero is not a
-   repair. The remaining agent owns this complete production boundary.
+   source helper row.
 2. **Rich-text child ranges lose their owner origin.** Three clear/page capture
    tests reach valid runtime content but report child range `0..1` before owner
-   origin `6`. The root owns the typed display-range repair; capture assertions
-   remain the acceptance behavior.
+   origin `6`. Capture assertions remain the acceptance behavior.
 3. **Metadata-only AWBC products emit a source map for absent block zero.** Three
-   tests/benches fail verifier bounds checks on an empty block inventory. The
-   root owns the source-map producer repair; verifier rejection remains intact.
+   tests/benches fail verifier bounds checks on an empty block inventory.
+   Verifier rejection remains intact.
 `````
 
 `````text
@@ -16893,8 +16889,7 @@ Verbatim paragraphs carrying observed validation, test, or audit outcomes:
   pass-through recipes.
 - `DataFormat`, dialogue identity, runtime collection conversions, compact
   resource codecs, and unpublished session-save identity were moved to their
-  owning typed boundaries. The remaining independent candidates are ranked in
-  `independent-cleanup-inventory-2026-07-10.md`.
+  owning typed boundaries.
 - Dialogue `[p]` and `[l]` now have stateful reveal/page/line advancement.
   Native and Web loops retain a page cursor within one display frame instead
   of treating a planner split as a complete paging implementation.
@@ -21297,8 +21292,7 @@ the changed-file scan supplies the corresponding whitespace evidence.
 ### Verification
 The disk embargo was lifted after `cargo clean`. Before the correction child
 was integrated, the root checkout passed
-`cargo check --workspace --all-targets --all-features`. The integrated cut
-repeats that check together with the remaining review gates:
+`cargo check --workspace --all-targets --all-features`.
 `````
 
 `````text

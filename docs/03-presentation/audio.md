@@ -1,6 +1,9 @@
 # Audio / Spatial / TTS / BGM
 
-音声は後付けの再生APIではなく、`AudioGraph` と `AudioDesiredState` として構造化する。
+Authored audio resources use a validated `AudioGraph`; runtime-to-host audio
+operations use typed `AudioCommandEnvelope` values. Their Rust owners are
+[`arcweft-audio-core`](../../crates/arcweft-audio-core/src/graph.rs) and the
+[`interaction-model audio contract`](../../crates/arcweft-interaction-model/src/audio.rs).
 
 ## 目的
 
@@ -12,36 +15,11 @@
 - Agent / test / bench から観測可能。
 - native / web 両対応。
 
-## crate
+## Audio model
 
-```text
-arcweft-audio-core
-  AudioCommand, AudioDesiredState, AudioGraph, Cue, Bus
-
-arcweft-audio-device-cpal
-  CPAL adapter for native/Web audio input and output
-
-arcweft-audio-mixer
-  mixer, bus, send, ducking, loudness, snapshots
-
-arcweft-audio-spatial
-  listener, source, panner, HRTF/binaural adapter
-
-arcweft-audio-tts
-  TtsProvider, VoiceProfile, SpeechRequest, viseme/phoneme events
-
-arcweft-audio-bgm
-  BGM cue, stem, adaptive music, loop, transition, music state
-
-arcweft-audio-authoring
-  BGM creation DSL, MIDI-like events, pattern, arrangement, pre-render
-
-arcweft-audio-kira
-  native backend adapter
-
-arcweft-audio-web
-  WebAudio backend adapter
-```
+`AudioGraph` owns authored assets, buses, effects, and snapshots. Runtime
+commands and their deterministic dispatch identity are defined by the shared
+interaction model; this chapter does not duplicate their Rust data types.
 
 ## Audio device I/O
 
@@ -58,36 +36,6 @@ Web:
 ```
 
 Microphone input is treated as a capture source and is specified in [Microphone / Camera Capture Devices](capture-devices.md).
-
-## AudioDesiredState
-
-Audio は imperative に鳴らすのではなく、できるだけ desired state と command を併用する。
-
-```rust
-pub struct AudioDesiredState {
-    pub bgm: Option<BgmDesiredState>,
-    pub ambience: Vec<AmbienceDesiredState>,
-    pub spatial_sources: Vec<SpatialSourceDesiredState>,
-    pub mixer_snapshot: MixerSnapshotRef,
-}
-```
-
-瞬間的な音は command。
-
-```rust
-pub enum AudioCommand {
-    EnsureBgm(BgmCommand),
-    StopBgm { id: StableAudioId, fade: Duration },
-    PlayOneShot { event_id: EventId, cue: Ref<Cue>, volume: f32 },
-    PlayVoice { line: Ref<DialogueLine>, cue: Ref<Cue>, sync: VoiceSyncPolicy },
-    SetMixerSnapshot { snapshot: Ref<MixerSnapshot>, transition: Duration },
-    SetListener(ListenerTransform),
-    UpdateSpatialSource(SpatialSourceCommand),
-    SynthesizeSpeech(TtsRequest),
-}
-```
-
-`PlayOneShot` は `event_id` で重複再生を防ぐ。
 
 ## Cue
 
@@ -408,13 +356,3 @@ arcweft.audio_render_bgm
 arcweft.tts_preview
 arcweft.audio_wait_until_finished
 ```
-
-## 実装方針
-
-1. `arcweft-audio-core` で型と command を定義。
-2. `arcweft-audio-mixer` で bus/snapshot/ducking を実装。
-3. `arcweft-audio-bgm` で loop/stem/adaptive music を実装。
-4. `arcweft-audio-tts` で provider trait と cache を実装。
-5. native/web backend を adapter として分離。
-6. Agent/test/bench から観測できるように signal/metric を出す。
-

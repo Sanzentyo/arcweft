@@ -37,29 +37,9 @@ layer/object" and "what did I click here" workflows while still updating
 `arcweft.observe` uses the same direct-source versus launch-profile selection
 model as `arcw agent observe`, so the profile-owned dialogue View, Style, and
 inline-failure policy, together with adapter context, are available through MCP
-without also supplying a source path. Capture
-resources are retained in the current
-MCP session by URI, so later captures do not evict earlier PNG/raw resources;
-`resources/read` and `arcweft.resource.read` return the same native renderer
-composition, metadata, and image bytes that each capture tool call produced.
-`arcweft.observe` and `arcweft.capture` both accept `capture_time` as a
-non-negative seconds value for native presentation animation sampling,
-including rich-text effects, shaders, motion functions, typewriter visibility,
-animated proxy bounds, animated image frame selection, hit-testing, and image
-capture. Source ranges and object ids remain stable, while visual bboxes, hit
-regions, glyph alpha, active image frames, object-id/mask attachments, and
-object crops use the sampled native presentation geometry. If
-`capture_step` is set without `capture_time`, native capture uses the step count
-as the animation sample time in seconds and records it as
-`capture_time_millis` on image resources. They also
-accept `viewport_width` and `viewport_height` to reproduce non-default screen
-sizes. Dialogue geometry comes from the selected authored View; Agent requests
-do not carry a second layout-height override.
-Observation reports include a `scene_graph` entry with
-`kind = "layout.viewport_scale"` that records the output viewport, canonical
-1280x720 design viewport, raw `scale_policy = "none"`, content rect, and
-renderer path used by the current native rich-text observer. This keeps raw
-pixel mode explicit in JSON while future fit/contain modes are designed.
+without also supplying a source path. Capture resource shape, URI families,
+retention, and animation sampling are defined by the
+[Agent Observe and Capture Contract](agent-observe-capture-contract.md).
 `arcweft.session.info` returns the latest frame identifiers, resources, images,
 observed layers, observed objects, resource templates, and latest capture
 metadata so a debugger can recover current capture options, object ids, and
@@ -78,18 +58,7 @@ post-action frame summary. Pointer-click synthesis remains outside the current
 MCP action surface. Scroll accepts an observed `region` plus signed i32
 `delta_x_milli` / `delta_y_milli`, converts them to logical pixels, and routes
 through the same live prepared-frame input controller used by native scrolling.
-When the latest observation generated a selected image, reading that image URI
-through `resources/read` or `arcweft.resource.read` returns the cached image
-bytes and metadata from the same observation. This preserves native framebuffer,
-native crop, masked framebuffer crop, isolated-region rich-text layer/object
-captures, and native object-id/mask attachments.
-`resources/list` includes the standard observation/log/signal/audio resources,
-the selected frame image when present, layer color/object-id/mask PNG/raw
-capture refs, and object-local color/object-id/mask PNG/raw capture refs for
-dialogue View and rich-text child objects. Image descriptors also summarize the
-image kind, renderer, scope, composition, and dimensions in their MCP
-description field, so debuggers can choose a viewport, layer, or object capture
-from the list before fetching the full resource body and metadata.
+
 Agent execution traces use the same resource conversion path. The protocol
 surface exposes `AgentResourceKind::Trace`, and `arcweft-agent-mcp` maps typed
 `AgentTraceRecord` arrays to `arcweft://run/{run_id}/trace.arcwx` with
@@ -132,155 +101,7 @@ display JSON, diagnostics, and effectfulness. It mirrors
 `arcw debug db repl-cells`.
 
 
-## Observation
-
-The typed observation and capture shape, scope, URI families, raw RGBA, and
-coordinate-space contract is owned by
-[Agent Observe and Capture Contract](agent-observe-capture-contract.md).
-
-## Image / bbox / polygon / mask
-
-Image kinds, geometry, capture references, and binary resource metadata are
-specified by [Agent Observe and Capture Contract](agent-observe-capture-contract.md).
-
-## Action
-
-MCP actions use enabled observed targets or the direct semantic kinds described
-above. Pointer-click synthesis is not supported by the current MCP action
-surface.
-
-## CLI
-
-Current implemented source/profile observation slice:
-
-```bash
-arcw agent mcp
-arcw agent mcp # then tools/call arcweft.action with action_id or kind
-arcw agent observe game/routes/opening.arcw --json
-arcw agent observe game/routes/opening.arcw --json --image overlay
-arcw agent observe game/routes/opening.arcw --image overlay --out overlay.svg
-arcw agent observe game/routes/opening.arcw --image png --out native.png --json
-arcw agent observe game/routes/opening.arcw --image png --layer dialogue --out dialogue.png --json
-arcw agent observe game/routes/opening.arcw --image png --capture object-id --layer dialogue --out object-id.png --json
-arcw agent observe game/routes/opening.arcw --image raw-rgba --capture mask --object object.dialogue.0.0 --out object-mask.rgba --json
-arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resource image
-arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resource image --mcp
-arcw agent observe game/routes/opening.arcw --image png --capture object-id --layer dialogue --resource all --mcp --mcp-format list
-arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resource image --mcp --mcp-format tool-result
-arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/presentation-tree.json?shader=soft_glow --mcp --mcp-format read
-arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/presentation-tree.json?proxy_type=KeywordHit --mcp --mcp-format read
-arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.channel=choice --mcp --mcp-format read
-arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.mask.rgba
-arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.png --mcp --mcp-format tool-result
-arcw agent observe game/routes/opening.arcw --image raw-rgba --object object.dialogue.0.0 --out object.rgba --json
-arcw agent observe --manifest arcw.toml --profile game.dev --json
-```
-
-CLI and MCP image resources use the same observation `images` slots.
-`--image overlay` emits `kind = "overlay_svg"` and embeds the SVG body
-when requested. `--out` paths must match the selected image format:
-`.svg` for `--image overlay`, `.png` for `--image png`, and `.rgba` for
-`--image raw-rgba`, so an overlay SVG is not accidentally written to a PNG
-filename. `--image png` and `--image raw-rgba` emit `kind = "color"` by default,
-or `kind = "object_id"` / `kind = "mask"` with `--capture object-id` or
-`--capture mask`. `--resource image` returns the selected image as an
-`AgentResource` whose body is base64-encoded binary data, and `--resource image
---mcp` returns MCP `resources/read` compatible contents with a base64 `blob`.
-The MCP server also supports `resources/templates/list`, which returns the
-current URI template families for observation JSON, object JSON, presentation
-tree readback, presentation tree filters, viewport captures, layer
-color/object-id/mask captures, and object color/object-id/mask captures.
-Presentation-tree filters include rich-text proxy id/type/role/struct/parameter
-keys, so a debugger can find all spans backed by a custom `#[text_proxy]`
-struct or a specific typed proxy parameter before choosing an object crop, mask,
-object-id capture, or hit-test point.
-`--mcp-format list` returns MCP `resources/list` compatible descriptors for the
-selected resources and object-local capture refs when `--resource all` is used,
-including image kind, renderer, scope, composition, and dimensions in each image
-descriptor description. `--mcp-format tool-result` returns MCP content blocks;
-single image resources become a compact JSON metadata text block followed by an
-image content block for multimodal clients, and multi-resource observations
-become resource links. Image metadata includes the producing `renderer`
-(`native`, meaning the host/readback adapter), while
-`selected_capture.renderer = "shared_wgpu_prepared_frame"` identifies the
-shared renderer input contract. It also includes structured `scope`
-(`viewport`, `layer`, or `object`) and `composition` (`overlay_vector`,
-`framebuffer`, `framebuffer_crop`, `object_id_attachment`, `mask_attachment`,
-`masked_framebuffer_crop`, or `debug_geometry`), so clients do not need to
-parse the URI to know what was captured or which shared path produced it. Raw
-RGBA metadata includes `pixel_format = "rgba8_unorm"` and `row_stride_bytes =
-width * 4` from the producer's closed pixel-format value. PNG/SVG resources omit
-raw pixel format and stride; URI suffixes do not select an encoding. Zero or
-overflowing raw extents and contradictory stride/MIME values are rejected.
-Raster metadata also
-includes image-local `content_bbox`, viewport-space `content_viewport_bbox`,
-and `content_pixels`, derived from the retained ObjectId/Mask attachment, to
-expose empty crops and bbox drift without background-color guessing. Cropped layer/object
-images include `crop_origin` in viewport coordinates, so an Agent can map
-image-local pixels back to observed object bboxes and rich-text display ranges
-or read the already-translated `content_viewport_bbox` directly.
-For MCP sessions, repeated `arcweft.capture` calls reuse one shared prepared-
-frame capture session; `arcweft.session.info` reports this via
-`shared_capture_session_active`. If the same command also generated an image
-with `--image`, `--read-uri` returns the cached selected image when the URI
-matches `images[0].uri`, so framebuffer, masked layer/object crop, and
-object-id/mask attachment captures keep their original bytes and metadata on
-readback. Other reads are derived only from the retained Color/ObjectId/Mask
-attachments for that exact `PreparedFrame`; no alternate renderer is started.
-Capture exposes the current runtime page/stage only. An issued non-zero
-`?page=N` is accepted when it names the current admitted context's page.
-A historical or mismatched page request is rejected; clients advance the runtime
-to the desired stage and use its issued capture refs. This prevents stale page
-geometry from being re-laid out against a different frame.
-`--layer` crops to the selected layer's object bounds; `--object` crops to one
-observed object's bbox. PNG/raw output is produced by `SharedOffscreenCapture`
-from the normal `SharedRenderer` framebuffer. Full viewport, layer bbox
-crops, and object bbox crops are supported. Rich-text child object crops use
-the prepared item's evaluated paint and actual View affine for text runs, ruby
-annotations, glyphs, and logical clusters.
-The implemented object slice is focused on rich-text/dialogue-View debugging: each
-observed layer includes a viewport bbox, object count, and stable
-`capture_refs` for color/object-id/mask PNG and raw RGBA images. Each
-observed dialogue View includes resolved display text, structured rich-text nodes,
-host events, inline interpolation failures, base styles, viewport bbox, polygon,
-object-local `capture_refs` for color/object-id/mask PNG and raw RGBA crops, the
-object-id debug color used in object-id images, rich-text `display_map` ranges
-for text/interpolation/ruby/control output, and a semantic `advance_text` action.
-The observation carries a version-1 `text_contexts` catalog with each owner's
-complete stage/document context and shaped layout once. Every text object carries
-a scoped `text_context` reference and a strict `rich_text` or `view_text` marker.
-The Objects resource body wraps `objects` and `text_contexts`; hit-test reports
-and standalone image metadata include their selected rows. These references
-preserve exact owner, parent, session, tick, and visual sample identities.
-Capture also checks the actual current prepared context and layout allocations.
-Visible rich-text pages, authored lines, text runs, text glyphs, ruby
-annotations, and glyph clusters are also exposed as `dialogue.rich_text` child
-objects with their own bbox,
-`capture_refs`, and a structured `rich_text_ref` pointing back to the parent
-display-map element, so an Agent can request a crop such as
-`arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png` when a
-specific inline element needs visual inspection. Page child objects use
-`rich_text_ref.kind = text_page`, expose the page text range, and carry
-page-aware color/object-id/mask capture refs, so a whole rendered text page can
-be inspected as directly as a sprite or model object. Line child objects use
-`rich_text_ref.kind = text_line` and split the resolved display text at authored
-hard breaks and page boundaries; their captures are restricted to the native
-text/ruby elements that overlap that line range. For child objects on later
-rendered pages, `rich_text_ref.page` records the page and capture refs include a
-matching `?page=N` query plus `capture_refs[].page` metadata. Child object
-bboxes come from the same evaluated prepared geometry used by native image capture
-where an object maps to concrete glyph/ruby elements, so image crop origins and
-observed child bboxes describe the same glyph, ruby, and cluster geometry.
-Text-glyph and glyph-cluster refs also report renderer-facing `orientation` and
-`vertical_form` metadata so debuggers can distinguish sideways rotation,
-text-combine-upright clusters, and requested vertical alternates.
-Ruby refs report `ruby_base_bbox` and `ruby_annotation_bbox` in viewport space
-so adjacent annotation collision avoidance can be inspected without inferring it
-from the union object bbox. If native metrics are unavailable, the child object
-is omitted instead of emitting an approximate bbox.
-The same `display_map` is also consumed by the native rich-text window path, so
-Agents can compare an object or layer capture against the exact resolved text
-ranges and style/ruby metadata that the player adapter uses.
+## Tool catalog
 
 Tools:
 

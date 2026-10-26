@@ -80,14 +80,5 @@ SVG file
 
 ## Render backend
 
-```rust
-pub enum ViewRenderBackend {
-    WgpuNative,
-    Vello,
-    VelloHybrid,
-    CpuTinySkia,
-    WebDomMetadataOnly,
-}
-```
-
-
+Vector scenes remain backend-neutral data. Rendering and compositing are owned
+by the [WGPU renderer contract](wgpu-renderer.md).

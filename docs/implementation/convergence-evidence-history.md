@@ -12477,3 +12477,8 @@ R3203 Core doctestは75／75 PASS、R3204構造gateは終了0・blocking 0。
 この境界はCore準備APIのcheckpointである。CompilerのSource parallel経路、callbackを所有する
 bounded AwaitMany、停止・公開save／restoreと最新入力の全53逆依存runtimeは、この結果で受入としていない。
 Generic Matchなど、以前に受入・公開した境界の判定は維持する。
+
+このcheckpointの公開commitは `173e4a69b1fb2a9375175874f6491001c9d030b6`、
+parentは `3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f`。
+通常push後の87 pathのblob・tree・patch照合と元WIPの保全確認は差分0だった。
+後続の資料整理でもHEADとorigin/mainの一致、検証済み16 Rustファイルのhash差分0を確認した。

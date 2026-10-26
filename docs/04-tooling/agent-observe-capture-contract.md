@@ -71,6 +71,11 @@ the frame was observed with an explicit `capture_time` or step-derived visual
 time, so subsequent capture or URI readback can reproduce the same animation
 state.
 
+MCP sessions retain the observed `PreparedFrame` attachments for follow-up
+captures. `arcweft.session.info` reports `shared_capture_session_active`;
+subsequent captures derive from the same retained Color/ObjectId/Mask data.
+Reads of retained image resources return their original bytes and metadata.
+
 Frame preparation distinguishes live playback from a visual sample. Live
 playback uses each dialogue stage's retained logical elapsed time. A sample
 evaluates reveal and Fx at the requested stage-local elapsed time while keeping
@@ -102,9 +107,9 @@ viewport coordinates without parsing URI strings.
 Current native Agent observation reports also publish viewport scaling metadata
 as a `scene_graph` entry with `kind = "layout.viewport_scale"`. The entry
 records the output viewport, canonical 1280x720 design viewport, raw
-`scale_policy = "none"`, content rect, scale factors, and renderer path. This
-is report metadata only in the current observer; applying contain/cover/stretch
-to all observed geometry and captures is tracked as a separate design item.
+`scale_policy = "raw"`, content rect, scale factors, and renderer path. It
+describes the transform metadata while observed geometry remains in output-
+viewport coordinates.
 
 ---
 
@@ -213,6 +218,10 @@ arcweft://session/{session}/frame/{frame}/object.{id}.mask.rgba
 
 Paged rich-text child captures append `?page=N` when the object is only visible
 on a non-zero rendered page. The `page` value is also present in metadata.
+An explicit non-zero page is accepted only when it matches the exact current
+prepared page for the requested object scope; historical or mismatched pages
+are rejected. The default page resolves to the current page when that scope has
+one.
 
 Clients should treat URIs as opaque identifiers after discovery. The resource
 metadata is authoritative for renderer, scope, composition, dimensions, and
@@ -392,6 +401,13 @@ The observation should include the effective presentation summary needed to
 debug rich text: layout fields, ruby defaults/overrides, transforms, effects,
 shader refs, object proxy metadata, hit-test regions, source anchors, and the
 resolved `object_layer` / `object_depth` used by text objects.
+The version-1 `text_contexts` catalog stores each admitted text owner's display
+stage or prepared document and shaped layout once. Text objects carry scoped
+`text_context` references; object, hit-test, and image-resource responses carry
+the catalog or its selected owner rows. The reference scope binds session,
+frame, tick, and capture sample, so a crop cannot resolve through another
+observation's layout. Its typed owner is
+[`AgentTextContextCatalog`](../../crates/arcweft-agent-protocol/src/text_context.rs).
 Prepared-glyph `opacity_milli` is the effective local opacity after the paint
 opacity, resolved transform opacity, and complete closed mask chain. A glyph
 with effective zero opacity is reported as not visible and is excluded from

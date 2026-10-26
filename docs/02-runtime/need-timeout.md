@@ -64,8 +64,8 @@ tryawait source
 ```
 
 `with` observes temporal Pending state; `timeout` owns a race; `match` and
-`try` consume its Result value. A legacy timeout branch, if recognized for a
-migration diagnostic, never remains as an executable compatibility path.
+`try` consume its Result value. Timeout is an ordinary combinator call, not an
+Await branch.
 
 ## Logical clock and start point
 
