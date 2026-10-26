@@ -1161,10 +1161,7 @@ pub enum FlowOp {
     ProgramTask {
         name: Option<String>,
         binding: RuntimePattern,
-        producer: crate::task::NeedProducerDefinition,
-        delivery: crate::task::ProgramTaskDelivery,
-        captures: Vec<RuntimeProgramTaskCapture>,
-        body: Vec<FlowOp>,
+        template: RuntimeProgramTaskTemplate,
     },
     Scope {
         identity: crate::scope::RuntimeScopeIdentity,
@@ -1210,6 +1207,17 @@ pub enum FlowOp {
 pub struct RuntimeProgramTaskCapture<Local = RuntimeLocalDeclarationId> {
     pub local: Local,
     pub mode: crate::value::RuntimeLocalReadMode,
+}
+
+/// Original executable body and launch contract of an independent Program.
+/// Seed and admitted forms share this owner; local and operation coordinates
+/// are resolved together by the enclosing plan builder.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeProgramTaskTemplate<Local = RuntimeLocalDeclarationId, Operation = FlowOp> {
+    pub producer: crate::task::NeedProducerDefinition,
+    pub delivery: crate::task::ProgramTaskDelivery,
+    pub captures: Vec<RuntimeProgramTaskCapture<Local>>,
+    pub body: Vec<Operation>,
 }
 
 impl<Local> RuntimeProgramTaskCapture<Local> {

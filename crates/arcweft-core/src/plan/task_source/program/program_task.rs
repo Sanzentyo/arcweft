@@ -9,7 +9,7 @@ use crate::awbc::schema::{
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::task_source::{RuntimeTaskSourceError, RuntimeTaskSourceRef};
 use crate::plan::{
-    FlowOp, RuntimeFunctionInputSource, RuntimeFunctionInputTransfer, RuntimeFunctionSemanticRole,
+    RuntimeFunctionInputSource, RuntimeFunctionInputTransfer, RuntimeFunctionSemanticRole,
     RuntimeGeneratedFunctionRole, RuntimeTaskPlanSealLimits,
 };
 use crate::task::TaskPolicy;
@@ -122,12 +122,12 @@ impl RuntimeTaskSourceProgram {
         let source = original
             .task_source_by_expected_key(&program.source, limits, meter)
             .map_err(|source| Error::Source { task, source })?;
-        let Some(FlowOp::ProgramTask {
+        let Some(crate::plan::RuntimeProgramTaskTemplate {
             producer,
             delivery,
             captures,
             ..
-        }) = source.request_endpoint().operation()
+        }) = source.request_endpoint().program_template()
         else {
             return Err(mismatch(Field::Kind));
         };

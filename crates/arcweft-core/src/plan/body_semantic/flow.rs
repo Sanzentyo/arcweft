@@ -198,9 +198,13 @@ impl RuntimeBodySemanticContext<'_> {
                 self.write_host_arguments_metadata(encoder, &target.args)?;
             }
             FlowOp::ProgramTask {
-                producer,
-                delivery,
-                captures,
+                template:
+                    crate::plan::RuntimeProgramTaskTemplate {
+                        producer,
+                        delivery,
+                        captures,
+                        ..
+                    },
                 ..
             } => {
                 Self::write_task_reference(

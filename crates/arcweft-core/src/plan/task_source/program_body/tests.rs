@@ -9,7 +9,11 @@ fn thread_coordinate(plan: &RuntimePlan) -> &RuntimeTaskPlanBuildCoordinate {
         .iter_with_ids()
         .find_map(|(_, function)| {
             function.body().executable()?.ops().iter().find_map(|op| {
-                if let FlowOp::ProgramTask { producer, .. } = op {
+                if let FlowOp::ProgramTask {
+                    template: crate::plan::RuntimeProgramTaskTemplate { producer, .. },
+                    ..
+                } = op
+                {
                     Some(&producer.plan)
                 } else {
                     None
@@ -29,9 +33,13 @@ fn compiler_program_body_borrows_the_original_operation_and_enclosing_function()
     let [
         _,
         FlowOp::ProgramTask {
-            producer,
-            captures,
-            body,
+            template:
+                crate::plan::RuntimeProgramTaskTemplate {
+                    producer,
+                    captures,
+                    body,
+                    ..
+                },
             ..
         },
         _,

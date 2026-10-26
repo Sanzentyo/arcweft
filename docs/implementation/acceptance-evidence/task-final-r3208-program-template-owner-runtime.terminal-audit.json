@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "9b1657dd6a6d61586087cbd33c2da5a76805f1dd",
+  "run": "task-final-r3208-program-template-owner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  48.172s] 2181 tests run: 2181 passed, 0 skipped",
+  "caseRowSource": "complete-live-status-before-terminal-summary",
+  "executed": 2181,
+  "passed": 2181,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-26T06:31:08.8765798Z"
+}

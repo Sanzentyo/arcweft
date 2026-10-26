@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "base": "9b1657dd6a6d61586087cbd33c2da5a76805f1dd",
+  "root": "arcweft-core",
+  "packages": [
+    {
+      "name": "arcweft",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft#0.1.0"
+    },
+    {
+      "name": "arcweft-adapter-desktop",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-desktop#0.1.0"
+    },
+    {
+      "name": "arcweft-adapter-sema",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+    },
+    {
+      "name": "arcweft-agent-mcp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+    },
+    {
+      "name": "arcweft-agent-mcp-client",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+    },
+    {
+      "name": "arcweft-agent-policy",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-policy#0.1.0"
+    },
+    {
+      "name": "arcweft-agent-protocol",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-protocol#0.1.0"
+    },
+    {
+      "name": "arcweft-agent-repl",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+    },
+    {
+      "name": "arcweft-agent-runner",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+    },
+    {
+      "name": "arcweft-browser-bench",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0"
+    },
+    {
+      "name": "arcweft-bundle",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0"
+    },
+    {
+      "name": "arcweft-bundle-assets",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle-assets#0.1.0"
+    },
+    {
+      "name": "arcweft-character-view",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-character-view#0.1.0"
+    },
+    {
+      "name": "arcweft-cli",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+    },
+    {
+      "name": "arcweft-compiler",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+    },
+    {
+      "name": "arcweft-core",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0"
+    },
+    {
+      "name": "arcweft-debug-model",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-model#0.1.0"
+    },
+    {
+      "name": "arcweft-debug-sqlite",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-sqlite#0.1.0"
+    },
+    {
+      "name": "arcweft-dialogue",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0"
+    },
+    {
+      "name": "arcweft-glyphon",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0"
+    },
+    {
+      "name": "arcweft-host-adapter",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-host-adapter#0.1.0"
+    },
+    {
+      "name": "arcweft-lang-jit-cranelift",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-jit-cranelift#0.1.0"
+    },
+    {
+      "name": "arcweft-lang-sema",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+    },
+    {
+      "name": "arcweft-launch",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0"
+    },
+    {
+      "name": "arcweft-lsp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+    },
+    {
+      "name": "arcweft-player-native",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+    },
+    {
+      "name": "arcweft-player-scene",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+    },
+    {
+      "name": "arcweft-player-text-input",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-text-input#0.1.0"
+    },
+    {
+      "name": "arcweft-player-web",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+    },
+    {
+      "name": "arcweft-project",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0"
+    },
+    {
+      "name": "arcweft-project-loader",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+    },
+    {
+      "name": "arcweft-rag",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-rag#0.1.0"
+    },
+    {
+      "name": "arcweft-render-text",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0"
+    },
+    {
+      "name": "arcweft-render-web",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-render-web#0.1.0"
+    },
+    {
+      "name": "arcweft-render-wgpu",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0"
+    },
+    {
+      "name": "arcweft-resource-manifest",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0"
+    },
+    {
+      "name": "arcweft-resource-model",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0"
+    },
+    {
+      "name": "arcweft-runtime-accelerator",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-accelerator#0.1.0"
+    },
+    {
+      "name": "arcweft-runtime-codegen",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-codegen#0.1.0"
+    },
+    {
+      "name": "arcweft-runtime-driver",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+    },
+    {
+      "name": "arcweft-runtime-host",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+    },
+    {
+      "name": "arcweft-runtime-plan",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+    },
+    {
+      "name": "arcweft-runtime-scheduler",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-scheduler#0.1.0"
+    },
+    {
+      "name": "arcweft-save",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0"
+    },
+    {
+      "name": "arcweft-test",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+    },
+    {
+      "name": "arcweft-text-layout",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0"
+    },
+    {
+      "name": "arcweft-text-model",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-text-model#0.1.0"
+    },
+    {
+      "name": "arcweft-tooling",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+    },
+    {
+      "name": "arcweft-verify",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+    },
+    {
+      "name": "arcweft-verify-lsp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+    },
+    {
+      "name": "arcweft-verify-oxiz",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+    },
+    {
+      "name": "arcweft-verify-z3",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+    },
+    {
+      "name": "arcweft-view",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0"
+    }
+  ],
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "inverseSha256": "91de9f9e6907b64e903ad853a129f7f861f4d2a21ee1472aa4ea2860eec6101b"
+}

@@ -978,10 +978,12 @@ impl Reader<'_, '_, '_> {
             28 => Op::ProgramTask {
                 name: self.optional_text()?,
                 binding: self.pattern()?,
-                producer: self.producer_definition()?,
-                delivery: self.program_task_delivery()?,
-                captures: self.program_task_captures()?,
-                body: self.body()?,
+                template: crate::plan::RuntimeProgramTaskTemplate {
+                    producer: self.producer_definition()?,
+                    delivery: self.program_task_delivery()?,
+                    captures: self.program_task_captures()?,
+                    body: self.body()?,
+                },
             },
             29 => Op::Scope {
                 identity: self.scope()?,

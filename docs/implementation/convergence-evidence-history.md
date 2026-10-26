@@ -12482,3 +12482,38 @@ Generic Matchなど、以前に受入・公開した境界の判定は維持す�
 parentは `3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f`。
 通常push後の87 pathのblob・tree・patch照合と元WIPの保全確認は差分0だった。
 後続の資料整理でもHEADとorigin/mainの一致、検証済み16 Rustファイルのhash差分0を確認した。
+
+資料整理の公開commitは `9b1657dd6a6d61586087cbd33c2da5a76805f1dd`、
+parentは `173e4a69b1fb2a9375175874f6491001c9d030b6`。通常push後の12 pathのblob・tree・patch、
+元tracked WIP 14件とuntracked実ファイル6件の保全確認は差分0だった。
+
+## 元SourceのProgram template一元化 — 2026-10-26
+
+公開main `9b1657dd6a6d61586087cbd33c2da5a76805f1dd` を基点に、Program taskの
+producer・delivery・capture ABI・bodyを`RuntimeProgramTaskTemplate`の所有へ揃えた。
+construction seedとadmitted operationは同じ型を使い、Coreからruntime-planへの逆向き依存は増やさない。
+元Source endpointのtyped projectionを、Compiler用body取得・capture検査・Native／AWBC起動認証で共有する。
+operationの個別fieldと、body参照の4本の個別保持を、templateとその借用へ置換した。
+この所有者をcallback workerへも使えるようにするための移行であり、Host専用AwaitManyや
+CompilerのSource parallel経路を接続済みとはしない。version 1のfield grammarとCopy／Move検査は維持した。
+
+初回R3205 checkは12 compiler message（同じ6診断をlib／lib-testで報告）、終了101だった。
+機械置換が別の`RuntimeTaskTemplateArguments::ProgramTask`引数packetにも当たったため、
+その`captures` fieldを復元した。R3206のCore／runtime-plan全target・全feature・locked checkは終了0。
+両runの3,989入力と実際の失敗診断を、成功へ書き換えず原本に保持した。
+
+最終23-file入力のR3207 catalogは2,181件・除外0、R3208は2,181／2,181 PASS、48.172秒、終了0。
+4件の元Source body認証・累積work／capture上限と、Native／AWBCのaffine capture移動、
+Copy拒否時の入力保全、LocalOnly、各step rollback／公開save・restore、Sourceの認証・効果・転送mode拒否を含む
+15件が全選択・全PASS。全catalogと終端case集合、3,989入力と2 executableの前後差分0。
+新しいgraphもCargo metadataと全targetのinverse treeから53逆依存を導出し、99 manifest／lockの差分0を確認した。
+
+R3209 workspace check／R3210 workspace Clippyは全target・全feature・locked、警告あり終了0。
+R3211 Core doctestは75／75 PASS、R3212構造gateは終了0・blocking 0。各3,989入力の差分0。
+23 Rustファイル・2 owner、最大growth 14 physical LOC、300超growth 0。
+Coreは元Program templateとそのSource認証、runtime-planはそのSource lowering／code generationを所有し、
+既存の大きなownerへ無関係な状態・I/O・別policy表・旧readerを加えていない。
+[owner・15件・共有gate・初回失敗と原本33件](acceptance-evidence/task-program-template-owner-checkpoint.json)、
+[構造測定・2 ownerの責任境界](acceptance-evidence/task-program-template-structure-review.json)に保持する。
+全53逆依存runtimeはこの変更後に再実行していない。全体goalの最終受入と、Source parallelの
+callback実行・停止復帰・save／restoreは別に残る。Generic Match等の先行受入は維持する。

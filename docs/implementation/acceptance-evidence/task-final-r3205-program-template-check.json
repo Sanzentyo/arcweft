@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "9b1657dd6a6d61586087cbd33c2da5a76805f1dd",
+  "name": "task-final-r3205-program-template-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r3205-program-template-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-26T06:17:12.4591462Z",
+  "finishedAt": "2026-10-26T06:18:34.7006222Z"
+}

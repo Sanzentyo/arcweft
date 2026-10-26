@@ -6126,18 +6126,23 @@ fn resolve_flow_tail_holes(
             RuntimeFlowOpSeed::ProgramTask {
                 name,
                 binding,
-                producer,
-                delivery,
-                captures,
-                body,
+                template:
+                    arcweft_core::plan::RuntimeProgramTaskTemplate {
+                        producer,
+                        delivery,
+                        captures,
+                        body,
+                    },
             } => {
                 output.push(RuntimeFlowOpSeed::ProgramTask {
                     name,
                     binding,
-                    producer,
-                    delivery,
-                    captures,
-                    body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+                    template: arcweft_core::plan::RuntimeProgramTaskTemplate {
+                        producer,
+                        delivery,
+                        captures,
+                        body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+                    },
                 });
             }
             RuntimeFlowOpSeed::Scope { identity, body } => {
@@ -8417,13 +8422,15 @@ impl<'a> FinalFlowLowerer<'a> {
         let mut ops = vec![RuntimeFlowOpSeed::ProgramTask {
             name: thread.name().map(|name| name.as_str().to_owned()),
             binding,
-            producer,
-            delivery: arcweft_core::task::ProgramTaskDelivery::HostMetadata,
-            captures: captures
-                .into_iter()
-                .map(arcweft_core::plan::RuntimeProgramTaskCapture::copy)
-                .collect(),
-            body,
+            template: arcweft_core::plan::RuntimeProgramTaskTemplate {
+                producer,
+                delivery: arcweft_core::task::ProgramTaskDelivery::HostMetadata,
+                captures: captures
+                    .into_iter()
+                    .map(arcweft_core::plan::RuntimeProgramTaskCapture::copy)
+                    .collect(),
+                body,
+            },
         }];
         ops.extend(self.lower_flow_tail(tail)?);
         Ok(ops)
@@ -9998,7 +10005,14 @@ mod tests {
         )
         .expect("Thread expression statement lowers");
 
-        let [FlowOp::ProgramTask { name, body, .. }] = report.plan.flows()[0].body().ops() else {
+        let [
+            FlowOp::ProgramTask {
+                name,
+                template: arcweft_core::plan::RuntimeProgramTaskTemplate { body, .. },
+                ..
+            },
+        ] = report.plan.flows()[0].body().ops()
+        else {
             panic!("ordinary expression statement must project its typed Thread payload")
         };
         assert!(name.is_none());

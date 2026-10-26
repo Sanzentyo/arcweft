@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "9b1657dd6a6d61586087cbd33c2da5a76805f1dd",
+  "name": "task-final-r3212-program-template-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-template-structure-report"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3212-program-template-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T06:42:09.8888836Z",
+  "finishedAt": "2026-10-26T06:42:13.0321782Z"
+}

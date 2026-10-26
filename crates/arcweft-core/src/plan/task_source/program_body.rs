@@ -39,10 +39,7 @@ impl std::fmt::Debug for RuntimeTaskSourceReadContext {
 pub struct RuntimeProgramTaskBodyRef<'program> {
     source: RuntimeTaskSourceRef<'program>,
     function: &'program RuntimeFunctionSite,
-    producer: &'program NeedProducerDefinition,
-    delivery: crate::task::ProgramTaskDelivery,
-    captures: &'program [crate::plan::RuntimeProgramTaskCapture],
-    body: &'program [FlowOp],
+    template: &'program crate::plan::RuntimeProgramTaskTemplate,
 }
 
 impl RuntimePlan {
@@ -55,25 +52,18 @@ impl RuntimePlan {
     ) -> Result<RuntimeProgramTaskBodyRef<'_>, RuntimeTaskSourceError> {
         let source = self.task_source(coordinate, context.limits, &mut context.meter)?;
         let endpoint = source.request;
-        let Some(FlowOp::ProgramTask {
-            producer,
-            delivery,
-            captures,
-            body,
-            ..
-        }) = endpoint.operation()
-        else {
+        let Some(template) = endpoint.program_template() else {
             context.meter.reject_owner();
             return Err(RuntimeTaskSourceError::NotProgramBody);
         };
         context.meter.charge_work(1).map_err(|error| {
             RuntimeTaskSourceError::Function(crate::plan::RuntimeBodySemanticError::from(error))
         })?;
-        if captures.len() > context.limits.max_function_roles as usize {
+        if template.captures.len() > context.limits.max_function_roles as usize {
             context.meter.reject_owner();
             return Err(RuntimeTaskSourceError::Function(
                 crate::plan::RuntimeBodySemanticError::FunctionRoles {
-                    actual: captures.len(),
+                    actual: template.captures.len(),
                     maximum: context.limits.max_function_roles,
                 },
             ));
@@ -85,10 +75,7 @@ impl RuntimePlan {
         Ok(RuntimeProgramTaskBodyRef {
             source,
             function,
-            producer,
-            delivery: *delivery,
-            captures,
-            body,
+            template,
         })
     }
 }
@@ -107,22 +94,22 @@ impl RuntimeProgramTaskBodyRef<'_> {
 
     #[must_use]
     pub const fn producer(&self) -> &NeedProducerDefinition {
-        self.producer
+        &self.template.producer
     }
 
     #[must_use]
     pub const fn delivery(&self) -> crate::task::ProgramTaskDelivery {
-        self.delivery
+        self.template.delivery
     }
 
     #[must_use]
     pub const fn captures(&self) -> &[crate::plan::RuntimeProgramTaskCapture] {
-        self.captures
+        self.template.captures.as_slice()
     }
 
     #[must_use]
     pub const fn body(&self) -> &[FlowOp] {
-        self.body
+        self.template.body.as_slice()
     }
 }
 

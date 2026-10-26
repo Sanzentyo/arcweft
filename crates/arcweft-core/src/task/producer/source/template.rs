@@ -204,21 +204,24 @@ impl RuntimeTaskSourceRef<'_> {
         }
         self.admit_invocation_binding(program, binding, admission)?;
         let mut locals = Vec::new();
-        match (self.request_endpoint().operation(), &arguments) {
-            (
-                Some(FlowOp::ProgramTask { captures, .. }),
-                RuntimeTaskTemplateArguments::ProgramTask { .. },
-            ) => {
-                admission.validate_metadata_collection(captures.len())?;
-                locals.extend(captures.iter().map(|capture| capture.local));
+        match (
+            self.request_endpoint().program_template(),
+            self.request_endpoint().operation(),
+            &arguments,
+        ) {
+            (Some(template), _, RuntimeTaskTemplateArguments::ProgramTask { .. }) => {
+                admission.validate_metadata_collection(template.captures.len())?;
+                locals.extend(template.captures.iter().map(|capture| capture.local));
             }
             (
+                None,
                 Some(FlowOp::AwaitMany { target, .. }),
                 RuntimeTaskTemplateArguments::AwaitManyBase { .. },
             ) if self.request_endpoint().kind() == EndpointKind::AwaitManyBase => {
                 locals = arguments.capture_locals(&target, admission)?;
             }
             (
+                None,
                 Some(FlowOp::AwaitMany { target, .. }),
                 RuntimeTaskTemplateArguments::AwaitManyChild { .. },
             ) if self.request_endpoint().kind() == EndpointKind::AwaitManyChild => {
@@ -287,9 +290,12 @@ impl RuntimeTaskSourceRef<'_> {
             // The original Program owns its transfer request. Fanout capture
             // packets retain their existing Copy contract; no backend or type
             // identity grants a different custody requirement.
-            let mode = match self.request_endpoint().operation() {
-                Some(FlowOp::ProgramTask { captures, .. }) => captures[index].mode,
-                Some(FlowOp::AwaitMany { .. }) => crate::value::RuntimeLocalReadMode::Copy,
+            let mode = match (
+                self.request_endpoint().program_template(),
+                self.request_endpoint().operation(),
+            ) {
+                (Some(template), _) => template.captures[index].mode,
+                (None, Some(FlowOp::AwaitMany { .. })) => crate::value::RuntimeLocalReadMode::Copy,
                 _ => unreachable!("the complete operand grammar was checked"),
             };
             if values_admitted {

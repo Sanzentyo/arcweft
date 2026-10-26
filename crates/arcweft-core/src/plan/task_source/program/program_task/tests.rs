@@ -2,7 +2,7 @@ use super::*;
 use crate::awbc::schema::*;
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::plan::task_source::RuntimeTaskSource;
-use crate::plan::{RuntimeTaskPlanIndex, RuntimeTaskSourceArtifactLimits};
+use crate::plan::{FlowOp, RuntimeTaskPlanIndex, RuntimeTaskSourceArtifactLimits};
 use std::sync::Arc;
 
 fn meter() -> TaskSemanticMeter {
@@ -39,7 +39,11 @@ fn executable_from(original: RuntimeTaskSourceProgram) -> AwbcProgram {
         )
         .unwrap();
     let Some(FlowOp::ProgramTask {
-        producer, captures, ..
+        template:
+            crate::plan::RuntimeProgramTaskTemplate {
+                producer, captures, ..
+            },
+        ..
     }) = source.request_endpoint().operation()
     else {
         panic!("fixture retains its original Thread")

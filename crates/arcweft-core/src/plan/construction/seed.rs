@@ -545,10 +545,7 @@ pub enum RuntimeFlowOpSeed {
     ProgramTask {
         name: Option<String>,
         binding: RuntimePatternSeed,
-        producer: crate::task::NeedProducerDefinition,
-        delivery: crate::task::ProgramTaskDelivery,
-        captures: Vec<crate::plan::RuntimeProgramTaskCapture<RuntimeLocalSeedId>>,
-        body: Vec<Self>,
+        template: crate::plan::RuntimeProgramTaskTemplate<RuntimeLocalSeedId, Self>,
     },
     Scope {
         identity: RuntimeScopeIdentity,
@@ -1002,7 +999,9 @@ fn collect_control_flow_free_locals(
             }
         }
         RuntimeFlowOpSeed::ProgramTask {
-            binding, captures, ..
+            binding,
+            template: crate::plan::RuntimeProgramTaskTemplate { captures, .. },
+            ..
         } => {
             for capture in captures {
                 if !bound.contains(&capture.local) && !locals.contains(&capture.local) {

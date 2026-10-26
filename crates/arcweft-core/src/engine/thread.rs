@@ -101,7 +101,11 @@ impl Engine {
         &self,
         operation: &super::code_cursor::NativeSourceOperation,
     ) -> Result<PreparedProgramTask, ProgramTaskPreparationError> {
-        let Some(FlowOp::ProgramTask { producer, .. }) = operation.operation(&self.plan) else {
+        let Some(FlowOp::ProgramTask {
+            template: crate::plan::RuntimeProgramTaskTemplate { producer, .. },
+            ..
+        }) = operation.operation(&self.plan)
+        else {
             return Err(crate::task::RuntimeTaskProducerSourceError::RequestKind.into());
         };
         let program = RuntimeTaskSourceProgram::native(Arc::clone(&self.plan));
@@ -114,9 +118,9 @@ impl Engine {
         let source = program
             .original()
             .task_source(&producer.plan, limits, &mut meter)?;
-        let Some(FlowOp::ProgramTask {
+        let Some(crate::plan::RuntimeProgramTaskTemplate {
             producer, captures, ..
-        }) = source.request_endpoint().operation()
+        }) = source.request_endpoint().program_template()
         else {
             return Err(crate::task::RuntimeTaskProducerSourceError::RequestKind.into());
         };

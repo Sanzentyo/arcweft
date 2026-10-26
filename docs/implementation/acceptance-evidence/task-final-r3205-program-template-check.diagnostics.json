@@ -1,0 +1,182 @@
+[
+  {
+    "code": "E0027",
+    "message": "pattern does not mention fields `producer`, `delivery`, `body`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 38,
+        "line_end": 38,
+        "byte_start": 1304,
+        "byte_end": 1356,
+        "label": "missing fields `producer`, `delivery`, `body`"
+      }
+    ],
+    "rendered": "error[E0027]: pattern does not mention fields `producer`, `delivery`, `body`\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:38:27\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing fields `producer`, `delivery`, `body`\n   |\nhelp: include the missing fields in the pattern\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures, producer, delivery, body },\n   |                                                                             ++++++++++++++++++++++++++\nhelp: if you don't care about these missing fields, you can explicitly ignore them\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures, producer: _, delivery: _, body: _ },\n   |                                                                             +++++++++++++++++++++++++++++++++++\nhelp: or always ignore missing fields here\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures, .. },\n   |                                                                             ++++\n\n"
+  },
+  {
+    "code": "E0026",
+    "message": "variant `RuntimeTaskTemplateArguments::ProgramTask` does not have a field named `template`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 38,
+        "line_end": 38,
+        "byte_start": 1294,
+        "byte_end": 1302,
+        "label": "variant `RuntimeTaskTemplateArguments::ProgramTask` does not have this field"
+      }
+    ],
+    "rendered": "error[E0026]: variant `RuntimeTaskTemplateArguments::ProgramTask` does not have a field named `template`\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:38:17\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n   |                 ^^^^^^^^\n   |                 |\n   |                 variant `RuntimeTaskTemplateArguments::ProgramTask` does not have this field\n   |                 help: `RuntimeTaskTemplateArguments::ProgramTask` has a field named `captures`\n\n"
+  },
+  {
+    "code": "E0027",
+    "message": "pattern does not mention field `captures`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 37,
+        "line_end": 39,
+        "byte_start": 1258,
+        "byte_end": 1371,
+        "label": "missing field `captures`"
+      }
+    ],
+    "rendered": "error[E0027]: pattern does not mention field `captures`\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:37:13\n   |\n37 | /             Self::ProgramTask {\n38 | |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n39 | |             }\n   | |_____________^ missing field `captures`\n   |\nhelp: include the missing field in the pattern\n   |\n38 -                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n39 -             }\n38 +                 template: crate::plan::RuntimeProgramTaskTemplate { captures }, captures }\n   |\nhelp: if you don't care about this missing field, you can explicitly ignore it\n   |\n38 -                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n39 -             }\n38 +                 template: crate::plan::RuntimeProgramTaskTemplate { captures }, captures: _ }\n   |\nhelp: or always ignore missing fields here\n   |\n38 -                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n39 -             }\n38 +                 template: crate::plan::RuntimeProgramTaskTemplate { captures }, .. }\n   |\n\n"
+  },
+  {
+    "code": "E0308",
+    "message": "mismatched types",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 40,
+        "line_end": 40,
+        "byte_start": 1408,
+        "byte_end": 1416,
+        "label": "expected `&Vec<RuntimeProgramTaskCapture<_>>`, found `&&[V]`"
+      }
+    ],
+    "rendered": "error[E0308]: mismatched types\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:40:37\n   |\n36 |         match self {\n   |               ---- this expression has type `&RuntimeTaskTemplateArguments<'_, V>`\n37 |             Self::ProgramTask {\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n   |                                                                     -------- first introduced with type `&Vec<RuntimeProgramTaskCapture<_>>` here\n39 |             }\n40 |             | Self::AwaitManyBase { captures, .. }\n   |                                     ^^^^^^^^ expected `&Vec<RuntimeProgramTaskCapture<_>>`, found `&&[V]`\n   |\n   = note: expected reference `&Vec<RuntimeProgramTaskCapture<_>>`\n              found reference `&&'value [V]`\n   = note: in the same arm, a binding must have the same type in all alternatives\n\n"
+  },
+  {
+    "code": "E0308",
+    "message": "mismatched types",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 41,
+        "line_end": 41,
+        "byte_start": 1460,
+        "byte_end": 1468,
+        "label": "expected `&Vec<RuntimeProgramTaskCapture<_>>`, found `&&[V]`"
+      }
+    ],
+    "rendered": "error[E0308]: mismatched types\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:41:38\n   |\n36 |         match self {\n   |               ---- this expression has type `&RuntimeTaskTemplateArguments<'_, V>`\n37 |             Self::ProgramTask {\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n   |                                                                     -------- first introduced with type `&Vec<RuntimeProgramTaskCapture<_>>` here\n...\n41 |             | Self::AwaitManyChild { captures, .. } => captures,\n   |                                      ^^^^^^^^ expected `&Vec<RuntimeProgramTaskCapture<_>>`, found `&&[V]`\n   |\n   = note: expected reference `&Vec<RuntimeProgramTaskCapture<_>>`\n              found reference `&&'value [V]`\n   = note: in the same arm, a binding must have the same type in all alternatives\n\n"
+  },
+  {
+    "code": "E0308",
+    "message": "mismatched types",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 41,
+        "line_end": 41,
+        "byte_start": 1478,
+        "byte_end": 1486,
+        "label": "expected `&[V]`, found `&Vec<RuntimeProgramTaskCapture<_>>`"
+      }
+    ],
+    "rendered": "error[E0308]: mismatched types\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:41:56\n   |\n35 |     fn captures(&self) -> &'value [V] {\n   |                           ----------- expected `&'value [V]` because of return type\n...\n41 |             | Self::AwaitManyChild { captures, .. } => captures,\n   |                                                        ^^^^^^^^ expected `&[V]`, found `&Vec<RuntimeProgramTaskCapture<_>>`\n   |\n   = note: expected reference `&'value [V]`\n              found reference `&Vec<RuntimeProgramTaskCapture<_>>`\n\n"
+  },
+  {
+    "code": "E0027",
+    "message": "pattern does not mention fields `producer`, `delivery`, `body`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 38,
+        "line_end": 38,
+        "byte_start": 1304,
+        "byte_end": 1356,
+        "label": "missing fields `producer`, `delivery`, `body`"
+      }
+    ],
+    "rendered": "error[E0027]: pattern does not mention fields `producer`, `delivery`, `body`\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:38:27\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing fields `producer`, `delivery`, `body`\n   |\nhelp: include the missing fields in the pattern\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures, producer, delivery, body },\n   |                                                                             ++++++++++++++++++++++++++\nhelp: if you don't care about these missing fields, you can explicitly ignore them\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures, producer: _, delivery: _, body: _ },\n   |                                                                             +++++++++++++++++++++++++++++++++++\nhelp: or always ignore missing fields here\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures, .. },\n   |                                                                             ++++\n\n"
+  },
+  {
+    "code": "E0026",
+    "message": "variant `producer::source::template::RuntimeTaskTemplateArguments::ProgramTask` does not have a field named `template`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 38,
+        "line_end": 38,
+        "byte_start": 1294,
+        "byte_end": 1302,
+        "label": "variant `producer::source::template::RuntimeTaskTemplateArguments::ProgramTask` does not have this field"
+      }
+    ],
+    "rendered": "error[E0026]: variant `producer::source::template::RuntimeTaskTemplateArguments::ProgramTask` does not have a field named `template`\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:38:17\n   |\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n   |                 ^^^^^^^^\n   |                 |\n   |                 variant `producer::source::template::RuntimeTaskTemplateArguments::ProgramTask` does not have this field\n   |                 help: `producer::source::template::RuntimeTaskTemplateArguments::ProgramTask` has a field named `captures`\n\n"
+  },
+  {
+    "code": "E0027",
+    "message": "pattern does not mention field `captures`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 37,
+        "line_end": 39,
+        "byte_start": 1258,
+        "byte_end": 1371,
+        "label": "missing field `captures`"
+      }
+    ],
+    "rendered": "error[E0027]: pattern does not mention field `captures`\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:37:13\n   |\n37 | /             Self::ProgramTask {\n38 | |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n39 | |             }\n   | |_____________^ missing field `captures`\n   |\nhelp: include the missing field in the pattern\n   |\n38 -                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n39 -             }\n38 +                 template: crate::plan::RuntimeProgramTaskTemplate { captures }, captures }\n   |\nhelp: if you don't care about this missing field, you can explicitly ignore it\n   |\n38 -                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n39 -             }\n38 +                 template: crate::plan::RuntimeProgramTaskTemplate { captures }, captures: _ }\n   |\nhelp: or always ignore missing fields here\n   |\n38 -                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n39 -             }\n38 +                 template: crate::plan::RuntimeProgramTaskTemplate { captures }, .. }\n   |\n\n"
+  },
+  {
+    "code": "E0308",
+    "message": "mismatched types",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 40,
+        "line_end": 40,
+        "byte_start": 1408,
+        "byte_end": 1416,
+        "label": "expected `&Vec<RuntimeProgramTaskCapture<_>>`, found `&&[V]`"
+      }
+    ],
+    "rendered": "error[E0308]: mismatched types\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:40:37\n   |\n36 |         match self {\n   |               ---- this expression has type `&producer::source::template::RuntimeTaskTemplateArguments<'_, V>`\n37 |             Self::ProgramTask {\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n   |                                                                     -------- first introduced with type `&Vec<plan::RuntimeProgramTaskCapture<_>>` here\n39 |             }\n40 |             | Self::AwaitManyBase { captures, .. }\n   |                                     ^^^^^^^^ expected `&Vec<RuntimeProgramTaskCapture<_>>`, found `&&[V]`\n   |\n   = note: expected reference `&Vec<plan::RuntimeProgramTaskCapture<_>>`\n              found reference `&&'value [V]`\n   = note: in the same arm, a binding must have the same type in all alternatives\n\n"
+  },
+  {
+    "code": "E0308",
+    "message": "mismatched types",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 41,
+        "line_end": 41,
+        "byte_start": 1460,
+        "byte_end": 1468,
+        "label": "expected `&Vec<RuntimeProgramTaskCapture<_>>`, found `&&[V]`"
+      }
+    ],
+    "rendered": "error[E0308]: mismatched types\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:41:38\n   |\n36 |         match self {\n   |               ---- this expression has type `&producer::source::template::RuntimeTaskTemplateArguments<'_, V>`\n37 |             Self::ProgramTask {\n38 |                 template: crate::plan::RuntimeProgramTaskTemplate { captures },\n   |                                                                     -------- first introduced with type `&Vec<plan::RuntimeProgramTaskCapture<_>>` here\n...\n41 |             | Self::AwaitManyChild { captures, .. } => captures,\n   |                                      ^^^^^^^^ expected `&Vec<RuntimeProgramTaskCapture<_>>`, found `&&[V]`\n   |\n   = note: expected reference `&Vec<plan::RuntimeProgramTaskCapture<_>>`\n              found reference `&&'value [V]`\n   = note: in the same arm, a binding must have the same type in all alternatives\n\n"
+  },
+  {
+    "code": "E0308",
+    "message": "mismatched types",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer\\source\\template.rs",
+        "line_start": 41,
+        "line_end": 41,
+        "byte_start": 1478,
+        "byte_end": 1486,
+        "label": "expected `&[V]`, found `&Vec<RuntimeProgramTaskCapture<_>>`"
+      }
+    ],
+    "rendered": "error[E0308]: mismatched types\n  --> crates\\arcweft-core\\src\\task\\producer\\source\\template.rs:41:56\n   |\n35 |     fn captures(&self) -> &'value [V] {\n   |                           ----------- expected `&'value [V]` because of return type\n...\n41 |             | Self::AwaitManyChild { captures, .. } => captures,\n   |                                                        ^^^^^^^^ expected `&[V]`, found `&Vec<RuntimeProgramTaskCapture<_>>`\n   |\n   = note: expected reference `&'value [V]`\n              found reference `&Vec<plan::RuntimeProgramTaskCapture<_>>`\n\n"
+  }
+]

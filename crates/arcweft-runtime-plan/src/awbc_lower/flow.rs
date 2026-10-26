@@ -1672,9 +1672,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.lower_loop(frame, body, result.as_ref(), ops, path);
             }
             FlowOp::ProgramTask {
-                producer,
+                template:
+                    arcweft_core::plan::RuntimeProgramTaskTemplate {
+                        producer, captures, ..
+                    },
                 binding,
-                captures,
                 ..
             } => {
                 if let Some(plan) =

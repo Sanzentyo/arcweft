@@ -7167,7 +7167,30 @@ fn await_many_original_program_with_thread(
             .unwrap();
         ops = vec![
             RuntimeFlowOpSeed::ProgramTask {
-                delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+                template: crate::plan::RuntimeProgramTaskTemplate {
+                    delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+                    captures: vec![crate::plan::RuntimeProgramTaskCapture::copy(source.clone())],
+                    producer: NeedProducerDefinition {
+                        function: RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                            [0xb4; 32],
+                        ),
+                        family: NeedProducerFamily::StructuredTaskPlan,
+                        contract: NeedProducerContractDigest::from_bytes([0xb7; 32]),
+                        plan: coordinate,
+                        producer_site: NeedProducerSiteDigest::from_bytes([0xb8; 32]),
+                        handle_type: crate::task::TaskHandleType::ThreadHandle {
+                            payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(
+                                *aggregate_result.as_bytes(),
+                            ),
+                        },
+                        class: TaskClass::Cpu,
+                        priority: TaskPriority(0),
+                        cancel_scope: CancelScopeId("flow".into()),
+                        policy: TaskPolicy::AlwaysStart,
+                        debug_label: "Result fanout child".into(),
+                    },
+                    body: ops,
+                },
                 name: None,
                 binding: RuntimePatternSeed::new(
                     handle,
@@ -7176,25 +7199,6 @@ fn await_many_original_program_with_thread(
                         mutable: false,
                     },
                 ),
-                captures: vec![crate::plan::RuntimeProgramTaskCapture::copy(source.clone())],
-                producer: NeedProducerDefinition {
-                    function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xb4; 32]),
-                    family: NeedProducerFamily::StructuredTaskPlan,
-                    contract: NeedProducerContractDigest::from_bytes([0xb7; 32]),
-                    plan: coordinate,
-                    producer_site: NeedProducerSiteDigest::from_bytes([0xb8; 32]),
-                    handle_type: crate::task::TaskHandleType::ThreadHandle {
-                        payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(
-                            *aggregate_result.as_bytes(),
-                        ),
-                    },
-                    class: TaskClass::Cpu,
-                    priority: TaskPriority(0),
-                    cancel_scope: CancelScopeId("flow".into()),
-                    policy: TaskPolicy::AlwaysStart,
-                    debug_label: "Result fanout child".into(),
-                },
-                body: ops,
             },
             RuntimeFlowOpSeed::Await {
                 binding: result_binding,
@@ -7281,9 +7285,13 @@ fn await_many_product_program_with_thread(
         .ops()[0];
     let (fanout, thread) = match first {
         crate::plan::FlowOp::ProgramTask {
-            body,
-            producer,
-            captures,
+            template:
+                crate::plan::RuntimeProgramTaskTemplate {
+                    body,
+                    producer,
+                    captures,
+                    ..
+                },
             ..
         } => (&body[0], Some((producer, captures))),
         op => (op, None),

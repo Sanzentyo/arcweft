@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3211-program-template-core-doctest",
+  "actualExitCode": 0,
+  "scope": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T06:42:09.7733894Z"
+}

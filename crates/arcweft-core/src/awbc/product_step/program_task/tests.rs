@@ -601,7 +601,11 @@ fn program_handle_private_fiber_checkpoint_restores_its_original_source() {
             &mut bank,
         )
         .unwrap();
-    let Some(FlowOp::ProgramTask { producer, .. }) = source.request_endpoint().operation() else {
+    let Some(FlowOp::ProgramTask {
+        template: crate::plan::RuntimeProgramTaskTemplate { producer, .. },
+        ..
+    }) = source.request_endpoint().operation()
+    else {
         unreachable!()
     };
     let spec = TaskSpec {

@@ -96,7 +96,40 @@ fn engine_with_carrier(explicit_return: bool, ordinary_need: bool) -> Engine {
                 effects: RuntimeEffectSet::empty(),
                 ops: Box::new([
                     RuntimeFlowOpSeed::ProgramTask {
-                        delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+                        template: crate::plan::RuntimeProgramTaskTemplate {
+                            delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+                            captures: vec![],
+                            producer: NeedProducerDefinition {
+                                function: definition,
+                                family: NeedProducerFamily::StructuredTaskPlan,
+                                contract: NeedProducerContractDigest::from_bytes([0xdc; 32]),
+                                plan: coordinate,
+                                producer_site: NeedProducerSiteDigest::from_bytes([0xdd; 32]),
+                                handle_type: if ordinary_need {
+                                    crate::task::TaskHandleType::Need {
+                                        payload: RuntimeTypeSemanticDigest::from_bytes(
+                                            *boolean.as_bytes(),
+                                        ),
+                                    }
+                                } else {
+                                    crate::task::TaskHandleType::ThreadHandle {
+                                        payload: RuntimeTypeSemanticDigest::from_bytes(
+                                            *boolean.as_bytes(),
+                                        ),
+                                    }
+                                },
+                                class: TaskClass::Cpu,
+                                priority: TaskPriority(0),
+                                cancel_scope: CancelScopeId("program.result".into()),
+                                policy: TaskPolicy::AlwaysStart,
+                                debug_label: "local Bool result".into(),
+                            },
+                            body: if explicit_return {
+                                vec![RuntimeFlowOpSeed::ReturnExpr(result)]
+                            } else {
+                                vec![]
+                            },
+                        },
                         name: None,
                         binding: RuntimePatternSeed::new(
                             handle,
@@ -105,37 +138,6 @@ fn engine_with_carrier(explicit_return: bool, ordinary_need: bool) -> Engine {
                                 mutable: false,
                             },
                         ),
-                        captures: vec![],
-                        producer: NeedProducerDefinition {
-                            function: definition,
-                            family: NeedProducerFamily::StructuredTaskPlan,
-                            contract: NeedProducerContractDigest::from_bytes([0xdc; 32]),
-                            plan: coordinate,
-                            producer_site: NeedProducerSiteDigest::from_bytes([0xdd; 32]),
-                            handle_type: if ordinary_need {
-                                crate::task::TaskHandleType::Need {
-                                    payload: RuntimeTypeSemanticDigest::from_bytes(
-                                        *boolean.as_bytes(),
-                                    ),
-                                }
-                            } else {
-                                crate::task::TaskHandleType::ThreadHandle {
-                                    payload: RuntimeTypeSemanticDigest::from_bytes(
-                                        *boolean.as_bytes(),
-                                    ),
-                                }
-                            },
-                            class: TaskClass::Cpu,
-                            priority: TaskPriority(0),
-                            cancel_scope: CancelScopeId("program.result".into()),
-                            policy: TaskPolicy::AlwaysStart,
-                            debug_label: "local Bool result".into(),
-                        },
-                        body: if explicit_return {
-                            vec![RuntimeFlowOpSeed::ReturnExpr(result)]
-                        } else {
-                            vec![]
-                        },
                     },
                     RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                         unit,

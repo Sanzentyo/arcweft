@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3212-program-template-structure",
+  "actualExitCode": 0,
+  "scope": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-template-structure-report"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T06:42:15.0001764Z"
+}

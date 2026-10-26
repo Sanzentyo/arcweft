@@ -515,9 +515,13 @@ impl Writer {
             FlowOp::For { evidence, .. } => self.iterator(evidence)?,
             FlowOp::ProgramTask {
                 name,
-                producer,
-                delivery,
-                captures,
+                template:
+                    crate::plan::RuntimeProgramTaskTemplate {
+                        producer,
+                        delivery,
+                        captures,
+                        ..
+                    },
                 ..
             } => {
                 self.optional_text(name.as_deref())?;

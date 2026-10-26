@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "run": "task-final-r3210-program-template-workspace-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T06:40:10.0526420Z"
+}

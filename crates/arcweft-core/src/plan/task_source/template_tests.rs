@@ -892,7 +892,33 @@ pub(crate) fn owned_program_need_fixture(
                 effects: RuntimeEffectSet::empty(),
                 ops: Box::new([
                     RuntimeFlowOpSeed::ProgramTask {
-                        delivery,
+                        template: crate::plan::RuntimeProgramTaskTemplate {
+                            delivery,
+                            producer: crate::task::NeedProducerDefinition {
+                                function: first_definition,
+                                family: NeedProducerFamily::StructuredTaskPlan,
+                                contract: NeedProducerContractDigest::from_bytes([0xad; 32]),
+                                plan: first_coordinate.clone(),
+                                producer_site: NeedProducerSiteDigest::from_bytes([0xae; 32]),
+                                handle_type: crate::task::TaskHandleType::Need {
+                                    payload: RuntimeTypeSemanticDigest::from_bytes(
+                                        *string.as_bytes(),
+                                    ),
+                                },
+                                class: TaskClass::Cpu,
+                                priority: TaskPriority(0),
+                                cancel_scope: CancelScopeId("owned.program.input".into()),
+                                policy: TaskPolicy::AlwaysStart,
+                                debug_label: "original owned Program input".into(),
+                            },
+                            captures: vec![],
+                            body: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                                string,
+                                RuntimeExprSeedKind::Value(RuntimeValue::String(
+                                    "owned result".into(),
+                                )),
+                            ))],
+                        },
                         name: None,
                         binding: RuntimePatternSeed::new(
                             input_type,
@@ -901,29 +927,30 @@ pub(crate) fn owned_program_need_fixture(
                                 mutable: false,
                             },
                         ),
-                        producer: crate::task::NeedProducerDefinition {
-                            function: first_definition,
-                            family: NeedProducerFamily::StructuredTaskPlan,
-                            contract: NeedProducerContractDigest::from_bytes([0xad; 32]),
-                            plan: first_coordinate.clone(),
-                            producer_site: NeedProducerSiteDigest::from_bytes([0xae; 32]),
-                            handle_type: crate::task::TaskHandleType::Need {
-                                payload: RuntimeTypeSemanticDigest::from_bytes(*string.as_bytes()),
-                            },
-                            class: TaskClass::Cpu,
-                            priority: TaskPriority(0),
-                            cancel_scope: CancelScopeId("owned.program.input".into()),
-                            policy: TaskPolicy::AlwaysStart,
-                            debug_label: "original owned Program input".into(),
-                        },
-                        captures: vec![],
-                        body: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                            string,
-                            RuntimeExprSeedKind::Value(RuntimeValue::String("owned result".into())),
-                        ))],
                     },
                     RuntimeFlowOpSeed::ProgramTask {
-                        delivery,
+                        template: crate::plan::RuntimeProgramTaskTemplate {
+                            delivery,
+                            producer: crate::task::NeedProducerDefinition {
+                                function: definition,
+                                family: NeedProducerFamily::StructuredTaskPlan,
+                                contract: NeedProducerContractDigest::from_bytes([0xaa; 32]),
+                                plan: coordinate.clone(),
+                                producer_site: NeedProducerSiteDigest::from_bytes([0xab; 32]),
+                                handle_type: crate::task::TaskHandleType::Need {
+                                    payload: RuntimeTypeSemanticDigest::from_bytes(
+                                        *input_type.as_bytes(),
+                                    ),
+                                },
+                                class: TaskClass::Cpu,
+                                priority: TaskPriority(0),
+                                cancel_scope: CancelScopeId("owned.program.capture".into()),
+                                policy: TaskPolicy::AlwaysStart,
+                                debug_label: "owned Program capture".into(),
+                            },
+                            captures: vec![RuntimeProgramTaskCapture { local: input, mode }],
+                            body: vec![RuntimeFlowOpSeed::ReturnExpr(result)],
+                        },
                         name: None,
                         binding: RuntimePatternSeed::new(
                             task_type,
@@ -932,25 +959,6 @@ pub(crate) fn owned_program_need_fixture(
                                 mutable: false,
                             },
                         ),
-                        producer: crate::task::NeedProducerDefinition {
-                            function: definition,
-                            family: NeedProducerFamily::StructuredTaskPlan,
-                            contract: NeedProducerContractDigest::from_bytes([0xaa; 32]),
-                            plan: coordinate.clone(),
-                            producer_site: NeedProducerSiteDigest::from_bytes([0xab; 32]),
-                            handle_type: crate::task::TaskHandleType::Need {
-                                payload: RuntimeTypeSemanticDigest::from_bytes(
-                                    *input_type.as_bytes(),
-                                ),
-                            },
-                            class: TaskClass::Cpu,
-                            priority: TaskPriority(0),
-                            cancel_scope: CancelScopeId("owned.program.capture".into()),
-                            policy: TaskPolicy::AlwaysStart,
-                            debug_label: "owned Program capture".into(),
-                        },
-                        captures: vec![RuntimeProgramTaskCapture { local: input, mode }],
-                        body: vec![RuntimeFlowOpSeed::ReturnExpr(result)],
                     },
                     RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                         unit,
@@ -1074,35 +1082,37 @@ fn program_context(
         })
         .collect::<Vec<_>>();
     ops.push(RuntimeFlowOpSeed::ProgramTask {
-        delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+        template: crate::plan::RuntimeProgramTaskTemplate {
+            delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+            captures: captures
+                .into_iter()
+                .map(RuntimeProgramTaskCapture::copy)
+                .collect(),
+            producer: crate::task::NeedProducerDefinition {
+                function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([2; 32]),
+                family: NeedProducerFamily::StructuredTaskPlan,
+                contract: NeedProducerContractDigest::from_bytes([21; 32]),
+                plan: coordinate,
+                producer_site: NeedProducerSiteDigest::from_bytes([22; 32]),
+                handle_type: if ordinary_need {
+                    crate::task::TaskHandleType::Need {
+                        payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+                    }
+                } else {
+                    crate::task::TaskHandleType::ThreadHandle {
+                        payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+                    }
+                },
+                class: TaskClass::Cpu,
+                priority: TaskPriority(0),
+                cancel_scope: CancelScopeId("thread".into()),
+                policy: TaskPolicy::AlwaysStart,
+                debug_label: "thread source".into(),
+            },
+            body: vec![RuntimeFlowOpSeed::ReturnExpr(unit_value.clone())],
+        },
         name: None,
         binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
-        captures: captures
-            .into_iter()
-            .map(RuntimeProgramTaskCapture::copy)
-            .collect(),
-        producer: crate::task::NeedProducerDefinition {
-            function: RuntimeFunctionDefinitionIdentity::from_accepted_identity([2; 32]),
-            family: NeedProducerFamily::StructuredTaskPlan,
-            contract: NeedProducerContractDigest::from_bytes([21; 32]),
-            plan: coordinate,
-            producer_site: NeedProducerSiteDigest::from_bytes([22; 32]),
-            handle_type: if ordinary_need {
-                crate::task::TaskHandleType::Need {
-                    payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
-                }
-            } else {
-                crate::task::TaskHandleType::ThreadHandle {
-                    payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
-                }
-            },
-            class: TaskClass::Cpu,
-            priority: TaskPriority(0),
-            cancel_scope: CancelScopeId("thread".into()),
-            policy: TaskPolicy::AlwaysStart,
-            debug_label: "thread source".into(),
-        },
-        body: vec![RuntimeFlowOpSeed::ReturnExpr(unit_value.clone())],
     });
     ops.push(RuntimeFlowOpSeed::ReturnExpr(unit_value));
     builder
@@ -1173,7 +1183,11 @@ fn thread_source_codec_retains_program_definition_and_capture_roles() {
         })
     ));
     let Some(FlowOp::ProgramTask {
-        captures, producer, ..
+        template:
+            crate::plan::RuntimeProgramTaskTemplate {
+                captures, producer, ..
+            },
+        ..
     }) = source.request_endpoint().operation()
     else {
         panic!("round trip must retain the actual Thread operation");

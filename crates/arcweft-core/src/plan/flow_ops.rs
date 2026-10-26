@@ -503,7 +503,10 @@ impl FlowOp {
             | Self::While { body, .. }
             | Self::WhileLet { body, .. }
             | Self::For { body, .. }
-            | Self::ProgramTask { body, .. }
+            | Self::ProgramTask {
+                template: crate::plan::RuntimeProgramTaskTemplate { body, .. },
+                ..
+            }
             | Self::Scope { body, .. } => Schema::One(Role::Body, body),
             FlowOp::Let { .. }
             | FlowOp::Assign { .. }

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3207-program-template-owner-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+      "bytes": 81442304,
+      "nonTest": false,
+      "sha256": "77f9540a320852417d2691cb18e3acd9c191b2cd96cd5aa87d451d79dea19b21"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+      "bytes": 104436736,
+      "nonTest": false,
+      "sha256": "27f9361ea0ba3fa2843f0d6c3518bda26a3b0269de06f6da65af661ce8fcadb5"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T06:30:16.7371722Z"
+}

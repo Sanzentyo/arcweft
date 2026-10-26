@@ -3921,10 +3921,13 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeFlowOpSeed::ProgramTask {
                 name,
                 binding,
-                producer,
-                delivery,
-                captures,
-                body,
+                template:
+                    crate::plan::RuntimeProgramTaskTemplate {
+                        producer,
+                        delivery,
+                        captures,
+                        body,
+                    },
             } => {
                 let binding = self.lower_pattern_seed(binding)?;
                 let producer = self.lower_producer_definition(producer)?;
@@ -3948,32 +3951,34 @@ impl RuntimePlanBodyConstruction<'_> {
                 FlowOp::ProgramTask {
                     name,
                     binding,
-                    producer,
-                    delivery,
-                    captures: {
-                        let mut selected = std::collections::BTreeSet::new();
-                        captures
-                            .into_iter()
-                            .map(|capture| {
-                                let (local, _) = capture
-                                    .local
-                                    .resolve(&self.issuer)
-                                    .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
-                                if !selected.insert(local) {
-                                    return Err(
-                                        RuntimePlanBuildError::DuplicateProgramTaskCapture {
-                                            local,
-                                        },
-                                    );
-                                }
-                                Ok(crate::plan::RuntimeProgramTaskCapture {
-                                    local,
-                                    mode: capture.mode,
+                    template: crate::plan::RuntimeProgramTaskTemplate {
+                        producer,
+                        delivery,
+                        captures: {
+                            let mut selected = std::collections::BTreeSet::new();
+                            captures
+                                .into_iter()
+                                .map(|capture| {
+                                    let (local, _) = capture
+                                        .local
+                                        .resolve(&self.issuer)
+                                        .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
+                                    if !selected.insert(local) {
+                                        return Err(
+                                            RuntimePlanBuildError::DuplicateProgramTaskCapture {
+                                                local,
+                                            },
+                                        );
+                                    }
+                                    Ok(crate::plan::RuntimeProgramTaskCapture {
+                                        local,
+                                        mode: capture.mode,
+                                    })
                                 })
-                            })
-                            .collect::<Result<_, _>>()?
+                                .collect::<Result<_, _>>()?
+                        },
+                        body: self.lower_flow_ops(body)?,
                     },
-                    body: self.lower_flow_ops(body)?,
                 }
             }
             RuntimeFlowOpSeed::StandardMap(control) => {
@@ -5473,8 +5478,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 }
                 FlowOp::ProgramTask {
                     binding,
-                    captures,
-                    body,
+                    template: crate::plan::RuntimeProgramTaskTemplate { captures, body, .. },
                     ..
                 } => {
                     let mut nested = BTreeSet::new();

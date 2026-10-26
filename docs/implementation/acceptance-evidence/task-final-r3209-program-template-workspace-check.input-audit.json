@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "run": "task-final-r3209-program-template-workspace-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T06:35:45.5556285Z"
+}

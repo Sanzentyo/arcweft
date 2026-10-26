@@ -177,19 +177,21 @@ fn fixture(
         }
     } else {
         RuntimeFlowOpSeed::ProgramTask {
-            delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+            template: crate::plan::RuntimeProgramTaskTemplate {
+                delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+                captures: vec![],
+                producer: producer_definition(
+                    builder.task_coordinate_owner(1).resolve(0).unwrap(),
+                    74,
+                    NeedProducerFamily::StructuredTaskPlan,
+                    TaskHandleType::ThreadHandle {
+                        payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
+                    },
+                ),
+                body: vec![RuntimeFlowOpSeed::ReturnExpr(returned.clone())],
+            },
             name: None,
             binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
-            captures: vec![],
-            producer: producer_definition(
-                builder.task_coordinate_owner(1).resolve(0).unwrap(),
-                74,
-                NeedProducerFamily::StructuredTaskPlan,
-                TaskHandleType::ThreadHandle {
-                    payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
-                },
-            ),
-            body: vec![RuntimeFlowOpSeed::ReturnExpr(returned.clone())],
         }
     };
     builder

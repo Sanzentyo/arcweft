@@ -230,15 +230,13 @@ impl<'a> OriginalRequestEndpoint<'a> {
                 plan::FlowOp::HostCall { target, .. } => Some(Source::Host(target)),
                 _ => None,
             },
-            EndpointKind::ProgramTask => match operation {
-                plan::FlowOp::ProgramTask {
-                    producer, delivery, ..
-                } => Some(Source::ProgramProducer {
-                    producer,
-                    delivery: *delivery,
-                }),
-                _ => None,
-            },
+            EndpointKind::ProgramTask => {
+                self.program_template()
+                    .map(|template| Source::ProgramProducer {
+                        producer: &template.producer,
+                        delivery: template.delivery,
+                    })
+            }
             EndpointKind::MakeNeed => match operation {
                 plan::FlowOp::StartNeedProducer { target, .. } => Some(Source::Start(target)),
                 _ => None,
@@ -344,11 +342,17 @@ impl<'a> OriginalRequestEndpoint<'a> {
         }
     }
     pub(super) fn program_captures(&self) -> Option<&'a [crate::plan::RuntimeProgramTaskCapture]> {
+        self.program_template()
+            .map(|template| template.captures.as_slice())
+    }
+
+    /// Borrows the Program contract from this endpoint's actual Source owner.
+    pub(crate) fn program_template(&self) -> Option<&'a plan::RuntimeProgramTaskTemplate> {
         match (self.kind, self.source) {
             (
                 EndpointKind::ProgramTask,
-                ProducerEndpointSource::Operation(plan::FlowOp::ProgramTask { captures, .. }),
-            ) => Some(captures),
+                ProducerEndpointSource::Operation(plan::FlowOp::ProgramTask { template, .. }),
+            ) => Some(template),
             _ => None,
         }
     }

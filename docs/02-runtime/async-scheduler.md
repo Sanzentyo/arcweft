@@ -106,6 +106,13 @@ the complete invocation effect set.
 carrier and payload match that row. A Thread Source declares `ThreadHandle<T>`;
 changing only the AWBC row to `Need<T>` fails original Source admission.
 Source-level Thread captures select Copy and require actual unrestricted custody.
+
+`RuntimeProgramTaskTemplate` owns a Program's producer, delivery, capture ABI,
+and executable body together. Construction seeds and admitted operations use
+the same template shape with their respective local and operation coordinates.
+Compiler body reads and runtime launch admission borrow that template from
+the actual Source endpoint. This ownership does not change the version-one
+Source field grammar or grant capture Copy permission.
 An explicit Program Move capture stays owned by the parent during preparation.
 The product executor prepares the child, authenticates the original Source and
 captures, and admits the actual launch receipt before committing the parent
