@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "name": "task-final-r3168-program-capture-duplicate-diagnostic-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(=awbc::product_step::program_task::tests::program_move_verifier_allows_destination_alias_and_rejects_duplicate_owners)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3168-program-capture-duplicate-diagnostic-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T00:33:44.9671624Z",
+  "finishedAt": "2026-10-26T00:38:31.3952669Z"
+}

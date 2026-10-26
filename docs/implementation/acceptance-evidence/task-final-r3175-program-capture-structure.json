@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "name": "task-final-r3175-program-capture-structure",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-capture-final-structure-report"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3175-program-capture-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T00:56:22.8958242Z",
+  "finishedAt": "2026-10-26T00:56:26.1317234Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "run": "task-final-r3173-program-capture-workspace-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T00:54:11.6462857Z"
+}

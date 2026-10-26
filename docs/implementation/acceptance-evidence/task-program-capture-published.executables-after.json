@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3160-program-capture-published-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+      "bytes": 81261056,
+      "nonTest": false,
+      "sha256": "f7c772f455afe28a29a67219a0157abcd9beecd90a18937a649e74fb189e4d2d"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+      "bytes": 104408064,
+      "nonTest": false,
+      "sha256": "93bd237316a8e699f9088948d19d92e7b347da483ae7f1c4ff693f76b8f19e17"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T00:07:00.0015278Z"
+}

@@ -1,0 +1,580 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "checkpoint": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "scope": "Explicit original Program Copy/Move captures in Source, Native and AWBC; owner execution and shared gates",
+  "runtime": {
+    "version": 1,
+    "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+    "run": "task-final-r3171-program-capture-verified-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  43.804s] 2169 tests run: 2169 passed, 0 skipped",
+    "caseRowSource": "complete-live-status-before-terminal-summary",
+    "executed": 2169,
+    "passed": 2169,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3989,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-26T00:46:50.8066255Z"
+  },
+  "requiredCases": [
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "awbc::codec::runtime::task_tests::program_capture_modes_are_required_and_unknown_wire_tags_are_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_move_verifier_allows_destination_alias_and_rejects_duplicate_owners",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_need_copy_capture_rejects_affine_input_before_product_launch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_need_moves_its_original_affine_input_through_every_public_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "engine::thread::tests::ordinary_program_need_moves_an_affine_capture_and_retains_it_through_rollback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "engine::thread::tests::program_copy_capture_rejection_keeps_the_original_need_and_identity_frontier",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "value::env::tests::program_capture_moves_commit_once_after_preparation_and_keep_source_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "value::env::tests::rejected_program_capture_preparation_preserves_all_earlier_moves",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "sharedGates": [
+    {
+      "version": 1,
+      "run": "task-final-r3172-program-capture-workspace-check",
+      "actualExitCode": 0,
+      "scope": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "sourceInputs": 3989,
+      "sourceDrift": 0,
+      "held": 14,
+      "at": "2026-10-26T00:50:20.0200076Z"
+    },
+    {
+      "version": 1,
+      "run": "task-final-r3173-program-capture-workspace-clippy",
+      "actualExitCode": 0,
+      "scope": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "sourceInputs": 3989,
+      "sourceDrift": 0,
+      "held": 14,
+      "at": "2026-10-26T00:54:11.6462857Z"
+    },
+    {
+      "version": 1,
+      "run": "task-final-r3174-program-capture-core-doctest",
+      "actualExitCode": 0,
+      "scope": [
+        "test",
+        "-p",
+        "arcweft-core",
+        "--doc",
+        "--all-features",
+        "--locked"
+      ],
+      "sourceInputs": 3989,
+      "sourceDrift": 0,
+      "held": 14,
+      "at": "2026-10-26T00:56:22.8047414Z"
+    },
+    {
+      "version": 1,
+      "run": "task-final-r3175-program-capture-structure",
+      "actualExitCode": 0,
+      "scope": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-capture-final-structure-report"
+      ],
+      "sourceInputs": 3989,
+      "sourceDrift": 0,
+      "held": 14,
+      "at": "2026-10-26T00:56:27.7264906Z"
+    }
+  ],
+  "sourceInputs": 3989,
+  "sourceDriftAtTerminals": 0,
+  "executableDriftAtOwnerRuntime": 0,
+  "fixturesRepaired": [
+    "Reserved Flow family prefix (previous checkpoint)",
+    "Extraneous ordinary function ownership of parent local",
+    "Contiguous ABI parameter prefix in duplicate-Move negative test"
+  ],
+  "implementationRepairs": [
+    "Native Source capture admission uses the original declared Move/Copy mode",
+    "AWBC Copy/Move effects consume declared Move operands in the common register transition"
+  ],
+  "preservedPriorRuntimeResults": [
+    "R3161: 2164 passed / 2 fixture failures",
+    "R3163: 2164 passed / 2 real Copy-only admission failures",
+    "R3165: 2166 passed / 0 failed",
+    "R3167: 2168 passed / 1 negative-fixture layout failure",
+    "R3169: 0 passed / 1 focused negative-fixture layout failure"
+  ],
+  "pending": [
+    "Full 53-package reverse consumer runtime on final capture input",
+    "Source parallel lowering and execution; separate boundary",
+    "Remaining whole-goal acceptance; separate boundaries"
+  ],
+  "limitsAssertionsWeakened": false,
+  "artifactCopyMove": false,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3160-program-capture-published-catalog.json",
+      "bytes": 621,
+      "sha256": "1736823a168b3eb0a79a819b041ae1a8bc5305b1be79fd58e02ef33730631bc5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3160-program-capture-published-catalog.log",
+      "bytes": 462323,
+      "sha256": "573f750097b4a916fba1ecc6eb60e4f3e124b695b3007827f7a918305fcff44c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3160-program-capture-published-catalog.input-audit.json",
+      "bytes": 424,
+      "sha256": "709a1b8045de144791dbc8cf19f3aefb8cda6548486354ebcc9d907f144d50f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3160-program-capture-published-catalog.inventory.json",
+      "bytes": 549545,
+      "sha256": "902659374731fc6a2fff910831ad79ead5eac16f98a52cab257c90d9a85cbbcd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3161-program-capture-published-runtime.json",
+      "bytes": 639,
+      "sha256": "d39803fada23ad64653cfdd5cb3230ebe769faed0f70082782a754a150414852"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3161-program-capture-published-runtime.log",
+      "bytes": 423539,
+      "sha256": "cb30d79a1f7c85479f6c654a284cc7627a287ed85aac9329ea7116b1ed3f5b3c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3161-program-capture-published-runtime.terminal-audit.json",
+      "bytes": 1058,
+      "sha256": "604e6d2c2372bcf4cf58a90ac3039dd765cef9f99b37a0551b6dee8f375f3e17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3162-program-capture-source-owner-catalog.json",
+      "bytes": 627,
+      "sha256": "eea61353115a85022231af34efd0891ed4c64fc70923150a67eb746656055766"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3162-program-capture-source-owner-catalog.log",
+      "bytes": 462323,
+      "sha256": "ca6321791d46ba5d798d3646f18f5ed9c9ced0d6613c79a3f95b33491c590a9a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3162-program-capture-source-owner-catalog.input-audit.json",
+      "bytes": 427,
+      "sha256": "3b41c71f04494156491c981bd9af4ecabf089ef1cf1181e7351c7c9965225e77"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3162-program-capture-source-owner-catalog.inventory.json",
+      "bytes": 549548,
+      "sha256": "1ed4fb487557e2632e909f2c0cc915317a757340ab3845d305bb782ccc15b22a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3163-program-capture-source-owner-runtime.json",
+      "bytes": 645,
+      "sha256": "e97724c7a2baa9ac101ffe33c58f38cd4e75ccdc46425a7d7f42c721678a6e4d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3163-program-capture-source-owner-runtime.log",
+      "bytes": 423376,
+      "sha256": "7fc5c73e33d4527742ae91ec6081a4760b26fffa19587f8019f35da8e8c98fda"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3163-program-capture-source-owner-runtime.terminal-audit.json",
+      "bytes": 1061,
+      "sha256": "1b82af9d358410af86daea728ecb369b2847bac9c24bbba1c1d1bf24106334f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3164-program-capture-owned-admission-catalog.json",
+      "bytes": 633,
+      "sha256": "752407aaf6ee342b34804ed9fe4f23bb59181b55e6d389290d15f1811f5954e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3164-program-capture-owned-admission-catalog.log",
+      "bytes": 462815,
+      "sha256": "6501555403414b185a7a5320aebf16dd2fa8edfddce7f3e456f7b8305535c7e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3164-program-capture-owned-admission-catalog.input-audit.json",
+      "bytes": 430,
+      "sha256": "9a21ce6c6f3e64a51410bd81b5435ba00751f339b17c1a4a9778b4376495af12"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3164-program-capture-owned-admission-catalog.inventory.json",
+      "bytes": 549551,
+      "sha256": "2434d7f0bbd3e5a858c2ab1269dc8782885a8c45f5da8d6d2236f0d4d1730be4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3165-program-capture-owned-admission-runtime.json",
+      "bytes": 649,
+      "sha256": "d1d97bcff7339b5ea90638434e0bfd7718496f7bcbb9bb0e05ec3b53fd11eaa1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3165-program-capture-owned-admission-runtime.log",
+      "bytes": 420879,
+      "sha256": "bead912141105a41d409ad04678c4b37bb5e2c462acbadd31dba40682cd83ad3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3165-program-capture-owned-admission-runtime.terminal-audit.json",
+      "bytes": 655,
+      "sha256": "c540d1351d45301ec70c1f24e0c2833743f52fbeeb497f3904082d69374fdd7a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3166-program-capture-rejection-catalog.json",
+      "bytes": 621,
+      "sha256": "89386e2608fc3f1da447688082078b2b97fdd43dc6c7aafa7232eaecea53e7e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3166-program-capture-rejection-catalog.log",
+      "bytes": 463110,
+      "sha256": "ed59f5dfafcb0db63c9ccbf463be13f39005ef0c2a4070f62faca449566caa5b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3166-program-capture-rejection-catalog.input-audit.json",
+      "bytes": 424,
+      "sha256": "c6a9faa0096d2cfdeeedc28e10a4589b79e185bed53ecce6c279520f805cd4ad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3166-program-capture-rejection-catalog.inventory.json",
+      "bytes": 550328,
+      "sha256": "e01a7641656e41e3c0da2a6337c649fc9384c93db7b8530829f060a4112c1e3a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3167-program-capture-rejection-runtime.json",
+      "bytes": 639,
+      "sha256": "2493696d86e18d4750ad722d39ae55f68c3a4e596e318b962d52c0539e24b1c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3167-program-capture-rejection-runtime.log",
+      "bytes": 422824,
+      "sha256": "11aa710bf9c30566e69b6fc284ff948e6be0c1e293156d8041866778a8679431"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3167-program-capture-rejection-runtime.terminal-audit.json",
+      "bytes": 872,
+      "sha256": "536075ce025e3536020f928df9eb334553953beab7fa7bda2868fa8c04649a7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3168-program-capture-duplicate-diagnostic-catalog.json",
+      "bytes": 746,
+      "sha256": "d2554e80b59387b81edb7e5b8bde696fb150029475dd6d08abb461f7fd60af10"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3168-program-capture-duplicate-diagnostic-catalog.log",
+      "bytes": 428001,
+      "sha256": "3d84bd204298d2c2ecc69f91f408dd5bd5b545dd6f3983ee1cf84d646a412e7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3168-program-capture-duplicate-diagnostic-catalog.input-audit.json",
+      "bytes": 538,
+      "sha256": "6e7fa168e6e9442b74013dcc8c991fccfa5d0c9d82794c62553a70caac93897e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3168-program-capture-duplicate-diagnostic-catalog.inventory.json",
+      "bytes": 519564,
+      "sha256": "264a487cbc059d974d1e09447460667e6dc4ecb9089633aab333cd5cee223789"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3169-program-capture-duplicate-diagnostic-runtime.json",
+      "bytes": 764,
+      "sha256": "1960a58632c519cd1544bd7319c79f1de3efae4e716eb1379409935298e9cc4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3169-program-capture-duplicate-diagnostic-runtime.log",
+      "bytes": 31476,
+      "sha256": "661bf989aafe2cb456e69d62c082157b0fee98bef2f5d08b73f913ff93d9a776"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3169-program-capture-duplicate-diagnostic-runtime.terminal-audit.json",
+      "bytes": 858,
+      "sha256": "d99bcf9f841671b7eff73e31939b7fecfe419370aa2654bdee32422989872f90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3170-program-capture-verified-catalog.json",
+      "bytes": 619,
+      "sha256": "898608ab59e043d4fef8bb43c30ad35022b24f2afe11ec455665c15d22aedc94"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3170-program-capture-verified-catalog.log",
+      "bytes": 462860,
+      "sha256": "6ce10a7c401fcfc600294a0e77b1c5411b9e5a86c040ff448f482cb6e5f43032"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3170-program-capture-verified-catalog.input-audit.json",
+      "bytes": 423,
+      "sha256": "57bb2889d8c915eb295c5f9438edbe4e2200e74a6594f3b7f842a75b3d2bede0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3170-program-capture-verified-catalog.inventory.json",
+      "bytes": 550327,
+      "sha256": "ebf586401156f3c3e6fdbb5cb11c830809f5487cee118a7e458d935907aaae71"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3171-program-capture-verified-runtime.json",
+      "bytes": 635,
+      "sha256": "3bd90d7bf774401f2421fbdefd41b325060ed6830b08dd188d23d9e8785fe23b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3171-program-capture-verified-runtime.log",
+      "bytes": 421359,
+      "sha256": "c1d3581831076a3ae6ab338914c91111a358473ba1102533e2567820f1309d75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3171-program-capture-verified-runtime.terminal-audit.json",
+      "bytes": 648,
+      "sha256": "efa7c49ace9e9464d364ee5ac5d2c3cf3964e14edd0a47362ca878bcf3dbb11a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3172-program-capture-workspace-check.json",
+      "bytes": 520,
+      "sha256": "9f2004937b0badcfe30f77a4e588e21a3547b16f9367f9e5558e5c8d51a65a11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3172-program-capture-workspace-check.log",
+      "bytes": 106154,
+      "sha256": "d0bf9d961b4879cf5ad7a55a3389d68e26eeb1d6fa19b15dc14f324406aa3130"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3172-program-capture-workspace-check.input-audit.json",
+      "bytes": 325,
+      "sha256": "9dce10643188b9fb3e3c1b8ada14c3c2277a208d0979118035828d28ef169870"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3173-program-capture-workspace-clippy.json",
+      "bytes": 523,
+      "sha256": "75dd387784f5afc5fe498c09e83e63d92fbefe466160545cb9640ffee9ded17f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3173-program-capture-workspace-clippy.log",
+      "bytes": 6633053,
+      "sha256": "5d1d57d2b4c62d629d9ba08df2e6f3c410461bfb415c61e7fa4beefd7a93c5f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3173-program-capture-workspace-clippy.input-audit.json",
+      "bytes": 327,
+      "sha256": "3e4abd81030974660709967677fe9d70dd21c402bf0bc5d0a28f5d3e842beea5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3174-program-capture-core-doctest.json",
+      "bytes": 517,
+      "sha256": "1cefcb2d7f7be067b2aaba1ee81b3a707b2441a44e533fde0d175098f2e2cafd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3174-program-capture-core-doctest.log",
+      "bytes": 78991,
+      "sha256": "c6796b82b27f306bf052e6567ac17179cfbc30d72aaf02c546dd853bf5ecdb20"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3174-program-capture-core-doctest.input-audit.json",
+      "bytes": 325,
+      "sha256": "36cc2366c667e68b74fb4c8006b1bcf86d7b0d957a6deefcbda27d916913cdfe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3175-program-capture-structure.json",
+      "bytes": 674,
+      "sha256": "422359926de320d09e935bfc04de8b7f6719f5fbd582b1a3b198adfcca43231c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3175-program-capture-structure.log",
+      "bytes": 64619,
+      "sha256": "9600ab6efc0f5a1ab56e9a8d47c43e6014bc0f06f6b5cf85cbdd9588c43cd42e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3175-program-capture-structure.input-audit.json",
+      "bytes": 485,
+      "sha256": "357ac22ea0df397717650c1c72b33cdd471935f949e2f54ce5afd668c02dadf5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-published.source-freeze.json",
+      "bytes": 779785,
+      "sha256": "285796a5bfe7af77dd945114a0792aecec393965ad7933bc0d3e9881bbf52cf1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-published.executables-before.json",
+      "bytes": 735,
+      "sha256": "e66e4001f2c78de252ef97c5a5caa15dd596d5febc20abe676650fbdec31fd31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-published.executables-after.json",
+      "bytes": 734,
+      "sha256": "787126c32fc68c4e7b3865cba05efe8f4ae97132c6c2a197dfcb3f546d4b8ceb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-source-owner.source-freeze.json",
+      "bytes": 779829,
+      "sha256": "e235c6d3ed4e9af1008649c25af816f85adb7039ae1dccd69b62a201888555e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-source-owner.executables-before.json",
+      "bytes": 738,
+      "sha256": "54c4f2d4ccdb8103a34e28b369811aac898e6e6b48ab3e9703392ae65b896a56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-source-owner.executables-after.json",
+      "bytes": 737,
+      "sha256": "6f063644339bdbb60b604ad9b9879444866d31d94af56402130314eb9ce68122"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owned-admission.source-freeze.json",
+      "bytes": 779800,
+      "sha256": "c4e5e8581d330baca7a103215bc78ef81a16a143c6936ee4681d2429bcbb91b3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owned-admission.executables-before.json",
+      "bytes": 741,
+      "sha256": "5df12fe3e686bb9fdf757ad2fbeb8dc548a4ba8ca4d991dd42e56dcb7f0dd90e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owned-admission.executables-after.json",
+      "bytes": 740,
+      "sha256": "7e10f58fcd7902de197b463cbcb7bdb01b9b4c0ce8e276e256ca2b821f952700"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-rejection.source-freeze.json",
+      "bytes": 779782,
+      "sha256": "ce7f51ae27a4e5a05141702f38bf27cdaff746da5b8225494ccbc36da270cd36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-rejection.executables-before.json",
+      "bytes": 735,
+      "sha256": "5381b8971209646e04b133b271b9fc79b6b40f07648658bf0a9ee24027499d3a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-rejection.executables-after.json",
+      "bytes": 734,
+      "sha256": "fc35ec6b80b1cfbacec14136eb6482560ec68cdfcc3b0859a5287069c1328ef4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-duplicate-diagnostic.source-freeze.json",
+      "bytes": 779778,
+      "sha256": "43d61b21370fffdf81d6063f1221900713a2b95787091a7f1cf16b2ff7bdb3fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-duplicate-diagnostic.executables-before.json",
+      "bytes": 496,
+      "sha256": "26e5ade2369ab6540dbf2e48e87f19978fac7d019718923754e44cde0d14f1cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-duplicate-diagnostic.executables-after.json",
+      "bytes": 495,
+      "sha256": "69d93c262fc4692fa1e22537a8f5307490d109a305d6c1a2bab76e52bc9a4860"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-verified.source-freeze.json",
+      "bytes": 779778,
+      "sha256": "41ef3e1fe03b955e980a872b9525827efb0e291cec1483cf5eb385dc5010edb1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-verified.executables-before.json",
+      "bytes": 734,
+      "sha256": "9cfe94dcaa7bcb3ac2b4e639e1601057ef87f2bac81374df667bac957f1aef83"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-verified.executables-after.json",
+      "bytes": 733,
+      "sha256": "ed6b3f1e1bf8fce9fe398676c14e317e73783dbd22fda49cb364f353437ffe02"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-review.json",
+      "bytes": 16403,
+      "sha256": "f415343b4e18cbd3bacad1eafb69dc214b34aa9fdcb3554acda6373a55826bd0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-source-checkpoint.verified.json",
+      "bytes": 10374,
+      "sha256": "eab707bd8ca34ec86f91f12187fd89cca61f4be15dd3f235dcdad4c88d26be19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-dependency_edges.csv",
+      "bytes": 77451,
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-file_metrics.csv",
+      "bytes": 326789,
+      "sha256": "91ef6d290be6fd0f0da06c586f4cc191b8254dbb2ad7ecbf8d3fe83dbf79d0ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-findings.md",
+      "bytes": 121535,
+      "sha256": "823ec048f5c4334308c7b3d2c2264df1ad76013618c28e83da8c7d1ffcdc5cd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-structure-public_type_duplicates.csv",
+      "bytes": 17121,
+      "sha256": "f36d05e5e23ed60e82eae1a68cc547068ce2bd2a07e7bb1c340a2b6b3523c7d3"
+    }
+  ],
+  "recordedAt": "2026-10-26T00:56:46.2084679Z"
+}

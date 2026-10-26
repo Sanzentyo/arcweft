@@ -271,7 +271,7 @@ impl RuntimeTaskSourceRef<'_> {
             } else {
                 None
             };
-        for (local, value) in locals.iter().zip(captures) {
+        for (index, (local, value)) in locals.iter().zip(captures).enumerate() {
             let ty = program
                 .original()
                 .local_declarations()
@@ -284,9 +284,22 @@ impl RuntimeTaskSourceRef<'_> {
                 .get(ty)
                 .expect("the common seal admitted the capture type")
                 .semantic_identity();
-            // Captures enter both thread frames and request kernels by Copy.
+            // The original Program owns its transfer request. Fanout capture
+            // packets retain their existing Copy contract; no backend or type
+            // identity grants a different custody requirement.
+            let mode = match self.request_endpoint().operation() {
+                Some(FlowOp::ProgramTask { captures, .. }) => captures[index].mode,
+                Some(FlowOp::AwaitMany { .. }) => crate::value::RuntimeLocalReadMode::Copy,
+                _ => unreachable!("the complete operand grammar was checked"),
+            };
             if values_admitted {
                 admission.validate_admitted_typed_borrowed_in_invocation(
+                    value.borrowed_value(),
+                    identity,
+                    binding,
+                )?;
+            } else if mode == crate::value::RuntimeLocalReadMode::Move {
+                admission.validate_owned_typed_borrowed_in_invocation(
                     value.borrowed_value(),
                     identity,
                     binding,

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "name": "task-final-r3172-program-capture-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3172-program-capture-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T00:46:51.5487451Z",
+  "finishedAt": "2026-10-26T00:50:18.6429079Z"
+}

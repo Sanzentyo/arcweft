@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "run": "task-final-r3163-program-capture-source-owner-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  44.495s] 2166 tests run: 2164 passed, 2 failed, 0 skipped",
+  "caseRowSource": "complete-live-status-before-terminal-summary",
+  "executed": 2166,
+  "passed": 2164,
+  "failed": 2,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_need_moves_its_original_affine_input_through_every_public_save"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "engine::thread::tests::ordinary_program_need_moves_an_affine_capture_and_retains_it_through_rollback"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-26T00:13:18.6200997Z"
+}

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3162-program-capture-source-owner-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+      "bytes": 81257984,
+      "nonTest": false,
+      "sha256": "a93bce5003260a04ac015ae33ec2644a608bdd974d2809eae735609f10c41ce6"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+      "bytes": 104408064,
+      "nonTest": false,
+      "sha256": "93bd237316a8e699f9088948d19d92e7b347da483ae7f1c4ff693f76b8f19e17"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T00:13:18.9471899Z"
+}

@@ -1,0 +1,420 @@
+{
+  "version": 1,
+  "base": "7c94e50db9e8fe78357bbb71af9ead3e2ab15360",
+  "observedHead": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "observedAt": "2026-10-26T00:56:32.9423322Z",
+  "report": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-capture-final-structure-report",
+  "measuredFiles": [
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+      "owner": "arcweft-core",
+      "bytes": 55440,
+      "physicalLoc": 1568,
+      "basePhysicalLoc": 1549,
+      "growth": 19,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "AWBC row, canonical/Serde grammar and common register Copy/Move effects"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime/task_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 4565,
+      "physicalLoc": 128,
+      "basePhysicalLoc": 93,
+      "growth": 35,
+      "classification": "test",
+      "embeddedTestLoc": 0,
+      "responsibility": "AWBC row, canonical/Serde grammar and common register Copy/Move effects"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "owner": "arcweft-core",
+      "bytes": 281523,
+      "physicalLoc": 7399,
+      "basePhysicalLoc": 7380,
+      "growth": 19,
+      "classification": "production",
+      "embeddedTestLoc": 1872,
+      "responsibility": "Sealed function input allocation and private deferred child frame transfer"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 4212,
+      "physicalLoc": 109,
+      "basePhysicalLoc": 0,
+      "growth": 109,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "Sealed function input allocation and private deferred child frame transfer"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 10016,
+      "physicalLoc": 262,
+      "basePhysicalLoc": 274,
+      "growth": -12,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "AWBC Source launch commit and public-save execution regression"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 23410,
+      "physicalLoc": 621,
+      "basePhysicalLoc": 328,
+      "growth": 293,
+      "classification": "test",
+      "embeddedTestLoc": 0,
+      "responsibility": "AWBC Source launch commit and public-save execution regression"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 321887,
+      "physicalLoc": 8167,
+      "basePhysicalLoc": 8166,
+      "growth": 1,
+      "classification": "test",
+      "embeddedTestLoc": 0,
+      "responsibility": "AWBC Source launch commit and public-save execution regression"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "owner": "arcweft-core",
+      "bytes": 120016,
+      "physicalLoc": 3744,
+      "basePhysicalLoc": 3742,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "AWBC row, canonical/Serde grammar and common register Copy/Move effects"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+      "owner": "arcweft-core",
+      "bytes": 255523,
+      "physicalLoc": 6560,
+      "basePhysicalLoc": 6546,
+      "growth": 14,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "AWBC row, canonical/Serde grammar and common register Copy/Move effects"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+      "owner": "arcweft-core",
+      "bytes": 157815,
+      "physicalLoc": 3925,
+      "basePhysicalLoc": 3923,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "AWBC row, canonical/Serde grammar and common register Copy/Move effects"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow.rs",
+      "owner": "arcweft-core",
+      "bytes": 84185,
+      "physicalLoc": 2035,
+      "basePhysicalLoc": 2062,
+      "growth": -27,
+      "classification": "production",
+      "embeddedTestLoc": 111,
+      "responsibility": "Native Source admission, receipt binding and parent/child commit"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread.rs",
+      "owner": "arcweft-core",
+      "bytes": 8352,
+      "physicalLoc": 210,
+      "basePhysicalLoc": 166,
+      "growth": 44,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "Native Source admission, receipt binding and parent/child commit"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 22201,
+      "physicalLoc": 616,
+      "basePhysicalLoc": 527,
+      "growth": 89,
+      "classification": "test",
+      "embeddedTestLoc": 0,
+      "responsibility": "Native Source admission, receipt binding and parent/child commit"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan.rs",
+      "owner": "arcweft-core",
+      "bytes": 54218,
+      "physicalLoc": 1583,
+      "basePhysicalLoc": 1557,
+      "growth": 26,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "Shared typed Program capture and operation contracts"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+      "owner": "arcweft-core",
+      "bytes": 15652,
+      "physicalLoc": 376,
+      "basePhysicalLoc": 375,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/function.rs",
+      "owner": "arcweft-core",
+      "bytes": 38566,
+      "physicalLoc": 968,
+      "basePhysicalLoc": 970,
+      "growth": -2,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/request.rs",
+      "owner": "arcweft-core",
+      "bytes": 25435,
+      "physicalLoc": 698,
+      "basePhysicalLoc": 697,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 52,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction.rs",
+      "owner": "arcweft-core",
+      "bytes": 178896,
+      "physicalLoc": 4387,
+      "basePhysicalLoc": 4385,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 840,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "owner": "arcweft-core",
+      "bytes": 257005,
+      "physicalLoc": 6031,
+      "basePhysicalLoc": 6007,
+      "growth": 24,
+      "classification": "production",
+      "embeddedTestLoc": 281,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+      "owner": "arcweft-core",
+      "bytes": 100775,
+      "physicalLoc": 3067,
+      "basePhysicalLoc": 3061,
+      "growth": 6,
+      "classification": "production",
+      "embeddedTestLoc": 91,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+      "owner": "arcweft-core",
+      "bytes": 43335,
+      "physicalLoc": 1099,
+      "basePhysicalLoc": 1077,
+      "growth": 22,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/encoding/fields.rs",
+      "owner": "arcweft-core",
+      "bytes": 22100,
+      "physicalLoc": 568,
+      "basePhysicalLoc": 564,
+      "growth": 4,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+      "owner": "arcweft-core",
+      "bytes": 21297,
+      "physicalLoc": 646,
+      "basePhysicalLoc": 633,
+      "growth": 13,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source.rs",
+      "owner": "arcweft-core",
+      "bytes": 6080,
+      "physicalLoc": 159,
+      "basePhysicalLoc": 157,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 12112,
+      "physicalLoc": 318,
+      "basePhysicalLoc": 306,
+      "growth": 12,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 18986,
+      "physicalLoc": 528,
+      "basePhysicalLoc": 517,
+      "growth": 11,
+      "classification": "test",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body.rs",
+      "owner": "arcweft-core",
+      "bytes": 4061,
+      "physicalLoc": 122,
+      "basePhysicalLoc": 123,
+      "growth": -1,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 53798,
+      "physicalLoc": 1464,
+      "basePhysicalLoc": 1301,
+      "growth": 163,
+      "classification": "test",
+      "embeddedTestLoc": 0,
+      "responsibility": "One original operation grammar, lexical capture scope, semantic seal and counted source encoding"
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer/source/template.rs",
+      "owner": "arcweft-core",
+      "bytes": 19112,
+      "physicalLoc": 432,
+      "basePhysicalLoc": 419,
+      "growth": 13,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "Original capture argument admission; Move borrows owning values, Copy retains unrestricted requirements"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "owner": "arcweft-core",
+      "bytes": 169042,
+      "physicalLoc": 4683,
+      "basePhysicalLoc": 4671,
+      "growth": 12,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "Environment/place ownership, private deferred Move guard and rollback context"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/env.rs",
+      "owner": "arcweft-core",
+      "bytes": 82947,
+      "physicalLoc": 2148,
+      "basePhysicalLoc": 2013,
+      "growth": 135,
+      "classification": "production",
+      "embeddedTestLoc": 1064,
+      "responsibility": "Environment/place ownership, private deferred Move guard and rollback context"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 152941,
+      "physicalLoc": 3928,
+      "basePhysicalLoc": 3928,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "Checked semantic projection, explicit Thread Copy capture selection and original Program kernel lowering"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow/program_task.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 4188,
+      "physicalLoc": 98,
+      "basePhysicalLoc": 97,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "Checked semantic projection, explicit Thread Copy capture selection and original Program kernel lowering"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 103707,
+      "physicalLoc": 2495,
+      "basePhysicalLoc": 2490,
+      "growth": 5,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "responsibility": "Checked semantic projection, explicit Thread Copy capture selection and original Program kernel lowering"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 442526,
+      "physicalLoc": 10370,
+      "basePhysicalLoc": 10367,
+      "growth": 3,
+      "classification": "production",
+      "embeddedTestLoc": 653,
+      "responsibility": "Checked semantic projection, explicit Thread Copy capture selection and original Program kernel lowering"
+    }
+  ],
+  "packages": [
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+      "workspace_fan_in": "5",
+      "workspace_fan_out": "10",
+      "development_workspace_fan_in": "5",
+      "development_workspace_fan_out": "0"
+    }
+  ],
+  "over300Growth": [],
+  "dispositions": [
+    "Core plan/construction and source modules retain one original grammar and key. Capture modes are source-owned metadata; lexical child scope is precisely its declared capture set. Existing large plan/value/lowering owners gain no unrelated state, I/O, alternate reader or fallback model.",
+    "Native environment and AWBC fiber each own their real storage transition. Private non-Clone preparation guards retain values in the parent until the complete launch and result binding succeed. Shared prepared input proof owns child frame allocation; no public API was widened merely for a file split.",
+    "AWBC canonical rows and verifier use the same declared transfer modes. Move participates in the existing consumed-operand transition, preserving duplicate checks and destination alias semantics. Copy remains subject to static and actual custody checks.",
+    "RuntimePlan is the only semantic projection consumer changed. Its Thread lowering explicitly selects Copy and its Program kernel consumes the original capture contract. Dependencies/features/host-I/O boundaries are unchanged; existing normal/development edge inventories remain authoritative.",
+    "Regression fixtures exercise the owning Native/AWBC boundaries with actual Source-issued Program Need inputs, one-op budgets and per-step rollback/public save. The fixture has one original owning Flow rather than a second ordinary function claiming the same local."
+  ]
+}

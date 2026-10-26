@@ -474,6 +474,49 @@ fn program_non_unit_result_survives_each_rollback_and_ack_cannot_republish_it() 
 }
 
 #[test]
+fn program_copy_capture_rejection_keeps_the_original_need_and_identity_frontier() {
+    let (plan, flow, coordinates) = crate::plan::task_source::owned_program_need_fixture(
+        crate::value::RuntimeLocalReadMode::Copy,
+    );
+    let local = plan
+        .task_program_body(
+            &coordinates[1],
+            &mut RuntimeTaskSourceReadContext::new(Default::default()),
+        )
+        .unwrap()
+        .captures()[0]
+        .local;
+    let mut engine = Engine::for_flow(plan, &flow).unwrap();
+    let mut submissions = vec![];
+    let mut rejected = false;
+    for _ in 0..64 {
+        let before = engine.next_fiber_id;
+        let step = engine.step(Default::default(), Default::default());
+        assert!(step.stats.executed_ops <= 1);
+        submissions.extend(step.output.requests.tasks);
+        if !step.output.diagnostics.is_empty() {
+            assert!(
+                step.output
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.message.contains("affine value"))
+            );
+            assert_eq!(engine.next_fiber_id, before);
+            assert_eq!(submissions.len(), 1);
+            assert!(
+                matches!(engine.fiber.frame.env.get(local), Some(RuntimeValue::NeedHandle(handle)) if handle.correlation() == submissions[0].handle().correlation)
+            );
+            rejected = true;
+            break;
+        }
+    }
+    assert!(
+        rejected,
+        "an affine Copy request must fail before launching its child"
+    );
+}
+
+#[test]
 fn program_resume_replays_only_unacknowledged_retirement_metadata_once() {
     let mut engine = engine(true);
     let (task, _) = retire(&mut engine, false);

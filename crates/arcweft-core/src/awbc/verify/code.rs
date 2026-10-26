@@ -2216,18 +2216,6 @@ fn apply_instruction(
             if args.len() != task_body.capture_modes.len() {
                 return argument_count(&at, task_body.capture_modes.len(), args.len());
             }
-            let mut moved = std::collections::BTreeSet::new();
-            for (register, mode) in args.iter().zip(&task_body.capture_modes) {
-                if *mode == crate::value::RuntimeLocalReadMode::Move && !moved.insert(*register) {
-                    return invalid_type(
-                        &at,
-                        "Program task capture moves each register at most once",
-                    );
-                }
-            }
-            for register in moved {
-                clear_register(verifier, function, block, register, state)?;
-            }
             write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::StreamYield { stream, value } => {
@@ -2825,13 +2813,23 @@ fn apply_instruction_copy_and_move_effects(
                 _ => {}
             }
         }
-        AwbcInstruction::StartProgram { dst, args, .. } => {
-            for capture in args {
-                if !state.copy_proofs[capture.index()].permits_copy() {
-                    return invalid_type(
-                        at,
-                        "original Program capture with unrestricted Copy custody",
-                    );
+        AwbcInstruction::StartProgram { dst, plan, args } => {
+            let crate::awbc::schema::AwbcTaskPlanExecution::Program(body) =
+                &program.task_plans[plan.index()].execution
+            else {
+                return invalid_type(at, "Program task row");
+            };
+            for (capture, mode) in args.iter().zip(&body.capture_modes) {
+                match mode {
+                    crate::value::RuntimeLocalReadMode::Copy => {
+                        if !state.copy_proofs[capture.index()].permits_copy() {
+                            return invalid_type(
+                                at,
+                                "original Program capture with unrestricted Copy custody",
+                            );
+                        }
+                    }
+                    crate::value::RuntimeLocalReadMode::Move => consumed.push(*capture),
                 }
             }
             outputs.push(*dst);
@@ -2951,10 +2949,11 @@ fn apply_instruction_copy_and_move_effects(
     }
     for source in &consumed {
         if outputs.contains(source) && !mutated.contains(source) {
-            // Binary consumes each input before writing its result, so its
-            // destination may reuse either vacated input register. The
+            // Binary and Program start consume inputs before writing their
+            // results, so a destination may reuse a vacated input register. The
             // uniqueness check above still rejects reading one owner twice.
             if !matches!(instruction, AwbcInstruction::Binary { dst, .. } if dst == source)
+                && !matches!(instruction, AwbcInstruction::StartProgram { dst, .. } if dst == source)
                 && !matches!(instruction, AwbcInstruction::CallTraitMethod { receiver_out: Some(out), receiver, .. } if out == source && receiver == source)
             {
                 return invalid_type(at, "consumed source distinct from instruction destination");

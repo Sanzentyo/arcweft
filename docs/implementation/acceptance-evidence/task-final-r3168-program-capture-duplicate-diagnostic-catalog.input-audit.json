@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "run": "task-final-r3168-program-capture-duplicate-diagnostic-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(=awbc::product_step::program_task::tests::program_move_verifier_allows_destination_alias_and_rejects_duplicate_owners)",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T00:40:51.2385765Z"
+}

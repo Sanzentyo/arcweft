@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "run": "task-final-r3169-program-capture-duplicate-diagnostic-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.048s] 1 test run: 0 passed, 1 failed, 2041 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 2041,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_move_verifier_allows_destination_alias_and_rejects_duplicate_owners"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-26T00:44:34.7257507Z"
+}

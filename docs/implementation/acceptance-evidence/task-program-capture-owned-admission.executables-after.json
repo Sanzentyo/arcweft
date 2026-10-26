@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3164-program-capture-owned-admission-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+      "bytes": 81262080,
+      "nonTest": false,
+      "sha256": "ed59a9f8717df595ffb3ae5fea9f660aafbdc7f8e249f56c19da1e5f668ce895"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+      "bytes": 104410624,
+      "nonTest": false,
+      "sha256": "1494aa3f22d2e730e5ae78c5cba070faeaf63e3b71a3faf4c4cf7b8d8e00a389"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T00:25:36.8290296Z"
+}

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "name": "task-final-r3166-program-capture-rejection-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3166-program-capture-rejection-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T00:26:54.8671057Z",
+  "finishedAt": "2026-10-26T00:28:37.2378624Z"
+}

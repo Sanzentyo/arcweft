@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "run": "task-final-r3167-program-capture-rejection-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  38.241s] 2169 tests run: 2168 passed, 1 failed, 0 skipped",
+  "caseRowSource": "complete-live-status-before-terminal-summary",
+  "executed": 2169,
+  "passed": 2168,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_move_verifier_allows_destination_alias_and_rejects_duplicate_owners"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-26T00:33:40.5901361Z"
+}

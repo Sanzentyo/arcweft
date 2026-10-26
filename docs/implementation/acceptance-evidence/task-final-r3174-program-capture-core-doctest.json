@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "name": "task-final-r3174-program-capture-core-doctest",
+  "command": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3174-program-capture-core-doctest.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T00:54:11.7254100Z",
+  "finishedAt": "2026-10-26T00:56:21.2252999Z"
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3175-program-capture-structure",
+  "actualExitCode": 0,
+  "scope": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-capture-final-structure-report"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T00:56:27.7264906Z"
+}

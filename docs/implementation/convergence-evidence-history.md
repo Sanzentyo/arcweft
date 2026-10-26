@@ -12300,3 +12300,41 @@ R3159は既定の最終表示が失敗だけのため、監査helperの「summar
 受入済みとはしない。共有gate・構造gate・全53逆依存も最終入力で別途確認する。
 ユーザーの「途中commitを必ず正常動作まで確認しなくてよい」という指示に従い、元WIPを混ぜずに公開する。
 [結果・失敗・入力と原本](acceptance-evidence/task-program-capture-checkpoint.json)。
+
+## Program captureの実所有入力とCopy拒否の検証 — 2026-10-26
+
+直前checkpointは `af3684d752c9530b698844b56f50d04d4cc8585f` として公開した。
+親 `7c94e50db9e8fe78357bbb71af9ead3e2ab15360`、tree
+`6a6e84f882099d0253273867a8a04bd022c5696c`、patch SHA-256
+`6c4eb950762821fa8b17ba21f8400012493dea3c3bf2fd514d26faa850f0132f`。
+公開62 blob・原本23件のbyte差分0、元tracked WIP 14件・untracked実ファイル6件を保持した。
+
+Supersedes: 前節checkpointのaffine実行「受入前」という現状判定は、次の実行証拠へ更新する。
+前節の実際の失敗・未再実行という当時の記録は保持する。R3160 catalog後のR3161は2,164 PASS／2 FAILで、
+不要なordinary function宣言が親localの所有者と競合するfixtureの問題だった。その宣言を除去した
+R3162 catalog／R3163 runtimeは2,164 PASS／2 FAIL。ここでNative Source capture admissionの
+無条件Unrestricted検査と、AWBCの共通Copy／Move効果検査に残るCopy専用条件を実際に再現した。
+前者は元Programの明示modeに従ってMoveをowned borrowed admissionへ通し、後者はMoveを既存の
+consumed operand遷移へ統合した。検査前の移動、型identityによるCopy許可、別の所有権authorityは加えていない。
+R3164 catalog／R3165 runtimeは2,166／2,166 PASS、45.807秒、除外0、終了0だった。
+
+Copy拒否とalias／重複Moveのケースを追加したR3166 catalog／R3167 runtimeは2,168 PASS／1 FAIL。
+R3168 catalog／R3169の1件再現でも、重複Move負テストのparameterをtemporaryの後へ追加したため
+`ParameterLayoutMismatch` で先に拒否された。ABIどおり連続parameter prefixへ修復し、temporary座標も移した。
+期待する重複Move拒否assertionは維持した。R3170 catalog／R3171 runtimeは全2,169件を選択し、
+2,169 PASS／0 FAIL／0 skip、43.804秒、終了0。実Sourceから発行したaffine NeedのNative／AWBC移動、
+各stepのprivate rollback／公開save復元、Copy拒否時の元入力・identity frontier保全、alias許可と重複Move拒否を含む。
+各run終端の3,989入力差分0、R3171の2実行ファイルの前後差分0。原失敗は消さず、結果を合算しない。
+Source parallelと全53逆依存runtimeは、このowner検証とは別の受入境界である。
+[owner検証・各原本](acceptance-evidence/task-program-capture-owner-acceptance.json)。
+
+同じ最終capture入力でR3172 workspace check（207.094秒）、R3173 workspace Clippy（229.938秒）は
+all-target／all-feature／locked、既存警告あり・終了0。R3174 Core doctestは75／75 PASS。
+R3175 canonical構造gateは3,227 files／3,097 Rust／1,753,171 Rust physical LOC／97 package、
+blocking違反0、終了0。変更35 Rustファイルの正確なbyte／physical LOC／分類／embedded test LOCと、
+Core／runtime-planのfan-in／fan-outを記録した。300 LOC超の増加0。元Source grammar、Native Env／
+AWBC frameの実storage遷移、共通register effect、RuntimePlanのprojectionという責任境界を保持し、
+size警告だけを理由とした分割やpublic API拡張は行っていない。全command終端の3,989入力差分0。
+元ログ・receipt・freeze・実行ファイルhash・前checkpointの公開記録の79原本をbyte差分0で保存した。
+[構造・所有境界](acceptance-evidence/task-program-capture-structure-review.json)、
+[checkpoint公開照合](acceptance-evidence/task-program-capture-source-checkpoint.verified.json)。

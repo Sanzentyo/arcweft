@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "af3684d752c9530b698844b56f50d04d4cc8585f",
+  "run": "task-final-r3171-program-capture-verified-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  43.804s] 2169 tests run: 2169 passed, 0 skipped",
+  "caseRowSource": "complete-live-status-before-terminal-summary",
+  "executed": 2169,
+  "passed": 2169,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-26T00:46:50.8066255Z"
+}

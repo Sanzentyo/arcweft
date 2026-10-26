@@ -859,52 +859,9 @@ pub(crate) fn owned_program_need_fixture(
         )),
     );
     let definition = RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xa8; 32]);
-    let function = builder
-        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
-            definition,
-            role: RuntimeFunctionSemanticRole::Ordinary,
-            function_type: None,
-            inputs: Box::new([RuntimeFunctionInputBindingSeed {
-                transfer: RuntimeFunctionInputTransfer::ExternalBinding,
-                origin: RuntimeFunctionInputOrigin::Binding([0xa6; 32]),
-                source: RuntimeFunctionInputSource::Capture { position: 0 },
-                input_local: input.clone(),
-                pattern: RuntimePatternSeed::new(
-                    input_type,
-                    RuntimePatternSeedKind::Bind {
-                        local: input.clone(),
-                        mutable: false,
-                    },
-                ),
-                ownership: RuntimeValueOwnershipRequirement::Owned,
-                unrestricted_bindings: Box::new([]),
-            }]),
-            result: input_type,
-            body_kind: RuntimeFunctionSiteBodyKind::Executable,
-            effects: RuntimeEffectSet::empty(),
-        })
-        .unwrap();
-    builder
-        .define_function_site_seed(
-            &function,
-            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
-                effects: RuntimeEffectSet::empty(),
-                ops: Box::new([RuntimeFlowOpSeed::ReturnExpr(result.clone())]),
-            }),
-        )
-        .unwrap();
     let first_definition = RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xac; 32]);
-    builder
-        .push_function_site_seed(
-            first_definition,
-            RuntimeFunctionSemanticRole::Ordinary,
-            [],
-            RuntimeExprSeed::new(
-                string,
-                RuntimeExprSeedKind::Value(RuntimeValue::String("owned result".into())),
-            ),
-        )
-        .unwrap();
+    // Both kernels are the actual nested Program bodies below. They do not
+    // declare another ordinary function that also owns the parent's local.
     let first_coordinate = builder
         .task_plan_construction()
         .reserve_original_source()

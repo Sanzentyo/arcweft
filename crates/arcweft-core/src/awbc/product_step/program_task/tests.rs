@@ -162,12 +162,9 @@ fn ordinary_program_need_starts_from_its_source_and_survives_each_public_save() 
     );
 }
 
-#[test]
-fn program_need_moves_its_original_affine_input_through_every_public_save() {
+fn owned_program_entry_code(mode: crate::value::RuntimeLocalReadMode) -> AwbcProgram {
     use crate::plan::{RuntimeGeneratedFunctionRole, RuntimeTaskSourceReadContext};
-    use crate::value::RuntimeLocalReadMode;
-    let (original, flow, coordinates) =
-        crate::plan::task_source::owned_program_need_fixture(RuntimeLocalReadMode::Move);
+    let (original, flow, coordinates) = crate::plan::task_source::owned_program_need_fixture(mode);
     let body = original
         .task_program_body(
             &coordinates[1],
@@ -230,7 +227,7 @@ fn program_need_moves_its_original_affine_input_through_every_public_save() {
         execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
             source: body.task_plan().key().into(),
             kernel: AwbcFunctionId(0),
-            capture_modes: vec![RuntimeLocalReadMode::Move],
+            capture_modes: vec![mode],
         }),
     };
     let first_source = original
@@ -313,6 +310,79 @@ fn program_need_moves_its_original_affine_input_through_every_public_save() {
             AwbcStringId(u32::try_from(code.strings.len() - 1).unwrap());
     }
     code.canonicalize_string_table();
+    code
+}
+
+#[test]
+fn program_need_copy_capture_rejects_affine_input_before_product_launch() {
+    let code = owned_program_entry_code(crate::value::RuntimeLocalReadMode::Copy);
+    let result = AwbcProductStepExecutor::for_entry(code, AwbcEntryId(0), 1);
+    assert!(
+        matches!(result, Err(super::super::AwbcProductStepBuildError::InvalidProgram { message }) if message.contains("original Program capture with unrestricted Copy custody"))
+    );
+}
+
+#[test]
+fn program_move_verifier_allows_destination_alias_and_rejects_duplicate_owners() {
+    let mut code = owned_program_entry_code(crate::value::RuntimeLocalReadMode::Move);
+    // This unit tests the register transition. The complete original Source
+    // and execution relation is exercised by the public-save test below.
+    code.signatures[0].result = Some(AwbcTypeId(1));
+    code.frame_layouts[0].slots[1].ty = AwbcTypeId(1);
+    code.blocks[0].instructions = AwbcTableRange::new(4, 1);
+    code.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(1)),
+    };
+    code.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(1),
+        constant: AwbcConstantId(1),
+    });
+    code.task_plans[1].handle_type = crate::task::TaskHandleType::Need {
+        payload: AwbcTypeId(1),
+    };
+    let AwbcInstruction::StartProgram { dst, .. } = &mut code.instructions[2] else {
+        unreachable!()
+    };
+    *dst = AwbcRegisterId(0);
+    code.verify(Default::default(), Default::default()).unwrap();
+
+    code.signatures[0].params.push(AwbcTypeId(2));
+    let mut parameter = code.frame_layouts[0].slots[0].clone();
+    parameter.ty = AwbcTypeId(2);
+    code.frame_layouts[0].slots.insert(1, parameter);
+    let AwbcInstruction::LoadConst { dst, .. } = &mut code.instructions[4] else {
+        unreachable!()
+    };
+    *dst = AwbcRegisterId(2);
+    code.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(2)),
+    };
+    code.functions[0]
+        .input_ownership
+        .push(AwbcFunctionInputOwnership::owned(
+            crate::plan::RuntimeLocalOrigin::Binding([0xb0; 32]),
+            crate::plan::RuntimeFunctionInputSource::Capture { position: 1 },
+            crate::plan::RuntimeFunctionInputTransfer::ExternalBinding,
+        ));
+    let AwbcTaskPlanExecution::Program(body) = &mut code.task_plans[1].execution else {
+        unreachable!()
+    };
+    body.capture_modes
+        .push(crate::value::RuntimeLocalReadMode::Move);
+    let AwbcInstruction::StartProgram { args, .. } = &mut code.instructions[2] else {
+        unreachable!()
+    };
+    args.push(AwbcRegisterId(0));
+    let result = code.verify(Default::default(), Default::default());
+    assert!(
+        matches!(&result, Err(crate::awbc::verify::AwbcVerifyError::InvalidInvariant { message, .. }) if message == "by-value operand registers are unique"),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn program_need_moves_its_original_affine_input_through_every_public_save() {
+    let code = owned_program_entry_code(crate::value::RuntimeLocalReadMode::Move);
     let bytes = code.encode_canonical().unwrap();
     let decoded = AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap();
     let mut executor = AwbcProductStepExecutor::for_entry(decoded, AwbcEntryId(0), 1).unwrap();

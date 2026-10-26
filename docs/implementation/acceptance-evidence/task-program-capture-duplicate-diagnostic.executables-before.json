@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3168-program-capture-duplicate-diagnostic-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 81304576,
+      "nonTest": false,
+      "sha256": "5b0560586f3d021f5a37beb7fccfd56953b681300cc0f31b8f233374328a6abf"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T00:40:51.6710298Z"
+}
