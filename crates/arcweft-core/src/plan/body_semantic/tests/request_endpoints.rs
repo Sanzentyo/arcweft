@@ -177,6 +177,7 @@ fn fixture(
         }
     } else {
         RuntimeFlowOpSeed::ProgramTask {
+            delivery: crate::task::ProgramTaskDelivery::HostMetadata,
             name: None,
             binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
             captures: vec![],

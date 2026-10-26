@@ -96,6 +96,7 @@ fn engine_with_carrier(explicit_return: bool, ordinary_need: bool) -> Engine {
                 effects: RuntimeEffectSet::empty(),
                 ops: Box::new([
                     RuntimeFlowOpSeed::ProgramTask {
+                        delivery: crate::task::ProgramTaskDelivery::HostMetadata,
                         name: None,
                         binding: RuntimePatternSeed::new(
                             handle,
@@ -306,6 +307,7 @@ fn ordinary_program_need_retains_source_custody_and_moves_its_result_once() {
 fn ordinary_program_need_moves_an_affine_capture_and_retains_it_through_rollback() {
     let (plan, flow, _) = crate::plan::task_source::owned_program_need_fixture(
         crate::value::RuntimeLocalReadMode::Move,
+        crate::task::ProgramTaskDelivery::HostMetadata,
     );
     let mut engine = Engine::for_flow(plan, &flow).unwrap();
     let (tasks, reports) = retire_all(&mut engine, true);
@@ -316,6 +318,73 @@ fn ordinary_program_need_moves_an_affine_capture_and_retains_it_through_rollback
             .iter()
             .all(|report| report.terminal() == &ProgramTaskTerminal::Completed)
     );
+    let result = engine
+        .need_producers
+        .take_ready_for_correlation(&tasks[1].handle().correlation)
+        .unwrap()
+        .into_value();
+    assert!(
+        matches!(result, RuntimeValue::NeedHandle(handle) if handle.correlation() == tasks[0].handle().correlation)
+    );
+    assert!(
+        engine
+            .need_producers
+            .take_ready_for_correlation(&tasks[1].handle().correlation)
+            .is_err()
+    );
+    assert_eq!(
+        engine
+            .need_producers
+            .take_ready_for_correlation(&tasks[0].handle().correlation)
+            .unwrap()
+            .into_value(),
+        RuntimeValue::String("owned result".into())
+    );
+}
+
+#[test]
+fn local_program_need_moves_its_result_without_host_delivery_or_ack_after_rollback() {
+    let (plan, flow, coordinates) = crate::plan::task_source::owned_program_need_fixture(
+        crate::value::RuntimeLocalReadMode::Move,
+        crate::task::ProgramTaskDelivery::LocalOnly,
+    );
+    let keys = coordinates
+        .each_ref()
+        .map(|coordinate| plan.task_plan(coordinate).unwrap().key());
+    let mut engine = Engine::for_flow(plan, &flow).unwrap();
+    let (tasks, reports) = retire_all(&mut engine, true);
+    assert!(tasks.is_empty());
+    assert!(reports.is_empty());
+    assert!(
+        engine
+            .need_producers
+            .take_program_retirement_replays()
+            .is_empty()
+    );
+    let admissions = engine.need_producers.task_admissions().collect::<Vec<_>>();
+    assert_eq!(admissions.len(), 2);
+    let tasks = keys.map(|key| {
+        admissions.iter().find(|task| {
+            matches!(&task.spec().request, crate::task::TaskRequest::Program(source) if source.task_plan().key() == key)
+        }).unwrap()
+    });
+    for task in tasks {
+        let dispatch =
+            TaskDispatchIdentity::new(task.handle().correlation, LogicalEpoch(1), TaskSequence(1));
+        let forged = TaskEvent::from_dispatch(
+            dispatch,
+            TaskPublicationRevision::FIRST,
+            TaskEventKind::ProgramTerminal(ProgramTaskTerminal::Completed),
+        );
+        let rejected = engine
+            .need_producers
+            .publish_task_event_owned(forged)
+            .unwrap_err();
+        assert_eq!(
+            rejected.into_parts().0,
+            NeedProducerAdmissionError::InvalidPublicationSource
+        );
+    }
     let result = engine
         .need_producers
         .take_ready_for_correlation(&tasks[1].handle().correlation)
@@ -477,6 +546,7 @@ fn program_non_unit_result_survives_each_rollback_and_ack_cannot_republish_it() 
 fn program_copy_capture_rejection_keeps_the_original_need_and_identity_frontier() {
     let (plan, flow, coordinates) = crate::plan::task_source::owned_program_need_fixture(
         crate::value::RuntimeLocalReadMode::Copy,
+        crate::task::ProgramTaskDelivery::HostMetadata,
     );
     let local = plan
         .task_program_body(

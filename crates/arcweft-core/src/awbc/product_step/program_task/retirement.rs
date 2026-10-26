@@ -89,7 +89,8 @@ impl AwbcProductStepExecutor {
             .need_producers
             .complete_program_task(launch, outcome, &mut admission)
         {
-            Ok(report) => output.requests.program_task_completions.push(report),
+            Ok(Some(report)) => output.requests.program_task_completions.push(report),
+            Ok(None) => (),
             Err(rejected) => {
                 child.fiber.terminal = Some(match rejected.outcome {
                     ProgramTaskOutcome::Returned(value) if explicit => {

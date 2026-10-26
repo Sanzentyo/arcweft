@@ -933,7 +933,9 @@ impl Engine {
                     }
                 };
                 self.advance_if_needed(next_op_index);
-                output.requests.tasks.push(accepted);
+                if let Some(accepted) = accepted {
+                    output.requests.tasks.push(accepted);
+                }
             }
             FlowOp::Scope { identity, .. } => {
                 self.advance_if_needed(next_op_index);

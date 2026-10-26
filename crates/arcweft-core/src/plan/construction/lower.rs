@@ -3861,6 +3861,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 name,
                 binding,
                 producer,
+                delivery,
                 captures,
                 body,
             } => {
@@ -3887,6 +3888,7 @@ impl RuntimePlanBodyConstruction<'_> {
                     name,
                     binding,
                     producer,
+                    delivery,
                     captures: {
                         let mut selected = std::collections::BTreeSet::new();
                         captures

@@ -231,9 +231,12 @@ impl<'a> OriginalRequestEndpoint<'a> {
                 _ => None,
             },
             EndpointKind::ProgramTask => match operation {
-                plan::FlowOp::ProgramTask { producer, .. } => {
-                    Some(Source::ProgramProducer(producer))
-                }
+                plan::FlowOp::ProgramTask {
+                    producer, delivery, ..
+                } => Some(Source::ProgramProducer {
+                    producer,
+                    delivery: *delivery,
+                }),
                 _ => None,
             },
             EndpointKind::MakeNeed => match operation {

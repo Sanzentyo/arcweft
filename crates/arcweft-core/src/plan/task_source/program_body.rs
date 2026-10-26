@@ -40,6 +40,7 @@ pub struct RuntimeProgramTaskBodyRef<'program> {
     source: RuntimeTaskSourceRef<'program>,
     function: &'program RuntimeFunctionSite,
     producer: &'program NeedProducerDefinition,
+    delivery: crate::task::ProgramTaskDelivery,
     captures: &'program [crate::plan::RuntimeProgramTaskCapture],
     body: &'program [FlowOp],
 }
@@ -56,6 +57,7 @@ impl RuntimePlan {
         let endpoint = source.request;
         let Some(FlowOp::ProgramTask {
             producer,
+            delivery,
             captures,
             body,
             ..
@@ -84,6 +86,7 @@ impl RuntimePlan {
             source,
             function,
             producer,
+            delivery: *delivery,
             captures,
             body,
         })
@@ -105,6 +108,11 @@ impl RuntimeProgramTaskBodyRef<'_> {
     #[must_use]
     pub const fn producer(&self) -> &NeedProducerDefinition {
         self.producer
+    }
+
+    #[must_use]
+    pub const fn delivery(&self) -> crate::task::ProgramTaskDelivery {
+        self.delivery
     }
 
     #[must_use]

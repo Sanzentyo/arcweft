@@ -546,6 +546,7 @@ pub enum RuntimeFlowOpSeed {
         name: Option<String>,
         binding: RuntimePatternSeed,
         producer: crate::task::NeedProducerDefinition,
+        delivery: crate::task::ProgramTaskDelivery,
         captures: Vec<crate::plan::RuntimeProgramTaskCapture<RuntimeLocalSeedId>>,
         body: Vec<Self>,
     },

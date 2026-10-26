@@ -277,7 +277,7 @@ impl RuntimeBodyTaskSource<'_> {
                 producer.outcome().payload_semantic_identity(),
                 RuntimeControlEffectCancellation::PropagatesToChildren,
             ),
-            RuntimeBodyTaskSource::ProgramProducer(producer) => (
+            RuntimeBodyTaskSource::ProgramProducer { producer, .. } => (
                 producer.family,
                 producer.class.clone(),
                 RuntimeTaskControlMode::RuntimeAggregate,

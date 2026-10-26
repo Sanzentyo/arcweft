@@ -70,9 +70,9 @@ mod request;
 pub(crate) use execution::ProgramTaskLaunch;
 pub(crate) use execution::TaskExecutionSource;
 pub use execution::{
-    ProgramTaskCompletion, ProgramTaskCompletionRejection, ProgramTaskPublication,
-    ProgramTaskPublicationBatch, ProgramTaskRetirementPhase, ProgramTaskTerminal,
-    TaskExecutionKind, TaskRequest,
+    ProgramTaskCompletion, ProgramTaskCompletionRejection, ProgramTaskDelivery,
+    ProgramTaskPublication, ProgramTaskPublicationBatch, ProgramTaskRetirementPhase,
+    ProgramTaskTerminal, TaskExecutionKind, TaskRequest,
 };
 pub(crate) use execution::{ProgramTaskOutcome, ProgramTaskRetirementRejection};
 pub use failure::{

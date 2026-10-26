@@ -170,7 +170,7 @@ impl Engine {
         &mut self,
         prepared: PreparedProgramTask,
         binding: &crate::pattern::RuntimePattern,
-    ) -> Result<crate::task::TaskSubmission, ProgramTaskPreparationError> {
+    ) -> Result<Option<crate::task::TaskSubmission>, ProgramTaskPreparationError> {
         let PreparedProgramTask {
             spec,
             mut child,
@@ -197,6 +197,7 @@ impl Engine {
                 })?;
         // Every fallible Source/capture/receipt/binding check precedes this
         // exclusive Move commit and the parent/child scheduler mutation.
+        let deliver = launch.delivery() == crate::task::ProgramTaskDelivery::HostMetadata;
         child.frame.env = captured.commit();
         child.launch = super::FlowFiberLaunch::Program(launch);
         child.frame.status = super::FlowFiberStatus::Running;
@@ -205,6 +206,6 @@ impl Engine {
         self.run_child_next = true;
         self.fiber.frame.env.bind_all(bindings);
         self.task_request_quota_remaining -= 1;
-        Ok(accepted)
+        Ok(deliver.then_some(accepted))
     }
 }

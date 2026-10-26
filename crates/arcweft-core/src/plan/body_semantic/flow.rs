@@ -13,7 +13,10 @@ use crate::task::semantic::TaskSemanticEncoder;
 #[derive(Clone, Copy)]
 pub(crate) enum RuntimeBodyTaskSource<'a> {
     Producer(&'a crate::task::NeedProducerTemplate),
-    ProgramProducer(&'a crate::task::NeedProducerDefinition),
+    ProgramProducer {
+        producer: &'a crate::task::NeedProducerDefinition,
+        delivery: crate::task::ProgramTaskDelivery,
+    },
     Host(&'a plan::RuntimeHostCallTarget),
     Start(&'a plan::RuntimeNeedProducerStartTarget),
 }
@@ -24,7 +27,7 @@ impl<'a> RuntimeBodyTaskSource<'a> {
     ) -> Option<&'a crate::task::NeedProducerDefinition> {
         match self {
             Self::Producer(template) => Some(&template.definition),
-            Self::ProgramProducer(definition) => Some(definition),
+            Self::ProgramProducer { producer, .. } => Some(producer),
             Self::Host(_) | Self::Start(_) => None,
         }
     }
@@ -43,8 +46,9 @@ impl<'a> RuntimeBodyTaskSource<'a> {
                 encoder.tag(1);
                 producer.encode_control_metadata(&mut encoder);
             }
-            Self::ProgramProducer(producer) => {
+            Self::ProgramProducer { producer, delivery } => {
                 encoder.tag(3);
+                encoder.tag(delivery.semantic_tag());
                 producer.encode_control_metadata(&mut encoder);
             }
             Self::Start(target) => {
@@ -62,7 +66,7 @@ impl<'a> RuntimeBodyTaskSource<'a> {
     pub(crate) fn coordinate(&self) -> &RuntimeTaskPlanBuildCoordinate {
         match self {
             Self::Producer(producer) => &producer.definition.plan,
-            Self::ProgramProducer(producer) => &producer.plan,
+            Self::ProgramProducer { producer, .. } => &producer.plan,
             Self::Host(target) => &target.producer.plan,
             Self::Start(target) => target.task_plan(),
         }
@@ -194,13 +198,20 @@ impl RuntimeBodySemanticContext<'_> {
                 self.write_host_arguments_metadata(encoder, &target.args)?;
             }
             FlowOp::ProgramTask {
-                producer, captures, ..
+                producer,
+                delivery,
+                captures,
+                ..
             } => {
                 Self::write_task_reference(
                     encoder,
-                    RuntimeBodyTaskSource::ProgramProducer(producer),
+                    RuntimeBodyTaskSource::ProgramProducer {
+                        producer,
+                        delivery: *delivery,
+                    },
                     task_owner,
                 )?;
+                encoder.tag(delivery.semantic_tag());
                 encoder.count(captures.len());
                 for capture in captures {
                     encoder.enter_element();

@@ -1,0 +1,393 @@
+{
+  "version": 1,
+  "base": "d2d87bb67f64892a433aff8c13257263e9ecafe4",
+  "status": "owner-and-shared-gates-verified-checkpoint",
+  "scope": "Explicit original-Source ProgramTaskDelivery, Native/AWBC local execution and retirement, canonical source/wire/Serde and save-restore admission",
+  "runtime": {
+    "version": 1,
+    "base": "d2d87bb67f64892a433aff8c13257263e9ecafe4",
+    "run": "task-final-r3185-program-delivery-owner-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  47.611s] 2172 tests run: 2172 passed, 0 skipped",
+    "caseRowSource": "complete-live-status-before-terminal-summary",
+    "executed": 2172,
+    "passed": 2172,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3989,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-26T03:20:10.6256113Z"
+  },
+  "catalog": {
+    "all": 2172,
+    "matched": 2172,
+    "excluded": 0,
+    "requiredCases": [
+      {
+        "package": "arcweft-core",
+        "binary": "arcweft-core",
+        "test": "engine::thread::tests::local_program_need_moves_its_result_without_host_delivery_or_ack_after_rollback",
+        "ignored": false,
+        "status": "matches"
+      },
+      {
+        "package": "arcweft-core",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::program_task::tests::local_program_need_preserves_owned_results_through_each_public_save_without_host_delivery",
+        "ignored": false,
+        "status": "matches"
+      },
+      {
+        "package": "arcweft-core",
+        "binary": "arcweft-core",
+        "test": "awbc::codec::runtime::task_tests::program_delivery_is_required_and_unknown_wire_tags_are_rejected_before_payload",
+        "ignored": false,
+        "status": "matches"
+      },
+      {
+        "package": "arcweft-core",
+        "binary": "arcweft-core",
+        "test": "plan::task_source::program::program_task::tests::program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drift",
+        "ignored": false,
+        "status": "matches"
+      },
+      {
+        "package": "arcweft-core",
+        "binary": "arcweft-core",
+        "test": "engine::thread::tests::ordinary_program_need_moves_an_affine_capture_and_retains_it_through_rollback",
+        "ignored": false,
+        "status": "matches"
+      },
+      {
+        "package": "arcweft-core",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::program_task::tests::program_need_moves_its_original_affine_input_through_every_public_save",
+        "ignored": false,
+        "status": "matches"
+      }
+    ]
+  },
+  "executables": {
+    "count": 2,
+    "drift": 0,
+    "artifactCopyMove": false
+  },
+  "priorFailures": {
+    "compile": {
+      "run": "task-final-r3180-program-delivery-shape-check",
+      "actualExitCode": 101,
+      "errors": 13,
+      "repair": "Eleven required delivery constructors and generic live/assertion Source retirement admission"
+    },
+    "runtime": {
+      "run": "task-final-r3183-program-delivery-owner-runtime",
+      "actualExitCode": 100,
+      "passed": 2155,
+      "failed": 17,
+      "repair": "Count/preflight reads and validates the original Source delivery byte before capture count, matching the materializing decoder"
+    }
+  },
+  "reverseDependencies": {
+    "graph": "task-program-capture-reverse.graph.json",
+    "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+    "packages": 53,
+    "manifestLockDrift": 0,
+    "currentDeliveryRuntime": "not-run"
+  },
+  "sharedGates": {
+    "workspaceCheck": {
+      "version": 1,
+      "run": "task-final-r3186-program-delivery-workspace-check",
+      "actualExitCode": 0,
+      "scope": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "sourceInputs": 3989,
+      "sourceDrift": 0,
+      "held": 14,
+      "at": "2026-10-26T03:40:44.6599051Z"
+    },
+    "workspaceClippy": {
+      "version": 1,
+      "run": "task-final-r3187-program-delivery-workspace-clippy",
+      "actualExitCode": 0,
+      "scope": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "sourceInputs": 3989,
+      "sourceDrift": 0,
+      "held": 14,
+      "at": "2026-10-26T03:40:45.527368Z"
+    },
+    "coreDoctest": {
+      "audit": {
+        "version": 1,
+        "run": "task-final-r3188-program-delivery-core-doctest",
+        "actualExitCode": 0,
+        "scope": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "sourceInputs": 3989,
+        "sourceDrift": 0,
+        "held": 14,
+        "at": "2026-10-26T03:40:47.3204116Z"
+      },
+      "passed": 75,
+      "failed": 0,
+      "ignored": 0
+    },
+    "structure": {
+      "audit": {
+        "version": 1,
+        "run": "task-final-r3189-program-delivery-structure",
+        "actualExitCode": 0,
+        "scope": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-program-delivery-structure-report"
+        ],
+        "sourceInputs": 3989,
+        "sourceDrift": 0,
+        "held": 14,
+        "at": "2026-10-26T03:40:49.021121Z"
+      },
+      "blockingViolations": 0,
+      "review": "task-program-delivery-structure-review.json"
+    }
+  },
+  "unchangedAcceptance": "Generic Match and other accepted cuts retain their original scope. Prior R3177 full reverse and R3172-R3175 capture gates are historical results, not delivery reruns.",
+  "raw": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3180-program-delivery-shape-check.diagnostics.json",
+      "bytes": 9978,
+      "sha256": "67b90f7c4051fe4d1091a3ffb63187ee10a3fc5066f61cae7e34ff422478e85e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3180-program-delivery-shape-check.input-audit.json",
+      "bytes": 414,
+      "sha256": "190790389e11031fc102d9ed6aaebb0df43bdb34800fefb3ae054fe67fe32fa3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3180-program-delivery-shape-check.json",
+      "bytes": 599,
+      "sha256": "78361dccf0c9f1bb4904cab7701733c5a1e1019cc8cf23e243fc387de84c511e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3180-program-delivery-shape-check.log",
+      "bytes": 296765,
+      "sha256": "3706f442ffa720f67ab89e02b9878d8c1c3b32e1069bcd3dc38e6103f2a32526"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3181-program-delivery-shape-check.input-audit.json",
+      "bytes": 412,
+      "sha256": "762142d584cb8e10c62d961665c7c382de1e9f443adf3b0959c3cd4a2266f22b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3181-program-delivery-shape-check.json",
+      "bytes": 597,
+      "sha256": "d2f24a813c0776429ea4460d320d203d057101d5d007fa3a0ab1d407de5aef92"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3181-program-delivery-shape-check.log",
+      "bytes": 693505,
+      "sha256": "4c0aecc23218eecabe18fcdfb39ab732945d605c5c2ed2611ffa2dd0760de337"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3182-program-delivery-owner-catalog.input-audit.json",
+      "bytes": 421,
+      "sha256": "69ddd67912cbde5ea31633a01ea4f7c5b33fbd56c685372fb82a3d2290d6af42"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3182-program-delivery-owner-catalog.inventory.json",
+      "bytes": 551128,
+      "sha256": "c89d60e87d9047c4d14fc22d6f18d02a84af2fe2e9cdf5b7a7bcd87aecc16c9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3182-program-delivery-owner-catalog.json",
+      "bytes": 615,
+      "sha256": "dac312380edcf6bd3efcb301fe9b0a2a5794be4b5f65ef8ca1a68a2295c343ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3182-program-delivery-owner-catalog.log",
+      "bytes": 463909,
+      "sha256": "ba76b476db4028a382d562c69921fb91ae69b26dd2988a649899ac8481dbc260"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3183-program-delivery-owner-runtime.json",
+      "bytes": 633,
+      "sha256": "ae43a22d8e8506cac93b86af2a6a1795052b6411a114a51d471155d954614cea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3183-program-delivery-owner-runtime.log",
+      "bytes": 440786,
+      "sha256": "8896ea14ebf8673c06914acef67465e01d7e4ceafdcab41880564fa0302db3b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3183-program-delivery-owner-runtime.terminal-audit.json",
+      "bytes": 4190,
+      "sha256": "f7de57071d7ebd66bc666477f70e9c237b539b96dfe202e557f92054c57ae24b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3184-program-delivery-owner-catalog.input-audit.json",
+      "bytes": 421,
+      "sha256": "7a32f79f469b9ccfaae6f6b0f5c37adaeb9e6cb52a236de888985b16d74e790f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3184-program-delivery-owner-catalog.inventory.json",
+      "bytes": 551128,
+      "sha256": "2be2ca8b67562da7fd59ec476cf720f0251c582852507c81e5fb22df7999982c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3184-program-delivery-owner-catalog.json",
+      "bytes": 615,
+      "sha256": "9039f8a528e7fec534b04ffdd8c6d8335f978cc6d8f3ccda1ce9e7f6c7d01c61"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3184-program-delivery-owner-catalog.log",
+      "bytes": 463909,
+      "sha256": "94c7256cd6cb5d078571118c2f3e79b8ae516025b761902c43412074eb638122"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3185-program-delivery-owner-runtime.json",
+      "bytes": 631,
+      "sha256": "c0c63183d69f0952151693f06149c7cd750163e62be524e9f1dfcc9329a9a2d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3185-program-delivery-owner-runtime.log",
+      "bytes": 421859,
+      "sha256": "6cf37521198057481aa1c2b3d29f3749cbcd4aa1b35265eb4e439fcacfcbbd1b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3185-program-delivery-owner-runtime.terminal-audit.json",
+      "bytes": 646,
+      "sha256": "7fb06e2611c451de05ff168b771433e4f0c68879d472c21d68e2909981634319"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-shape.source-freeze.json",
+      "bytes": 781197,
+      "sha256": "661313e8353597fa581503305216f5dcde53698b56c49b845fc9c085cdce7991"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-shape-current.source-freeze.json",
+      "bytes": 781605,
+      "sha256": "d300d332b22d6c64be3c0020331fbd6b645d3cb2c54bd19f36b93187745a48a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-owner.source-freeze.json",
+      "bytes": 781605,
+      "sha256": "f75c9290caa413c17b73df4a31f4e7aa01bc3b845986e655b2db196103e5c986"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-owner-current.source-freeze.json",
+      "bytes": 781686,
+      "sha256": "177f5d1290cddc889834504e37c02f953cc58179979a5bf9c7a66fa0f31fbf5b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-owner.executables-before.json",
+      "bytes": 732,
+      "sha256": "d5dfd0349b0494aef03dda904e68fa0d090c6bd735dbd98b79c557001377f8e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-owner.executables-after.json",
+      "bytes": 731,
+      "sha256": "590ec5cf7f7b6f81b756109fc511f10bd1eb46443ff7ed3c0f3dc697df6dadff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-owner-current.executables-before.json",
+      "bytes": 732,
+      "sha256": "2bdeae9560cc49e76221480fb1e220358687a2e083774b4b42d8b6cb8aaeaf90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-owner-current.executables-after.json",
+      "bytes": 731,
+      "sha256": "7486478073c912bbf0e1360f3ea1bcbdd3c2ee74f492be5c4763438ef1145542"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3186-program-delivery-workspace-check.json",
+      "bytes": 522,
+      "sha256": "44a45d59986a13806919d618d690576baa8e1671480c3b056f250ba80c45add8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3186-program-delivery-workspace-check.log",
+      "bytes": 106154,
+      "sha256": "2118b84ddf97c76ae66cc07718702409f872493e9cfa77d165f8205f88ad5446"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3186-program-delivery-workspace-check.input-audit.json",
+      "bytes": 326,
+      "sha256": "ae092f585f0487abd32d82479f6c922017ac71c1d7dcb4e9d1325c259524f605"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3187-program-delivery-workspace-clippy.json",
+      "bytes": 525,
+      "sha256": "318ed2e9910fcfb019537e9de52c48600d3b3e997485f948c0046536869b821f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3187-program-delivery-workspace-clippy.log",
+      "bytes": 6636183,
+      "sha256": "1dd4e8408874e2e42d51c4df59b448ae18071d5cb58eda77fc710e799a8f0a3f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3187-program-delivery-workspace-clippy.input-audit.json",
+      "bytes": 328,
+      "sha256": "05acee48e3cbb05fc7c4fd19e573b148fc31f294e9e0a06910e487f599564bbf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3188-program-delivery-core-doctest.json",
+      "bytes": 519,
+      "sha256": "6fc4a7b426bd99fed0a5c42f8415d19ab33c333051434772e2c9cfba44f08028"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3188-program-delivery-core-doctest.log",
+      "bytes": 78991,
+      "sha256": "23200954001f459216823fe69241ac1585f6bbf18927025201d0e71a6c271eff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3188-program-delivery-core-doctest.input-audit.json",
+      "bytes": 326,
+      "sha256": "fc1f19ede32a6af6dd651305f441d94468a7e48b41139f11814a422631e0e26b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3189-program-delivery-structure.json",
+      "bytes": 671,
+      "sha256": "35676991014bcfceb019271072a761c06eeb1df0834cc213cff8b342b24189f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3189-program-delivery-structure.log",
+      "bytes": 64614,
+      "sha256": "5d4331521124e7530e76b936f08590bbdd43431e2b1aed69ca2840f31cc668cd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3189-program-delivery-structure.input-audit.json",
+      "bytes": 481,
+      "sha256": "532d263b5c0c7ee2a003e821ee8dd0ea89e0c85429957b5410315b222660aab5"
+    }
+  ],
+  "recordedAt": "2026-10-26T03:41:46.9291801Z",
+  "publicationBase": "3454d188896e2ac4455936912f9cf64f7785d1a5"
+}

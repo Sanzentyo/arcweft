@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d2d87bb67f64892a433aff8c13257263e9ecafe4",
+  "name": "task-final-r3188-program-delivery-core-doctest",
+  "command": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3188-program-delivery-core-doctest.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T03:37:35.1285018Z",
+  "finishedAt": "2026-10-26T03:40:10.1147379Z"
+}

@@ -1956,6 +1956,10 @@ fn validate_restore_launch<
             ))
         }
         NeedProducerLaunchOriginRestore::Program { retirement } => {
+            let super::TaskRequest::Program(source) = &saved_spec.request else {
+                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
+            };
+            let delivery_matches = source.validate_program_retirement(*retirement).is_ok();
             let terminal_matches = match &restore.state {
                 RuntimeNeedProducerState::NotStarted => false,
                 RuntimeNeedProducerState::Pending(_) => {
@@ -1970,7 +1974,7 @@ fn validate_restore_launch<
                         && *retirement != super::ProgramTaskRetirementPhase::Executing
                 }
             };
-            if !matches!(&saved_spec.request, super::TaskRequest::Program(_))
+            if !delivery_matches
                 || !restore.task_submitted
                 || !terminal_matches
                 || (restore.publication.is_some()
@@ -2494,7 +2498,7 @@ impl NeedProducerRegistry {
         launch: &super::ProgramTaskLaunch,
         outcome: super::ProgramTaskOutcome,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
-    ) -> Result<super::ProgramTaskCompletion, super::ProgramTaskRetirementRejection> {
+    ) -> Result<Option<super::ProgramTaskCompletion>, super::ProgramTaskRetirementRejection> {
         let correlation = launch.handle().correlation;
         let key = NeedProducerLaunchKey {
             generation: correlation.generation,
@@ -2565,11 +2569,19 @@ impl NeedProducerRegistry {
         let RuntimeTaskLaunchOrigin::Program { retirement, .. } = &mut existing.origin else {
             unreachable!("retirement preflight selected an actual Program launch")
         };
-        *retirement = super::ProgramTaskRetirementPhase::Unacknowledged;
-        Ok(super::ProgramTaskCompletion::retired(
-            launch.clone(),
-            terminal,
-        ))
+        match launch.delivery() {
+            super::ProgramTaskDelivery::HostMetadata => {
+                *retirement = super::ProgramTaskRetirementPhase::Unacknowledged;
+                Ok(Some(super::ProgramTaskCompletion::retired(
+                    launch.clone(),
+                    terminal,
+                )))
+            }
+            super::ProgramTaskDelivery::LocalOnly => {
+                *retirement = super::ProgramTaskRetirementPhase::Local;
+                Ok(None)
+            }
+        }
     }
 
     pub(crate) fn accepted_task_spec(&self, handle: super::TaskHandle) -> Option<&TaskSpec> {
@@ -3117,6 +3129,14 @@ impl NeedProducerRegistry {
             }
         }
         if program {
+            if matches!(&launch.origin, RuntimeTaskLaunchOrigin::Program { launch, .. }
+                if launch.delivery() == super::ProgramTaskDelivery::LocalOnly)
+            {
+                return Err(reject(
+                    NeedProducerAdmissionError::InvalidPublicationSource,
+                    event,
+                ));
+            }
             if !task_event_matches_launch(launch, &event) {
                 return Err(reject(
                     NeedProducerAdmissionError::InvalidNeedTransition,

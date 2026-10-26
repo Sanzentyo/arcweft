@@ -4280,7 +4280,8 @@ impl Engine {
                         outcome,
                         &mut admission,
                     ) {
-                        Ok(report) => output.requests.program_task_completions.push(report),
+                        Ok(Some(report)) => output.requests.program_task_completions.push(report),
+                        Ok(None) => (),
                         Err(rejected) => {
                             if let crate::task::ProgramTaskOutcome::Returned(value) =
                                 rejected.outcome
@@ -4335,7 +4336,8 @@ impl Engine {
                         crate::task::ProgramTaskOutcome::Failed(failure),
                         &mut admission,
                     ) {
-                        Ok(report) => output.requests.program_task_completions.push(report),
+                        Ok(Some(report)) => output.requests.program_task_completions.push(report),
+                        Ok(None) => (),
                         Err(rejected) => {
                             child.frame.status = FlowFiberStatus::Failed(message);
                             self.child_fibers.push_front(child);

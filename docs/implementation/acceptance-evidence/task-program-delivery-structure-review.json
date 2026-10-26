@@ -1,0 +1,377 @@
+{
+  "version": 1,
+  "base": "d2d87bb67f64892a433aff8c13257263e9ecafe4",
+  "workingTree": "dirty: this delivery cut and the preserved original WIP",
+  "measuredAt": "2026-10-26T03:34:06.8574934Z",
+  "blockingViolations": 0,
+  "changedFiles": [
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+      "owner": "arcweft-core",
+      "bytes": 56092,
+      "physicalLoc": 1587,
+      "basePhysicalLoc": 1568,
+      "growth": 19,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime/task_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 6240,
+      "physicalLoc": 167,
+      "basePhysicalLoc": 128,
+      "growth": 39,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 10142,
+      "physicalLoc": 265,
+      "basePhysicalLoc": 262,
+      "growth": 3,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task/retirement.rs",
+      "owner": "arcweft-core",
+      "bytes": 4189,
+      "physicalLoc": 109,
+      "basePhysicalLoc": 108,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 26948,
+      "physicalLoc": 712,
+      "basePhysicalLoc": 621,
+      "growth": 91,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 322039,
+      "physicalLoc": 8169,
+      "basePhysicalLoc": 8167,
+      "growth": 2,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "owner": "arcweft-core",
+      "bytes": 120068,
+      "physicalLoc": 3745,
+      "basePhysicalLoc": 3744,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "owner": "arcweft-core",
+      "bytes": 229454,
+      "physicalLoc": 5705,
+      "basePhysicalLoc": 5703,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 819
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow.rs",
+      "owner": "arcweft-core",
+      "bytes": 84258,
+      "physicalLoc": 2037,
+      "basePhysicalLoc": 2035,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 111
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread.rs",
+      "owner": "arcweft-core",
+      "bytes": 8470,
+      "physicalLoc": 211,
+      "basePhysicalLoc": 210,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 24774,
+      "physicalLoc": 686,
+      "basePhysicalLoc": 616,
+      "growth": 70,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan.rs",
+      "owner": "arcweft-core",
+      "bytes": 54270,
+      "physicalLoc": 1584,
+      "basePhysicalLoc": 1583,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+      "owner": "arcweft-core",
+      "bytes": 16012,
+      "physicalLoc": 387,
+      "basePhysicalLoc": 376,
+      "growth": 11,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/function.rs",
+      "owner": "arcweft-core",
+      "bytes": 38654,
+      "physicalLoc": 971,
+      "basePhysicalLoc": 968,
+      "growth": 3,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/tests/request_endpoints.rs",
+      "owner": "arcweft-core",
+      "bytes": 14361,
+      "physicalLoc": 386,
+      "basePhysicalLoc": 385,
+      "growth": 1,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "owner": "arcweft-core",
+      "bytes": 257061,
+      "physicalLoc": 6033,
+      "basePhysicalLoc": 6031,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 281
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+      "owner": "arcweft-core",
+      "bytes": 100827,
+      "physicalLoc": 3068,
+      "basePhysicalLoc": 3067,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 91
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+      "owner": "arcweft-core",
+      "bytes": 43688,
+      "physicalLoc": 1108,
+      "basePhysicalLoc": 1099,
+      "growth": 9,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/encoding/fields.rs",
+      "owner": "arcweft-core",
+      "bytes": 22179,
+      "physicalLoc": 570,
+      "basePhysicalLoc": 568,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+      "owner": "arcweft-core",
+      "bytes": 21517,
+      "physicalLoc": 651,
+      "basePhysicalLoc": 646,
+      "growth": 5,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/task_plans/original_source.rs",
+      "owner": "arcweft-core",
+      "bytes": 13975,
+      "physicalLoc": 331,
+      "basePhysicalLoc": 331,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/owned.rs",
+      "owner": "arcweft-core",
+      "bytes": 8058,
+      "physicalLoc": 214,
+      "basePhysicalLoc": 196,
+      "growth": 18,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 12243,
+      "physicalLoc": 323,
+      "basePhysicalLoc": 318,
+      "growth": 5,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 19363,
+      "physicalLoc": 536,
+      "basePhysicalLoc": 528,
+      "growth": 8,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body.rs",
+      "owner": "arcweft-core",
+      "bytes": 4280,
+      "physicalLoc": 130,
+      "basePhysicalLoc": 122,
+      "growth": 8,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 54042,
+      "physicalLoc": 1472,
+      "basePhysicalLoc": 1464,
+      "growth": 8,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "owner": "arcweft-core",
+      "bytes": 73675,
+      "physicalLoc": 2226,
+      "basePhysicalLoc": 2226,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 154
+    },
+    {
+      "path": "crates/arcweft-core/src/task/execution.rs",
+      "owner": "arcweft-core",
+      "bytes": 22522,
+      "physicalLoc": 645,
+      "basePhysicalLoc": 578,
+      "growth": 67,
+      "classification": "production",
+      "embeddedTestLoc": 31
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer.rs",
+      "owner": "arcweft-core",
+      "bytes": 176440,
+      "physicalLoc": 4601,
+      "basePhysicalLoc": 4581,
+      "growth": 20,
+      "classification": "production",
+      "embeddedTestLoc": 995
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 103756,
+      "physicalLoc": 2496,
+      "basePhysicalLoc": 2495,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 442659,
+      "physicalLoc": 10373,
+      "basePhysicalLoc": 10370,
+      "growth": 3,
+      "classification": "production",
+      "embeddedTestLoc": 653
+    }
+  ],
+  "packages": [
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+      "workspace_fan_in": "5",
+      "workspace_fan_out": "10",
+      "development_workspace_fan_in": "5",
+      "development_workspace_fan_out": "0"
+    }
+  ],
+  "growthOver300": [],
+  "ownerDispositions": [
+    {
+      "owner": "arcweft-core",
+      "disposition": "Retain cohesive owners",
+      "reason": "The original Program operation owns the required delivery enum. Semantic transcript, counted source grammar, materializing codec and AWBC admission project that same contract. RuntimeTaskSource caches one private attested execution contract; inert locators grant no delivery authority. Live restore validates the resolved original Source before registry commit. Native and AWBC keep their existing real frame/capture and Ready-result owners; only external metadata delivery differs. No parallel policy table, fallback reader, host I/O or new dependency is introduced. Existing large plan/engine/producer owners receive related transitions, not unrelated state. Regression tests exercise each owning boundary with existing one-op budgets, rollback/public-save transitions and forged metadata rejection. Public APIs were changed for the contract, never merely to split a file."
+    },
+    {
+      "owner": "arcweft-runtime-plan",
+      "disposition": "Retain semantic projection and AWBC inventory owners",
+      "reason": "Final Flow resolution forwards explicit delivery and existing Thread lowering selects HostMetadata. AWBC inventory reads delivery from the admitted original Program body. This preserves direction from checked semantic projection to Core and adds no policy inference, state owner, Cargo dependency or I/O. The cut does not claim to implement Source parallel."
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-structure.dependency_edges.csv",
+      "bytes": 77451,
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-structure.file_metrics.csv",
+      "bytes": 326789,
+      "sha256": "3a64915d557dec9d63d5aa5fc8d97447c5d8eee94b4dc5270e914087fc0ae9eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-structure.findings.md",
+      "bytes": 121535,
+      "sha256": "5b90d038ad0ffee2d5ac6a90893870bf61decf126f7a0f30cd59de4a04a650e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-structure.package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-delivery-structure.public_type_duplicates.csv",
+      "bytes": 17121,
+      "sha256": "f36d05e5e23ed60e82eae1a68cc547068ce2bd2a07e7bb1c340a2b6b3523c7d3"
+    }
+  ]
+}

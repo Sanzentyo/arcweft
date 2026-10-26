@@ -1,0 +1,197 @@
+[
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\codec\\runtime\\task_tests.rs",
+        "line_start": 8,
+        "line_end": 8,
+        "byte_start": 241,
+        "byte_end": 260,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`\n --> crates\\arcweft-core\\src\\awbc\\codec\\runtime\\task_tests.rs:8:15\n  |\n8 |     let row = AwbcProgramTaskPlan {\n  |               ^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\codec\\runtime\\task_tests.rs",
+        "line_start": 103,
+        "line_end": 103,
+        "byte_start": 3513,
+        "byte_end": 3532,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`\n   --> crates\\arcweft-core\\src\\awbc\\codec\\runtime\\task_tests.rs:103:55\n    |\n103 |             execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {\n    |                                                       ^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\product_step\\program_task\\tests.rs",
+        "line_start": 227,
+        "line_end": 227,
+        "byte_start": 8801,
+        "byte_end": 8820,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`\n   --> crates\\arcweft-core\\src\\awbc\\product_step\\program_task\\tests.rs:227:51\n    |\n227 |         execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {\n    |                                                   ^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs",
+        "line_start": 7169,
+        "line_end": 7169,
+        "byte_start": 281354,
+        "byte_end": 281384,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`\n    --> crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7169:13\n     |\n7169 |             RuntimeFlowOpSeed::ProgramTask {\n     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs",
+        "line_start": 7683,
+        "line_end": 7683,
+        "byte_start": 302475,
+        "byte_end": 302515,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`\n    --> crates\\arcweft-core\\src\\awbc\\product_step\\tests.rs:7683:17\n     |\n7683 |                 crate::awbc::schema::AwbcProgramTaskPlan {\n     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\thread\\tests.rs",
+        "line_start": 98,
+        "line_end": 98,
+        "byte_start": 3926,
+        "byte_end": 3956,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`\n  --> crates\\arcweft-core\\src\\engine\\thread\\tests.rs:98:21\n   |\n98 |                     RuntimeFlowOpSeed::ProgramTask {\n   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `program_delivery` found for reference `&S` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer.rs",
+        "line_start": 1962,
+        "line_end": 1962,
+        "byte_start": 70962,
+        "byte_end": 70978,
+        "label": "method not found in `&S`"
+      }
+    ],
+    "rendered": "error[E0599]: no method named `program_delivery` found for reference `&S` in the current scope\n    --> crates\\arcweft-core\\src\\task\\producer.rs:1962:49\n     |\n1962 |             let delivery_matches = match source.program_delivery() {\n     |                                                 ^^^^^^^^^^^^^^^^ method not found in `&S`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\plan\\body_semantic\\tests\\request_endpoints.rs",
+        "line_start": 179,
+        "line_end": 179,
+        "byte_start": 6234,
+        "byte_end": 6264,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`\n   --> crates\\arcweft-core\\src\\plan\\body_semantic\\tests\\request_endpoints.rs:179:9\n    |\n179 |         RuntimeFlowOpSeed::ProgramTask {\n    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\plan\\task_source\\program\\program_task\\tests.rs",
+        "line_start": 130,
+        "line_end": 130,
+        "byte_start": 4785,
+        "byte_end": 4804,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `awbc::schema::AwbcProgramTaskPlan`\n   --> crates\\arcweft-core\\src\\plan\\task_source\\program\\program_task\\tests.rs:130:55\n    |\n130 |             execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {\n    |                                                       ^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\plan\\task_source\\template_tests.rs",
+        "line_start": 893,
+        "line_end": 893,
+        "byte_start": 31022,
+        "byte_end": 31052,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`\n   --> crates\\arcweft-core\\src\\plan\\task_source\\template_tests.rs:893:21\n    |\n893 |                     RuntimeFlowOpSeed::ProgramTask {\n    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\plan\\task_source\\template_tests.rs",
+        "line_start": 923,
+        "line_end": 923,
+        "byte_start": 32760,
+        "byte_end": 32790,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`\n   --> crates\\arcweft-core\\src\\plan\\task_source\\template_tests.rs:923:21\n    |\n923 |                     RuntimeFlowOpSeed::ProgramTask {\n    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0063",
+    "message": "missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\plan\\task_source\\template_tests.rs",
+        "line_start": 1073,
+        "line_end": 1073,
+        "byte_start": 39077,
+        "byte_end": 39107,
+        "label": "missing `delivery`"
+      }
+    ],
+    "rendered": "error[E0063]: missing field `delivery` in initializer of `plan::construction::seed::RuntimeFlowOpSeed`\n    --> crates\\arcweft-core\\src\\plan\\task_source\\template_tests.rs:1073:14\n     |\n1073 |     ops.push(RuntimeFlowOpSeed::ProgramTask {\n     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `delivery`\n\n"
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `program_delivery` found for reference `&S` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\task\\producer.rs",
+        "line_start": 1962,
+        "line_end": 1962,
+        "byte_start": 70962,
+        "byte_end": 70978,
+        "label": "method not found in `&S`"
+      }
+    ],
+    "rendered": "error[E0599]: no method named `program_delivery` found for reference `&S` in the current scope\n    --> crates\\arcweft-core\\src\\task\\producer.rs:1962:49\n     |\n1962 |             let delivery_matches = match source.program_delivery() {\n     |                                                 ^^^^^^^^^^^^^^^^ method not found in `&S`\n\n"
+  }
+]

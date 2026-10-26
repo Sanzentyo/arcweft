@@ -1727,6 +1727,7 @@ impl AwbcInventory {
                 arcweft_core::awbc::schema::AwbcProgramTaskPlan {
                     source: key.into(),
                     kernel,
+                    delivery: source.delivery(),
                     capture_modes: source
                         .captures()
                         .iter()

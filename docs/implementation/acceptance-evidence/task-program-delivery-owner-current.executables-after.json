@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3184-program-delivery-owner-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+      "bytes": 81320448,
+      "nonTest": false,
+      "sha256": "3bd22889b545793800c6f5a3acad2bdc54c5ea7dcf09a5552a6cb781680f478c"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+      "bytes": 104419328,
+      "nonTest": false,
+      "sha256": "86d670ff9668b678ae51db41c223f3d28375b69b36c01b6b04887c19780fa1df"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T03:20:10.9846044Z"
+}

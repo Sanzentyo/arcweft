@@ -6,6 +6,7 @@ use crate::task::TaskHandleType;
 fn program_capture_modes_are_required_and_unknown_wire_tags_are_rejected() {
     use crate::value::RuntimeLocalReadMode as Mode;
     let row = AwbcProgramTaskPlan {
+        delivery: crate::task::ProgramTaskDelivery::HostMetadata,
         source: crate::task::ExpectedTaskPlanKey::new([0x36; 32]),
         kernel: AwbcFunctionId(0),
         capture_modes: vec![Mode::Move, Mode::Copy],
@@ -32,6 +33,43 @@ fn program_capture_modes_are_required_and_unknown_wire_tags_are_rejected() {
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
         assert!(
             matches!(Mode::read_wire(&mut reader), Err(AwbcCodecError::UnknownTag { kind: "Program capture mode", tag: actual, offset: 0 }) if actual == tag)
+        );
+    }
+}
+
+#[test]
+fn program_delivery_is_required_and_unknown_wire_tags_are_rejected_before_payload() {
+    use crate::task::ProgramTaskDelivery as Delivery;
+    for delivery in [Delivery::HostMetadata, Delivery::LocalOnly] {
+        let row = AwbcProgramTaskPlan {
+            source: crate::task::ExpectedTaskPlanKey::new([0x37; 32]),
+            kernel: AwbcFunctionId(0),
+            delivery,
+            capture_modes: vec![],
+        };
+        let execution = AwbcTaskPlanExecution::Program(row.clone());
+        let mut writer = Writer::default();
+        execution.write_wire(&mut writer).unwrap();
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            AwbcTaskPlanExecution::read_wire(&mut reader).unwrap(),
+            execution
+        );
+        reader.finish().unwrap();
+        let mut json = serde_json::to_value(&row).unwrap();
+        assert_eq!(
+            serde_json::from_value::<AwbcProgramTaskPlan>(json.clone()).unwrap(),
+            row
+        );
+        json.as_object_mut().unwrap().remove("delivery");
+        assert!(serde_json::from_value::<AwbcProgramTaskPlan>(json).is_err());
+    }
+    for tag in 2..=u8::MAX {
+        let bytes = [tag];
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert!(
+            matches!(Delivery::read_wire(&mut reader), Err(AwbcCodecError::UnknownTag { kind: "Program task delivery", tag: actual, offset: 0 }) if actual == tag)
         );
     }
 }
@@ -101,6 +139,7 @@ fn task_row_codecs_require_full_carrier_independently_of_program_execution() {
             policy: AwbcTaskPolicy::AlwaysStart,
             handle_type,
             execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
+                delivery: crate::task::ProgramTaskDelivery::HostMetadata,
                 source: crate::task::ExpectedTaskPlanKey::new([0x35; 32]),
                 kernel: AwbcFunctionId(0),
                 capture_modes: vec![],

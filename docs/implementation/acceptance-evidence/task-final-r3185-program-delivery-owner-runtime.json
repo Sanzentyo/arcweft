@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "d2d87bb67f64892a433aff8c13257263e9ecafe4",
+  "name": "task-final-r3185-program-delivery-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3185-program-delivery-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T03:19:19.0071546Z",
+  "finishedAt": "2026-10-26T03:20:08.1573438Z"
+}

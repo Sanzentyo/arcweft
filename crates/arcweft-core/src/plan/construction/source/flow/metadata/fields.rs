@@ -189,6 +189,11 @@ pub(super) fn preflight(
             reader.optional_text()?;
             reader.pattern()?;
             reader.producer_definition()?;
+            let tag = reader.metadata.byte()?;
+            crate::task::ProgramTaskDelivery::from_semantic_tag(tag).ok_or(Error::Tag {
+                kind: "Program task delivery",
+                tag,
+            })?;
             let count = reader.metadata.u32()? as usize;
             reader
                 .counts

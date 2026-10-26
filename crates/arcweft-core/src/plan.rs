@@ -1162,6 +1162,7 @@ pub enum FlowOp {
         name: Option<String>,
         binding: RuntimePattern,
         producer: crate::task::NeedProducerDefinition,
+        delivery: crate::task::ProgramTaskDelivery,
         captures: Vec<RuntimeProgramTaskCapture>,
         body: Vec<FlowOp>,
     },

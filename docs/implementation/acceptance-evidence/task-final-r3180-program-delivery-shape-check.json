@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "d2d87bb67f64892a433aff8c13257263e9ecafe4",
+  "name": "task-final-r3180-program-delivery-shape-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r3180-program-delivery-shape-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-26T02:47:11.4123749Z",
+  "finishedAt": "2026-10-26T02:48:48.6495445Z"
+}

@@ -6127,6 +6127,7 @@ fn resolve_flow_tail_holes(
                 name,
                 binding,
                 producer,
+                delivery,
                 captures,
                 body,
             } => {
@@ -6134,6 +6135,7 @@ fn resolve_flow_tail_holes(
                     name,
                     binding,
                     producer,
+                    delivery,
                     captures,
                     body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
                 });
@@ -8416,6 +8418,7 @@ impl<'a> FinalFlowLowerer<'a> {
             name: thread.name().map(|name| name.as_str().to_owned()),
             binding,
             producer,
+            delivery: arcweft_core::task::ProgramTaskDelivery::HostMetadata,
             captures: captures
                 .into_iter()
                 .map(arcweft_core::plan::RuntimeProgramTaskCapture::copy)

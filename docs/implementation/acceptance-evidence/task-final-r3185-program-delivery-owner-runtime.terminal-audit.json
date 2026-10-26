@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "d2d87bb67f64892a433aff8c13257263e9ecafe4",
+  "run": "task-final-r3185-program-delivery-owner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  47.611s] 2172 tests run: 2172 passed, 0 skipped",
+  "caseRowSource": "complete-live-status-before-terminal-summary",
+  "executed": 2172,
+  "passed": 2172,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-26T03:20:10.6256113Z"
+}

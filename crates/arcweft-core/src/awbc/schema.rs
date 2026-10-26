@@ -2870,6 +2870,7 @@ pub struct AwbcHostTaskPlan {
 pub struct AwbcProgramTaskPlan {
     pub source: crate::task::ExpectedTaskPlanKey,
     pub kernel: AwbcFunctionId,
+    pub delivery: crate::task::ProgramTaskDelivery,
     pub capture_modes: Vec<crate::value::RuntimeLocalReadMode>,
 }
 

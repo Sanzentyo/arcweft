@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "base": "d2d87bb67f64892a433aff8c13257263e9ecafe4",
+  "run": "task-final-r3183-program-delivery-owner-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  46.525s] 2172 tests run: 2155 passed, 17 failed, 0 skipped",
+  "caseRowSource": "complete-live-status-before-terminal-summary",
+  "executed": 2172,
+  "passed": 2155,
+  "failed": 17,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::local_program_need_preserves_owned_results_through_each_public_save_without_host_delivery"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::ordinary_program_need_starts_from_its_source_and_survives_each_public_save"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_handle_private_fiber_checkpoint_restores_its_original_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_move_verifier_allows_destination_alias_and_rejects_duplicate_owners"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_need_copy_capture_rejects_affine_input_before_product_launch"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::program_task::tests::program_need_moves_its_original_affine_input_through_every_public_save"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::program_child_result_fanout_binds_retires_and_survives_each_public_restore"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_destination_verifier_checks_the_row_carrier_and_payload"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_requires_its_task_kind_and_suspending_role_flags"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_checks_payload_and_capture_types_against_the_original"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drift"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_source_round_trips_without_a_host_request_and_reborrows_its_actual_row"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_source_rejects_effect_permissions_not_owned_by_the_enclosing_invocation"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_source_rejects_host_rows_and_exhausted_work_without_issuing_a_lease"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::program::program_task::tests::program_kernel_retains_the_original_lexical_context_with_its_distinct_capture_abi"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::awbc_host_request_kernel_cannot_claim_an_original_thread_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "plan::task_source::template_tests::thread_source_codec_retains_program_definition_and_capture_roles"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-26T03:12:40.6355849Z"
+}

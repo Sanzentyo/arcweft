@@ -806,6 +806,7 @@ pub(in crate::plan::task_source) fn thread_with_lexical_context() -> RuntimeTask
 
 pub(crate) fn owned_program_need_fixture(
     mode: crate::value::RuntimeLocalReadMode,
+    delivery: crate::task::ProgramTaskDelivery,
 ) -> (
     RuntimePlan,
     FlowRuntimeId,
@@ -891,6 +892,7 @@ pub(crate) fn owned_program_need_fixture(
                 effects: RuntimeEffectSet::empty(),
                 ops: Box::new([
                     RuntimeFlowOpSeed::ProgramTask {
+                        delivery,
                         name: None,
                         binding: RuntimePatternSeed::new(
                             input_type,
@@ -921,6 +923,7 @@ pub(crate) fn owned_program_need_fixture(
                         ))],
                     },
                     RuntimeFlowOpSeed::ProgramTask {
+                        delivery,
                         name: None,
                         binding: RuntimePatternSeed::new(
                             task_type,
@@ -1071,6 +1074,7 @@ fn program_context(
         })
         .collect::<Vec<_>>();
     ops.push(RuntimeFlowOpSeed::ProgramTask {
+        delivery: crate::task::ProgramTaskDelivery::HostMetadata,
         name: None,
         binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
         captures: captures
@@ -1137,7 +1141,7 @@ fn thread_source_codec_retains_program_definition_and_capture_roles() {
         .unwrap();
     assert!(matches!(
         source.request_endpoint().task_source(),
-        Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer(_))
+        Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer { .. })
     ));
     assert!(source.request_endpoint().host_arguments().is_none());
     let request = source
@@ -1235,8 +1239,10 @@ fn awbc_host_request_kernel_cannot_claim_an_original_thread_source() {
             &mut meter(),
         )
         .unwrap();
-    let Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer(definition)) =
-        source.request_endpoint().task_source()
+    let Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer {
+        producer: definition,
+        ..
+    }) = source.request_endpoint().task_source()
     else {
         panic!("Thread has an actual program producer");
     };
@@ -1318,8 +1324,10 @@ fn thread_source_uses_original_capture_order_and_retains_only_an_admitted_source
             &mut bank(&program, RuntimeSchemaLimits::engine_default()),
         )
         .unwrap();
-    let Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer(original)) =
-        source.request_endpoint().task_source()
+    let Some(crate::plan::body_semantic::flow::RuntimeBodyTaskSource::ProgramProducer {
+        producer: original,
+        ..
+    }) = source.request_endpoint().task_source()
     else {
         unreachable!()
     };

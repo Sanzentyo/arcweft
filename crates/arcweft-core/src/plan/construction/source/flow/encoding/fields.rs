@@ -516,11 +516,13 @@ impl Writer {
             FlowOp::ProgramTask {
                 name,
                 producer,
+                delivery,
                 captures,
                 ..
             } => {
                 self.optional_text(name.as_deref())?;
                 self.producer_definition(producer, plan)?;
+                self.byte(delivery.semantic_tag())?;
                 self.count(captures.len())?;
                 for capture in captures {
                     self.byte(capture.mode.semantic_tag())?;

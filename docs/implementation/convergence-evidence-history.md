@@ -12407,3 +12407,36 @@ Presentation command ABI拒否、parallelのruntime intrinsic未接続、JLREQ�
 Generic Matchの受入・公開済み判定を維持する。Source parallel、残るCLI、他Tier 2／最終workspace受入は別境界。
 raw 20件をbyte差分0で保存し、ビルド生成物の移動・コピー・退避は行っていない。
 [今回51件の原診断](acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.failure-recon.json)。
+
+## Program deliveryの元Source契約とLocalOnly owner検証 — 2026-10-26
+
+基点は公開main `d2d87bb67f64892a433aff8c13257263e9ecafe4`。元tracked WIP 14件と
+untracked実ファイル6件を保持し、元Sourceに明示したHostMetadata／LocalOnlyを
+Native／AWBCの同じProgram起動・結果保管・退役・保存復元へ接続した。
+carrierやbackendによるdelivery推定は行わず、version 1の元SourceとAWBC rowを直接移行した。
+
+R3180はrequired deliveryのconstructor 11箇所とgeneric Source検査2箇所の
+compile error 13件で終了101。明示constructorとlive/assertion Sourceの責任境界を修復し、
+R3181のCore／runtime-plan全target・全feature・locked checkは終了0だった。
+その後のLocalOnly regressionを含むR3182 catalogは2,172件・除外0、
+R3183は2,155 PASS／17 FAIL・終了100だった。Source encoderとmaterializing decoderに
+delivery byteがある一方、count/preflight readerがcapture countとして読んでいたため、
+同じgrammarでdeliveryを先に読み、未知tagを拒否するよう修復した。
+
+最終入力のR3184 catalogは2,172件・除外0、R3185は2,172／2,172 PASS、
+47.611秒、nextest終了0。各3,989入力と対象2実行ファイルの前後差分0。
+Native LocalOnlyの各step rollback・偽Host ACK拒否・一回のaffine結果移動、
+canonical decoded AWBCの1-op量子・各step公開save／restore、両deliveryの退役phase改変拒否、
+wire／Serde必須field・未知tag拒否を含む。既存HostMetadataと明示Copy／Moveのケースも保持した。
+失敗runを成功へ書き換えず、原本29件をbyte差分0で保存した。
+[owner結果・原本一覧・適用範囲](acceptance-evidence/task-program-delivery-owner-checkpoint.json)。
+
+このcheckpointはowner検証の結果であり、以前のR3177全53逆依存やR3172–R3175共有gateを
+今回delivery変更後の合格とは扱わない。Generic Matchなどの受入済みcutの判定は維持する。
+
+同じ最終delivery入力でR3186 workspace check／R3187 workspace Clippyは全target・全feature・locked、
+警告あり・終了0。R3188 Core doctestは75／75 PASS、R3189構造gateは終了0・blocking違反0。
+各3,989入力の終端後差分0。構造実測は31 Rustファイル・2 owner、最大growth 91 physical LOC、
+300超growth 0だった。元Source契約と実行・結果所有の責任境界を維持し、I/O・依存・並列policy table・
+旧readerを追加していない。[測定と所有境界](acceptance-evidence/task-program-delivery-structure-review.json)。
+これらの共有gateは今回の新規実行であり、全53逆依存runtimeの再実行は行っていない。

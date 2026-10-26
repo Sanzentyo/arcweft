@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "d2d87bb67f64892a433aff8c13257263e9ecafe4",
+  "name": "task-final-r3186-program-delivery-workspace-check",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3186-program-delivery-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T03:26:44.9038917Z",
+  "finishedAt": "2026-10-26T03:30:52.9253061Z"
+}

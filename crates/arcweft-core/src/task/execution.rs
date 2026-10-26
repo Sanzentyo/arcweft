@@ -12,6 +12,33 @@ pub enum TaskExecutionKind {
     Program,
 }
 
+/// The original Program decides whether its launch and retirement metadata
+/// crosses the host boundary. Local result ownership is identical in both modes.
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+pub enum ProgramTaskDelivery {
+    HostMetadata,
+    LocalOnly,
+}
+
+impl ProgramTaskDelivery {
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::HostMetadata => 0,
+            Self::LocalOnly => 1,
+        }
+    }
+
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::HostMetadata),
+            1 => Some(Self::LocalOnly),
+            _ => None,
+        }
+    }
+}
+
 /// Retains the exact accepted Program launch. Its private constructor excludes
 /// Host request payloads, so cloning this immutable receipt cannot clone a live
 /// runtime value. The original Source remains its only executable authority.
@@ -45,6 +72,12 @@ impl ProgramTaskLaunch {
             unreachable!("the retained launch has no Host request payload")
         };
         source
+    }
+
+    pub(crate) fn delivery(&self) -> ProgramTaskDelivery {
+        self.source()
+            .program_delivery()
+            .expect("the accepted Program Source owns its delivery contract")
     }
 
     pub(crate) fn matches_spec<P>(&self, spec: &super::TaskSpec<P>) -> bool {
@@ -124,6 +157,7 @@ pub enum ProgramTaskTerminal {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ProgramTaskRetirementPhase {
     Executing,
+    Local,
     Unacknowledged,
     ReplayPending,
     Acknowledged,
@@ -405,6 +439,10 @@ impl<S> TaskRequest<crate::value::RuntimePayload, S> {
 /// An assertion admits metadata; only the live role can retain an execution
 /// lease. Restore must resolve the assertion through its enclosing executable.
 pub(crate) trait TaskExecutionSource {
+    fn validate_program_retirement(
+        &self,
+        phase: ProgramTaskRetirementPhase,
+    ) -> Result<(), super::TaskEnsureError>;
     fn validate_handle_type(
         &self,
         expected: super::TaskHandleType,
@@ -429,6 +467,25 @@ pub(crate) trait TaskExecutionSource {
 }
 
 impl TaskExecutionSource for RuntimeTaskSource {
+    fn validate_program_retirement(
+        &self,
+        phase: ProgramTaskRetirementPhase,
+    ) -> Result<(), super::TaskEnsureError> {
+        let permitted = match self.program_delivery() {
+            Some(ProgramTaskDelivery::HostMetadata) => phase != ProgramTaskRetirementPhase::Local,
+            Some(ProgramTaskDelivery::LocalOnly) => matches!(
+                phase,
+                ProgramTaskRetirementPhase::Executing | ProgramTaskRetirementPhase::Local
+            ),
+            None => false,
+        };
+        if permitted {
+            Ok(())
+        } else {
+            Err(super::TaskEnsureError::ProgramSourceMismatch)
+        }
+    }
+
     fn validate_handle_type(
         &self,
         expected: super::TaskHandleType,
@@ -489,6 +546,16 @@ impl TaskExecutionSource for RuntimeTaskSource {
 }
 
 impl TaskExecutionSource for RuntimeTaskSourceAssertion {
+    fn validate_program_retirement(
+        &self,
+        _phase: ProgramTaskRetirementPhase,
+    ) -> Result<(), super::TaskEnsureError> {
+        // Like handle-type admission below, an inert assertion grants no
+        // execution contract. Actual-Source restore repeats this check before
+        // committing the live registry.
+        Ok(())
+    }
+
     fn validate_handle_type(
         &self,
         _expected: super::TaskHandleType,

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "run": "task-final-r3180-program-delivery-shape-check",
+  "actualExitCode": 101,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T02:48:50.7623354Z"
+}

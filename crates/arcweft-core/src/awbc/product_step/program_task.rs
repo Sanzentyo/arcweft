@@ -126,6 +126,7 @@ impl AwbcProductStepExecutor {
         };
         assert_eq!(parent.instance, prepared.parent_id);
         let child = prepared.child.commit(parent);
+        let deliver = launch.delivery() == crate::task::ProgramTaskDelivery::HostMetadata;
         parent.commit_yielded_register_write_prepared(prepared.write, value);
         self.child_fibers.push_back(ProductChildFiber {
             owner: ProductChildFiberOwner::Program {
@@ -139,7 +140,9 @@ impl AwbcProductStepExecutor {
         self.next_generation = prepared.next_generation;
         self.next_fiber_instance = prepared.next_fiber_instance;
         self.remaining_new_task_requests -= 1;
-        output.requests.tasks.push(receipt);
+        if deliver {
+            output.requests.tasks.push(receipt);
+        }
     }
 
     fn prepare_program_task_start(

@@ -17,7 +17,13 @@ pub struct RuntimeTaskSource {
     execution: Option<RuntimeTaskExecutionRow>,
     // Attested with this immutable original Source; never supplied by an inert locator.
     handle_type: crate::task::TaskHandleType,
-    execution_kind: crate::task::TaskExecutionKind,
+    execution_contract: RuntimeTaskSourceExecutionContract,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum RuntimeTaskSourceExecutionContract {
+    Host,
+    Program(crate::task::ProgramTaskDelivery),
 }
 
 /// Inert locator for an already completed Source and its exact execution row.
@@ -96,16 +102,16 @@ impl RuntimeTaskSource {
         }
         let coordinate = source.owner.resolve(source.task.index().0)?;
         use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
-        use crate::task::TaskExecutionKind;
-        let (execution_kind, handle_type) = match source.request_endpoint().task_source()? {
+        use RuntimeTaskSourceExecutionContract as Contract;
+        let (execution_contract, handle_type) = match source.request_endpoint().task_source()? {
             RuntimeBodyTaskSource::Producer(template) => {
-                (TaskExecutionKind::Host, template.definition.handle_type)
+                (Contract::Host, template.definition.handle_type)
             }
-            RuntimeBodyTaskSource::ProgramProducer(producer) => {
-                (TaskExecutionKind::Program, producer.handle_type)
+            RuntimeBodyTaskSource::ProgramProducer { producer, delivery } => {
+                (Contract::Program(delivery), producer.handle_type)
             }
             RuntimeBodyTaskSource::Start(target) => (
-                TaskExecutionKind::Host,
+                Contract::Host,
                 crate::task::TaskHandleType::Need {
                     payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(
                         *target.plan().payload_type().as_bytes(),
@@ -113,7 +119,7 @@ impl RuntimeTaskSource {
                 },
             ),
             RuntimeBodyTaskSource::Host(target) => (
-                TaskExecutionKind::Host,
+                Contract::Host,
                 crate::task::TaskHandleType::Need {
                     payload: crate::task::RuntimeTypeSemanticDigest::from_bytes(
                         *program
@@ -130,7 +136,7 @@ impl RuntimeTaskSource {
             program: program.clone(),
             coordinate,
             handle_type,
-            execution_kind,
+            execution_contract,
             execution: source
                 .execution
                 .as_ref()
@@ -143,7 +149,19 @@ impl RuntimeTaskSource {
     }
 
     pub(crate) const fn execution_kind(&self) -> crate::task::TaskExecutionKind {
-        self.execution_kind
+        match self.execution_contract {
+            RuntimeTaskSourceExecutionContract::Host => crate::task::TaskExecutionKind::Host,
+            RuntimeTaskSourceExecutionContract::Program(_) => {
+                crate::task::TaskExecutionKind::Program
+            }
+        }
+    }
+
+    pub(crate) const fn program_delivery(&self) -> Option<crate::task::ProgramTaskDelivery> {
+        match self.execution_contract {
+            RuntimeTaskSourceExecutionContract::Host => None,
+            RuntimeTaskSourceExecutionContract::Program(delivery) => Some(delivery),
+        }
     }
 
     pub fn task_plan(&self) -> RuntimeTaskPlanRef<'_> {
@@ -181,7 +199,7 @@ impl PartialEq for RuntimeTaskSource {
             && self.coordinate == other.coordinate
             && self.execution == other.execution
             && self.handle_type == other.handle_type
-            && self.execution_kind == other.execution_kind
+            && self.execution_contract == other.execution_contract
     }
 }
 impl Eq for RuntimeTaskSource {}

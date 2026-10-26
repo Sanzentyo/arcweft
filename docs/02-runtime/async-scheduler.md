@@ -32,7 +32,13 @@ contains the language carrier (`Need` or `ThreadHandle`) and its exact payload
 identity. The producer-instance transcript and version-one source codec commit
 both fields. `FlowOp::ProgramTask` stores
 that definition directly and checks its result binding against the declared
-carrier and payload. Source-level Thread producers declare `ThreadHandle<T>`;
+carrier and payload. The operation also owns an explicit `ProgramTaskDelivery`:
+`HostMetadata` (tag 0) publishes launch/retirement metadata, while `LocalOnly`
+(tag 1) keeps both inside Core. This choice is independent of the carrier and
+backend. It participates in the original semantic transcript and version-one
+source grammar; AWBC rows must carry and match it before a Source lease is
+returned. Missing fields and unknown delivery tags are rejected.
+Source-level Thread producers declare `ThreadHandle<T>`;
 ordinary Program Need producers declare `Need<T>` on the same operation.
 `NeedProducerTemplate` combines the same definition
 with a Host request only for producers that actually construct Host arguments.
@@ -175,7 +181,7 @@ body or retained function context. AOT Flow blocks resolve by the same function
 identity, independently of the order of Flow wrappers in the plan.
 
 Program dispatch remains in flight while Core executes its body and joins its
-attached descendants. Core issues `ProgramTaskCompletion` on actual retirement;
+attached descendants. For `HostMetadata`, Core issues `ProgramTaskCompletion` on actual retirement;
 the report retains the actual issuing Source lease, and the host checks it
 against the accepted request before publishing its terminal through the original dispatch identity, bound
 outcome and next publication revision. A host adapter cannot manufacture this
@@ -183,6 +189,16 @@ report by decoding serialized data. Duplicate or foreign terminal batches reject
 before advancing the scheduler, publication frontiers or completion counters.
 Equal deterministic task coordinates from another executable are insufficient.
 Re-ensuring the same live Web dispatch preserves its pending work and frontier.
+
+`LocalOnly` executes the same admitted body, capture transfers, scope cleanup,
+child joins and Ready-value transfer. It emits neither launch metadata nor a
+retirement report and needs no Host acknowledgement. Actual retirement enters
+the registry's `Local` phase; only this phase and `Executing` are valid for a
+local Source. A metadata-delivering Source cannot restore `Local`, and a local
+Source cannot restore an acknowledgement/replay phase. Restore validates this
+relation against the resolved original Source before committing the live
+registry. Local retirements are not replayed, and forged Host terminal packets
+are rejected without changing the local result or publication frontier.
 
 The common producer registry owns a Program task's returned value in its
 `Ready` state. Its Program origin retains the accepted launch, with no synthetic

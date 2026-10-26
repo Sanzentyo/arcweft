@@ -162,9 +162,13 @@ fn ordinary_program_need_starts_from_its_source_and_survives_each_public_save() 
     );
 }
 
-fn owned_program_entry_code(mode: crate::value::RuntimeLocalReadMode) -> AwbcProgram {
+fn owned_program_entry_code(
+    mode: crate::value::RuntimeLocalReadMode,
+    delivery: crate::task::ProgramTaskDelivery,
+) -> AwbcProgram {
     use crate::plan::{RuntimeGeneratedFunctionRole, RuntimeTaskSourceReadContext};
-    let (original, flow, coordinates) = crate::plan::task_source::owned_program_need_fixture(mode);
+    let (original, flow, coordinates) =
+        crate::plan::task_source::owned_program_need_fixture(mode, delivery);
     let body = original
         .task_program_body(
             &coordinates[1],
@@ -225,6 +229,7 @@ fn owned_program_entry_code(mode: crate::value::RuntimeLocalReadMode) -> AwbcPro
             payload: AwbcTypeId(2),
         },
         execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
+            delivery,
             source: body.task_plan().key().into(),
             kernel: AwbcFunctionId(0),
             capture_modes: vec![mode],
@@ -315,7 +320,10 @@ fn owned_program_entry_code(mode: crate::value::RuntimeLocalReadMode) -> AwbcPro
 
 #[test]
 fn program_need_copy_capture_rejects_affine_input_before_product_launch() {
-    let code = owned_program_entry_code(crate::value::RuntimeLocalReadMode::Copy);
+    let code = owned_program_entry_code(
+        crate::value::RuntimeLocalReadMode::Copy,
+        crate::task::ProgramTaskDelivery::HostMetadata,
+    );
     let result = AwbcProductStepExecutor::for_entry(code, AwbcEntryId(0), 1);
     assert!(
         matches!(result, Err(super::super::AwbcProductStepBuildError::InvalidProgram { message }) if message.contains("original Program capture with unrestricted Copy custody"))
@@ -324,7 +332,10 @@ fn program_need_copy_capture_rejects_affine_input_before_product_launch() {
 
 #[test]
 fn program_move_verifier_allows_destination_alias_and_rejects_duplicate_owners() {
-    let mut code = owned_program_entry_code(crate::value::RuntimeLocalReadMode::Move);
+    let mut code = owned_program_entry_code(
+        crate::value::RuntimeLocalReadMode::Move,
+        crate::task::ProgramTaskDelivery::HostMetadata,
+    );
     // This unit tests the register transition. The complete original Source
     // and execution relation is exercised by the public-save test below.
     code.signatures[0].result = Some(AwbcTypeId(1));
@@ -382,13 +393,29 @@ fn program_move_verifier_allows_destination_alias_and_rejects_duplicate_owners()
 
 #[test]
 fn program_need_moves_its_original_affine_input_through_every_public_save() {
-    let code = owned_program_entry_code(crate::value::RuntimeLocalReadMode::Move);
+    exercise_owned_program_capture_delivery(crate::task::ProgramTaskDelivery::HostMetadata);
+}
+
+#[test]
+fn local_program_need_preserves_owned_results_through_each_public_save_without_host_delivery() {
+    exercise_owned_program_capture_delivery(crate::task::ProgramTaskDelivery::LocalOnly);
+}
+
+fn exercise_owned_program_capture_delivery(delivery: crate::task::ProgramTaskDelivery) {
+    let code = owned_program_entry_code(crate::value::RuntimeLocalReadMode::Move, delivery);
+    let keys = [0, 1].map(|index| {
+        let AwbcTaskPlanExecution::Program(body) = &code.task_plans[index].execution else {
+            unreachable!()
+        };
+        body.source
+    });
     let bytes = code.encode_canonical().unwrap();
     let decoded = AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap();
     let mut executor = AwbcProductStepExecutor::for_entry(decoded, AwbcEntryId(0), 1).unwrap();
     let mut submissions = vec![];
     let mut completions = vec![];
     let mut moved_parent_observed = false;
+    let mut rejected_wrong_delivery_phase = false;
     for _ in 0..256 {
         let step = executor.step(Default::default(), Default::default());
         assert!(step.stats.executed_ops <= 1);
@@ -400,7 +427,7 @@ fn program_need_moves_its_original_affine_input_through_every_public_save() {
         assert!(step.output.requests.host_calls.is_empty());
         submissions.extend(step.output.requests.tasks);
         completions.extend(step.output.requests.program_task_completions);
-        if submissions.len() == 2
+        if executor.need_producers.task_admissions().count() == 2
             && let Ok(frame) = executor.fiber.active_frame()
         {
             assert!(frame.register(AwbcRegisterId(0)).is_err());
@@ -413,19 +440,83 @@ fn program_need_moves_its_original_affine_input_through_every_public_save() {
         )
         .unwrap();
         let encoded = serde_json::to_vec(&save).unwrap();
+        if !rejected_wrong_delivery_phase {
+            let mut invalid = serde_json::to_value(&save).unwrap();
+            for launch in invalid["need_producers"]["launches"]
+                .as_array_mut()
+                .unwrap()
+            {
+                let Some(program) = launch["origin"].get_mut("Program") else {
+                    continue;
+                };
+                if program["retirement"]
+                    .as_str()
+                    .is_some_and(|phase| phase != "Executing")
+                {
+                    program["retirement"] = serde_json::json!(match delivery {
+                        crate::task::ProgramTaskDelivery::HostMetadata => "Local",
+                        crate::task::ProgramTaskDelivery::LocalOnly => "Unacknowledged",
+                    });
+                    rejected_wrong_delivery_phase = true;
+                    break;
+                }
+            }
+            if rejected_wrong_delivery_phase {
+                let invalid: super::super::AwbcProductExecutorSaveSnapshot =
+                    serde_json::from_value(invalid).unwrap();
+                assert!(
+                    invalid
+                        .into_live_for_program(executor.admitted_program())
+                        .is_err()
+                );
+            }
+        }
         let decoded: super::super::AwbcProductExecutorSaveSnapshot =
             serde_json::from_slice(&encoded).unwrap();
         let restored = decoded
             .into_live_for_program(executor.admitted_program())
             .unwrap();
         executor = executor.restore_snapshot_owned(restored).unwrap();
-        if completions.len() == 2 && executor.child_fibers.is_empty() {
+        let complete = match delivery {
+            crate::task::ProgramTaskDelivery::HostMetadata => {
+                completions.len() == 2 && executor.child_fibers.is_empty()
+            }
+            crate::task::ProgramTaskDelivery::LocalOnly => {
+                executor.fiber.status == crate::awbc::fiber::FiberStatus::Returned
+                    && executor.child_fibers.is_empty()
+                    && executor.need_producers.task_admissions().count() == 2
+            }
+        };
+        if complete {
             break;
         }
     }
-    assert_eq!(submissions.len(), 2);
-    assert_eq!(completions.len(), 2);
+    let expected_metadata = match delivery {
+        crate::task::ProgramTaskDelivery::HostMetadata => 2,
+        crate::task::ProgramTaskDelivery::LocalOnly => 0,
+    };
+    assert_eq!(submissions.len(), expected_metadata);
+    assert_eq!(completions.len(), expected_metadata);
     assert!(moved_parent_observed);
+    assert!(rejected_wrong_delivery_phase);
+    if delivery == crate::task::ProgramTaskDelivery::LocalOnly {
+        assert!(
+            executor
+                .need_producers
+                .take_program_retirement_replays()
+                .is_empty()
+        );
+    }
+    let admissions = executor
+        .need_producers
+        .task_admissions()
+        .collect::<Vec<_>>();
+    assert_eq!(admissions.len(), 2);
+    let submissions = keys.map(|key| {
+        admissions.iter().find(|task| {
+            matches!(&task.spec().request, crate::task::TaskRequest::Program(source) if source.task_plan().key().as_bytes() == key.bytes())
+        }).unwrap()
+    });
     let result = executor
         .need_producers
         .take_ready_for_correlation(&submissions[1].handle().correlation)

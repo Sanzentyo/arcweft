@@ -7167,6 +7167,7 @@ fn await_many_original_program_with_thread(
             .unwrap();
         ops = vec![
             RuntimeFlowOpSeed::ProgramTask {
+                delivery: crate::task::ProgramTaskDelivery::HostMetadata,
                 name: None,
                 binding: RuntimePatternSeed::new(
                     handle,
@@ -7681,6 +7682,7 @@ fn await_many_product_program_with_thread(
             handle_type: producer.handle_type.map_payload(|_| AwbcTypeId(7)),
             execution: crate::awbc::schema::AwbcTaskPlanExecution::Program(
                 crate::awbc::schema::AwbcProgramTaskPlan {
+                    delivery: crate::task::ProgramTaskDelivery::HostMetadata,
                     source: original.task_plan(&producer.plan).unwrap().key().into(),
                     kernel: AwbcFunctionId(0),
                     capture_modes: vec![crate::value::RuntimeLocalReadMode::Copy],

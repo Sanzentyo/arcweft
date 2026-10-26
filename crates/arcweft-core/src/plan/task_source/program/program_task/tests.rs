@@ -128,6 +128,7 @@ fn executable_from(original: RuntimeTaskSourceProgram) -> AwbcProgram {
             policy: AwbcTaskPolicy::AlwaysStart,
             handle_type: producer.handle_type.map_payload(|_| AwbcTypeId(0)),
             execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
+                delivery: crate::task::ProgramTaskDelivery::HostMetadata,
                 source: row.key().into(),
                 kernel: AwbcFunctionId(0),
                 capture_modes: captures.iter().map(|capture| capture.mode).collect(),
@@ -284,6 +285,7 @@ fn program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drif
         Field::Definition,
         Field::Capture { index: 0 },
         Field::CaptureMode { index: 0 },
+        Field::Delivery,
     ] {
         let mut code = executable();
         match field {
@@ -313,6 +315,12 @@ fn program_kernel_source_rejects_scheduling_definition_and_capture_transfer_drif
                     unreachable!()
                 };
                 body.capture_modes[0] = crate::value::RuntimeLocalReadMode::Move;
+            }
+            Field::Delivery => {
+                let AwbcTaskPlanExecution::Program(body) = &mut code.task_plans[0].execution else {
+                    unreachable!()
+                };
+                body.delivery = crate::task::ProgramTaskDelivery::LocalOnly;
             }
             _ => unreachable!(),
         }

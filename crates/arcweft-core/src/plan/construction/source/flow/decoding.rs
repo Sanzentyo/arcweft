@@ -238,6 +238,14 @@ impl Reader<'_, '_, '_> {
             })
             .collect()
     }
+
+    fn program_task_delivery(&mut self) -> Result<crate::task::ProgramTaskDelivery, Error> {
+        let tag = self.metadata.byte()?;
+        crate::task::ProgramTaskDelivery::from_semantic_tag(tag).ok_or(Error::Tag {
+            kind: "Program task delivery",
+            tag,
+        })
+    }
     fn body(&mut self) -> Result<Vec<RuntimeFlowOpSeed>, Error> {
         let count = self.bodies.u32()? as usize;
         if count > self.seeds.len() {
@@ -971,6 +979,7 @@ impl Reader<'_, '_, '_> {
                 name: self.optional_text()?,
                 binding: self.pattern()?,
                 producer: self.producer_definition()?,
+                delivery: self.program_task_delivery()?,
                 captures: self.program_task_captures()?,
                 body: self.body()?,
             },
