@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "run": "task-final-r3214-fanout-progress-owner-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3990,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T13:01:26.4280172Z"
+}

@@ -1,0 +1,422 @@
+{
+  "version": 1,
+  "base": "fd88d4476630881966df2760904bd298e1ed870f",
+  "recordedAt": "2026-10-26T13:06:15.4478282Z",
+  "status": "private-Core-owner-checkpoint",
+  "scope": "Native rollback and AWBC live/inert restore share the started/pending/completed source-position partition. Source/handle/type/cursor admission stays in its existing backend context. Values, wire shapes, scheduling and Copy/Move policy are unchanged.",
+  "runtime": {
+    "version": 1,
+    "base": "fd88d4476630881966df2760904bd298e1ed870f",
+    "run": "task-final-r3215-fanout-progress-owner-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  29.149s] 2059 tests run: 2059 passed, 0 skipped",
+    "caseRowSource": "complete-live-status-before-terminal-summary",
+    "executed": 2059,
+    "passed": 2059,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3990,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-26T13:01:59.3374316Z"
+  },
+  "newCases": [
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "task::fanout::tests::admitted_progress_partitions_started_positions_in_source_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "task::fanout::tests::invalid_frontiers_and_in_flight_bounds_are_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "task::fanout::tests::pending_positions_cannot_repeat_or_point_beyond_the_started_frontier",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "task::fanout::tests::started_positions_cannot_lose_or_duplicate_their_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "task::fanout::tests::uninitialized_progress_has_no_started_or_ready_positions",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "receipts": [
+    {
+      "version": 1,
+      "base": "fd88d4476630881966df2760904bd298e1ed870f",
+      "name": "task-final-r3213-fanout-progress-check",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r3213-fanout-progress-check.log",
+      "exitCode": 0,
+      "startedAt": "2026-10-26T12:55:39.4874561Z",
+      "finishedAt": "2026-10-26T12:56:59.3905349Z"
+    },
+    {
+      "version": 1,
+      "base": "fd88d4476630881966df2760904bd298e1ed870f",
+      "name": "task-final-r3214-fanout-progress-owner-catalog",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3214-fanout-progress-owner-catalog.log",
+      "exitCode": 0,
+      "startedAt": "2026-10-26T12:58:48.2132813Z",
+      "finishedAt": "2026-10-26T13:01:25.3963859Z"
+    },
+    {
+      "version": 1,
+      "base": "fd88d4476630881966df2760904bd298e1ed870f",
+      "name": "task-final-r3215-fanout-progress-owner-runtime",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "--all-features",
+        "--locked",
+        "--no-fail-fast",
+        "--no-tests",
+        "fail"
+      ],
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3215-fanout-progress-owner-runtime.log",
+      "exitCode": 0,
+      "startedAt": "2026-10-26T13:01:27.365311Z",
+      "finishedAt": "2026-10-26T13:01:58.3275188Z"
+    },
+    {
+      "version": 1,
+      "base": "fd88d4476630881966df2760904bd298e1ed870f",
+      "name": "task-final-r3216-fanout-progress-clippy",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3216-fanout-progress-clippy.log",
+      "exitCode": 0,
+      "startedAt": "2026-10-26T13:02:44.9213236Z",
+      "finishedAt": "2026-10-26T13:04:19.686148Z"
+    },
+    {
+      "version": 1,
+      "base": "fd88d4476630881966df2760904bd298e1ed870f",
+      "name": "task-final-r3217-fanout-progress-structure",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-fanout-progress-structure-report"
+      ],
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3217-fanout-progress-structure.log",
+      "exitCode": 0,
+      "startedAt": "2026-10-26T13:04:20.9438787Z",
+      "finishedAt": "2026-10-26T13:04:26.7542999Z"
+    }
+  ],
+  "sourceInputs": 3990,
+  "ownedRust": [
+    "crates/arcweft-core/src/awbc/fiber/await_many.rs",
+    "crates/arcweft-core/src/engine/rollback/await_state.rs",
+    "crates/arcweft-core/src/task.rs",
+    "crates/arcweft-core/src/task/fanout.rs"
+  ],
+  "structure": {
+    "blockingViolations": 0,
+    "files": [
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/await_many.rs",
+        "owner": "arcweft-core",
+        "bytes": 16751,
+        "physicalLoc": 447,
+        "priorPhysicalLoc": 473,
+        "growth": -26,
+        "classification": "production",
+        "embeddedTestLoc": 0
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/rollback/await_state.rs",
+        "owner": "arcweft-core",
+        "bytes": 10452,
+        "physicalLoc": 251,
+        "priorPhysicalLoc": 255,
+        "growth": -4,
+        "classification": "production",
+        "embeddedTestLoc": 0
+      },
+      {
+        "path": "crates/arcweft-core/src/task.rs",
+        "owner": "arcweft-core",
+        "bytes": 73733,
+        "physicalLoc": 2228,
+        "priorPhysicalLoc": 2226,
+        "growth": 2,
+        "classification": "production",
+        "embeddedTestLoc": 154
+      },
+      {
+        "path": "crates/arcweft-core/src/task/fanout.rs",
+        "owner": "arcweft-core",
+        "bytes": 5592,
+        "physicalLoc": 171,
+        "priorPhysicalLoc": 0,
+        "growth": 171,
+        "classification": "production",
+        "embeddedTestLoc": 106
+      }
+    ],
+    "disposition": "Core task control owns the pure source-position partition; backend owners retain their Source and typed custody checks. The new private module removes duplicate validation without I/O, dependency/public API changes or a parallel runtime state. Existing large backend validators lose only this common rule.",
+    "package": [
+      {
+        "package": "arcweft-core",
+        "manifest": "crates/arcweft-core/Cargo.toml",
+        "workspace_fan_in": "31",
+        "workspace_fan_out": "7",
+        "development_workspace_fan_in": "4",
+        "development_workspace_fan_out": "5"
+      }
+    ]
+  },
+  "dependencyGraph": {
+    "packages": 53,
+    "status": "reused on identical 99 manifest/lock inputs",
+    "reference": "task-program-template.reverse.json"
+  },
+  "notRun": {
+    "workspaceCheck": "Private validation refactor; prior R3209 remains evidence for its own input",
+    "reverseRuntime": "Full 53-package runtime not rerun",
+    "sourceParallel": "Compiler path remains unconnected; no callback execution acceptance is claimed",
+    "workspaceClippy": "Core all-target/all-feature Clippy R3216 only",
+    "doctests": "No executable or public API documentation changed"
+  },
+  "raw": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3213-fanout-progress-check.json",
+      "bytes": 543,
+      "sha256": "0c46781b26efa056dde3fd08acf29a4475cb61cb1345df37b0424dab0ee3eea8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3213-fanout-progress-check.log",
+      "bytes": 607402,
+      "sha256": "391a5fc84f39bb76829692d5791f4f3e63d1d59e621a4d7f125d268c54105009"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3213-fanout-progress-check.input-audit.json",
+      "bytes": 365,
+      "sha256": "a5550d19d34844e43ead5507d71adefbcbb69366f0a772f4c30d0c7369b8d6a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3214-fanout-progress-owner-catalog.json",
+      "bytes": 573,
+      "sha256": "878e0896fb950d55aa5b4701ea614c28be33b659b4844083cca0df0960052760"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3214-fanout-progress-owner-catalog.log",
+      "bytes": 383931,
+      "sha256": "f9f6e169a6542e723d0c3e817255393915e310b7894b26095778fd7d8a57e483"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3214-fanout-progress-owner-catalog.input-audit.json",
+      "bytes": 380,
+      "sha256": "a28abe24c4297ef53534189b0b041beb4fbc093a68b751158ff384c0bd3ace6a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3214-fanout-progress-owner-catalog.inventory.json",
+      "bytes": 521775,
+      "sha256": "d3e894de5f88e7f06971b593985cec481fda52c61b211fd294bb17d7b793eed9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3215-fanout-progress-owner-runtime.json",
+      "bytes": 589,
+      "sha256": "fc98b78fa78cd5c767c1bfc64569463d15fe4df1018cde4cbe81242f87c1bd15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3215-fanout-progress-owner-runtime.log",
+      "bytes": 343937,
+      "sha256": "b7188da535e99a6e076edf9e87ab23da66c81311a68ed84c7e1418cbf4a5a44a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3215-fanout-progress-owner-runtime.terminal-audit.json",
+      "bytes": 645,
+      "sha256": "8d88ea8b51b7e4b8749f228a776284f9ccae91c0cf924c8af7d7fc7684ed61f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3216-fanout-progress-clippy.json",
+      "bytes": 553,
+      "sha256": "ae4b6e18448b217f8c222e1a5d78244dec592f48106de573c8372e483d256d48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3216-fanout-progress-clippy.log",
+      "bytes": 19180718,
+      "sha256": "ac33ed47f120ea9febec157f3623da1cc2e130327c334bdffcf783b23c1b2af9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3216-fanout-progress-clippy.input-audit.json",
+      "bytes": 367,
+      "sha256": "07044d3665dc1040f6ee49348347c3c893674d75bea6544ae093f0cf869a650f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3217-fanout-progress-structure.json",
+      "bytes": 675,
+      "sha256": "eaac88532a002d47f20ed4e3e591a269bbb1d4d770700efd7baa57c4b812f6bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3217-fanout-progress-structure.log",
+      "bytes": 64613,
+      "sha256": "eb9eb9e0121ccf7ac19518f1626da6c22bf38b3d5d8c7e572e86e6b354c310c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3217-fanout-progress-structure.input-audit.json",
+      "bytes": 486,
+      "sha256": "fabfdf1e37bdf42d0f91e275e99e7750c470aab3a689a768d9003723f5bc551d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-progress-current.source-freeze.json",
+      "bytes": 780170,
+      "sha256": "3a173701bd910fda8cd5b037d00fc9ea33dfb7425864e3315dd80b58c40f3562"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-progress-current.executables-before.json",
+      "bytes": 481,
+      "sha256": "794cea05bde5d9b3b7b6d8fdd91bd87512c58b4c121a0d14a6a563343fe57bd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-progress-current.executables-after.json",
+      "bytes": 480,
+      "sha256": "dac52ad1002124fff175daf9bb417dff76d660e0f23091e4c9f5032e5153e233"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-progress-structure.dependency_edges.csv",
+      "bytes": 77451,
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-progress-structure.file_metrics.csv",
+      "bytes": 326877,
+      "sha256": "e98aef6b221fad17b5376ceffbd1051e0c5721b068c818b67f20493df600d8d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-progress-structure.findings.md",
+      "bytes": 121535,
+      "sha256": "81a57a983afec91a15b7272d76fb888f3cf3979272f900fa16c0a8e6c7530e15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-progress-structure.package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-progress-structure.public_type_duplicates.csv",
+      "bytes": 17121,
+      "sha256": "ebf8314840f2e0f221a4807fa014f201a6ac505a289adeb1d634e636c5c21375"
+    }
+  ],
+  "documentationQa": {
+    "version": 1,
+    "base": "fd88d4476630881966df2760904bd298e1ed870f",
+    "observedAt": "2026-10-26T13:08:10.3858035Z",
+    "markdown": [
+      {
+        "path": "docs/implementation/convergence-evidence-history.md",
+        "checkedSurface": "added hunks",
+        "priorFullIdentifiers": 1162,
+        "lostFullIdentifiers": 0
+      },
+      {
+        "path": "docs/implementation/current-status.md",
+        "checkedSurface": "complete maintained chapter",
+        "priorFullIdentifiers": 30,
+        "lostFullIdentifiers": 0
+      }
+    ],
+    "checkedRelativeLinks": 59,
+    "unclosedFences": 0,
+    "currentStatusCommits": [
+      "01af81001e1a7a2ac7ed70e2846371ad1cdb3c08",
+      "0403def0b856ddbb4ab19b43e822d0bcc8de1ce7",
+      "0b5ac5491d245a5386ca1b44547091e50bcb1955",
+      "173e4a69b1fb2a9375175874f6491001c9d030b6",
+      "1be0eb4d09a958b099225a1c7fbbd506afe39d26",
+      "1c994218a25444e14b58e1111f65581f8bbdd73a",
+      "3c7bae39d31250647811a4e2c0b91a08dfd99374",
+      "3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f",
+      "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+      "4c8844d70baf81ae7bb031766360738050875b35",
+      "5931e15eb9bf92c8b849216406687c44e348497b",
+      "6a86816246cd8e1bfae8f8250324cdbf0a2c559a",
+      "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+      "80e4845d9a23d097a4e60b6a46071c3d2545da93",
+      "843947a2c595368e323bbc4d57981053e1fb5e6c",
+      "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+      "86958911833f2509f391b70962773236e46a124e",
+      "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+      "946bdf08e48d81e7db88b51a8cd919a356f5ca6b",
+      "a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117",
+      "a74957e455597a0d3160af11c914e2e93f58d144",
+      "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+      "c4ec6d1109ca37b222f7238fd345b3a17caea612",
+      "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+      "dd7ce52715d3beda046ad465063623ece4ea5092",
+      "dec74c879c651705e41d23cfcf9b6b0f8dc50f71",
+      "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+      "faff95041f0d36bd492918cce57bc65c0ef428e2",
+      "fb04fd878622fac57a22db7e2c005ee6daa829ea",
+      "fd88d4476630881966df2760904bd298e1ed870f"
+    ],
+    "lostFullIdentifiers": 0,
+    "existingRawEvidenceEdited": 0,
+    "originalUntrackedFiles": 6,
+    "originalUntrackedDrift": 0,
+    "genericAcceptance": "Preserved: accepted and published; no reopening from whole-goal incompleteness",
+    "cargoForProseOnly": false
+  }
+}

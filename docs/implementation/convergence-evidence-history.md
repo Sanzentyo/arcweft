@@ -12517,3 +12517,33 @@ Coreは元Program templateとそのSource認証、runtime-planはそのSource lo
 [構造測定・2 ownerの責任境界](acceptance-evidence/task-program-template-structure-review.json)に保持する。
 全53逆依存runtimeはこの変更後に再実行していない。全体goalの最終受入と、Source parallelの
 callback実行・停止復帰・save／restoreは別に残る。Generic Match等の先行受入は維持する。
+
+Program template統一の公開commitは `fd88d4476630881966df2760904bd298e1ed870f`、
+parentは `9b1657dd6a6d61586087cbd33c2da5a76805f1dd`。通常push後の66 pathのblob・tree・patch、
+元tracked WIP 14件の差分0とindex空を確認した。
+
+## Native／AWBCのfanout進行位置の共通検査 — 2026-10-26
+
+公開main `fd88d4476630881966df2760904bd298e1ed870f` を基点に、privateな
+`RuntimeFanoutProgress`へ、開始済み位置のpending／resultの排他的所有、未来位置、
+初期化前、正のlimitとin-flight上限、入力／結果件数の規則を集約した。
+Native rollbackとAWBCのlive／inert復元が同じ規則を使う。両contextのcollection preflightは残し、
+値・ハンドル・元Source・世代／cursor・型の認証は既存ownerの責任として維持した。
+wire shape、起動policy、所有値のCopy／Move、結果のsource順序を変更していない。
+
+R3213 Core全target・全feature・locked checkは終了0。
+R3214 catalogはCore library 2,059件・除外0、R3215は2,059／2,059 PASS、29.149秒、終了0。
+新規5ケースを含む全catalogと終端case集合が一致し、3,990入力と1 executableの前後差分0。
+開始済み位置の欠落・二重所有、重複／未来pending、frontier／limit／件数不整合、
+未初期化位置の完了を拒否する。既存のNative rollback／AWBC公開save・restoreのケースも同じrunに含む。
+R3216 Core Clippyは全target・全feature・locked、警告あり終了0。R3217構造gateはblocking 0。
+各3,990入力の差分0。4 Rustファイル・Core 1 owner、新規moduleは171 physical LOC、最大growth 171。
+Core task controlが純粋な位置partitionを所有し、backendの大きなvalidatorから重複した規則を除いた。
+無関係な状態、I/O、依存、公開API、別のruntime状態表を追加していない。
+
+前段Cargo graphの97 member manifestとroot Cargo／lockの計99入力は全hash一致し、53逆依存graphを再利用した。
+source凍結対象にはworkspace外fixtureのCargo.tomlも1件あるため、全100 Cargo関連pathの件数を
+workspace graphの99入力と取り違えない。両集合とも変更0だった。
+このprivateな検査統合の検証はCore ownerに限定し、前段workspace共有gateを今回の再実行とはしない。
+全53逆依存runtimeとSource parallelのcallback実行は未受入の別境界として保持する。
+[Core全件・新規5件・適用範囲・構造測定・原本24件](acceptance-evidence/task-fanout-progress-owner-checkpoint.json)。

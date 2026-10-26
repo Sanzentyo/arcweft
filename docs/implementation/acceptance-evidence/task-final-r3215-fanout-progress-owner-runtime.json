@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "fd88d4476630881966df2760904bd298e1ed870f",
+  "name": "task-final-r3215-fanout-progress-owner-runtime",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast",
+    "--no-tests",
+    "fail"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3215-fanout-progress-owner-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T13:01:27.3653110Z",
+  "finishedAt": "2026-10-26T13:01:58.3275188Z"
+}

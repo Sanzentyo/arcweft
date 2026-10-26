@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3213-fanout-progress-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3990,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T12:57:00.3605241Z"
+}

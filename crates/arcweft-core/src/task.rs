@@ -83,6 +83,8 @@ pub use publication::{ProgramTaskValuePhase, RuntimeNeedPublicationCursor};
 mod template;
 pub use semantic::TaskSemanticEncodingError;
 pub use template::{HostCallProducerDefinition, NeedProducerDefinition, NeedProducerTemplate};
+mod fanout;
+pub(crate) use fanout::RuntimeFanoutProgress;
 
 #[cfg(test)]
 mod identity_tests {

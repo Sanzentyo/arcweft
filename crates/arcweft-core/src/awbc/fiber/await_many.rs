@@ -184,56 +184,30 @@ impl<V, N> FiberAwaitManyState<V, N> {
             .last()
             .copied()
             .ok_or(FiberStateError::InvalidFrame)?;
-        if *limit == 0
-            || u32::try_from(self.items.len()).is_err()
-            || self.captured.len() != captures.len()
+        if self.captured.len() != captures.len()
             || request.params.len() != captures.len()
             || child_inputs.params.len()
                 != captures
                     .len()
                     .checked_add(1)
                     .ok_or(FiberStateError::InvalidFrame)?
-            || self.results.len() != self.items.len()
-            || self.next_index as usize > self.items.len()
-            || self.in_flight.len() > *limit as usize
             || self
                 .binding
                 .is_some_and(|p| program.patterns.get(p.index()).is_none())
         {
             return Err(FiberStateError::InvalidFrame);
         }
-        let mut pending = std::collections::BTreeSet::new();
-        for child in &self.in_flight {
-            resources
-                .work()
-                .charge(0)
-                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-            if child.index >= self.next_index || !pending.insert(child.index as usize) {
-                return Err(FiberStateError::InvalidFrame);
-            }
+        crate::task::RuntimeFanoutProgress {
+            total: self.items.len(),
+            next_index: self.next_index as usize,
+            limit: *limit,
+            initialized: self.base.is_some(),
         }
-        if self.base.is_none()
-            && (self.next_index != 0
-                || !self.in_flight.is_empty()
-                || self.results.iter().any(Option::is_some))
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        for (index, result) in self.results.iter().enumerate() {
-            resources
-                .work()
-                .charge(0)
-                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-            if self.base.is_some()
-                && !(if index < self.next_index as usize {
-                    result.is_some() != pending.contains(&index)
-                } else {
-                    result.is_none() && !pending.contains(&index)
-                })
-            {
-                return Err(FiberStateError::InvalidFrame);
-            }
-        }
+        .validate(
+            self.in_flight.iter().map(|flight| flight.index as usize),
+            self.results.iter().map(Option::is_some),
+        )
+        .map_err(|_| FiberStateError::InvalidFrame)?;
         for (ordinal, ((value, register), expected)) in self
             .captured
             .iter()

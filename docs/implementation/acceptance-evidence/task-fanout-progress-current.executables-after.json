@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3214-fanout-progress-owner-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-e1e10b552a267676.exe",
+      "bytes": 81485312,
+      "nonTest": false,
+      "sha256": "7d1c244c9223858263bf0b03719852b61505970794bb5738216504ec0009917b"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T13:01:59.5102874Z"
+}

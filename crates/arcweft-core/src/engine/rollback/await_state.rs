@@ -130,17 +130,25 @@ where
         admission.validate_metadata_collection(self.target.base.request.captures().len())?;
         admission.validate_metadata_collection(self.target.child.request.captures().len())?;
         admission.validate_metadata(&(self.target.base.outcome(), self.target.child.outcome()))?;
-        if self.target.limit == 0
-            || u32::try_from(self.items.len()).is_err()
-            || self.next_index > self.items.len()
-            || self.results.len() != self.items.len()
-            || self.in_flight.len() > self.target.limit as usize
-            || self.captured.len() != self.target.captures().count()
-        {
+        if self.captured.len() != self.target.captures().count() {
             return Err(invalid(
                 "native AwaitMany inventories disagree with its frontier",
             ));
         }
+        for flight in &self.in_flight {
+            admission.validate_metadata(&(flight.index, flight.observed_through))?;
+        }
+        crate::task::RuntimeFanoutProgress {
+            total: self.items.len(),
+            next_index: self.next_index,
+            limit: self.target.limit,
+            initialized: true,
+        }
+        .validate(
+            self.in_flight.iter().map(|flight| flight.index),
+            self.results.iter().map(Option::is_some),
+        )
+        .map_err(|error| invalid(&error.to_string()))?;
         let base = RuntimeNeedView::from(&self.base);
         base.admit_retained(admission)?;
         if base.outcome() != &self.target.base.outcome() {
@@ -173,16 +181,11 @@ where
                 binding,
             )?;
         }
-        let mut indices = std::collections::BTreeSet::new();
         let mut correlations = std::collections::BTreeSet::new();
         for flight in &self.in_flight {
-            admission.validate_metadata(&(flight.index, flight.observed_through))?;
             let handle = RuntimeNeedView::from(&flight.handle);
             handle.admit_retained(admission)?;
-            if flight.index >= self.next_index
-                || self.results[flight.index].is_some()
-                || !indices.insert(flight.index)
-                || !correlations.insert(handle.correlation())
+            if !correlations.insert(handle.correlation())
                 || handle.correlation().generation != base.correlation().generation
                 || handle.outcome() != &self.target.child.outcome()
             {
@@ -191,14 +194,7 @@ where
                 ));
             }
         }
-        for (index, result) in self.results.iter().enumerate() {
-            if (index >= self.next_index && result.is_some())
-                || (index < self.next_index && result.is_none() && !indices.contains(&index))
-            {
-                return Err(invalid(
-                    "native AwaitMany result presence differs from its frontier",
-                ));
-            }
+        for result in &self.results {
             if let Some(value) = result {
                 admission.validate_owned_borrowed(value.borrowed_value())?;
                 admission.admit_composite(P::admission_origin(), |owner, resources| {

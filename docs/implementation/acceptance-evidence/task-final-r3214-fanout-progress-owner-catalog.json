@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "fd88d4476630881966df2760904bd298e1ed870f",
+  "name": "task-final-r3214-fanout-progress-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3214-fanout-progress-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T12:58:48.2132813Z",
+  "finishedAt": "2026-10-26T13:01:25.3963859Z"
+}
