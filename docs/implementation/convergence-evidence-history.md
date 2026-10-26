@@ -12347,3 +12347,23 @@ size警告だけを理由とした分割やpublic API拡張は行っていない
 この公開後のSourceを変更せず、R3176／R3177で全53逆依存を別途確認する。
 [owner公開照合](acceptance-evidence/task-program-capture-owner.verified.json)、
 [逆依存の開始・入力記録](acceptance-evidence/task-program-capture-reverse-start.json)。
+
+## Program capture移行後の全53逆依存catalog — 2026-10-26
+
+開始記録は `c2e56ac5c6721fbf8ba8145cf132d222aba9dd26` として公開した。親
+`e08b0f3cf2d0739a0b2223c30c12029fa428c31d`、tree
+`01738201f39c707d45ba4a8554341a29688df1c8`、patch SHA-256
+`298603eedbb19bd94df3fa295e8d5545f282c4491110cc127fcb0160fafde10a`。
+公開6 blob・raw 3件のbyte差分0、元WIP 14件を保持し、indexは空だった。
+[公開照合](acceptance-evidence/task-program-capture-reverse-start.verified.json)。
+
+R3176は全53 package・全target／全feature／lockedのcatalogを構築し、終了0となった。
+Cargoのcompileは38分9秒、catalog列挙を含むcommand全体は42分53.340秒。
+全7,403件／通常選択7,364件／既存除外39件を実inventoryで確認した。元Sourceの3,989入力と
+99 manifest／lockの差分0。Generic Match 151件・以前の必須owner／Source 17件・今回のcapture必須8件が
+それぞれ一意に通常選択へ含まれることを照合し、221 test binaries・6補助実行ファイルの227 hashを固定した。
+同じSourceでR3177 runtimeを開始した。catalog成功はruntime成功の証明とはせず、終端結果を別途照合する。
+[catalog receipt](acceptance-evidence/task-final-r3176-program-capture-reverse-catalog.json)、
+[入力照合](acceptance-evidence/task-final-r3176-program-capture-reverse-catalog.input-audit.json)、
+[必須集合と選択](acceptance-evidence/task-program-capture-reverse.preflight.json)、
+[実行ファイルhash](acceptance-evidence/task-program-capture-reverse.executables-before.json)。

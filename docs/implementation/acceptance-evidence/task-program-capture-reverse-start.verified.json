@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "commit": "c2e56ac5c6721fbf8ba8145cf132d222aba9dd26",
+  "parent": "e08b0f3cf2d0739a0b2223c30c12029fa428c31d",
+  "tree": "01738201f39c707d45ba4a8554341a29688df1c8",
+  "remote": "c2e56ac5c6721fbf8ba8145cf132d222aba9dd26",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-owner.verified.json",
+      "blob": "2224460ef75b4681c125b5c91a0d7fdc90386c2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse-start.json",
+      "blob": "470bbeff902d9cfd8a746c24480439c885c2f41c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse.graph.json",
+      "blob": "7e4c164f918454562759731984acaa4495fe74d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse.source-freeze.json",
+      "blob": "33811ae6cc9d1a192f2ff93d1b067ce3c4018597"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "dfe34449d591c052e6726195eaffbe3bd7713933"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "28e5f9449b45f0da9c1d46ba8c05c74b062aef3b"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "298603eedbb19bd94df3fa295e8d5545f282c4491110cc127fcb0160fafde10a",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-26T01:17:18.9934432Z"
+}
