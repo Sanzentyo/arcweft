@@ -61,6 +61,113 @@ fn collection_program() -> AwbcProgram {
     }
 }
 
+#[test]
+fn traversal_destructuring_copy_proofs_use_field_types_and_actual_callback_custody() {
+    use crate::awbc::schema::AwbcVariantCase;
+    use crate::pattern::RuntimeBuiltinVariantIdentity;
+    let mut program = collection_program();
+    program.strings.extend(["Ok".into(), "Err".into()]);
+    for (marker, shape) in [
+        (8, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)])),
+        (
+            9,
+            AwbcRuntimeTypeShape::Variant {
+                owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
+                arguments: vec![],
+                cases: vec![
+                    AwbcVariantCase {
+                        name: AwbcStringId(1),
+                        payload: Some(AwbcTypeId(7)),
+                    },
+                    AwbcVariantCase {
+                        name: AwbcStringId(2),
+                        payload: Some(AwbcTypeId(7)),
+                    },
+                ],
+            },
+        ),
+        (10, AwbcRuntimeTypeShape::Need(AwbcTypeId(8))),
+        (
+            11,
+            AwbcRuntimeTypeShape::Function {
+                contract: crate::plan::RuntimeFunctionTypeContract::monomorphic(
+                    crate::effect_row::EffectSet::default(),
+                ),
+                parameters: vec![AwbcTypeId(0)],
+                result: AwbcTypeId(9),
+            },
+        ),
+        (
+            12,
+            AwbcRuntimeTypeShape::Traversal {
+                source: AwbcTypeId(4),
+                mapping: AwbcTypeId(10),
+            },
+        ),
+    ] {
+        program.runtime_types.push(AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([marker; 32]),
+            shape,
+        ));
+    }
+    program.patterns = vec![
+        AwbcPattern::Bind {
+            target: AwbcRegisterId(0),
+            mutable: false,
+            expected: Some(AwbcTypeId(4)),
+        },
+        AwbcPattern::Bind {
+            target: AwbcRegisterId(1),
+            mutable: false,
+            expected: Some(AwbcTypeId(10)),
+        },
+        AwbcPattern::Tuple(vec![AwbcPatternId(0), AwbcPatternId(1)]),
+    ];
+    let verifier = Verifier {
+        program: &program,
+        budget: crate::awbc::verify::AwbcVerifyBudget::default(),
+        context: crate::awbc::verify::AwbcVerifyContext::default(),
+        block_owner: vec![],
+    };
+    for (proof, expected) in [
+        (CopyProof::Affine, [CopyProof::Copyable, CopyProof::Affine]),
+        (
+            CopyProof::Tuple(vec![CopyProof::Copyable, CopyProof::Function(vec![])]),
+            [CopyProof::Copyable, CopyProof::Function(vec![])],
+        ),
+        (
+            CopyProof::Tuple(vec![
+                CopyProof::Copyable,
+                CopyProof::Function(vec![CopyProof::Affine]),
+            ]),
+            [
+                CopyProof::Copyable,
+                CopyProof::Function(vec![CopyProof::Affine]),
+            ],
+        ),
+    ] {
+        let mut state = FlowState {
+            initialized: vec![RuntimePlaceInitialization::Initialized; 2],
+            moved_fields: BTreeMap::new(),
+            copy_proofs: vec![CopyProof::Affine; 2],
+            scopes: vec![],
+            format_attempts: vec![],
+        };
+        assign_pattern_copy_proofs(
+            &verifier,
+            0,
+            0,
+            AwbcPatternId(2),
+            AwbcTypeId(11),
+            &proof,
+            &mut state,
+            0,
+        )
+        .unwrap();
+        assert_eq!(state.copy_proofs, expected);
+    }
+}
+
 fn verify(program: &AwbcProgram, intrinsic: RuntimeIntrinsic) -> Result<(), AwbcVerifyError> {
     verify_collection_intrinsic_signature(
         program,
@@ -68,6 +175,63 @@ fn verify(program: &AwbcProgram, intrinsic: RuntimeIntrinsic) -> Result<(), Awbc
         AwbcSignatureId(0),
         "collection signature",
     )
+}
+
+#[test]
+fn ownership_guard_abi_preserves_exact_function_identity_and_purity() {
+    let mut program = collection_program();
+    for marker in [31, 32] {
+        program.runtime_types.push(AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([marker; 32]),
+            AwbcRuntimeTypeShape::Function {
+                contract: crate::plan::RuntimeFunctionTypeContract::monomorphic(
+                    crate::effect_row::EffectSet::default(),
+                ),
+                parameters: vec![AwbcTypeId(0)],
+                result: AwbcTypeId(1),
+            },
+        ));
+    }
+    program.signatures[0].params = vec![AwbcTypeId(7)];
+    program.signatures[0].result = Some(AwbcTypeId(7));
+    let check = |program: &AwbcProgram| {
+        verify_ownership_intrinsic_signature(
+            program,
+            RuntimeIntrinsic::CoreRequireUnrestricted,
+            AwbcSignatureId(0),
+            "ownership ABI",
+        )
+    };
+    assert_eq!(check(&program), Ok(()));
+    program.signatures[0].result = Some(AwbcTypeId(8));
+    assert!(check(&program).is_err());
+    program.signatures[0].result = Some(AwbcTypeId(7));
+    program.signatures[0].effects = AwbcEffectSetId(1);
+    assert!(check(&program).is_err());
+}
+
+#[test]
+fn fanout_inputs_abi_preserves_collection_identity_and_exact_limit_width() {
+    let mut program = collection_program();
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeSemanticTypeId::from_bytes([33; 32]),
+        AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32),
+    ));
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeSemanticTypeId::from_bytes([34; 32]),
+        AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(4), AwbcTypeId(2), AwbcTypeId(2)]),
+    ));
+    program.signatures[0].params = vec![AwbcTypeId(4), AwbcTypeId(7)];
+    program.signatures[0].result = Some(AwbcTypeId(8));
+    assert_eq!(verify(&program, RuntimeIntrinsic::CoreFanoutInputs), Ok(()));
+    program.signatures[0].params[0] = AwbcTypeId(5);
+    assert!(verify(&program, RuntimeIntrinsic::CoreFanoutInputs).is_err());
+    program.signatures[0].params[0] = AwbcTypeId(4);
+    program.signatures[0].params[1] = AwbcTypeId(2);
+    assert!(verify(&program, RuntimeIntrinsic::CoreFanoutInputs).is_err());
+    program.signatures[0].params[1] = AwbcTypeId(7);
+    program.signatures[0].effects = AwbcEffectSetId(1);
+    assert!(verify(&program, RuntimeIntrinsic::CoreFanoutInputs).is_err());
 }
 
 fn assert_rejected(program: &AwbcProgram, intrinsic: RuntimeIntrinsic, expected: &str) {

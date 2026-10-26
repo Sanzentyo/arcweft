@@ -1438,6 +1438,11 @@ pub(crate) fn evaluate_runtime_call(
     pure_backend: &mut impl RuntimeCallBackend,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
     if let Some(intrinsic) = callee.as_intrinsic()
+        && let Some(value) = crate::value::evaluate_ownership_intrinsic(intrinsic, &mut args)?
+    {
+        return Ok(value);
+    }
+    if let Some(intrinsic) = callee.as_intrinsic()
         && let Some(value) = crate::value::evaluate_collection_intrinsic(intrinsic, &mut args)?
     {
         return Ok(value);

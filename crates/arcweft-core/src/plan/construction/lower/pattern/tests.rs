@@ -12,6 +12,123 @@ const BOOLEAN: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([71; 32
 const TRIPLE: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([72; 32]);
 const ROOT: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([73; 32]);
 
+#[test]
+fn traversal_destructuring_requires_its_exact_source_and_callback_types() {
+    use crate::plan::{RuntimeFunctionTypeContract, RuntimePlanSequenceKind};
+    const SOURCE: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([74; 32]);
+    const PAYLOAD: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([75; 32]);
+    const RESULT: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([76; 32]);
+    const NEED: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([77; 32]);
+    const MAPPING: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([78; 32]);
+    const TRAVERSAL: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([79; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    let admitted = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(BOOLEAN, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(
+                    SOURCE,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: BOOLEAN,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    PAYLOAD,
+                    RuntimePlanTypeProjection::Tuple(Box::new([BOOLEAN])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    RESULT,
+                    RuntimePlanTypeProjection::Result {
+                        value: BOOLEAN,
+                        error: BOOLEAN,
+                        value_payload: PAYLOAD,
+                        error_payload: PAYLOAD,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(NEED, RuntimePlanTypeProjection::Need(RESULT)),
+                RuntimePlanTypeSeed::new(
+                    MAPPING,
+                    RuntimePlanTypeProjection::Function {
+                        contract: RuntimeFunctionTypeContract::monomorphic(
+                            crate::effect_row::EffectSet::default(),
+                        ),
+                        parameters: Box::new([BOOLEAN]),
+                        result: NEED,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    TRAVERSAL,
+                    RuntimePlanTypeProjection::Traversal {
+                        source: SOURCE,
+                        mapping: MAPPING,
+                    },
+                ),
+            ],
+            [SOURCE, MAPPING]
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, ty)| {
+                    let mut identity = [91; 32];
+                    identity[0] = u8::try_from(ordinal).unwrap();
+                    RuntimeLocalDeclarationSeed::new(
+                        RuntimeLocalDeclarationSource::Binding {
+                            identity,
+                            declaration: RuntimeLocalBindingDeclaration::new(
+                                RuntimeLocalBindingKind::PatternBinding,
+                                false,
+                                RuntimeLocalBindingStorage::Derived,
+                            ),
+                        },
+                        ty,
+                    )
+                }),
+        )
+        .unwrap();
+    let locals = admitted.local_ids();
+    builder.declare_test_input_locals(locals).unwrap();
+    let bind = |ty, ordinal: usize| {
+        RuntimePatternSeed::new(
+            ty,
+            RuntimePatternSeedKind::Bind {
+                local: locals[ordinal].clone(),
+                mutable: false,
+            },
+        )
+    };
+    let product = |items: Vec<RuntimePatternSeed>| {
+        RuntimePatternSeed::new(
+            TRAVERSAL,
+            RuntimePatternSeedKind::Tuple(items.into_boxed_slice()),
+        )
+    };
+    assert!(
+        builder
+            .root_body_context()
+            .lower_pattern_seed(product(vec![bind(SOURCE, 0)]))
+            .is_err()
+    );
+    assert!(
+        builder
+            .root_body_context()
+            .lower_pattern_seed(product(vec![bind(SOURCE, 0), bind(SOURCE, 1)]))
+            .is_err()
+    );
+    let pattern = builder
+        .root_body_context()
+        .lower_pattern_seed(product(vec![bind(SOURCE, 0), bind(MAPPING, 1)]))
+        .unwrap();
+    let declarations = pattern
+        .binding_declarations()
+        .map(|declaration| declaration.ty())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        declarations,
+        [admitted.type_ids()[1], admitted.type_ids()[5]]
+    );
+    builder.finish().unwrap();
+}
+
 fn fixture(prefix: usize) -> (RuntimePlanBuilder, Box<[RuntimeLocalSeedId]>) {
     let mut builder = RuntimePlanBuilder::new();
     let mut root = vec![BOOLEAN; prefix];

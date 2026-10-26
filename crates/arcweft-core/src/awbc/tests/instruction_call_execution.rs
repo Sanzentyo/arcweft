@@ -9,6 +9,95 @@ fn int_constant(value: i64) -> AwbcConstant {
     }
 }
 
+#[test]
+fn ownership_guard_executes_in_core_with_a_rejecting_vm_host_and_moves_its_input() {
+    let mut program = minimal_program();
+    program.strings.push("owned guard value".to_owned());
+    let string = AwbcTypeId(0);
+    program.runtime_types = vec![runtime_type(0x44, AwbcRuntimeTypeShape::String)];
+    program.signatures[0].result = Some(string);
+    program.signatures.push(AwbcSignature {
+        params: vec![string],
+        result: Some(string),
+        effects: AwbcEffectSetId(0),
+    });
+    program.intrinsics = vec![AwbcIntrinsic {
+        identity: crate::value::RuntimeCallTarget::Intrinsic(
+            crate::value::RuntimeIntrinsic::CoreRequireUnrestricted,
+        ),
+        signature: AwbcSignatureId(1),
+        revision: 1,
+    }];
+    program.frame_layouts[0].slots = (0..3)
+        .map(|_| AwbcFrameSlot {
+            name: None,
+            ty: string,
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        })
+        .collect();
+    program.constants = vec![AwbcConstant::String(AwbcStringId(1))];
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::CallIntrinsic {
+            dst: Some(AwbcRegisterId(1)),
+            intrinsic: AwbcIntrinsicId(0),
+            args: vec![AwbcRegisterId(0)],
+        },
+        AwbcInstruction::CallIntrinsic {
+            dst: Some(AwbcRegisterId(2)),
+            intrinsic: AwbcIntrinsicId(0),
+            args: vec![AwbcRegisterId(1)],
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(2)),
+    };
+    program.canonicalize_string_table();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, Default::default()).unwrap();
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 64).unwrap();
+    let options = super::super::vm::VmStepOptions {
+        max_instructions: 1,
+    };
+    super::super::vm::step(&decoded, &mut fiber, options).unwrap();
+    let RuntimeValue::String(before) = fiber
+        .active_frame()
+        .unwrap()
+        .register(AwbcRegisterId(0))
+        .unwrap()
+    else {
+        panic!("owned String input");
+    };
+    let pointer = before.as_ptr();
+    // step uses RejectingVmHost, so delegating this Core check would fail.
+    super::super::vm::step(&decoded, &mut fiber, options).unwrap();
+    assert!(
+        fiber
+            .active_frame()
+            .unwrap()
+            .register(AwbcRegisterId(0))
+            .is_err()
+    );
+    let RuntimeValue::String(after) = fiber
+        .active_frame()
+        .unwrap()
+        .register(AwbcRegisterId(1))
+        .unwrap()
+    else {
+        panic!("owned String output");
+    };
+    assert_eq!(after, "owned guard value");
+    assert_eq!(after.as_ptr(), pointer);
+}
+
 fn mut_trait_program(receiver_out: AwbcRegisterId) -> std::sync::Arc<AwbcProgram> {
     let mut program = minimal_program();
     program.strings.push("mut_method".to_owned());

@@ -1029,6 +1029,26 @@ pub enum AwbcRuntimeTypeShape {
 
 /// Structural reference behavior of the executable type algebra.
 impl AwbcRuntimeTypeShape {
+    pub(crate) fn tuple_arity(&self) -> Option<usize> {
+        match self {
+            Self::Tuple(items) => Some(items.len()),
+            Self::Traversal { .. } => Some(2),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn tuple_element(&self, ordinal: usize) -> Option<&AwbcTypeId> {
+        match self {
+            Self::Tuple(items) => items.get(ordinal),
+            Self::Traversal { source, mapping } => match ordinal {
+                0 => Some(source),
+                1 => Some(mapping),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     /// Nominal body edges end at their identity; generic arguments remain
     /// structural. Scanning every row also checks each body's child subgraphs.
     pub(crate) fn visit_structural_type_refs(&self, visit: &mut impl FnMut(AwbcTypeId)) {

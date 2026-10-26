@@ -371,6 +371,28 @@ pub enum RuntimeAgentTypeProjection<R> {
 }
 
 impl<R> RuntimePlanTypeProjection<R> {
+    /// The positional value representation used by tuples and owned Traversal.
+    /// This inspects type edges without allocating or duplicating captured values.
+    pub(crate) fn tuple_arity(&self) -> Option<usize> {
+        match self {
+            Self::Tuple(items) => Some(items.len()),
+            Self::Traversal { .. } => Some(2),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn tuple_element(&self, ordinal: usize) -> Option<&R> {
+        match self {
+            Self::Tuple(items) => items.get(ordinal),
+            Self::Traversal { source, mapping } => match ordinal {
+                0 => Some(source),
+                1 => Some(mapping),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     /// Validates locally bound references and returns the scope of child edges.
     pub fn child_scope(
         &self,

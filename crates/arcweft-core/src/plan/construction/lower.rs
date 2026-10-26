@@ -971,10 +971,10 @@ impl RuntimePlanBodyConstruction<'_> {
                         ty: target.ty(),
                     }
                 })?;
-                let expected = match self.projection(target.ty())? {
-                    RuntimePlanTypeProjection::Tuple(items) => items.get(ordinal).copied(),
-                    _ => None,
-                }
+                let expected = self
+                    .projection(target.ty())?
+                    .tuple_element(ordinal)
+                    .copied()
                 .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
                     context: "tuple projection",
                     ty: target.ty(),
@@ -1013,6 +1013,7 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeExprSeedKind::Call { callee, args } => {
                 let args = self.lower_call_arguments(args)?;
                 if let Some(intrinsic) = callee.as_intrinsic() {
+                    self.validate_ownership_intrinsic_signature(intrinsic, &args, ty)?;
                     self.validate_collection_intrinsic_signature(intrinsic, &args, ty)?;
                 }
                 RuntimeExprKind::Call { callee, args }
@@ -1984,6 +1985,26 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         Ok((callee, args))
     }
 
+    fn validate_ownership_intrinsic_signature(
+        &self,
+        intrinsic: crate::value::RuntimeIntrinsic,
+        args: &[RuntimeCallArgument],
+        result: RuntimePlanTypeId,
+    ) -> Result<(), RuntimePlanBuildError> {
+        if intrinsic != crate::value::RuntimeIntrinsic::CoreRequireUnrestricted {
+            return Ok(());
+        }
+        let inputs = self.expanded_argument_types(args)?;
+        let [input] = inputs.as_slice() else {
+            return Err(RuntimePlanBuildError::CallableAbiArity {
+                context: "ownership guard",
+                expected: 1,
+                actual: inputs.len(),
+            });
+        };
+        require_same("ownership guard identity result", *input, result)
+    }
+
     /// The closed collection intrinsic ABI uses this exact admitted type graph,
     /// including already checked spread/position expansion. It cannot publish
     /// a result inferred from an unrelated same-width or receiver type.
@@ -1996,11 +2017,51 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         use crate::value::RuntimeIntrinsic;
         if !matches!(
             intrinsic,
-            RuntimeIntrinsic::CoreSeqLen | RuntimeIntrinsic::CoreSeqSum
+            RuntimeIntrinsic::CoreSeqLen
+                | RuntimeIntrinsic::CoreSeqSum
+                | RuntimeIntrinsic::CoreFanoutInputs
         ) {
             return Ok(());
         }
         let inputs = self.expanded_argument_types(args)?;
+        if intrinsic == RuntimeIntrinsic::CoreFanoutInputs {
+            let [source, limit] = inputs.as_slice() else {
+                return Err(RuntimePlanBuildError::CallableAbiArity {
+                    context: "fanout inputs",
+                    expected: 2,
+                    actual: inputs.len(),
+                });
+            };
+            if !matches!(
+                self.projection(*source)?,
+                RuntimePlanTypeProjection::Sequence { .. }
+                    | RuntimePlanTypeProjection::Array { .. }
+            ) {
+                return invalid_projection("fanout collection", *source);
+            }
+            if !matches!(
+                self.projection(*limit)?,
+                RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U32)
+            ) {
+                return invalid_projection("fanout limit", *limit);
+            }
+            let RuntimePlanTypeProjection::Tuple(fields) = self.projection(result)? else {
+                return invalid_projection("fanout inputs result", result);
+            };
+            let [returned_source, count, returned_limit] = fields.as_ref() else {
+                return invalid_projection("fanout inputs result arity", result);
+            };
+            require_same("fanout owned collection", *source, *returned_source)?;
+            for ty in [count, returned_limit] {
+                if !matches!(
+                    self.projection(*ty)?,
+                    RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::USize)
+                ) {
+                    return invalid_projection("fanout count/limit", *ty);
+                }
+            }
+            return Ok(());
+        }
         let [receiver] = inputs.as_slice() else {
             return Err(RuntimePlanBuildError::CallableAbiArity {
                 context: "collection intrinsic",

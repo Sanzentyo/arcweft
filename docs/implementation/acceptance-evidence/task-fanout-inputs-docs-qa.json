@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "base": "3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f",
+  "observedAt": "2026-10-26T05:49:23.3058673Z",
+  "markdown": [
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "checkedSurface": "complete maintained chapter",
+      "priorFullIdentifiers": 0,
+      "lostFullIdentifiers": 0
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "checkedSurface": "added hunks",
+      "priorFullIdentifiers": 1158,
+      "lostFullIdentifiers": 0
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "checkedSurface": "complete maintained chapter",
+      "priorFullIdentifiers": 29,
+      "lostFullIdentifiers": 0
+    }
+  ],
+  "checkedRelativeLinks": 73,
+  "unclosedFences": 0,
+  "currentStatusCommits": [
+    "01af81001e1a7a2ac7ed70e2846371ad1cdb3c08",
+    "0403def0b856ddbb4ab19b43e822d0bcc8de1ce7",
+    "0b5ac5491d245a5386ca1b44547091e50bcb1955",
+    "1be0eb4d09a958b099225a1c7fbbd506afe39d26",
+    "1c994218a25444e14b58e1111f65581f8bbdd73a",
+    "3c7bae39d31250647811a4e2c0b91a08dfd99374",
+    "3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f",
+    "42c9d06867a1e29bf0bd302485bb4f130445dc89",
+    "4c8844d70baf81ae7bb031766360738050875b35",
+    "5931e15eb9bf92c8b849216406687c44e348497b",
+    "6a86816246cd8e1bfae8f8250324cdbf0a2c559a",
+    "7e0092db58d578b249abd7ec669cd3b97d4e722c",
+    "80e4845d9a23d097a4e60b6a46071c3d2545da93",
+    "843947a2c595368e323bbc4d57981053e1fb5e6c",
+    "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+    "86958911833f2509f391b70962773236e46a124e",
+    "9038c82a7a0aff5650bc635d74ff21f7e7cba69e",
+    "946bdf08e48d81e7db88b51a8cd919a356f5ca6b",
+    "a4f1f3954caa2c10da3e447b8cfb2f0ae8e9b117",
+    "a74957e455597a0d3160af11c914e2e93f58d144",
+    "b1e89daf80a30d73806326f5daef1cde7b0751d4",
+    "c4ec6d1109ca37b222f7238fd345b3a17caea612",
+    "d0dd946a9dfcbc62898682c75d7aad7cb1b8de42",
+    "dd7ce52715d3beda046ad465063623ece4ea5092",
+    "dec74c879c651705e41d23cfcf9b6b0f8dc50f71",
+    "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+    "faff95041f0d36bd492918cce57bc65c0ef428e2",
+    "fb04fd878622fac57a22db7e2c005ee6daa829ea"
+  ],
+  "lostFullIdentifiers": 0,
+  "existingRawEvidenceEdited": 0,
+  "originalUntrackedFiles": 6,
+  "originalUntrackedDrift": 0,
+  "genericAcceptance": "Preserved: accepted and published; no reopening from whole-goal incompleteness",
+  "cargoForProseOnly": false
+}

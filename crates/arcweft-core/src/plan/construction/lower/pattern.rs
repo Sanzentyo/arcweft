@@ -313,11 +313,10 @@ impl RuntimePlanBodyConstruction<'_> {
                 }
             }
             RuntimePatternSeedKind::Tuple(seeds) => {
-                let expected = match self.projection(ty)? {
-                    RuntimePlanTypeProjection::Tuple(items) => items,
-                    _ => return invalid_projection("tuple pattern", ty),
+                let Some(arity) = self.projection(ty)?.tuple_arity() else {
+                    return invalid_projection("tuple pattern", ty);
                 };
-                if expected.len() != seeds.len() {
+                if arity != seeds.len() {
                     return invalid_projection("tuple pattern arity", ty);
                 }
                 Pending::Tuple {
@@ -415,16 +414,14 @@ impl Frame {
                 values.push(pattern);
             }
             Pending::Tuple { values, .. } => {
-                let RuntimePlanTypeProjection::Tuple(expected) =
-                    construction.projection(self.ty)?
+                let Some(expected) = construction
+                    .projection(self.ty)?
+                    .tuple_element(values.len())
+                    .copied()
                 else {
                     return invalid_projection("tuple pattern", self.ty);
                 };
-                require_same(
-                    "tuple pattern element",
-                    expected[values.len()],
-                    pattern.ty(),
-                )?;
+                require_same("tuple pattern element", expected, pattern.ty())?;
                 values.push(pattern);
             }
             Pending::Record(record) => record.accept(pattern)?,

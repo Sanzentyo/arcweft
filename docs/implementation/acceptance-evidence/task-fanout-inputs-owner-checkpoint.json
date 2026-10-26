@@ -1,0 +1,531 @@
+{
+  "version": 1,
+  "base": "3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f",
+  "status": "owner-and-shared-gates-verified-checkpoint",
+  "scope": "Owned Traversal positional type admission, actual retained-graph Copy guard, finite fanout input preparation and Core-owned VM dispatch",
+  "runtime": {
+    "version": 1,
+    "base": "3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f",
+    "run": "task-final-r3200-fanout-core-vm-owner-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  40.753s] 2181 tests run: 2181 passed, 0 skipped",
+    "caseRowSource": "complete-live-status-before-terminal-summary",
+    "executed": 2181,
+    "passed": 2181,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3989,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-26T04:52:37.1021759Z"
+  },
+  "requiredCases": [
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "plan::construction::lower::pattern::tests::traversal_destructuring_requires_its_exact_source_and_callback_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "awbc::verify::code::collection_tests::traversal_destructuring_copy_proofs_use_field_types_and_actual_callback_custody",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "value::ownership::tests::unrestricted_guard_returns_the_same_owned_allocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "value::ownership::tests::unrestricted_guard_rejects_actual_affine_custody_without_consuming_the_packet",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "value::collection::tests::fanout_inputs_reject_invalid_limits_before_consuming_affine_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "value::collection::tests::fanout_inputs_move_affine_collection_and_preserve_empty_and_dynamic_limits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "awbc::verify::code::collection_tests::ownership_guard_abi_preserves_exact_function_identity_and_purity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "awbc::verify::code::collection_tests::fanout_inputs_abi_preserves_collection_identity_and_exact_limit_width",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::instruction_call_execution::ownership_guard_executes_in_core_with_a_rejecting_vm_host_and_moves_its_input",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-core",
+      "binary": "arcweft-core",
+      "test": "plan::construction::source::expression::tests::expression_intrinsic_source_tags_are_closed_and_preserve_all_original_semantic_coordinates",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "packageCounts": [
+    {
+      "package": "arcweft-core",
+      "matched": 2054
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "matched": 127
+    }
+  ],
+  "executables": {
+    "count": 2,
+    "drift": 0,
+    "artifactCopyMove": false
+  },
+  "priorRuns": {
+    "firstOwner": {
+      "run": "task-final-r3192-traversal-destructuring-owner-runtime",
+      "passed": 2173,
+      "failed": 0,
+      "scope": "Initial seven-file positional admission input, before Copy-proof and intrinsic changes"
+    },
+    "tagExpectationFailure": {
+      "run": "task-final-r3196-fanout-inputs-owner-runtime",
+      "actualExitCode": 100,
+      "passed": 2179,
+      "failed": 1,
+      "test": "plan::construction::source::expression::tests::expression_intrinsic_source_tags_are_closed_and_preserve_all_original_semantic_coordinates",
+      "repair": "Append stable tags 92 and 93; update closed intrinsic grammar cardinality 92 to 94 and assert both new coordinates"
+    },
+    "testConstructorFailure": {
+      "run": "task-final-r3197-fanout-core-vm-check",
+      "actualExitCode": 101,
+      "errors": 1,
+      "repair": "Replace a nonexistent test-only Copy instruction with the actual CallIntrinsic operation"
+    }
+  },
+  "sharedGates": {
+    "workspaceCheck": {
+      "version": 1,
+      "run": "task-final-r3201-fanout-inputs-workspace-check",
+      "actualExitCode": 0,
+      "scope": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "sourceInputs": 3989,
+      "sourceDrift": 0,
+      "held": 14,
+      "at": "2026-10-26T05:47:10.7179466Z"
+    },
+    "workspaceClippy": {
+      "audit": {
+        "version": 1,
+        "run": "task-final-r3202-fanout-inputs-workspace-clippy",
+        "actualExitCode": 0,
+        "scope": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "sourceInputs": 3989,
+        "sourceDrift": 0,
+        "held": 14,
+        "at": "2026-10-26T05:47:11.5901324Z"
+      },
+      "warnings": "Warnings retained in the raw log, including the new cohesive Traversal fixture line-count and method-closure suggestions; exit 0"
+    },
+    "coreDoctest": {
+      "audit": {
+        "version": 1,
+        "run": "task-final-r3203-fanout-inputs-core-doctest",
+        "actualExitCode": 0,
+        "scope": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "sourceInputs": 3989,
+        "sourceDrift": 0,
+        "held": 14,
+        "at": "2026-10-26T05:47:12.8893717Z"
+      },
+      "passed": 75,
+      "failed": 0,
+      "ignored": 0
+    },
+    "structure": {
+      "audit": {
+        "version": 1,
+        "run": "task-final-r3204-fanout-inputs-structure",
+        "actualExitCode": 0,
+        "scope": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-fanout-inputs-structure-report"
+        ],
+        "sourceInputs": 3989,
+        "sourceDrift": 0,
+        "held": 14,
+        "at": "2026-10-26T05:47:16.1097122Z"
+      },
+      "blockingViolations": 0,
+      "review": "task-fanout-inputs-structure-review.json"
+    }
+  },
+  "structureReview": "task-fanout-inputs-structure-review.json",
+  "reverseDependencies": {
+    "graph": "task-program-capture-reverse.graph.json",
+    "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+    "packages": 53,
+    "currentInputRuntime": "not-run"
+  },
+  "remainingBoundary": "Compiler still rejects Source parallel; callback ownership, dynamic bounds and save/restore must be connected through the typed AwaitMany state. The helpers do not prove that Source pipeline.",
+  "acceptancePreserved": "Generic Match and other accepted cuts retain their original scope; historical full reverse and shared gates are not current-input reruns.",
+  "raw": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3190-traversal-destructuring-check.input-audit.json",
+      "bytes": 413,
+      "sha256": "065b8f19c98877d003e1ca44b881533f3d5780e1c6a67a94c52f17f9dd69be67"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3190-traversal-destructuring-check.json",
+      "bytes": 599,
+      "sha256": "3c1a8914dc8766a880763ad4845f442b078e16845b3ffc61537a8c2e5e5a23bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3190-traversal-destructuring-check.log",
+      "bytes": 693505,
+      "sha256": "b58e206897f9251c544234884d757fb801c9099aa42c03bf23a500e289e870a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3191-traversal-destructuring-owner-catalog.input-audit.json",
+      "bytes": 428,
+      "sha256": "ff4b45c0f564a605f37f24eade5277252d801e47826a37a71dc7ca1816d9fa78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3191-traversal-destructuring-owner-catalog.inventory.json",
+      "bytes": 551399,
+      "sha256": "21db3b9c1ccb8937171f8a3837291ac7cab1d3bcb0910ed02ecbd990944552cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3191-traversal-destructuring-owner-catalog.json",
+      "bytes": 629,
+      "sha256": "af9ec53b0a88cb5bcfd2c9a1b4106aeef3cd9df8faa76c123ee03d65cbb4c75f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3191-traversal-destructuring-owner-catalog.log",
+      "bytes": 464091,
+      "sha256": "9f932aaf8ee94e9890304c773100846fe29d62f989d39c6074472a50bf698bba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3192-traversal-destructuring-owner-runtime.json",
+      "bytes": 645,
+      "sha256": "8a6a11313816dea0857bfb821e9e5163b3e7134f457bf30a1f94ec899b6fc752"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3192-traversal-destructuring-owner-runtime.log",
+      "bytes": 422022,
+      "sha256": "31acf90dee55c057eaeb44c4fba92e2f6f7490ab3d2eff24abc8f434d6bc5d56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3192-traversal-destructuring-owner-runtime.terminal-audit.json",
+      "bytes": 653,
+      "sha256": "01489210f96697f6c2a37d5d0a68abb4c19731b551e9c19df9e4747c8766f0b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3193-traversal-custody-check.input-audit.json",
+      "bytes": 407,
+      "sha256": "e39cdfd38b0d87b44e54079d5cfc52469f2f54cfb160a19e587fe223749d94a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3193-traversal-custody-check.json",
+      "bytes": 587,
+      "sha256": "01d653bbf938640ffa85dcd420d72517c2be274874f5b30a0b01b0bb849dee6c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3193-traversal-custody-check.log",
+      "bytes": 693505,
+      "sha256": "a4ba8ab499bc0950c00d83022b6bd9e7c23f590ff48887fd936fca85c9d2e9f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3194-fanout-inputs-check.input-audit.json",
+      "bytes": 403,
+      "sha256": "0979e83620c0c580f2f4ae0be881a480bab4c59d66c2216df8e9bfa0d55abb17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3194-fanout-inputs-check.json",
+      "bytes": 579,
+      "sha256": "396c5b884ccf70c3f2d692230d6307464ed02112c19588d7fab2fc58e8567f60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3194-fanout-inputs-check.log",
+      "bytes": 693505,
+      "sha256": "b576dc8b9c9d0563002fb16173242fbdd71346605bf8578af85e2944127a853b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3195-fanout-inputs-owner-catalog.input-audit.json",
+      "bytes": 418,
+      "sha256": "6aedfd4c1df527cad84b6b06707c82a0182ceab87bc39d48971a6d421871e03f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3195-fanout-inputs-owner-catalog.inventory.json",
+      "bytes": 553157,
+      "sha256": "e058fe064c926d3a1af8f649478484bfa54da748d3490243320c3dc691a83b81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3195-fanout-inputs-owner-catalog.json",
+      "bytes": 609,
+      "sha256": "fdc76f81379f97c8153fff6c25f9bd7d43905960a0f3a66ed19e09977f42bb11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3195-fanout-inputs-owner-catalog.log",
+      "bytes": 465285,
+      "sha256": "1b159e953a3774347fa24740a6a2cd0cd6ae4126f6f09b6b3e1630e2de134eb5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3196-fanout-inputs-owner-runtime.json",
+      "bytes": 627,
+      "sha256": "a89de460d22e9320a5053f50b73d27a4b6b7b9a7d8a42fc4f8f4a97a1eb5bf81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3196-fanout-inputs-owner-runtime.log",
+      "bytes": 424224,
+      "sha256": "6d9b73a7b937a8ef6cebad4b40bde4713753d97f137a8e87a4633589e08a4437"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3196-fanout-inputs-owner-runtime.terminal-audit.json",
+      "bytes": 887,
+      "sha256": "4cdd83e3e9167066e9500268a5b4ff3a653762f2f9014cb20b85bda36faece53"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3197-fanout-core-vm-check.diagnostics.json",
+      "bytes": 915,
+      "sha256": "3249aca0af0a57f07484dced02b000e9ff449cc5686c22724954a59c73cd60bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3197-fanout-core-vm-check.input-audit.json",
+      "bytes": 406,
+      "sha256": "fc17b651cd87f38cf875d17a0be093a19adef8eaf2114b0d6c291bea56a07e7c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3197-fanout-core-vm-check.json",
+      "bytes": 583,
+      "sha256": "ca0a7822cbe0b28dd7d761df3300b6ccfed5b8d6b68a7e8de2f06bf993fcb841"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3197-fanout-core-vm-check.log",
+      "bytes": 608143,
+      "sha256": "db32e1a99afb1703c6687c6d9b5a0e0cfd70eb8d7fafb68b2a36e30ce5befdd4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3198-fanout-core-vm-check.input-audit.json",
+      "bytes": 404,
+      "sha256": "1870065fcc9957f40a073d7f698e4ceb22c3fe255d8fc98a09d7ef3e8d50f4d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3198-fanout-core-vm-check.json",
+      "bytes": 581,
+      "sha256": "8fc742cfea53e8ac77ad4564cc154100b03fa7270868cd5dfcaf4ded6cdd0f5d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3198-fanout-core-vm-check.log",
+      "bytes": 693082,
+      "sha256": "f2d99b4c7f2425cbd276fe0f5fc402937fab674f091c8a32a32588ff47e6ead0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3199-fanout-core-vm-owner-catalog.input-audit.json",
+      "bytes": 419,
+      "sha256": "60659003cd727506a824e401ef2b5e75265ed7d0b57675992041ac370a4925a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3199-fanout-core-vm-owner-catalog.inventory.json",
+      "bytes": 553429,
+      "sha256": "10d48df4c830d4fd1f5121a835575303f2352de5fcf3a64434c8432b9e945923"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3199-fanout-core-vm-owner-catalog.json",
+      "bytes": 611,
+      "sha256": "49b02ec0da85aed619c58db15e8f5c56bea04e645a9eaa4d261798d560e89494"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3199-fanout-core-vm-owner-catalog.log",
+      "bytes": 465474,
+      "sha256": "227250dac69abf99c744977c5fa3d8ce5672beddf0a5232cf9c83dff72254175"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3200-fanout-core-vm-owner-runtime.json",
+      "bytes": 627,
+      "sha256": "67f0e22db3fbddb4b63f0d9a60447db832d7f278a87a24428e1925fa7e11d07b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3200-fanout-core-vm-owner-runtime.log",
+      "bytes": 423253,
+      "sha256": "ef0982a396e161ae313be2bdf007f3eeade915a96f6a3d0b9dca6494812f9265"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3200-fanout-core-vm-owner-runtime.terminal-audit.json",
+      "bytes": 644,
+      "sha256": "ea9c069823a0297bebd35d0dd4cd3683ac3046f9ec972921475be8590fb70731"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-destructuring.source-freeze.json",
+      "bytes": 780173,
+      "sha256": "b9bf4548926238a36299df3144638ab7cc4df9b2c54e30937aa6d68b0f2f60e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-destructuring.executables-before.json",
+      "bytes": 739,
+      "sha256": "9e214cbd20f6bc2533274f9cd4eacfe937588df17049dce1c98d167b5d3282fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-destructuring.executables-after.json",
+      "bytes": 738,
+      "sha256": "e717cc69b1e55446e500d9c9f886065374834fe7009fc23d29396ceedde43ea8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-traversal-custody.source-freeze.json",
+      "bytes": 780242,
+      "sha256": "af0c7a51eaca0247e133a99b32ea47ba1db391374f3980cccb1838fa44d83485"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-inputs.source-freeze.json",
+      "bytes": 780475,
+      "sha256": "9149d151d50a35a7c71e80ab344e94787bc1a010318cae133903493a34f9657f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-inputs.executables-before.json",
+      "bytes": 729,
+      "sha256": "c8d8dc19ac225efb06f276fa65172073e2e48f5c4cb412f8dc02f602040fc2fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-inputs.executables-after.json",
+      "bytes": 728,
+      "sha256": "6b6eec877bb730432d5a74fd9e01a3563949bc235deac6623d748140859bc3e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-core-vm.source-freeze.json",
+      "bytes": 780669,
+      "sha256": "cc4aa310b8b7c8dcc308bf19e0b6bcf28795523daa88d0e106af00951d701952"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-core-vm-current.source-freeze.json",
+      "bytes": 780669,
+      "sha256": "31c9b380afa30c258e661e919387116530c7d5d1fd934adf20803b3373125df9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-core-vm-current.executables-before.json",
+      "bytes": 730,
+      "sha256": "bf7f28a0a3b95cba644ae543ed0bd92914fde7704877e2f1561896c3f03305e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-core-vm-current.executables-after.json",
+      "bytes": 729,
+      "sha256": "2f038e15f94422078ea64d5a7029c930c85f6477d1fcb88979341e8fcb23941d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3201-fanout-inputs-workspace-check.json",
+      "bytes": 516,
+      "sha256": "b41991e047e697114b4f898d843b7d9564a080f584985c2bd5cec7d658d5aa1e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3201-fanout-inputs-workspace-check.log",
+      "bytes": 106154,
+      "sha256": "53b78947dc4e748c3816860a17d3af9387e93576340d61f29cde1548a6abf91b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3201-fanout-inputs-workspace-check.input-audit.json",
+      "bytes": 323,
+      "sha256": "95064c768ffda7cd44bc01d183c268a7d561e0971ee81eb1e1bf0e55f99aec11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3202-fanout-inputs-workspace-clippy.json",
+      "bytes": 519,
+      "sha256": "8ee9fa095f8d810e241416d75a74f65c446f74c8d7c8f1700cb0f04a83b15c8f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3202-fanout-inputs-workspace-clippy.log",
+      "bytes": 6640890,
+      "sha256": "c37a0a570597d2831bc0dfea65c4fe8b1b8141e1cd5e8dc13aa42848b765a561"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3202-fanout-inputs-workspace-clippy.input-audit.json",
+      "bytes": 325,
+      "sha256": "a057f6fd75d3f2fe3ba7bf0bbbb137f96566a0e25595b56fe7bc32dbbc336378"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3203-fanout-inputs-core-doctest.json",
+      "bytes": 513,
+      "sha256": "b3f44656ab57f7a75aea2fd2b87028c57d6310abe1a5bec5291e224a0705f310"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3203-fanout-inputs-core-doctest.log",
+      "bytes": 78991,
+      "sha256": "3414a8583ae9307ede5ce3c79e18a9f9039b4a340b5c37876f07dd6921516f22"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3203-fanout-inputs-core-doctest.input-audit.json",
+      "bytes": 323,
+      "sha256": "288cf5c180acbe01064a2ccdb4d669c152e99f684f7b7f79328643eddcb8bcb1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3204-fanout-inputs-structure.json",
+      "bytes": 662,
+      "sha256": "a686c991d36f58ce331b615d30953c3321e1b92189622326363e1bf93db485df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3204-fanout-inputs-structure.log",
+      "bytes": 64611,
+      "sha256": "64e07d85e79d6261ede7665d9620956b78200e589903044bd3d0c331613590c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3204-fanout-inputs-structure.input-audit.json",
+      "bytes": 475,
+      "sha256": "5fbf49a4501ac5379f8c60f37a5f924d4771897c58a7ccffc4111f7095581432"
+    }
+  ],
+  "recordedAt": "2026-10-26T05:47:16.5115912Z"
+}

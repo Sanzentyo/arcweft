@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3191-traversal-destructuring-owner-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+      "bytes": 81366016,
+      "nonTest": false,
+      "sha256": "95eac2db89adec5dc23d55ad10f57683dd5f778baae4866f115f78429edf2d24"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+      "bytes": 104418816,
+      "nonTest": false,
+      "sha256": "e36ccd31f92197e061f0eb256b9801f157efa7a1422de37faada5cc9bc980ffa"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T04:11:27.6298640Z"
+}

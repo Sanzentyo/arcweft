@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3195-fanout-inputs-owner-catalog",
+  "phase": "after-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+      "bytes": 81419264,
+      "nonTest": false,
+      "sha256": "44873cb67458db8b658f881bf5c8ae7b501c185d3958d086f1fc433a8ec6e466"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+      "bytes": 104431616,
+      "nonTest": false,
+      "sha256": "ae75845be2b6a1af0c2ee33a52aa30750808f4d69a39b4b0efed04399ad9824e"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T04:36:55.7832221Z"
+}

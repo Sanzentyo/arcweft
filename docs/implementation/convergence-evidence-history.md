@@ -12440,3 +12440,40 @@ wire／Serde必須field・未知tag拒否を含む。既存HostMetadataと明示
 300超growth 0だった。元Source契約と実行・結果所有の責任境界を維持し、I/O・依存・並列policy table・
 旧readerを追加していない。[測定と所有境界](acceptance-evidence/task-program-delivery-structure-review.json)。
 これらの共有gateは今回の新規実行であり、全53逆依存runtimeの再実行は行っていない。
+Program deliveryの公開commitは `3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f`、
+parentは資料整理の `3454d188896e2ac4455936912f9cf64f7785d1a5`。
+通常push後に83 pathの公開blob・tree・patchと元WIPを照合し、差分0を確認した。
+
+## Traversalの所有値分解とCore fanout入力・Copy検査 — 2026-10-26
+
+公開main `3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f` を基点に、Traversal構築の
+positional表現をNative／AWBCのpattern・projection・Copy証明へ接続した。
+型のS/F fieldを正確に使い、Fn型という理由だけで保持値のCopyを許可しない。
+CoreRequireUnrestrictedは実保持グラフを確認するT→Tの所有値identity操作、
+CoreFanoutInputsはowned collectionと正のu32 limitの入力検査である。両者はtaskを開始しない。
+AWBC VM自身がこの所有権を検査するため、外部intrinsic hostがCopy証明を与える経路はない。
+
+初回7-file入力のR3190 checkは終了0、R3191 catalogは2,173件・除外0、
+R3192は2,173／2,173 PASS・100.351秒・終了0だった。
+Copy証明と2 intrinsicを接続した後のR3196は2,180件中2,179 PASS／1 FAIL・40.886秒・終了100。
+Source intrinsicの閉じたtag数テストだけが92を期待しており、実際の94と不一致だった。
+追加した92／93の座標を明示し、cardinalityを94へ移行した。未知tag拒否や他の条件は弱めていない。
+VM実行テストの初回R3197 checkは存在しないCopy命令constructorの1 errorで終了101。
+実際のCallIntrinsicへ修復し、R3198 checkは終了0となった。
+
+最終16-file入力のR3199 catalogは2,181件・除外0、R3200は2,181／2,181 PASS、
+40.753秒、nextest終了0。必須10件が全選択・全PASS、3,989入力と2 executableの前後差分0。
+実際に発行したaffine handleを含む入力packetの拒否時保全、空source・動的limit・所有移動、
+完全なfunction identity／pure性のABI拒否、canonical decoded VM＋RejectingVmHost＋1-op下での
+同一String allocationの移動を確認した。異なる入力の前段runを最終runへ合算しない。
+
+R3201 workspace check／R3202 workspace Clippyは全target・全feature・locked、警告あり終了0。
+Clippyの原本には追加fixtureの113-lineとmethod closureの指摘も保持する。
+R3203 Core doctestは75／75 PASS、R3204構造gateは終了0・blocking 0。
+各3,989入力の終端後差分0。16 Rustファイル・1 owner、最大growth 164 physical LOC、300超growth 0。
+原本60件と構造測定5件をbyte差分0で保持し、ビルド生成物を移動・コピー・退避していない。
+[owner・共有gate・修復履歴と原本](acceptance-evidence/task-fanout-inputs-owner-checkpoint.json)、
+[構造と所有境界](acceptance-evidence/task-fanout-inputs-structure-review.json)。
+この境界はCore準備APIのcheckpointである。CompilerのSource parallel経路、callbackを所有する
+bounded AwaitMany、停止・公開save／restoreと最新入力の全53逆依存runtimeは、この結果で受入としていない。
+Generic Matchなど、以前に受入・公開した境界の判定は維持する。

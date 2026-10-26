@@ -1767,6 +1767,7 @@ fn apply_instruction(
             check_index(program.intrinsics.len(), intrinsic.0, "intrinsics", &at)?;
             let intrinsic = &program.intrinsics[intrinsic.index()];
             if let crate::value::RuntimeCallTarget::Intrinsic(identity) = &intrinsic.identity {
+                verify_ownership_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
                 verify_capacity_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
                 verify_index_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
                 verify_collection_intrinsic_signature(
@@ -1777,7 +1778,10 @@ fn apply_instruction(
                 )?;
                 if matches!(
                     identity,
-                    RuntimeIntrinsic::CoreSeqLen | RuntimeIntrinsic::CoreSeqSum
+                    RuntimeIntrinsic::CoreSeqLen
+                        | RuntimeIntrinsic::CoreSeqSum
+                        | RuntimeIntrinsic::CoreFanoutInputs
+                        | RuntimeIntrinsic::CoreRequireUnrestricted
                 ) && dst.is_none()
                 {
                     return invalid_type(&at, "collection intrinsic requires a result destination");
@@ -2744,9 +2748,29 @@ fn apply_instruction_copy_and_move_effects(
             consumed.extend(args.iter().copied());
             outputs.push(*dst);
         }
-        AwbcInstruction::CallIntrinsic { dst, args, .. } => {
+        AwbcInstruction::CallIntrinsic {
+            dst,
+            intrinsic,
+            args,
+        } => {
             consumed.extend(args.iter().copied());
             outputs.extend(dst.iter().copied());
+            match program.intrinsics[intrinsic.index()]
+                .identity
+                .as_intrinsic()
+            {
+                Some(RuntimeIntrinsic::CoreRequireUnrestricted) => {
+                    output_proof = Some(CopyProof::Copyable)
+                }
+                Some(RuntimeIntrinsic::CoreFanoutInputs) => {
+                    output_proof = Some(CopyProof::Tuple(vec![
+                        state.copy_proofs[args[0].index()].clone(),
+                        CopyProof::Copyable,
+                        CopyProof::Copyable,
+                    ]));
+                }
+                _ => {}
+            }
         }
         AwbcInstruction::MakeDialogueContent {
             destination,
@@ -4912,11 +4936,17 @@ fn validate_pattern(
             }
         }
         AwbcPattern::Tuple(items) => match runtime_shape(program, value_ty) {
-            Some(AwbcRuntimeTypeShape::Tuple(types)) => {
-                if items.len() != types.len() {
-                    return argument_count("tuple pattern", types.len(), items.len());
+            Some(
+                shape @ (AwbcRuntimeTypeShape::Tuple(_) | AwbcRuntimeTypeShape::Traversal { .. }),
+            ) => {
+                let arity = shape.tuple_arity().expect("positional product shape");
+                if items.len() != arity {
+                    return argument_count("tuple pattern", arity, items.len());
                 }
-                for (child, ty) in items.iter().zip(types) {
+                for (ordinal, child) in items.iter().enumerate() {
+                    let ty = shape
+                        .tuple_element(ordinal)
+                        .expect("admitted product arity");
                     validate_pattern(
                         verifier,
                         function,
@@ -5193,13 +5223,10 @@ fn assign_pattern_copy_proofs(
             state.copy_proofs[target.index()] = proof.clone();
         }
         AwbcPattern::Tuple(items) => {
-            let types = match runtime_shape(program, value_ty) {
-                Some(AwbcRuntimeTypeShape::Tuple(types)) => Some(types.as_slice()),
-                _ => None,
-            };
+            let shape = runtime_shape(program, value_ty);
             for (ordinal, child) in items.iter().enumerate() {
-                let child_ty = types
-                    .and_then(|types| types.get(ordinal).copied())
+                let child_ty = shape
+                    .and_then(|shape| shape.tuple_element(ordinal).copied())
                     .unwrap_or(value_ty);
                 let child_proof = proof
                     .element(ordinal)
@@ -5574,7 +5601,9 @@ fn project_ordinal(
     let target_ty = read_register(verifier, function, block, target, state)?;
     let dst_ty = register_type(verifier, function, block, dst)?;
     let projected = match runtime_shape(program, target_ty) {
-        Some(AwbcRuntimeTypeShape::Tuple(items)) if tuple => items.get(ordinal as usize).copied(),
+        Some(shape) if tuple && shape.tuple_arity().is_some() => {
+            shape.tuple_element(ordinal as usize).copied()
+        }
         Some(
             AwbcRuntimeTypeShape::Record { fields, .. }
             | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
@@ -6038,6 +6067,36 @@ fn verify_index_intrinsic_signature(
     Ok(())
 }
 
+fn verify_ownership_intrinsic_signature(
+    program: &AwbcProgram,
+    intrinsic: RuntimeIntrinsic,
+    signature_id: AwbcSignatureId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    if intrinsic != RuntimeIntrinsic::CoreRequireUnrestricted {
+        return Ok(());
+    }
+    let signature = program
+        .signatures
+        .get(signature_id.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "ownership guard has no signature".to_owned(),
+        })?;
+    let [input] = signature.params.as_slice() else {
+        return invalid_type(at, "ownership guard requires one owned value");
+    };
+    if signature.result != Some(*input)
+        || !program
+            .effect_sets
+            .get(signature.effects.index())
+            .is_some_and(|effects| effects.effects.is_empty())
+    {
+        return invalid_type(at, "ownership guard requires a pure identity signature");
+    }
+    Ok(())
+}
+
 fn verify_collection_intrinsic_signature(
     program: &AwbcProgram,
     intrinsic: RuntimeIntrinsic,
@@ -6046,7 +6105,9 @@ fn verify_collection_intrinsic_signature(
 ) -> Result<(), AwbcVerifyError> {
     if !matches!(
         intrinsic,
-        RuntimeIntrinsic::CoreSeqLen | RuntimeIntrinsic::CoreSeqSum
+        RuntimeIntrinsic::CoreSeqLen
+            | RuntimeIntrinsic::CoreSeqSum
+            | RuntimeIntrinsic::CoreFanoutInputs
     ) {
         return Ok(());
     }
@@ -6057,6 +6118,45 @@ fn verify_collection_intrinsic_signature(
             at: at.to_owned(),
             message: "collection intrinsic has no signature".to_owned(),
         })?;
+    if intrinsic == RuntimeIntrinsic::CoreFanoutInputs {
+        let [source, limit] = signature.params.as_slice() else {
+            return invalid_type(at, "fanout inputs require collection and limit");
+        };
+        let source_matches = matches!(
+            runtime_shape(program, *source),
+            Some(AwbcRuntimeTypeShape::Sequence { .. } | AwbcRuntimeTypeShape::Array { .. })
+        );
+        let limit_matches = matches!(
+            runtime_shape(program, *limit),
+            Some(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32))
+        );
+        let result_matches = match signature
+            .result
+            .and_then(|result| runtime_shape(program, result))
+        {
+            Some(AwbcRuntimeTypeShape::Tuple(fields)) => match fields.as_slice() {
+                [returned_source, count, returned_limit] => {
+                    returned_source == source
+                        && [count, returned_limit].into_iter().all(|ty| {
+                            matches!(
+                                runtime_shape(program, *ty),
+                                Some(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize))
+                            )
+                        })
+                }
+                _ => false,
+            },
+            _ => false,
+        };
+        let pure = program
+            .effect_sets
+            .get(signature.effects.index())
+            .is_some_and(|effects| effects.effects.is_empty());
+        if !source_matches || !limit_matches || !result_matches || !pure {
+            return invalid_type(at, "fanout inputs have an invalid typed signature");
+        }
+        return Ok(());
+    }
     let [receiver] = signature.params.as_slice() else {
         return invalid_type(at, "collection intrinsic requires exactly one receiver");
     };

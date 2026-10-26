@@ -1175,5 +1175,13 @@ fn expression_intrinsic_source_tags_are_closed_and_preserve_all_original_semanti
             count += 1;
         }
     }
-    assert_eq!(count, 92);
+    assert_eq!(count, 94);
+    assert_eq!(
+        RuntimeIntrinsic::from_source_tag(92),
+        Some(RuntimeIntrinsic::CoreRequireUnrestricted)
+    );
+    assert_eq!(
+        RuntimeIntrinsic::from_source_tag(93),
+        Some(RuntimeIntrinsic::CoreFanoutInputs)
+    );
 }

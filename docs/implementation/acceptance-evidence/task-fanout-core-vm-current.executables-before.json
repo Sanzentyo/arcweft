@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3199-fanout-core-vm-owner-catalog",
+  "phase": "before-run",
+  "hashesRecorded": true,
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+      "bytes": 81441792,
+      "nonTest": false,
+      "sha256": "45df375bf276b97d1fcf05a0b5c618309350e38545d85798f5d262027df889d9"
+    },
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+      "bytes": 104436736,
+      "nonTest": false,
+      "sha256": "32a426d96011d64fcf6e5bec0bd70ab53d69aa1f92e2dd20a7397ffd574c5384"
+    }
+  ],
+  "artifactCopyMove": false,
+  "recordedAt": "2026-10-26T04:51:52.4580826Z"
+}

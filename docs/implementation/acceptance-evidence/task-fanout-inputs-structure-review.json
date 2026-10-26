@@ -1,0 +1,214 @@
+{
+  "version": 1,
+  "base": "3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f",
+  "workingTree": "dirty: fanout input preparation cut and the preserved original WIP",
+  "measuredAt": "2026-10-26T05:33:24.4838170Z",
+  "blockingViolations": 0,
+  "changedFiles": [
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "owner": "arcweft-core",
+      "bytes": 120660,
+      "physicalLoc": 3765,
+      "basePhysicalLoc": 3745,
+      "growth": 20,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests/instruction_call_execution.rs",
+      "owner": "arcweft-core",
+      "bytes": 12904,
+      "physicalLoc": 357,
+      "basePhysicalLoc": 268,
+      "growth": 89,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+      "owner": "arcweft-core",
+      "bytes": 259392,
+      "physicalLoc": 6660,
+      "basePhysicalLoc": 6560,
+      "growth": 100,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code/collection_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 11490,
+      "physicalLoc": 325,
+      "basePhysicalLoc": 161,
+      "growth": 164,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "owner": "arcweft-core",
+      "bytes": 219098,
+      "physicalLoc": 5446,
+      "basePhysicalLoc": 5415,
+      "growth": 31,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/eval.rs",
+      "owner": "arcweft-core",
+      "bytes": 66590,
+      "physicalLoc": 1663,
+      "basePhysicalLoc": 1658,
+      "growth": 5,
+      "classification": "production",
+      "embeddedTestLoc": 124
+    },
+    {
+      "path": "crates/arcweft-core/src/pattern.rs",
+      "owner": "arcweft-core",
+      "bytes": 152153,
+      "physicalLoc": 3928,
+      "basePhysicalLoc": 3925,
+      "growth": 3,
+      "classification": "production",
+      "embeddedTestLoc": 948
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "owner": "arcweft-core",
+      "bytes": 259598,
+      "physicalLoc": 6094,
+      "basePhysicalLoc": 6033,
+      "growth": 61,
+      "classification": "production",
+      "embeddedTestLoc": 281
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower/pattern.rs",
+      "owner": "arcweft-core",
+      "bytes": 24402,
+      "physicalLoc": 653,
+      "basePhysicalLoc": 656,
+      "growth": -3,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower/pattern/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 13967,
+      "physicalLoc": 388,
+      "basePhysicalLoc": 271,
+      "growth": 117,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/expression/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 41518,
+      "physicalLoc": 1187,
+      "basePhysicalLoc": 1179,
+      "growth": 8,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/type_kind.rs",
+      "owner": "arcweft-core",
+      "bytes": 36542,
+      "physicalLoc": 952,
+      "basePhysicalLoc": 930,
+      "growth": 22,
+      "classification": "production",
+      "embeddedTestLoc": 92
+    },
+    {
+      "path": "crates/arcweft-core/src/pure.rs",
+      "owner": "arcweft-core",
+      "bytes": 129111,
+      "physicalLoc": 3414,
+      "basePhysicalLoc": 3409,
+      "growth": 5,
+      "classification": "production",
+      "embeddedTestLoc": 134
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "owner": "arcweft-core",
+      "bytes": 169887,
+      "physicalLoc": 4698,
+      "basePhysicalLoc": 4683,
+      "growth": 15,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/value/collection.rs",
+      "owner": "arcweft-core",
+      "bytes": 10402,
+      "physicalLoc": 298,
+      "basePhysicalLoc": 221,
+      "growth": 77,
+      "classification": "production",
+      "embeddedTestLoc": 236
+    },
+    {
+      "path": "crates/arcweft-core/src/value/ownership.rs",
+      "owner": "arcweft-core",
+      "bytes": 25274,
+      "physicalLoc": 666,
+      "basePhysicalLoc": 605,
+      "growth": 61,
+      "classification": "production",
+      "embeddedTestLoc": 278
+    }
+  ],
+  "packages": [
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    }
+  ],
+  "growthOver300": [],
+  "ownerDispositions": [
+    {
+      "owner": "arcweft-core",
+      "disposition": "Retain cohesive type, custody and execution owners",
+      "reason": "Plan and AWBC type projections expose the same positional representation of Traversal. Native and AWBC pattern/projection admission and Copy-proof propagation use exact field types. The generic ownership identity guard checks the actual retained graph and moves its value without allocation or duplication. Collection preparation validates an owned source and positive u32 limit. Source and wire ABI checks preserve full input/output identity and purity. Native, pure evaluation and the VM route the new operations through their Core owners; a custom VM host cannot grant the ownership proof. The changed large owners receive related type/ABI/state transitions and their corresponding regression tests. There is no added I/O, dependency, parallel policy table, legacy reader, or public API introduced for file splitting. This cut does not claim Source parallel execution."
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-inputs-structure.dependency_edges.csv",
+      "bytes": 77451,
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-inputs-structure.file_metrics.csv",
+      "bytes": 326793,
+      "sha256": "5c95d74688b86b5a006fe2cacb75fd4852ee698022037ca8c995d5c146a16491"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-inputs-structure.findings.md",
+      "bytes": 121535,
+      "sha256": "146fda46c67c6d41d6a96b1806b84a4b1ccad04ebafff57debe807791952c956"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-inputs-structure.package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-fanout-inputs-structure.public_type_duplicates.csv",
+      "bytes": 17121,
+      "sha256": "ebf8314840f2e0f221a4807fa014f201a6ac505a289adeb1d634e636c5c21375"
+    }
+  ]
+}

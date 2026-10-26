@@ -6,6 +6,30 @@ pub(crate) fn evaluate_collection_intrinsic(
     intrinsic: RuntimeIntrinsic,
     args: &mut Vec<RuntimeValue>,
 ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+    if intrinsic == RuntimeIntrinsic::CoreFanoutInputs {
+        let [
+            RuntimeValue::Seq(source),
+            RuntimeValue::UInt(super::RuntimeUInt::U32(limit)),
+        ] = args.as_slice()
+        else {
+            return Err(collection_error(
+                intrinsic,
+                "expected an owned collection and u32 limit",
+            ));
+        };
+        if *limit == 0 {
+            return Err(collection_error(intrinsic, "fanout limit must be positive"));
+        }
+        let limit = u64::from(*limit);
+        let count = source.len() as u64;
+        args.pop();
+        let source = args.pop().expect("validated owned collection");
+        return Ok(Some(RuntimeValue::Tuple(vec![
+            source,
+            RuntimeValue::usize(count),
+            RuntimeValue::usize(limit),
+        ])));
+    }
     if !matches!(
         intrinsic,
         RuntimeIntrinsic::CoreSeqLen | RuntimeIntrinsic::CoreSeqSum
@@ -40,6 +64,59 @@ fn collection_error(intrinsic: RuntimeIntrinsic, reason: &str) -> RuntimeEvalErr
 mod tests {
     use super::*;
     use crate::value::*;
+
+    #[test]
+    fn fanout_inputs_reject_invalid_limits_before_consuming_affine_source() {
+        let issued = crate::tests::program_custody::issued_program_handle();
+        let mut args = vec![
+            RuntimeValue::Seq(RuntimeSeq::values(vec![issued.value])),
+            RuntimeValue::u32(0),
+        ];
+        assert!(
+            evaluate_collection_intrinsic(RuntimeIntrinsic::CoreFanoutInputs, &mut args).is_err()
+        );
+        assert_eq!(args.len(), 2);
+        let handles = args[0].affine_line_handles().unwrap();
+        assert_eq!(handles.len(), 1);
+        assert_eq!(handles[0].token(), &issued.token);
+        args[1] = RuntimeValue::u64(2);
+        assert!(
+            evaluate_collection_intrinsic(RuntimeIntrinsic::CoreFanoutInputs, &mut args).is_err()
+        );
+        assert_eq!(args.len(), 2);
+    }
+
+    #[test]
+    fn fanout_inputs_move_affine_collection_and_preserve_empty_and_dynamic_limits() {
+        let mut empty = vec![
+            RuntimeValue::Seq(RuntimeSeq::values(vec![])),
+            RuntimeValue::u32(7),
+        ];
+        let Some(RuntimeValue::Tuple(fields)) =
+            evaluate_collection_intrinsic(RuntimeIntrinsic::CoreFanoutInputs, &mut empty).unwrap()
+        else {
+            panic!("owned fanout tuple");
+        };
+        assert_eq!(fields[1], RuntimeValue::usize(0));
+        assert_eq!(fields[2], RuntimeValue::usize(7));
+        assert!(empty.is_empty());
+        let issued = crate::tests::program_custody::issued_program_handle();
+        let mut args = vec![
+            RuntimeValue::Seq(RuntimeSeq::values(vec![issued.value])),
+            RuntimeValue::u32(2),
+        ];
+        let Some(RuntimeValue::Tuple(fields)) =
+            evaluate_collection_intrinsic(RuntimeIntrinsic::CoreFanoutInputs, &mut args).unwrap()
+        else {
+            panic!("owned fanout tuple");
+        };
+        assert!(args.is_empty());
+        assert_eq!(fields[1], RuntimeValue::usize(1));
+        assert_eq!(fields[2], RuntimeValue::usize(2));
+        let handles = fields[0].affine_line_handles().unwrap();
+        assert_eq!(handles.len(), 1);
+        assert_eq!(handles[0].token(), &issued.token);
+    }
 
     fn assert_sum(receiver: RuntimeValue, expected: i64) {
         let mut args = vec![receiver];

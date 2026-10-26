@@ -1,0 +1,15 @@
+{
+  "code": "E0599",
+  "message": "no variant named `Copy` found for enum `awbc::schema::AwbcInstruction`",
+  "spans": [
+    {
+      "file_name": "crates\\arcweft-core\\src\\awbc\\tests\\instruction_call_execution.rs",
+      "line_start": 50,
+      "line_end": 50,
+      "byte_start": 1653,
+      "byte_end": 1657,
+      "label": "variant not found in `awbc::schema::AwbcInstruction`"
+    }
+  ],
+  "rendered": "error[E0599]: no variant named `Copy` found for enum `awbc::schema::AwbcInstruction`\n    --> crates\\arcweft-core\\src\\awbc\\tests\\instruction_call_execution.rs:50:26\n     |\n  50 |         AwbcInstruction::Copy {\n     |                          ^^^^ variant not found in `awbc::schema::AwbcInstruction`\n     |\n    ::: crates\\arcweft-core\\src\\awbc\\schema.rs:2071:1\n     |\n2071 | pub enum AwbcInstruction {\n     | ------------------------ variant `Copy` not found here\n\n"
+}

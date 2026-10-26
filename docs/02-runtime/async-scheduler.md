@@ -40,6 +40,24 @@ source grammar; AWBC rows must carry and match it before a Source lease is
 returned. Missing fields and unknown delivery tags are rejected.
 Source-level Thread producers declare `ThreadHandle<T>`;
 ordinary Program Need producers declare `Need<T>` on the same operation.
+
+The owned Core preflight operations preserve this distinction between a value's
+type and its actual custody. `CoreRequireUnrestricted` has a pure identity
+signature `T -> T`: it checks the complete retained value graph and returns the
+same owned value, without allocating a replacement or duplicating captures.
+Only successful execution supplies the verifier's unrestricted Copy proof.
+Native evaluation, pure evaluation and the AWBC VM execute this check in Core;
+the VM cannot delegate its authority to an intrinsic host.
+
+`CoreFanoutInputs` takes an owned finite collection and a positive `u32` limit,
+and returns that exact collection with its count and limit as `usize` values.
+It rejects zero or an invalid input packet before consuming the packet, moves
+affine elements without copying them, and starts no task. Source and AWBC ABI
+admission preserve the exact collection identity, limit width and result shape.
+Traversal's positional representation exposes its exact source and callback
+field types to construction, matching, projection and Copy-proof propagation;
+destructuring the pair does not grant Copy permission to its callback.
+
 `NeedProducerTemplate` combines the same definition
 with a Host request only for producers that actually construct Host arguments.
 Program task semantic endpoints and private source encoding contain no synthetic Host

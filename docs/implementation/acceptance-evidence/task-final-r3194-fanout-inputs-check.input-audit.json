@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "run": "task-final-r3194-fanout-inputs-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T04:29:44.3945379Z"
+}

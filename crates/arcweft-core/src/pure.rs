@@ -3013,6 +3013,11 @@ impl<'a> PureEvaluator<'a> {
         mut args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let Some(intrinsic) = callee.as_intrinsic()
+            && let Some(value) = crate::value::evaluate_ownership_intrinsic(intrinsic, &mut args)?
+        {
+            return Ok(value);
+        }
+        if let Some(intrinsic) = callee.as_intrinsic()
             && let Some(value) = crate::value::evaluate_collection_intrinsic(intrinsic, &mut args)?
         {
             return Ok(value);

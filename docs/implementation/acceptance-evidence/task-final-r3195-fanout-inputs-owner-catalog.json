@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f",
+  "name": "task-final-r3195-fanout-inputs-owner-catalog",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3195-fanout-inputs-owner-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T04:30:51.3190229Z",
+  "finishedAt": "2026-10-26T04:36:05.2959919Z"
+}

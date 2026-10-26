@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3203-fanout-inputs-core-doctest",
+  "actualExitCode": 0,
+  "scope": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3989,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T05:47:12.8893717Z"
+}

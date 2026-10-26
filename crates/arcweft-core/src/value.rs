@@ -43,6 +43,7 @@ mod character_dialogue;
 mod collection;
 mod color;
 pub(crate) use collection::evaluate_collection_intrinsic;
+pub(crate) use ownership::evaluate_ownership_intrinsic;
 mod data_shape;
 mod dense_numeric;
 mod entity_identity;
@@ -796,6 +797,10 @@ pub enum RuntimeIntrinsic {
     CoreIterCollect,
     CoreSeqLen,
     CoreSeqSum,
+    /// Checks the actual retained graph and returns the same owned value.
+    CoreRequireUnrestricted,
+    /// Owns a finite collection plus its validated positive fanout limit.
+    CoreFanoutInputs,
     CoreRangeIntoIter,
     CoreSeqIntoIter,
     CoreStreamIntoIter,
@@ -925,6 +930,8 @@ impl RuntimeIntrinsic {
             "core.range" => Some(Self::CoreRange),
             "core.iter.collect" => Some(Self::CoreIterCollect),
             "core.seq.len" => Some(Self::CoreSeqLen),
+            "core.value.require_unrestricted" => Some(Self::CoreRequireUnrestricted),
+            "core.fanout.inputs" => Some(Self::CoreFanoutInputs),
             "core.seq.sum" => Some(Self::CoreSeqSum),
             "core.iter.into_iter.range" => Some(Self::CoreRangeIntoIter),
             "core.iter.into_iter.seq" => Some(Self::CoreSeqIntoIter),
@@ -1023,6 +1030,8 @@ impl RuntimeIntrinsic {
             Self::CoreRange => "core.range",
             Self::CoreIterCollect => "core.iter.collect",
             Self::CoreSeqLen => "core.seq.len",
+            Self::CoreRequireUnrestricted => "core.value.require_unrestricted",
+            Self::CoreFanoutInputs => "core.fanout.inputs",
             Self::CoreSeqSum => "core.seq.sum",
             Self::CoreRangeIntoIter => "core.iter.into_iter.range",
             Self::CoreSeqIntoIter => "core.iter.into_iter.seq",
@@ -2712,6 +2721,8 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
+    #[error(transparent)]
+    ValueOwnership(#[from] ownership::RuntimeValueOwnershipAdmissionError),
     #[error("Program task repeats capture local {local:?}")]
     DuplicateProgramTaskCapture { local: RuntimeLocalDeclarationId },
     #[error("native task request evaluation failed: {message}")]
@@ -4464,6 +4475,8 @@ impl RuntimeIntrinsic {
             Self::MathTensorAddF64 => 89,
             Self::CoreSeqLen => 90,
             Self::CoreSeqSum => 91,
+            Self::CoreRequireUnrestricted => 92,
+            Self::CoreFanoutInputs => 93,
         }
     }
 
@@ -4561,6 +4574,8 @@ impl RuntimeIntrinsic {
             89 => Some(Self::MathTensorAddF64),
             90 => Some(Self::CoreSeqLen),
             91 => Some(Self::CoreSeqSum),
+            92 => Some(Self::CoreRequireUnrestricted),
+            93 => Some(Self::CoreFanoutInputs),
             _ => None,
         }
     }

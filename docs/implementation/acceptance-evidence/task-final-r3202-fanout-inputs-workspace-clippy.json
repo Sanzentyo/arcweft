@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "3ee3c7d0c3d91332e4ab550b946b2dc7b626e00f",
+  "name": "task-final-r3202-fanout-inputs-workspace-clippy",
+  "command": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3202-fanout-inputs-workspace-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-26T05:34:27.3591463Z",
+  "finishedAt": "2026-10-26T05:38:43.7981932Z"
+}

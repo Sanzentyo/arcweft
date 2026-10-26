@@ -9,6 +9,27 @@ use super::{RuntimeCallableValue, RuntimeHandleKind, RuntimeIterator, RuntimeSeq
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// An identity operation whose successful result carries a checked Copy proof.
+/// Rejection leaves the caller's owning argument packet untouched.
+pub(crate) fn evaluate_ownership_intrinsic(
+    intrinsic: super::RuntimeIntrinsic,
+    args: &mut Vec<RuntimeValue>,
+) -> Result<Option<RuntimeValue>, super::RuntimeEvalError> {
+    if intrinsic != super::RuntimeIntrinsic::CoreRequireUnrestricted {
+        return Ok(None);
+    }
+    let [value] = args.as_slice() else {
+        return Err(super::RuntimeEvalError::UnsupportedPure {
+            name: intrinsic.as_label().to_owned(),
+            reason: "expected exactly one owned value".to_owned(),
+        });
+    };
+    if !RuntimeValueOwnershipRequirement::Unrestricted.accepts(value.ownership()) {
+        return Err(RuntimeValueOwnershipAdmissionError::AffineValue.into());
+    }
+    Ok(args.pop())
+}
+
 #[allow(dead_code, reason = "the canonical snapshot consumer lands in G1.2-D")]
 mod binary;
 mod path;
@@ -481,6 +502,46 @@ mod tests {
     use super::*;
     use crate::pattern::RuntimeVariantIdentity;
     use crate::value::TupleSeq;
+
+    #[test]
+    fn unrestricted_guard_returns_the_same_owned_allocation() {
+        let value = String::from("one owning allocation");
+        let address = value.as_ptr();
+        let mut args = vec![RuntimeValue::String(value)];
+        let Some(RuntimeValue::String(value)) = evaluate_ownership_intrinsic(
+            super::super::RuntimeIntrinsic::CoreRequireUnrestricted,
+            &mut args,
+        )
+        .unwrap() else {
+            panic!("owned String result");
+        };
+        assert_eq!(value.as_ptr(), address);
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn unrestricted_guard_rejects_actual_affine_custody_without_consuming_the_packet() {
+        let issued = crate::tests::program_custody::issued_program_handle();
+        let mut args = vec![RuntimeValue::Tuple(vec![
+            RuntimeValue::Bool(true),
+            issued.value,
+        ])];
+        let rejected = evaluate_ownership_intrinsic(
+            super::super::RuntimeIntrinsic::CoreRequireUnrestricted,
+            &mut args,
+        )
+        .unwrap_err();
+        assert_eq!(
+            rejected,
+            super::super::RuntimeEvalError::ValueOwnership(
+                RuntimeValueOwnershipAdmissionError::AffineValue
+            )
+        );
+        assert_eq!(args.len(), 1);
+        let handles = args[0].affine_line_handles().unwrap();
+        assert_eq!(handles.len(), 1);
+        assert_eq!(handles[0].token(), &issued.token);
+    }
 
     #[test]
     fn join_is_affine_if_either_side_is_affine() {

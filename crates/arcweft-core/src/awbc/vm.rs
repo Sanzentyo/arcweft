@@ -1492,15 +1492,46 @@ fn execute_instruction(
             intrinsic,
             args,
         } => {
-            let args = fiber
-                .active_frame_mut()?
-                .take_register_values(program, args)?;
             let identity = program
                 .intrinsics
                 .get(intrinsic.index())
                 .ok_or(VmError::MissingIntrinsic(*intrinsic))?
                 .identity
                 .as_intrinsic();
+            if matches!(
+                identity,
+                Some(
+                    crate::value::RuntimeIntrinsic::CoreRequireUnrestricted
+                        | crate::value::RuntimeIntrinsic::CoreFanoutInputs
+                )
+            ) && dst.is_none()
+            {
+                return Err(VmError::Runtime(
+                    "owned Core intrinsic has no result destination".to_owned(),
+                ));
+            }
+            let mut args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
+            if let Some(
+                identity @ (crate::value::RuntimeIntrinsic::CoreRequireUnrestricted
+                | crate::value::RuntimeIntrinsic::CoreFanoutInputs),
+            ) = identity
+            {
+                let value =
+                    if identity == crate::value::RuntimeIntrinsic::CoreRequireUnrestricted {
+                        crate::value::evaluate_ownership_intrinsic(identity, &mut args)?
+                    } else {
+                        crate::value::evaluate_collection_intrinsic(identity, &mut args)?
+                    }
+                    .ok_or_else(|| {
+                        VmError::Runtime("owned Core intrinsic returned no value".to_owned())
+                    })?;
+                fiber
+                    .active_frame_mut()?
+                    .set_register(dst.expect("checked Core result destination"), value)?;
+                return Ok(InstructionControl::Continue);
+            }
             if let Some((kind, lazy)) = identity.and_then(context_intrinsic_kind) {
                 let [receiver, message] = args.try_into().map_err(|args: Vec<RuntimeValue>| {
                     VmError::FunctionArgumentCount {

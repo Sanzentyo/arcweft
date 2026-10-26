@@ -2480,17 +2480,20 @@ fn validate_tuple_pattern(
     path: &[RuntimePatternBindingStep],
     locals: &mut BTreeSet<RuntimeLocalDeclarationId>,
 ) -> Result<(), RuntimePatternMatchError> {
-    let Some(RuntimePlanTypeProjection::Tuple(types)) = plan
+    let Some(projection) = plan
         .type_table()
         .get(ty)
         .map(crate::plan::RuntimePlanTypeDeclaration::projection)
     else {
         return Err(RuntimePatternMatchError::InvalidKind { ty });
     };
-    if patterns.len() != types.len() {
+    if projection.tuple_arity() != Some(patterns.len()) {
         return Err(RuntimePatternMatchError::InvalidKind { ty });
     }
-    for (ordinal, (pattern, expected)) in patterns.iter().zip(types).enumerate() {
+    for (ordinal, pattern) in patterns.iter().enumerate() {
+        let expected = projection
+            .tuple_element(ordinal)
+            .ok_or(RuntimePatternMatchError::InvalidKind { ty })?;
         validate_child_type(*expected, pattern.ty())?;
         let ordinal =
             u32::try_from(ordinal).map_err(|_| RuntimePatternMatchError::InvalidKind { ty })?;
