@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "name": "task-final-r3178-program-quota-expectation-catalog",
+  "all": 18,
+  "matched": 18,
+  "excluded": 0,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "awbc_returned_thread_handle_preserves_capture_and_result_through_each_step_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "forged_program_child_save_rejects_without_losing_the_original_handle_or_result",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "forward_include_implicitly_completes_and_resumes_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "generic_thread_capture_is_copied_under_its_original_binding_and_survives_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "goto_inside_an_include_replaces_the_actual_flow_without_returning_to_its_caller",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_explicit_unit_and_value_returns_resume_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_in_a_function_owned_thread_joins_before_its_flow_caller_returns",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_rejects_a_parameterized_flow_before_executable_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "mutually_recursive_includes_execute_under_the_original_one_operation_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_nested_thread_finishes_its_own_descendants_before_the_outer_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_returned_thread_handle_delivers_its_actual_non_unit_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_sibling_thread_includes_return_to_their_callers_without_mutual_join",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_spawn_function_returns_before_its_child_finishes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_thread_capture_source_and_child_resume_under_one_operation_steps",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_thread_quota_rejection_publishes_no_child_or_task",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_thread_retires_its_actual_non_unit_source_result_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "repeated_and_nested_includes_share_original_functions_and_resume_their_callers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "returned_thread_result_waits_for_its_actual_nested_child_through_each_step_save",
+      "ignored": false,
+      "status": "matches"
+    }
+  ]
+}

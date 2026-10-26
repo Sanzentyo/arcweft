@@ -1,0 +1,748 @@
+{
+  "version": 1,
+  "inspectedHead": "15639c72b02e5ecfd6f4ba22c6f3c08aacd6d6f0",
+  "sourcePublication": "e08b0f3cf2d0739a0b2223c30c12029fa428c31d",
+  "fullReverse": {
+    "version": 1,
+    "base": "c2e56ac5c6721fbf8ba8145cf132d222aba9dd26",
+    "run": "task-final-r3177-program-capture-reverse-runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [2456.410s] 7364 tests run: 7313 passed (75 slow), 51 failed, 39 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 7364,
+    "passed": 7313,
+    "failed": 51,
+    "skipped": 39,
+    "selectedPackages": 53,
+    "matchedPackages": 50,
+    "noMatchingSelectedTests": [
+      "arcweft",
+      "arcweft-bundle-assets",
+      "arcweft-render-web"
+    ],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3989,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_rag_query_indexes_multiple_sources"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_checks_runtime_assert_sections"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_headless_runtime_sections"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_traverse_parallel_file_tasks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_skips_adapter_only_script_benches"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_validates_headless_script_benches"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "plan_json_lists_runtime_task_graph"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "profile_check_rejects_ambient_route_params"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "profile_json_runs_native_file_tasks_without_absolute_source"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "run_json_executes_scope_and_loop_value_bindings"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "run_json_executes_traverse_parallel_file_tasks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "run_json_observes_line_child_tasks_through_scheduler"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "run_json_steps_runtime_plan"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "test_json_executes_headless_scenario_expectations"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_invalid_proof_body"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_semantic_thread_join_conflict"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_unknown_proof_dependency"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-compiler::flow_include",
+        "test": "native_thread_quota_rejection_publishes_no_child_or_task"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-26T02:24:04.2825826Z"
+  },
+  "fullReverseRecord": "task-program-capture-reverse-acceptance.json",
+  "originalExecSessionExitCode": 1,
+  "actualNextestExitCode": 100,
+  "focusedRevalidation": {
+    "version": 1,
+    "base": "15639c72b02e5ecfd6f4ba22c6f3c08aacd6d6f0",
+    "run": "task-final-r3179-program-quota-expectation-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   1.952s] 18 tests run: 18 passed, 0 skipped",
+    "caseRowSource": "complete-live-status-before-terminal-summary",
+    "executed": 18,
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 53,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [
+      "arcweft",
+      "arcweft-adapter-desktop",
+      "arcweft-adapter-sema",
+      "arcweft-agent-mcp",
+      "arcweft-agent-mcp-client",
+      "arcweft-agent-policy",
+      "arcweft-agent-protocol",
+      "arcweft-agent-repl",
+      "arcweft-agent-runner",
+      "arcweft-browser-bench",
+      "arcweft-bundle",
+      "arcweft-bundle-assets",
+      "arcweft-character-view",
+      "arcweft-cli",
+      "arcweft-core",
+      "arcweft-debug-model",
+      "arcweft-debug-sqlite",
+      "arcweft-dialogue",
+      "arcweft-glyphon",
+      "arcweft-host-adapter",
+      "arcweft-lang-jit-cranelift",
+      "arcweft-lang-sema",
+      "arcweft-launch",
+      "arcweft-lsp",
+      "arcweft-player-native",
+      "arcweft-player-scene",
+      "arcweft-player-text-input",
+      "arcweft-player-web",
+      "arcweft-project",
+      "arcweft-project-loader",
+      "arcweft-rag",
+      "arcweft-render-text",
+      "arcweft-render-web",
+      "arcweft-render-wgpu",
+      "arcweft-resource-manifest",
+      "arcweft-resource-model",
+      "arcweft-runtime-accelerator",
+      "arcweft-runtime-codegen",
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-runtime-plan",
+      "arcweft-runtime-scheduler",
+      "arcweft-save",
+      "arcweft-test",
+      "arcweft-text-layout",
+      "arcweft-text-model",
+      "arcweft-tooling",
+      "arcweft-verify",
+      "arcweft-verify-lsp",
+      "arcweft-verify-oxiz",
+      "arcweft-verify-z3",
+      "arcweft-view"
+    ],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3989,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-26T02:25:18.6256092Z"
+  },
+  "sourceDifferenceAfterFullRun": [
+    "crates/arcweft-compiler/tests/flow_include.rs"
+  ],
+  "repair": {
+    "version": 1,
+    "base": "15639c72b02e5ecfd6f4ba22c6f3c08aacd6d6f0",
+    "path": "crates/arcweft-compiler/tests/flow_include.rs",
+    "beforeSha256": "50cbf3bc7a7c603d9ea581a2038b395d82eee34d2386a32370ca16cf51c482df",
+    "afterSha256": "786cdcb0ed54c1d35934fef36f89a1a303fd8d5f309c56a4079a4c9b135845f8",
+    "oldExpectation": "diagnostic.message.contains(\"Thread start\")",
+    "newExpectation": "diagnostic.message.contains(\"Program task start\")",
+    "reason": "ProgramTask generalized the diagnostic owner; budget/category/no-child/no-task assertions are retained",
+    "recordedAt": "2026-10-26T02:24:44.061836Z"
+  },
+  "interpretation": "R3177 and R3179 have distinct input snapshots and are not one runtime execution. Only the stale quota diagnostic expectation changed after the full run; production code and the original user WIP remain unchanged.",
+  "retainedCliFailures": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_indexes_multiple_sources"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_checks_runtime_assert_sections"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_headless_runtime_sections"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_traverse_parallel_file_tasks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_skips_adapter_only_script_benches"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_validates_headless_script_benches"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "plan_json_lists_runtime_task_graph"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_check_rejects_ambient_route_params"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_runs_native_file_tasks_without_absolute_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_scope_and_loop_value_bindings"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_traverse_parallel_file_tasks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_observes_line_child_tasks_through_scheduler"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_steps_runtime_plan"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "spec_valid_run_edge_fixture_now_executes"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "test_json_executes_headless_scenario_expectations"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "unsafe_json_lists_audit_regions"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_records_required_solver_checks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_invalid_proof_body"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_missing_promotion_proof"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_semantic_thread_join_conflict"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_unknown_proof_dependency"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_respects_semantic_defer_cancel_discharge"
+    }
+  ],
+  "genericStatus": "accepted-and-published; all 151 cases pass in R3177",
+  "requiredCurrentCapturePassed": 8,
+  "fullReverseExecutableHashes": 227,
+  "focusedExecutableHashes": 1,
+  "sourceInputs": 3989,
+  "sourceDriftAtTerminals": 0,
+  "executableDrift": 0,
+  "pending": [
+    "CLI 50 failures diagnosed from the current original log",
+    "Source parallel and the remaining whole-goal acceptance are separate boundaries"
+  ],
+  "limitsAssertionsWeakened": false,
+  "artifactCopyMove": false,
+  "files": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.json",
+      "bytes": 2681,
+      "sha256": "b04a2bf2de149ef3d0f2a6328079a197d87b14481d202f47e975302a41d894c7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.log",
+      "bytes": 5390824,
+      "sha256": "da02d43f60f6160a38079c7a67663a51cad04082aa7b048ead995a86b51c2414"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.terminal-audit.json",
+      "bytes": 9178,
+      "sha256": "5dc9d193ebf5ec05d6896ba414ce588d3cb3f9550d24e2492a9eebda5a339993"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.failure-recon.json",
+      "bytes": 3430316,
+      "sha256": "8f8f6b57eb042a7ab13bc7b90244316247183f8a7ebf1f9e146e95da9b0ff85f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse.executables-after.json",
+      "bytes": 56288,
+      "sha256": "45bef3c18e2cdef5145da3930bd759d2bccc4b37115a9279d00c32f07d7a2db0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse-acceptance.json",
+      "bytes": 57958,
+      "sha256": "7c477adbf401418c8310717111e7a8e4fd50d4648490a6f465227f7a835522ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3178-program-quota-expectation-catalog.json",
+      "bytes": 2632,
+      "sha256": "5d5f324ba8859b45fbfbe0cefbb55d07c8ea6a8408e7f82d3918720381aeab00"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3178-program-quota-expectation-catalog.log",
+      "bytes": 207126,
+      "sha256": "0ee0d985f7fabb75863f25e568650921e54a491a8a11a460d403c07236741c87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3178-program-quota-expectation-catalog.input-audit.json",
+      "bytes": 2435,
+      "sha256": "5b2c11ce46b6ea7a6eb37be35cdac7e635030f055efe791a363987f5c487f9af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3178-program-quota-expectation-catalog.inventory.json",
+      "bytes": 4584,
+      "sha256": "1c4b2dbff384bfeee07a92612397cd0003b58c663f190e74ac590152da3c3046"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3179-program-quota-expectation-runtime.json",
+      "bytes": 2648,
+      "sha256": "0985a8c2d46c019c38a3bc1eacdd6f609ff76f8f754f4a0734998706f19bd894"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3179-program-quota-expectation-runtime.log",
+      "bytes": 104397,
+      "sha256": "a923b9bdf468a237dabac64b94b53062bb45ec232ddab886570b40fe30681970"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3179-program-quota-expectation-runtime.terminal-audit.json",
+      "bytes": 2071,
+      "sha256": "acbca97031a06844afc7247b9c0936d03ae7a608bc4694b032a623b501abd156"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-quota-expectation.source-freeze.json",
+      "bytes": 779835,
+      "sha256": "bd504fcad73ecb9c273ab3ea14c8ba56cf650ab1e90926c5fd2842387471d2b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-quota-expectation.repair.json",
+      "bytes": 624,
+      "sha256": "847858f32d9278a0aaf747365eb989cb40f5c392560f504a79fbb4817e1d7fdc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-quota-expectation.executables-before.json",
+      "bytes": 400,
+      "sha256": "8491ea3842467bfa4c5fc488039f581c253a20c79a9ad7712513b912aad3663a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-quota-expectation.executables-after.json",
+      "bytes": 399,
+      "sha256": "f4b7d3387102ef601f460cca15ff58a74a12875bbb978990559ec3d7f1ba3140"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/seal-program-capture-reverse.ps1",
+      "bytes": 7487,
+      "sha256": "989cf4e9adf1d9b3827abac8c58647a36e844810fd44f0f8c3f6b29b265037f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/finish-capture-reverse-and-repair-quota.ps1",
+      "bytes": 7870,
+      "sha256": "df3aa1c124ea4eff7b9ebd9dddd5cf54db8e89caad60220208a73faad2656eb6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse-preflight.verified.json",
+      "bytes": 2123,
+      "sha256": "943ac1173b3215060b7339fb2e165cb65a1e4b9fce06f514be4434e9ac36126a"
+    }
+  ],
+  "recordedAt": "2026-10-26T02:30:19.0096196Z"
+}

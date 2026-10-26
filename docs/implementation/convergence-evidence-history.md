@@ -12367,3 +12367,43 @@ Cargoのcompileは38分9秒、catalog列挙を含むcommand全体は42分53.340�
 [入力照合](acceptance-evidence/task-final-r3176-program-capture-reverse-catalog.input-audit.json)、
 [必須集合と選択](acceptance-evidence/task-program-capture-reverse.preflight.json)、
 [実行ファイルhash](acceptance-evidence/task-program-capture-reverse.executables-before.json)。
+
+## Program capture全53逆依存の終端とquota期待修復 — 2026-10-26
+
+catalogと起動前照合は `15639c72b02e5ecfd6f4ba22c6f3c08aacd6d6f0` として公開した。
+親 `c2e56ac5c6721fbf8ba8145cf132d222aba9dd26`、tree
+`8dd4023927521ad958034337697f8763caabce2b`、patch SHA-256
+`c7d86ec8ce8dbf2fb66f14d51b462fc26fa639b630e04ebb3aa2c3a8e6af5daa`。
+公開9 blob・raw 7件のbyte差分0、元WIP 14件を保持し、indexは空だった。
+[公開照合](acceptance-evidence/task-program-capture-reverse-preflight.verified.json)。
+
+R3177は全53 package・全target／全feature／locked、7,364実行／7,313 PASS（75 slow）／51 FAIL／
+39既存除外、2,456.410秒、nextest終了100で終端した。外側execセッションの終了1とは区別して保持する。
+全catalog集合、3,989入力・99 manifest／lock・227実行ファイルの前後差分0。
+named caseは50 package、buildのみはarcweft／bundle-assets／render-webの3 packageだった。
+Core 2,095／2,095、runtime-plan 158／158、Sema 1,357／1,357、LSP 223／223、Generic 151／151、
+以前のowner／Source必須17／17と今回のcapture必須8／8は全PASS。
+Compilerは621 PASS／1 FAIL、CLIは641 PASS／50 FAILだった。
+[全件終端照合](acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.terminal-audit.json)、
+[package・必須集合・前段比較](acceptance-evidence/task-program-capture-reverse-acceptance.json)。
+
+R3139と比べた新規失敗はCompilerの `native_thread_quota_rejection_publishes_no_child_or_task` 1件。
+実診断はBudget分類の `Program task start exceeds the remaining task request quota` で、
+1-op予算・子fiber 0・task出力0のassertionは通っていた。共通ProgramTaskへの診断名移行に対し、
+テストだけが旧 `Thread start` を期待していた。quota拒否と起動前保全の受入を維持し、
+元runの入力・実行ファイル照合が完了してから期待文字列を `Program task start` へ1行移行した。
+Budget分類、操作数、子・taskの非公開、拒否まで到達する条件と128-step上限は変更していない。
+
+R3178／R3179は、同じ全53 package・全target／全feature／lockedのbuild構成を再利用し、
+flow_includeだけを選択した。catalog全18件／除外0、runtime 18／18 PASS、1.952秒、終了0。
+各3,989入力と対象1実行ファイルの差分0。全体run後の変更はこのテスト期待1行のみであり、
+製品処理・型・API・依存・元WIPは変更していない。対象ファイルは782 physical LOCのまま、byteのみ6増加した。
+R3177の51失敗は当時の原本として保持し、異なる入力の後続18件を一つの再実行として合算しない。
+[修復と入力差分・別runの範囲](acceptance-evidence/task-program-capture-reverse-and-quota-acceptance.json)。
+
+残るCLI 50件はR3139と同じ識別子だが、今回の原ログから各stderrを新たに抽出した。
+Presentation command ABI拒否、parallelのruntime intrinsic未接続、JLREQのcolumn／hyphen保持などの
+実診断を保持し、識別子の一致だけで原因を同一と判断していない。
+Generic Matchの受入・公開済み判定を維持する。Source parallel、残るCLI、他Tier 2／最終workspace受入は別境界。
+raw 20件をbyte差分0で保存し、ビルド生成物の移動・コピー・退避は行っていない。
+[今回51件の原診断](acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.failure-recon.json)。

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "catalog": "task-final-r3178-program-quota-expectation-catalog",
+  "phase": "after",
+  "binaries": [
+    {
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_include-d3e5d47c56d4ad9c.exe",
+      "bytes": 126108672,
+      "sha256": "d17cdb3b02e2767f2616ec49bbdd4d3dbc026fcf9da780a7f5db86bb743060f0"
+    }
+  ],
+  "recordedAt": "2026-10-26T02:25:19.0155649Z"
+}

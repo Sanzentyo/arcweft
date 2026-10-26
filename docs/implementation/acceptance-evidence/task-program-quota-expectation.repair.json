@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "base": "15639c72b02e5ecfd6f4ba22c6f3c08aacd6d6f0",
+  "path": "crates/arcweft-compiler/tests/flow_include.rs",
+  "beforeSha256": "50cbf3bc7a7c603d9ea581a2038b395d82eee34d2386a32370ca16cf51c482df",
+  "afterSha256": "786cdcb0ed54c1d35934fef36f89a1a303fd8d5f309c56a4079a4c9b135845f8",
+  "oldExpectation": "diagnostic.message.contains(\"Thread start\")",
+  "newExpectation": "diagnostic.message.contains(\"Program task start\")",
+  "reason": "ProgramTask generalized the diagnostic owner; budget/category/no-child/no-task assertions are retained",
+  "recordedAt": "2026-10-26T02:24:44.0618360Z"
+}

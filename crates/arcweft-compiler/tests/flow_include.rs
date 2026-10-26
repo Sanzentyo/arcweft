@@ -598,7 +598,7 @@ fn native_thread_quota_rejection_publishes_no_child_or_task() {
             assert!(
                 result.output.diagnostics.iter().any(|diagnostic| {
                     diagnostic.category == arcweft_core::step::RuntimeDiagnosticCategory::Budget
-                        && diagnostic.message.contains("Thread start")
+                        && diagnostic.message.contains("Program task start")
                 }),
                 "step={step}: {:?}",
                 result.output.diagnostics

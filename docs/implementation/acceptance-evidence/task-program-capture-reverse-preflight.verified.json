@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "commit": "15639c72b02e5ecfd6f4ba22c6f3c08aacd6d6f0",
+  "parent": "c2e56ac5c6721fbf8ba8145cf132d222aba9dd26",
+  "tree": "8dd4023927521ad958034337697f8763caabce2b",
+  "remote": "15639c72b02e5ecfd6f4ba22c6f3c08aacd6d6f0",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3176-program-capture-reverse-catalog.input-audit.json",
+      "blob": "fb6d1f59e81f6244fab84955c9cbbc280d2e7e80"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3176-program-capture-reverse-catalog.inventory.json",
+      "blob": "044d64f8fbf8d3390b89cb685f3fbd8b75123eb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3176-program-capture-reverse-catalog.json",
+      "blob": "86f784b3797a27620f16a2396f2634e5a003a741"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3176-program-capture-reverse-catalog.log",
+      "blob": "62b1715ac6d4a9657e5da6153a8dc21a27bd41b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse-start.verified.json",
+      "blob": "3d90e19fd288279f864c1d9ae70780c1081c8772"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse.executables-before.json",
+      "blob": "ae24e27cc75007ac2fb1858f400e32e54cafb9f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-capture-reverse.preflight.json",
+      "blob": "20533d4699bf6d291e2c9b3d4d21574f976ef56f"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "bc33c603f01b76b3e0afbdb790bc093a8f356c93"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "7d8917a3d4d5a2197cbee7a7fe119f1049b7ce83"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "c7d86ec8ce8dbf2fb66f14d51b462fc26fa639b630e04ebb3aa2c3a8e6af5daa",
+  "heldPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-26T01:48:19.2542968Z"
+}
