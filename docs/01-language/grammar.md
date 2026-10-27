@@ -173,16 +173,18 @@ AST attachment instead of falling through as raw statements.
 Proofs use the ordinary outer-attribute surface and a typed proof body:
 
 ```text
-ProofDecl   := 'proof' Ident '{' ProofClause* '}'
-ProofClause := ('requires' | 'ensures' | 'check') Expr
-             | 'use' ProofRef
-             | 'assume' Expr (','? 'proof' '=' ProofRef)
-ProofRef    := EntityRef
+ProofDecl     := 'proof' Ident GenericParams? ParamGroup ReturnType? WhereClause? ProofContract* ProofBody
+ProofContract := ('requires' | 'ensures') Expr
+ProofBody     := '=' Expr | ProofBlock
 ```
 
-The top-level proof declaration uses one ordinary local name. `ProofRef` is
-the entity-reference form used inside proof clauses and must resolve to the
-`proof` family. The optional
+The top-level declaration has exactly one fixed parameter group, including
+`()` for no parameters. Contracts precede the expression or block body. A proof
+block uses typed statements, including ordinary calls to registered proof
+declarations such as `lemma(value);`. Its result must match the declared return
+type; an omitted Unit result permits an implicit Unit block tail. Unknown calls
+are rejected by semantic analysis before a verifier generation is published.
+The optional
 `#[verify.trusted(reason = String)]` attribute marks external evidence; its
 reason must be a nonempty, non-interpolated string literal. Escape sequences
 are decoded once by the syntax-owned string-literal value contract, and the
@@ -497,7 +499,7 @@ aliases to the same type.
 FunctionDecl  := Visibility? 'fn' Ident GenericParams? ParamGroup+ ReturnType? WhereClause? Contract* Block
 GenericParams := '<' GenericParam (',' GenericParam)* ','? '>'
 GenericParam  := Lifetime | IdentPath
-ParamGroup    := '(' Param (',' Param)* ','? ')'
+ParamGroup    := '(' (Param (',' Param)* ','?)? ')'
 Param         := DocComment* Pattern ':' Type ParamDefault?
                | DocComment* Pattern ':' '...' Type
                | 'self' ':' Type

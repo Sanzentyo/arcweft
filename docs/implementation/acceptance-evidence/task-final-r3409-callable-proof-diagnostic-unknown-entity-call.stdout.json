@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "status": "denied",
+  "stage": "readiness",
+  "diagnostics": [
+    {
+      "module": null,
+      "stage": "readiness",
+      "diagnostic": {
+        "severity": "error",
+        "code": "hir.project.analysis",
+        "message": "HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+        "span": null,
+        "labels": [],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    }
+  ]
+}

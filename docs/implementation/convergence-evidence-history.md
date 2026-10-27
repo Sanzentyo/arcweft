@@ -12975,3 +12975,21 @@ Supersedes: 現状一覧のloop修復の最終横断未完了、HIR stack修復�
 Scope訂正: Source traverse構築cutの末尾にあったcallback／parallelの「未受入」は、後続の実行受入と矛盾する現在形だったため、「その構築cutの証拠に含まれない」へ訂正し、後続のSource parallel行へ集約した。carrier／capture cutに残ったCLI 50失敗も当時の履歴として区別し、最新48件は統合行だけで管理する。元の検証結果・公開SHAは各原本と既存履歴へ保持する。
 
 [最終受入・終端・識別子比較](acceptance-evidence/task-loop-source-frame-reverse-acceptance.json)、[check／Clippy／doctest／wasm原本](acceptance-evidence/task-loop-source-frame-checks.json)。
+
+## Callable proofのCLI fixture・現行仕様同期 -- 2026-10-28
+
+基点1967910a993476a25af376daca84525762c5beef。R3405のverify_json_reports_invalid_proof_body／verify_json_reports_unknown_proof_dependencyは、元のproof headerに固定parameter groupがなくreadinessで拒否され、意図した検証へ到達していなかった。R3407の括弧だけを加えた診断でも、旧body-local requires／use／checkがHIR recoveryになった。現行のSyntax／HIR／Semaは、固定group一つ・型付きheader requires／ensures・通常proof call・typed returnを持つcallable proofを所有し、verifierは登録済みCall factsを消費する。
+
+R3408の一行連結した複数宣言という不正な診断sourceと、EntityRefをcalleeにした回復も原本に保持する。R3409では通常名のproof callと改行した宣言が型検査を通り、各bodyが未証明obligationへ入ることを確認した。古い構造化body clauseや未知calleeを後段のproof_body世代へ通すという期待は、現在のsealed checkerと両立しないため採用しない。
+
+fixtureの未証明bodyはrequires trueをheaderへ置き、元の失敗exit・proof_body・proof.requires_onlyというassertionを残して、正確なobligation ID、missing discharge、sourceを追加した。不明proof dependencyは通常callへ移し、version 1／denied／type-check／sema.call.unknown_target／正確なmissing source slice／primary label／obligations未公開を検査する。単なる非0 exitへ弱めず、readiness拒否で誤って成功するfixtureを除去した。verifierの実装やdischarge条件は変更しない。
+
+R3410 catalog終了0。R3411は対象2件の2 PASS／478対象外、2.321秒、3,998入力・harness＋CLIの2 executable・catalog／終端の差分0。R3413はCLI check target・all feature・locked Clippy終了0、warningメッセージ6,115、3,998入力差分0。製品logic・Cargo／依存・test helper変更は0であり、変更していない実装・fixtureのR3405証拠を再利用する。全55や全CLIを再実行したとはしない。
+
+grammarとProof章は旧body-local clauseの設計説明を削除し、現行のcallable header・typed body／call・未証明報告へ同期した。空のparameter groupをgrammarへ明記し、stub生成APIのRustdocも実際に生成するproof name()へ合わせた。R3412は資料の6 proofをまとめたexact exampleをdev modeで受理したが、6件ともmissing proof_bodyであり、形式証明完了やtrusted metadataによる自動受入とはしない。古い設計の写しは新しい仕様資料へ残さず、訂正理由と実際の診断・commit SHAだけをここへ保持する。
+
+同じCLI fileにあった元WIPのsystem-info steps 8 -> 32はstageしない。元user patchを新しいcanonical codeへalternate Git indexで適用したblobと実working blobが完全一致し、他13 tracked blobの差分0。code-only blobは8f580aa0cf5eede5469c3ec83d35266913fa24e1、working blobはd55c9413c93554c5788b8a4b1e645b68f5814b13。元held patch SHA 89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31と、code-only indexに残る同じuser WIPのSHA c2d8505dd38877f745816d0a4fc5234e1ac29e7ce0064505fe95d6377a64fd15を区別する。raw user patchやworking sourceの写しは公開しない。資料auditのhash guardも、このowned overlapの証明に基づき更新した。
+
+Supersedes: 最新全体R3405の48失敗のうち、上記2識別子を後続PASSとして閉じる。残る46識別子は集合差分であり、新しい全CLI 46 FAILの実測ではない。Generic Match、loop制御、HIR frameの受入を戻さない。
+
+[対象結果・診断・仕様同期・WIP保全](acceptance-evidence/task-cli-callable-proof-acceptance.json)、[残る識別子と由来](acceptance-evidence/task-cli-remaining-failures-after-proof-fixtures.json)。

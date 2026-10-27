@@ -22,7 +22,7 @@ pub struct VerifierInsertionTarget {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "policy")]
 pub enum VerifierInsertionPolicy {
-    /// Insert a new top-level `proof name { ... }` item.
+    /// Insert a new top-level `proof name() { ... }` item.
     TopLevelProofItem,
 }
 

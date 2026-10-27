@@ -1,0 +1,346 @@
+{
+  "version": 1,
+  "base": "1967910a993476a25af376daca84525762c5beef",
+  "status": "Two current callable-proof CLI rejection paths validated; formal proof discharge remains pending",
+  "oldFailures": "R3405 fails before the intended checks: missing fixed parameter groups and retired body-local clauses",
+  "contract": "A single fixed parameter group; typed requires/ensures header contracts; ordinary proof calls in the body",
+  "runtime": {
+    "version": 1,
+    "base": "1967910a993476a25af376daca84525762c5beef",
+    "run": "task-final-r3411-program-fanout-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   2.321s] 2 tests run: 2 passed, 478 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 478,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-27T22:16:40.6032152Z"
+  },
+  "executables": 2,
+  "executableDrift": 0,
+  "catalogDrift": 0,
+  "firstCase": "Preserve failed test-mode exit, proof_body and proof.requires_only; add exact obligation ID, missing discharge and source assertions",
+  "secondCase": "Unknown proof callee is rejected by the sealed checker before verifier publication: version1, denied/type-check, sema.call.unknown_target, exact missing target source slice, primary label, no obligations",
+  "assertionMigration": "Retired use/check clause and downstream proof_body expectation are replaced by the current typed admission contract, not by a generic nonzero-exit assertion",
+  "docs": {
+    "exitCode": 0,
+    "formalDischargeClaim": false,
+    "pendingProofBodyObligations": 6,
+    "typedProofs": 6,
+    "mode": "dev",
+    "run": "R3412"
+  },
+  "clippy": {
+    "sourceInputs": 3998,
+    "allFeatures": true,
+    "target": "arcweft-cli::check",
+    "warningMessages": 6115,
+    "run": "R3413",
+    "locked": true,
+    "sourceDrift": 0,
+    "exitCode": 0
+  },
+  "productionLogicChanges": 0,
+  "cargoChanges": 0,
+  "testHelperChanges": 0,
+  "scope": "Reuse R3405 for unchanged implementations and tests. This is a two-case fixture/documentation slice, not a fresh 46-failure CLI run.",
+  "originalUserPatchPreserved": true,
+  "originalTrackedWip": 14,
+  "originalUntrackedWip": 6,
+  "originalHeldPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "expectedResidualWipPatchSha256": "c2d8505dd38877f745816d0a4fc5234e1ac29e7ce0064505fe95d6377a64fd15",
+  "stagedCodeBlob": "8f580aa0cf5eede5469c3ec83d35266913fa24e1",
+  "workingBlob": "d55c9413c93554c5788b8a4b1e645b68f5814b13",
+  "structuralReview": {
+    "physicalLoc": 9082,
+    "baselineLoc": 9053,
+    "classification": "integration test",
+    "newHelper": 0,
+    "newSharedState": 0,
+    "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "review": "Retain the existing CLI JSON-contract fixture owner for migration of two existing test bodies. No new ownership boundary, state or helper is added; other embedded DSL fixtures remain unchanged. Reuse the prior CLI-owner disposition instead of widening this leaf repair into an unrelated test-file migration.",
+    "netGrowth": 29,
+    "newTests": 0
+  },
+  "genericMatch": "Accepted; not reopened",
+  "loopControl": "Accepted; not reopened",
+  "hirFrameRepair": "Accepted; not reopened",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-proof.document-baseline-adjustment.json",
+      "bytes": 932,
+      "sha256": "331ae526021b794bd68c2f88b763a9c10916c5eff46e76ec05bedb7b2346e54b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-proof.preservation-before.json",
+      "bytes": 3660,
+      "sha256": "f54baa69192946197e9ed0f6a2875007e987a919f832d6c2713ef037f4897be6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-proof.preservation-proof.json",
+      "bytes": 2645,
+      "sha256": "0e336b4fdf6a1739523ab51cd66a3015e38f6e0a25fbfc0a845ee0e5a55bc294"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3407-proof-header-diagnostic-verify_json_reports_invalid_proof_body.arcw",
+      "bytes": 66,
+      "sha256": "4d6b873c55357cebd688e049b920762553c31d37ae211bcbb7b3245f1836d45d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3407-proof-header-diagnostic-verify_json_reports_invalid_proof_body.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3407-proof-header-diagnostic-verify_json_reports_invalid_proof_body.stdout.json",
+      "bytes": 570,
+      "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3407-proof-header-diagnostic-verify_json_reports_unknown_proof_dependency.arcw",
+      "bytes": 103,
+      "sha256": "3ed6f9c2f4179f1731b649c26f4d280f8964d5e22eeb27bc430bd642c2885617"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3407-proof-header-diagnostic-verify_json_reports_unknown_proof_dependency.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3407-proof-header-diagnostic-verify_json_reports_unknown_proof_dependency.stdout.json",
+      "bytes": 570,
+      "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3407-proof-header-diagnostic.json",
+      "bytes": 2293,
+      "sha256": "4acc86d717406b3eb28aa7f576a02ca989dff37e425bfa3b0b4b7042a023a08c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-known-local-call.arcw",
+      "bytes": 49,
+      "sha256": "81a083591419bd728ab539b4ecbc76197cbe63aeac7cb2341b299accdc39f411"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-known-local-call.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-known-local-call.stdout.json",
+      "bytes": 570,
+      "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-requires-only.arcw",
+      "bytes": 41,
+      "sha256": "cb5f13b76dffadc6c03529264a7f740a85a8d04ff8bba52c25478b5eee71ca1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-requires-only.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-requires-only.stdout.json",
+      "bytes": 3672,
+      "sha256": "fcb33eba2f8a3e378c0c36f7d7a223d30185461c7ed58d30d1a0df7e7e973323"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-unknown-entity-call.arcw",
+      "bytes": 49,
+      "sha256": "3f5387a138adbd0de0ef45392415ed12b07d8f61eaa51c3f92b248438971bcc2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-unknown-entity-call.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-unknown-entity-call.stdout.json",
+      "bytes": 570,
+      "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-unknown-local-call.arcw",
+      "bytes": 42,
+      "sha256": "ea3fc0781b4450ee238ec5f16b5b6259c42453270196aac1861246193b3f4a7f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-unknown-local-call.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic-unknown-local-call.stdout.json",
+      "bytes": 1369,
+      "sha256": "26115f82fe7bfae9bfdf24b0fc31c9b75b0fd1e97bf3fe40d4de62229648796f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3408-callable-proof-diagnostic.json",
+      "bytes": 4592,
+      "sha256": "f84bad83604c3edf2ee0dcdd655ad1b1a38d5363c1d972987f9d3d9d3b9f8caa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+      "bytes": 50,
+      "sha256": "43a7310ba18794ae3808049ed435022cdf40215e3a5676bd2357afa52bb61e32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-known-local-call.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-known-local-call.stdout.json",
+      "bytes": 7079,
+      "sha256": "06ddf3de00a0c11bd59d1a9166ee20f81f85458ef04477611d0c2a07eb9b735e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-requires-only.arcw",
+      "bytes": 41,
+      "sha256": "cb5f13b76dffadc6c03529264a7f740a85a8d04ff8bba52c25478b5eee71ca1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-requires-only.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-requires-only.stdout.json",
+      "bytes": 3672,
+      "sha256": "205de4a9bd93eac5df8977bbf5071bd1c013292ba0163a45b34e9cbe0138e0e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-unknown-entity-call.arcw",
+      "bytes": 49,
+      "sha256": "3f5387a138adbd0de0ef45392415ed12b07d8f61eaa51c3f92b248438971bcc2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-unknown-entity-call.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-unknown-entity-call.stdout.json",
+      "bytes": 570,
+      "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-unknown-local-call.arcw",
+      "bytes": 42,
+      "sha256": "ea3fc0781b4450ee238ec5f16b5b6259c42453270196aac1861246193b3f4a7f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-unknown-local-call.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic-unknown-local-call.stdout.json",
+      "bytes": 1369,
+      "sha256": "a52fcfa9efd60955a145c196b373069888f667b8d9f6d1d5447c956713c120b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3409-callable-proof-diagnostic.json",
+      "bytes": 4459,
+      "sha256": "e90c248d0eab7bf6fe93657cbcdef24882027a29cdc7ad14f4d750f1f837bba2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3410-program-fanout-awbc-check.input-audit.json",
+      "bytes": 509,
+      "sha256": "6f1d884881709e7e1cd0fb9997a02cfe821e064c325e5da041422f77c58988a5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3410-program-fanout-awbc-check.json",
+      "bytes": 641,
+      "sha256": "a20a150b3781a412c5a28720c0f15bd2ae1bb8bc875014661c79e1ca9acc0b9a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3410-program-fanout-awbc-check.log",
+      "bytes": 172493,
+      "sha256": "92180673f93ff727baf740582f5d143a87d0607b49c11bbc00b944c7da9332e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3411-program-fanout-runtime.binaries-before.json",
+      "bytes": 403,
+      "sha256": "3efd70b5c9d52fd320909dffe50a1e39c36371b3739c80c5bcfcd74416740682"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3411-program-fanout-runtime.json",
+      "bytes": 730,
+      "sha256": "0012399b4eaea9c70f2e25a9be0eb03bd9a119136de6fb221390506b56a6c9c1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3411-program-fanout-runtime.log",
+      "bytes": 220257,
+      "sha256": "65360fa26a0c0c113e3bf1c6f0a7af474f4fa4cba4ef500d40f8391ca6eda945"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3411-program-fanout-runtime.terminal-audit.json",
+      "bytes": 612,
+      "sha256": "adec1e75190b5e9dc572578fd95647a3d487161bd5d64b45211f8166cd536664"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3412-proof-doc-examples.arcw",
+      "bytes": 373,
+      "sha256": "27604c539515138ae42924b4f9d05dbf49121b9cb4653e899fc99f8bb9d42013"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3412-proof-doc-examples.json",
+      "bytes": 3617,
+      "sha256": "20966b124a125111302712b03b4427041673cd18816d6203e75a5935fb0cc6ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3412-proof-doc-examples.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3412-proof-doc-examples.stdout.json",
+      "bytes": 19869,
+      "sha256": "f981314472387a27c899bde05a94ac93ada29b02a4ac2448ff103913d33622d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3413-proof-fixture-clippy.input-audit.json",
+      "bytes": 333,
+      "sha256": "9ddecd3924ab9d187a3f382f9a4ec43ba87d9d05fef3096736141ee44a7315c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3413-proof-fixture-clippy.json",
+      "bytes": 465,
+      "sha256": "c080da6049eaa72326bb437abbc1ca22d6cb1bf5e7b5e4727bccf6e3f483fbc9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3413-proof-fixture-clippy.log",
+      "bytes": 5255299,
+      "sha256": "75f36f7bc0774974a6cddf05a8612ef720b0e1c452059f4787052d214e4b06b3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3410.source-freeze.json",
+      "bytes": 781720,
+      "sha256": "34888ae68ddd1b3ff0e1c22bac8ccb5dddfb376e376a8550441313f3f575a736"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3411.source-freeze.json",
+      "bytes": 781720,
+      "sha256": "34888ae68ddd1b3ff0e1c22bac8ccb5dddfb376e376a8550441313f3f575a736"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3413.source-freeze.json",
+      "bytes": 781720,
+      "sha256": "34888ae68ddd1b3ff0e1c22bac8ccb5dddfb376e376a8550441313f3f575a736"
+    }
+  ],
+  "derivedRemaining": "docs/implementation/acceptance-evidence/task-cli-remaining-failures-after-proof-fixtures.json"
+}

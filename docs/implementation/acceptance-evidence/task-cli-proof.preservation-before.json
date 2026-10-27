@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "base": "1967910a993476a25af376daca84525762c5beef",
+  "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+  "originalHeldPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "held": [
+    {
+      "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+      "blob": "54a77e26e4e7b66941f5c575c24647d53bf3e688",
+      "sha256": "750ee6cd6cafa5b322aa61580d13a62e9c28e1147fcfecd48fc769e4627a743e"
+    },
+    {
+      "path": "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+      "blob": "39e4c8cc33b1cfcfa5c7869b36501fea4518def7",
+      "sha256": "f8aba5f7befec01033269f75f0b4f4452ac88ff5f66739fce345e85edd11a025"
+    },
+    {
+      "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+      "blob": "a5d83b1d30a6d8d6b55b9cd0720178f38e9aba42",
+      "sha256": "6e378301fce67990eef9113eeb45f6adf9804c51fccbaeb4a216dc6a00786899"
+    },
+    {
+      "path": "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+      "blob": "d7109fcbd25177b244ff2e626536a2247a6ef158",
+      "sha256": "218dead97f656989bf32cb6de98e8b6618512f6d1aed9f607d6bfd3bbb6ff005"
+    },
+    {
+      "path": "crates/arcweft-runtime-host/src/native_task.rs",
+      "blob": "b06ac4c9450d7a97aeecce989435b2957ff9dbd1",
+      "sha256": "1565a2fb349d8871e1cd4e6561ea0e4b0e233509c07ed0c0ec76a6ba387dfa8a"
+    },
+    {
+      "path": "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+      "blob": "b64dfa16bbc56601d4c70397a29b9a0832d8aaa0",
+      "sha256": "6d35acc42641f80464c8a5de987a2b4c0693a91aca7fa15cd21db4c74f5461ac"
+    },
+    {
+      "path": "samples/agent-script/cli-read-resource-smoke.awfagent",
+      "blob": "b151b67feedfe4f42c63949cc334bd62b96693e3",
+      "sha256": "ca7e221393117be87128cb8696e328a239c61c4b449b6e40524d353d2d3245f1"
+    },
+    {
+      "path": "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+      "blob": "313aa453b9abd75d6085296bba07ba86ed718b0d",
+      "sha256": "09da18e738ac038221b317ed465b489083e5e4ce52ccef0948aaff32fd80b523"
+    },
+    {
+      "path": "samples/agent-script/native-choice-dispatch.arcw",
+      "blob": "ab0d14a956551c627ee0e585f3ffa5b9965b3c0d",
+      "sha256": "89432207a184ca286203287f8290a4f1f85295adbae1eb8bb3df75078ff3db59"
+    },
+    {
+      "path": "samples/agent-script/native-project-graph-relations.arcw",
+      "blob": "c9b7335f70859a44a82c42b2fc347ab0443be8ec",
+      "sha256": "ca9f2318675fb2761b40cdb3e2f1db8c656333c3bd1df7760abf1ca6713697c5"
+    },
+    {
+      "path": "samples/agent-script/native-visual-regression.arcw",
+      "blob": "68e938de7dad9e13f1ece2316bce9bc4bd1426cb",
+      "sha256": "b563a6c3e3598e3f78b91ff3f435e3abe521f3936e5023e528a46b14e8669ace"
+    },
+    {
+      "path": "samples/image-animation.arcw",
+      "blob": "c7f8b6fcf8c4d23b1fc70412dbab1b488a6bd20e",
+      "sha256": "9173c5fea1fe20729145088cb27d6bbeb98b83da2df977ecc870509494d73b4f"
+    },
+    {
+      "path": "samples/rich-text-full-grammar.arcw",
+      "blob": "63e369ec7b2e2767f1b1eb2553e0a71f0ebcdd89",
+      "sha256": "ed62eec83a0b9fd32e422f6a4ecd28bb471e8fcb0a28ef3683bd403c7c4e90fa"
+    },
+    {
+      "path": "samples/rich-text-windows-fonts.arcw",
+      "blob": "469421620e54d3e0dec5a6b408523b1f4762aa3e",
+      "sha256": "025474ae5424e2249e0afc00e2e8e512dbf5f5ed494c4c1c1505990529e8a868"
+    }
+  ],
+  "headBlob": "2dcaae3b1a1a3ca81f0b69e4238b547b88a8df81",
+  "workingBlob": "a5d83b1d30a6d8d6b55b9cd0720178f38e9aba42",
+  "sourcePatchSha256": "796f56ee9d466ec776e4394581edc3997fa71921bc7c48b9908a8104f7719754"
+}

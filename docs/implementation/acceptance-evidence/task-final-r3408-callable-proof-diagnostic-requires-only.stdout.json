@@ -1,0 +1,114 @@
+{
+  "policy": {
+    "mode": "test",
+    "backend": "emit",
+    "allow_trusted_proofs": true
+  },
+  "diagnostics": [
+    {
+      "id": "verify.pending.proof.requires_only.body",
+      "severity": "error",
+      "message": "proof `requires_only` awaits typed proof discharge",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3408-callable-proof-diagnostic-requires-only/task-final-r3408-callable-proof-diagnostic-requires-only.arcw",
+          "revision": "01559643559b3f122a1bcce5317bc6e8489b672f1ad22bfefe10bd3bb501669a",
+          "source_len": 41
+        },
+        "start": 0,
+        "end": 40
+      },
+      "obligation": "proof.requires_only.body",
+      "related_ids": [
+        "requires_only"
+      ],
+      "actions": [
+        {
+          "id": "action.generate_proof_stub",
+          "label": "Generate proof stub",
+          "kind": "generate_proof_stub",
+          "source_edit": {
+            "span": {
+              "source": {
+                "id": "arcweft-project://task-final-r3408-callable-proof-diagnostic-requires-only/task-final-r3408-callable-proof-diagnostic-requires-only.arcw",
+                "revision": "01559643559b3f122a1bcce5317bc6e8489b672f1ad22bfefe10bd3bb501669a",
+                "source_len": 41
+              },
+              "start": 41,
+              "end": 41
+            },
+            "replacement": "\n\nproof proof_requires_only_body() {\n    // TODO: prove proof `requires_only` awaits typed proof discharge\n}\n",
+            "applicability": "has_placeholders"
+          },
+          "command": {
+            "id": "arcweft.verify.generateProofStub",
+            "title": "Generate proof stub"
+          }
+        },
+        {
+          "id": "action.show_obligation",
+          "label": "Show proof obligation",
+          "kind": "show_obligation",
+          "command": {
+            "id": "arcweft.verify.showObligation",
+            "title": "Show proof obligation"
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "id": "proof.requires_only.body",
+      "kind": "proof_body",
+      "message": "proof `requires_only` awaits typed proof discharge",
+      "subject": "requires_only",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3408-callable-proof-diagnostic-requires-only/task-final-r3408-callable-proof-diagnostic-requires-only.arcw",
+          "revision": "01559643559b3f122a1bcce5317bc6e8489b672f1ad22bfefe10bd3bb501669a",
+          "source_len": 41
+        },
+        "start": 0,
+        "end": 40
+      },
+      "insertion_target": {
+        "span": {
+          "source": {
+            "id": "arcweft-project://task-final-r3408-callable-proof-diagnostic-requires-only/task-final-r3408-callable-proof-diagnostic-requires-only.arcw",
+            "revision": "01559643559b3f122a1bcce5317bc6e8489b672f1ad22bfefe10bd3bb501669a",
+            "source_len": 41
+          },
+          "start": 41,
+          "end": 41
+        },
+        "policy": {
+          "policy": "top_level_proof_item"
+        }
+      },
+      "discharge": {
+        "kind": "missing"
+      },
+      "smt": null
+    }
+  ],
+  "solver_checks": [],
+  "proofs": [
+    {
+      "id": "requires_only",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3408-callable-proof-diagnostic-requires-only/task-final-r3408-callable-proof-diagnostic-requires-only.arcw",
+          "revision": "01559643559b3f122a1bcce5317bc6e8489b672f1ad22bfefe10bd3bb501669a",
+          "source_len": 41
+        },
+        "start": 0,
+        "end": 40
+      },
+      "trust": {
+        "kind": "pending"
+      }
+    }
+  ],
+  "unsafe_audits": []
+}

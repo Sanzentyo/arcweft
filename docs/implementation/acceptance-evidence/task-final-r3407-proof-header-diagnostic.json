@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "base": "1967910a993476a25af376daca84525762c5beef",
+  "diagnostic": "Only add the required empty fixed parameter group to exact old proof fixtures; assertions, production and body unchanged",
+  "binary": {
+    "binary": "subprocess::arcw",
+    "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+    "sha256": "2b625e3b8b18b89ec63c7e11c3264d468c26ddd6db883eac97aa9b0fe6392fa6"
+  },
+  "cases": [
+    {
+      "test": "verify_json_reports_invalid_proof_body",
+      "command": [
+        "verify",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3407-proof-header-diagnostic-verify_json_reports_invalid_proof_body.arcw",
+        "--mode",
+        "test",
+        "--json"
+      ],
+      "exitCode": 1,
+      "status": "denied",
+      "stage": "readiness",
+      "hasProofBody": false,
+      "diagnosticCodes": [
+        "hir.project.analysis"
+      ],
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3407-proof-header-diagnostic-verify_json_reports_invalid_proof_body.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3407-proof-header-diagnostic-verify_json_reports_invalid_proof_body.stderr.log"
+    },
+    {
+      "test": "verify_json_reports_unknown_proof_dependency",
+      "command": [
+        "verify",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3407-proof-header-diagnostic-verify_json_reports_unknown_proof_dependency.arcw",
+        "--mode",
+        "test",
+        "--json"
+      ],
+      "exitCode": 1,
+      "status": "denied",
+      "stage": "readiness",
+      "hasProofBody": false,
+      "diagnosticCodes": [
+        "hir.project.analysis"
+      ],
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3407-proof-header-diagnostic-verify_json_reports_unknown_proof_dependency.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3407-proof-header-diagnostic-verify_json_reports_unknown_proof_dependency.stderr.log"
+    }
+  ]
+}

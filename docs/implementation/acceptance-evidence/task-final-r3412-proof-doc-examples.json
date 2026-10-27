@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "base": "1967910a993476a25af376daca84525762c5beef",
+  "command": [
+    "verify",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3412-proof-doc-examples.arcw",
+    "--mode",
+    "dev",
+    "--json"
+  ],
+  "exitCode": 0,
+  "binary": {
+    "binary": "subprocess::arcw",
+    "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+    "sha256": "1d3a9e4b5b8e3c1bdb1a080b81a68ef3ccf9e5a7e90ce3784d5d3b7096ed88de"
+  },
+  "proofs": [
+    {
+      "id": "nonnegative",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3412-proof-doc-examples/task-final-r3412-proof-doc-examples.arcw",
+          "revision": "96609e7064907d86aca1ff285edb225881d78bf5b346c27b0a572456b68cfc9a",
+          "source_len": 373
+        },
+        "start": 0,
+        "end": 79
+      },
+      "trust": {
+        "kind": "pending"
+      }
+    },
+    {
+      "id": "requires_only",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3412-proof-doc-examples/task-final-r3412-proof-doc-examples.arcw",
+          "revision": "96609e7064907d86aca1ff285edb225881d78bf5b346c27b0a572456b68cfc9a",
+          "source_len": 373
+        },
+        "start": 81,
+        "end": 121
+      },
+      "trust": {
+        "kind": "pending"
+      }
+    },
+    {
+      "id": "lemma",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3412-proof-doc-examples/task-final-r3412-proof-doc-examples.arcw",
+          "revision": "96609e7064907d86aca1ff285edb225881d78bf5b346c27b0a572456b68cfc9a",
+          "source_len": 373
+        },
+        "start": 123,
+        "end": 141
+      },
+      "trust": {
+        "kind": "pending"
+      }
+    },
+    {
+      "id": "dependent",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3412-proof-doc-examples/task-final-r3412-proof-doc-examples.arcw",
+          "revision": "96609e7064907d86aca1ff285edb225881d78bf5b346c27b0a572456b68cfc9a",
+          "source_len": 373
+        },
+        "start": 142,
+        "end": 176
+      },
+      "trust": {
+        "kind": "pending"
+      }
+    },
+    {
+      "id": "resource_manifest_hashes",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3412-proof-doc-examples/task-final-r3412-proof-doc-examples.arcw",
+          "revision": "96609e7064907d86aca1ff285edb225881d78bf5b346c27b0a572456b68cfc9a",
+          "source_len": 373
+        },
+        "start": 178,
+        "end": 308
+      },
+      "trust": {
+        "kind": "pending"
+      }
+    },
+    {
+      "id": "voice_manifest_safe",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3412-proof-doc-examples/task-final-r3412-proof-doc-examples.arcw",
+          "revision": "96609e7064907d86aca1ff285edb225881d78bf5b346c27b0a572456b68cfc9a",
+          "source_len": 373
+        },
+        "start": 309,
+        "end": 372
+      },
+      "trust": {
+        "kind": "pending"
+      }
+    }
+  ],
+  "proofBodyObligations": 6,
+  "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3412-proof-doc-examples.stdout.json",
+  "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3412-proof-doc-examples.stderr.log",
+  "scope": "Exact callable proof examples, including trust metadata; dev accepts pending obligations, formal proof discharge is not claimed"
+}

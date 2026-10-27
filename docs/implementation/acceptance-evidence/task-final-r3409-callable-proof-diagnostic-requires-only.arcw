@@ -1,0 +1,1 @@
+proof requires_only() requires true = ()

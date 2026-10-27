@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "status": "denied",
+  "stage": "type-check",
+  "diagnostics": [
+    {
+      "module": null,
+      "stage": "type-check",
+      "diagnostic": {
+        "severity": "error",
+        "code": "sema.call.unknown_target",
+        "message": "unknown function `missing`",
+        "span": {
+          "source": {
+            "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-unknown-local-call/task-final-r3409-callable-proof-diagnostic-unknown-local-call.arcw",
+            "revision": "915e7b851f40df694a88401c97caf333008a6e34af5a9df375e6c88d4ab4d692",
+            "source_len": 42
+          },
+          "start": 29,
+          "end": 36
+        },
+        "labels": [
+          {
+            "style": "primary",
+            "span": {
+              "source": {
+                "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-unknown-local-call/task-final-r3409-callable-proof-diagnostic-unknown-local-call.arcw",
+                "revision": "915e7b851f40df694a88401c97caf333008a6e34af5a9df375e6c88d4ab4d692",
+                "source_len": 42
+              },
+              "start": 29,
+              "end": 36
+            },
+            "message": "no registered callable candidate matches this target"
+          }
+        ],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    }
+  ]
+}

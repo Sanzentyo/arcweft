@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "base": "1967910a993476a25af376daca84525762c5beef",
+  "diagnostic": "Current callable proof headers and typed call bodies; no production or test changes",
+  "binary": {
+    "binary": "subprocess::arcw",
+    "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+    "sha256": "2b625e3b8b18b89ec63c7e11c3264d468c26ddd6db883eac97aa9b0fe6392fa6"
+  },
+  "cases": [
+    {
+      "name": "requires-only",
+      "source": "proof requires_only() requires true = ()",
+      "command": [
+        "verify",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-requires-only.arcw",
+        "--mode",
+        "test",
+        "--json"
+      ],
+      "exitCode": 1,
+      "status": null,
+      "stage": null,
+      "hasProofBody": true,
+      "diagnostics": [
+        {
+          "code": null,
+          "message": null
+        }
+      ],
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-requires-only.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-requires-only.stderr.log"
+    },
+    {
+      "name": "unknown-entity-call",
+      "source": "proof missing_dependency() { @proof.missing(); }",
+      "command": [
+        "verify",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-unknown-entity-call.arcw",
+        "--mode",
+        "test",
+        "--json"
+      ],
+      "exitCode": 1,
+      "status": "denied",
+      "stage": "readiness",
+      "hasProofBody": false,
+      "diagnostics": [
+        {
+          "code": "hir.project.analysis",
+          "message": "HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis"
+        }
+      ],
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-unknown-entity-call.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-unknown-entity-call.stderr.log"
+    },
+    {
+      "name": "known-local-call",
+      "source": "proof lemma() = ()\nproof dependent() { lemma(); }",
+      "command": [
+        "verify",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+        "--mode",
+        "test",
+        "--json"
+      ],
+      "exitCode": 1,
+      "status": null,
+      "stage": null,
+      "hasProofBody": true,
+      "diagnostics": [
+        {
+          "code": null,
+          "message": null
+        },
+        {
+          "code": null,
+          "message": null
+        }
+      ],
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-known-local-call.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-known-local-call.stderr.log"
+    },
+    {
+      "name": "unknown-local-call",
+      "source": "proof missing_dependency() { missing(); }",
+      "command": [
+        "verify",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-unknown-local-call.arcw",
+        "--mode",
+        "test",
+        "--json"
+      ],
+      "exitCode": 1,
+      "status": "denied",
+      "stage": "type-check",
+      "hasProofBody": false,
+      "diagnostics": [
+        {
+          "code": "sema.call.unknown_target",
+          "message": "unknown function `missing`"
+        }
+      ],
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-unknown-local-call.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3409-callable-proof-diagnostic-unknown-local-call.stderr.log"
+    }
+  ]
+}

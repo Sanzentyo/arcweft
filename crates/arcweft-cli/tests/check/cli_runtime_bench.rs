@@ -525,9 +525,7 @@ fn verify_json_reports_invalid_proof_body() {
     let path = temp_arcw(
         "verify-proof-body",
         r"
-proof requires_only {
-    requires summary.lifetime >= 'flow
-}
+proof requires_only() requires true = ()
 ",
     );
 
@@ -549,19 +547,28 @@ proof requires_only {
         stdout.contains("proof_body") && stdout.contains("proof.requires_only"),
         "JSON report should include the proof body obligation: {stdout}"
     );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("verification report is JSON");
+    assert_eq!(report["policy"]["mode"], "test");
+    let obligation = report["obligations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == "proof.requires_only.body")
+        .expect("the original typed proof body remains unproved");
+    assert_eq!(obligation["kind"], "proof_body");
+    assert_eq!(obligation["discharge"]["kind"], "missing");
+    assert!(!obligation["source"].is_null());
 }
 
 #[test]
 fn verify_json_reports_unknown_proof_dependency() {
-    let path = temp_arcw(
-        "verify-proof-dependency",
-        r"
-proof missing_dependency {
-    use @proof.missing
-    check no_lifetime_below(LineSummary, 'flow)
+    let source = r"
+proof missing_dependency() {
+    missing();
 }
-",
-    );
+";
+    let path = temp_arcw("verify-proof-dependency", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("verify")
@@ -576,10 +583,32 @@ proof missing_dependency {
         !output.status.success(),
         "unknown proof dependency should fail test-mode verification"
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("denied proof report is JSON");
+    assert_eq!(report["version"], 1);
+    assert_eq!(report["status"], "denied");
+    assert_eq!(report["stage"], "type-check");
+    let diagnostic = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["diagnostic"]["code"] == "sema.call.unknown_target")
+        .expect("the proof call retains its checker-owned unknown target");
+    let diagnostic = &diagnostic["diagnostic"];
+    assert!(diagnostic["message"].as_str().unwrap().contains("missing"));
+    let start = usize::try_from(diagnostic["span"]["start"].as_u64().unwrap()).unwrap();
+    let end = usize::try_from(diagnostic["span"]["end"].as_u64().unwrap()).unwrap();
+    assert_eq!(&source[start..end], "missing");
     assert!(
-        stdout.contains("proof_body") && stdout.contains("proof.missing"),
-        "JSON report should include the unknown proof dependency obligation: {stdout}"
+        diagnostic["labels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|label| label["style"] == "primary")
+    );
+    assert!(
+        report.get("obligations").is_none(),
+        "an unknown proof call must not publish an accepted verifier generation"
     );
 }
 

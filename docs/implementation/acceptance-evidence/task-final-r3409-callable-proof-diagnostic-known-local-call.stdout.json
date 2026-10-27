@@ -1,0 +1,213 @@
+{
+  "policy": {
+    "mode": "test",
+    "backend": "emit",
+    "allow_trusted_proofs": true
+  },
+  "diagnostics": [
+    {
+      "id": "verify.pending.proof.lemma.body",
+      "severity": "error",
+      "message": "proof `lemma` awaits typed proof discharge",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+          "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+          "source_len": 50
+        },
+        "start": 0,
+        "end": 18
+      },
+      "obligation": "proof.lemma.body",
+      "related_ids": [
+        "lemma"
+      ],
+      "actions": [
+        {
+          "id": "action.generate_proof_stub",
+          "label": "Generate proof stub",
+          "kind": "generate_proof_stub",
+          "source_edit": {
+            "span": {
+              "source": {
+                "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+                "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+                "source_len": 50
+              },
+              "start": 50,
+              "end": 50
+            },
+            "replacement": "\n\nproof proof_lemma_body() {\n    // TODO: prove proof `lemma` awaits typed proof discharge\n}\n",
+            "applicability": "has_placeholders"
+          },
+          "command": {
+            "id": "arcweft.verify.generateProofStub",
+            "title": "Generate proof stub"
+          }
+        },
+        {
+          "id": "action.show_obligation",
+          "label": "Show proof obligation",
+          "kind": "show_obligation",
+          "command": {
+            "id": "arcweft.verify.showObligation",
+            "title": "Show proof obligation"
+          }
+        }
+      ]
+    },
+    {
+      "id": "verify.pending.proof.dependent.body",
+      "severity": "error",
+      "message": "proof `dependent` awaits typed proof discharge",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+          "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+          "source_len": 50
+        },
+        "start": 19,
+        "end": 49
+      },
+      "obligation": "proof.dependent.body",
+      "related_ids": [
+        "dependent"
+      ],
+      "actions": [
+        {
+          "id": "action.generate_proof_stub",
+          "label": "Generate proof stub",
+          "kind": "generate_proof_stub",
+          "source_edit": {
+            "span": {
+              "source": {
+                "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+                "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+                "source_len": 50
+              },
+              "start": 50,
+              "end": 50
+            },
+            "replacement": "\n\nproof proof_dependent_body() {\n    // TODO: prove proof `dependent` awaits typed proof discharge\n}\n",
+            "applicability": "has_placeholders"
+          },
+          "command": {
+            "id": "arcweft.verify.generateProofStub",
+            "title": "Generate proof stub"
+          }
+        },
+        {
+          "id": "action.show_obligation",
+          "label": "Show proof obligation",
+          "kind": "show_obligation",
+          "command": {
+            "id": "arcweft.verify.showObligation",
+            "title": "Show proof obligation"
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "id": "proof.lemma.body",
+      "kind": "proof_body",
+      "message": "proof `lemma` awaits typed proof discharge",
+      "subject": "lemma",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+          "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+          "source_len": 50
+        },
+        "start": 0,
+        "end": 18
+      },
+      "insertion_target": {
+        "span": {
+          "source": {
+            "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+            "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+            "source_len": 50
+          },
+          "start": 50,
+          "end": 50
+        },
+        "policy": {
+          "policy": "top_level_proof_item"
+        }
+      },
+      "discharge": {
+        "kind": "missing"
+      },
+      "smt": null
+    },
+    {
+      "id": "proof.dependent.body",
+      "kind": "proof_body",
+      "message": "proof `dependent` awaits typed proof discharge",
+      "subject": "dependent",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+          "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+          "source_len": 50
+        },
+        "start": 19,
+        "end": 49
+      },
+      "insertion_target": {
+        "span": {
+          "source": {
+            "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+            "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+            "source_len": 50
+          },
+          "start": 50,
+          "end": 50
+        },
+        "policy": {
+          "policy": "top_level_proof_item"
+        }
+      },
+      "discharge": {
+        "kind": "missing"
+      },
+      "smt": null
+    }
+  ],
+  "solver_checks": [],
+  "proofs": [
+    {
+      "id": "lemma",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+          "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+          "source_len": 50
+        },
+        "start": 0,
+        "end": 18
+      },
+      "trust": {
+        "kind": "pending"
+      }
+    },
+    {
+      "id": "dependent",
+      "source": {
+        "source": {
+          "id": "arcweft-project://task-final-r3409-callable-proof-diagnostic-known-local-call/task-final-r3409-callable-proof-diagnostic-known-local-call.arcw",
+          "revision": "eba6e6035dae5e3e9a93e4e90add1b25fe0de9b441a064c18df3d186b096029d",
+          "source_len": 50
+        },
+        "start": 19,
+        "end": 49
+      },
+      "trust": {
+        "kind": "pending"
+      }
+    }
+  ],
+  "unsafe_audits": []
+}

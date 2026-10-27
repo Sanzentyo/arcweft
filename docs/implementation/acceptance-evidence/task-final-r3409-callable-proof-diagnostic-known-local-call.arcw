@@ -1,0 +1,2 @@
+proof lemma() = ()
+proof dependent() { lemma(); }

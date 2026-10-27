@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-28。公開source 705b3ff1d6df01f153803eed3d2e050f3273e2b3。最終入力の全55逆依存R3405は9,097実行／9,049 PASS／48 FAIL、新規失敗0。loop制御とHIR source frame修復は対象条件で受入済み。workspace check／Clippy、owner doctest 80件、Core／player-web wasm checkもPASS。残るCLI 48件と他の未受入境界は各行へ区別する。
+確認日: 2026-10-28。製品source 705b3ff1d6df01f153803eed3d2e050f3273e2b3の全55逆依存R3405は9,097実行／9,049 PASS／48 FAIL、新規失敗0。loop制御とHIR source frame修復は受入・公開済み。後続R3411でcallable proofのCLI fixture 2件がPASSした。残る46識別子は集合差分であり、全CLIを46 FAILとして再実行した結果ではない。
 元のtracked WIP 14件とuntracked実ファイル6件を保持したcheckoutで確認した。公開済み入力の検証結果を、保持WIPを含むcheckout全体の合格へ拡張しない。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
@@ -51,9 +51,10 @@
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、受理済みProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗。checkpointに元executable leaseを保持させ、復元先を同leaseのadmitted Productに限定し、Product／activation／codegenの呼出側も同じadmissionへ移行。R2535の新規Core caseはhandleを取り出して破棄した候補から復元でき、同内容の別leaseは元fiberを保って拒否。private checkpointは非Serde。公開wire DTOのJSON／cleanup検証とR2531 compile-fail 2件PASS、detached Bool入力rollbackを維持。公開saveの全資源境界の包括受入は別。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
-| CLI・全 consumer の統合受入 | **最新R3405はCLI 643 PASS／48 FAIL。新規失敗0** | 全691件の実行結果。loop value bindingとparallel benchは元の条件でPASSし、残件へ戻さない。parallel runは12 step／budget 1でpath生成Host call 3件だけが完了し、read 0／submitted 0・runningのまま。これを3件完了へ期待値変更せず、元のread 3・return done等を未達として保持する。今回48件はR3391のCLI失敗集合と同じであり、以前の集合差分49件を転記した計数ではない。[最新全終端・必須集合・比較](acceptance-evidence/task-loop-source-frame-reverse-acceptance.json)。 |
+| CLI・全 consumer の統合受入 | **最新全体R3405は643 PASS／48 FAIL。後続proof 2件PASS、残る46件は集合差分** | R3411は修復した2件の2 PASS／478対象外、2.321秒。現行callable proofへfixtureを揃え、未証明bodyのobligationと不明callの型検査拒否・正確なspanを確認した。新しい全CLI 46 FAIL runとはしない。loop value bindingとparallel benchのPASSも維持する。parallel runは元の12 step／budget 1でpath生成Host call 3件だけが完了し、read 0／submitted 0・runningのまま。元のread 3・return done等は未達として保持する。[今回2件の検証](acceptance-evidence/task-cli-callable-proof-acceptance.json)、[残る識別子](acceptance-evidence/task-cli-remaining-failures-after-proof-fixtures.json)、[最新全体原本](acceptance-evidence/task-loop-source-frame-reverse-acceptance.json)。 |
 | LSP signature stampのcache／publication拒否 | **fixture準備順を修復・LSP全223件PASS** | disk-backed alternate environment 6種をrequest admissionより前へ構築する。prepared mutationを同じ型付き代数で保持し、request中はauthority差し替えと検査を行う。19 mutation×cache-hit／post-computeの38組、正確なstale型／cache不変／publication拒否のassertionと10秒deadlineを維持。R3129は223／223 PASS、R3130 Clippyは警告あり・終了0、各3,987入力の前後差分0。[修復と限定影響](acceptance-evidence/task-signature-stamp-staging-acceptance.json)。 |
 | その他のTier 2／Native-Web capture parity | **最終受入未確認** | HIR Tier 2の8件は該当行の範囲。他ownerの本番上限・停止復帰と、Native/Webのcapture・実画像parity全体を満たす最終実行は確認できていない。既存の個別検証は履歴に保持し、未実行を失敗とはしない。 |
+| callable proofの現行surface／CLI拒否 | **現行文法へ同期・対象2件で検証済み。形式証明の完了とはしない** | 固定引数group一つ、headerのrequires／ensures、body内の通常proof callを使う。不明callはcheckerで拒否し、well-typed bodyも現在のverifierではmissing proof_bodyとして保持する。旧body-local use／check／assumeの文法・説明を現行仕様から除去し、CLI fixtureも同じauthorityへ揃えた。R3411は2／2 PASS、R3412の資料例はdevで6件受理・未証明obligation 6件、R3413対象Clippy終了0。[現行契約](../01-language/proofs-and-unsafe-audits.md)、[実測と移行理由](acceptance-evidence/task-cli-callable-proof-acceptance.json)。 |
 
 ## 横断検証の適用範囲
 

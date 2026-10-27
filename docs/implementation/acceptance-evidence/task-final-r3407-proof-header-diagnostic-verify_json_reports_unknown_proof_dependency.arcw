@@ -1,0 +1,5 @@
+
+proof missing_dependency() {
+    use @proof.missing
+    check no_lifetime_below(LineSummary, 'flow)
+}

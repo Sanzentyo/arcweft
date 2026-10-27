@@ -1,0 +1,1 @@
+proof missing_dependency() { missing(); }

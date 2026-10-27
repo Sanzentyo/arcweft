@@ -1,0 +1,4 @@
+
+proof requires_only() {
+    requires summary.lifetime >= 'flow
+}

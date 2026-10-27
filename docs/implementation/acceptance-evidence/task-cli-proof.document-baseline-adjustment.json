@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "base": "1967910a993476a25af376daca84525762c5beef",
+  "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+  "oldWorkingSha256": "6e378301fce67990eef9113eeb45f6adf9804c51fccbaeb4a216dc6a00786899",
+  "newWorkingSha256": "8e53c36a740962d78c846189d5ce3bcbdcd47d5cf33ff5761217d1dedf358e75",
+  "codeOnlyBlob": "8f580aa0cf5eede5469c3ec83d35266913fa24e1",
+  "workingBlob": "d55c9413c93554c5788b8a4b1e645b68f5814b13",
+  "originalWipPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "expectedResidualWipPatchSha256": "c2d8505dd38877f745816d0a4fc5234e1ac29e7ce0064505fe95d6377a64fd15",
+  "originalUserPatchPreserved": true,
+  "heldCanonicalBlobDrift": 0,
+  "reason": "Only owned fixture code changed. The exact original user patch applied to the new canonical code yields this working blob; update the documentation read-only hash guard for that owned overlap."
+}
