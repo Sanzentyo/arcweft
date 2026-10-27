@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3396-loop-wasm-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-player-web",
+    "--target",
+    "wasm32-unknown-unknown",
+    "--locked"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T21:25:17.0475202Z"
+}

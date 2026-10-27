@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "base": "705b3ff1d6df01f153803eed3d2e050f3273e2b3",
+  "command": [
+    "test",
+    "--doc",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-lang-syntax",
+    "-p",
+    "arcweft-lang-hir",
+    "-p",
+    "arcweft-lang-sema",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-lang-jit-cranelift",
+    "-p",
+    "arcweft-runtime-accelerator",
+    "-p",
+    "arcweft-cli",
+    "-p",
+    "arcweft-compiler",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3395-loop-owner-doctests.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-27T21:22:21.1953346Z",
+  "finishedAt": "2026-10-27T21:23:40.7779078Z"
+}

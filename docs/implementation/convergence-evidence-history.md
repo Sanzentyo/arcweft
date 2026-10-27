@@ -12957,3 +12957,21 @@ Supersedes: 現状一覧の「全55 catalog再確認中」「元CLI loop case再
 | CLI parallelの計数契約 | **R3367：bench PASS／run FAIL、R3368 Clippy終了0** | 元のworkload・steps・budget・batch・copy／captureを維持し、scheduled件数とdirect／total件数の意味を明確にした。3,998入力・2 executable・catalog集合の差分0。ClippyはCLI check target・all feature・locked、警告6,106メッセージ。既存User patch全14件を新codeへ適用したGit treeと実working blobの差分0を確認し、同file内のsystem-info変更はstageしない。[実測・部分公開の証明](acceptance-evidence/task-cli-parallel-counter-acceptance.json)。
 
 [全55終端・比較原本](acceptance-evidence/task-labelled-loop-reverse-acceptance.json)、[HIR frame修復の対象検証](acceptance-evidence/task-loop-source-frame-acceptance.json)。
+
+## ラベル付きloop・HIR投影修復の最終受入 -- 2026-10-28
+
+実装sourceは705b3ff1d6df01f153803eed3d2e050f3273e2b3。R3404全55 catalogは終了0。R3405は9,097実行／9,049 PASS／48 FAIL／47 ignored、1,017.466秒、nextest終了100。3,998入力、228 harness＋4 subprocess executable、catalog／終端／byte差分0。失敗48件はすべて既存CLI識別子で、R3391のHIR lowering abort 1件が回復し、新規失敗識別子0。元の深いSema caseは2.068秒でPASSし、Sema全1,357／1,357、HIR全962／962がPASSした。
+
+Core 2,120、Compiler 634、Syntax 731、runtime-plan 161、LSP 223も全PASS。Generic 151、既存必須17、capture 8、新loop 14件はすべてPASS。元の12-step CLI loop caseとparallel benchはPASSを維持する。Native実行、decoded VMの型付き戻り値、AWBC Productの各step private rollbackという検証範囲を維持し、Native Forのprivate every-step検証へ読み替えない。元のstack・32階層・33 selected call・budget・workload・assertion・batch・fusion・copy／capture条件は弱めない。
+
+修復後入力のR3406 workspace check --all-targets --all-features --lockedは終了0（warningメッセージ268）。R3394 workspace Clippyの同matrixも終了0（warningメッセージ8,685）。R3395は影響9 packageのdoctestを実行し、Core 76・Sema 2・Syntax 2の計80／80 PASS、他6 packageは実ケース0、ignored 0。R3396はCore／player-webのdefault feature・wasm32-unknown-unknown・locked checkで終了0（warningメッセージ169）。各3,998入力の差分0。警告メッセージ数を独立したlint種類数や新しい不具合件数とはしない。
+
+ループ制御とHIR source frame修復を、この対象条件で受入・公開済みとする。全体goal、Native公開save、別のPresentation ABI、画像parityなどへ受入を広げない。CLI全691件は643 PASS／48 FAILで、run parallelは元の12 step／budget 1でpath生成Host call 3件だけが完了し、read 0／submitted 0・runningのままだった。元のread 3・return done等を満たす修復は残る。成功済みのbenchやloop bindingを残件へ戻さない。
+
+Supersedes: 現状一覧のloop修復の最終横断未完了、HIR stack修復の対象3件だけという状態を最終終端・matrixで閉じる。前のR3391 49失敗とR3403対象3件、各チェックの途中状態は当時の証拠として保持する。Generic Matchの受入850534b9e9bc8c8872f6528dd00050a5e6e7699e／公開f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2は維持し、全体goal未完了を理由に未完了へ戻さない。
+
+元tracked WIP 14件・untracked実ファイル6件とheld patch SHA 89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31を保持した。生成物の移動・コピー、再cargo clean、jobs指定は行わない。private投影2 fileの既存所有境界・Cargo graphを維持し、R3384 scanner blocking 0と今回の責務・実測reviewを適用した。
+
+Scope訂正: Source traverse構築cutの末尾にあったcallback／parallelの「未受入」は、後続の実行受入と矛盾する現在形だったため、「その構築cutの証拠に含まれない」へ訂正し、後続のSource parallel行へ集約した。carrier／capture cutに残ったCLI 50失敗も当時の履歴として区別し、最新48件は統合行だけで管理する。元の検証結果・公開SHAは各原本と既存履歴へ保持する。
+
+[最終受入・終端・識別子比較](acceptance-evidence/task-loop-source-frame-reverse-acceptance.json)、[check／Clippy／doctest／wasm原本](acceptance-evidence/task-loop-source-frame-checks.json)。

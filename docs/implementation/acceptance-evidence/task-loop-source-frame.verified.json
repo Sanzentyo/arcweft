@@ -1,0 +1,219 @@
+{
+  "version": 1,
+  "commit": "705b3ff1d6df01f153803eed3d2e050f3273e2b3",
+  "parent": "36d51d4143fdae58b0dfbd5cd07399b738319f11",
+  "tree": "197906937e30c406e0bfe7dcbddd329fb2404787",
+  "remote": "705b3ff1d6df01f153803eed3d2e050f3273e2b3",
+  "paths": [
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest.rs",
+      "blob": "125b55d446ca65fc6e3e6b42d57f5845f798230e"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/dialogue_projection.rs",
+      "blob": "b4ae8828ea8d15c0c12b82abe60904106e5aa0ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3390-program-fanout-awbc-check.input-audit.json",
+      "blob": "42b9af1f8ab9cc8e913cc74a930e7aeab0eed74e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3390-program-fanout-awbc-check.json",
+      "blob": "2a212e4d3148eed74349d31141b4b4c3a62b282d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3390-program-fanout-awbc-check.log",
+      "blob": "30b2b26a01f6f3c01dd03ec1856a28230af14bde"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3391-program-fanout-runtime.binaries-before.json",
+      "blob": "afac8440ae5c52d4264f384ae5693a2636a06252"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3391-program-fanout-runtime.cases.json",
+      "blob": "fb54a674cdcdc67f79a7874a2b8c25386822b519"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3391-program-fanout-runtime.json",
+      "blob": "97ed18ea64b0b254d6eb780720d75278fb90dd3d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3391-program-fanout-runtime.log",
+      "blob": "99cd1ba4b4953a1242feee29063a750084a05498"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3391-program-fanout-runtime.terminal-audit.json",
+      "blob": "024577a989966183d3cd86cc6f113343e5ddd650"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3392-workspace-check.input-audit.json",
+      "blob": "1769a7081cdba808f39cd3c348c50abda8161fc3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3392-workspace-check.json",
+      "blob": "e04adad16ae7fb0fde8ceb1aa7bf4771283ef595"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3392-workspace-check.log",
+      "blob": "a0511bba9c00d94a4a1b150817da6e5ebfd1ec7d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3393-labelled-loop-cli-diagnostic.arcw",
+      "blob": "fe38b30926a350f774220524f08ac986bca33e34"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3393-labelled-loop-cli-diagnostic.json",
+      "blob": "8511be76fdfa3b6ea8dfd2f2560e6ad9675e8d9f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3393-labelled-loop-cli-diagnostic.stderr.log",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3393-labelled-loop-cli-diagnostic.stdout.json",
+      "blob": "36fad4a7afc23149746c2c5ff8d8fa72a68b6d6e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3397-deep-control-diagnostic.json",
+      "blob": "4046dca5920fa5b522e371537ed769dfd578f727"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3397-deep-control-diagnostic.log",
+      "blob": "af7399381cff86f28751bfba36601113f46bffc1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3398-deep-control-debugger.json",
+      "blob": "45ff19c8023c6f79d478a305185fc4588f8a8125"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3398-deep-control-debugger.log",
+      "blob": "bea13c5231a245b075c29ea9afee861e9f9a064a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3399-deep-control-debugger.json",
+      "blob": "2b1683f4076e4da88a3a7d5c6d950872fe8208e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3399-deep-control-debugger.log",
+      "blob": "9135b74bd102b2eed40b4f9637d768695a09daf3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3400-deep-control-debugger.json",
+      "blob": "d6e8e29e667232e0173b60ff2feb369ecf363517"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3400-deep-control-debugger.log",
+      "blob": "c57652c55c4b1ba2531d9b0925a9b67e2ab488b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3401-deep-control-debugger.json",
+      "blob": "b6b75a90a71e4662cf229eb1680294ccb084217e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3401-deep-control-debugger.log",
+      "blob": "3d30c29010d7b5870388d896cfabf4373eb00ec6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3402-program-fanout-awbc-check.input-audit.json",
+      "blob": "f234f1518ed88bf361f875201739bc1709a5ba84"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3402-program-fanout-awbc-check.json",
+      "blob": "f8bb2dd820bc84e849f089ab02598073fbfa3732"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3402-program-fanout-awbc-check.log",
+      "blob": "03f230306d807583d53a2db0332f62eb1170a153"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3403-program-fanout-runtime.binaries-before.json",
+      "blob": "6ac22bba03a1e6c941f47e08672297e3036ad77b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3403-program-fanout-runtime.json",
+      "blob": "f603162b822b054b3b06e272027977488259fa92"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3403-program-fanout-runtime.log",
+      "blob": "5839b97f6932e1674810c27b0800ab35b34f41d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3403-program-fanout-runtime.terminal-audit.json",
+      "blob": "a4f508ae85a1005ed5c092a0e748aadbf841f603"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3406-workspace-check.input-audit.json",
+      "blob": "c0a58d59b332920c9a74933c8c03bfb39fe66753"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3406-workspace-check.json",
+      "blob": "8398f49d2e063dceb5f0b12b0c0cbdd0a470598c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3406-workspace-check.log",
+      "blob": "8109a483b9fd3df084577a166b69012bf5751d74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-labelled-loop-reverse-acceptance.json",
+      "blob": "75962bc1ce1574ada01e6494ea0dd1ed65234c47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-labelled-loop-reverse-case-audit.json",
+      "blob": "d80cb1c1be5bea9d3cdc352489d501c4e138258a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-loop-context-owner.verified.json",
+      "blob": "3663a0173791efb635f8d9c013c8bb660e29db66"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-loop-grammar-contract.verified.json",
+      "blob": "f52cb22f33291a5d8a81cf0096e72572a713dada"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-loop-source-frame-acceptance.json",
+      "blob": "7d1be7939179d0dafc1005fe0cc316f6234895d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3390.inventory.json",
+      "blob": "166e0ed697101bcb2920e8280dc2dea0ebc58f3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3390.source-freeze.json",
+      "blob": "e838608ee1b926fe19dd955903393b358c9f0b4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3391.source-freeze.json",
+      "blob": "e838608ee1b926fe19dd955903393b358c9f0b4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3392.source-freeze.json",
+      "blob": "cc04674e118baa7ce3653f25ee11fc292d2f13c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3402.source-freeze.json",
+      "blob": "b33966032d8e5af826c4f9126d1cbe91dc1c7b01"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3403.source-freeze.json",
+      "blob": "b33966032d8e5af826c4f9126d1cbe91dc1c7b01"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3406.source-freeze.json",
+      "blob": "b33966032d8e5af826c4f9126d1cbe91dc1c7b01"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "a97ed8a60fce6de0f39e48219d5ebc914e49645f"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "29d10adae34c62ddacb2e67cfd78f1a69990d81a"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "2fb2ebf4dd2f35d7b88cd52f2c72c2eefb13443efe5b7458e5515bd9deb264b6",
+  "heldPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-27T21:22:05.2813484Z"
+}

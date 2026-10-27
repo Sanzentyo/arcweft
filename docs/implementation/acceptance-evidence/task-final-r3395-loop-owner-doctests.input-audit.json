@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "run": "task-final-r3395-loop-owner-doctests",
+  "actualExitCode": 0,
+  "scope": [
+    "test",
+    "--doc",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-lang-syntax",
+    "-p",
+    "arcweft-lang-hir",
+    "-p",
+    "arcweft-lang-sema",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-lang-jit-cranelift",
+    "-p",
+    "arcweft-runtime-accelerator",
+    "-p",
+    "arcweft-cli",
+    "-p",
+    "arcweft-compiler",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T21:23:41.5561758Z"
+}

@@ -1,0 +1,208 @@
+{
+  "version": 1,
+  "publishedSource": "705b3ff1d6df01f153803eed3d2e050f3273e2b3",
+  "workspaceCheck": {
+    "sourceInputs": 3998,
+    "exitCode": 0,
+    "sourceDrift": 0,
+    "allFeatures": true,
+    "warningMessages": 268,
+    "allTargets": true,
+    "run": "R3406",
+    "locked": true
+  },
+  "workspaceClippy": {
+    "sourceInputs": 3998,
+    "exitCode": 0,
+    "sourceDrift": 0,
+    "allFeatures": true,
+    "warningMessages": 8685,
+    "allTargets": true,
+    "run": "R3394",
+    "locked": true
+  },
+  "ownerDoctests": {
+    "sourceInputs": 3998,
+    "exitCode": 0,
+    "ignored": 0,
+    "failed": 0,
+    "sourceDrift": 0,
+    "passed": 80,
+    "run": "R3395",
+    "packages": [
+      {
+        "package": "arcweft_cli",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "arcweft_compiler",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "arcweft_core",
+        "passed": 76,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "arcweft_lang_hir",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "arcweft_lang_jit_cranelift",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "arcweft_lang_sema",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "arcweft_lang_syntax",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "arcweft_runtime_accelerator",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "arcweft_runtime_plan",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  "wasm": {
+    "warningMessages": 169,
+    "sourceDrift": 0,
+    "run": "R3396",
+    "exitCode": 0,
+    "sourceInputs": 3998,
+    "target": "wasm32-unknown-unknown",
+    "locked": true,
+    "packages": [
+      "arcweft-core",
+      "arcweft-player-web"
+    ],
+    "features": "default"
+  },
+  "reverseCatalog": {
+    "sourceInputs": 3998,
+    "exitCode": 0,
+    "sourceDrift": 0,
+    "allFeatures": true,
+    "allTargets": true,
+    "run": "R3404",
+    "locked": true,
+    "packages": 55
+  },
+  "scope": "Matrix receipts only. R3405 runtime is recorded separately after its terminal audit.",
+  "originalTrackedWip": 14,
+  "originalUntrackedWip": 6,
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3394-workspace-clippy.input-audit.json",
+      "bytes": 311,
+      "sha256": "691ba70e7ada84239776d31b0f54952fdd4c202255920653d5bc00b91f05f1cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3394-workspace-clippy.json",
+      "bytes": 443,
+      "sha256": "d373c78f4cf91f03ad837c96131343b1fedfcf67aee1017cc2ebc1418976715d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3394-workspace-clippy.log",
+      "bytes": 6712475,
+      "sha256": "4521cfcfb7af152bffef561563dae67a02ff9ac276a9ce1f1b9889b4c42f662e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3395-loop-owner-doctests.input-audit.json",
+      "bytes": 628,
+      "sha256": "a95600ae9810bf9e7066473e26973aa780d98fd3acd1c8efb4bb35ab2e4e3a5a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3395-loop-owner-doctests.json",
+      "bytes": 760,
+      "sha256": "02e3a82a5571619e76295da44e98e6a52091009093c607d09572ff95d0ae02fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3395-loop-owner-doctests.log",
+      "bytes": 98996,
+      "sha256": "ad9bfabeba449ece63d15f25999798b42c1d7f9d6fa3a851ad825e267ecaf99b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3396-loop-wasm-check.input-audit.json",
+      "bytes": 362,
+      "sha256": "8f524921f7575a678fe7bfa0a75590dd591ec07cfc4502193a6a0076d706f653"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3396-loop-wasm-check.json",
+      "bytes": 494,
+      "sha256": "e15ec512bc703fb7eddaa5e1331f3095164c2165dda5f6a1454dfedbf314c007"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3396-loop-wasm-check.log",
+      "bytes": 73549,
+      "sha256": "3cbf0f212f9256a68d4c7e59b6748433fab1171345f0141b753e4aaf05422199"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3404-program-fanout-awbc-check.input-audit.json",
+      "bytes": 2461,
+      "sha256": "523bdd8dcf42e02208fc8c2f83b6f166e223814cf647b2810da9753142824009"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3404-program-fanout-awbc-check.json",
+      "bytes": 2593,
+      "sha256": "285beef2927d2b4a50a9d35368946fc36fecefaf40cdc2c060f378242214682b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3404-program-fanout-awbc-check.log",
+      "bytes": 1663382,
+      "sha256": "a8651541162834418613ea87a911a96dbce8311be6079362dfd322419d6d7213"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-loop-source-frame.verified.json",
+      "bytes": 9568,
+      "sha256": "890ef211ad0e16205892c071e2485404c86bdc213f065c60735a29517ed8eb30"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3394.source-freeze.json",
+      "bytes": 781689,
+      "sha256": "3a227b188f6dcd5342d60c5e73f0f11f66655ba5c476f897927b57f15029cb95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3395.source-freeze.json",
+      "bytes": 781689,
+      "sha256": "53827fa1803d6e97a8229791b994862b96ce1de94011abc6cc5e1e1dc62e8f57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3396.source-freeze.json",
+      "bytes": 781689,
+      "sha256": "53827fa1803d6e97a8229791b994862b96ce1de94011abc6cc5e1e1dc62e8f57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3404.inventory.json",
+      "bytes": 2297995,
+      "sha256": "f95ffa658e10a702a955413d72864c110d1edc23bf55b0b950ca219ac5c45712"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3404.source-freeze.json",
+      "bytes": 781522,
+      "sha256": "503c54d9dadda3fdb4841f9d7c7a00fae1012b146b5c4c19b23a22bcf7149fe2"
+    }
+  ]
+}
