@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "commit": "36d51d4143fdae58b0dfbd5cd07399b738319f11",
+  "parent": "7f8e6d77caf20ef505c086d1e0772a45d66e3a78",
+  "tree": "5b4ec91938e3cfcf085f4c5a38c05c060168ca6f",
+  "remote": "36d51d4143fdae58b0dfbd5cd07399b738319f11",
+  "paths": [
+    {
+      "path": "docs/01-language/expression-control-flow.md",
+      "blob": "d81df62cead8bc244236f784c3580a73e3cad0f3"
+    },
+    {
+      "path": "docs/01-language/grammar.md",
+      "blob": "0cca3219d327c33fd4ac049129cc06751f5b68a6"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "10853f3b0e944b7ac76907798b86e5ecfa69eb3eabb524654f8a5d179747f280",
+  "heldPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-27T20:47:56.9531153Z"
+}

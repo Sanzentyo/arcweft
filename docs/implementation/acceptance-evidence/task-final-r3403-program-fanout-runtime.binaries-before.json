@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "arcweft-lang-hir",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_hir-8a644ef035569299.exe",
+    "sha256": "ad3cb1a965c93b240e2e144141f35e5b7a59814d86f57980510e3e565050f4b9"
+  },
+  {
+    "binary": "arcweft-lang-sema",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-71f74520dae64c37.exe",
+    "sha256": "5db6b4494f6f27ed18aaa57212fb7e75f3fd15e2925a2ba8e9e680d450c4c1fc"
+  }
+]

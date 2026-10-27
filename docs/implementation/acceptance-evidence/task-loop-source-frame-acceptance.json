@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "base": "36d51d4143fdae58b0dfbd5cd07399b738319f11",
+  "status": "Targeted regression passed; final cross-consumer checks pending",
+  "files": [
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest.rs",
+      "owner": "arcweft-lang-hir",
+      "classification": "production",
+      "bytes": 62449,
+      "physicalLoc": 1433,
+      "baselineLoc": 1519,
+      "netGrowth": -86,
+      "embeddedTestLoc": 0,
+      "sha256": "37bc6d2b169a3d214108fdfccc63700322b550d3781b31d5f6376f9a327fc121",
+      "workspaceDirectFanIn": 11,
+      "resolvedDirectFanOut": 9,
+      "responsibilities": "Expression source manifests, generic component roles, recovery and freeze validation"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/dialogue_projection.rs",
+      "owner": "arcweft-lang-hir",
+      "classification": "production",
+      "bytes": 19514,
+      "physicalLoc": 480,
+      "baselineLoc": 361,
+      "netGrowth": 119,
+      "embeddedTestLoc": 0,
+      "sha256": "6d9c5f77d24a58f750e267dad5cf9f0e0ecc12c515411173702b37a10b0f6a6a",
+      "workspaceDirectFanIn": 11,
+      "resolvedDirectFanOut": 9,
+      "responsibilities": "Dialogue/content payload projection, line-plan source matching and application target component sites"
+    }
+  ],
+  "productionChange": "Move application-only source collection to existing dialogue projection owner; generic expression collection keeps its own frame",
+  "ownership": "One source role/error matrix is retained. No new public API, Cargo edge, parallel resolver, AST reconstruction, added clone or I/O boundary",
+  "oldFailure": "R3391 Sema test aborts during HIR lowering; same source case was PASS in R3347",
+  "debugger": "R3400/R3401 on exact R3391 executable; failed frame probe 28608 bytes; no post-fix numeric stack-size claim",
+  "targetedRun": {
+    "sourceDrift": 0,
+    "excluded": 2293,
+    "run": "R3403",
+    "failed": 0,
+    "executableDrift": 0,
+    "passed": 3,
+    "seconds": 0.518,
+    "executed": 3,
+    "catalogDrift": 0,
+    "sourceInputs": 3998,
+    "executables": 2
+  },
+  "unchanged": "Original 32-depth inputs, branch directions, scope/name/tail assertions, Sema Never type and 33 selected-call assertions; no stack/budget/feature override added",
+  "wholeScope": "R3391 full55 evidence is pre-repair and is not claimed for the new two-file bytes",
+  "pending": [
+    "workspace Clippy",
+    "owner doctests",
+    "default core/player-web wasm check",
+    "full55 final-input nextest"
+  ],
+  "originalTrackedWip": 14,
+  "originalUntrackedWip": 6,
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3402-program-fanout-awbc-check.input-audit.json",
+      "bytes": 817,
+      "sha256": "088b2912ecb4b78a1276ec0b26c8c74351e15841eac070658d8ff1d7f1d68c90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3402-program-fanout-awbc-check.json",
+      "bytes": 949,
+      "sha256": "8d09983ffb9d2f720354ecc54768f4b7f5cd2d718420417973ee3948b6e2c3f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3402-program-fanout-awbc-check.log",
+      "bytes": 522076,
+      "sha256": "772b3ff0af21029ba310afbdfcc0e3ab853604b645f5694cabe30ad017d5ba23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3402.source-freeze.json",
+      "bytes": 781689,
+      "sha256": "3a227b188f6dcd5342d60c5e73f0f11f66655ba5c476f897927b57f15029cb95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3403-program-fanout-runtime.binaries-before.json",
+      "bytes": 449,
+      "sha256": "d7ad03c6774ddfbf9e16b869a729afb82a584ab8284abdf2541649346cb1047f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3403-program-fanout-runtime.json",
+      "bytes": 1038,
+      "sha256": "5156b4c0f3084e6a57284e3799c41c8842623da2c5068440c4e6b0b1ad8db467"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3403-program-fanout-runtime.log",
+      "bytes": 791662,
+      "sha256": "8eeb22572107ba494e2b4df0070b015b47c768c1d1a60b7e05ddfdf9ba20cdc7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3403-program-fanout-runtime.terminal-audit.json",
+      "bytes": 614,
+      "sha256": "2da9be78015a31fa85a0fadf7036c847e2ccf3e2127b3c666b8c48cef1783476"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3403.source-freeze.json",
+      "bytes": 781689,
+      "sha256": "3a227b188f6dcd5342d60c5e73f0f11f66655ba5c476f897927b57f15029cb95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3406-workspace-check.input-audit.json",
+      "bytes": 309,
+      "sha256": "05b8cd8134956d949018cd6ed9fba7ca42a8c80b6fa1487c4f79ab69ba69b755"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3406-workspace-check.json",
+      "bytes": 441,
+      "sha256": "6e0e0baebefd6dfe23efa894f2a92adfe96848ef31956c8430e22f3435b66fe5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3406-workspace-check.log",
+      "bytes": 106397,
+      "sha256": "972180183b23680bb46e56e5ca7b56e7258f7247a63048dad98d5dbb74083d6d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3406.source-freeze.json",
+      "bytes": 781689,
+      "sha256": "3a227b188f6dcd5342d60c5e73f0f11f66655ba5c476f897927b57f15029cb95"
+    }
+  ],
+  "structuralReview": "The generic manifest remains a cohesive 1433-LOC owner; application-specific decoding belongs beside existing dialogue payload/source checks in the 480-LOC owner. No file grows by 300 LOC. Cargo edges and public boundaries are unchanged; resolved graph and prior scanner evidence are reused.",
+  "workspaceCheck": {
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "warningMessages": 268,
+    "locked": true,
+    "allTargets": true,
+    "exitCode": 0,
+    "allFeatures": true,
+    "run": "R3406"
+  }
+}

@@ -1,11 +1,21 @@
 //! Exact dialogue-content payload projection shared by source-backed and E34 expressions.
 
+use std::collections::BTreeMap;
+
 use arcweft_lang_syntax::attachment::{AttachedDialogueLinePlanItem, AttachedExpressionNode};
 use arcweft_lang_syntax::expressions::{
-    SyntaxAttachedContentApplicationProjection, SyntaxDialogueActionArgumentProjection,
-    SyntaxDialogueContentIssue, SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
+    ExpressionComponentRole, ExpressionProjection, SyntaxAttachedContentApplicationProjection,
+    SyntaxCallArgumentPart, SyntaxDialogueActionArgumentProjection, SyntaxDialogueContentIssue,
+    SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
     SyntaxDialoguePointActionIdentity, SyntaxDialoguePointActionPayload,
     SyntaxDialoguePointActionProjection, SyntaxLineBreakKind,
+};
+use arcweft_lang_syntax::incremental::ParsedSource;
+use arcweft_source::SourceDocumentIdentity;
+
+use super::{
+    HirCallArgumentSourcePart, HirExprSourceRole, HirSourceCommitInvariantError,
+    expression_component_role, insert_expression_site, validate_component_source,
 };
 
 use crate::arena::ArenaSnapshot;
@@ -14,11 +24,120 @@ use crate::dialogue_application::{
     HirAttachedContentBodyPresence, HirDialogueContentError, HirDialogueNodeKind,
     HirDialoguePointActionIdentity, HirLinePlanItem,
 };
-use crate::identity::{ExprId, ScopeId, StmtId};
+use crate::identity::{ExprId, ScopeId, StmtId, SyntheticOwner};
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::slot::SlotSnapshot;
 use crate::source_index::{HirSourceSite, block_projection::source_owner_matches};
 use crate::stmt::HirStmt;
+
+#[allow(
+    clippy::result_large_err,
+    reason = "application source projection retains complete typed source errors"
+)]
+pub(super) fn insert_application_component_sites(
+    source: &SourceDocumentIdentity,
+    parsed: &ParsedSource,
+    owner: ExprId,
+    application: &HirAttachedContentApplication,
+    attached: &AttachedExpressionNode,
+    sites: &mut BTreeMap<HirExprSourceRole, HirSourceSite>,
+) -> Result<(), HirSourceCommitInvariantError> {
+    // A ContentCall owns the invocation payload directly. When its target is
+    // authored as a Call, that target has no separate HIR Call owner, so the
+    // target Call's components are re-owned by the attached-content owner.
+    if matches!(
+        application.family(),
+        HirAttachedContentApplicationFamily::ContentCall { .. }
+    ) && let Some(target) = attached.children().first()
+        && let Ok(Some(target)) = target.authored_semantic()
+        && matches!(target.projection(), ExpressionProjection::Call(_))
+    {
+        for component in target.components() {
+            validate_component_source(source, component.source_span().source())?;
+            let Some(role) = expression_component_role(target.projection(), component.role())
+            else {
+                continue;
+            };
+            let site =
+                HirSourceSite::from_attached_span(parsed.document(), component.source_span())?;
+            insert_expression_site(sites, owner, role, site)?;
+        }
+    }
+
+    if let HirAttachedContentApplicationFamily::DialogueLine { coordinates, .. } =
+        application.family()
+        && !coordinates.is_empty()
+    {
+        let target = attached
+            .children()
+            .first()
+            .filter(|target| target.ordinal() == 0)
+            .ok_or(
+                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                    owner: SyntheticOwner::Expr(owner),
+                },
+            )?;
+        let target = target
+            .authored_semantic()
+            .map_err(
+                |error| HirSourceCommitInvariantError::AttachedSyntaxAccess {
+                    owner: SyntheticOwner::Expr(owner),
+                    error,
+                },
+            )?
+            .ok_or(
+                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                    owner: SyntheticOwner::Expr(owner),
+                },
+            )?;
+        if !matches!(target.projection(), ExpressionProjection::Call(_)) {
+            return Err(
+                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                    owner: SyntheticOwner::Expr(owner),
+                },
+            );
+        }
+        for coordinate in coordinates {
+            for (syntax_part, hir_part) in [
+                (
+                    SyntaxCallArgumentPart::Whole,
+                    HirCallArgumentSourcePart::Whole,
+                ),
+                (
+                    SyntaxCallArgumentPart::Name,
+                    HirCallArgumentSourcePart::Name,
+                ),
+                (
+                    SyntaxCallArgumentPart::Value,
+                    HirCallArgumentSourcePart::Value,
+                ),
+            ] {
+                let span = target
+                    .component(ExpressionComponentRole::CallArgument {
+                        argument: coordinate.argument().get(),
+                        part: syntax_part,
+                    })
+                    .ok_or(
+                        HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                            owner: SyntheticOwner::Expr(owner),
+                        },
+                    )?;
+                validate_component_source(source, span.source())?;
+                let site = HirSourceSite::from_attached_span(parsed.document(), &span)?;
+                insert_expression_site(
+                    sites,
+                    owner,
+                    HirExprSourceRole::ConfigurationArgument {
+                        argument: coordinate.argument(),
+                        part: hir_part,
+                    },
+                    site,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
 
 pub(super) fn dialogue_line_plan_sources_match(
     actual: &HirAttachedContentApplication,

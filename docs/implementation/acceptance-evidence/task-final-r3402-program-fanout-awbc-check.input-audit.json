@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "run": "task-final-r3402-program-fanout-awbc-check",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "-p",
+    "arcweft-lang-hir",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json",
+    "-E",
+    "test(=final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result) | test(=final_lowering::expression_lowering::tests::control::nested_control_projection_publishes_both_branch_directions_on_the_default_stack) | test(=final_lowering::expression_lowering::tests::control::nested_named_block_projection_retains_each_name_scope_and_tail)"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T21:14:36.0224747Z"
+}

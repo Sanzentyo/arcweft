@@ -1,0 +1,12 @@
+error: unable to find 'python311.dll'.
+PLEASE submit a bug report to https://github.com/llvm/llvm-project/issues/ and include the crash backtrace.
+Stack dump:
+0.	Program arguments: "C:\\Program Files\\LLVM\\bin\\lldb.exe" --batch -o run -o "thread backtrace -c 45" -- D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-9c2a65da5ddfdf49.exe --exact final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result --nocapture
+Exception Code: 0xC06D007E
+#0 0x00007ffe22a4408a (C:\WINDOWS\System32\KERNELBASE.dll+0xc408a)
+#1 0x00007ff6a9d28dcb (C:\Program Files\LLVM\bin\lldb.exe+0x38dcb)
+#2 0x00007ff6a9d5f2ad (C:\Program Files\LLVM\bin\lldb.exe+0x6f2ad)
+#3 0x00007ff6a9d0e753 (C:\Program Files\LLVM\bin\lldb.exe+0x1e753)
+#4 0x00007ff6a9d28768 (C:\Program Files\LLVM\bin\lldb.exe+0x38768)
+#5 0x00007ffe23dddda7 (C:\WINDOWS\System32\KERNEL32.DLL+0x2dda7)
+#6 0x00007ffe2547ee4c (C:\WINDOWS\SYSTEM32\ntdll.dll+0x7ee4c)

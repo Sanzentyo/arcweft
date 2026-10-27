@@ -1,0 +1,78 @@
+(lldb) target create "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-9c2a65da5ddfdf49.exe"
+Current executable set to 'D:\git\arcweft\target\debug\deps\arcweft_lang_sema-9c2a65da5ddfdf49.exe' (x86_64).
+(lldb) settings set -- target.run-args  "--exact" "final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result" "--nocapture"
+(lldb) run
+
+running 1 test
+
+thread 'final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result' (60080) has overflowed its stack
+Process 30424 launched: 'D:\git\arcweft\target\debug\deps\arcweft_lang_sema-9c2a65da5ddfdf49.exe' (x86_64)
+Process 30424 stopped
+* thread #5, name = 'final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result', stop reason = Exception 0xc00000fd encountered at address 0x7ff68ae99217
+    frame #0: 0x00007ff68ae99217 arcweft_lang_sema-9c2a65da5ddfdf49.exe`__chkstk at chkstk.asm:109
+(lldb) thread backtrace -c 60
+* thread #5, name = 'final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result', stop reason = Exception 0xc00000fd encountered at address 0x7ff68ae99217
+  * frame #0: 0x00007ff68ae99217 arcweft_lang_sema-9c2a65da5ddfdf49.exe`__chkstk at chkstk.asm:109
+    frame #1: 0x00007ff68a76e64b arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::source_index::expression_manifest::expression_component_sites at expression_manifest.rs:765
+    frame #2: 0x00007ff68a0aa790 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::source_index::StagedHirSourceIndex>::stage_attached_expression at expression_manifest.rs:126
+    frame #3: 0x00007ff68a28ceb9 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:196
+    frame #4: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #5: 0x00007ff68a2815ec arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_call_value_receiver at expression_lowering.rs:1357
+    frame #6: 0x00007ff68a274860 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_call_expression at expression_lowering.rs:1112
+    frame #7: 0x00007ff68a286741 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_application_expression at expression_lowering.rs:552
+    frame #8: 0x00007ff68a28293d arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:354
+    frame #9: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #10: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #11: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #12: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+    frame #13: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+    frame #14: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+    frame #15: 0x00007ff68a2577eb arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block at statement_lowering.rs:233
+    frame #16: 0x00007ff68a281821 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_scoped_expression at expression_lowering.rs:788
+    frame #17: 0x00007ff68a282a39 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:371
+    frame #18: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #19: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #20: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #21: 0x00007ff68a27fc77 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_composite_children at expression_lowering.rs:1400
+    frame #22: 0x00007ff68a2889cc arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_conditional_expression at expression_lowering.rs:719
+    frame #23: 0x00007ff68a282b43 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:365
+    frame #24: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #25: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #26: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #27: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+    frame #28: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+    frame #29: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+    frame #30: 0x00007ff68a2577eb arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block at statement_lowering.rs:233
+    frame #31: 0x00007ff68a281821 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_scoped_expression at expression_lowering.rs:788
+    frame #32: 0x00007ff68a282a39 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:371
+    frame #33: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #34: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #35: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #36: 0x00007ff68a27fc77 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_composite_children at expression_lowering.rs:1400
+    frame #37: 0x00007ff68a2889cc arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_conditional_expression at expression_lowering.rs:719
+    frame #38: 0x00007ff68a282b43 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:365
+    frame #39: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #40: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #41: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #42: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+    frame #43: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+    frame #44: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+    frame #45: 0x00007ff68a2577eb arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block at statement_lowering.rs:233
+    frame #46: 0x00007ff68a281821 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_scoped_expression at expression_lowering.rs:788
+    frame #47: 0x00007ff68a282a39 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:371
+    frame #48: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #49: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #50: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #51: 0x00007ff68a27fc77 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_composite_children at expression_lowering.rs:1400
+    frame #52: 0x00007ff68a2889cc arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_conditional_expression at expression_lowering.rs:719
+    frame #53: 0x00007ff68a282b43 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:365
+    frame #54: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #55: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #56: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #57: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+    frame #58: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+    frame #59: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+(lldb) register read rsp rax
+     rsp = 0x000000883AF0D928
+     rax = 0x0000000000006FC0
+(lldb) 

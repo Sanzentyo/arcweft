@@ -12937,3 +12937,23 @@ R3384 canonical scannerは終了0／blocking 0。後続はテストhost／assert
 Supersedes: 現状一覧の前cutの未達4件を、今回の修復とowner検証へ更新する。R3376の8 PASS／4 FAILと、その後のfixture失敗・full catalog失敗は原本のまま履歴へ残す。
 
 [最終owner結果・失敗履歴・構造review](acceptance-evidence/task-loop-context-owner-acceptance.json)。
+
+## ラベル付きloopの横断終端とHIR source frame修復 -- 2026-10-28
+
+公開実装7f8e6d77caf20ef505c086d1e0772a45d66e3a78、文法補正36d51d4143fdae58b0dfbd5cd07399b738319f11。前cutの確認基点は8152510d2c7d57e39d6e658107be7d5e627ce481。R3390全55 catalogは終了0。R3391は9,097実行／9,048 PASS／49 FAIL／47 ignored、1,722.008秒。3,998入力、228 harness＋4 subprocess executable、catalog／終端／byte差分0。named caseは52 package、buildのみ3 package。Generic 151、既存必須17、capture 8、新loop 14件は全PASS。Core 2,120、Compiler 634、HIR 962、Syntax 731、runtime-plan 161、LSP 223も全PASS。CLI全691件は643 PASS／48 FAILで、元のloop value bindingとparallel benchがPASSした。元CLI fixtureのR3393直接診断は12-step上限・budget 1のまま7 stepでgoto flow.done／return doneへ到達した。
+
+Semaは1,356 PASS／1 ABORT。32階層のdeeply_nested_unannotated_diverging_branches_keep_the_never_resultは、R3347で2.248秒のPASSだったがR3391で0xc00000fdとなった。R3397の同一凍結実行ファイル単独診断でも再現。R3400／R3401のLLDBは、Sema分析前のHIR expression_component_sitesと再帰するIf／Block loweringのstackを示し、失敗したframe probeは28,608 bytesだった。デバッガ初回起動失敗も原本へ保持し、製品の失敗件数と区別する。既存runtime／Generic受入を一括未完了へ戻さず、この具体的な新未達を修復した。
+
+ContentCall／DialogueLine専用のauthored target decodingを、全expressionのsource収集frameから既存dialogue_projection ownerへ移した。元のrole、error、component検査を維持し、source再構築、追加clone、stack／depth／budgetの変更、生成物の移動・コピー、再cargo clean、jobs指定は行わない。R3402対象catalogは終了0。R3403は元Sema caseとHIRの両方向32階層If／32階層NamedBlockの3／3 PASS、2,293対象外、0.518秒。3,998入力・2 executable・catalog／終端の差分0。これは修復後の全55再実行とはしない。
+
+R3392は修復前の実装に対するworkspace check --all-targets --all-features --lockedで終了0、warningメッセージ268、3,998入力差分0。後続R3406は修復後入力のworkspace check --all-targets --all-features --lockedで終了0、warningメッセージ268、3,998入力差分0。Clippy、owner doctest、wasm default matrix、全55逆依存の最終検証は続行する。元tracked WIP 14件・untracked実ファイル6件、held patch SHA 89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31を保持する。
+
+Supersedes: 現状一覧の「全55 catalog再確認中」「元CLI loop case再実行待ち」を終端証拠で置換した。横断表のR3347／R3364／R3367の重複した現在形は最新R3391へ一本化し、置換前の実測行を次に原文で保持する。受入済みGeneric Matchと完了cutを全体goal未完了の理由で戻さない。
+
+| 対象・入力 | 当時の結果 | 当時の適用範囲・原本 |
+|---|---|---|
+| Core／runtime-planの全53逆依存runtime | **R3347終端：7,393実行／7,343 PASS／50 FAIL／39 ignored、1,427.130秒** | 全53 package・全target／feature／locked、named caseは50 package・buildのみ3 package。Core 2,119／2,119、Compiler 624／624、Sema 1,357／1,357、runtime-plan 161／161、LSP 223／223、Generic 151／151、以前の必須17／17・capture 8／8 PASS。3,998入力、221 harness＋4 subprocess executable、catalog／終端集合の差分0。R3348 Core全target Clippyは終了0（警告3,502）、R3349 Core doctest 76／76 PASS。依存／公開API不変、Cargo入力100件を照合しR3325 scanner／graphと今回のowner実測を再利用した。古い227 binaryのrunと今回225 executableの計数を混同しない。[全結果・必須集合・失敗比較](acceptance-evidence/task-native-host-reply-reverse-acceptance.json)。
+| Need入力Arrayの追加owner検証 | **R3364：Compiler callable全187／187 PASS・除外0、24.686秒** | 1 test pathに85行追加し、製品Rust・Cargo／依存・公開APIの変更0。R3359で正しい対象指定の新caseを確認した後、入力をArray<Need<Result<String,String>>,2>と明示し、R3364で全caseを検証した。R3365の同test target Clippyは終了0（警告5,330メッセージ）。3,998入力、1 binary、catalog／終端集合の差分0。先行のR3347全53 runと合算して一つの7,394件runにはしない。誤filterと不正fixture構文の失敗を原本へ保持した。[結果と受入の範囲](acceptance-evidence/task-source-affine-need-input-acceptance.json)。
+| CLI parallelの計数契約 | **R3367：bench PASS／run FAIL、R3368 Clippy終了0** | 元のworkload・steps・budget・batch・copy／captureを維持し、scheduled件数とdirect／total件数の意味を明確にした。3,998入力・2 executable・catalog集合の差分0。ClippyはCLI check target・all feature・locked、警告6,106メッセージ。既存User patch全14件を新codeへ適用したGit treeと実working blobの差分0を確認し、同file内のsystem-info変更はstageしない。[実測・部分公開の証明](acceptance-evidence/task-cli-parallel-counter-acceptance.json)。
+
+[全55終端・比較原本](acceptance-evidence/task-labelled-loop-reverse-acceptance.json)、[HIR frame修復の対象検証](acceptance-evidence/task-loop-source-frame-acceptance.json)。

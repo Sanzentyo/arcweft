@@ -1,0 +1,13 @@
+(lldb) target create "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-9c2a65da5ddfdf49.exe"
+Current executable set to 'D:\git\arcweft\target\debug\deps\arcweft_lang_sema-9c2a65da5ddfdf49.exe' (x86_64).
+(lldb) settings set -- target.run-args  "--exact" "final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result" "--nocapture"
+(lldb) run
+
+running 1 test
+
+thread 'final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result' (75516) has overflowed its stack
+Process 74720 launched: 'D:\git\arcweft\target\debug\deps\arcweft_lang_sema-9c2a65da5ddfdf49.exe' (x86_64)
+Process 74720 stopped
+* thread #5, name = 'final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result', stop reason = Exception 0xc00000fd encountered at address 0x7ff68ae99217
+    frame #0: 0x00007ff68ae99217 arcweft_lang_sema-9c2a65da5ddfdf49.exe`__chkstk at chkstk.asm:109
+(lldb) 

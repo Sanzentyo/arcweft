@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "head": "36d51d4143fdae58b0dfbd5cd07399b738319f11",
+  "command": [
+    "--batch",
+    "-o",
+    "run",
+    "-o",
+    "thread backtrace -c 45",
+    "--",
+    "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-9c2a65da5ddfdf49.exe",
+    "--exact",
+    "final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result",
+    "--nocapture"
+  ],
+  "exitCode": -1066598274,
+  "binary": {
+    "binary": "arcweft-lang-sema",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-9c2a65da5ddfdf49.exe",
+    "sha256": "28837f874e98b656e9692c5b7455ccd4cd95f08e5c72b402fdac55767ac450d2"
+  },
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3398-deep-control-debugger.log",
+  "startedAt": "2026-10-27T21:03:19.1410604Z",
+  "finishedAt": "2026-10-27T21:03:19.7919529Z"
+}

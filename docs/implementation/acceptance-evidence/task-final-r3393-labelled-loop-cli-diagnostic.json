@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "head": "7f8e6d77caf20ef505c086d1e0772a45d66e3a78",
+  "exitCode": 0,
+  "command": [
+    "run",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3393-labelled-loop-cli-diagnostic.arcw",
+    "--entry",
+    "entry.value_bindings",
+    "--steps",
+    "12",
+    "--json"
+  ],
+  "binary": {
+    "binary": "subprocess::arcw",
+    "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+    "sha256": "6f9a92fac61a531a92fd43ad5011e2712dfacc9d4dec87355f67933087574160"
+  },
+  "fixtureSha256": "0e15cc70f3eaff3ec3ba3aba6ae8fe2fe227ab63339beaffa1c64e7b540392b8",
+  "source": "Exact original test source, entry and 12-step limit; diagnostic invocation outside nextest",
+  "status": "done Return(\"done\")",
+  "steps": [
+    {
+      "index": 0,
+      "stop": "OneOp",
+      "fiber": "running",
+      "ops": 1,
+      "events": []
+    },
+    {
+      "index": 1,
+      "stop": "OneOp",
+      "fiber": "running",
+      "ops": 1,
+      "events": []
+    },
+    {
+      "index": 2,
+      "stop": "OneOp",
+      "fiber": "running",
+      "ops": 1,
+      "events": []
+    },
+    {
+      "index": 3,
+      "stop": "OneOp",
+      "fiber": "running",
+      "ops": 1,
+      "events": []
+    },
+    {
+      "index": 4,
+      "stop": "OneOp",
+      "fiber": "running",
+      "ops": 1,
+      "events": []
+    },
+    {
+      "index": 5,
+      "stop": "OneOp",
+      "fiber": "running",
+      "ops": 1,
+      "events": [
+        "goto flow.done"
+      ]
+    },
+    {
+      "index": 6,
+      "stop": "Done",
+      "fiber": "done Return(\"done\")",
+      "ops": 1,
+      "events": [
+        "return done"
+      ]
+    }
+  ]
+}

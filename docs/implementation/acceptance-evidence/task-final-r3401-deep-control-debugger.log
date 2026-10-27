@@ -1,0 +1,355 @@
+(lldb) target create "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-9c2a65da5ddfdf49.exe"
+Current executable set to 'D:\git\arcweft\target\debug\deps\arcweft_lang_sema-9c2a65da5ddfdf49.exe' (x86_64).
+(lldb) settings set -- target.run-args  "--exact" "final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result" "--nocapture"
+(lldb) run
+
+running 1 test
+
+thread 'final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result' (61912) has overflowed its stack
+Process 66936 launched: 'D:\git\arcweft\target\debug\deps\arcweft_lang_sema-9c2a65da5ddfdf49.exe' (x86_64)
+Process 66936 stopped
+* thread #5, name = 'final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result', stop reason = Exception 0xc00000fd encountered at address 0x7ff68ae99217
+    frame #0: 0x00007ff68ae99217 arcweft_lang_sema-9c2a65da5ddfdf49.exe`__chkstk at chkstk.asm:109
+(lldb) thread backtrace -c 60
+* thread #5, name = 'final_analysis::tests::control_results::deeply_nested_unannotated_diverging_branches_keep_the_never_result', stop reason = Exception 0xc00000fd encountered at address 0x7ff68ae99217
+  * frame #0: 0x00007ff68ae99217 arcweft_lang_sema-9c2a65da5ddfdf49.exe`__chkstk at chkstk.asm:109
+    frame #1: 0x00007ff68a76e64b arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::source_index::expression_manifest::expression_component_sites at expression_manifest.rs:765
+    frame #2: 0x00007ff68a0aa790 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::source_index::StagedHirSourceIndex>::stage_attached_expression at expression_manifest.rs:126
+    frame #3: 0x00007ff68a28ceb9 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:196
+    frame #4: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #5: 0x00007ff68a2815ec arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_call_value_receiver at expression_lowering.rs:1357
+    frame #6: 0x00007ff68a274860 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_call_expression at expression_lowering.rs:1112
+    frame #7: 0x00007ff68a286741 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_application_expression at expression_lowering.rs:552
+    frame #8: 0x00007ff68a28293d arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:354
+    frame #9: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #10: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #11: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #12: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+    frame #13: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+    frame #14: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+    frame #15: 0x00007ff68a2577eb arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block at statement_lowering.rs:233
+    frame #16: 0x00007ff68a281821 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_scoped_expression at expression_lowering.rs:788
+    frame #17: 0x00007ff68a282a39 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:371
+    frame #18: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #19: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #20: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #21: 0x00007ff68a27fc77 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_composite_children at expression_lowering.rs:1400
+    frame #22: 0x00007ff68a2889cc arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_conditional_expression at expression_lowering.rs:719
+    frame #23: 0x00007ff68a282b43 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:365
+    frame #24: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #25: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #26: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #27: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+    frame #28: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+    frame #29: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+    frame #30: 0x00007ff68a2577eb arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block at statement_lowering.rs:233
+    frame #31: 0x00007ff68a281821 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_scoped_expression at expression_lowering.rs:788
+    frame #32: 0x00007ff68a282a39 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:371
+    frame #33: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #34: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #35: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #36: 0x00007ff68a27fc77 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_composite_children at expression_lowering.rs:1400
+    frame #37: 0x00007ff68a2889cc arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_conditional_expression at expression_lowering.rs:719
+    frame #38: 0x00007ff68a282b43 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:365
+    frame #39: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #40: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #41: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #42: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+    frame #43: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+    frame #44: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+    frame #45: 0x00007ff68a2577eb arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block at statement_lowering.rs:233
+    frame #46: 0x00007ff68a281821 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_scoped_expression at expression_lowering.rs:788
+    frame #47: 0x00007ff68a282a39 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:371
+    frame #48: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #49: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #50: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #51: 0x00007ff68a27fc77 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_composite_children at expression_lowering.rs:1400
+    frame #52: 0x00007ff68a2889cc arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_conditional_expression at expression_lowering.rs:719
+    frame #53: 0x00007ff68a282b43 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:365
+    frame #54: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+    frame #55: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+    frame #56: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+    frame #57: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+    frame #58: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+    frame #59: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+(lldb) register read rsp rax
+     rsp = 0x000000FED730D6F8
+     rax = 0x0000000000006FC0
+(lldb) frame select 1
+warning: This version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited.
+frame #1: 0x00007ff68a76e64b arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::source_index::expression_manifest::expression_component_sites at expression_manifest.rs:765
+   762 	    clippy::too_many_lines,
+   763 	    reason = "one expression-family projection owns the complete typed component-site and recovery matrix"
+   764 	)]
+-> 765 	fn expression_component_sites(
+   766 	    source: &SourceDocumentIdentity,
+   767 	    parsed: &ParsedSource,
+   768 	    owner: ExprId,
+(lldb) register read rsp
+     rsp = 0x000000FED730D710
+(lldb) frame select 2
+frame #2: 0x00007ff68a0aa790 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::source_index::StagedHirSourceIndex>::stage_attached_expression at expression_manifest.rs:126
+   123 	            );
+   124 	        };
+   125 	        let components =
+-> 126 	            match expression_component_sites(&self.source, parsed, owner, payload, attached) {
+   127 	                Ok(components) => components,
+   128 	                Err(error) => return self.reject(error),
+   129 	            };
+(lldb) register read rsp
+     rsp = 0x000000FED730D720
+(lldb) frame select 3
+frame #3: 0x00007ff68a28ceb9 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:196
+   193 	        let payload = HirExpr::try_new(scope, kind.clone(), state)
+   194 	            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+   195 	
+-> 196 	        self.source_components.stage_attached_expression(
+   197 	            self.request.source(),
+   198 	            owner,
+   199 	            attached,
+(lldb) register read rsp
+     rsp = 0x000000FED730EA30
+(lldb) frame select 4
+frame #4: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+   143 	        attached: &AttachedExpressionNode,
+   144 	        scope: ScopeId,
+   145 	    ) -> Result<ExprId, HirLowerFailure> {
+-> 146 	        self.lower_attached_expression_inner_with_family(
+   147 	            attached,
+   148 	            scope,
+   149 	            HirAttachedContentApplicationFamilyKind::DialogueLine,
+(lldb) register read rsp
+     rsp = 0x000000FED73109B0
+(lldb) frame select 10
+frame #10: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+   178 	        }
+   179 	
+   180 	        let (kind, state, parent_diagnostic_required) =
+-> 181 	            self.project_expression(attached, owner, scope, application_family)?;
+   182 	        let poisoned = state.is_poisoned();
+   183 	        let recovery_primary = (poisoned && parent_diagnostic_required)
+   184 	            .then(|| {
+(lldb) register read rsp
+     rsp = 0x000000FED731CB50
+(lldb) frame select 12
+frame #12: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+   131 	        attached: &AttachedExpressionNode,
+   132 	        scope: ScopeId,
+   133 	    ) -> Result<ExprId, HirLowerFailure> {
+-> 134 	        let result = self.lower_attached_expression_inner(attached, scope);
+   135 	        if result.is_err() {
+   136 	            self.slots.poison();
+   137 	        }
+(lldb) register read rsp
+     rsp = 0x000000FED731EB20
+(lldb) frame select 13
+frame #13: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+   416 	                let semantic = expression
+   417 	                    .semantic()
+   418 	                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+-> 419 	                let tail = self.lower_attached_expression(&semantic, scope)?;
+   420 	                if self.staged_expression_is_poisoned(tail)? {
+   421 	                    recovery.get_or_insert(HirRecoveryIssue::InvalidExpression(
+   422 	                        HirExpressionRecoveryIssue::RecoveredChild {
+(lldb) register read rsp
+     rsp = 0x000000FED731EC10
+(lldb) frame select 14
+frame #14: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+   264 	            ValueBlockOwner::Expression(owner),
+   265 	            parent_scope,
+   266 	        )?;
+-> 267 	        self.lower_value_block(ValueBlockInput {
+   268 	            statements,
+   269 	            tail,
+   270 	            owner: ValueBlockOwner::Expression(owner),
+(lldb) register read rsp
+     rsp = 0x000000FED7321440
+(lldb) frame select 15
+frame #15: 0x00007ff68a2577eb arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block at statement_lowering.rs:233
+   230 	        owner: ExprId,
+   231 	        parent_scope: ScopeId,
+   232 	    ) -> Result<(HirBlockExpr, Option<HirRecoveryIssue>), HirLowerFailure> {
+-> 233 	        let lowered = self.lower_attached_value_block_parts(
+   234 	            attached,
+   235 	            owner,
+   236 	            parent_scope,
+(lldb) register read rsp
+     rsp = 0x000000FED7321A80
+(lldb) frame select 16
+frame #16: 0x00007ff68a281821 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_scoped_expression at expression_lowering.rs:788
+   785 	                (HirExprKind::Closure(closure), recovery)
+   786 	            }
+   787 	            ExpressionProjection::Block => {
+-> 788 	                let (block, recovery) = self.lower_attached_value_block(attached, owner, scope)?;
+   789 	                (HirExprKind::Block(block), recovery)
+   790 	            }
+   791 	            ExpressionProjection::ComputationBlock(kind) => {
+(lldb) register read rsp
+     rsp = 0x000000FED7321EB0
+(lldb) frame select 17
+frame #17: 0x00007ff68a282a39 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:371
+   368 	            | ExpressionProjection::Closure(_)
+   369 	            | ExpressionProjection::Block
+   370 	            | ExpressionProjection::ComputationBlock(_) => {
+-> 371 	                self.project_scoped_expression(attached, owner, scope)
+   372 	            }
+   373 	            ExpressionProjection::NamedBlock(source_name) => {
+   374 	                self.project_named_block_expression(attached, owner, scope, source_name)
+(lldb) register read rsp
+     rsp = 0x000000FED7323790
+(lldb) frame select 18
+frame #18: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+   283 	        application_family: HirAttachedContentApplicationFamilyKind,
+   284 	    ) -> Result<(HirExprKind, HirPoisonState, bool), HirLowerFailure> {
+   285 	        let (kind, recovery) =
+-> 286 	            self.project_expression_payload(attached, owner, scope, application_family)?;
+   287 	        let parent_diagnostic_required = match attached.projection() {
+   288 	            ExpressionProjection::Select(member) => {
+   289 	                matches!(member, SyntaxSelectedMember::Missing)
+(lldb) register read rsp
+     rsp = 0x000000FED7323DF0
+(lldb) frame select 19
+frame #19: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+   178 	        }
+   179 	
+   180 	        let (kind, state, parent_diagnostic_required) =
+-> 181 	            self.project_expression(attached, owner, scope, application_family)?;
+   182 	        let poisoned = state.is_poisoned();
+   183 	        let recovery_primary = (poisoned && parent_diagnostic_required)
+   184 	            .then(|| {
+(lldb) register read rsp
+     rsp = 0x000000FED7324770
+(lldb) frame select 20
+frame #20: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+   143 	        attached: &AttachedExpressionNode,
+   144 	        scope: ScopeId,
+   145 	    ) -> Result<ExprId, HirLowerFailure> {
+-> 146 	        self.lower_attached_expression_inner_with_family(
+   147 	            attached,
+   148 	            scope,
+   149 	            HirAttachedContentApplicationFamilyKind::DialogueLine,
+(lldb) register read rsp
+     rsp = 0x000000FED73266F0
+(lldb) frame select 21
+frame #21: 0x00007ff68a27fc77 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_composite_children at expression_lowering.rs:1400
+   1397	                .authored_semantic()
+   1398	                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+   1399	            {
+-> 1400	                let lowered = self.lower_attached_expression_inner(&semantic, scope)?;
+   1401	                if self.staged_expression_is_poisoned(lowered)? {
+   1402	                    recovery.get_or_insert(HirRecoveryIssue::InvalidExpression(
+   1403	                        HirExpressionRecoveryIssue::RecoveredChild { role },
+(lldb) register read rsp
+     rsp = 0x000000FED7326740
+(lldb) frame select 22
+frame #22: 0x00007ff68a2889cc arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_conditional_expression at expression_lowering.rs:719
+   716 	    ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
+   717 	        Ok(match attached.projection() {
+   718 	            ExpressionProjection::If { else_branch, .. } => {
+-> 719 	                let (children, recovery) = self.lower_composite_children(attached, owner, scope)?;
+   720 	                let (condition, then_branch, else_branch) = match (children.as_ref(), else_branch) {
+   721 	                    ([condition, then_branch, else_branch], Some(_)) => {
+   722 	                        (*condition, *then_branch, *else_branch)
+(lldb) register read rsp
+     rsp = 0x000000FED7327DC0
+(lldb) frame select 23
+frame #23: 0x00007ff68a282b43 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression_payload at expression_lowering.rs:365
+   362 	            ExpressionProjection::If { .. }
+   363 	            | ExpressionProjection::IfLet { .. }
+   364 	            | ExpressionProjection::Match(_) => {
+-> 365 	                self.project_conditional_expression(attached, owner, scope)
+   366 	            }
+   367 	            ExpressionProjection::Loop(_)
+   368 	            | ExpressionProjection::Closure(_)
+(lldb) register read rsp
+     rsp = 0x000000FED73291B0
+(lldb) frame select 24
+frame #24: 0x00007ff68a26fd09 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_expression at expression_lowering.rs:286
+   283 	        application_family: HirAttachedContentApplicationFamilyKind,
+   284 	    ) -> Result<(HirExprKind, HirPoisonState, bool), HirLowerFailure> {
+   285 	        let (kind, recovery) =
+-> 286 	            self.project_expression_payload(attached, owner, scope, application_family)?;
+   287 	        let parent_diagnostic_required = match attached.projection() {
+   288 	            ExpressionProjection::Select(member) => {
+   289 	                matches!(member, SyntaxSelectedMember::Missing)
+(lldb) register read rsp
+     rsp = 0x000000FED7329810
+(lldb) frame select 25
+frame #25: 0x00007ff68a28c84a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner_with_family at expression_lowering.rs:181
+   178 	        }
+   179 	
+   180 	        let (kind, state, parent_diagnostic_required) =
+-> 181 	            self.project_expression(attached, owner, scope, application_family)?;
+   182 	        let poisoned = state.is_poisoned();
+   183 	        let recovery_primary = (poisoned && parent_diagnostic_required)
+   184 	            .then(|| {
+(lldb) register read rsp
+     rsp = 0x000000FED732A190
+(lldb) frame select 26
+frame #26: 0x00007ff68a289e2a arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_expression_inner at expression_lowering.rs:146
+   143 	        attached: &AttachedExpressionNode,
+   144 	        scope: ScopeId,
+   145 	    ) -> Result<ExprId, HirLowerFailure> {
+-> 146 	        self.lower_attached_expression_inner_with_family(
+   147 	            attached,
+   148 	            scope,
+   149 	            HirAttachedContentApplicationFamilyKind::DialogueLine,
+(lldb) register read rsp
+     rsp = 0x000000FED732C110
+(lldb) frame select 27
+frame #27: 0x00007ff68a281225 arcweft_lang_sema-9c2a65da5ddfdf49.exe`<arcweft_lang_hir::final_lowering::StagedHirModuleTransaction>::lower_attached_expression at expression_lowering.rs:134
+   131 	        attached: &AttachedExpressionNode,
+   132 	        scope: ScopeId,
+   133 	    ) -> Result<ExprId, HirLowerFailure> {
+-> 134 	        let result = self.lower_attached_expression_inner(attached, scope);
+   135 	        if result.is_err() {
+   136 	            self.slots.poison();
+   137 	        }
+(lldb) register read rsp
+     rsp = 0x000000FED732C160
+(lldb) frame select 28
+frame #28: 0x00007ff68a24f6d1 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_value_block at statement_lowering.rs:419
+   416 	                let semantic = expression
+   417 	                    .semantic()
+   418 	                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+-> 419 	                let tail = self.lower_attached_expression(&semantic, scope)?;
+   420 	                if self.staged_expression_is_poisoned(tail)? {
+   421 	                    recovery.get_or_insert(HirRecoveryIssue::InvalidExpression(
+   422 	                        HirExpressionRecoveryIssue::RecoveredChild {
+(lldb) register read rsp
+     rsp = 0x000000FED732C250
+(lldb) frame select 29
+frame #29: 0x00007ff68a2619b6 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block_parts at statement_lowering.rs:267
+   264 	            ValueBlockOwner::Expression(owner),
+   265 	            parent_scope,
+   266 	        )?;
+-> 267 	        self.lower_value_block(ValueBlockInput {
+   268 	            statements,
+   269 	            tail,
+   270 	            owner: ValueBlockOwner::Expression(owner),
+(lldb) register read rsp
+     rsp = 0x000000FED732EA80
+(lldb) frame select 30
+frame #30: 0x00007ff68a2577eb arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::lower_attached_value_block at statement_lowering.rs:233
+   230 	        owner: ExprId,
+   231 	        parent_scope: ScopeId,
+   232 	    ) -> Result<(HirBlockExpr, Option<HirRecoveryIssue>), HirLowerFailure> {
+-> 233 	        let lowered = self.lower_attached_value_block_parts(
+   234 	            attached,
+   235 	            owner,
+   236 	            parent_scope,
+(lldb) register read rsp
+     rsp = 0x000000FED732F0C0
+(lldb) frame select 31
+frame #31: 0x00007ff68a281821 arcweft_lang_sema-9c2a65da5ddfdf49.exe`arcweft_lang_hir::final_lowering::StagedHirModuleTransaction::project_scoped_expression at expression_lowering.rs:788
+   785 	                (HirExprKind::Closure(closure), recovery)
+   786 	            }
+   787 	            ExpressionProjection::Block => {
+-> 788 	                let (block, recovery) = self.lower_attached_value_block(attached, owner, scope)?;
+   789 	                (HirExprKind::Block(block), recovery)
+   790 	            }
+   791 	            ExpressionProjection::ComputationBlock(kind) => {
+(lldb) register read rsp
+     rsp = 0x000000FED732F4F0
+(lldb) 
+(lldb) 

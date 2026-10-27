@@ -1,0 +1,19 @@
+
+entry cli @entry.value_bindings { goto @flow.value_bindings }
+
+flow value_bindings() -> String {
+    let local_target = {
+        let candidate = @flow.done
+        candidate
+    }
+
+    let next = 'pick: loop {
+        break 'pick local_target
+    }
+
+    goto next
+}
+
+flow done() -> String {
+    return "done"
+}

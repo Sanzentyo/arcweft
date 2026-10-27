@@ -836,28 +836,17 @@ fn expression_component_sites(
         }
     }
 
-    // A ContentCall owns the invocation payload directly. When its target is
-    // authored as a Call, that target has no separate HIR Call owner, so the
-    // target Call's components are re-owned by the attached-content owner.
-    if let HirExprKind::AttachedContentApplication(application) = payload
-        && matches!(
-            application.family(),
-            crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall { .. }
-        )
-        && let Some(target) = attached.children().first()
-        && let Ok(Some(target)) = target.authored_semantic()
-        && matches!(target.projection(), ExpressionProjection::Call(_))
-    {
-        for component in target.components() {
-            validate_component_source(source, component.source_span().source())?;
-            let Some(role) = expression_component_role(target.projection(), component.role())
-            else {
-                continue;
-            };
-            let site =
-                HirSourceSite::from_attached_span(parsed.document(), component.source_span())?;
-            insert_expression_site(&mut sites, owner, role, site)?;
-        }
+    // Keep application target decoding in its family owner, outside the stack
+    // frame used by every recursively lowered ordinary expression.
+    if let HirExprKind::AttachedContentApplication(application) = payload {
+        dialogue_projection::insert_application_component_sites(
+            source,
+            parsed,
+            owner,
+            application,
+            attached,
+            &mut sites,
+        )?;
     }
 
     if matches!(attached.projection(), ExpressionProjection::Path) {
@@ -926,81 +915,6 @@ fn expression_component_sites(
                         owner: SyntheticOwner::Expr(owner),
                     },
                 );
-            }
-        }
-    }
-    if let HirExprKind::AttachedContentApplication(application) = payload
-        && let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
-            coordinates,
-            ..
-        } = application.family()
-        && !coordinates.is_empty()
-    {
-        let target = attached
-            .children()
-            .first()
-            .filter(|target| target.ordinal() == 0)
-            .ok_or(
-                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
-                    owner: SyntheticOwner::Expr(owner),
-                },
-            )?;
-        let target = target
-            .authored_semantic()
-            .map_err(
-                |error| HirSourceCommitInvariantError::AttachedSyntaxAccess {
-                    owner: SyntheticOwner::Expr(owner),
-                    error,
-                },
-            )?
-            .ok_or(
-                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
-                    owner: SyntheticOwner::Expr(owner),
-                },
-            )?;
-        if !matches!(target.projection(), ExpressionProjection::Call(_)) {
-            return Err(
-                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
-                    owner: SyntheticOwner::Expr(owner),
-                },
-            );
-        }
-        for coordinate in coordinates {
-            for (syntax_part, hir_part) in [
-                (
-                    SyntaxCallArgumentPart::Whole,
-                    HirCallArgumentSourcePart::Whole,
-                ),
-                (
-                    SyntaxCallArgumentPart::Name,
-                    HirCallArgumentSourcePart::Name,
-                ),
-                (
-                    SyntaxCallArgumentPart::Value,
-                    HirCallArgumentSourcePart::Value,
-                ),
-            ] {
-                let span = target
-                    .component(ExpressionComponentRole::CallArgument {
-                        argument: coordinate.argument().get(),
-                        part: syntax_part,
-                    })
-                    .ok_or(
-                        HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
-                            owner: SyntheticOwner::Expr(owner),
-                        },
-                    )?;
-                validate_component_source(source, span.source())?;
-                let site = HirSourceSite::from_attached_span(parsed.document(), &span)?;
-                insert_expression_site(
-                    &mut sites,
-                    owner,
-                    HirExprSourceRole::ConfigurationArgument {
-                        argument: coordinate.argument(),
-                        part: hir_part,
-                    },
-                    site,
-                )?;
             }
         }
     }
