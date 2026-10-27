@@ -186,6 +186,54 @@ fn snapshot_byte_budget_counts_callable_state_header_and_retained_value() {
 }
 
 #[test]
+fn admitted_callable_argument_identity_preserves_captures_and_static_encoding_rejection() {
+    use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+    use crate::value::{AwbcRuntimeValueSnapshot, RuntimeRetainedValueAdmission};
+    let owner = RuntimeProgramOwner::Plan(Arc::new(captured_identity_plan()));
+    let function = RuntimeSemanticTypeId::from_bytes([0x8b; 32]);
+    let state = RuntimeCallableStateId::from_zero_based(0).unwrap();
+    let mut digests = Vec::new();
+    for retained in [42, 43] {
+        let value = RuntimeValue::Callable(
+            RuntimeCallableValue::try_new(owner.clone(), state, [RuntimeValue::i64(retained)])
+                .unwrap(),
+        );
+        let image =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits::engine_default(),
+        );
+        admission.validate_typed(&value, function).unwrap();
+        let live = admission.admitted_arguments_digest(value.view()).unwrap();
+        admission.validate_typed_snapshot(&image, function).unwrap();
+        assert_eq!(
+            live,
+            admission.admitted_arguments_digest(image.view()).unwrap()
+        );
+        let mut foreign = RuntimeRetainedValueAdmission::for_program(
+            RuntimeProgramOwner::Plan(Arc::new(captured_identity_plan())),
+            RuntimeSchemaLimits::engine_default(),
+        );
+        assert!(foreign.validate_typed(&value, function).is_err());
+        assert!(foreign.admitted_arguments_digest(value.view()).is_err());
+        assert!(crate::entry::schema::canonical_runtime_value_bytes(&value, 1024).is_err());
+        assert!(matches!(
+            crate::entry::schema::retained_argument_identity_digest(value.view(), 0),
+            Err(RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes"
+            })
+        ));
+        let RuntimeValue::Callable(callable) = &value else {
+            unreachable!()
+        };
+        assert_eq!(callable.retained(), &[RuntimeValue::i64(retained)]);
+        digests.push(live);
+    }
+    assert_ne!(digests[0], digests[1]);
+}
+
+#[test]
 fn inert_callable_admission_uses_original_retained_types_and_preserves_live_lease_checks() {
     use crate::{entry::RuntimeSchemaLimits, value::AwbcRuntimeValueSnapshot};
     let plan = captured_identity_plan();

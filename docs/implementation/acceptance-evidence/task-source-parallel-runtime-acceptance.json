@@ -1,0 +1,2299 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+  "status": "Accepted the 12 Source callback/save-rollback conditions below; other Source/CLI and whole-goal acceptance are separate",
+  "observedWorkingTree": "main; 14 owned Rust paths and task evidence/docs; original tracked 14 and untracked 6 files preserved",
+  "rustPaths": [
+    "crates/arcweft-compiler/src/lower.rs",
+    "crates/arcweft-compiler/src/project/tests/producer_slots.rs",
+    "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+    "crates/arcweft-core/src/awbc/product_step.rs",
+    "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+    "crates/arcweft-core/src/entry/schema.rs",
+    "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+    "crates/arcweft-core/src/executor.rs",
+    "crates/arcweft-core/src/task/producer.rs",
+    "crates/arcweft-core/src/task/producer/source/template.rs",
+    "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+    "crates/arcweft-core/src/value/callable/tests.rs",
+    "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+    "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs"
+  ],
+  "sourceInputs": 3998,
+  "implementation": [
+    "Host/ProgramNeed producer-definition requirements share RuntimeResolvedCall authority in global and closed local-use views.",
+    "Bounded retained identity uses the existing exhaustive value grammar after original Program admission. It preserves callable state and ordered captures without literal serialization, Copy permission or another live value owner.",
+    "Structural launch validity and public quiescence policy are separate. Save and Resume share blocking-Need detection; Resume rejects before dropping the old owner or materializing live values. Private Rollback preserves its task-submission frontier.",
+    "Program child commit consumes its prepared Ready/Host result and resumes the sole fiber, instead of retaining a cursor with an uncommitted Await.",
+    "The public SDK current-invocation rollback entry delegates to existing Product target/retained-value admission for explicit typed Flow invocations."
+  ],
+  "acceptedExecution": {
+    "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback",
+    "inputs": [
+      "Vec<String> 3",
+      "Array<String,3> 3",
+      "Seq<String> 3",
+      "Slice<String> 3",
+      "Vec<String> 3 with Err at source index 0 and 2",
+      "Vec<String> empty"
+    ],
+    "backends": [
+      "Native original RuntimePlan",
+      "Canonical decoded AWBC Product through public SDK"
+    ],
+    "conditions": 12,
+    "limit": 2,
+    "maxExecutedOpsPerStep": 1,
+    "fixtureSteps": 4096,
+    "assertions": [
+      "Actual retained F creates Host read_text Need with exact prefix/item arguments; original Source outcome admission supplies actual Ready values.",
+      "Every item is submitted/completed once; max in-flight is exactly min(count,2); later inputs finish before source index 0.",
+      "The Source asserts input-ordered Ok, minimum-source-index Err, or empty Ok. Program work stays LocalOnly. Normal delivery diagnostics match exactly.",
+      "Every AWBC step uses public JSON save/restore when quiescent, otherwise typed public save/Resume refusal and private rollback.",
+      "Rejected public Resume retains its sole original owner with a completely equal inert image."
+    ],
+    "targetedRuntime": "R3294 4/4 pass, 181 excluded, 18.736s",
+    "fullOwnerRuntime": "R3297 all 185 Compiler integration tests pass, including the same 12 conditions"
+  },
+  "checks": [
+    {
+      "run": "R3265",
+      "record": "task-final-r3265-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(traversal::)",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3266",
+      "record": "task-final-r3266-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(traversal::)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [   0.514s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3266-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.514s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4,
+        "passed": 3,
+        "failed": 1,
+        "skipped": 181,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T14:01:33.6450141Z"
+      },
+      "failureCause": "Pure deterministic extraction correctly refused the effectful root; fixture now uses ordinary Flow execution."
+    },
+    {
+      "run": "R3267",
+      "record": "task-final-r3267-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(traversal::)",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3268",
+      "record": "task-final-r3268-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(traversal::)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [   0.571s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3268-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.571s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4,
+        "passed": 3,
+        "failed": 1,
+        "skipped": 181,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T14:07:56.2352175Z"
+      },
+      "failureCause": "Closed producer fact validation recognized Host only; shared owner classification now includes ProgramNeed."
+    },
+    {
+      "run": "R3269",
+      "record": "task-final-r3269-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(traversal::)",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3270",
+      "record": "task-final-r3270-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(traversal::)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [   0.580s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3270-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.580s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4,
+        "passed": 3,
+        "failed": 1,
+        "skipped": 181,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T14:11:24.8289587Z"
+      },
+      "failureCause": "Static canonical argument encoding rejected retained F; admitted original-program identity now retains callable state and ordered captures."
+    },
+    {
+      "run": "R3271",
+      "record": "task-final-r3271-program-fanout-awbc-check.json",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3272",
+      "record": "task-final-r3272-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(traversal::)",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3273",
+      "record": "task-final-r3273-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(traversal::)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [   0.555s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3273-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.555s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4,
+        "passed": 3,
+        "failed": 1,
+        "skipped": 181,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T14:26:42.2566468Z"
+      },
+      "failureCause": "Fixture expected fs.read_text operation; the actual request separates capability fs and operation read_text."
+    },
+    {
+      "run": "R3274",
+      "record": "task-final-r3274-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3275",
+      "record": "task-final-r3275-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [ 102.829s] 3896 tests run: 3895 passed, 1 failed, 0 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3275-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 102.829s] 3896 tests run: 3895 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 3896,
+        "passed": 3895,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 5,
+        "matchedPackages": 5,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T14:34:38.425462Z"
+      },
+      "failureCause": "Fixture expected no diagnostics instead of the exact normal task-delivery diagnostics."
+    },
+    {
+      "run": "R3276",
+      "record": "task-final-r3276-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3277",
+      "record": "task-final-r3277-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [   7.800s] 185 tests run: 184 passed, 1 failed, 0 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3277-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   7.800s] 185 tests run: 184 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 185,
+        "passed": 184,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T14:38:46.4251489Z"
+      },
+      "failureCause": "Structural restored launch validation incorrectly required public quiescence; structural validity now separates private Rollback from public Resume policy."
+    },
+    {
+      "run": "R3278",
+      "record": "task-final-r3278-program-fanout-awbc-check.json",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3279",
+      "record": "task-final-r3279-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3280",
+      "record": "task-final-r3280-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [ 113.205s] 185 tests run: 184 passed, 1 failed, 0 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3280-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 113.205s] 185 tests run: 184 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 185,
+        "passed": 184,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T14:55:18.1209486Z"
+      },
+      "failureCause": "Program child published the Ready cursor without committing payload transfer/resume; blocked at 4096 steps before callback 3."
+    },
+    {
+      "run": "R3281",
+      "record": "task-final-r3281-program-fanout-runtime-structure.json",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-source-parallel-runtime-structure-report"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3282",
+      "record": "task-final-r3282-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3283",
+      "record": "task-final-r3283-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [ 109.072s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3283-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 109.072s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4,
+        "passed": 3,
+        "failed": 1,
+        "skipped": 181,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T14:58:17.3337589Z"
+      },
+      "failureCause": "AWBC Vec blocked after two submitted/completed Host tasks, no pending inputs and three retained child fibers."
+    },
+    {
+      "run": "R3284",
+      "record": "task-final-r3284-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3285",
+      "record": "task-final-r3285-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3286",
+      "record": "task-final-r3286-program-fanout-runtime-structure.json",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-source-parallel-runtime-final-structure-report"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3287",
+      "record": "task-final-r3287-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [   8.234s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3287-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   8.234s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4,
+        "passed": 3,
+        "failed": 1,
+        "skipped": 181,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T15:01:58.6990361Z"
+      },
+      "failureCause": "Program child transfer repaired; fixture then failed to assign a bracket literal to exact Seq type."
+    },
+    {
+      "run": "R3288",
+      "record": "task-final-r3288-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3289",
+      "record": "task-final-r3289-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [   7.690s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3289-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   7.690s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4,
+        "passed": 3,
+        "failed": 1,
+        "skipped": 181,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T15:03:21.2097182Z"
+      },
+      "failureCause": "Source diagnostic confirmed Seq literal final-type failure; runtime admission was preserved."
+    },
+    {
+      "run": "R3290",
+      "record": "task-final-r3290-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3291",
+      "record": "task-final-r3291-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [   0.599s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3291-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.599s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4,
+        "passed": 3,
+        "failed": 1,
+        "skipped": 181,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T15:07:51.9559633Z"
+      },
+      "failureCause": "Entry correctly refused unbound required Flow inputs; fixture now uses explicit typed Flow SDK invocation."
+    },
+    {
+      "run": "R3292",
+      "record": "task-final-r3292-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 101,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": "Existing traversal helper import missing after SDK fixture refactor; restored the import."
+    },
+    {
+      "run": "R3293",
+      "record": "task-final-r3293-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3294",
+      "record": "task-final-r3294-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(traversal::)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": "Summary [  18.736s] 4 tests run: 4 passed, 181 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3294-program-fanout-runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  18.736s] 4 tests run: 4 passed, 181 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 181,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-10-27T15:11:17.0204875Z"
+      },
+      "failureCause": null
+    },
+    {
+      "run": "R3295",
+      "record": "task-final-r3295-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3296",
+      "record": "task-final-r3296-program-fanout-runtime-structure.json",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-source-parallel-runtime-accepted-structure-report"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3297",
+      "record": "task-final-r3297-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [ 139.135s] 3896 tests run: 3895 passed, 1 failed, 0 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3297-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 139.135s] 3896 tests run: 3895 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 3896,
+        "passed": 3895,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 5,
+        "matchedPackages": 5,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler",
+            "test": "project::tests::producer_slots::compact_and_expression_need_spreads_emit_in_order_then_resume_native_and_awbc"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T15:16:36.1745444Z"
+      },
+      "failureCause": "Existing Compiler resume-refusal test expected the old generic error wording; refusal and original image preservation held."
+    },
+    {
+      "run": "R3298",
+      "record": "task-final-r3298-program-fanout-awbc-check.json",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3299",
+      "record": "task-final-r3299-program-fanout-runtime-clippy.json",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3300",
+      "record": "task-final-r3300-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3301",
+      "record": "task-final-r3301-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": "Summary [   4.295s] 172 tests run: 172 passed, 0 skipped",
+      "terminalAudit": {
+        "version": 1,
+        "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+        "run": "task-final-r3301-program-fanout-runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   4.295s] 172 tests run: 172 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 172,
+        "passed": 172,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-10-27T15:19:14.9188114Z"
+      },
+      "failureCause": null
+    },
+    {
+      "run": "R3302",
+      "record": "task-final-r3302-program-fanout-runtime-clippy.json",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-compiler",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3303",
+      "record": "task-final-r3303-program-fanout-runtime-doctests.json",
+      "command": [
+        "test",
+        "--doc",
+        "-p",
+        "arcweft-core",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    },
+    {
+      "run": "R3304",
+      "record": "task-final-r3304-program-fanout-runtime-structure.json",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-source-parallel-runtime-published-structure-report"
+      ],
+      "exitCode": 0,
+      "summary": null,
+      "terminalAudit": null,
+      "failureCause": null
+    }
+  ],
+  "finalEvidenceReuse": {
+    "version": 1,
+    "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+    "sourceInputs": 3998,
+    "changedInputs": [
+      "crates/arcweft-compiler/src/project/tests/producer_slots.rs"
+    ],
+    "unchangedBinaryCount": 5,
+    "changedBinaryCount": 1,
+    "binaries": [
+      {
+        "binary": "arcweft-compiler",
+        "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+        "previousSha256": "dd5639547badaf896fcda3b009b7e548ac2e8bf2892becbd76ef4d2ac47fa0bb",
+        "currentSha256": "13ff48d0eccc7d46f5133ebfa727b8729a807e3b9f9bd04d32327737c225d4d5",
+        "unchanged": false
+      },
+      {
+        "binary": "arcweft-compiler::callable_execution",
+        "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-6f0f9fd90f0abf3c.exe",
+        "previousSha256": "f7de2e44285e56572a7b8df2f22d770cfab599797dfc5b89f64712e4da03a301",
+        "currentSha256": "f7de2e44285e56572a7b8df2f22d770cfab599797dfc5b89f64712e4da03a301",
+        "unchanged": true
+      },
+      {
+        "binary": "arcweft-core",
+        "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-728949707a889d5a.exe",
+        "previousSha256": "5e85dfa76b63888ff01d46fa3f16341fbb2c68f0633720c56d5aea65945c3d0f",
+        "currentSha256": "5e85dfa76b63888ff01d46fa3f16341fbb2c68f0633720c56d5aea65945c3d0f",
+        "unchanged": true
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-6b86fc072d3b9ae4.exe",
+        "previousSha256": "046998d65e5212d1654e31c203a5b84166f7f551f96d034898d1c1b344e7a6d2",
+        "currentSha256": "046998d65e5212d1654e31c203a5b84166f7f551f96d034898d1c1b344e7a6d2",
+        "unchanged": true
+      },
+      {
+        "binary": "arcweft-runtime-codegen",
+        "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_codegen-406b38c9ce2beae1.exe",
+        "previousSha256": "56f82fc3c75027fd8d96ce9ba28f0d81d8f3bd569e4b04d1077aebc73cab7143",
+        "currentSha256": "56f82fc3c75027fd8d96ce9ba28f0d81d8f3bd569e4b04d1077aebc73cab7143",
+        "unchanged": true
+      },
+      {
+        "binary": "arcweft-runtime-plan",
+        "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-f920f0f61da00655.exe",
+        "previousSha256": "8372501ff18c792e21863b548a5b1bfbdff34e1de8c05414e5787e84bd86e245",
+        "currentSha256": "8372501ff18c792e21863b548a5b1bfbdff34e1de8c05414e5787e84bd86e245",
+        "unchanged": true
+      }
+    ],
+    "changedOwnerRuntime": "R3301 Compiler library 172/172 passed",
+    "priorRuntime": "R3297 3895 pass / 1 old diagnostic expectation fail",
+    "combinedRunClaim": false
+  },
+  "gates": {
+    "check": "R3298 five packages/all targets/all features/locked exit 0 before one test-only diagnostic string update; final Compiler library rebuilt by R3300",
+    "clippy": "R3299 five packages/all targets/all features/locked exit 0, 7021 warning messages; R3302 final Compiler exit 0, 5648 warning messages",
+    "doctest": "R3303 Core all features/locked: 76 pass, 0 fail/ignored",
+    "structure": "R3304 exit 0, blocking 0; 14 Rust paths, 3 owners",
+    "inputAudit": "Each run has zero drift over 3998 non-document inputs, binary hashes and catalog/terminal test sets"
+  },
+  "structure": {
+    "files": [
+      {
+        "path": "crates/arcweft-compiler/src/lower.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "433557",
+        "physical_lines": "10197",
+        "code_lines": "9967",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/project/tests/producer_slots.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "8955",
+        "physical_lines": "252",
+        "code_lines": "243",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "24175",
+        "physical_lines": "627",
+        "code_lines": "613",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "owner": "arcweft-core",
+        "bytes": "181291",
+        "physical_lines": "4277",
+        "code_lines": "4127",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "180"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "owner": "arcweft-core",
+        "bytes": "240452",
+        "physical_lines": "5967",
+        "code_lines": "5683",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+        "owner": "arcweft-core",
+        "bytes": "72816",
+        "physical_lines": "1978",
+        "code_lines": "1839",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/entry/schema.rs",
+        "owner": "arcweft-core",
+        "bytes": "46179",
+        "physical_lines": "1427",
+        "code_lines": "1281",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "269"
+      },
+      {
+        "path": "crates/arcweft-core/src/executor.rs",
+        "owner": "arcweft-core",
+        "bytes": "44604",
+        "physical_lines": "1134",
+        "code_lines": "968",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/task/producer/source/template.rs",
+        "owner": "arcweft-core",
+        "bytes": "21791",
+        "physical_lines": "491",
+        "code_lines": "462",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/task/producer.rs",
+        "owner": "arcweft-core",
+        "bytes": "177657",
+        "physical_lines": "4631",
+        "code_lines": "4225",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "995"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+        "owner": "arcweft-core",
+        "bytes": "25813",
+        "physical_lines": "695",
+        "code_lines": "583",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/callable/tests.rs",
+        "owner": "arcweft-core",
+        "bytes": "41706",
+        "physical_lines": "1007",
+        "code_lines": "987",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "121365",
+        "physical_lines": "3176",
+        "code_lines": "2811",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "594718",
+        "physical_lines": "15211",
+        "code_lines": "14030",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      }
+    ],
+    "owners": [
+      {
+        "package": "arcweft-compiler",
+        "manifest": "crates/arcweft-compiler/Cargo.toml",
+        "workspace_fan_in": "3",
+        "workspace_fan_out": "24",
+        "development_workspace_fan_in": "2",
+        "development_workspace_fan_out": "10"
+      },
+      {
+        "package": "arcweft-core",
+        "manifest": "crates/arcweft-core/Cargo.toml",
+        "workspace_fan_in": "31",
+        "workspace_fan_out": "7",
+        "development_workspace_fan_in": "4",
+        "development_workspace_fan_out": "5"
+      },
+      {
+        "package": "arcweft-runtime-plan",
+        "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+        "workspace_fan_in": "5",
+        "workspace_fan_out": "10",
+        "development_workspace_fan_in": "5",
+        "development_workspace_fan_out": "0"
+      }
+    ],
+    "blocking": 0,
+    "scannedRust": 3106,
+    "disposition": [
+      "Core schema keeps one exhaustive value visitor; retained identity adds an admission-scoped sink mode, without making Callable a literal, granting Copy, or adding a second value model.",
+      "Producer owns structural launch validity and public Resume policy as separate checks. Product preflights policy before dropping the old live owner and commits already prepared Ready/Host-result transfers for Program children at the same value boundary as deferred children.",
+      "The public SDK rollback entry delegates to existing CurrentInvocation admission for explicit Flow inputs; no entry authority is fabricated.",
+      "Runtime-plan owns the closed Host/Program producer classification across compiler and closed-function consumers. Tests exercise exact input ABI, Source callbacks, publication order and every-step save/rollback rather than source spelling. Existing large exhaustive owners gain no I/O or dependency direction changes."
+    ]
+  },
+  "notAcceptedByThisReceipt": [
+    "Source affine, advanced cancellation/cleanup, arbitrary latent effects and attached defaults/generic shared prefixes",
+    "CLI integration, full 53 reverse dependencies and final workspace acceptance",
+    "Native public executor save"
+  ],
+  "unchangedAcceptedBoundary": "Generic Match remains accepted and published; this failure history does not reopen it.",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3265-program-fanout-awbc-check.input-audit.json",
+      "sha256": "ae83474583002f1542b40bd2d9decc4def1ae229959a2e4a7032eb6e8696284b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3265-program-fanout-awbc-check.json",
+      "sha256": "40d7f5e36bb6d9d15d1e670d77090910d3a25da171f99ce221fe7dbcc685cce6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3265-program-fanout-awbc-check.log",
+      "sha256": "6c163139da15900fac0e82a9c192c3e93a3e54977fffa89971f55e25aab6aab9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3266-program-fanout-runtime.binaries-before.json",
+      "sha256": "4059d775f158d66c84877170e5d9492dbd88a1b49cde9ddf852203ef8820989b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3266-program-fanout-runtime.json",
+      "sha256": "2a5a383deb9ae614b854c7a040626354d1d64b5774cf29a414bd221f32a8173d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3266-program-fanout-runtime.log",
+      "sha256": "852b8678f31dda856b2137cfacfca3402151c0308e2fc17d759e5d08c76249c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3266-program-fanout-runtime.terminal-audit.json",
+      "sha256": "157f3ad4182e8b42270eb3be842037185784ac9355fd2ce49c2cff428c613876"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3267-program-fanout-awbc-check.input-audit.json",
+      "sha256": "1efc038492dc69afc0fc1e3414f50b21d2391872b2e991da892355f5f50a2499"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3267-program-fanout-awbc-check.json",
+      "sha256": "d5ea18359e8bf1edd15ccbd7c87ff6293bc0308850e44e0d3b48e6600b16ca50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3267-program-fanout-awbc-check.log",
+      "sha256": "efc7cf6f968a9cfb262eaa96cd5232f771e435d96ecd1ec75047ba6c17dfab8a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3268-program-fanout-runtime.binaries-before.json",
+      "sha256": "ecd3cdac2d45243ab4b1dd3463bc1c421cd69bb7f0ce28b0e132b4e315a01363"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3268-program-fanout-runtime.json",
+      "sha256": "703ea136e77595757949444439558dd7d5827aad9e1788a385c1ad5d16bd65d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3268-program-fanout-runtime.log",
+      "sha256": "79bf0edd373debbb2afec06ede6dacb9b6758676bc00771171345fcadb954baf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3268-program-fanout-runtime.terminal-audit.json",
+      "sha256": "6bab587cc143b60a8f145fe07c634445b1e4c407bcf2a4084aaf6f061616050e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3269-program-fanout-awbc-check.input-audit.json",
+      "sha256": "bbf56ea9177b8fd069ca380c62f04831e98a86de7dc0b7cca444bb208b623fe8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3269-program-fanout-awbc-check.json",
+      "sha256": "9721e4d5738919bb31583770064a7ff0b57ae36555822b4102d4bc9d169b8f1f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3269-program-fanout-awbc-check.log",
+      "sha256": "78ffd5c02a170d651fd52e02a048770b563bd80ffc8d926a19fa35a38b03cfc5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3270-program-fanout-runtime.binaries-before.json",
+      "sha256": "74d65fbe8eb6fa7b0486490d4da1703d9d49e1264a621eb6765ed209a3d832a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3270-program-fanout-runtime.json",
+      "sha256": "1f6c80338d69259fe30fc5141c5f299a2fb029dc5cc81aefa2c9c1f82b653547"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3270-program-fanout-runtime.log",
+      "sha256": "22e898314c4bb3b3efd9a864be6d2c03232520663af3ac81493587c40bdd2cd1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3270-program-fanout-runtime.terminal-audit.json",
+      "sha256": "099a2d45152ce14a513e2d7ef4328515bf30ee6f09c93f34eaf41fd36ec2d537"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3271-program-fanout-awbc-check.input-audit.json",
+      "sha256": "acdc40eab4ecb7bac43f44e34ad7d245584c19bc6d5cca16719d2634c0dd50f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3271-program-fanout-awbc-check.json",
+      "sha256": "6403be19063d13fba947642c20f0233c6ca20d76808cb0ab41dec952e2a9ae89"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3271-program-fanout-awbc-check.log",
+      "sha256": "809d26e4f009fa0edc6704e382f81654a3a19bbb5b5afcf241096a31cb9a1e6b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3272-program-fanout-awbc-check.input-audit.json",
+      "sha256": "db8ee726623f56b8d18771b95608ea640a0fefe453fdc56cb1090b0852fb781f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3272-program-fanout-awbc-check.json",
+      "sha256": "598e80ffa3b2d134ec3f0c66642a52675e6cd78b3bbac216092e0c51bb03a487"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3272-program-fanout-awbc-check.log",
+      "sha256": "bc40511ec2f6dde7c53447262f0823c59e33828f36ac4992987000bb755797e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3273-program-fanout-runtime.binaries-before.json",
+      "sha256": "69450faaee31d8b52c46638d30344f4bd9db6c46ae3d489c904bc406d4334cf5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3273-program-fanout-runtime.json",
+      "sha256": "6533105d49c0015ecdcbbb2d049a30a84f701c4d3a5e7fe13ea14f1b23c88bae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3273-program-fanout-runtime.log",
+      "sha256": "02672f7fefb425983f91bd9fda73d2d319a2d074cda2a4c20cb7c633d87b0b4e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3273-program-fanout-runtime.terminal-audit.json",
+      "sha256": "5641047cd65768d7b26877ea6efb4e05d3cb6312bcd48cbeda79959f65129dc4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3274-program-fanout-awbc-check.input-audit.json",
+      "sha256": "648065778d46061b1358bb9110e395b48296a179453fc48de313549ca1912c29"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3274-program-fanout-awbc-check.json",
+      "sha256": "5c0036b5dc13cd07133c2c9fdb227ed1e997919817897d79c27a2bce52dce2cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3274-program-fanout-awbc-check.log",
+      "sha256": "a0a7eb7a0427562463f9c9e19f8400b1d695fbc0f1b48415ff11b84646bc116f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3275-program-fanout-runtime.binaries-before.json",
+      "sha256": "86402f23695e79c15e5b0acaacb141e4ade5879d613c4a735a04b71ac1f8e1fa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3275-program-fanout-runtime.json",
+      "sha256": "2f7b2da7d22be661e5b225c813bc5a874de9e55ba810e872a82fc19427c7e3ad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3275-program-fanout-runtime.log",
+      "sha256": "6d058881ddd43df7f2a5ae526808e60f56bd56dd8034f117c36bac3bdecabc1b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3275-program-fanout-runtime.terminal-audit.json",
+      "sha256": "c6024a9b3867577361bf45a1828c2c15e0c118b5aeb69ad9ce8f64f63872aca2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3276-program-fanout-awbc-check.input-audit.json",
+      "sha256": "09152b54999e0f4ae12e027b0ab89284e091cffb507839ebd5d9a3f2420eaf1a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3276-program-fanout-awbc-check.json",
+      "sha256": "8e3835da10180a5eeba3cd200d661a5f99046946f9ee7d735bea4e0d16a163e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3276-program-fanout-awbc-check.log",
+      "sha256": "7359a625c0c923cd3e66530953816424ff38343d21629666668ea968d5133fa9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3277-program-fanout-runtime.binaries-before.json",
+      "sha256": "1485f4c378adea99c8d9f1a043663e38e7e687a47eeb22406a84a9d6f9a21a1b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3277-program-fanout-runtime.json",
+      "sha256": "b8ba683f08a51b6117bf78d66013cb8c97b83df3521417c40b01d51e6d4f5acd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3277-program-fanout-runtime.log",
+      "sha256": "81a79f44ad2c91582616f98a38f48e6eb1996311adc3a9523a4c1202c0fcc045"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3277-program-fanout-runtime.terminal-audit.json",
+      "sha256": "8341550f5c980f30cd43909ceb942a1f49e4f56cad2ef590169bbc7afbae165e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3278-program-fanout-awbc-check.input-audit.json",
+      "sha256": "69bb8e4f17ad41a16f89c960f9530da2fe847980a273d654b2c12b61042fe453"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3278-program-fanout-awbc-check.json",
+      "sha256": "c0699f375e60ecf6ec0292617bce41575055ebf420aadaa5badf8544ba38b369"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3278-program-fanout-awbc-check.log",
+      "sha256": "42fb8e9368428924586879fa5766a0056387eac99c8e5116c955f815be312446"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3279-program-fanout-awbc-check.input-audit.json",
+      "sha256": "a0349a6bf042c08706583e52c038ca2ecda45dbc0daef52a122d525445b72787"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3279-program-fanout-awbc-check.json",
+      "sha256": "52248341be83b0d30945a85d65ec69d8eae35209c8a66b3df617efc31bc88622"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3279-program-fanout-awbc-check.log",
+      "sha256": "66b4f506a1b256ffec0d64c817db3e561f4648de644160c94d9d47a9d4444169"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3280-program-fanout-runtime.binaries-before.json",
+      "sha256": "cb0d7d7cdd7b45454dd292bbe6a69618637de4158d406ef37e510f243d7427ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3280-program-fanout-runtime.json",
+      "sha256": "98f018a6119b485f596c41aaa7acc9a4471177090f59d448a18b541c593b15ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3280-program-fanout-runtime.log",
+      "sha256": "aeebd037b78976bef08a65e307e269428761197d845aa5c984dbfa069fc429c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3280-program-fanout-runtime.terminal-audit.json",
+      "sha256": "e6de98cba98c2bace8ee37211845b1be71926c6b0c60f8ed51eb48190509f767"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3281-program-fanout-runtime-structure.input-audit.json",
+      "sha256": "a82327ebd8c58b70a2138814b8d932d131985e76b8a17e1ded9c8f88330ff55c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3281-program-fanout-runtime-structure.json",
+      "sha256": "90d1168f9c1e332c3151d4209fdd7272660420b6ff50b30143a33f1f6e707391"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3281-program-fanout-runtime-structure.log",
+      "sha256": "83acca1329f2d42c3a0d8de23485bddc8aecf0675b6777d043ffc07dc48c8458"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3282-program-fanout-awbc-check.input-audit.json",
+      "sha256": "d1a56449a0b925ec27fd7d55f37131e556a7ed05f58f644305075364b7e1e2fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3282-program-fanout-awbc-check.json",
+      "sha256": "2d49ab75cd98f1cb44ae60c219b28e3fa9d54fdfcdedffe82d752b35e4732028"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3282-program-fanout-awbc-check.log",
+      "sha256": "27145e9beac9b9923b3acf867b15c1de4b89ff91ec26a78cd1ff7131db2ea0d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3283-program-fanout-runtime.binaries-before.json",
+      "sha256": "67f9099198b43dd38732154a512529749f9e946a3aafc9a802313c266c903369"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3283-program-fanout-runtime.json",
+      "sha256": "531a19451a18e66f8839bd1e8185073231aa57b0e3f8ca564863fecd8a234156"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3283-program-fanout-runtime.log",
+      "sha256": "38dcaaaf2675f66c0f5432f258529f355767f7cc74411add081057562d7a75a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3283-program-fanout-runtime.terminal-audit.json",
+      "sha256": "93bf69c80cb86bb0ca502a7c38a4dd19b68d5b6a998b09af58008953b028a740"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3284-program-fanout-awbc-check.input-audit.json",
+      "sha256": "a3fa58afa79033e6cc298e1edf3a8c138b9a86231b67ea32cdda6488f83fb0ff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3284-program-fanout-awbc-check.json",
+      "sha256": "4075f80fa25d1780ed1424fef0706912ffc64c6be9e7df8deb6f12cae23adaa0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3284-program-fanout-awbc-check.log",
+      "sha256": "0a5f11b4ab92394082b5118a2b88a063cd4ce117f230f2da406f5fdbc2aef56d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3285-program-fanout-awbc-check.input-audit.json",
+      "sha256": "a6c19c7d925d2f9b5cae2b9de22aac5137258de34c238bec65043cb842089adb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3285-program-fanout-awbc-check.json",
+      "sha256": "d2cdc38e1acf8d32b766f5d8f95c58525ded82b89e490da12ab9bb96c1313602"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3285-program-fanout-awbc-check.log",
+      "sha256": "d2891a98302c1a2f1c1a1fa8ecf3dda1cece6617b78fac84aefa2642195479f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3286-program-fanout-runtime-structure.input-audit.json",
+      "sha256": "1ba720be764855995635495e664ae843adcf19d94f1bf2bc8392f0fa752c2b49"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3286-program-fanout-runtime-structure.json",
+      "sha256": "c148e81cf9fc7fd1000080fc8902651a5e7d5e767da9c3fda2081c4b63ffcb50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3286-program-fanout-runtime-structure.log",
+      "sha256": "ef9d55d7437f314c7b224431132f5245d64fa030a11a0f44559dbeb5ce1b8ec0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3287-program-fanout-runtime.binaries-before.json",
+      "sha256": "7853c04e0ece12540af11fe2566110ca51ffabb1cf829bb3373467fa263fcc6a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3287-program-fanout-runtime.json",
+      "sha256": "ae80a319402188b7b602fd6e511509399fb66161898089efe49b0ba5bddbe9c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3287-program-fanout-runtime.log",
+      "sha256": "7b45879bbaf1cd24737afe7dcdd826d01f83adcb7ceeecf0d97e363de35e4f0e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3287-program-fanout-runtime.terminal-audit.json",
+      "sha256": "c5156ff63f6a6de923b3ebc8826c4d7409d922ab0b7855fc4081912455812497"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3288-program-fanout-awbc-check.input-audit.json",
+      "sha256": "4cad04970eaab4381939cab10a72334ab4faaee94bd12d1070081a71c44bf3a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3288-program-fanout-awbc-check.json",
+      "sha256": "74dcff6d028a0cc36367110f90ef826ce769ce1174c1d8fbd8eecb818207a91e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3288-program-fanout-awbc-check.log",
+      "sha256": "f85704868150df24d674fc5b2936fd225cd886b3870ab67638dd2da9614f3b32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3289-program-fanout-runtime.binaries-before.json",
+      "sha256": "5527380ae5f6bb3781e4532617adf31711f4dd06f6eaf8e28792d25c8fb16c65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3289-program-fanout-runtime.json",
+      "sha256": "e2163447d32df011cd700bb350f985a2acecd9585f46bd1ae388f621444b0519"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3289-program-fanout-runtime.log",
+      "sha256": "b3d849c9c22cf89aab8e451b3ee19c5a006b0f0e17d23009e645ddfb8782dc34"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3289-program-fanout-runtime.terminal-audit.json",
+      "sha256": "24d9beb638b76bddc1fd7f70c6b74222266967a89dd3947173d53c59a86b54a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3290-program-fanout-awbc-check.input-audit.json",
+      "sha256": "965245eee5027fd8ecb5c6b4c7bdc0964a5c87b0ddd34267082f293cd71d3927"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3290-program-fanout-awbc-check.json",
+      "sha256": "5635a0bcf07e589cf3170b09978f0ff1dbb417745b7dcd106ff0df705d4e52f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3290-program-fanout-awbc-check.log",
+      "sha256": "8d6377690a5327ba3e96597d80b6fcbfc378c0f8133c7894c8946f67a13a2d14"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3291-program-fanout-runtime.binaries-before.json",
+      "sha256": "07e8e2db89449eb0026b8f783cc6c6191ac7831c0e7a051f7856064d40a9858f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3291-program-fanout-runtime.json",
+      "sha256": "c2ddf019da5f629abb43a3e13649df9508f8199bcf4ab2915b314ffc9b887724"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3291-program-fanout-runtime.log",
+      "sha256": "799ca65e4318a1a7e966043efb9dfddca4c8df50b0f8fc43c81c618734778f84"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3291-program-fanout-runtime.terminal-audit.json",
+      "sha256": "aa38446863ec2ff5ee4d24d56009391a049a134bf941117ffa043c463dcdcae7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3292-program-fanout-awbc-check.input-audit.json",
+      "sha256": "d53873b6be63caa05f1af62a31d28bc1c0e5f9b7aec1c3dcd7474a5fd579f78c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3292-program-fanout-awbc-check.json",
+      "sha256": "0a99ee41a07914b75b3d9f0a05472a7a64189d07d692af9219756d93fab8d943"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3292-program-fanout-awbc-check.log",
+      "sha256": "de72e36d568ad8f0db0e26807f90c3f941eddcea4e0588e640c7d49474dae940"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3293-program-fanout-awbc-check.input-audit.json",
+      "sha256": "7874ad8e11254b415eb74514e08e7c2a443c65324e982f74129a0a372cb026fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3293-program-fanout-awbc-check.json",
+      "sha256": "19487e092407bea0686b696aaa00c99ce3929b48500bf482c549463b3a72136a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3293-program-fanout-awbc-check.log",
+      "sha256": "cf523a88b5ad42ae1e6ecec82b5e27b3d9fd2eac9a0ca1ca2860c0b4e574071a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3294-program-fanout-runtime.binaries-before.json",
+      "sha256": "7718e54c469202f6cef9c676b7bd7520df70f2935dde1f107398ad219e3c900a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3294-program-fanout-runtime.json",
+      "sha256": "9d7492e96a57b424369d95366229f47458eb21af491e54a1338b5f77a57555fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3294-program-fanout-runtime.log",
+      "sha256": "845726fe4f2c1f62a9725b963108eb9700b004c5f81688a5a5bceabf9a252a67"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3294-program-fanout-runtime.terminal-audit.json",
+      "sha256": "983efb9f9f8ca6d22e359b9c7e5eeff7dbc984d54015272b735898be97f9a085"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3295-program-fanout-awbc-check.input-audit.json",
+      "sha256": "55f1938e932d9d0a5358e167b784739501b82770de173d61d38e7b4bc0f96413"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3295-program-fanout-awbc-check.json",
+      "sha256": "d87d03b773155746edeeb9b08bdd00350f486477cc21bc1044ea6c4ff06dca02"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3295-program-fanout-awbc-check.log",
+      "sha256": "f18a7e817537bd2769917c9b7086f623660879cece94cefa4797185106b37f0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3296-program-fanout-runtime-structure.input-audit.json",
+      "sha256": "ed03f464ee41d50dcbcf416ff6cf4794f2c336a2fe1b621416b4c8471c875cad"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3296-program-fanout-runtime-structure.json",
+      "sha256": "d0cead461ee5545437b9e9cef8df68498cc20291adbbafea84776de19a03f7c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3296-program-fanout-runtime-structure.log",
+      "sha256": "b77667eedd2b62bf9a038231dd87a8b164a8d87894baf9e739bfeb003beaf875"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3297-program-fanout-runtime.binaries-before.json",
+      "sha256": "043f65e71b71af32adc082b559385ee2fff48bdaa506eb2164be9dfa4cea1963"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3297-program-fanout-runtime.json",
+      "sha256": "5c68c171f457b803e88af6fc8255e654a8659e46ccf6c23dd24d1ae9496a7b7a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3297-program-fanout-runtime.log",
+      "sha256": "5e3851e2a12ca3513d6d3610e601658a1b4b34188f858fcbc765ac98521ad9e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3297-program-fanout-runtime.terminal-audit.json",
+      "sha256": "12a659528ac89071a4aaa5195ff448cddb1819036e1f830b8fbdde779a60fbab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3298-program-fanout-awbc-check.input-audit.json",
+      "sha256": "cf4da95ff38991c89e9ccbcecb556a0954f6e30b4682d64cf49a7b5c84ff8587"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3298-program-fanout-awbc-check.json",
+      "sha256": "9f836b66aae3f9ae4e7868720e8d794e6aee6af1ca187692c159d8939f33181f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3298-program-fanout-awbc-check.log",
+      "sha256": "05332b4decccd3f03d06fd0faf75d6e9da1f32c513a419ca1f898350eb3ca8a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3299-program-fanout-runtime-clippy.input-audit.json",
+      "sha256": "973bb1d418f7e39d77fc82302f5c21b8d49df4891794ea55fbb1b124e8c034de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3299-program-fanout-runtime-clippy.json",
+      "sha256": "7cc3eca478c486013eb6273b7b2352f1e48b2382f5eb344e85140d261c8ba756"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3299-program-fanout-runtime-clippy.log",
+      "sha256": "a96a345785f2013a1ffdcffd02603c8cce539a30400dff7486e937e00df50969"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3265.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3265.source-freeze.json",
+      "sha256": "c6d29cfe66fe2e11ca35be9a7c1c04b3f07ccfaf8c0488dc9b8a241e1f659a3f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3266.source-freeze.json",
+      "sha256": "c6d29cfe66fe2e11ca35be9a7c1c04b3f07ccfaf8c0488dc9b8a241e1f659a3f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3267.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3267.source-freeze.json",
+      "sha256": "d65675cefa2612cc7c64335832d841871d29a52aeb86f1ffacc873f63f9467cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3268.source-freeze.json",
+      "sha256": "d65675cefa2612cc7c64335832d841871d29a52aeb86f1ffacc873f63f9467cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3269.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3269.source-freeze.json",
+      "sha256": "65e94ce2f4a06c0e07d047d782d05574f0a107931fdb99b13455bf2135bdf750"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3270.source-freeze.json",
+      "sha256": "65e94ce2f4a06c0e07d047d782d05574f0a107931fdb99b13455bf2135bdf750"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3271.source-freeze.json",
+      "sha256": "d69699e18732dd7ca044d17fef7abd210492e4c7de00ce549053f60d1bcc7627"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3272.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3272.source-freeze.json",
+      "sha256": "d7a8f3e866fc19fe17fc5b2eb01f03603bf3355c85249be31dfa143c22f66d33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3273.source-freeze.json",
+      "sha256": "d7a8f3e866fc19fe17fc5b2eb01f03603bf3355c85249be31dfa143c22f66d33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3274.inventory.json",
+      "sha256": "2fb2525c69869ed302aaad1aff133939984abc8870e3b9f5c273a1614ef2d9fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3274.source-freeze.json",
+      "sha256": "3541cc01785d33d74c1e82db92f28dbc412e0d07e4e4822807b1b6a1b527d054"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3275.source-freeze.json",
+      "sha256": "3541cc01785d33d74c1e82db92f28dbc412e0d07e4e4822807b1b6a1b527d054"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3276.inventory.json",
+      "sha256": "42ac0d00497e328f9a70c81b43dd7c76175f426b45caca02fef1ac2a89d28552"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3276.source-freeze.json",
+      "sha256": "ca2dcc3204189668275c87686df55d2d97d493a0f206ddc58b400749346bafd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3277.source-freeze.json",
+      "sha256": "c3c9bf904cc78b70a0182a3f2d8e132f3d3090e56e24f4882bde7d00d9908c73"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3278.source-freeze.json",
+      "sha256": "583b6c58f83187d99ef23918f39e0262eead38309f86daac9fed999b81bbe268"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3279.inventory.json",
+      "sha256": "42ac0d00497e328f9a70c81b43dd7c76175f426b45caca02fef1ac2a89d28552"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3279.source-freeze.json",
+      "sha256": "ff5143cdd66cd7175b30c035023a07f95885c56261d7bfcd3179930634bf58c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3280.source-freeze.json",
+      "sha256": "ff5143cdd66cd7175b30c035023a07f95885c56261d7bfcd3179930634bf58c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3281.source-freeze.json",
+      "sha256": "ff5143cdd66cd7175b30c035023a07f95885c56261d7bfcd3179930634bf58c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3282.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3282.source-freeze.json",
+      "sha256": "65aeb6e828870abfdebc97286d7eaea0c1a905ab7cb80ac2c40bc60f56073221"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3283.source-freeze.json",
+      "sha256": "65aeb6e828870abfdebc97286d7eaea0c1a905ab7cb80ac2c40bc60f56073221"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3284.source-freeze.json",
+      "sha256": "56631d34acfc259b06a78821f2fc9b91c58ff793ee4b7f587720adce09203d40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3285.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3285.source-freeze.json",
+      "sha256": "b1e2fa0b309aaaa24079c7bff702df7949a1ae91e0c97ba15d43c1e8bf149ce0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3286.source-freeze.json",
+      "sha256": "b1e2fa0b309aaaa24079c7bff702df7949a1ae91e0c97ba15d43c1e8bf149ce0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3287.source-freeze.json",
+      "sha256": "b1e2fa0b309aaaa24079c7bff702df7949a1ae91e0c97ba15d43c1e8bf149ce0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3288.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3288.source-freeze.json",
+      "sha256": "d693c6a1ce037ee5eb8c1df793464608699e4f2bcf2b546ae58b54d186db6e04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3289.source-freeze.json",
+      "sha256": "d693c6a1ce037ee5eb8c1df793464608699e4f2bcf2b546ae58b54d186db6e04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3290.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3290.source-freeze.json",
+      "sha256": "7e5f86c4e4ac5816255750441f00a65aca792d7ea97ba4fcfbeee42413f232a5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3291.source-freeze.json",
+      "sha256": "7e5f86c4e4ac5816255750441f00a65aca792d7ea97ba4fcfbeee42413f232a5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3292.source-freeze.json",
+      "sha256": "a5393dc869f463c79eae396df407b7774493804c437b9ed542638725223fd2d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3293.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3293.source-freeze.json",
+      "sha256": "83cc2ce43ddaea5a7083b4517408ce13e9f0a8fe0a72ccd417690dad6f600412"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3294.source-freeze.json",
+      "sha256": "e95eab3ec7ba9687353c959657dfc34fd16f8e5dde3357d1f891066a7c61eed8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3295.inventory.json",
+      "sha256": "2fb2525c69869ed302aaad1aff133939984abc8870e3b9f5c273a1614ef2d9fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3295.source-freeze.json",
+      "sha256": "1a05ac8cc0ab1d934d420f49844ec365d53a1a734ac142955fa21bd2fa869dd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3296.source-freeze.json",
+      "sha256": "1a05ac8cc0ab1d934d420f49844ec365d53a1a734ac142955fa21bd2fa869dd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3297.source-freeze.json",
+      "sha256": "1a05ac8cc0ab1d934d420f49844ec365d53a1a734ac142955fa21bd2fa869dd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3298.source-freeze.json",
+      "sha256": "8545b26286c5a374f347455ae0d77959031fd16aaca75db8581c0a8fc75473b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3299.source-freeze.json",
+      "sha256": "1a05ac8cc0ab1d934d420f49844ec365d53a1a734ac142955fa21bd2fa869dd9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-parallel-compiler-checkpoint.verified.json",
+      "sha256": "86cfd8a3bd7c4975cc85af6e07630677813a6253a8af872586d513e53d4cfe0e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3300-program-fanout-awbc-check.input-audit.json",
+      "sha256": "5dda5ad01d8591f101fd321eb2c2d7c25b62b98e930f7aa09032d2197eb2d456"
+    }
+  ]
+}

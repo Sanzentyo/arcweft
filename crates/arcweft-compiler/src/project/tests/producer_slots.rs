@@ -197,7 +197,7 @@ fn assert_awbc_returns(program: &AwbcProgram) {
     assert!(
         error
             .to_string()
-            .contains("invalid Need producer registry snapshot"),
+            .contains("public producer resume requires quiescence"),
         "{error}"
     );
     assert_eq!(product.snapshot().unwrap(), image);

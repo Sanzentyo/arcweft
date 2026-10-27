@@ -12740,3 +12740,49 @@ R3264はSource traversal 4件、3 PASS／新parallel fixture 1 FAIL／181対象�
 3,998入力と実binary 1件の差分0、catalog終端集合差分0。rootのawaitに必要なcontrol.suspendが
 宣言上限にないAWF-EFX-001で、実callbackへ入る前の拒否だった。次cutでfixtureのroot宣言へ
 必要なeffectを加える。callbackのfs.read契約、effect上限検査、budget／assertionは維持する。
+
+## Source parallelの実callback・保存復元修復 — 2026-10-28
+
+公開 `7abb208bb0dbb0e97d8a14ace9da38f107e93531` はCompiler接続のcheckpointであり、
+その時点のSource実行未受入という記録を保持する。次cutではHost／Programのproducer定義判定を
+閉じたlocal-useでも同じownerへ揃え、元Programのadmissionを終えたFn／captureを保持identityとして
+digestする。static canonical literalのCallable拒否、Copy権限、Source lease、byte上限は維持した。
+Core単体では42／43のcapture、live／inertの同一digest、別owner拒否、budget 0拒否を確認した。
+
+R3266はeffect付きrootをpure deterministic programとして抽出したfixtureの拒否、R3268は閉じた
+producer factのHost限定判定、R3270はCallableのstatic canonical digest拒否だった。R3273は実Host
+operationがread_textなのにfixtureがfs.read_textを期待し、R3275は正常なdelivery診断を空と期待した。
+R3275は3,896件中3,895 PASS／新Source fixture 1 FAIL、102.829秒。5 library 3,711件と他の
+Compiler integration184件はPASS。この旧入力の合格を、後続Core修復の最終受入へ転用しない。
+
+R3277はMustBeQuiescentを構造snapshot検査でも拒否していた。構造的inert imageの有効性と
+公開save／resumeの静止policyを分け、private rollbackを可能にした。公開resumeは元ownerを
+破棄・再構築する前に拒否する。R3280／R3283ではAWBCの2 Host応答後に3件目が起動せず、
+4,096 stepで停止。Program childがPrepared Readyのcursorのみを記録し、payload移動とresumeを
+commitしていないことが原因だった。既存deferred childと同じ準備済みReady／Host-resultの
+確定処理をProgram ownerのcommitへ接続した。step／budget／assertionは変更していない。
+
+R3287／R3289はSeqへのliteral代入がfinal typeを持たないfixtureの失敗、R3291はEntryから
+必須Flow引数を渡さないfixtureの拒否。各familyを既存のtyped Flow invocationから渡し、AWBCも
+公開SDKのexplicit Flow起動を使う。SDKには現在のinvocationを対象にしたprivate rollback復元口を
+既存Core復元authorityへの薄い入口として加えた。R3292の既存helper用import漏れ1件も修復した。
+失敗runとfull SHAは[原本](acceptance-evidence/task-source-parallel-runtime-acceptance.json)へ保持する。
+
+R3294はtraversal全4件PASS／181対象外、18.736秒。新fixture内は6入力×Native／canonical decoded
+AWBCの12条件。実Fが保持prefixとitemでHost Needを作り、順序を変えて応答する。入力順Ok、
+最小index Err、空Ok、3 callback、最大2 in-flight、LocalOnlyを検査する。各AWBC stepで公開JSON
+save／restoreまたはprivate rollbackを行う。公開resume拒否後は完全なinert imageの一致を検査し、
+sole live ownerの維持を確認した。3,998入力・実binary 1件・catalog終端集合の差分0。
+これは当該12条件の実行受入であり、Source affine・高度な取消・CLI統合まで完了としない。
+
+R3297は5 package全owner 3,896実行／3,895 PASS／1 FAIL、139.135秒、除外0。Core 2,064、Sema
+1,333、runtime-plan 130、codegen 12、Compiler integration185件は全PASS。Compiler library172件は
+171 PASS／1 FAILで、公開resume拒否を検査する既存testが旧汎用診断を期待していた。
+R3301はその期待1行を更新後、Compiler library全172／172 PASS、4.295秒。拒否と元状態保持の
+assertionは残した。R3297からの変更入力は当該test 1ファイルのみ、他5 binaryのhashは一致する。
+未変更binaryの結果を再利用し、3,896件の全PASSを一つのrunとして作らない。
+各runの3,998入力・実binary・catalog終端集合の差分0。R3298の5 package全target check、R3299の
+5 package Clippyは終了0（警告7,021メッセージ）。R3302の更新後Compiler Clippyも終了0（警告
+5,648メッセージ）。全53逆依存とworkspace最終受入はこのowner検証から推定しない。
+
+R3303 Core doctestは76／76 PASS・除外0、R3304構造gateは終了0／blocking 0。14 Rust path・3 ownerの責任境界と実測値を同じ原本へ保持した。

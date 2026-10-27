@@ -545,6 +545,25 @@ impl RuntimeRetainedValueAdmission {
             .map_or(Ok(()), |failure| Err(failure.into()))
     }
 
+    /// Digests the original Source's fully admitted borrowed argument group.
+    /// Its byte transcript grants neither Copy nor standalone serialization.
+    pub(crate) fn admitted_arguments_digest(
+        &self,
+        value: crate::value::RuntimeValueView<'_>,
+    ) -> Result<crate::entry::RuntimeValueDigest, AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        if self.program_owner().is_none() {
+            return Err(AwbcRuntimeValueSnapshotError::Message {
+                message: "retained argument identity requires its original program".into(),
+            });
+        }
+        crate::entry::schema::retained_argument_identity_digest(
+            value,
+            self.work().limits().platform_encoded_bytes(),
+        )
+        .map_err(Into::into)
+    }
+
     pub(crate) fn admit_partial_record_header(
         &mut self,
         header: &crate::value::RuntimePlaceRecordHeader,

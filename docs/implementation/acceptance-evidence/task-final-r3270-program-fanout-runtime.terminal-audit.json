@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+  "run": "task-final-r3270-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.580s] 4 tests run: 3 passed, 1 failed, 181 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 4,
+  "passed": 3,
+  "failed": 1,
+  "skipped": 181,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-27T14:11:24.8289587Z"
+}

@@ -643,6 +643,32 @@ pub(crate) fn canonical_runtime_value_view_digest(
     Ok(RuntimeValueDigest::from_bytes(sink.finish()))
 }
 
+/// Bounded identity transcript for an already admitted original-program group.
+/// Callable ordinals are scoped by that exact program and retain their ordered
+/// captures; Native and AWBC preserve the original callable-state ordinals.
+pub(crate) fn retained_argument_identity_digest(
+    value: crate::value::RuntimeValueView<'_>,
+    max_encoded_bytes: usize,
+) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
+    let mut sink = CanonicalBlake3Sink::default();
+    let mut writer = CanonicalWriter {
+        sink: &mut sink,
+        max_string_bytes: None,
+        max_encoded_bytes: u64::try_from(max_encoded_bytes).map_err(|_| {
+            RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes",
+            }
+        })?,
+    };
+    value_encoding::visit_retained_identity(
+        value,
+        &mut writer,
+        &mut value_encoding::NoSchemaValidation::default(),
+        (),
+    )?;
+    Ok(RuntimeValueDigest::from_bytes(sink.finish()))
+}
+
 /// Private byte boundary shared by canonical schema and value transcripts.
 /// Each algebra has one exhaustive visitor; bytes and direct BLAKE3 consumers
 /// use the same primitive encoding and bounded write accounting.

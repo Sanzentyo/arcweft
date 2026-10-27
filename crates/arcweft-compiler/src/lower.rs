@@ -1707,13 +1707,7 @@ fn project_runtime_semantic_fact_inventories(
         input.push_project_function_root(root);
     }
     for (owner, call) in runtime_calls {
-        if matches!(
-            call.dispatch(),
-            RuntimeResolvedCallDispatch::Static(
-                RuntimeResolvedStaticCallTarget::Host(_)
-                    | RuntimeResolvedStaticCallTarget::ProgramNeed
-            )
-        ) {
+        if call.requires_producer_definition() {
             let definition = analysis
                 .checked_call_producer_definition(project, symbols, owner)
                 .map_err(|error| RuntimeSemanticProjectionError::Call {
@@ -8486,7 +8480,7 @@ fn runtime_executable_semantic_facts<'abi>(
             expected.children().into(),
             payload,
         );
-        let producer_kind = if matches!(fact.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if matches!(call.dispatch(), RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_) | RuntimeResolvedStaticCallTarget::ProgramNeed)))
+        let producer_kind = if matches!(fact.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if call.requires_producer_definition())
         {
             Some(arcweft_lang_sema::CheckedExpressionProducerKind::Call)
         } else if expected.producer_kind()

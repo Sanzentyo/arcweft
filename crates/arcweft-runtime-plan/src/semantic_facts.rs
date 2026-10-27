@@ -4260,6 +4260,18 @@ impl RuntimeResolvedCall {
         self.need_producer.as_ref()
     }
 
+    /// Calls whose execution retains original Source require a producer
+    /// definition from the same global or closed local-use authority.
+    pub const fn requires_producer_definition(&self) -> bool {
+        matches!(
+            self.dispatch,
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::Host(_)
+                    | RuntimeResolvedStaticCallTarget::ProgramNeed
+            )
+        )
+    }
+
     pub const fn mutation(&self) -> Option<&RuntimeResolvedCallMutation> {
         self.mutation.as_ref()
     }

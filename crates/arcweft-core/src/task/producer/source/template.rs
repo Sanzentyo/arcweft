@@ -364,10 +364,9 @@ impl RuntimeTaskSourceRef<'_> {
         }
         let captured: Vec<_> = captures.iter().map(V::borrowed_view).collect();
         let captured = RuntimeValueView::Tuple(RuntimeTupleView::Views(&captured));
-        let max_bytes = admission.work().limits().platform_encoded_bytes();
         let digest = match arguments {
             RuntimeTaskTemplateArguments::ProgramTask { .. } => {
-                crate::entry::schema::canonical_runtime_value_view_digest(captured, max_bytes)
+                admission.admitted_arguments_digest(captured)
             }
             RuntimeTaskTemplateArguments::FanoutProgramWorker { index, .. } => {
                 admission.validate_metadata(&index)?;
@@ -377,10 +376,9 @@ impl RuntimeTaskSourceRef<'_> {
                         crate::value::RuntimeUInt::U32(index),
                     )),
                 ];
-                crate::entry::schema::canonical_runtime_value_view_digest(
-                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-                    max_bytes,
-                )
+                admission.admitted_arguments_digest(RuntimeValueView::Tuple(
+                    RuntimeTupleView::Views(&fields),
+                ))
             }
             RuntimeTaskTemplateArguments::AwaitManyBase { source, .. } => {
                 let Some(FlowOp::AwaitMany { target, .. }) = self.request_endpoint().operation()
@@ -423,10 +421,9 @@ impl RuntimeTaskSourceRef<'_> {
                     captured,
                     RuntimeValueView::Tuple(RuntimeTupleView::Views(&source)),
                 ];
-                crate::entry::schema::canonical_runtime_value_view_digest(
-                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-                    max_bytes,
-                )
+                admission.admitted_arguments_digest(RuntimeValueView::Tuple(
+                    RuntimeTupleView::Views(&fields),
+                ))
             }
             RuntimeTaskTemplateArguments::AwaitManyChild { index, item, .. } => {
                 let Some(FlowOp::AwaitMany { target, .. }) = self.request_endpoint().operation()
@@ -463,10 +460,9 @@ impl RuntimeTaskSourceRef<'_> {
                     crate::value::RuntimeUInt::U32(index),
                 ));
                 let fields = [captured, index, item.view()];
-                crate::entry::schema::canonical_runtime_value_view_digest(
-                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-                    max_bytes,
-                )
+                admission.admitted_arguments_digest(RuntimeValueView::Tuple(
+                    RuntimeTupleView::Views(&fields),
+                ))
             }
         }
         .map_err(|error| {

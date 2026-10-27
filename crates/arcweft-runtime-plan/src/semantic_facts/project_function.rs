@@ -1722,18 +1722,18 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             {
                 return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
             }
-            let host = matches!(expression.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if matches!(call.dispatch(), super::RuntimeResolvedCallDispatch::Static(super::RuntimeResolvedStaticCallTarget::Host(_))));
+            let call_producer = matches!(expression.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if call.requires_producer_definition());
             match expression.producer() {
                 Some(producer)
                     if producer.matches_authority(expression.owner(), &local_uses)
                         && match producer.kind() {
-                            arcweft_lang_sema::CheckedExpressionProducerKind::Call => host,
+                            arcweft_lang_sema::CheckedExpressionProducerKind::Call => call_producer,
                             arcweft_lang_sema::CheckedExpressionProducerKind::Thread => matches!(
                                 expression.payload(),
                                 RuntimeProjectFunctionExpressionPayload::Thread
                             ),
                         } => {}
-                None if !host => {}
+                None if !call_producer => {}
                 _ => return Err(RuntimeProjectFunctionFactError::InvalidProducerDefinition),
             }
         }

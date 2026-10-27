@@ -3,6 +3,7 @@ use arcweft_core::awbc::{
     codec::AwbcDecodeBudget, product_step::AwbcProductStepExecutor, schema::AwbcProgram,
 };
 use arcweft_core::engine::{Engine, FlowFiberStatus};
+use arcweft_core::executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot};
 use arcweft_core::step::{RuntimeStepBudget, RuntimeStepMode, RuntimeStepOptions};
 use arcweft_lang_sema::final_analysis::{CheckedExecutionBodyOwner, CheckedExecutionSource};
 
@@ -46,6 +47,27 @@ fn source_parallel_executes_callbacks_with_public_save_quiescence_and_private_ro
         ("Vec<String>", 3, true),
         ("Vec<String>", 0, false),
     ] {
+        // Seq and Slice are admitted through their exact Flow input ABI;
+        // a bracket literal does not implicitly construct either family.
+        let bindings = || {
+            [arcweft_core::value::RuntimeFlowParameterBinding {
+                parameter: arcweft_core::entry::FlowParameterCoordinate::from_position(0),
+                value: arcweft_core::value::runtime_sequence_values(
+                    ["a.txt", "b.txt", "c.txt"]
+                        .into_iter()
+                        .take(count)
+                        .map(|path| RuntimeValue::String(path.into()))
+                        .collect(),
+                ),
+            }]
+        };
+        let expected_source = if errors {
+            r#".Err("a.txt")"#
+        } else if count == 0 {
+            ".Ok([])"
+        } else {
+            r#".Ok(["root/a.txt", "root/b.txt", "root/c.txt"])"#
+        };
         let source = format!(
             r#"
 extern capability fs {{
@@ -54,121 +76,91 @@ extern capability fs {{
 fn request(prefix: String, path: String) -> Need<Result<String, String>> effects {{ fs.read }} {{
     fs.read_text(prefix, path)
 }}
-pub fn root(values: {family}, prefix: String, limit: u32) -> Result<Vec<String>, String> effects {{ fs.read }} {{
+pub fn root(values: {family}, prefix: String, limit: u32) -> Result<Vec<String>, String> effects {{ fs.read, control.suspend }} {{
     let traversal = values.traverse(|path| request(prefix, path));
     let work = traversal.parallel(limit = limit);
     await work
 }}
-flow main() -> String {{ return "unused" }}
+flow main(values: {family}) -> String {{
+    let result = root(values, "root/", 2u32);
+    let expected: Result<Vec<String>, String> = {expected_source};
+    assert.check(result == expected);
+    return "parallel passed"
+}}
 "#
         );
         let compiled = compile_traversal_source(&source);
-        let declaration = compiled
-            .analysis_lease()
-            .final_analysis()
-            .hir_topology()
-            .modules()
-            .iter()
-            .flat_map(|module| module.entries())
-            .filter_map(|entry| entry.body())
-            .find(|body| body.declaration().name() == "root")
-            .unwrap()
-            .declaration()
-            .clone();
-        let selected = compiled
-            .analysis_lease()
-            .compile_deterministic_program(
-                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
-                    declaration,
-                    role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
-                }),
-                None,
-                &Default::default(),
-            )
-            .unwrap();
-        let inputs = || {
-            vec![
-                arcweft_core::value::runtime_sequence_values(
-                    ["a.txt", "b.txt", "c.txt"]
-                        .into_iter()
-                        .take(count)
-                        .map(|path| RuntimeValue::String(path.into()))
-                        .collect(),
-                ),
-                RuntimeValue::String("root/".into()),
-                RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(2)),
-            ]
-        };
-        let expected = || {
-            if errors {
-                RuntimeValue::result_err(RuntimeValue::String("a.txt".into()))
-            } else {
-                RuntimeValue::result_ok(arcweft_core::value::runtime_sequence_values(
-                    ["root/a.txt", "root/b.txt", "root/c.txt"]
-                        .into_iter()
-                        .take(count)
-                        .map(|path| RuntimeValue::String(path.into()))
-                        .collect(),
-                ))
-            }
-        };
-        let plan = Arc::clone(selected.plan());
-        let mut native =
-            Engine::for_program_invocation(Arc::clone(&plan), selected.program(), inputs())
-                .unwrap();
-        drive_source_parallel(RuntimeProgramOwner::Plan(plan), count, errors, |input| {
-            native.step(input, parallel_options())
-        });
-        assert_eq!(
-            native.take_program_result().unwrap().unwrap().1,
-            expected(),
-            "Native {family}"
-        );
-
+        let report = compiled.runtime_plan();
         let lowered = AwbcLowerer::new(
-            selected.plan(),
-            &selected.lowering_report().dialogue_content_catalog,
+            &report.plan,
+            &report.dialogue_content_catalog,
             "parallel.arcw",
         )
         .lower()
         .unwrap()
         .program;
-        let decoded = AwbcProgram::decode_canonical(
-            &lowered.encode_canonical().unwrap(),
-            AwbcDecodeBudget::default(),
+        let encoded = lowered.encode_canonical().unwrap();
+        let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+        assert_eq!(decoded, lowered);
+        let mut native_plan = report.plan.clone();
+        native_plan
+            .bind_artifact(
+                arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+                    *blake3::hash(&encoded).as_bytes(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let flow = native_plan.flows()[0].id.clone();
+        let mut native = Engine::for_flow_invocation(
+            native_plan
+                .seal_flow_invocation(flow.clone(), bindings())
+                .unwrap(),
         )
         .unwrap();
-        assert_eq!(decoded, lowered);
-        let code = Arc::new(decoded);
-        let mut awbc = Some(
-            AwbcProductStepExecutor::for_program_invocation(
-                Arc::clone(&code),
-                selected.program(),
-                inputs(),
-                arcweft_core::task::GenerationId::new(0),
-                1,
-            )
-            .unwrap(),
+        drive_source_parallel(
+            &format!("Native {family}"),
+            RuntimeProgramOwner::Plan(native.program_plan()),
+            count,
+            errors,
+            |input| native.step(input, parallel_options()),
         );
+        let code = Arc::new(decoded);
+        let executor = ArcweftRuntimeExecutor::from_awbc_product_flow_invocation(
+            Arc::clone(&code),
+            report
+                .plan
+                .clone()
+                .seal_flow_invocation(flow, bindings())
+                .unwrap(),
+            None,
+        )
+        .unwrap();
+        let mut awbc = Some(executor);
         let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
         let mut public_saves = 0;
         let mut quiescence_refusals = 0;
-        drive_source_parallel(RuntimeProgramOwner::Awbc(code), count, errors, |input| {
-            let mut current = awbc.take().unwrap();
-            let step = current.step_with_pure_backend(input, parallel_options(), &mut backend);
-            let snapshot = current.snapshot().unwrap();
-            awbc = Some(
+        drive_source_parallel(
+            &format!("AWBC {family}"),
+            RuntimeProgramOwner::Awbc(code),
+            count,
+            errors,
+            |input| {
+                let mut current = awbc.take().unwrap();
+                let step = current.step_with_pure_backend(input, parallel_options(), &mut backend);
+                let snapshot = current.product_inert_rollback_image().unwrap();
+                awbc = Some(
                 match arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
                     &snapshot,
-                    current.admitted_program(),
+                    current.admitted_product_awbc_program().unwrap(),
                 ) {
                     Ok(saved) => {
                         let saved =
                             serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
                         public_saves += 1;
-                        current
-                            .restore_inert_snapshot_owned(saved)
-                            .unwrap_or_else(|(_, error)| panic!("parallel public restore: {error}"))
+                        let saved = current.bind_product_save_snapshot(saved).unwrap();
+                        current.restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved))
+                            .unwrap_or_else(|error| panic!("parallel public restore: {error}"))
                     }
                     Err(
                         arcweft_core::awbc::product_step::AwbcProductSaveError::NeedsQuiescence {
@@ -177,29 +169,26 @@ flow main() -> String {{ return "unused" }}
                     ) => {
                         assert!(!needs.is_empty());
                         quiescence_refusals += 1;
+                        let (original, error) = current
+                            .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot.clone()))
+                            .expect_err("public resume must preserve its quiescence requirement").into_parts();
+                        assert!(matches!(error, arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message } if message.contains("public producer resume requires quiescence")));
+                        current = original;
+                        assert_eq!(current.product_inert_rollback_image().unwrap(), snapshot);
                         current
-                            .restore_rollback_image(snapshot)
-                            .unwrap_or_else(|(_, error)| {
+                            .restore_current_product_rollback_image(snapshot)
+                            .unwrap_or_else(|error| {
                                 panic!("parallel private rollback: {error}")
                             })
                     }
                     Err(error) => panic!("parallel save admission: {error}"),
                 },
             );
-            step
-        });
+                step
+            },
+        );
         assert!(public_saves > 0);
         assert_eq!(quiescence_refusals > 0, count > 0);
-        assert_eq!(
-            awbc.as_mut()
-                .unwrap()
-                .take_program_result()
-                .unwrap()
-                .unwrap()
-                .1,
-            expected(),
-            "AWBC {family}"
-        );
     }
 }
 
@@ -212,6 +201,7 @@ fn parallel_options() -> RuntimeStepOptions {
 }
 
 fn drive_source_parallel(
+    label: &str,
     owner: RuntimeProgramOwner,
     count: usize,
     errors: bool,
@@ -225,6 +215,7 @@ fn drive_source_parallel(
     let mut submitted = 0;
     let mut completed = Vec::new();
     let mut max_pending = 0;
+    let mut last_step = String::new();
     for tick in 0..4096 {
         let mut input = arcweft_core::step::RuntimeStepInput::default();
         let mut index = pending.len();
@@ -236,12 +227,32 @@ fn drive_source_parallel(
                 input.task_events.push(event);
             }
         }
+        let mut delivered = input
+            .task_events
+            .iter()
+            .map(|event| {
+                (
+                    event.publication_order(),
+                    arcweft_core::step::RuntimeDiagnostic::new(format!(
+                        "task {} sequence {} delivered",
+                        event.correlation.task_id, event.cursor.sequence.0,
+                    )),
+                )
+            })
+            .collect::<Vec<_>>();
+        delivered.sort_by_key(|(order, _)| *order);
+        let expected_diagnostics = delivered
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect::<Vec<_>>();
         let result = step(input);
+        if tick == 4095 {
+            last_step = format!("{result:?}");
+        }
         assert!(result.stats.executed_ops <= 1);
-        assert!(
-            result.output.diagnostics.is_empty(),
-            "parallel: {:?}",
-            result.output.diagnostics
+        assert_eq!(
+            result.output.diagnostics, expected_diagnostics,
+            "parallel diagnostics"
         );
         assert!(result.output.requests.host_calls.is_empty());
         assert!(result.output.requests.program_task_completions.is_empty());
@@ -263,7 +274,7 @@ fn drive_source_parallel(
                 panic!("callback must issue its actual Host request")
             };
             assert_eq!(capability.0, "fs");
-            assert_eq!(operation, "fs.read_text");
+            assert_eq!(operation, "read_text");
             assert!(named_args.is_empty());
             let [prefix, path] = args.as_slice() else {
                 panic!("callback keeps both actual String arguments")
@@ -305,6 +316,12 @@ fn drive_source_parallel(
         max_pending = max_pending.max(pending.len());
         assert!(pending.len() <= 2);
         if matches!(result.fiber_status, FlowFiberStatus::Done(_)) {
+            assert_eq!(
+                result.fiber_status,
+                FlowFiberStatus::Done(arcweft_core::engine::FlowExit::Return(
+                    "parallel passed".into()
+                ))
+            );
             assert_eq!(submitted, count);
             assert_eq!(completed.len(), count);
             assert_eq!(max_pending, count.min(2));
@@ -319,7 +336,9 @@ fn drive_source_parallel(
             result.fiber_status
         );
     }
-    panic!("parallel did not finish its bounded fixture");
+    panic!(
+        "parallel did not finish its bounded fixture: {label}, submitted={submitted}, completed={completed:?}, pending={pending:?}, last={last_step}"
+    );
 }
 
 fn assert_source_traversal(family: &str, expression: &str) {
@@ -604,5 +623,5 @@ fn compile_traversal_source(source: &str) -> arcweft_compiler::project::Compiled
         &BTreeMap::from([(CanonicalModulePath::crate_root(), parsed)]),
         &context,
     )
-    .unwrap_or_else(|error| panic!("manifest-backed traversal project: {error:?}"))
+    .unwrap_or_else(|error| panic!("manifest-backed traversal project: {error:?}\n{source}"))
 }

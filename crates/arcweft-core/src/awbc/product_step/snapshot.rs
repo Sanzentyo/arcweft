@@ -2886,18 +2886,7 @@ impl AwbcProductExecutorSaveSnapshot {
             })?;
         let needs = snapshot
             .need_producers
-            .launches
-            .iter()
-            .filter(|launch| {
-                matches!(&launch.origin, NeedProducerLaunchOriginRestore::Need { start, .. } if start.restart() == HostRestartPolicy::MustBeQuiescent)
-                    && !launch.task_terminal
-                    && !launch.state.is_terminal()
-                    && !matches!(
-                        launch.state,
-                        RuntimeNeedProducerState::InfrastructureFailure(_)
-                    )
-            })
-            .map(|launch| launch.correlation.need)
+            .quiescence_blocking_needs()
             .collect::<Vec<_>>();
         if !needs.is_empty() {
             return Err(AwbcProductSaveError::NeedsQuiescence { needs });
@@ -3365,6 +3354,14 @@ impl AwbcProductStepExecutor {
             Ok(admission) => admission,
             Err(error) => return Err((self, error)),
         };
+        if let Err(error) = image.need_producers.validate_restore_policy(policy) {
+            return Err((
+                self,
+                AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                },
+            ));
+        }
         let rollback = match self.snapshot() {
             Ok(snapshot) => snapshot,
             Err(error) => {
@@ -3703,6 +3700,12 @@ impl AwbcProductStepExecutor {
         policy: crate::task::NeedProducerRestorePolicy,
         admission: &crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<Self, AwbcProductStepBuildError> {
+        snapshot
+            .need_producers
+            .validate_restore_policy(policy)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         let mut snapshot = snapshot;
         let program_owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
         let source_program = program.task_source.clone();

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+  "run": "task-final-r3297-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 139.135s] 3896 tests run: 3895 passed, 1 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 3896,
+  "passed": 3895,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 5,
+  "matchedPackages": 5,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::producer_slots::compact_and_expression_need_spreads_emit_in_order_then_resume_native_and_awbc"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-27T15:16:36.1745444Z"
+}

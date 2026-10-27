@@ -1456,6 +1456,8 @@ pub enum NeedProducerAdmissionError {
     LaunchSpecificationConflict,
     #[error("producer launch record is not consistent with its canonical identity")]
     InvalidRestoredLaunch,
+    #[error("public producer resume requires quiescence for Need {need:?}")]
+    RestoreRequiresQuiescence { need: NeedId },
     #[error("producer Need state transition is not monotone")]
     InvalidNeedTransition,
     #[error("Need publication source does not match its selected producer authority")]
@@ -1649,6 +1651,34 @@ impl<V, P, S> Default for NeedProducerRegistryRestore<V, P, S> {
             invocation_frontiers: Vec::new(),
             launch_frontiers: Vec::new(),
         }
+    }
+}
+
+impl<V, P, S> NeedProducerRegistryRestore<V, P, S> {
+    /// Structural snapshots can retain in-flight non-restartable Host work.
+    /// Public save/resume, rather than private rollback, owns this policy gate.
+    pub(crate) fn quiescence_blocking_needs(&self) -> impl Iterator<Item = NeedId> + '_ {
+        self.launches
+            .iter()
+            .filter(|launch| {
+                matches!(&launch.origin, NeedProducerLaunchOriginRestore::Need { start, .. }
+                if start.restart == HostRestartPolicy::MustBeQuiescent)
+                    && !launch.task_terminal
+                    && !launch.state.is_terminal()
+            })
+            .map(|launch| launch.correlation.need)
+    }
+
+    pub(crate) fn validate_restore_policy(
+        &self,
+        policy: NeedProducerRestorePolicy,
+    ) -> Result<(), NeedProducerAdmissionError> {
+        if policy == NeedProducerRestorePolicy::Resume
+            && let Some(need) = self.quiescence_blocking_needs().next()
+        {
+            return Err(NeedProducerAdmissionError::RestoreRequiresQuiescence { need });
+        }
+        Ok(())
     }
 }
 
@@ -2896,6 +2926,7 @@ impl NeedProducerRegistry {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         }
         Self::validate_restore_journal(&restore)?;
+        restore.validate_restore_policy(policy)?;
         let mut candidate = Self::default();
         for row in restore.task_admissions {
             let (spec, handle) = row.into_parts();
@@ -3571,7 +3602,6 @@ fn restored_need_state_is_valid<P: crate::value::RuntimeStoredValue>(
         && (!matches!(state, RuntimeNeedProducerState::ReadyTransferred)
             || policy == TaskPolicy::AlwaysStart)
         && (task_submitted || (!task_terminal && restart == HostRestartPolicy::Restartable))
-        && (restart != HostRestartPolicy::MustBeQuiescent || task_terminal)
 }
 #[allow(clippy::too_many_arguments)]
 fn launch_matches_start(

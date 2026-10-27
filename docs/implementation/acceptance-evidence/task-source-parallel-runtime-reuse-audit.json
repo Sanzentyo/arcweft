@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "base": "7abb208bb0dbb0e97d8a14ace9da38f107e93531",
+  "sourceInputs": 3998,
+  "changedInputs": [
+    "crates/arcweft-compiler/src/project/tests/producer_slots.rs"
+  ],
+  "unchangedBinaryCount": 5,
+  "changedBinaryCount": 1,
+  "binaries": [
+    {
+      "binary": "arcweft-compiler",
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+      "previousSha256": "dd5639547badaf896fcda3b009b7e548ac2e8bf2892becbd76ef4d2ac47fa0bb",
+      "currentSha256": "13ff48d0eccc7d46f5133ebfa727b8729a807e3b9f9bd04d32327737c225d4d5",
+      "unchanged": false
+    },
+    {
+      "binary": "arcweft-compiler::callable_execution",
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-6f0f9fd90f0abf3c.exe",
+      "previousSha256": "f7de2e44285e56572a7b8df2f22d770cfab599797dfc5b89f64712e4da03a301",
+      "currentSha256": "f7de2e44285e56572a7b8df2f22d770cfab599797dfc5b89f64712e4da03a301",
+      "unchanged": true
+    },
+    {
+      "binary": "arcweft-core",
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-728949707a889d5a.exe",
+      "previousSha256": "5e85dfa76b63888ff01d46fa3f16341fbb2c68f0633720c56d5aea65945c3d0f",
+      "currentSha256": "5e85dfa76b63888ff01d46fa3f16341fbb2c68f0633720c56d5aea65945c3d0f",
+      "unchanged": true
+    },
+    {
+      "binary": "arcweft-lang-sema",
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-6b86fc072d3b9ae4.exe",
+      "previousSha256": "046998d65e5212d1654e31c203a5b84166f7f551f96d034898d1c1b344e7a6d2",
+      "currentSha256": "046998d65e5212d1654e31c203a5b84166f7f551f96d034898d1c1b344e7a6d2",
+      "unchanged": true
+    },
+    {
+      "binary": "arcweft-runtime-codegen",
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_codegen-406b38c9ce2beae1.exe",
+      "previousSha256": "56f82fc3c75027fd8d96ce9ba28f0d81d8f3bd569e4b04d1077aebc73cab7143",
+      "currentSha256": "56f82fc3c75027fd8d96ce9ba28f0d81d8f3bd569e4b04d1077aebc73cab7143",
+      "unchanged": true
+    },
+    {
+      "binary": "arcweft-runtime-plan",
+      "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-f920f0f61da00655.exe",
+      "previousSha256": "8372501ff18c792e21863b548a5b1bfbdff34e1de8c05414e5787e84bd86e245",
+      "currentSha256": "8372501ff18c792e21863b548a5b1bfbdff34e1de8c05414e5787e84bd86e245",
+      "unchanged": true
+    }
+  ],
+  "changedOwnerRuntime": "R3301 Compiler library 172/172 passed",
+  "priorRuntime": "R3297 3895 pass / 1 old diagnostic expectation fail",
+  "combinedRunClaim": false
+}

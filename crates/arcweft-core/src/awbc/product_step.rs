@@ -3450,6 +3450,16 @@ impl AwbcProductStepExecutor {
                     source_map: None,
                 });
             }
+            // Program children use the prepared Ready/Host-result transfer
+            // without a dialogue transaction. Commit the payload and resume
+            // before retaining the fiber; a cursor alone leaves Await stale.
+            resume_journal.commit_staged_need_ready(
+                &mut self.need_producers,
+                need_states,
+                &self.program,
+                &mut child.fiber,
+            );
+            resume_journal.commit_staged_host_call(&mut input.host_call_results, &mut child);
             if program_returned {
                 let value = child
                     .fiber

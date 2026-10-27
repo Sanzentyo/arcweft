@@ -258,6 +258,7 @@ fn validate_root_without_digest<V: ValueValidation>(
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum ValueEncoding {
     Canonical,
+    RetainedIdentity,
     Literal,
     Live,
     Snapshot,
@@ -1062,6 +1063,25 @@ pub(super) fn visit<S: CanonicalSink + ?Sized, V: ValueValidation>(
     )
 }
 
+/// Identity of values already admitted by an original Program. This is not
+/// static literal encoding or permission to persist a live value.
+pub(super) fn visit_retained_identity<S: CanonicalSink + ?Sized, V: ValueValidation>(
+    root: RuntimeValueView<'_>,
+    writer: &mut CanonicalWriter<'_, S>,
+    validation: &mut V,
+    expected: V::Expected,
+) -> Result<(), RuntimeSchemaError> {
+    visit_with_encoding(
+        root,
+        0,
+        writer,
+        None,
+        validation,
+        expected,
+        ValueEncoding::RetainedIdentity,
+    )
+}
+
 fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
     root: RuntimeValueView<'_>,
     depth: usize,
@@ -1456,7 +1476,9 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 ValueEncoding::Canonical | ValueEncoding::Literal => {
                     value.persistence() == RuntimeOpaquePersistence::SnapshotOnly || affine
                 }
-                ValueEncoding::Snapshot | ValueEncoding::Live => false,
+                ValueEncoding::Snapshot | ValueEncoding::Live | ValueEncoding::RetainedIdentity => {
+                    false
+                }
             };
             if rejected {
                 return Err(RuntimeSchemaError::Encoding {
@@ -1464,7 +1486,9 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                         ValueEncoding::Canonical | ValueEncoding::Literal => {
                             "opaque value class/persistence is not constant-admissible"
                         }
-                        ValueEncoding::Snapshot | ValueEncoding::Live => {
+                        ValueEncoding::Snapshot
+                        | ValueEncoding::Live
+                        | ValueEncoding::RetainedIdentity => {
                             "opaque value class/persistence is not admissible"
                         }
                     }
@@ -1563,7 +1587,10 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
             }
         }
         RuntimeValueView::Callable(callable)
-            if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) =>
+            if matches!(
+                encoding,
+                ValueEncoding::Live | ValueEncoding::Snapshot | ValueEncoding::RetainedIdentity
+            ) =>
         {
             writer.u8(26)?;
             writer.var_u32(callable.state().get().get())?;
@@ -1574,12 +1601,18 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
             work.push(Work::Tuple(callable.retained(), 0, depth + 1, children));
         }
         RuntimeValueView::Range(range)
-            if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) =>
+            if matches!(
+                encoding,
+                ValueEncoding::Live | ValueEncoding::Snapshot | ValueEncoding::RetainedIdentity
+            ) =>
         {
             writer.runtime_range(range)?;
         }
         RuntimeValueView::Iterator(iterator)
-            if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) =>
+            if matches!(
+                encoding,
+                ValueEncoding::Live | ValueEncoding::Snapshot | ValueEncoding::RetainedIdentity
+            ) =>
         {
             iterator_prefix(
                 iterator,
@@ -1886,17 +1919,24 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
     ) -> Result<(), RuntimeSchemaError> {
         use crate::value::RuntimeScalarView as Scalar;
         // Canonical ingress/digests retain finite floats and normalized zero.
-        // Executable literals, live values and snapshots retain exact IEEE bits.
+        // Executable literals, live values, snapshots and retained identities
+        // preserve exact IEEE bits.
         match (encoding, value) {
             (
-                ValueEncoding::Literal | ValueEncoding::Live | ValueEncoding::Snapshot,
+                ValueEncoding::Literal
+                | ValueEncoding::Live
+                | ValueEncoding::Snapshot
+                | ValueEncoding::RetainedIdentity,
                 Scalar::F32(value),
             ) => {
                 self.u8(5)?;
                 self.fixed_u32(value.to_bits())
             }
             (
-                ValueEncoding::Literal | ValueEncoding::Live | ValueEncoding::Snapshot,
+                ValueEncoding::Literal
+                | ValueEncoding::Live
+                | ValueEncoding::Snapshot
+                | ValueEncoding::RetainedIdentity,
                 Scalar::F64(value),
             ) => {
                 self.u8(6)?;

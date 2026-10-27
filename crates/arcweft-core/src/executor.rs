@@ -774,6 +774,20 @@ impl ArcweftRuntimeExecutor {
         )
     }
 
+    /// Restores an inert image under this executor's current invocation.
+    /// Explicit Flow invocations have no selected Entry. The Product admission
+    /// still checks the exact program, retained group and invocation target.
+    pub fn restore_current_product_rollback_image(
+        self,
+        image: AwbcProductExecutorSnapshot,
+    ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
+        self.restore_snapshot_with_policy(
+            ArcweftRuntimeExecutorSnapshot::AwbcProduct(image),
+            crate::task::NeedProducerRestorePolicy::Rollback,
+            AwbcProductSnapshotRestoreTarget::CurrentInvocation,
+        )
+    }
+
     /// Retains the exact selected program for an asynchronous host result.
     pub fn program_owner(&self) -> crate::task::RuntimeProgramOwner {
         match &self.inner {
