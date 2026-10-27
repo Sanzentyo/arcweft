@@ -1,0 +1,1414 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+  "status": "External callable frames and actual Native/decoded-AWBC callback conditions verified; strict CLI step/counter acceptance remains failing",
+  "workingTree": "main; 12 owned Rust paths plus evidence/docs; original 14 tracked and 6 untracked WIP files preserved",
+  "rustPaths": [
+    "crates/arcweft-compiler/src/lower.rs",
+    "crates/arcweft-compiler/src/lower/callable_values.rs",
+    "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+    "crates/arcweft-lang-sema/src/final_analysis.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/environment_callable_value.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/tests/callable_values.rs",
+    "crates/arcweft-runtime-plan/src/final_expr.rs",
+    "crates/arcweft-runtime-plan/src/final_flow.rs",
+    "crates/arcweft-runtime-plan/src/final_flow/environment_callables.rs",
+    "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+    "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+    "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs"
+  ],
+  "sourceInputs": 3998,
+  "implementation": [
+    "CheckedExternalCallableValueProjection retains the exact checked catalog declaration, complete function type, origin and manifest Host contract for environment values and authored extern capability references.",
+    "Global extern values project directly into runtime value facts; closed local-use projection uses the same typed external value authority. No source namespace is evaluated as a scalar.",
+    "One external declaration-frame owner handles pure environment execution and Host execution. Host Need construction uses the complete original function input ABI and Source admission rather than a fabricated selected-call certificate.",
+    "The generated Host frame moves all fixed inputs, retains checked named-only roles and exact outcome/contract, and returns the actual Need. Its source task is AlwaysStart/MustBeQuiescent/Background, matching direct manifest Host production.",
+    "Definition identity includes declaration and full function type. Count-first locals include the Host result slot, with checked coordinate arithmetic. No compatibility alias or non-1 contract marker is introduced."
+  ],
+  "accepted": {
+    "directTest": "traversal::source_parallel_lowers_direct_environment_function_values_in_flow",
+    "conditions": 2,
+    "backends": [
+      "Native original Source",
+      "Canonical decoded AWBC"
+    ],
+    "actualBehavior": "Bare fs.read_text F creates actual Host Needs; three exact unary String arguments and Result payloads, ordered Source value, exactly three callbacks, maximum two in-flight, one-op budget and LocalOnly are asserted.",
+    "priorConditions": "The existing 12 lambda/capture/public-save/private-rollback conditions remain passing in the same R3323 run.",
+    "runtime": "R3323: 3897/3897 pass, 0 excluded, 140.171s, 5 libraries plus Compiler callable integration",
+    "directRuntime": "R3321 1 test/2 backend conditions pass, 185 excluded, 0.436s",
+    "inputAndBinaryAudit": "3998 source inputs, 6 executable hashes and catalog/terminal set have zero drift in R3323"
+  },
+  "checks": [
+    {
+      "run": "R3305",
+      "record": "task-final-r3305-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-cli",
+        "--test",
+        "check",
+        "-E",
+        "test(traverse_parallel_file_tasks)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3306",
+      "record": "task-final-r3306-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--test",
+        "check",
+        "-E",
+        "test(traverse_parallel_file_tasks)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "terminalAudit": {
+        "version": 1,
+        "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+        "run": "task-final-r3306-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   1.905s] 2 tests run: 0 passed, 2 failed, 478 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2,
+        "passed": 0,
+        "failed": 2,
+        "skipped": 478,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "bench_json_measures_traverse_parallel_file_tasks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "run_json_executes_traverse_parallel_file_tasks"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T15:32:52.1806239Z"
+      }
+    },
+    {
+      "run": "R3307",
+      "record": "task-final-r3307-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3308",
+      "record": "task-final-r3308-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "terminalAudit": {
+        "version": 1,
+        "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+        "run": "task-final-r3308-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.207s] 1 test run: 0 passed, 1 failed, 185 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 0,
+        "failed": 1,
+        "skipped": 185,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_lowers_direct_environment_function_values_in_flow"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T15:38:01.4469332Z"
+      }
+    },
+    {
+      "run": "R3309",
+      "record": "task-final-r3309-program-fanout-awbc-check.json",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 101,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3310",
+      "record": "task-final-r3310-program-fanout-awbc-check.json",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3311",
+      "record": "task-final-r3311-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3312",
+      "record": "task-final-r3312-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "terminalAudit": {
+        "version": 1,
+        "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+        "run": "task-final-r3312-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.173s] 1 test run: 0 passed, 1 failed, 185 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 0,
+        "failed": 1,
+        "skipped": 185,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_lowers_direct_environment_function_values_in_flow"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T15:55:07.5876834Z"
+      }
+    },
+    {
+      "run": "R3313",
+      "record": "task-final-r3313-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3314",
+      "record": "task-final-r3314-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "terminalAudit": {
+        "version": 1,
+        "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+        "run": "task-final-r3314-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.274s] 1 test run: 0 passed, 1 failed, 185 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 0,
+        "failed": 1,
+        "skipped": 185,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "traversal::source_parallel_lowers_direct_environment_function_values_in_flow"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T15:57:22.3844708Z"
+      }
+    },
+    {
+      "run": "R3315",
+      "record": "task-final-r3315-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3316",
+      "record": "task-final-r3316-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "terminalAudit": {
+        "version": 1,
+        "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+        "run": "task-final-r3316-program-fanout-runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.213s] 1 test run: 1 passed, 185 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 185,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-10-27T15:59:37.3481503Z"
+      }
+    },
+    {
+      "run": "R3317",
+      "record": "task-final-r3317-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-cli",
+        "--test",
+        "check",
+        "-E",
+        "test(traverse_parallel_file_tasks)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3318",
+      "record": "task-final-r3318-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--test",
+        "check",
+        "-E",
+        "test(traverse_parallel_file_tasks)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "terminalAudit": {
+        "version": 1,
+        "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+        "run": "task-final-r3318-program-fanout-runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   2.321s] 2 tests run: 0 passed, 2 failed, 478 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2,
+        "passed": 0,
+        "failed": 2,
+        "skipped": 478,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "run_json_executes_traverse_parallel_file_tasks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "bench_json_measures_traverse_parallel_file_tasks"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-27T16:04:29.3614448Z"
+      }
+    },
+    {
+      "run": "R3319",
+      "record": "task-final-r3319-cli-bench-diagnostic.json",
+      "command": [
+        "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+        "bench",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\cli-bench-repro-r3319\\bench.arcw",
+        "--iterations",
+        "1",
+        "--warmup",
+        "0",
+        "--steps",
+        "12",
+        "--json"
+      ],
+      "exitCode": 1,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3320",
+      "record": "task-final-r3320-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3321",
+      "record": "task-final-r3321-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "callable_execution",
+        "-E",
+        "test(source_parallel_lowers_direct_environment)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "terminalAudit": {
+        "version": 1,
+        "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+        "run": "task-final-r3321-program-fanout-runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.436s] 1 test run: 1 passed, 185 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 185,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-10-27T16:22:02.6216125Z"
+      }
+    },
+    {
+      "run": "R3322",
+      "record": "task-final-r3322-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3323",
+      "record": "task-final-r3323-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "terminalAudit": {
+        "version": 1,
+        "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+        "run": "task-final-r3323-program-fanout-runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [ 140.171s] 3897 tests run: 3897 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 3897,
+        "passed": 3897,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 5,
+        "matchedPackages": 5,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3998,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-10-27T16:27:09.8965501Z"
+      }
+    },
+    {
+      "run": "R3324",
+      "record": "task-final-r3324-program-fanout-runtime-clippy.json",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3325",
+      "record": "task-final-r3325-program-fanout-runtime-structure.json",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-source-external-callable-structure-report"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3326",
+      "record": "task-final-r3326-program-fanout-runtime-doctests.json",
+      "command": [
+        "test",
+        "--doc",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    },
+    {
+      "run": "R3327",
+      "record": "task-final-r3327-cli-runtime-diagnostic.json",
+      "command": [
+        "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+        "run",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-cli-native-traverse-parallel-61236/main.arcw",
+        "--entry",
+        "entry.main",
+        "--mode",
+        "drain",
+        "--steps",
+        "12",
+        "--max-ops",
+        "32",
+        "--json"
+      ],
+      "exitCode": 0,
+      "terminalAudit": null
+    }
+  ],
+  "failureHistory": [
+    "R3306 CLI 0/2: missing checked value fact for the namespace child of an extern reference.",
+    "R3308 isolated the same failure in a small String/manifest Compiler fixture.",
+    "R3309 compile failed with two distinct ownership-consumer migration errors (private mode import and one stale exhaustive variant; lib/test diagnostic duplicates preserved); R3310 check passed.",
+    "R3312/R3314 still missed the global extern value. R3314 semantic-lease diagnostics identified the exact ProjectCallable(ExternCapability) reference and its namespace child; R3316 passed after direct global projection.",
+    "R3318 CLI lowering succeeded but run/bench remained incomplete under their unchanged 12-step conditions.",
+    "R3319 is a fresh-source diagnostic bench execution with the same 12-step/default-32-op settings, not an acceptance run.",
+    "R3327 is a diagnostic run at the existing bench budget 32; it does not replace the run acceptance default budget 1 or increase any test budget."
+  ],
+  "strictCli": {
+    "runtime": "R3318 0/2 pass, 478 excluded, 2.321s",
+    "inputAndBinaryAudit": "3998 inputs and both check test executable / spawned arcw executable hashes have zero drift",
+    "run": "Default budget 1, drain, 12 steps: three path.save Host calls completed; no reads yet, aggregate Await started; final status running.",
+    "bench": "Default budget 32, 12 steps: diagnostic R3319 reported runtime step limit reached while running.",
+    "diagnostic32": "R3327 reached actual read_ops/submitted/dispatched/completed 3, max_in_flight 2, parallel_batches 1, parallel_tasks/parallel_io_tasks 2, program_task_terminals 0. It still reported running after 12 steps and completed_tasks 6 including 3 immediate Host calls.",
+    "nextBoundary": "Native readiness/Blocked quiescence and operation accounting, then Host-vs-task completion counters, with steps/budgets/task count/batch/copy/capture assertions unchanged."
+  },
+  "gates": {
+    "check": "R3310 five packages all targets/all features/locked exit 0 before final global value projection; final R3324 Clippy compiles all targets",
+    "clippy": "R3324 five packages/all targets/all features/locked exit 0; 7022 warning messages",
+    "doctest": "R3326 Sema/runtime-plan/Compiler exit 0: two runtime-plan doctests pass; Sema and Compiler have zero cases. Core source is unchanged from published R3303 76-pass evidence.",
+    "structure": "R3325 exit 0, blocking 0; 12 Rust paths, 3 owners"
+  },
+  "structure": {
+    "files": [
+      {
+        "path": "crates/arcweft-compiler/src/lower/callable_values.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "3144",
+        "physical_lines": "88",
+        "code_lines": "84",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/lower.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "434079",
+        "physical_lines": "10205",
+        "code_lines": "9975",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "27020",
+        "physical_lines": "713",
+        "code_lines": "697",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/environment_callable_value.rs",
+        "owner": "arcweft-lang-sema",
+        "bytes": "4888",
+        "physical_lines": "127",
+        "code_lines": "106",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/tests/callable_values.rs",
+        "owner": "arcweft-lang-sema",
+        "bytes": "15135",
+        "physical_lines": "449",
+        "code_lines": "432",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis.rs",
+        "owner": "arcweft-lang-sema",
+        "bytes": "15603",
+        "physical_lines": "287",
+        "code_lines": "277",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "147989",
+        "physical_lines": "3622",
+        "code_lines": "3493",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/environment_callables.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "23693",
+        "physical_lines": "584",
+        "code_lines": "565",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "444219",
+        "physical_lines": "10406",
+        "code_lines": "10081",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "664"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "121362",
+        "physical_lines": "3176",
+        "code_lines": "2811",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "14824",
+        "physical_lines": "419",
+        "code_lines": "395",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "594688",
+        "physical_lines": "15211",
+        "code_lines": "14030",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      }
+    ],
+    "owners": [
+      {
+        "package": "arcweft-compiler",
+        "manifest": "crates/arcweft-compiler/Cargo.toml",
+        "workspace_fan_in": "3",
+        "workspace_fan_out": "24",
+        "development_workspace_fan_in": "2",
+        "development_workspace_fan_out": "10"
+      },
+      {
+        "package": "arcweft-lang-sema",
+        "manifest": "crates/arcweft-lang-sema/Cargo.toml",
+        "workspace_fan_in": "8",
+        "workspace_fan_out": "14",
+        "development_workspace_fan_in": "4",
+        "development_workspace_fan_out": "0"
+      },
+      {
+        "package": "arcweft-runtime-plan",
+        "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+        "workspace_fan_in": "5",
+        "workspace_fan_out": "10",
+        "development_workspace_fan_in": "5",
+        "development_workspace_fan_out": "0"
+      }
+    ],
+    "blocking": 0,
+    "disposition": [
+      "Sema owns the checked external declaration/type/origin projection. The project extern case validates the immutable checked catalog Host contract. Compiler projects it in both global and closed value views.",
+      "Runtime-plan keeps external frames, parameter ABI, count-first locals, source roles and body emission in one cohesive owner. The Host body shares the existing Core original Source and producer grammars, with no I/O in the lowerer or duplicate callable schema.",
+      "The module grows from 379 to 584 physical lines; the 150-line Host-body helper is cohesive request-role/producer/result emission and its Clippy warning is retained. Existing large final-flow/semantic-facts owners remain exhaustive phase and dispatch owners."
+    ]
+  },
+  "unchangedAcceptance": "Generic Match remains accepted and published. Neither whole-goal incompleteness nor the separate CLI failure reopens it or the prior Source callback/save conditions.",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3305-program-fanout-awbc-check.input-audit.json",
+      "sha256": "ac7b31c5bb403094a495a245460fa3b20cb174ba4baacc6d08b452d8dfc160e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3305-program-fanout-awbc-check.json",
+      "sha256": "79989f7c2431c0b51f6a47e22c59ad98f42417808dc9de33f7a4f99e402c8f62"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3305-program-fanout-awbc-check.log",
+      "sha256": "bc2d35ff15b54567bf1a375424cd5f72afc516ea032db3817b397499d6612abb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3306-program-fanout-runtime.binaries-before.json",
+      "sha256": "59eac0af0ac052433eea1af13abf3284cfec39f53ba3086f3e5c4fd96a952f73"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3306-program-fanout-runtime.json",
+      "sha256": "24a7c07b25432786dbee78a0d297cefb15b75b685393fc5863610433f16086af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3306-program-fanout-runtime.log",
+      "sha256": "bf267ff30a50a7737d2c4659b43bca0db17fa47f5d24b1dfe19fc308db0c9ea7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3306-program-fanout-runtime.terminal-audit.json",
+      "sha256": "4edb5acbf9a9da2f5365bd9c93dff93085e9de22937b435de68dcfb761289171"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3307-program-fanout-awbc-check.input-audit.json",
+      "sha256": "334bd0c781269e316378fcca35e760985e12820ffe988ed983b634f54c85c62a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3307-program-fanout-awbc-check.json",
+      "sha256": "80527789c702619eb41fd85d1a01fe853f66cd03d51e69f1118503b436b93a70"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3307-program-fanout-awbc-check.log",
+      "sha256": "301ed7345b8ef76993452299935826758d24413127bd786a9fef26bc54c46f9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3308-program-fanout-runtime.binaries-before.json",
+      "sha256": "6664f1b2d48fdfb50d0f9d2f0dcf81ca90aeca55fbddf05c299e7be024d250ff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3308-program-fanout-runtime.json",
+      "sha256": "b6cc5b89f21940cd8c87cad5bc88ad29e99e7307c1a6aa8bc36730a6857d390d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3308-program-fanout-runtime.log",
+      "sha256": "dcc4526e42d734b6717d8fa778b8707a4708690494bb2e6b95ecc89e91825fe5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3308-program-fanout-runtime.terminal-audit.json",
+      "sha256": "f9577c4c5d8d1b0a440afde6c120933f5e317273f246ad0ac80dbbe7cb33459b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3309-program-fanout-awbc-check.diagnostics.json",
+      "sha256": "432f0cea2d78f59ba26c90a43c6336f2eba7a95b1068786eaaf95ae5343d55c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3309-program-fanout-awbc-check.input-audit.json",
+      "sha256": "a56975df05734118e4895a077aca969db90438834631d6de5e5fd3eca1b41b67"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3309-program-fanout-awbc-check.json",
+      "sha256": "63a46e1de22f8268c0f4acf912f63af42c6c9994d8f6a56d235355efbae5f664"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3309-program-fanout-awbc-check.log",
+      "sha256": "a628b01fd83a6b393045c0d626faa5a2f91c33f4a23191a4c85394d267fdc9fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3310-program-fanout-awbc-check.input-audit.json",
+      "sha256": "bdaba322b626a93eb2f7b238fed176f77673ac21d8c2ebf9a7ada11ee75149a5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3310-program-fanout-awbc-check.json",
+      "sha256": "7f806aeac0bce1467007bbfaaf07d17e441e0076fd2feb08a3a23edcfba326e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3310-program-fanout-awbc-check.log",
+      "sha256": "64d54da9416d7bf72a2e005eac4158ff564aac26d6cd6e699cbc8ad488dea4ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3311-program-fanout-awbc-check.input-audit.json",
+      "sha256": "5e28e01211087319cc2357c0cd6051709c49545185b77235bbbcbe2143cae6eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3311-program-fanout-awbc-check.json",
+      "sha256": "de04c2d173719f34915f1105cb478e0cf83b8b9fd3d9710bf49b037093e06bee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3311-program-fanout-awbc-check.log",
+      "sha256": "2499a3af04c9671f7f0cddab5cad52387b5f7e4a62dc49ea9ed30b1ea1f66a38"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3312-program-fanout-runtime.binaries-before.json",
+      "sha256": "215147c8f49ccaacc9fb049a4e1d3cf31a6acfe2d548ce9d3071947eb0c17d4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3312-program-fanout-runtime.json",
+      "sha256": "f04bd444bf256e518358aaeaf03a8a4eb2c79d5c63918a2ee6d2fa52d8e42b57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3312-program-fanout-runtime.log",
+      "sha256": "f6535e10335eaef8be1c0f117112a009d1a5487748e1e8f1309db79b273315a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3312-program-fanout-runtime.terminal-audit.json",
+      "sha256": "02c14945bb92e84f14bae099615de72c30a12042d52b9285ce646e63b6ec45b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3313-program-fanout-awbc-check.input-audit.json",
+      "sha256": "7ea30c4f80a63d22adeb55ec1e3fb1d4aa7575f918e100affa723bffc5b601a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3313-program-fanout-awbc-check.json",
+      "sha256": "85d4951beb616e4748f6d1568d72e983316e360c39c15ea28e7f6bcfeca69ac3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3313-program-fanout-awbc-check.log",
+      "sha256": "798f5ccad04a1e5c25a58a6c56bb14bc0d82bffeda9cee4e0a15813f971c50eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3314-program-fanout-runtime.binaries-before.json",
+      "sha256": "e5a084192bd47e8afe4d307c9403691fcfffb47bcdd551f91febfa8bcd5b683f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3314-program-fanout-runtime.json",
+      "sha256": "88cd1a87936ed81dffee9d844a7bbee0c262c26eedc1f5083c1661098bf0b1aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3314-program-fanout-runtime.log",
+      "sha256": "e552c0fa9e273aae1b6d1b3658d6f5237495d0352306e774303f79b4b9ef9058"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3314-program-fanout-runtime.terminal-audit.json",
+      "sha256": "b2c6b40abcc4fcc77f382f683d548016b881af5f12060eb917c6ebd2343dd236"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3315-program-fanout-awbc-check.input-audit.json",
+      "sha256": "2cf3c18d9360221fd2ea31dc61ba3235f9f68120915f60ccabfd2056de1aa62d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3315-program-fanout-awbc-check.json",
+      "sha256": "10fd8a6e203ab19de3240fa996533ba9757706641c990e6358759e16307c51e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3315-program-fanout-awbc-check.log",
+      "sha256": "c20267fc69d92c3695569e518c9e88eeb151dd889e13f28fe78a57c3449fddd3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3316-program-fanout-runtime.binaries-before.json",
+      "sha256": "8135b7f88024451175fe0b29c499ea97d6e4bc2af883edccddde5ef20bac8ee3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3316-program-fanout-runtime.json",
+      "sha256": "8ac1a9d1bef4d919a80d4c04521e59b216f98bcafc6a9db99aa529b110f943cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3316-program-fanout-runtime.log",
+      "sha256": "831f94d26a05a7c49e4e07c7806cfe20ac8b6bd942faca0f0799b428accaecd2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3316-program-fanout-runtime.terminal-audit.json",
+      "sha256": "4588155274d526bafb8a394eb4030acf831ae2f46eaf8b771c38d367964065f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3317-program-fanout-awbc-check.input-audit.json",
+      "sha256": "47f0b6af93375eb72bd9dd75ec9a1d1251004af29407a4a9b7be6ec5aed04eb9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3317-program-fanout-awbc-check.json",
+      "sha256": "2f2cc09bd8b3ccebeb8e00de7711ad17748d672c8683dabca727a43d2302d99e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3317-program-fanout-awbc-check.log",
+      "sha256": "ec73320f29642fd58acfc9df4f295944e0f4c9e94bc9486523795e4a034c9327"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3318-cli-run-output.json",
+      "sha256": "5eea95598746e97cfd57c73657175ded14013da6910f419643325cab1f4e36ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3318-program-fanout-runtime.binaries-before.json",
+      "sha256": "20eeda426482dc461f40d004095293027627b65fbb55815d562b64b3073c2372"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3318-program-fanout-runtime.json",
+      "sha256": "f8ea92a2906e062fff7418ca7fc6f8915100736bf387caf92d27bd5ed6029680"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3318-program-fanout-runtime.log",
+      "sha256": "59860e1d34055eb6028b3af7390ff3a1d073758f6091ce8f3bd42f0a1ffd1fe6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3318-program-fanout-runtime.terminal-audit.json",
+      "sha256": "a1f33a6aeebd00eb3368a5fab38a38782318359dfb93196f5efca6aa8843400a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3319-cli-bench-diagnostic.json",
+      "sha256": "d048ffcff8cfe17174325d950079123edf6ed9496aad05537a2cdf4c7b6b151b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3319-cli-bench-diagnostic.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3319-cli-bench-diagnostic.stdout.json",
+      "sha256": "ac3307077aae8e229b913fb7f74eb4b09ecc46768462f7956fb701d047de915f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3320-program-fanout-awbc-check.input-audit.json",
+      "sha256": "0e295e4497975d1cd1bb171cfd794987be229e02f8961736460b581c383e6b5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3320-program-fanout-awbc-check.json",
+      "sha256": "fbbaed67aa9b1a7d75401f16019fcb261ed88d6913853ccbf6e846b1182b583f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3320-program-fanout-awbc-check.log",
+      "sha256": "59869103451a76f4bef95eb6d376035360914a8c15303c89f26a1c79882f5809"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3321-program-fanout-runtime.binaries-before.json",
+      "sha256": "b1672e0b1c148fd859922cf3a09615ededb922d59cffc39dbaa7c097315abe7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3321-program-fanout-runtime.json",
+      "sha256": "90a9af21ac7463a047be50f0ef30265fb3c92393bd353043da298277b61b20a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3321-program-fanout-runtime.log",
+      "sha256": "cc56c144eef0bec6cae4e6dbf39dad6f3249eedcd280f103d7a3486b219ce7ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3321-program-fanout-runtime.terminal-audit.json",
+      "sha256": "31d60e59ce13737fe5768c948635c397b5bc4dfed1ee830db4e8b4481e68ca19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3322-program-fanout-awbc-check.input-audit.json",
+      "sha256": "80e026aa21eb9b7d2549e3fea4d85cc4167822d6290d7051e83742d035549d62"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3322-program-fanout-awbc-check.json",
+      "sha256": "bbc750afece406d1fd5d8ed6ac507d7b3f0adf8ff29999e8ca7eca9460e0069e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3322-program-fanout-awbc-check.log",
+      "sha256": "c617bf1f034aa0059de17874a734b1570b02079bfba3ba871a14bb933bf15d46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3323-program-fanout-runtime.binaries-before.json",
+      "sha256": "ef1df0ae7f115c51ba2a499c1cb9117a741676e97561fbf733239bae4e2b412d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3323-program-fanout-runtime.json",
+      "sha256": "da59cb50eef94b552389ee84cbd597aaf90bfac0d929f6c347801e80c315f9c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3323-program-fanout-runtime.log",
+      "sha256": "8b6c0767479fb989fa724bf1bd2b9d78966095cd9e1812be656cdce3e7278d4b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3323-program-fanout-runtime.terminal-audit.json",
+      "sha256": "8ae0a0b926ae233c5d9e0618aa2d2449a3661fd1ec0355be4aee1d38a3529152"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3324-program-fanout-runtime-clippy.input-audit.json",
+      "sha256": "9145dff7f1b9ad76ca16f35e6faa9cdafd152e385a8a8ad2667235331fcbc7da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3324-program-fanout-runtime-clippy.json",
+      "sha256": "40b71a7ba4765371bf7fc06c9ee31cfb86481ac98e022e64ff426a62812dba30"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3324-program-fanout-runtime-clippy.log",
+      "sha256": "5b854a51ae0743f4b02ac97a5c263ad50c2df87d44b97c12b660171b6959670d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3325-program-fanout-runtime-structure.input-audit.json",
+      "sha256": "e385d07e133144ade2af6604d8531e5eced4dec951d32ea503ef87c9aedf226c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3325-program-fanout-runtime-structure.json",
+      "sha256": "e137dca5756f3e38ef5cd206c76bd33f5c17d70b10839b24c1f529cb6ab8848a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3325-program-fanout-runtime-structure.log",
+      "sha256": "e02f1961240449a607d03ca132d4746a3e0d1195dcc11eb3643b81a6865234f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3326-program-fanout-runtime-doctests.input-audit.json",
+      "sha256": "cba60ae2430a6d3f1894bc1b4cbc4d14cf4228b9265a4c46eada81d5841175a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3326-program-fanout-runtime-doctests.json",
+      "sha256": "db830df3f7fc79b64dca9fd9d2be0e52c988266fa6e06d571aa10ff7080f55d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3326-program-fanout-runtime-doctests.log",
+      "sha256": "440a6de75f594cd4b57dd8b49a3a7742fbfcb90607a066a521f75e26e1eacf93"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3327-cli-runtime-diagnostic.json",
+      "sha256": "16b33a9edc52879f40c72268c15e592317a2168da759ece661634885f5064e27"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3327-cli-runtime-diagnostic.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3327-cli-runtime-diagnostic.stdout.json",
+      "sha256": "636a02c745a9360715ab9d65b0d2575b4e14ab1c365bf44a5554877e02644ecc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3305.inventory.json",
+      "sha256": "953c6e713b79dd7cce8c0b85523ba002d8bb44f333b549216172b411f057c205"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3305.source-freeze.json",
+      "sha256": "b117d0ac09220d9f6d6080d915aa77d7c15620939f2eafce57885ff59f5ad096"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3306.source-freeze.json",
+      "sha256": "b117d0ac09220d9f6d6080d915aa77d7c15620939f2eafce57885ff59f5ad096"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3307.inventory.json",
+      "sha256": "a29f217c40f7657e07aca7dc7f105f6382bd3854de5e96e22b7d93c6965734ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3307.source-freeze.json",
+      "sha256": "196e5ecd04381d093240dcafb5d928b7e263f0f39701c136437f24964f125902"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3308.source-freeze.json",
+      "sha256": "196e5ecd04381d093240dcafb5d928b7e263f0f39701c136437f24964f125902"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3309.source-freeze.json",
+      "sha256": "b05ad54fe5849a2210bdd88c81a97f302b333e3c5c979f51036888118e7cae9c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3310.source-freeze.json",
+      "sha256": "dc0099b9e736e9b548417510dcba72dd0d028f66cc2c849293a86c27caf6b209"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3311.inventory.json",
+      "sha256": "a29f217c40f7657e07aca7dc7f105f6382bd3854de5e96e22b7d93c6965734ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3311.source-freeze.json",
+      "sha256": "41d5962fb9a27af44adc49979987724d60f92d54d3df780adc30a8c4d0a270f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3312.source-freeze.json",
+      "sha256": "41d5962fb9a27af44adc49979987724d60f92d54d3df780adc30a8c4d0a270f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3313.inventory.json",
+      "sha256": "a29f217c40f7657e07aca7dc7f105f6382bd3854de5e96e22b7d93c6965734ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3313.source-freeze.json",
+      "sha256": "96409112ed9043c00aa1af84c1c6e0853d3379971fb8441500e93612b11fddff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3314.source-freeze.json",
+      "sha256": "96409112ed9043c00aa1af84c1c6e0853d3379971fb8441500e93612b11fddff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3315.inventory.json",
+      "sha256": "a29f217c40f7657e07aca7dc7f105f6382bd3854de5e96e22b7d93c6965734ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3315.source-freeze.json",
+      "sha256": "036b29487cfa639b9a952ead81f57c345d2460cd419ca65d244024a530727800"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3316.source-freeze.json",
+      "sha256": "036b29487cfa639b9a952ead81f57c345d2460cd419ca65d244024a530727800"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3317.inventory.json",
+      "sha256": "953c6e713b79dd7cce8c0b85523ba002d8bb44f333b549216172b411f057c205"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3317.source-freeze.json",
+      "sha256": "9cf541bf5dbe4347650bf3553d7734969019b11de8da4b085c95f22a26438e97"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3318.source-freeze.json",
+      "sha256": "9cf541bf5dbe4347650bf3553d7734969019b11de8da4b085c95f22a26438e97"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3320.inventory.json",
+      "sha256": "a29f217c40f7657e07aca7dc7f105f6382bd3854de5e96e22b7d93c6965734ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3320.source-freeze.json",
+      "sha256": "f39a4e26534b426c77d434156350977ea5f30872375b333bf68a8efe544b3110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3321.source-freeze.json",
+      "sha256": "f39a4e26534b426c77d434156350977ea5f30872375b333bf68a8efe544b3110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3322.inventory.json",
+      "sha256": "f72f4e197abc43b41e4a53a731e95964ab4ac6b26eed18304dcd2e2cef2aaa9f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3322.source-freeze.json",
+      "sha256": "dc11a182bef8d5ef8f23fdca6b3896f3179eeaa2680022ef5823ce1fd517966e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3323.source-freeze.json",
+      "sha256": "dc11a182bef8d5ef8f23fdca6b3896f3179eeaa2680022ef5823ce1fd517966e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3324.source-freeze.json",
+      "sha256": "dc11a182bef8d5ef8f23fdca6b3896f3179eeaa2680022ef5823ce1fd517966e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3325.source-freeze.json",
+      "sha256": "dc11a182bef8d5ef8f23fdca6b3896f3179eeaa2680022ef5823ce1fd517966e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3326.source-freeze.json",
+      "sha256": "dc11a182bef8d5ef8f23fdca6b3896f3179eeaa2680022ef5823ce1fd517966e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-parallel-runtime-acceptance.verified.json",
+      "sha256": "5c45efca44392e7d3e4e7edb5cb3a5dc7318518a2feb30acb75ff8c5a5eaff89"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-external-callable-structure-dependency_edges.csv",
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-external-callable-structure-file_metrics.csv",
+      "sha256": "8f26610a8d4422eb2b35a10b4427d8ccaa8b68e28fdd7c4ef4773759731107d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-external-callable-structure-findings.md",
+      "sha256": "08c497fbf0927e60814bbb654a5afdb55a13536bacf4383818c961b4d30cc50f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-external-callable-structure-package_metrics.csv",
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-external-callable-structure-public_type_duplicates.csv",
+      "sha256": "bf7e52c3ade064e269da077a90f24181951298d7862e2bf74cfda213b3a29347"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3318-fixture-main.arcw",
+      "sha256": "fa3cc44ca62202f562d46185e89badcc22342340887162d5614baf910488cfee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3319-fixture-bench.arcw",
+      "sha256": "085c6925d341d5d4ad7534b9d82688b4d0d817e86e01886c11c6dea5f2c01290"
+    }
+  ]
+}

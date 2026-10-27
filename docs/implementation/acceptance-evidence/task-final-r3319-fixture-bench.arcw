@@ -1,0 +1,21 @@
+
+entry bench @entry.parallel_io { goto @flow.parallel_io }
+
+extern capability fs {
+    type FsError
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>> effects { fs.write }
+}
+extern capability path { fn save(path: String) -> VirtualPath }
+
+bench @bench.parallel_io {
+    measure iterations = 1 { goto @flow.parallel_io }
+    assert { expect.file(path.save("output.txt"), equals="done") }
+}
+
+flow parallel_io() -> String effects { fs.read(save), fs.write(save) } {
+    let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
+    let values = match (await paths.traverse(fs.read_text).parallel(limit = 2)) { .Ok(values) => values, .Err(_) => [] }
+    let status = match (await fs.write_text(path.save("output.txt"), "done")) { .Ok(_) => "done", .Err(_) => "write_failed" }
+    return status
+}

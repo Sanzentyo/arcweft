@@ -5,7 +5,7 @@ mod callable_states;
 
 #[path = "final_flow/environment_callables.rs"]
 mod environment_callables;
-pub(crate) use environment_callables::{EnvironmentCallableKey, EnvironmentCallableStates};
+pub(crate) use environment_callables::{ExternalCallableKey, ExternalCallableStates};
 
 #[path = "final_flow/control_locals.rs"]
 mod control_locals;
@@ -588,7 +588,7 @@ struct FinalLoweringContext<'project, 'data> {
     flow_functions: &'data flow_functions::ReservedFlowFunctions,
     locals: &'data BTreeMap<LocalId, RuntimeLocalSeedId>,
     project_callable_states: &'data callable_states::ProjectCallableStates,
-    environment_callable_states: &'data EnvironmentCallableStates,
+    environment_callable_states: &'data ExternalCallableStates,
     callable_sources: &'data callable_states::ProjectCallableSourceStates,
     callable_specializations: &'data callable_states::CallableSpecializationSeeds,
     callable_applications: &'data callable_states::ProjectCallableApplicationStates,
@@ -845,7 +845,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
     }
 
     let environment_definitions =
-        environment_callables::EnvironmentCallableDefinitions::prepare(facts)
+        environment_callables::ExternalCallableDefinitions::prepare(facts)
             .map_err(|error| vec![error])?;
     let mut type_seeds = facts
         .runtime_plan_type_seeds()
@@ -5833,7 +5833,7 @@ struct FinalFlowLowerer<'a> {
     defer_sites: &'a BTreeMap<StmtId, RuntimeDeferSiteId>,
     closure_sites: &'a BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
     project_callable_states: &'a callable_states::ProjectCallableStates,
-    environment_callable_states: &'a EnvironmentCallableStates,
+    environment_callable_states: &'a ExternalCallableStates,
     callable_sources: &'a callable_states::ProjectCallableSourceStates,
     callable_specializations: &'a callable_states::CallableSpecializationSeeds,
     callable_applications: &'a callable_states::ProjectCallableApplicationStates,

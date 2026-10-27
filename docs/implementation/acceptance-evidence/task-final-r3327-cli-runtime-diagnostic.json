@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+  "command": [
+    "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+    "run",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-cli-native-traverse-parallel-61236/main.arcw",
+    "--entry",
+    "entry.main",
+    "--mode",
+    "drain",
+    "--steps",
+    "12",
+    "--max-ops",
+    "32",
+    "--json"
+  ],
+  "exitCode": 0,
+  "binarySha256": "189ff5822f7581477225aefcff790371d90b6a6280d2060d3213d27f1d1fb4c9",
+  "binaryDrift": false,
+  "acceptanceRun": false,
+  "purpose": "Use the existing bench default of 32 ops to isolate its runtime failure; the run acceptance remains its unchanged default budget 1 / steps 12"
+}

@@ -12786,3 +12786,42 @@ assertionは残した。R3297からの変更入力は当該test 1ファイルの
 5,648メッセージ）。全53逆依存とworkspace最終受入はこのowner検証から推定しない。
 
 R3303 Core doctestは76／76 PASS・除外0、R3304構造gateは終了0／blocking 0。14 Rust path・3 ownerの責任境界と実測値を同じ原本へ保持した。
+
+## Extern関数値の全signature frame接続 — 2026-10-28
+
+前cutは `06de1a6213186caf7c77e4141da86a9eda07e502` としてmainへ公開した。parentは
+`7abb208bb0dbb0e97d8a14ace9da38f107e93531`、treeは`2160ec5744743fac702970d4167df0ace0b158e2`、
+patch SHA-256は`306e55f68b788f9e11dee13f325bc0a85bff0ed34c54c7fc39ea5eb55a86191c`。
+213 pathの公開blob差分0、元のtracked WIP14＋untracked実ファイル6を保持、indexは空だった。
+[公開照合原本](acceptance-evidence/task-source-parallel-runtime-acceptance.verified.json)。
+
+R3306のCLI parallel run／benchは0／2 PASS。callbackのextern参照がProjectCallableとして解決される
+一方、runtime valueから除外され、そのnamespace childをscalarとしてlowerしていた。
+R3308の小さなString／manifest fixtureで再現した。checked catalogの完全な宣言・Fn型・origin・
+Host契約を持つexternal callable値へ、既存environment値とextern値を統合した。
+Host frameは全signatureの入力をMoveし、元Sourceのproducerと実Needを返す。新たなselected-call
+証明を偽造せず、元の直接Host callの引数証明も維持する。function定義identityは宣言と全Fn型を含む。
+R3309のcompile失敗2種（lib/test重複行あり）を修復したR3310は5 package全target check終了0。
+
+R3312／R3314ではglobal valueが未接続だった。失敗時に保持されたsemantic leaseで、実参照が
+ProjectCallable(ExternCapability)であることとnamespace childを確認し、global投影も直接接続した。
+診断用の一時出力は削除した。R3316はlowering／canonical decoded AWBC往復PASS。R3321はさらに
+実callbackをNative／decoded AWBCで動かし、1 test内2条件をPASSした。1-op budgetと最大2 in-flight、
+3 callback・正確なunary引数・Source内のResultを検査する。既存lambda12条件のcapture／保存検査は残す。
+
+R3318のCLI 2件はloweringを通過したが、変更していない12-step条件では0／2 PASS／478対象外、
+2.321秒。run既定budget 1は3 path.save Host callの後にaggregate Awaitまで進み、readは未実行。
+新規source／入力を作ったR3319 bench診断も、既定budget 32・12 stepでrunningのまま失敗した。
+R3327は同じbench budgetで実行を観察する診断であり、runの受入budget 1へ結果を転用しない。
+read／submitted／dispatched／completed 3、max_in_flight 2、parallel batch 1／tasks 2、Program terminal 0を
+確認したが、最終statusはrunning。入力なしの後続stepで進むBlockedがあり、completed_tasksは
+3 immediate Host callを含め6になっている。次はNativeのreadiness／静止判定とwork accounting、
+Hostとtaskの完了counter境界を修復する。steps・budget・task量・batch・copy・capture条件は弱めない。
+
+R3323は5 library＋Compiler callable integration、全3,897／3,897 PASS／除外0、140.171秒。
+3,998入力・6 binary・catalog終端集合に差分0。R3324 Clippyは5 package全target・all feature・lockedで
+終了0（警告7,022）。R3325構造gateは終了0／blocking 0、12 Rust path・3 ownerを実測した。
+新Host bodyの150行lintは、role／producer／resultを生成する同じ責任のhelperとして判断を記録した。
+R3326 doctestはSema／runtime-plan／Compilerで終了0（runtime-plan 2 PASS、他は0件）。
+Coreの76件PASSはsource不変の公開R3303証拠を維持し、今回のrunへ合算しない。
+[全結果・原診断・責任境界](acceptance-evidence/task-source-external-callable-acceptance.json)。

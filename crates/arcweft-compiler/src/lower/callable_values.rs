@@ -11,6 +11,17 @@ pub(super) fn resolve(
     enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
     instances: &mut ProjectInstanceProjection<'_>,
 ) -> Result<RuntimeResolvedValue, RuntimeSemanticProjectionError> {
+    if declaration.declaration().owner()
+        == arcweft_lang_hir::symbol::CallableDeclarationOwner::ExternCapability
+    {
+        return analysis
+            .external_callable_value_projection(owner)
+            .map(|value| RuntimeResolvedValue::ExternalCallable(Box::new(value)))
+            .map_err(|error| RuntimeSemanticProjectionError::Value {
+                owner,
+                reason: error.to_string(),
+            });
+    }
     let origin = ProjectInstantiationOrigin::CallableValue(owner);
     let target = instances.callable_root(
         owner,

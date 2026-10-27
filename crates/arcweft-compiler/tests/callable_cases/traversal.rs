@@ -38,6 +38,76 @@ fn source_traversal_does_not_enter_the_callback_body() {
 }
 
 #[test]
+fn source_parallel_lowers_direct_environment_function_values_in_flow() {
+    let source = r#"
+extern capability fs {
+    fn read_text(path: String) -> Need<Result<String, String>> effects { fs.read }
+}
+flow main() -> String {
+    let paths = ["a.txt", "b.txt", "c.txt"];
+    let values = match (await paths.traverse(fs.read_text).parallel(limit = 2u32)) {
+        .Ok(values) => values,
+        .Err(_) => [],
+    };
+    assert.check(values == ["a.txt", "b.txt", "c.txt"]);
+    return "parallel passed"
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_traversal_source_with_parameters(source, &["path"]);
+    let report = compiled.runtime_plan();
+    let program = AwbcLowerer::new(
+        &report.plan,
+        &report.dialogue_content_catalog,
+        "direct.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let encoded = program.encode_canonical().unwrap();
+    assert_eq!(
+        AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap(),
+        program
+    );
+    let mut native_plan = report.plan.clone();
+    native_plan
+        .bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+                *blake3::hash(&encoded).as_bytes(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let flow = native_plan.flows()[0].id.clone();
+    let mut native = Engine::for_flow(native_plan, &flow).unwrap();
+    drive_source_parallel(
+        "Native direct external F",
+        RuntimeProgramOwner::Plan(native.program_plan()),
+        3,
+        false,
+        None,
+        |input| native.step(input, parallel_options()),
+    );
+    let code =
+        Arc::new(AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap());
+    let mut awbc = AwbcProductStepExecutor::for_entry_arc(
+        Arc::clone(&code),
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+        1,
+    )
+    .unwrap();
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+    drive_source_parallel(
+        "AWBC direct external F",
+        RuntimeProgramOwner::Awbc(code),
+        3,
+        false,
+        None,
+        |input| awbc.step_with_pure_backend(input, parallel_options(), &mut backend),
+    );
+}
+
+#[test]
 fn source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback() {
     for (family, count, errors) in [
         ("Vec<String>", 3, false),
@@ -123,6 +193,7 @@ flow main(values: {family}) -> String {{
             RuntimeProgramOwner::Plan(native.program_plan()),
             count,
             errors,
+            Some("root/"),
             |input| native.step(input, parallel_options()),
         );
         let code = Arc::new(decoded);
@@ -145,6 +216,7 @@ flow main(values: {family}) -> String {{
             RuntimeProgramOwner::Awbc(code),
             count,
             errors,
+            Some("root/"),
             |input| {
                 let mut current = awbc.take().unwrap();
                 let step = current.step_with_pure_backend(input, parallel_options(), &mut backend);
@@ -205,6 +277,7 @@ fn drive_source_parallel(
     owner: RuntimeProgramOwner,
     count: usize,
     errors: bool,
+    expected_prefix: Option<&str>,
     mut step: impl FnMut(arcweft_core::step::RuntimeStepInput) -> arcweft_core::step::RuntimeStepResult,
 ) {
     use arcweft_core::task::{
@@ -276,15 +349,20 @@ fn drive_source_parallel(
             assert_eq!(capability.0, "fs");
             assert_eq!(operation, "read_text");
             assert!(named_args.is_empty());
-            let [prefix, path] = args.as_slice() else {
-                panic!("callback keeps both actual String arguments")
+            let (prefix, path) = match (expected_prefix, args.as_slice()) {
+                (Some(expected), [prefix, path]) => {
+                    let RuntimeValue::String(prefix) = prefix.value() else {
+                        panic!("exact prefix type")
+                    };
+                    assert_eq!(prefix, expected);
+                    (prefix.as_str(), path)
+                }
+                (None, [path]) => ("", path),
+                _ => panic!("callback keeps its complete actual argument ABI"),
             };
-            let (RuntimeValue::String(prefix), RuntimeValue::String(path)) =
-                (prefix.value(), path.value())
-            else {
-                panic!("exact callback argument types")
+            let RuntimeValue::String(path) = path.value() else {
+                panic!("exact callback item type")
             };
-            assert_eq!(prefix, "root/");
             let value = if errors && path != "b.txt" {
                 bound
                     .outcome()
@@ -493,6 +571,13 @@ flow main() -> String {{ return "unused" }}
 }
 
 fn compile_traversal_source(source: &str) -> arcweft_compiler::project::CompiledProject {
+    compile_traversal_source_with_parameters(source, &["prefix", "path"])
+}
+
+fn compile_traversal_source_with_parameters(
+    source: &str,
+    parameter_names: &[&str],
+) -> arcweft_compiler::project::CompiledProject {
     use arcweft_adapter_context::manifest::{
         AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableParameterIndex,
         AdapterEffectCapability, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
@@ -517,8 +602,9 @@ fn compile_traversal_source(source: &str) -> arcweft_compiler::project::Compiled
     use std::{collections::BTreeMap, path::PathBuf};
 
     let effect = AdapterEffectCapability::new("fs.read");
-    let parameters = ["prefix", "path"]
-        .into_iter()
+    let parameters = parameter_names
+        .iter()
+        .copied()
         .enumerate()
         .map(|(index, name)| {
             AdapterFunctionParam::try_new(

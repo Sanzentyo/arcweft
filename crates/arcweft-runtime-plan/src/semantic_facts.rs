@@ -2595,8 +2595,8 @@ pub enum RuntimeResolvedValue {
         callable: RuntimeProjectCallable,
         target: RuntimeProjectCallableValueTarget,
     },
-    EnvironmentCallable(
-        Box<arcweft_lang_sema::final_analysis::CheckedEnvironmentCallableValueProjection>,
+    ExternalCallable(
+        Box<arcweft_lang_sema::final_analysis::CheckedExternalCallableValueProjection>,
     ),
     /// Final Sema's accepted expression, actual entity payload and type key.
     Entity(arcweft_lang_sema::final_analysis::CheckedEntityValueProjection),
@@ -8244,7 +8244,7 @@ impl RuntimePlanSemanticFacts {
                     HirExprKind::EntityReference(_),
                     RuntimeResolvedValue::Local(_)
                     | RuntimeResolvedValue::ProjectCallable { .. }
-                    | RuntimeResolvedValue::EnvironmentCallable(_)
+                    | RuntimeResolvedValue::ExternalCallable(_)
                     | RuntimeResolvedValue::Intrinsic(_)
                     | RuntimeResolvedValue::Registered(_)
                     | RuntimeResolvedValue::Constant(_),
@@ -8261,7 +8261,7 @@ impl RuntimePlanSemanticFacts {
                 | (HirExprKind::Path(_), _)
                 | (
                     HirExprKind::Select(_),
-                    RuntimeResolvedValue::EnvironmentCallable(_)
+                    RuntimeResolvedValue::ExternalCallable(_)
                     | RuntimeResolvedValue::ProjectCallable { .. },
                 ) => {}
                 _ => {
@@ -10973,9 +10973,9 @@ pub enum RuntimeSemanticFactsError {
     #[error("entity value for {expression:?} disagrees with its accepted canonical Ref type")]
     InvalidEntityValueType { expression: ExprId },
     #[error("environment callable value has a foreign or mismatched origin at {expression:?}")]
-    InvalidEnvironmentCallableValueOrigin { expression: ExprId },
+    InvalidExternalCallableValueOrigin { expression: ExprId },
     #[error("environment callable value has a mismatched normalized type at {expression:?}")]
-    InvalidEnvironmentCallableValueType { expression: ExprId },
+    InvalidExternalCallableValueType { expression: ExprId },
     #[error("entity pattern {pattern:?} belongs to another accepted owner or generation")]
     InvalidEntityPatternOrigin { pattern: PatternId },
     #[error("entity pattern {pattern:?} disagrees with its accepted canonical Ref type")]
@@ -11566,7 +11566,7 @@ fn validate_resolved_value(
         RuntimeResolvedValue::Entity(entity) => {
             validate_entity_value(origin_context, expression, expression_type, entity)
         }
-        RuntimeResolvedValue::EnvironmentCallable(callable) => {
+        RuntimeResolvedValue::ExternalCallable(callable) => {
             let accepted_origin = match origin_context {
                 RuntimeValueOriginContext::Project(project) => {
                     callable.origin().validate_owner(project, expression)
@@ -11577,7 +11577,7 @@ fn validate_resolved_value(
             };
             if !accepted_origin {
                 return Err(
-                    RuntimeSemanticFactsError::InvalidEnvironmentCallableValueOrigin { expression },
+                    RuntimeSemanticFactsError::InvalidExternalCallableValueOrigin { expression },
                 );
             }
             if expression_type.is_none_or(|ty| {
@@ -11585,7 +11585,7 @@ fn validate_resolved_value(
                     || !matches!(ty.shape(), RuntimeTypeShape::Function { .. })
             }) {
                 return Err(
-                    RuntimeSemanticFactsError::InvalidEnvironmentCallableValueType { expression },
+                    RuntimeSemanticFactsError::InvalidExternalCallableValueType { expression },
                 );
             }
             Ok(())
@@ -13751,7 +13751,7 @@ fn validate_project_function_semantic_catalog(
                     (
                         HirExprKind::Select(_),
                         RuntimeResolvedValue::ProjectCallable { .. }
-                            | RuntimeResolvedValue::EnvironmentCallable(_),
+                            | RuntimeResolvedValue::ExternalCallable(_),
                     )
                 ) {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);

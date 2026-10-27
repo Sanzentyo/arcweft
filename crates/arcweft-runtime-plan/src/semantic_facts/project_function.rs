@@ -2528,7 +2528,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             match expression.payload() {
                 RuntimeProjectFunctionExpressionPayload::Value(
                     value @ (RuntimeResolvedValue::ProjectCallable { .. }
-                    | RuntimeResolvedValue::EnvironmentCallable(_)),
+                    | RuntimeResolvedValue::ExternalCallable(_)),
                 ) => {
                     visitor(
                         expression.owner(),

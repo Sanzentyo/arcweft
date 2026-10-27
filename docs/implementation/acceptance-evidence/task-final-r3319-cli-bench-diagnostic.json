@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+  "command": [
+    "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+    "bench",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\cli-bench-repro-r3319\\bench.arcw",
+    "--iterations",
+    "1",
+    "--warmup",
+    "0",
+    "--steps",
+    "12",
+    "--json"
+  ],
+  "exitCode": 1,
+  "binarySha256": "189ff5822f7581477225aefcff790371d90b6a6280d2060d3213d27f1d1fb4c9",
+  "binaryDrift": false,
+  "fixtureSourceSha256": "085c6925d341d5d4ad7534b9d82688b4d0d817e86e01886c11c6dea5f2c01290",
+  "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3319-cli-bench-diagnostic.stderr.log",
+  "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3319-cli-bench-diagnostic.stdout.json",
+  "acceptanceRun": false
+}

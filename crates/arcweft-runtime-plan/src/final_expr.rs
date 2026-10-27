@@ -90,7 +90,7 @@ pub(crate) struct FinalExprLowerer<'hir> {
             Box<[arcweft_core::plan::RuntimeCallableStateSeedId]>,
         >,
     >,
-    environment_callable_states: Option<&'hir crate::flow::EnvironmentCallableStates>,
+    environment_callable_states: Option<&'hir crate::flow::ExternalCallableStates>,
     callable_specializations: Option<
         &'hir BTreeMap<RuntimeCallableSpecializationKey, RuntimeCallableSpecializationSeedId>,
     >,
@@ -313,7 +313,7 @@ impl<'hir> FinalExprLowerer<'hir> {
 
     pub(crate) fn with_environment_callable_states(
         mut self,
-        states: &'hir crate::flow::EnvironmentCallableStates,
+        states: &'hir crate::flow::ExternalCallableStates,
     ) -> Self {
         self.environment_callable_states = Some(states);
         self
@@ -1920,8 +1920,8 @@ impl<'hir> FinalExprLowerer<'hir> {
                     captures: Box::new([]),
                 })
             }
-            RuntimeResolvedValue::EnvironmentCallable(value) => {
-                let key = crate::flow::EnvironmentCallableKey::of(value);
+            RuntimeResolvedValue::ExternalCallable(value) => {
+                let key = crate::flow::ExternalCallableKey::of(value);
                 let state = self.environment_callable_states
                     .and_then(|states| states.get(&key))
                     .and_then(|states| states.first()).cloned()
@@ -3111,7 +3111,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             self.value(id),
             Some(
                 RuntimeResolvedValue::ProjectCallable { .. }
-                    | RuntimeResolvedValue::EnvironmentCallable(_)
+                    | RuntimeResolvedValue::ExternalCallable(_)
             )
         ) {
             return self.lower_path(id);

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-source-external-callable-structure-report"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3325-program-fanout-runtime-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-27T16:27:50.8427318Z",
+  "finishedAt": "2026-10-27T16:27:54.9778116Z"
+}

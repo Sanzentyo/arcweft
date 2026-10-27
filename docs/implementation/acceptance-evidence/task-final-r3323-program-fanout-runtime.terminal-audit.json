@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "06de1a6213186caf7c77e4141da86a9eda07e502",
+  "run": "task-final-r3323-program-fanout-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 140.171s] 3897 tests run: 3897 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 3897,
+  "passed": 3897,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 5,
+  "matchedPackages": 5,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-27T16:27:09.8965501Z"
+}

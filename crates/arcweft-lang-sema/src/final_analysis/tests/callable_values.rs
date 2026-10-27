@@ -45,7 +45,7 @@ fn caller(value: i64) -> i64 {
     assert_eq!(*reference, declared.id());
     assert!(checked.effects().is_empty(), "creation does not invoke");
     let projection = analysis
-        .environment_callable_value_projection(*reference_owner)
+        .external_callable_value_projection(*reference_owner)
         .expect("the accepted reference issues its original complete declaration");
     assert_eq!(projection.declaration(), declared);
     assert!(std::ptr::eq(projection.declaration(), declared));
@@ -63,8 +63,8 @@ fn caller(value: i64) -> i64 {
     for (owner, _) in analysis.calls() {
         assert!(!projection.origin().validate_owner(project, owner));
         assert!(matches!(
-            analysis.environment_callable_value_projection(owner),
-            Err(crate::final_analysis::CheckedEnvironmentCallableValueProjectionError::NotEnvironmentCallable { owner: rejected })
+            analysis.external_callable_value_projection(owner),
+            Err(crate::final_analysis::CheckedExternalCallableValueProjectionError::NotExternalCallable { owner: rejected })
                 if rejected == owner
         ));
     }

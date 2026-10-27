@@ -1,0 +1,115 @@
+{
+  "source": "bench.arcw",
+  "syntax_warnings": 0,
+  "line_task_groups": 0,
+  "compiler": {
+    "syntax": {
+      "accepted_source_bytes": 927,
+      "lexer_tokens": 362,
+      "grammar_events": 1043,
+      "top_level_items": 5,
+      "statements": 7,
+      "expressions": 54,
+      "type_nodes": 24,
+      "pattern_nodes": 19,
+      "identity_bearing_nodes": 281,
+      "diagnostic_identities": 0
+    },
+    "semantic": {
+      "types": 14,
+      "locals": 8,
+      "captures": 0,
+      "expressions": 36,
+      "patterns": 19,
+      "statements": 4,
+      "items": 5,
+      "calls": 7,
+      "call_diagnostics": 0,
+      "logical_argument_checks": 8,
+      "resolver_invocations": 7,
+      "candidate_argument_probes": 8,
+      "selected_replay_argument_visits": 0,
+      "retained_argument_fact_publications": 7
+    },
+    "runtime_plan": {
+      "pure_function_candidates": 0,
+      "pure_candidate_functions_seen": 0,
+      "pure_candidate_lower_attempts": 0,
+      "pure_candidate_lower_failures_inferred": 0,
+      "pure_expr_lowered_nodes": 0,
+      "pure_expr_cloned_nodes": 0,
+      "pure_rewrite_expr_visits": 0,
+      "optimized_flows": 0,
+      "optimized_op_slices": 0,
+      "local_use_tail_scans": 0,
+      "local_use_scan_ops": 0,
+      "sequence_map_sum_fusions": 0,
+      "sequence_source_inlines": 0,
+      "pure_call_exprs": 0
+    },
+    "awbc": {
+      "flows": 1,
+      "instructions": 97,
+      "line_task_groups": 0,
+      "stream_plans": 0
+    },
+    "aot": {
+      "flows": 1,
+      "ops": 30,
+      "linear_ops": 14,
+      "branch_ops": 4,
+      "effect_ops": 0,
+      "await_ops": 12,
+      "choice_ops": 0,
+      "dialogue_ops": 0,
+      "jump_ops": 0,
+      "linear_dispatch_flows": 0,
+      "mixed_dispatch_flows": 1
+    }
+  },
+  "phases": [
+    {
+      "name": "read_source",
+      "elapsed_ns": 8635700
+    },
+    {
+      "name": "project_compile",
+      "elapsed_ns": 93508000
+    },
+    {
+      "name": "product_awbc_lower",
+      "elapsed_ns": 6341700
+    },
+    {
+      "name": "aot_lower",
+      "elapsed_ns": 19800
+    }
+  ],
+  "benches": [
+    {
+      "id": "bench.parallel_io",
+      "status": "failed",
+      "sections": [
+        {
+          "name": "measure",
+          "status": "failed",
+          "diagnostics": [
+            "measured iteration 1 failed: runtime step limit 12 reached before completion (status: running)"
+          ],
+          "measurement": null,
+          "pure_helper": null
+        },
+        {
+          "name": "assert",
+          "status": "validated",
+          "diagnostics": [],
+          "measurement": null,
+          "pure_helper": null
+        }
+      ],
+      "diagnostics": [
+        "measured iteration 1 failed: runtime step limit 12 reached before completion (status: running)"
+      ]
+    }
+  ]
+}

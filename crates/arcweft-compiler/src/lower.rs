@@ -5864,12 +5864,20 @@ fn runtime_value_resolution(
         CheckedValueResolution::Local(local) => RuntimeResolvedValue::Local(*local),
         CheckedValueResolution::EnvironmentCallable(id) => {
             let value = analysis
-                .environment_callable_value_projection(owner)
+                .external_callable_value_projection(owner)
                 .map_err(|error| error.to_string())?;
             if value.declaration().id() != id || value.ty() != ty {
                 return Err("environment callable projection differs from its accepted declaration or source type".to_owned());
             }
-            RuntimeResolvedValue::EnvironmentCallable(Box::new(value))
+            RuntimeResolvedValue::ExternalCallable(Box::new(value))
+        }
+        CheckedValueResolution::ProjectCallable(callable)
+            if callable.declaration().owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::ExternCapability => {
+            let value = analysis.external_callable_value_projection(owner).map_err(|error| error.to_string())?;
+            if value.ty() != ty {
+                return Err("external callable projection differs from its complete source type".to_owned());
+            }
+            RuntimeResolvedValue::ExternalCallable(Box::new(value))
         }
         CheckedValueResolution::CatalogAsset(_) | CheckedValueResolution::ProjectItem(_)
         | CheckedValueResolution::ImportedProjectEntity(_)

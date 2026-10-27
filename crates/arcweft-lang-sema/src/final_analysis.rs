@@ -63,7 +63,7 @@ mod environment_callable_value;
 pub use entity_pattern::{CheckedEntityPatternProjection, CheckedEntityPatternProjectionError};
 pub use entity_value::{CheckedEntityValueProjection, CheckedEntityValueProjectionError};
 pub use environment_callable_value::{
-    CheckedEnvironmentCallableValueProjection, CheckedEnvironmentCallableValueProjectionError,
+    CheckedExternalCallableValueProjection, CheckedExternalCallableValueProjectionError,
 };
 mod execution_inputs;
 mod flow_execution;

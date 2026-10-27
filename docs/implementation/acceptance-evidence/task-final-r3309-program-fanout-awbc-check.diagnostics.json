@@ -1,0 +1,46 @@
+[
+  {
+    "code": "E0603",
+    "message": "enum `RuntimeHostCallMode` is private",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\final_flow\\environment_callables.rs",
+        "line_start": 183,
+        "label": "private enum"
+      }
+    ]
+  },
+  {
+    "code": "E0603",
+    "message": "enum `RuntimeHostCallMode` is private",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\final_flow\\environment_callables.rs",
+        "line_start": 183,
+        "label": "private enum"
+      }
+    ]
+  },
+  {
+    "code": "E0599",
+    "message": "no variant, associated function, or constant named `EnvironmentCallable` found for enum `RuntimeResolvedValue` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts\\type_dependencies.rs",
+        "line_start": 54,
+        "label": "variant, associated function, or constant not found in `RuntimeResolvedValue`"
+      }
+    ]
+  },
+  {
+    "code": "E0599",
+    "message": "no variant, associated function, or constant named `EnvironmentCallable` found for enum `RuntimeResolvedValue` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts\\type_dependencies.rs",
+        "line_start": 54,
+        "label": "variant, associated function, or constant not found in `RuntimeResolvedValue`"
+      }
+    ]
+  }
+]
