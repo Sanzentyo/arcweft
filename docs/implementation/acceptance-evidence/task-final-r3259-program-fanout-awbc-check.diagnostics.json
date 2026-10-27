@@ -1,0 +1,90 @@
+[
+  {
+    "code": "E0004",
+    "message": "non-exhaustive patterns: `&semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed` not covered",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts\\type_dependencies.rs",
+        "line_start": 115,
+        "label": "pattern `&semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed` not covered"
+      }
+    ]
+  },
+  {
+    "code": "E0004",
+    "message": "non-exhaustive patterns: `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts.rs",
+        "line_start": 4470,
+        "label": "pattern `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered"
+      }
+    ]
+  },
+  {
+    "code": "E0004",
+    "message": "non-exhaustive patterns: `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts.rs",
+        "line_start": 8502,
+        "label": "pattern `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered"
+      }
+    ]
+  },
+  {
+    "code": "E0004",
+    "message": "non-exhaustive patterns: `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts.rs",
+        "line_start": 13385,
+        "label": "pattern `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered"
+      }
+    ]
+  },
+  {
+    "code": "E0004",
+    "message": "non-exhaustive patterns: `&semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed` not covered",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts\\type_dependencies.rs",
+        "line_start": 115,
+        "label": "pattern `&semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed` not covered"
+      }
+    ]
+  },
+  {
+    "code": "E0004",
+    "message": "non-exhaustive patterns: `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts.rs",
+        "line_start": 4470,
+        "label": "pattern `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered"
+      }
+    ]
+  },
+  {
+    "code": "E0004",
+    "message": "non-exhaustive patterns: `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts.rs",
+        "line_start": 8502,
+        "label": "pattern `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered"
+      }
+    ]
+  },
+  {
+    "code": "E0004",
+    "message": "non-exhaustive patterns: `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\semantic_facts.rs",
+        "line_start": 13385,
+        "label": "pattern `&semantic_facts::RuntimeResolvedCallDispatch::Static(semantic_facts::RuntimeResolvedStaticCallTarget::ProgramNeed)` not covered"
+      }
+    ]
+  }
+]

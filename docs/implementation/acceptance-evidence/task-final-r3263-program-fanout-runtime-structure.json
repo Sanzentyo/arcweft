@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "82b78470abd2806cfaa524e8967e52d41742fffc",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-source-parallel-compiler-structure-report"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3263-program-fanout-runtime-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-27T13:54:54.3767573Z",
+  "finishedAt": "2026-10-27T13:55:09.9765291Z"
+}

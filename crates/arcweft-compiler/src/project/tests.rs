@@ -243,18 +243,22 @@ flow main(background: Ref<Asset>) -> i64 {
     let [(owner, call, producer)] = producers.as_slice() else {
         panic!("one selected asset producer call is projected")
     };
+    let arcweft_runtime_plan::semantic_facts::RuntimeResolvedNeedProducerExecution::Host {
+        plan,
+        admission,
+    } = producer.execution()
+    else {
+        panic!("asset producer keeps its actual Host execution contract")
+    };
 
     assert!(matches!(
-        producer.plan().request(),
+        plan.request(),
         arcweft_core::task::NeedProducerRequestProjection::AssetLoad {
             kind: arcweft_core::task::AssetLoadKind::Image,
             ..
         }
     ));
-    assert_eq!(
-        producer.plan().policy(),
-        arcweft_core::task::TaskPolicy::JoinSameKey
-    );
+    assert_eq!(plan.policy(), arcweft_core::task::TaskPolicy::JoinSameKey);
     assert_eq!(
         compiled.runtime_facts().expression_type(*owner),
         Some(producer.need_type()),
@@ -269,9 +273,9 @@ flow main(background: Ref<Asset>) -> i64 {
         item.shape(),
         arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Result { .. }
     ));
-    assert_eq!(producer.admission().arguments().len(), 1);
+    assert_eq!(admission.arguments().len(), 1);
     assert_eq!(
-        producer.admission().arguments()[0].ty().as_bytes(),
+        admission.arguments()[0].ty().as_bytes(),
         call.operands()[0].ty().identity().as_bytes(),
         "the admission and runtime call retain the same checked argument type"
     );
@@ -2725,8 +2729,13 @@ flow main() -> Result<i64, String> {
             let producer = call
                 .need_producer()
                 .expect("manifest-bound suspended Need call has one producer plan");
+            let arcweft_runtime_plan::semantic_facts::RuntimeResolvedNeedProducerExecution::Host {
+                plan, ..
+            } = producer.execution() else {
+                panic!("extern Need producer keeps its actual Host execution contract")
+            };
             assert!(matches!(
-                producer.plan().request(),
+                plan.request(),
                 arcweft_core::task::NeedProducerRequestProjection::ExternCapability {
                     capability,
                     operation,

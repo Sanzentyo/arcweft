@@ -3616,13 +3616,35 @@ pub struct RuntimeResolvedCall {
 /// it is never copied into the Sema-owned producer role.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeResolvedNeedProducer {
-    plan: NeedProducerTaskPlan,
+    execution: RuntimeResolvedNeedProducerExecution,
     need_type: RuntimeNormalizedType,
-    admission: arcweft_lang_sema::CheckedNeedProducerAdmission,
+}
+
+/// The source-owned executable path selected for an ordinary Need.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeResolvedNeedProducerExecution {
+    Host {
+        plan: NeedProducerTaskPlan,
+        admission: arcweft_lang_sema::CheckedNeedProducerAdmission,
+    },
+    /// Retains its checked call producer definition in the common executable
+    /// fact view; live capture admission belongs to the original Program source.
+    ProgramFanout,
+}
+
+/// Borrowed exact types from an admitted fanout call, without a second schema.
+pub(crate) struct RuntimeProgramFanoutContract<'a> {
+    pub source: &'a RuntimeNormalizedType,
+    pub mapping: &'a RuntimeNormalizedType,
+    pub limit: &'a RuntimeNormalizedType,
+    pub item: &'a RuntimeNormalizedType,
+    pub need: &'a RuntimeNormalizedType,
+    pub result: &'a RuntimeNormalizedType,
+    pub aggregate: &'a RuntimeNormalizedType,
 }
 
 impl RuntimeResolvedNeedProducer {
-    pub fn try_new(
+    pub fn try_host(
         plan: NeedProducerTaskPlan,
         need_type: RuntimeNormalizedType,
         admission: arcweft_lang_sema::CheckedNeedProducerAdmission,
@@ -3647,22 +3669,29 @@ impl RuntimeResolvedNeedProducer {
             return Err(RuntimeResolvedCallError::NeedProducerAdmissionCount);
         }
         Ok(Self {
-            plan,
+            execution: RuntimeResolvedNeedProducerExecution::Host { plan, admission },
             need_type,
-            admission,
         })
     }
 
-    pub const fn plan(&self) -> &NeedProducerTaskPlan {
-        &self.plan
+    pub fn try_program_fanout(
+        need_type: RuntimeNormalizedType,
+    ) -> Result<Self, RuntimeResolvedCallError> {
+        if !matches!(need_type.shape(), RuntimeTypeShape::Need(_)) {
+            return Err(RuntimeResolvedCallError::NeedProducerResultNotNeed);
+        }
+        Ok(Self {
+            execution: RuntimeResolvedNeedProducerExecution::ProgramFanout,
+            need_type,
+        })
     }
 
     pub const fn need_type(&self) -> &RuntimeNormalizedType {
         &self.need_type
     }
 
-    pub const fn admission(&self) -> &arcweft_lang_sema::CheckedNeedProducerAdmission {
-        &self.admission
+    pub const fn execution(&self) -> &RuntimeResolvedNeedProducerExecution {
+        &self.execution
     }
 }
 
@@ -4033,74 +4062,95 @@ impl RuntimeResolvedCall {
         {
             return Err(RuntimeResolvedCallError::NeedProducerResultNotNeed);
         }
-        let target_admitted = match (self.dispatch(), producer.plan().request()) {
-            (
-                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Registered(_)),
-                NeedProducerRequestProjection::AssetLoad { .. },
-            ) => true,
-            (
-                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)),
-                NeedProducerRequestProjection::ExternCapability {
-                    capability,
-                    operation,
-                    contract,
-                    ..
-                },
-            ) => {
-                matches!(
-                    host.owner(),
-                    RuntimeResolvedHostCallOwner::ExternCapability { .. }
-                ) && host.mode() == RuntimeHostCallMode::Suspend
-                    && host.contract().is_some_and(|selected| {
-                        selected.as_bytes() == contract.as_bytes()
-                            && selected.as_bytes() == producer.plan().contract().as_bytes()
-                    })
-                    && capability.0 == host.capability()
-                    && operation == host.operation()
+        match producer.execution() {
+            RuntimeResolvedNeedProducerExecution::Host { plan, admission } => {
+                let target_admitted = match (self.dispatch(), plan.request()) {
+                    (
+                        RuntimeResolvedCallDispatch::Static(
+                            RuntimeResolvedStaticCallTarget::Registered(_),
+                        ),
+                        NeedProducerRequestProjection::AssetLoad { .. },
+                    ) => true,
+                    (
+                        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(
+                            host,
+                        )),
+                        NeedProducerRequestProjection::ExternCapability {
+                            capability,
+                            operation,
+                            contract,
+                            ..
+                        },
+                    ) => {
+                        matches!(
+                            host.owner(),
+                            RuntimeResolvedHostCallOwner::ExternCapability { .. }
+                        ) && host.mode() == RuntimeHostCallMode::Suspend
+                            && host.contract().is_some_and(|selected| {
+                                selected.as_bytes() == contract.as_bytes()
+                                    && selected.as_bytes() == plan.contract().as_bytes()
+                            })
+                            && capability.0 == host.capability()
+                            && operation == host.operation()
+                    }
+                    (
+                        RuntimeResolvedCallDispatch::Static(_)
+                        | RuntimeResolvedCallDispatch::Value { .. },
+                        _,
+                    ) => false,
+                };
+                if !target_admitted {
+                    return Err(RuntimeResolvedCallError::NeedProducerDispatch);
+                }
+                let admitted_arguments = admission.arguments();
+                if admitted_arguments.len() != self.operands.len() {
+                    return Err(RuntimeResolvedCallError::NeedProducerAdmissionCount);
+                }
+                for (ordinal, (admitted, operand)) in admitted_arguments
+                    .iter()
+                    .zip(self.operands.iter())
+                    .enumerate()
+                {
+                    let source_ordinal = ordinal;
+                    let ordinal = u32::try_from(ordinal)
+                        .map_err(|_| RuntimeResolvedCallError::NeedProducerAdmissionCount)?;
+                    if !matches!(
+                        operand.origin(),
+                        RuntimeResolvedCallOperandOrigin::Argument { .. }
+                    ) || !matches!(
+                        operand.projection(),
+                        RuntimeResolvedCallOperandProjection::Scalar
+                    ) {
+                        return Err(RuntimeResolvedCallError::NeedProducerOperandShape);
+                    }
+                    if admitted.ty().as_bytes() != operand.ty().identity().as_bytes() {
+                        return Err(RuntimeResolvedCallError::NeedProducerAdmissionType {
+                            ordinal,
+                        });
+                    }
+                    let source_name = match operand.binding() {
+                        RuntimeResolvedCallOperandBinding::Positional => None,
+                        RuntimeResolvedCallOperandBinding::Named(name) => Some(name.as_str()),
+                    };
+                    let binding_matches = plan
+                        .request()
+                        .argument_binding(source_ordinal)
+                        .is_some_and(|binding| binding.accepts_source_name(source_name));
+                    if !binding_matches {
+                        return Err(RuntimeResolvedCallError::NeedProducerPlanMismatch);
+                    }
+                }
             }
-            (
-                RuntimeResolvedCallDispatch::Static(_) | RuntimeResolvedCallDispatch::Value { .. },
-                _,
-            ) => false,
-        };
-        if !target_admitted {
-            return Err(RuntimeResolvedCallError::NeedProducerDispatch);
-        }
-        let admitted_arguments = producer.admission().arguments();
-        if admitted_arguments.len() != self.operands.len() {
-            return Err(RuntimeResolvedCallError::NeedProducerAdmissionCount);
-        }
-        for (ordinal, (admitted, operand)) in admitted_arguments
-            .iter()
-            .zip(self.operands.iter())
-            .enumerate()
-        {
-            let source_ordinal = ordinal;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| RuntimeResolvedCallError::NeedProducerAdmissionCount)?;
-            if !matches!(
-                operand.origin(),
-                RuntimeResolvedCallOperandOrigin::Argument { .. }
-            ) || !matches!(
-                operand.projection(),
-                RuntimeResolvedCallOperandProjection::Scalar
-            ) {
-                return Err(RuntimeResolvedCallError::NeedProducerOperandShape);
-            }
-            if admitted.ty().as_bytes() != operand.ty().identity().as_bytes() {
-                return Err(RuntimeResolvedCallError::NeedProducerAdmissionType { ordinal });
-            }
-            let source_name = match operand.binding() {
-                RuntimeResolvedCallOperandBinding::Positional => None,
-                RuntimeResolvedCallOperandBinding::Named(name) => Some(name.as_str()),
-            };
-            let binding_matches = producer
-                .plan()
-                .request()
-                .argument_binding(source_ordinal)
-                .is_some_and(|binding| binding.accepts_source_name(source_name));
-            if !binding_matches {
-                return Err(RuntimeResolvedCallError::NeedProducerPlanMismatch);
+            RuntimeResolvedNeedProducerExecution::ProgramFanout => {
+                if !matches!(
+                    self.dispatch(),
+                    RuntimeResolvedCallDispatch::Static(
+                        RuntimeResolvedStaticCallTarget::ProgramNeed
+                    )
+                ) || self.program_fanout_contract(producer.need_type()).is_none()
+                {
+                    return Err(RuntimeResolvedCallError::NeedProducerDispatch);
+                }
             }
         }
         if self.need_producer.replace(producer).is_some() {
@@ -4218,6 +4268,115 @@ impl RuntimeResolvedCall {
         self.result
     }
 
+    pub(crate) fn program_fanout(&self) -> Option<RuntimeProgramFanoutContract<'_>> {
+        let producer = self.need_producer()?;
+        if !matches!(
+            producer.execution(),
+            RuntimeResolvedNeedProducerExecution::ProgramFanout
+        ) {
+            return None;
+        }
+        self.program_fanout_contract(producer.need_type())
+    }
+
+    fn program_fanout_contract<'a>(
+        &'a self,
+        need_type: &'a RuntimeNormalizedType,
+    ) -> Option<RuntimeProgramFanoutContract<'a>> {
+        let [receiver, limit] = self.operands() else {
+            return None;
+        };
+        if self.completed_group.get() != 0
+            || !matches!(
+                receiver.origin(),
+                RuntimeResolvedCallOperandOrigin::Receiver
+            )
+            || !matches!(
+                limit.origin(),
+                RuntimeResolvedCallOperandOrigin::Argument {
+                    argument: 0,
+                    slot: 0
+                }
+            )
+            || limit.parameter() != Some(RuntimeCallParameterCoordinate::new(0, 0))
+            || !matches!(limit.binding(), RuntimeResolvedCallOperandBinding::Named(name) if name.as_str() == "limit")
+            || !matches!(
+                limit.ty().shape(),
+                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U32)
+            )
+            || self.operands().iter().any(|operand| {
+                !matches!(
+                    operand.projection(),
+                    RuntimeResolvedCallOperandProjection::Scalar
+                )
+            })
+        {
+            return None;
+        }
+        let RuntimeTypeShape::Traversal { source, mapping } = receiver.ty().shape() else {
+            return None;
+        };
+        let item = match source.shape() {
+            RuntimeTypeShape::Sequence {
+                kind:
+                    RuntimeSequenceKind::Vec | RuntimeSequenceKind::Seq | RuntimeSequenceKind::Slice,
+                item,
+            }
+            | RuntimeTypeShape::Array { item, .. } => item,
+            _ => return None,
+        };
+        let RuntimeTypeShape::Function {
+            parameters,
+            result: need,
+            ..
+        } = mapping.shape()
+        else {
+            return None;
+        };
+        let [parameter] = parameters.as_ref() else {
+            return None;
+        };
+        let RuntimeTypeShape::Need(result) = need.shape() else {
+            return None;
+        };
+        let RuntimeTypeShape::Result { value, error, .. } = result.shape() else {
+            return None;
+        };
+        let RuntimeTypeShape::Need(aggregate) = need_type.shape() else {
+            return None;
+        };
+        let RuntimeTypeShape::Result {
+            value: collection,
+            error: aggregate_error,
+            ..
+        } = aggregate.shape()
+        else {
+            return None;
+        };
+        let RuntimeTypeShape::Sequence {
+            kind: RuntimeSequenceKind::Vec,
+            item: aggregate_item,
+        } = collection.shape()
+        else {
+            return None;
+        };
+        if parameter != item.as_ref()
+            || value.as_ref() != aggregate_item.as_ref()
+            || error != aggregate_error
+        {
+            return None;
+        }
+        Some(RuntimeProgramFanoutContract {
+            source,
+            mapping,
+            limit: limit.ty(),
+            item,
+            need,
+            result,
+            aggregate,
+        })
+    }
+
     fn accepts_traversal_type(&self, result: Option<&RuntimeNormalizedType>) -> bool {
         let [source, mapping] = self.operands() else {
             return false;
@@ -4330,6 +4489,7 @@ impl RuntimeResolvedCallDispatch {
                 | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
                 | RuntimeResolvedStaticCallTarget::Traverse
                 | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
+                | RuntimeResolvedStaticCallTarget::ProgramNeed
                 | RuntimeResolvedStaticCallTarget::Registered(_)
                 | RuntimeResolvedStaticCallTarget::Line(_),
             )
@@ -4372,6 +4532,8 @@ pub enum RuntimeResolvedStaticCallTarget {
     VecPush,
     /// Owns the checked collection and unary Need-returning function value.
     Traverse,
+    /// An ordinary Need whose executable kernel is owned by its producer fact.
+    ProgramNeed,
     Agent(crate::agent::RuntimeAgentIntrinsic),
     AgentProbeComparison(arcweft_core::value::RuntimeAgentCompareOp),
     AgentDiagnosticsHasError,
@@ -8359,6 +8521,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedStaticCallTarget::StandardMap(_)
                     | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
                     | RuntimeResolvedStaticCallTarget::Traverse
+                    | RuntimeResolvedStaticCallTarget::ProgramNeed
                     | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                     | RuntimeResolvedStaticCallTarget::Line(_)
                     | RuntimeResolvedStaticCallTarget::Registered(_)
@@ -12197,6 +12360,11 @@ fn validate_call(
         return Err(RuntimeSemanticFactsError::MissingProjectFunctionCallPlan);
     }
     match call.dispatch() {
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::ProgramNeed) => {
+            if call.program_fanout().is_none() {
+                return Err(RuntimeSemanticFactsError::InvalidNeedProducerFact { expression });
+            }
+        }
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Traverse) => {
             if !call.accepts_traversal_type(expression_source_type) {
                 return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
@@ -13238,6 +13406,7 @@ fn validate_project_function_instance(
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
                 | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
                 | RuntimeResolvedStaticCallTarget::Traverse
+                | RuntimeResolvedStaticCallTarget::ProgramNeed
                 | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                 | RuntimeResolvedStaticCallTarget::Line(_)
                 | RuntimeResolvedStaticCallTarget::Registered(_)

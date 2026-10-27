@@ -25,6 +25,16 @@ pub(super) struct ControlLocals {
     pub(super) maps: BTreeMap<ExprId, MapLocalSeeds>,
     pub(super) map_frames: BTreeMap<ExprId, MapFrameLocalSeeds>,
     pub(super) map_functions: BTreeMap<ExprId, arcweft_core::plan::RuntimeFunctionSiteSeedId>,
+    pub(super) fanouts: BTreeMap<ExprId, FanoutLocalSeeds>,
+}
+#[derive(Clone)]
+pub(super) struct FanoutLocalSeeds {
+    pub(super) source: RuntimeLocalSeedId,
+    pub(super) limit: RuntimeLocalSeedId,
+    pub(super) callable: RuntimeLocalSeedId,
+    pub(super) item: RuntimeLocalSeedId,
+    pub(super) need: RuntimeLocalSeedId,
+    pub(super) result: RuntimeLocalSeedId,
 }
 #[derive(Clone)]
 pub(super) struct MapFrameLocalSeeds {
@@ -61,6 +71,10 @@ impl ValueRole {
     }
 }
 enum RequestKind<'a> {
+    Fanout {
+        owner: ExprId,
+        contract: crate::semantic_facts::RuntimeProgramFanoutContract<'a>,
+    },
     MapFrame {
         owner: ExprId,
         receiver: &'a RuntimeNormalizedType,
@@ -103,6 +117,7 @@ impl LocalRequest<'_> {
             | RequestKind::Try { owner, .. }
             | RequestKind::Map { owner, .. } => RuntimeScopeOwner::Expression(*owner),
             RequestKind::MapFrame { owner, .. } => RuntimeScopeOwner::Expression(*owner),
+            RequestKind::Fanout { owner, .. } => RuntimeScopeOwner::Expression(*owner),
             RequestKind::Scope { owner, .. } => *owner,
         }
     }
@@ -112,12 +127,14 @@ impl LocalRequest<'_> {
             RequestKind::Try { .. } => Role::TrySuccess,
             RequestKind::Map { .. } => Role::MapCallable,
             RequestKind::MapFrame { .. } => Role::MapOutput,
+            RequestKind::Fanout { .. } => Role::FanoutSource,
             RequestKind::Scope { .. } => Role::ScopeCarrier,
         }
     }
     fn count(&self) -> u64 {
         match &self.kind {
             RequestKind::Value { .. } => 1,
+            RequestKind::Fanout { .. } => 6,
             RequestKind::MapFrame { .. } => 2,
             RequestKind::Try { residual, .. } => 1 + u64::from(residual.is_some()),
             RequestKind::Scope { residual, .. } => 2 + u64::from(residual.is_some()),
@@ -175,6 +192,14 @@ impl LocalRequest<'_> {
         };
         match &self.kind {
             RequestKind::MapFrame { .. } => unreachable!("frame declarations were emitted above"),
+            RequestKind::Fanout { contract, .. } => {
+                visit(contract.source, Role::FanoutSource)?;
+                visit(contract.limit, Role::FanoutLimit)?;
+                visit(contract.mapping, Role::FanoutCallable)?;
+                visit(contract.item, Role::FanoutItem)?;
+                visit(contract.need, Role::FanoutNeed)?;
+                visit(contract.result, Role::FanoutResult)?;
+            }
             RequestKind::Value { role, ty, .. } => visit(ty, role.semantic_role())?,
             RequestKind::Try {
                 success, residual, ..
@@ -233,6 +258,19 @@ impl LocalRequest<'_> {
             })
         };
         match &self.kind {
+            RequestKind::Fanout { owner, .. } => {
+                result.fanouts.insert(
+                    *owner,
+                    FanoutLocalSeeds {
+                        source: next()?,
+                        limit: next()?,
+                        callable: next()?,
+                        item: next()?,
+                        need: next()?,
+                        result: next()?,
+                    },
+                );
+            }
             RequestKind::MapFrame { owner, .. } => {
                 result.map_frames.insert(
                     *owner,
@@ -486,6 +524,14 @@ impl<'a> ControlLocalInventory<'a> {
                 result,
                 map.collection(),
             )?;
+        }
+        if let Some(call) = facts.call(owner)
+            && let Some(contract) = call.program_fanout()
+        {
+            self.requests.push(LocalRequest {
+                coordinate,
+                kind: RequestKind::Fanout { owner, contract },
+            });
         }
         if let Some(call) = facts.call(owner)
             && let crate::semantic_facts::RuntimeResolvedCallDispatch::Static(

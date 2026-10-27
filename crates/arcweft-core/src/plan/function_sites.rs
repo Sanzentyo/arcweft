@@ -69,6 +69,9 @@ impl RuntimeFunctionDefinitionIdentity {
             RuntimeGeneratedFunctionRole::TaskBody => {
                 hash.update(&[7]);
             }
+            RuntimeGeneratedFunctionRole::FanoutWorker => {
+                hash.update(&[8]);
+            }
         }
         Self(*hash.finalize().as_bytes())
     }
@@ -91,6 +94,7 @@ pub enum RuntimeGeneratedFunctionRole {
     StandardMapContinuation,
     TaskRequest,
     TaskBody,
+    FanoutWorker,
     FormatOperand {
         parameter: crate::value::RuntimeFmtParameterId,
     },

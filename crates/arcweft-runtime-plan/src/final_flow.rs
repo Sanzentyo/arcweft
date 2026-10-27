@@ -19,6 +19,8 @@ mod format_attempt;
 mod line_plan;
 #[path = "final_flow/preparation.rs"]
 mod preparation;
+#[path = "final_flow/program_fanout.rs"]
+mod program_fanout;
 pub use preparation::{PreparedRuntimePlanLowering, RuntimeViewMatchTaskPlanSource};
 #[path = "final_flow/rust_defaults.rs"]
 mod rust_defaults;
@@ -7718,6 +7720,14 @@ impl<'a> FinalFlowLowerer<'a> {
                 "Need producer call {expression:?} result differs from its selected instantiated Need<T>"
             )));
         }
+        let plan = match producer.execution() {
+            crate::semantic_facts::RuntimeResolvedNeedProducerExecution::Host { plan, .. } => {
+                plan.clone()
+            }
+            crate::semantic_facts::RuntimeResolvedNeedProducerExecution::ProgramFanout => {
+                return self.lower_program_fanout_value(expression, call, continuation, overrides);
+            }
+        };
         let local = self
             .control
             .expression_values
@@ -7728,7 +7738,6 @@ impl<'a> FinalFlowLowerer<'a> {
                     "Need producer call {expression:?} has no admitted result local"
                 ))
             })?;
-        let plan = producer.plan().clone();
         if call.operands().len() != plan.argument_types().len() {
             return Err(RuntimePlanLowerError::new(format!(
                 "Need producer call {expression:?} source row differs from its selected argument signature"

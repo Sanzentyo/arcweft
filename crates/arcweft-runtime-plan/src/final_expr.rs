@@ -2247,6 +2247,11 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_)) => Err(
                 format!("host call {id:?} is effectful and cannot enter pure expression lowering"),
             ),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::ProgramNeed) => {
+                Err(format!(
+                    "Program Need call {id:?} requires its flow-owned producer lowering"
+                ))
+            }
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Line(_)) => Err(
                 format!("line capability call {id:?} must be consumed by typed line-plan lowering"),
             ),

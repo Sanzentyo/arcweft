@@ -12709,3 +12709,34 @@ Cargo関連100入力の差分0を確認した。新たな依存・public契約�
 
 現状のSource parallel行に重複していたrun件数・過去のCompiler診断は、共有gate表と本履歴・原本へ
 集約した。機能の成立範囲と未接続条件を現状行に残し、検証結果やfull SHAは削除していない。
+
+## Source parallelのCompiler接続checkpoint — 2026-10-27
+
+前cutは82b78470abd2806cfaa524e8967e52d41742fffcとして公開し、
+parent 35f3e68bc74481c4fa562b63341312a2033b45b5、tree
+41cc857653ee2902e135113ab7f729416502d263、29 path／公開blob差分0を確認した。
+[公開照合](acceptance-evidence/task-program-fanout-awbc-cancellation.verified.json)。
+
+この基点から11 RustファイルでCompilerのparallel選択、実行方式fact、元call producer定義、
+count-firstの6 local、実FのMove呼出し・Need awaitを含む元Program workerへ接続した。
+Hostのargument certificateはHost variantが保持し、Programは既存のglobal／local-use環境の
+checked producer Sourceと実capture admissionを使う。擬似Host requestやF型のCopy仮定を足していない。
+Core Bool worker 48条件・取消6条件の受入を、未実行のSource callback受入へ拡張しない。
+
+R3259は新dispatchの網羅consumer 4種を欠き、lib/test重複を含む診断8行で終了101。
+R3260は既存Compiler Hostテストの削除済getter参照5件と依存する型診断1件で終了101。
+assertionを残してHost variantを明示する形へ移行したR3261は、Core／Sema／runtime-plan／
+runtime-codegen／Compilerの全target・全feature・locked check終了0。
+各3,998入力の差分0。新fixtureは4 collection family、空入力、順不同の複数Err、
+実prefix captureを含むHost要求をコンパイル確認した段階で、実行はR3262 catalog後に行う。
+Host MustBeQuiescentの実行中は公開save拒否を確認してprivate rollbackを行い、
+保存可能な地点は公開JSON save／restoreする条件とした。restart policy・製品budgetは変更しない。
+[実装範囲・初回失敗と修復](acceptance-evidence/task-source-parallel-compiler-checkpoint.json)。
+
+R3262 Source fixture catalog buildは終了0。R3263構造gateは終了0／blocking 0、
+11 Rust path・4 ownerを計測し、各3,998入力差分0。責任境界の判断と測定はcheckpointに保持した。
+
+R3264はSource traversal 4件、3 PASS／新parallel fixture 1 FAIL／181対象外、0.808秒、終了100。
+3,998入力と実binary 1件の差分0、catalog終端集合差分0。rootのawaitに必要なcontrol.suspendが
+宣言上限にないAWF-EFX-001で、実callbackへ入る前の拒否だった。次cutでfixtureのroot宣言へ
+必要なeffectを加える。callbackのfs.read契約、effect上限検査、budget／assertionは維持する。

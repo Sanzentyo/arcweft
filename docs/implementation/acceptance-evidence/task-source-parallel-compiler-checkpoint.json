@@ -1,0 +1,371 @@
+{
+  "version": 1,
+  "base": "82b78470abd2806cfaa524e8967e52d41742fffc",
+  "status": "Compiler Source parallel implementation checkpoint; actual first Source run is 3 pass / 1 fixture effect-bound failure; callback execution not yet accepted",
+  "rustPaths": [
+    "crates/arcweft-compiler/src/lower.rs",
+    "crates/arcweft-compiler/src/project/tests.rs",
+    "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+    "crates/arcweft-core/src/plan/function_sites.rs",
+    "crates/arcweft-lang-sema/src/semantic_coordinate.rs",
+    "crates/arcweft-runtime-plan/src/final_expr.rs",
+    "crates/arcweft-runtime-plan/src/final_flow.rs",
+    "crates/arcweft-runtime-plan/src/final_flow/control_locals.rs",
+    "crates/arcweft-runtime-plan/src/final_flow/program_fanout.rs",
+    "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+    "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs"
+  ],
+  "implementation": [
+    "RuntimeResolvedNeedProducer owns a closed Host/ProgramFanout execution choice. Host admission stays attached to Host; Program capture admission uses the original checked call producer definition in the common global or local-use executable view.",
+    "The admitted call validates the exact Traversal source and full unary F type, its Need<Result<U,E>>, the aggregate Need<Result<Vec<U>,E>> and named u32 limit.",
+    "A count-first typed local inventory reserves source, limit, callable, item, worker Need and worker result with distinct semantic roles.",
+    "The generated original Program Fanout moves S and F, retains the dynamic limit and uses LocalOnly delivery. Each original worker moves F and its item, applies the actual function value, awaits its Need and returns its Result.",
+    "Host consumers, normalized dependency visitors, original producer definitions, pure-lowering rejection and existing Host admission tests migrate together. Contract markers remain 1."
+  ],
+  "checks": [
+    {
+      "run": "R3259",
+      "exitCode": 101,
+      "diagnosticRows": 8,
+      "distinctErrors": 4,
+      "cause": "Four exhaustive dispatch consumers required the new ProgramNeed arm; duplicate lib/test diagnostic rows retained",
+      "sourceInputs": 3998,
+      "sourceDrift": 0
+    },
+    {
+      "run": "R3260",
+      "exitCode": 101,
+      "diagnosticRows": 6,
+      "cause": "Existing Compiler Host producer tests still called removed Host-only getters; migrated to an explicit Host pattern without removing assertions",
+      "sourceInputs": 3998,
+      "sourceDrift": 0
+    },
+    {
+      "run": "R3261",
+      "exitCode": 0,
+      "packages": 5,
+      "targets": "all",
+      "features": "all",
+      "sourceInputs": 3998,
+      "sourceDrift": 0
+    },
+    {
+      "run": "R3262",
+      "exitCode": 0,
+      "selected": 4,
+      "excluded": 181,
+      "sourceInputs": 3998,
+      "sourceDrift": 0
+    },
+    {
+      "run": "R3264",
+      "exitCode": 100,
+      "passed": 3,
+      "failed": 1,
+      "skipped": 181,
+      "seconds": 0.808,
+      "sourceInputs": 3998,
+      "sourceDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "catalogCaseDrift": 0,
+      "cause": "New root fixture declares fs.read but awaits without declaring control.suspend; AWF-EFX-001 before actual Source callback execution",
+      "repair": "Add the required root control.suspend effect while retaining the callback latent fs.read contract and the effect upper-bound check"
+    }
+  ],
+  "fixture": [
+    "Existing traversal tests remain 3/3 pass. The new parallel fixture is type-check rejected before runtime because its root effect upper bound omits control.suspend.",
+    "Four collection families, empty source, out-of-order Err and actual captured prefix are authored for subsequent execution. Public save quiescence/private rollback conditions remain unchanged."
+  ],
+  "remaining": [
+    "First actual Source callback execution and change-caused repairs",
+    "Broader callback/default/generic/affine/cancellation coverage and CLI counters/parity",
+    "Clippy, affected reverse dependencies and final workspace acceptance"
+  ],
+  "originalHeldTracked": 14,
+  "originalHeldUntracked": 6,
+  "genericMatchReopened": false,
+  "archivedEvidence": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3259-program-fanout-awbc-check.log",
+      "sha256": "76af195672b4ee9919fef0e3c328012cc8bbfb8f19308455789dc1981d76d8f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3259-program-fanout-awbc-check.json",
+      "sha256": "ad354e6a0cc53e0e5b6c9a9e53ac5d1fe8a19afa009e057c3dbf50e2b9da6412"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3259-program-fanout-awbc-check.input-audit.json",
+      "sha256": "d33a57b6b7db6bb4d556f9e64772ece575654bed32b5440724e99aa9bd09a9f8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3259.source-freeze.json",
+      "sha256": "1f5484bc74605769483c33f32c6555d058f6a1b3a81655bd385cf6720d3c9e58"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3260-program-fanout-awbc-check.log",
+      "sha256": "6ecb4bd339a85f9fe63b39c3bd381b59e29edc7235f3804de9f5d8188defdc0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3260-program-fanout-awbc-check.json",
+      "sha256": "dc4097812d52f4e611cae0c4162efb5dea009873e0529edeefc666e4c10a72d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3260-program-fanout-awbc-check.input-audit.json",
+      "sha256": "2018be75f0db14c64bc8b48831601e111559417b9ba9bc3a6687da9c35ea6d60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3260.source-freeze.json",
+      "sha256": "64ba7286716917d364fd671597f292709a20631146cf5fd7fdaecad7679dfe5c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3261-program-fanout-awbc-check.log",
+      "sha256": "45f6f413781db8a826ecd56ef24ff02ac899e9b52eb572fdb64aaa29ae923692"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3261-program-fanout-awbc-check.json",
+      "sha256": "1c83b5458aa189d416a22eb4f7107573d4acafa5e595cf4cc715e212971814c1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3261-program-fanout-awbc-check.input-audit.json",
+      "sha256": "05f43c3ce7f48edf83e313ac5dc927ed8edd49d286ee40725b1cebe6037f242b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3261.source-freeze.json",
+      "sha256": "8ae2c99e55eff09188ad0707b6003d53230d0795a99aa3ce7b4ba4b53309f344"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3259-program-fanout-awbc-check.diagnostics.json",
+      "sha256": "8205a4a59cb907538edee3a912b8e810c927ed812574db540fc9451be82d6328"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3260-program-fanout-awbc-check.diagnostics.json",
+      "sha256": "9e101d48689cb580722f4ad20533be1b0e15ddac371636f5b6287945673e4f72"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3263-program-fanout-runtime-structure.log",
+      "sha256": "45b930d32a334a990a96b1443e881357f07e1bc6600934e6fba7080da5f551d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3263-program-fanout-runtime-structure.json",
+      "sha256": "c47ac49d3abc662778235ddbe8404e96333bb62c837294b12d5ca60118453915"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3263-program-fanout-runtime-structure.input-audit.json",
+      "sha256": "87c7b8f105ba59ef3003a9f7a968f72c6946bf15c94606e01d227bc67eb4c625"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3263.source-freeze.json",
+      "sha256": "8ae2c99e55eff09188ad0707b6003d53230d0795a99aa3ce7b4ba4b53309f344"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3262-program-fanout-awbc-check.log",
+      "sha256": "bc2dbd48a3bb81ab279886bc34e2583cc4d12aad497fb89368cec3e9167e9daf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3262-program-fanout-awbc-check.json",
+      "sha256": "bb038b7ab3419fd9827d0ac681df77fc67bc503d197aec69fbe934c5344d8401"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3262-program-fanout-awbc-check.input-audit.json",
+      "sha256": "9668a7c923a895b9d949f15d3f347607331f5338a29b1fffcb1eecc8ed9a87d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3262.source-freeze.json",
+      "sha256": "0adcc14f02bee33b769a281325fcec33141fd83db557f33501013a7fc3d41bc3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3262.inventory.json",
+      "sha256": "ac4f472987ce3ae8c50607bd96bcfc7c4cdf1434368c853f17d1dbfea0483a74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3264-program-fanout-runtime.log",
+      "sha256": "6043ece9881ca7335da85a920d39acecd4a40151b00244b461a0f8d4ad689fc3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3264-program-fanout-runtime.json",
+      "sha256": "94b1ae80246519b0d8af68644783b68c806b80a423f801310c49c93195b996b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3264-program-fanout-runtime.terminal-audit.json",
+      "sha256": "9835e616817295d4c9f9d6cb7482ae04d5502ab50dfceb422cf40349b18cb66a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3264-program-fanout-runtime.binaries-before.json",
+      "sha256": "ec58ab8ce3ca81d3afe082ece5c05e42f38442a7e76d1cab355ac0789e3e9dc8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3264.source-freeze.json",
+      "sha256": "0adcc14f02bee33b769a281325fcec33141fd83db557f33501013a7fc3d41bc3"
+    }
+  ],
+  "structure": {
+    "run": "R3263",
+    "exitCode": 0,
+    "blocking": 0,
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "metrics": [
+      {
+        "path": "crates/arcweft-compiler/src/lower.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "433873",
+        "physical_lines": "10203",
+        "code_lines": "9973",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0",
+        "basePhysicalLines": 10177
+      },
+      {
+        "path": "crates/arcweft-compiler/src/project/tests.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "160478",
+        "physical_lines": "4315",
+        "code_lines": "4206",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0",
+        "basePhysicalLines": 4306
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "22749",
+        "physical_lines": "608",
+        "code_lines": "595",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0",
+        "basePhysicalLines": 322
+      },
+      {
+        "path": "crates/arcweft-core/src/plan/function_sites.rs",
+        "owner": "arcweft-core",
+        "bytes": "23268",
+        "physical_lines": "721",
+        "code_lines": "600",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "46",
+        "basePhysicalLines": 717
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/semantic_coordinate.rs",
+        "owner": "arcweft-lang-sema",
+        "bytes": "104553",
+        "physical_lines": "2958",
+        "code_lines": "2605",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "213",
+        "basePhysicalLines": 2946
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "148004",
+        "physical_lines": "3622",
+        "code_lines": "3493",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0",
+        "basePhysicalLines": 3617
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/control_locals.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "25341",
+        "physical_lines": "670",
+        "code_lines": "666",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0",
+        "basePhysicalLines": 624
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/program_fanout.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "8993",
+        "physical_lines": "203",
+        "code_lines": "200",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0",
+        "basePhysicalLines": 0
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "444234",
+        "physical_lines": "10406",
+        "code_lines": "10081",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "664",
+        "basePhysicalLines": 10397
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "14827",
+        "physical_lines": "419",
+        "code_lines": "395",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0",
+        "basePhysicalLines": 418
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": "594262",
+        "physical_lines": "15199",
+        "code_lines": "14021",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0",
+        "basePhysicalLines": 15030
+      }
+    ],
+    "packages": [
+      {
+        "package": "arcweft-compiler",
+        "manifest": "crates/arcweft-compiler/Cargo.toml",
+        "workspace_fan_in": "3",
+        "workspace_fan_out": "24",
+        "development_workspace_fan_in": "2",
+        "development_workspace_fan_out": "10"
+      },
+      {
+        "package": "arcweft-core",
+        "manifest": "crates/arcweft-core/Cargo.toml",
+        "workspace_fan_in": "31",
+        "workspace_fan_out": "7",
+        "development_workspace_fan_in": "4",
+        "development_workspace_fan_out": "5"
+      },
+      {
+        "package": "arcweft-lang-sema",
+        "manifest": "crates/arcweft-lang-sema/Cargo.toml",
+        "workspace_fan_in": "8",
+        "workspace_fan_out": "14",
+        "development_workspace_fan_in": "4",
+        "development_workspace_fan_out": "0"
+      },
+      {
+        "package": "arcweft-runtime-plan",
+        "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+        "workspace_fan_in": "5",
+        "workspace_fan_out": "10",
+        "development_workspace_fan_in": "5",
+        "development_workspace_fan_out": "0"
+      }
+    ],
+    "disposition": [
+      "Core and Sema add distinct generated function/local roles under the existing version 1 identity grammars; they retain the original ownership and dependency directions.",
+      "Runtime-plan owns the closed executable Need choice and exact call contract. Its borrowed contract derives from the actual typed operands and result; count-first locals and a separate cohesive Program fanout lowering module use that authority without another signature or value owner. The existing large semantic-facts and final-flow owners remain cohesive exhaustive schemas/control transfer dispatchers; no new I/O state or widened splitting API is introduced.",
+      "Compiler projects accepted callable and call-producer definitions in both global and closed local-use scopes. Existing Host proof tests retain their assertions; the source fixture uses real manifests, actual callback requests, exact outcome admission and both execution backends."
+    ]
+  }
+}

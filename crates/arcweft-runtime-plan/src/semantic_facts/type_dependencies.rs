@@ -137,6 +137,7 @@ impl RuntimeResolvedStaticCallTarget {
             | Self::VecPop
             | Self::VecPush
             | Self::Traverse
+            | Self::ProgramNeed
             | Self::Agent(_)
             | Self::AgentProbeComparison(_)
             | Self::AgentDiagnosticsHasError

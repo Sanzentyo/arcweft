@@ -36,6 +36,292 @@ fn source_traversal_does_not_enter_the_callback_body() {
     );
 }
 
+#[test]
+fn source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback() {
+    for (family, count, errors) in [
+        ("Vec<String>", 3, false),
+        ("Array<String, 3>", 3, false),
+        ("Seq<String>", 3, false),
+        ("Slice<String>", 3, false),
+        ("Vec<String>", 3, true),
+        ("Vec<String>", 0, false),
+    ] {
+        let source = format!(
+            r#"
+extern capability fs {{
+    fn read_text(prefix: String, path: String) -> Need<Result<String, String>> effects {{ fs.read }}
+}}
+fn request(prefix: String, path: String) -> Need<Result<String, String>> effects {{ fs.read }} {{
+    fs.read_text(prefix, path)
+}}
+pub fn root(values: {family}, prefix: String, limit: u32) -> Result<Vec<String>, String> effects {{ fs.read }} {{
+    let traversal = values.traverse(|path| request(prefix, path));
+    let work = traversal.parallel(limit = limit);
+    await work
+}}
+flow main() -> String {{ return "unused" }}
+"#
+        );
+        let compiled = compile_traversal_source(&source);
+        let declaration = compiled
+            .analysis_lease()
+            .final_analysis()
+            .hir_topology()
+            .modules()
+            .iter()
+            .flat_map(|module| module.entries())
+            .filter_map(|entry| entry.body())
+            .find(|body| body.declaration().name() == "root")
+            .unwrap()
+            .declaration()
+            .clone();
+        let selected = compiled
+            .analysis_lease()
+            .compile_deterministic_program(
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
+                }),
+                None,
+                &Default::default(),
+            )
+            .unwrap();
+        let inputs = || {
+            vec![
+                arcweft_core::value::runtime_sequence_values(
+                    ["a.txt", "b.txt", "c.txt"]
+                        .into_iter()
+                        .take(count)
+                        .map(|path| RuntimeValue::String(path.into()))
+                        .collect(),
+                ),
+                RuntimeValue::String("root/".into()),
+                RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(2)),
+            ]
+        };
+        let expected = || {
+            if errors {
+                RuntimeValue::result_err(RuntimeValue::String("a.txt".into()))
+            } else {
+                RuntimeValue::result_ok(arcweft_core::value::runtime_sequence_values(
+                    ["root/a.txt", "root/b.txt", "root/c.txt"]
+                        .into_iter()
+                        .take(count)
+                        .map(|path| RuntimeValue::String(path.into()))
+                        .collect(),
+                ))
+            }
+        };
+        let plan = Arc::clone(selected.plan());
+        let mut native =
+            Engine::for_program_invocation(Arc::clone(&plan), selected.program(), inputs())
+                .unwrap();
+        drive_source_parallel(RuntimeProgramOwner::Plan(plan), count, errors, |input| {
+            native.step(input, parallel_options())
+        });
+        assert_eq!(
+            native.take_program_result().unwrap().unwrap().1,
+            expected(),
+            "Native {family}"
+        );
+
+        let lowered = AwbcLowerer::new(
+            selected.plan(),
+            &selected.lowering_report().dialogue_content_catalog,
+            "parallel.arcw",
+        )
+        .lower()
+        .unwrap()
+        .program;
+        let decoded = AwbcProgram::decode_canonical(
+            &lowered.encode_canonical().unwrap(),
+            AwbcDecodeBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(decoded, lowered);
+        let code = Arc::new(decoded);
+        let mut awbc = Some(
+            AwbcProductStepExecutor::for_program_invocation(
+                Arc::clone(&code),
+                selected.program(),
+                inputs(),
+                arcweft_core::task::GenerationId::new(0),
+                1,
+            )
+            .unwrap(),
+        );
+        let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        let mut public_saves = 0;
+        let mut quiescence_refusals = 0;
+        drive_source_parallel(RuntimeProgramOwner::Awbc(code), count, errors, |input| {
+            let mut current = awbc.take().unwrap();
+            let step = current.step_with_pure_backend(input, parallel_options(), &mut backend);
+            let snapshot = current.snapshot().unwrap();
+            awbc = Some(
+                match arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
+                    &snapshot,
+                    current.admitted_program(),
+                ) {
+                    Ok(saved) => {
+                        let saved =
+                            serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+                        public_saves += 1;
+                        current
+                            .restore_inert_snapshot_owned(saved)
+                            .unwrap_or_else(|(_, error)| panic!("parallel public restore: {error}"))
+                    }
+                    Err(
+                        arcweft_core::awbc::product_step::AwbcProductSaveError::NeedsQuiescence {
+                            needs,
+                        },
+                    ) => {
+                        assert!(!needs.is_empty());
+                        quiescence_refusals += 1;
+                        current
+                            .restore_rollback_image(snapshot)
+                            .unwrap_or_else(|(_, error)| {
+                                panic!("parallel private rollback: {error}")
+                            })
+                    }
+                    Err(error) => panic!("parallel save admission: {error}"),
+                },
+            );
+            step
+        });
+        assert!(public_saves > 0);
+        assert_eq!(quiescence_refusals > 0, count > 0);
+        assert_eq!(
+            awbc.as_mut()
+                .unwrap()
+                .take_program_result()
+                .unwrap()
+                .unwrap()
+                .1,
+            expected(),
+            "AWBC {family}"
+        );
+    }
+}
+
+fn parallel_options() -> RuntimeStepOptions {
+    RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..Default::default()
+    }
+}
+
+fn drive_source_parallel(
+    owner: RuntimeProgramOwner,
+    count: usize,
+    errors: bool,
+    mut step: impl FnMut(arcweft_core::step::RuntimeStepInput) -> arcweft_core::step::RuntimeStepResult,
+) {
+    use arcweft_core::task::{
+        BoundTaskSpec, HostTaskRequest, LogicalEpoch, TaskDispatchIdentity, TaskEvent,
+        TaskEventKind, TaskPublicationRevision, TaskRequest, TaskSequence,
+    };
+    let mut pending = Vec::<(usize, String, TaskEvent)>::new();
+    let mut submitted = 0;
+    let mut completed = Vec::new();
+    let mut max_pending = 0;
+    for tick in 0..4096 {
+        let mut input = arcweft_core::step::RuntimeStepInput::default();
+        let mut index = pending.len();
+        while index > 0 {
+            index -= 1;
+            if pending[index].0 <= tick {
+                let (_, path, event) = pending.remove(index);
+                completed.push(path);
+                input.task_events.push(event);
+            }
+        }
+        let result = step(input);
+        assert!(result.stats.executed_ops <= 1);
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "parallel: {:?}",
+            result.output.diagnostics
+        );
+        assert!(result.output.requests.host_calls.is_empty());
+        assert!(result.output.requests.program_task_completions.is_empty());
+        for submission in result.output.requests.tasks {
+            let bound = BoundTaskSpec::bind(
+                submission,
+                Some(owner.clone()),
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .unwrap();
+            let TaskRequest::Host(HostTaskRequest::Custom {
+                capability,
+                operation,
+                args,
+                named_args,
+                ..
+            }) = &bound.spec().request
+            else {
+                panic!("callback must issue its actual Host request")
+            };
+            assert_eq!(capability.0, "fs");
+            assert_eq!(operation, "fs.read_text");
+            assert!(named_args.is_empty());
+            let [prefix, path] = args.as_slice() else {
+                panic!("callback keeps both actual String arguments")
+            };
+            let (RuntimeValue::String(prefix), RuntimeValue::String(path)) =
+                (prefix.value(), path.value())
+            else {
+                panic!("exact callback argument types")
+            };
+            assert_eq!(prefix, "root/");
+            let value = if errors && path != "b.txt" {
+                bound
+                    .outcome()
+                    .try_result_err(RuntimeValue::String(path.clone()))
+                    .unwrap()
+            } else {
+                bound
+                    .outcome()
+                    .try_result_ok(RuntimeValue::String(format!("{prefix}{path}")))
+                    .unwrap()
+            };
+            let event = TaskEvent::from_dispatch(
+                TaskDispatchIdentity::new(
+                    bound.handle().correlation,
+                    LogicalEpoch(1),
+                    TaskSequence(1),
+                ),
+                TaskPublicationRevision::FIRST,
+                TaskEventKind::Ready(value),
+            );
+            // Keep the first source item pending while later source items finish.
+            pending.push((
+                tick + if path == "a.txt" { 64 } else { 4 },
+                path.clone(),
+                event,
+            ));
+            submitted += 1;
+        }
+        max_pending = max_pending.max(pending.len());
+        assert!(pending.len() <= 2);
+        if matches!(result.fiber_status, FlowFiberStatus::Done(_)) {
+            assert_eq!(submitted, count);
+            assert_eq!(completed.len(), count);
+            assert_eq!(max_pending, count.min(2));
+            if count > 1 {
+                assert_ne!(completed.first().unwrap(), "a.txt");
+            }
+            return;
+        }
+        assert!(
+            !matches!(result.fiber_status, FlowFiberStatus::Failed(_)),
+            "{:?}",
+            result.fiber_status
+        );
+    }
+    panic!("parallel did not finish its bounded fixture");
+}
+
 fn assert_source_traversal(family: &str, expression: &str) {
     let source = format!(
         r#"

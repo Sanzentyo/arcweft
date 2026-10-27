@@ -1709,7 +1709,10 @@ fn project_runtime_semantic_fact_inventories(
     for (owner, call) in runtime_calls {
         if matches!(
             call.dispatch(),
-            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_))
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::Host(_)
+                    | RuntimeResolvedStaticCallTarget::ProgramNeed
+            )
         ) {
             let definition = analysis
                 .checked_call_producer_definition(project, symbols, owner)
@@ -7045,7 +7048,24 @@ fn runtime_call(
             });
         }
     }
-    let call = if producer_role.is_some() || manifest_need_producer {
+    let call = if matches!(
+        call.dispatch(),
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::ProgramNeed)
+    ) {
+        let producer =
+            RuntimeResolvedNeedProducer::try_program_fanout(need_type).map_err(|error| {
+                RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: error.to_string(),
+                }
+            })?;
+        call.try_with_need_producer(producer).map_err(|error| {
+            RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: error.to_string(),
+            }
+        })?
+    } else if producer_role.is_some() || manifest_need_producer {
         let admission = analysis
             .checked_need_producer_admission_for_call(
                 project,
@@ -7167,7 +7187,7 @@ fn runtime_call(
             reason: format!("selected Need producer plan is invalid: {error}"),
         })?;
         let producer =
-            RuntimeResolvedNeedProducer::try_new(plan, need_type, admission).map_err(|error| {
+            RuntimeResolvedNeedProducer::try_host(plan, need_type, admission).map_err(|error| {
                 RuntimeSemanticProjectionError::Call {
                     owner,
                     reason: error.to_string(),
@@ -8466,7 +8486,7 @@ fn runtime_executable_semantic_facts<'abi>(
             expected.children().into(),
             payload,
         );
-        let producer_kind = if matches!(fact.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if matches!(call.dispatch(), RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_))))
+        let producer_kind = if matches!(fact.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if matches!(call.dispatch(), RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_) | RuntimeResolvedStaticCallTarget::ProgramNeed)))
         {
             Some(arcweft_lang_sema::CheckedExpressionProducerKind::Call)
         } else if expected.producer_kind()
@@ -9712,6 +9732,12 @@ fn runtime_call_target(
         CallableCandidateId::CollectionMethod(CollectionMethodId::Traverse { .. })
     ) {
         return Ok(RuntimeResolvedStaticCallTarget::Traverse);
+    }
+    if matches!(
+        selected_id,
+        CallableCandidateId::CollectionMethod(CollectionMethodId::Parallel { .. })
+    ) {
+        return Ok(RuntimeResolvedStaticCallTarget::ProgramNeed);
     }
     if let Some(intrinsic) = runtime_intrinsic(selected_id) {
         return Ok(RuntimeResolvedStaticCallTarget::Intrinsic(intrinsic));

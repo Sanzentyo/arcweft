@@ -1,0 +1,68 @@
+[
+  {
+    "code": "E0599",
+    "message": "no method named `plan` found for reference `&&RuntimeResolvedNeedProducer` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-compiler\\src\\project\\tests.rs",
+        "line_start": 248,
+        "label": "method not found in `&&RuntimeResolvedNeedProducer`"
+      }
+    ]
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `plan` found for reference `&&RuntimeResolvedNeedProducer` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-compiler\\src\\project\\tests.rs",
+        "line_start": 255,
+        "label": "method not found in `&&RuntimeResolvedNeedProducer`"
+      }
+    ]
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `admission` found for reference `&&RuntimeResolvedNeedProducer` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-compiler\\src\\project\\tests.rs",
+        "line_start": 272,
+        "label": "method not found in `&&RuntimeResolvedNeedProducer`"
+      }
+    ]
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `admission` found for reference `&&RuntimeResolvedNeedProducer` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-compiler\\src\\project\\tests.rs",
+        "line_start": 274,
+        "label": "method not found in `&&RuntimeResolvedNeedProducer`"
+      }
+    ]
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `plan` found for reference `&RuntimeResolvedNeedProducer` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-compiler\\src\\project\\tests.rs",
+        "line_start": 2729,
+        "label": "method not found in `&RuntimeResolvedNeedProducer`"
+      }
+    ]
+  },
+  {
+    "code": "E0614",
+    "message": "type `HostCallContractDigest` cannot be dereferenced",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-compiler\\src\\project\\tests.rs",
+        "line_start": 2737,
+        "label": "can't be dereferenced"
+      }
+    ]
+  }
+]

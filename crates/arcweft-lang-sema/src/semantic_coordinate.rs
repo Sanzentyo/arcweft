@@ -1465,6 +1465,12 @@ pub enum CheckedGeneratedLocalRole {
     MapResidual,
     MapOutput,
     MapAccumulator,
+    FanoutSource,
+    FanoutLimit,
+    FanoutCallable,
+    FanoutItem,
+    FanoutNeed,
+    FanoutResult,
 }
 
 impl CheckedGeneratedLocalRole {
@@ -1491,6 +1497,12 @@ impl CheckedGeneratedLocalRole {
             Self::MapResidual => 18,
             Self::MapOutput => 19,
             Self::MapAccumulator => 20,
+            Self::FanoutSource => 21,
+            Self::FanoutLimit => 22,
+            Self::FanoutCallable => 23,
+            Self::FanoutItem => 24,
+            Self::FanoutNeed => 25,
+            Self::FanoutResult => 26,
         };
         hasher.update(&[tag]);
         match self {
