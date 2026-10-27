@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "run": "task-final-r3350-program-fanout-awbc-check",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "-E",
+    "test(source_parallel_lowers_direct_environment)",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T18:20:32.6683483Z"
+}

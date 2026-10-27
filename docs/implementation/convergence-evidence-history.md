@@ -12869,3 +12869,19 @@ R3348 Core全target Clippyは終了0（警告3,502）、R3349 Core doctestは76�
 Supersedes: 現状一覧のR3335 owner、R3256取消owner、R3177全体runという重複した検証入力3行を、対象を包含する今回の全53終端1行へ整理した。過去の件数・失敗・SHA・原本は削除せず履歴へ保持する。進行中だったR3346–R3349も実際の終端へ更新した。Generic Matchを未完了へ戻す変更ではない。
 
 [全結果・package内訳・必須151／17／8件・最新CLI原JSON・公開照合](acceptance-evidence/task-native-host-reply-reverse-acceptance.json)。
+
+## Source parallel の Need入力Array受入 — 2026-10-28
+
+基点はd7c3c4edcca00600b2e30416a040414d3eefa038。全53終端公開のparent／tree／patch／全23 pathのblob差分0も今回の原本へ保存した。変更はCompiler callable fixtureの85行追加のみで、製品Rust、Cargo／依存、公開APIは不変。
+
+実Arrayに2つのNeed<Result<String,String>>を作り、identity Fでtraverse／parallelへ移動する。実Host request／completion各2、最大pending 2、先頭を遅延した入力順結果、budget 1・guard 4096、Host Program request／completion 0を既存driverで検証する。Nativeは通常実行、canonical decoded AWBCは各step private owned rollbackを行い、ともに同じ結果でDoneとなった。追加のArray／2要素／identity Fという範囲を、任意affine captureや公開save全体へ拡張しない。
+
+訂正: R3350／R3351は誤って既存direct extern filterを残しており、そのPASSは追加caseの実行証拠ではなかった。R3353／R3355／R3357は不正なfixture構文 (item) => item により型検査で失敗した。Flow scopeのitem参照をHIRのscope不具合と判断した説明を撤回する。正規の |item| item に変更すると、HIR／Sema／runtimeの修復なしでPASSした。一時診断は削除し、誤filter・失敗・訂正理由は履歴に保持する。
+
+R3359は追加case 1／1 PASS・186対象外、1.549秒。R3361はCompiler callable全187／187 PASS・除外0、25.665秒で、既受入のlambda 12条件とbare extern 2条件も含む。R3362は同test targetのClippy終了0（警告5,330メッセージ）。全3,998入力、1実行binary、catalog／終端集合の差分0。
+
+全53のR3347は前のtest入力に対する7,393実行／7,343 PASS／50 FAIL／39 ignoredのまま保持する。今回の新test-only runを合算して、一つの7,394件runとはしない。Generic Matchの受入と、CLI 50件の未達条件は変更しない。
+
+[全結果・対象指定・fixture失敗・source freeze・公開照合](acceptance-evidence/task-source-affine-need-input-acceptance.json)。
+
+入力型の固定: 最終fixtureはArray<Need<Result<String,String>>,2>を明示する。未注釈collectionのR3361全187件PASS（25.665秒）を履歴へ保持し、最終型指定のR3363／R3364は全187／187 PASS・除外0、24.686秒、R3365同target Clippyは終了0（警告5,330）と別に記録する。最終入力3,998件と1 binary・catalog／終端集合の差分0。

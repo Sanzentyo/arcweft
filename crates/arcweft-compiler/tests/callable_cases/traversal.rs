@@ -108,6 +108,91 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn source_parallel_moves_affine_need_items_and_restores_the_product_each_step() {
+    let source = r#"
+extern capability fs {
+    fn read_text(path: String) -> Need<Result<String, String>> effects { fs.read }
+}
+flow main() -> String {
+    let pending: Array<Need<Result<String, String>>, 2> = [fs.read_text("a.txt"), fs.read_text("b.txt")];
+    let values = match (await pending.traverse(|item| item).parallel(limit = 2u32)) {
+        .Ok(values) => values,
+        .Err(_) => [],
+    };
+    assert.check(values == ["a.txt", "b.txt"]);
+    return "parallel passed"
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_traversal_source_with_parameters(source, &["path"]);
+    let report = compiled.runtime_plan();
+    let program = AwbcLowerer::new(
+        &report.plan,
+        &report.dialogue_content_catalog,
+        "affine-items.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+    assert_eq!(decoded, program);
+    let mut native_plan = report.plan.clone();
+    native_plan
+        .bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+                *blake3::hash(&encoded).as_bytes(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let flow = native_plan.flows()[0].id.clone();
+    let mut native = Engine::for_flow(native_plan, &flow).unwrap();
+    drive_source_parallel(
+        "Native affine Need items",
+        RuntimeProgramOwner::Plan(native.program_plan()),
+        2,
+        false,
+        None,
+        |input| native.step(input, parallel_options()),
+    );
+    let code = Arc::new(decoded);
+    let executor = ArcweftRuntimeExecutor::from_awbc_product_flow_invocation(
+        Arc::clone(&code),
+        report
+            .plan
+            .clone()
+            .seal_flow_invocation(flow, vec![])
+            .unwrap(),
+        None,
+    )
+    .unwrap();
+    let mut awbc = Some(executor);
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+    let mut restores = 0;
+    drive_source_parallel(
+        "AWBC affine Need items",
+        RuntimeProgramOwner::Awbc(code),
+        2,
+        false,
+        None,
+        |input| {
+            let mut current = awbc.take().unwrap();
+            let step = current.step_with_pure_backend(input, parallel_options(), &mut backend);
+            let snapshot = current.product_inert_rollback_image().unwrap();
+            awbc = Some(
+                current
+                    .restore_current_product_rollback_image(snapshot)
+                    .unwrap_or_else(|error| panic!("affine item rollback: {error}")),
+            );
+            restores += 1;
+            step
+        },
+    );
+    assert!(restores > 0);
+}
+
+#[test]
 fn source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback() {
     for (family, count, errors) in [
         ("Vec<String>", 3, false),

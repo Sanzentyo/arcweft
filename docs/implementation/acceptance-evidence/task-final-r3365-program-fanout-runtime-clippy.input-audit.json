@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "run": "task-final-r3365-program-fanout-runtime-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T18:43:36.0100416Z"
+}

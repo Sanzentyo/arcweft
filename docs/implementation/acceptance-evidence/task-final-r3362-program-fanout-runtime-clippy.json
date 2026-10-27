@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "d7c3c4edcca00600b2e30416a040414d3eefa038",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "callable_execution",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3362-program-fanout-runtime-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-27T18:34:43.9733661Z",
+  "finishedAt": "2026-10-27T18:36:12.1146031Z"
+}
