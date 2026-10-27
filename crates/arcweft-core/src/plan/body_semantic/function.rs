@@ -992,8 +992,8 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             | Op::WhileLet { .. }
             | Op::For { .. }
             | Op::Scope { .. }
-            | Op::Break(_)
-            | Op::Continue
+            | Op::Break { .. }
+            | Op::Continue { .. }
             | Op::Goto(_)
             | Op::GotoExpr(_)
             | Op::Return(_)

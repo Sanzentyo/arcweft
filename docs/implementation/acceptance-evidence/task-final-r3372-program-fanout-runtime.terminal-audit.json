@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "base": "bde560d8f762e95795cce8e13cc71de1555c70cd",
+  "run": "task-final-r3372-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.157s] 4 tests run: 0 passed, 4 failed, 2045 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 4,
+  "passed": 0,
+  "failed": 4,
+  "skipped": 2045,
+  "selectedPackages": 3,
+  "matchedPackages": 3,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::thread_statement::tests::labelled_loop_expression_retains_name_span_and_body"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-hir",
+      "test": "project::semantic_paths::tests::labelled_loop_targets_reject_unknown_names_and_callable_crossing"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-hir",
+      "test": "project::semantic_paths::tests::labelled_loop_targets_retain_lexical_identity_and_depth"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_transfers_run_in_native_and_decoded_awbc"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-27T19:32:22.4601479Z"
+}

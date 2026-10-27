@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-28。基点81e668bcd6ba90b9532dfc1b50efe7eece7deb50＋CLI parallel計数assertionの2関数。製品Rustは全53検証済み入力から不変。既存WIPを保持した部分hunk公開と対象2件を照合する。
+確認日: 2026-10-28。基点bde560d8f762e95795cce8e13cc71de1555c70cd＋ラベル付きloopの型付きターゲット移行。R3376の対象12件は8 PASS／4 FAIL。全55逆依存の再検証は未実行であり、以前の全53結果を今回の入力へ拡張しない。
 元のtracked WIP 14件とuntracked実ファイル6件を保持したcheckoutで確認した。公開済み入力の検証結果を、保持WIPを含むcheckout全体の合格へ拡張しない。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
@@ -16,6 +16,7 @@
 
 | 項目・境界 | 状態 | 根拠と、別途区別する範囲 |
 |---|---|---|
+| ラベル付きloop・通常ブロック内のloop制御 | **実装中・対象8／12 PASS、4 FAIL** | ラベル・source span・HIRターゲットidentity／深さを保持し、Native／AWBC、source codec、意味digestへ接続。通常の入れ子値loopのbreak／continue・同名shadowing、未知ラベル／callable越境拒否、codec往復がPASS。通常ブロック内whileはHIR lowering、通常Forのbreak／continueは意味座標、外側loopへ向かうFor内移譲はAWBC target stackで未達。元のsteps／budgetを維持した既存CLI caseの再実行は未実施。[対象結果と未達4件](acceptance-evidence/task-labelled-loop-checkpoint-acceptance.json)。 |
 | Generic Match `.1.2` C3/C5 | **受入・公開済み** | 受入 `850534b9e9bc8c8872f6528dd00050a5e6e7699e`、公開 `f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2`。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件。明示capture移行後のR3347でも同じ151件を全PASSとして終端照合した。完全transcript、uninhabited-domain、Never／let-else、exhaustive-only atomic publicationを含む。[受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)、[公開記録](acceptance-evidence/accepted-generic-phase-note-publication.json)、[最新151件の照合](acceptance-evidence/task-native-host-reply-reverse-acceptance.json)。 |
 | Collection／variant Map | **公開6 familyとArray反復化は対象条件で検証・公開済み** | Vec／Seq／Array／Slice／Option／Resultが公開catalog。Arrayのexact length、直接／retained-prefix、effect／source order、capture、途中保存復元を含む対象46件がPASSした。4,096要素入力も製品既定上限のままPASS。Need／Parser／Streamのschema候補を公開済みとはしない。[修復の検証履歴](convergence-evidence-history.md#array-map反復化の検証--2026-10-24)、[現行契約](../01-language/traits-seq-ranges.md)。 |
 | Presentation引数schema／resource型 | **引数role・resource型移行は検証・公開済み** | `0b5ac5491d245a5386ca1b44547091e50bcb1955`。11 callableのparameterに型付きroleを保持し、UncheckedSupplyのconsumerもversion 1 transcriptに含む。Character固有look、異なるtarget／metadata role、family違いのconsumer拒否を4件と当時の全22逆依存で検証。[roleのowner検証](acceptance-evidence/task-presentation-role-owner-acceptance.json)、[当時の横断結果](acceptance-evidence/task-presentation-role-reverse-acceptance.json)。後続 `fb04fd878622fac57a22db7e2c005ee6daa829ea` はresource kindと再帰型 `Handle<T>`／`SlotRef<T>`を36 pathで共有化し、13／13とR2864全62逆依存で新規失敗0。[型モデルの検証](acceptance-evidence/task-presentation-handle-owner-acceptance.json)。実行ABIは次行の範囲。 |

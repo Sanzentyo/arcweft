@@ -245,7 +245,7 @@ impl PendingExpressionProjection {
             ) | (
                 ExpressionProjection::NamedBlock(_),
                 SyntaxKind::NamedBlockExpression
-            ) | (ExpressionProjection::Loop, SyntaxKind::LoopExpression)
+            ) | (ExpressionProjection::Loop(_), SyntaxKind::LoopExpression)
                 | (
                     ExpressionProjection::Thread(_),
                     SyntaxKind::ThreadExpression
@@ -410,8 +410,14 @@ fn basic_leaf_components_validate(
         | ExpressionProjection::Path
         | ExpressionProjection::Block
         | ExpressionProjection::ComputationBlock(_)
-        | ExpressionProjection::Loop
         | ExpressionProjection::Choice => Some(components.is_empty()),
+        ExpressionProjection::Loop(None) => Some(components.is_empty()),
+        ExpressionProjection::Loop(Some(name)) => basic_leaf_components_validate(
+            &ExpressionProjection::NamedBlock(name.clone()),
+            owner,
+            roles,
+            components,
+        ),
         ExpressionProjection::NamedBlock(name) => Some(
             exact_component_roles(roles, components, &[ExpressionComponentRole::Name])
                 && component_range(components, ExpressionComponentRole::Name).is_some_and(

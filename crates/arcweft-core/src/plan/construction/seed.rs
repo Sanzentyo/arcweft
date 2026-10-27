@@ -558,8 +558,13 @@ pub enum RuntimeFlowOpSeed {
         pattern: RuntimePatternSeed,
         expr: RuntimeExprSeed,
     },
-    Break(Option<RuntimeExprSeed>),
-    Continue,
+    Break {
+        depth: u32,
+        value: Option<RuntimeExprSeed>,
+    },
+    Continue {
+        depth: u32,
+    },
     Goto(FlowRuntimeId),
     GotoExpr(RuntimeExprSeed),
     Return(String),
@@ -1056,7 +1061,7 @@ fn collect_terminal_or_effect_free_locals(
     locals: &mut Vec<RuntimeLocalSeedId>,
 ) {
     match op {
-        RuntimeFlowOpSeed::Continue
+        RuntimeFlowOpSeed::Continue { .. }
         | RuntimeFlowOpSeed::Goto(_)
         | RuntimeFlowOpSeed::Return(_)
         | RuntimeFlowOpSeed::CancelCleanup { .. }
@@ -1070,7 +1075,7 @@ fn collect_terminal_or_effect_free_locals(
                 }
             }
         }
-        RuntimeFlowOpSeed::Break(value) => {
+        RuntimeFlowOpSeed::Break { value, .. } => {
             if let Some(value) = value {
                 value.collect_free_locals(bound, locals);
             }

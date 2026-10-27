@@ -2512,12 +2512,20 @@ impl Analyzer<'_, '_, '_> {
         self.evaluate_block_statement_uses(context, module, loop_expression.statements())?;
         self.evaluate_expression(context, loop_expression.tail(), None)?;
         let mut exits = Vec::new();
-        for (_, statement) in module.statements() {
-            let HirStmtKind::Break { label: None, value } = statement.kind() else {
+        for (statement_id, statement) in module.statements() {
+            let HirStmtKind::Break { value, .. } = statement.kind() else {
                 continue;
             };
-            if !break_targets_loop(module, statement.scope(), owner)
-                .map_err(AnalyzerExpressionError::fatal)?
+            let transfer = self.topology.control_transfer(statement_id).map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            let target = transfer.target().map_err(|error| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ControlTransfer(*error))
+            })?;
+            if target
+                .loop_body_owner()
+                .and_then(|body| body.expression_owner())
+                != Some(owner)
             {
                 continue;
             }
@@ -5463,47 +5471,6 @@ fn array_repeat_length(length: &PreparedExpressionFact) -> Option<usize> {
         return None;
     };
     magnitude.to_decimal_string().parse().ok()
-}
-
-fn break_targets_loop(
-    module: &HirModule,
-    mut scope: ScopeId,
-    target: ExprId,
-) -> Result<bool, FinalSemanticAnalysisError> {
-    loop {
-        let current = module
-            .resolve_scope(scope)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        match current.owner() {
-            HirScopeOwner::Expr(owner)
-                if matches!(
-                    module
-                        .resolve_expr(*owner)
-                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                        .kind(),
-                    HirExprKind::Loop(_)
-                ) =>
-            {
-                return Ok(*owner == target);
-            }
-            HirScopeOwner::Stmt(owner)
-                if matches!(
-                    module
-                        .resolve_stmt(*owner)
-                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                        .kind(),
-                    HirStmtKind::While(_) | HirStmtKind::WhileLet(_) | HirStmtKind::For(_)
-                ) =>
-            {
-                return Ok(false);
-            }
-            _ => {}
-        }
-        let Some(parent) = current.parent() else {
-            return Ok(false);
-        };
-        scope = parent;
-    }
 }
 
 fn style_u8_literal(module: &HirModule, owner: ExprId) -> Option<u8> {

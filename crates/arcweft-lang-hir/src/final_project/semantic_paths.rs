@@ -510,6 +510,7 @@ pub enum HirControlTransferTarget {
     Loop {
         family: HirLoopTargetFamily,
         body_owner: HirSemanticBodyOwner,
+        depth: u32,
     },
 }
 
@@ -521,8 +522,21 @@ impl HirControlTransferTarget {
     pub(crate) const fn loop_target(
         family: HirLoopTargetFamily,
         body_owner: HirSemanticBodyOwner,
+        depth: u32,
     ) -> Self {
-        Self::Loop { family, body_owner }
+        Self::Loop {
+            family,
+            body_owner,
+            depth,
+        }
+    }
+
+    /// Number of enclosing loops skipped before reaching the resolved target.
+    pub const fn loop_depth(&self) -> Option<u32> {
+        match self {
+            Self::Loop { depth, .. } => Some(*depth),
+            Self::Return { .. } | Self::Output { .. } => None,
+        }
     }
 
     pub const fn output_application(&self) -> Option<ExprId> {
@@ -1171,7 +1185,9 @@ impl HirSemanticPathIndex {
                 }
                 (
                     HirControlTransferKind::Break | HirControlTransferKind::Continue,
-                    HirControlTransferTarget::Loop { family, body_owner },
+                    HirControlTransferTarget::Loop {
+                        family, body_owner, ..
+                    },
                 ) => {
                     if body_owner
                         .expression_owner()
@@ -4578,6 +4594,24 @@ fn path_map_delta<T: Copy + Ord>(
         .collect()
 }
 
+impl HirModule {
+    /// Resolves control transfer through the same lexical authority used by
+    /// the sealed project topology. Runtime lowering consumes this typed
+    /// target rather than interpreting authored labels again.
+    pub fn resolve_control_transfer_target(
+        &self,
+        statement: StmtId,
+    ) -> Result<Option<HirControlTransferTarget>, HirSemanticPathError> {
+        let kind = self
+            .resolve_stmt(statement)
+            .map_err(|_| HirSemanticPathError::UnresolvedOwner)?
+            .kind();
+        HirProjectEvaluationTopologyBuilder::new_for_module(self)
+            .resolve_control_transfer(statement, kind)
+            .map(|value| value.map(|(_, target)| target))
+    }
+}
+
 impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
     /// Seals one complete project topology through the same builder authority
     /// used by declaration projections.
@@ -5787,15 +5821,11 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 )
             }
             HirStmtKind::Break { label, value } => {
-                if label.is_some() {
-                    return Err(HirControlTransferResolutionError::UnresolvedTarget {
-                        statement,
-                        kind: HirControlTransferKind::Break,
-                    }
-                    .into());
-                }
-                let (family, body_owner) =
-                    self.nearest_loop_target(statement, HirControlTransferKind::Break)?;
+                let (family, body_owner, depth) = self.nearest_loop_target(
+                    statement,
+                    HirControlTransferKind::Break,
+                    label.as_ref(),
+                )?;
                 if value.is_some() && family != HirLoopTargetFamily::LoopExpression {
                     return Err(
                         HirControlTransferResolutionError::BreakValueRequiresLoopExpression {
@@ -5806,22 +5836,18 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 }
                 (
                     HirControlTransferKind::Break,
-                    HirControlTransferTarget::loop_target(family, body_owner),
+                    HirControlTransferTarget::loop_target(family, body_owner, depth),
                 )
             }
             HirStmtKind::Continue { label } => {
-                if label.is_some() {
-                    return Err(HirControlTransferResolutionError::UnresolvedTarget {
-                        statement,
-                        kind: HirControlTransferKind::Continue,
-                    }
-                    .into());
-                }
-                let (family, body_owner) =
-                    self.nearest_loop_target(statement, HirControlTransferKind::Continue)?;
+                let (family, body_owner, depth) = self.nearest_loop_target(
+                    statement,
+                    HirControlTransferKind::Continue,
+                    label.as_ref(),
+                )?;
                 (
                     HirControlTransferKind::Continue,
-                    HirControlTransferTarget::loop_target(family, body_owner),
+                    HirControlTransferTarget::loop_target(family, body_owner, depth),
                 )
             }
             _ => return Ok(None),
@@ -5833,13 +5859,15 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         &self,
         statement_id: StmtId,
         kind: HirControlTransferKind,
-    ) -> Result<(HirLoopTargetFamily, HirSemanticBodyOwner), HirSemanticPathError> {
+        label: Option<&crate::leaf::HirName>,
+    ) -> Result<(HirLoopTargetFamily, HirSemanticBodyOwner, u32), HirSemanticPathError> {
         let statement = self
             .module
             .resolve_stmt(statement_id)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
         let mut scope = Some(statement.scope());
         let mut visited = BTreeSet::new();
+        let mut depth = 0u32;
         while let Some(scope_id) = scope {
             if !visited.insert(scope_id) {
                 return Err(HirControlTransferResolutionError::InvalidScopeChain {
@@ -5857,11 +5885,25 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                         .module
                         .resolve_expr(*owner)
                         .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
-                    if matches!(expression.kind(), HirExprKind::Loop(_)) {
+                    if matches!(
+                        expression.kind(),
+                        HirExprKind::Closure(_) | HirExprKind::Thread(_)
+                    ) {
+                        break;
+                    }
+                    if let HirExprKind::Loop(loop_expression) = expression.kind()
+                        && label.is_none_or(|label| loop_expression.label() == Some(label))
+                    {
                         return Ok((
                             HirLoopTargetFamily::LoopExpression,
                             HirSemanticBodyOwner::direct_expression(*owner),
+                            depth,
                         ));
+                    }
+                    if matches!(expression.kind(), HirExprKind::Loop(_)) {
+                        depth = depth
+                            .checked_add(1)
+                            .ok_or(HirSemanticPathError::UnresolvedOwner)?;
                     }
                 }
                 HirScopeOwner::Stmt(owner) => {
@@ -5884,10 +5926,19 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                         _ => None,
                     };
                     if let Some((family, role)) = target {
-                        return Ok((family, HirSemanticBodyOwner::statement_body(*owner, role)));
+                        if label.is_none() {
+                            return Ok((
+                                family,
+                                HirSemanticBodyOwner::statement_body(*owner, role),
+                                depth,
+                            ));
+                        }
+                        depth = depth
+                            .checked_add(1)
+                            .ok_or(HirSemanticPathError::UnresolvedOwner)?;
                     }
                 }
-                HirScopeOwner::Module(_) | HirScopeOwner::Item(_) => {}
+                HirScopeOwner::Module(_) | HirScopeOwner::Item(_) => break,
             }
             scope = value.parent();
         }

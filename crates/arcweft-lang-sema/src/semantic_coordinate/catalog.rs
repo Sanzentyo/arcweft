@@ -686,7 +686,9 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
             }
             (
                 HirControlTransferKind::Break | HirControlTransferKind::Continue,
-                HirControlTransferTarget::Loop { family, body_owner },
+                HirControlTransferTarget::Loop {
+                    family, body_owner, ..
+                },
             ) => {
                 if !loop_family_matches_body(*family, body_owner)
                     || body_owner

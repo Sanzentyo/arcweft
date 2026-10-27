@@ -6968,20 +6968,19 @@ impl<'a> FinalFlowLowerer<'a> {
             HirStmtKind::Scope(scope) => {
                 self.lower_scope_statement(id, scope.body(), RuntimeFlowTail::None)
             }
-            HirStmtKind::Break { label, value } if label.is_none() => {
-                Ok(vec![RuntimeFlowOpSeed::Break(
-                    value
-                        .map(|value| {
-                            self.expr_lowerer()
-                                .lower(value)
-                                .map_err(RuntimePlanLowerError::new)
-                        })
-                        .transpose()?,
-                )])
-            }
-            HirStmtKind::Continue { label } if label.is_none() => {
-                Ok(vec![RuntimeFlowOpSeed::Continue])
-            }
+            HirStmtKind::Break { value, .. } => Ok(vec![RuntimeFlowOpSeed::Break {
+                depth: self.loop_transfer_depth(id)?,
+                value: value
+                    .map(|value| {
+                        self.expr_lowerer()
+                            .lower(value)
+                            .map_err(RuntimePlanLowerError::new)
+                    })
+                    .transpose()?,
+            }]),
+            HirStmtKind::Continue { .. } => Ok(vec![RuntimeFlowOpSeed::Continue {
+                depth: self.loop_transfer_depth(id)?,
+            }]),
             HirStmtKind::Error => Err(RuntimePlanLowerError::new(format!(
                 "recovered statement {id:?} cannot enter runtime-plan lowering"
             ))),
@@ -6989,6 +6988,18 @@ impl<'a> FinalFlowLowerer<'a> {
                 "final-HIR statement {id:?} family {unsupported:?} has no checked core projection"
             ))),
         }
+    }
+
+    fn loop_transfer_depth(&self, statement: StmtId) -> Result<u32, RuntimePlanLowerError> {
+        self.module
+            .resolve_control_transfer_target(statement)
+            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
+            .and_then(|target| target.loop_depth())
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "statement {statement:?} has no resolved loop target"
+                ))
+            })
     }
 
     fn lower_iteration_continuation(
@@ -8489,7 +8500,11 @@ impl<'a> FinalFlowLowerer<'a> {
         };
         let mut ops = vec![RuntimeFlowOpSeed::Loop {
             result: Some(result),
-            body: self.lower_statement_ids(expression.statements())?,
+            body: self.lower_value_block(
+                expression.statements(),
+                expression.tail(),
+                RuntimeFlowValueContinuation::Ignore(RuntimeFlowTail::None),
+            )?,
         }];
         ops.extend(self.lower_flow_tail(tail)?);
         Ok(ops)

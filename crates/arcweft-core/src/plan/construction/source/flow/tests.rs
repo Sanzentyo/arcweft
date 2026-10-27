@@ -59,6 +59,13 @@ pub(in crate::plan::construction::source) fn limits(plan: &RuntimePlan) -> Runti
     }
 }
 fn fixture(condition: Option<bool>) -> RuntimePlan {
+    fixture_with_body(condition, None)
+}
+
+fn fixture_with_body(
+    condition: Option<bool>,
+    body: Option<Box<[RuntimeFlowOpSeed]>>,
+) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     let admitted = builder
         .admit_type_batch(
@@ -116,19 +123,21 @@ fn fixture(condition: Option<bool>) -> RuntimePlan {
             &root,
             RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
                 effects: RuntimeEffectSet::empty(),
-                ops: Box::new([RuntimeFlowOpSeed::Scope {
-                    identity: crate::scope::RuntimeScopeIdentity::Named(
-                        arcweft_id::DeclarationName::try_new("flow_source").unwrap(),
-                    ),
-                    body: vec![RuntimeFlowOpSeed::If {
-                        condition: bool_value(true),
-                        then_ops: vec![RuntimeFlowOpSeed::Match {
-                            scrutinee: bool_value(true),
-                            arms,
+                ops: body.unwrap_or_else(|| {
+                    Box::new([RuntimeFlowOpSeed::Scope {
+                        identity: crate::scope::RuntimeScopeIdentity::Named(
+                            arcweft_id::DeclarationName::try_new("flow_source").unwrap(),
+                        ),
+                        body: vec![RuntimeFlowOpSeed::If {
+                            condition: bool_value(true),
+                            then_ops: vec![RuntimeFlowOpSeed::Match {
+                                scrutinee: bool_value(true),
+                                arms,
+                            }],
+                            else_ops: vec![RuntimeFlowOpSeed::ReturnExpr(value(-1))],
                         }],
-                        else_ops: vec![RuntimeFlowOpSeed::ReturnExpr(value(-1))],
-                    }],
-                }]),
+                    }])
+                }),
             }),
         )
         .unwrap();
@@ -208,73 +217,97 @@ fn run(plan: RuntimePlan) -> RuntimeValue {
     result
 }
 
+fn round_trip_flow_source(plan: &RuntimePlan) -> RuntimePlan {
+    let bounds = limits(plan);
+    let encoded = plan
+        .encode_flow_source(ops(plan), bounds, &resources(), &mut meter())
+        .unwrap();
+    let (mut source, functions) = source(plan);
+    let prepared = PreparedRuntimeFlowSource::preflight(
+        encoded.bytes(),
+        bounds,
+        &resources(),
+        &mut source.meter,
+    )
+    .unwrap();
+    assert_eq!(prepared.node_count(), encoded.node_count());
+    assert_eq!(prepared.elements(), encoded.elements());
+    assert_eq!(prepared.storage_bytes(), encoded.storage_bytes());
+    let expressions = empty_expression_handles();
+    let handles = RuntimeFlowSourceHandles {
+        expression: &expressions,
+        contents: &[],
+        defers: &[],
+        tasks: &[],
+    };
+    let seeds = prepared
+        .materialize(&mut source, &handles, &mut resources())
+        .unwrap();
+    source
+        .builder
+        .define_function_site_seed(
+            &functions[0],
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: seeds.into_boxed_slice(),
+            }),
+        )
+        .unwrap();
+    source
+        .builder
+        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed {
+            program: program(),
+            site: functions[0].clone(),
+        })
+        .unwrap();
+    let seal = RuntimeTaskPlanSealLimits::default();
+    let restored = source
+        .prepare_image(seal)
+        .unwrap()
+        .seal(seal, None)
+        .unwrap()
+        .into_plan();
+    assert_eq!(plan.function_sites(), restored.function_sites());
+    assert_eq!(
+        plan.executable_semantic_digest(),
+        restored.executable_semantic_digest()
+    );
+    assert_eq!(
+        restored
+            .encode_flow_source(ops(&restored), bounds, &resources(), &mut meter())
+            .unwrap()
+            .bytes(),
+        encoded.bytes()
+    );
+    restored
+}
+
 #[test]
 fn flow_source_preserves_nested_guard_bodies_never_results_and_actual_native_execution() {
     for (condition, expected) in [(None, 7), (Some(true), 42), (Some(false), 100)] {
         let plan = fixture(condition);
-        let bounds = limits(&plan);
-        let encoded = plan
-            .encode_flow_source(ops(&plan), bounds, &resources(), &mut meter())
-            .unwrap();
-        let (mut source, functions) = source(&plan);
-        let prepared = PreparedRuntimeFlowSource::preflight(
-            encoded.bytes(),
-            bounds,
-            &resources(),
-            &mut source.meter,
-        )
-        .unwrap();
-        assert_eq!(prepared.node_count(), encoded.node_count());
-        assert_eq!(prepared.elements(), encoded.elements());
-        assert_eq!(prepared.storage_bytes(), encoded.storage_bytes());
-        let expressions = empty_expression_handles();
-        let handles = RuntimeFlowSourceHandles {
-            expression: &expressions,
-            contents: &[],
-            defers: &[],
-            tasks: &[],
-        };
-        let seeds = prepared
-            .materialize(&mut source, &handles, &mut resources())
-            .unwrap();
-        source
-            .builder
-            .define_function_site_seed(
-                &functions[0],
-                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
-                    effects: RuntimeEffectSet::empty(),
-                    ops: seeds.into_boxed_slice(),
-                }),
-            )
-            .unwrap();
-        source
-            .builder
-            .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed {
-                program: program(),
-                site: functions[0].clone(),
-            })
-            .unwrap();
-        let seal = RuntimeTaskPlanSealLimits::default();
-        let restored = source
-            .prepare_image(seal)
-            .unwrap()
-            .seal(seal, None)
-            .unwrap()
-            .into_plan();
-        assert_eq!(plan.function_sites(), restored.function_sites());
-        assert_eq!(
-            plan.executable_semantic_digest(),
-            restored.executable_semantic_digest()
-        );
-        assert_eq!(
-            restored
-                .encode_flow_source(ops(&restored), bounds, &resources(), &mut meter())
-                .unwrap()
-                .bytes(),
-            encoded.bytes()
-        );
+        let restored = round_trip_flow_source(&plan);
         assert_eq!(run(plan), RuntimeValue::i64(expected));
         assert_eq!(run(restored), RuntimeValue::i64(expected));
+    }
+}
+
+#[test]
+fn labelled_loop_depth_survives_source_codec_and_native_execution() {
+    for depth in [1, 2] {
+        let mut body = vec![RuntimeFlowOpSeed::If {
+            condition: bool_value(true),
+            then_ops: vec![RuntimeFlowOpSeed::Break { depth, value: None }],
+            else_ops: vec![RuntimeFlowOpSeed::Continue { depth }],
+        }];
+        for _ in 0..=depth {
+            body = vec![RuntimeFlowOpSeed::Loop { result: None, body }];
+        }
+        body.push(RuntimeFlowOpSeed::ReturnExpr(value(42)));
+        let plan = fixture_with_body(None, Some(body.into_boxed_slice()));
+        let restored = round_trip_flow_source(&plan);
+        assert_eq!(run(plan), RuntimeValue::i64(42));
+        assert_eq!(run(restored), RuntimeValue::i64(42));
     }
 }
 

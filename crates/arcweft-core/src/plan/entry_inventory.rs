@@ -1088,8 +1088,8 @@ impl super::RuntimePlanInventory {
             | FlowOp::StartNeedProducer { .. }
             | FlowOp::HostCall { .. }
             | FlowOp::ApplyGroup { .. }
-            | FlowOp::Break(_)
-            | FlowOp::Continue
+            | FlowOp::Break { .. }
+            | FlowOp::Continue { .. }
             | FlowOp::Goto(_)
             | FlowOp::GotoExpr(_)
             | FlowOp::Return(_)

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "bde560d8f762e95795cce8e13cc71de1555c70cd",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-compiler",
+    "--lib",
+    "--all-features",
+    "--locked"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-27T19:26:58.1818030Z",
+  "finishedAt": "2026-10-27T19:28:00.9901059Z"
+}

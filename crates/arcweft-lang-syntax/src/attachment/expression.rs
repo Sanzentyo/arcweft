@@ -1253,7 +1253,7 @@ fn candidate_semantic_child_specs(
         | ExpressionProjection::Block
         | ExpressionProjection::ComputationBlock(_)
         | ExpressionProjection::NamedBlock(_)
-        | ExpressionProjection::Loop
+        | ExpressionProjection::Loop(_)
         | ExpressionProjection::Thread(_)
         | ExpressionProjection::Choice
         | ExpressionProjection::Error => Vec::new(),
@@ -1893,7 +1893,7 @@ impl AttachedExpressionNode {
             ExpressionProjection::Block
             | ExpressionProjection::ComputationBlock(_)
             | ExpressionProjection::NamedBlock(_)
-            | ExpressionProjection::Loop => Some(attached_block(&syntax)?),
+            | ExpressionProjection::Loop(_) => Some(attached_block(&syntax)?),
             _ => None,
         };
         let thread = match pending.projection() {

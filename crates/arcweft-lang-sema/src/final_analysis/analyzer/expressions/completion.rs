@@ -388,7 +388,7 @@ impl Analyzer<'_, '_, '_> {
         family: HirLoopTargetFamily,
         body: HirSemanticBodyOwner,
     ) -> Result<(), AnalyzerExpressionError> {
-        if self.receive_completion_transfers(module, completion, |target| matches!(target, HirControlTransferTarget::Loop { family: target_family, body_owner } if *target_family == family && *body_owner == body))? {
+        if self.receive_completion_transfers(module, completion, |target| matches!(target, HirControlTransferTarget::Loop { family: target_family, body_owner, .. } if *target_family == family && *body_owner == body))? {
             completion.normal = completion.normal.join(NormalContinuation::Unit);
         }
         Ok(())

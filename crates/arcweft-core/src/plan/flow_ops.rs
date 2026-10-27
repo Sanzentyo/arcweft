@@ -226,8 +226,8 @@ impl FlowOp {
             Self::For { .. } => 26,
             Self::ProgramTask { .. } => 28,
             Self::Scope { .. } => 29,
-            Self::Break(_) => 31,
-            Self::Continue => 32,
+            Self::Break { .. } => 31,
+            Self::Continue { .. } => 32,
             Self::Goto(_) => 33,
             Self::GotoExpr(_) => 34,
             Self::Return(_) => 35,
@@ -285,7 +285,9 @@ impl FlowOp {
             | FlowOp::SelectDialogueResult { value }
             | FlowOp::GotoExpr(value)
             | FlowOp::ReturnExpr(value)
-            | FlowOp::Break(Some(value)) => expression(Role::Value, value, visitor)?,
+            | FlowOp::Break {
+                value: Some(value), ..
+            } => expression(Role::Value, value, visitor)?,
             FlowOp::Dialogue { target, result, .. } => {
                 expression(Role::Target, target, visitor)?;
                 visitor(Role::Result, Node::Pattern(result.pattern()))?;
@@ -447,8 +449,8 @@ impl FlowOp {
             FlowOp::StandardMap(_)
             | FlowOp::ProjectCall { .. }
             | FlowOp::Scope { .. }
-            | FlowOp::Break(None)
-            | FlowOp::Continue
+            | FlowOp::Break { value: None, .. }
+            | FlowOp::Continue { .. }
             | FlowOp::Goto(_)
             | FlowOp::Return(_)
             | FlowOp::CancelCleanup { .. }
@@ -519,8 +521,8 @@ impl FlowOp {
             | FlowOp::HostCall { .. }
             | FlowOp::ProjectCall { .. }
             | FlowOp::ApplyGroup { .. }
-            | FlowOp::Break(_)
-            | FlowOp::Continue
+            | FlowOp::Break { .. }
+            | FlowOp::Continue { .. }
             | FlowOp::Goto(_)
             | FlowOp::GotoExpr(_)
             | FlowOp::Return(_)

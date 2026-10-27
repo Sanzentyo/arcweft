@@ -257,6 +257,7 @@ impl Engine {
                 | FlowControlStackEntryKind::Loop { .. }
                 | FlowControlStackEntryKind::While { .. }
                 | FlowControlStackEntryKind::WhileLet { .. } => {}
+                FlowControlStackEntryKind::For { .. } => {}
                 FlowControlStackEntryKind::FormatAttempt(_) => {
                     unreachable!("innermost active format attempt owns this failure")
                 }

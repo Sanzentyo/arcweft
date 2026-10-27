@@ -654,6 +654,9 @@ pub(super) fn dialogue_plan_interval(
     statement_start: usize,
     limit: usize,
 ) -> Option<DialoguePlanInterval> {
+    if crate::parser::expression::labelled_loop_start(parser, statement_start, limit) {
+        return None;
+    }
     let head_end = physical_line_end(parser, statement_start, limit);
     let mut depth = 0_usize;
     let mut saw_postfix_close = false;

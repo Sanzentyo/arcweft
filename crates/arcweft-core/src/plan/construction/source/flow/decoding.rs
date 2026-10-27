@@ -1026,8 +1026,13 @@ impl Reader<'_, '_, '_> {
                 identity: self.scope()?,
                 body: self.body()?,
             },
-            31 => Op::Break(self.optional_expression()?),
-            32 => Op::Continue,
+            31 => Op::Break {
+                depth: self.metadata.u32()?,
+                value: self.optional_expression()?,
+            },
+            32 => Op::Continue {
+                depth: self.metadata.u32()?,
+            },
             33 => Op::Goto(self.path()?),
             34 => Op::GotoExpr(self.expression()?),
             35 => Op::Return(self.text()?),

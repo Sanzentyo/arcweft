@@ -364,7 +364,7 @@ impl StagedHirModuleTransaction<'_> {
             | ExpressionProjection::Match(_) => {
                 self.project_conditional_expression(attached, owner, scope)
             }
-            ExpressionProjection::Loop
+            ExpressionProjection::Loop(_)
             | ExpressionProjection::Closure(_)
             | ExpressionProjection::Block
             | ExpressionProjection::ComputationBlock(_) => {
@@ -755,7 +755,15 @@ impl StagedHirModuleTransaction<'_> {
         scope: ScopeId,
     ) -> Result<(HirExprKind, Option<HirRecoveryIssue>), HirLowerFailure> {
         Ok(match attached.projection() {
-            ExpressionProjection::Loop => {
+            ExpressionProjection::Loop(source_label) => {
+                let (label, recovery) = match source_label {
+                    None => (None, None),
+                    Some(Ok(label)) => (Some(name(label)?), None),
+                    Some(Err(issue)) => {
+                        require_attempted_name_limit(issue)?;
+                        (None, Some(HirRecoveryIssue::InvalidName(name_issue(issue))))
+                    }
+                };
                 let block = self.lower_attached_value_block_parts(
                     attached,
                     owner,
@@ -763,8 +771,13 @@ impl StagedHirModuleTransaction<'_> {
                     OmittedValueTail::ImplicitUnit,
                 )?;
                 (
-                    HirExprKind::Loop(HirLoopExpr::new(block.scope, block.statements, block.tail)),
-                    block.recovery,
+                    HirExprKind::Loop(HirLoopExpr::new(
+                        label,
+                        block.scope,
+                        block.statements,
+                        block.tail,
+                    )),
+                    recovery.or(block.recovery),
                 )
             }
             ExpressionProjection::Closure(_) => {

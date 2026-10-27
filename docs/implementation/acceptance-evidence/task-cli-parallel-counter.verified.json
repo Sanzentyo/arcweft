@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "commit": "bde560d8f762e95795cce8e13cc71de1555c70cd",
+  "parent": "81e668bcd6ba90b9532dfc1b50efe7eece7deb50",
+  "tree": "145cd894aa3ba99373cd14378b28f3bbf5ba2aef",
+  "remote": "bde560d8f762e95795cce8e13cc71de1555c70cd",
+  "paths": [
+    {
+      "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+      "blob": "2dcaae3b1a1a3ca81f0b69e4238b547b88a8df81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter-acceptance.json",
+      "blob": "3d3eadf47399f050911d3f86c1ac4f2ae074a0f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter-documentation-audit.json",
+      "blob": "3d0ac381fd685baa7bf34dc5cb271a903a445047"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter-owner-review.json",
+      "blob": "c94fe9cd846d7057d4dc4ab16d40e2b4ed1bb48a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter.document-baseline-adjustment.json",
+      "blob": "1873947d5df5693b0ec1038480a7d9a6371f784f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter.preservation-proof.json",
+      "blob": "52b1284ce98af46357d9a3572cd0c471e7d13d48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-remaining-failures-after-parallel-bench.json",
+      "blob": "2a4f3a5b9cc5baf9576f695e5ba7461cbd57710f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3366-program-fanout-awbc-check.input-audit.json",
+      "blob": "b2087381fd11692565479ba34774055eac8e101d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3366-program-fanout-awbc-check.json",
+      "blob": "02725026deb8abf80b74b7cbccd889b64e62dea0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3366-program-fanout-awbc-check.log",
+      "blob": "ceabcc29cb48315ae08805032a599fa739c71408"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3367-program-fanout-runtime.binaries-before.json",
+      "blob": "f9f5bbb713bd89de2a024d83190b5f7264b3e93d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3367-program-fanout-runtime.json",
+      "blob": "4d138fe85a511981eace08c24d153d906af2255a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3367-program-fanout-runtime.log",
+      "blob": "a8049622620d32843a3256357f8f1852c14b1822"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3367-program-fanout-runtime.terminal-audit.json",
+      "blob": "5716cb51b620e34a5ea3a2ea331301e008a1e4db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3368-program-fanout-runtime-clippy.input-audit.json",
+      "blob": "7cac353e93cddd55c1daf2e63c712392c3123c7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3368-program-fanout-runtime-clippy.json",
+      "blob": "9cdd7c0b01246e31f41c5634733943530d179e82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3368-program-fanout-runtime-clippy.log",
+      "blob": "3749842bf0feb10f99d83be5877cc371d4b4124d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3366.inventory.json",
+      "blob": "20245eb3e0de6a2a56fc737a668ae783d77a3b64"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3366.source-freeze.json",
+      "blob": "52574bb42469318c076b295bdb8c2531015b25b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3367.source-freeze.json",
+      "blob": "52574bb42469318c076b295bdb8c2531015b25b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3368.source-freeze.json",
+      "blob": "52574bb42469318c076b295bdb8c2531015b25b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-affine-need-input.verified.json",
+      "blob": "14bf7c76f425952139ef2dd65d805a6e435fff44"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "1d6bfcf8d33094b9f96636a70eef74c8d29c7e8c"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "cc0f67d34d1fb92d3132a26b99ae181b79bbac6b"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "f0f184f19b213ff033f9a81a3669154008b48546ad118a0d7fc4f762d6689977",
+  "heldPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-27T19:03:13.4212412Z"
+}

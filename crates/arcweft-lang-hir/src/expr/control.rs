@@ -182,18 +182,29 @@ pub struct HirNamedBlockExpr {
 /// exact loop target through this expression owner.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirLoopExpr {
+    label: Option<HirName>,
     scope: ScopeId,
     statements: Box<[StmtId]>,
     tail: ExprId,
 }
 
 impl HirLoopExpr {
-    pub(crate) const fn new(scope: ScopeId, statements: Box<[StmtId]>, tail: ExprId) -> Self {
+    pub(crate) const fn new(
+        label: Option<HirName>,
+        scope: ScopeId,
+        statements: Box<[StmtId]>,
+        tail: ExprId,
+    ) -> Self {
         Self {
+            label,
             scope,
             statements,
             tail,
         }
+    }
+
+    pub const fn label(&self) -> Option<&HirName> {
+        self.label.as_ref()
     }
 
     pub const fn scope(&self) -> ScopeId {

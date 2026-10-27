@@ -337,7 +337,6 @@ impl Writer {
             | FlowOp::SelectDialogueResult { .. }
             | FlowOp::If { .. }
             | FlowOp::While { .. }
-            | FlowOp::Continue
             | FlowOp::GotoExpr(_)
             | FlowOp::ReturnExpr(_)
             | FlowOp::ExitScope
@@ -552,7 +551,11 @@ impl Writer {
             FlowOp::Scope { identity, .. } | FlowOp::EnterScope { identity } => {
                 self.scope(identity)?;
             }
-            FlowOp::Break(value) => self.flag(value.is_some())?,
+            FlowOp::Break { depth, value } => {
+                self.count(*depth as usize)?;
+                self.flag(value.is_some())?;
+            }
+            FlowOp::Continue { depth } => self.count(*depth as usize)?,
             FlowOp::Goto(flow) => self.path(flow)?,
             FlowOp::Return(text) | FlowOp::CancelCleanup { key: text } => self.text(text)?,
             FlowOp::Effect(effect) => self.effect(effect, counts, resources, meter)?,

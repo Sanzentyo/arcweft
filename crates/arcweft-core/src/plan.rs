@@ -1167,8 +1167,15 @@ pub enum FlowOp {
         identity: crate::scope::RuntimeScopeIdentity,
         body: Vec<FlowOp>,
     },
-    Break(Option<RuntimeExpr>),
-    Continue,
+    /// Exit the resolved loop, skipping `depth` enclosing loops (zero is nearest).
+    Break {
+        depth: u32,
+        value: Option<RuntimeExpr>,
+    },
+    /// Restart the resolved loop, skipping `depth` enclosing loops.
+    Continue {
+        depth: u32,
+    },
     Goto(FlowRuntimeId),
     GotoExpr(RuntimeExpr),
     Return(String),

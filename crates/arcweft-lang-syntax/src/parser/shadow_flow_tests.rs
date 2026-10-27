@@ -19,6 +19,32 @@ fn kind_count(entries: &[UnattachedGrammarEntry], kind: SyntaxKind) -> usize {
 }
 
 #[test]
+fn labelled_loop_prefix_preserves_trivia_lifetime_paths_and_missing_body_recovery() {
+    let source = "flow main() { let value = 'events /* label */ : loop { break 'events 42 }; let lifetime = 'flow }";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    assert!(built.diagnostics().is_empty(), "{:#?}", built.diagnostics());
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::LoopExpression),
+        1
+    );
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::LifetimePathExpression),
+        1
+    );
+    assert_eq!(built.green().to_string(), source);
+
+    let missing = "flow main() { let value = 'events: loop }";
+    let built = parse_document(&document(missing), crate::parser::ParseOptions::default()).unwrap();
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == "syntax.expression.missing_loop_body")
+    );
+    assert_eq!(built.green().to_string(), missing);
+}
+
+#[test]
 fn on_handler_blocks_preserve_statement_bodies_and_recovery_sites() {
     for source in [
         "flow handled() -> String {\n    on event(event) { log.info(\"first\"); log.info(\"second\") }\n    return \"done\"\n}\n",

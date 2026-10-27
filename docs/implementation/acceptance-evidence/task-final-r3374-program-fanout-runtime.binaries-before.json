@@ -1,0 +1,27 @@
+[
+  {
+    "binary": "arcweft-compiler",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+    "sha256": "39cb953cbc99fec2240c3efcdd59c4d7d88acce665b889788b3f47b1c440a743"
+  },
+  {
+    "binary": "arcweft-compiler::callable_execution",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\callable_execution-6f0f9fd90f0abf3c.exe",
+    "sha256": "3a4cd8c204bf0afae29d68353cf666798732ea50cd465e8c045b58b193c90cb6"
+  },
+  {
+    "binary": "arcweft-core",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-728949707a889d5a.exe",
+    "sha256": "d33dfa763b2e1b73ebf8e0159f9642d5b25b15fb7d6d3a51218c11c7f2d4eee3"
+  },
+  {
+    "binary": "arcweft-lang-hir",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_hir-e851fb60e209d62a.exe",
+    "sha256": "fa88010557f862d836ecbab1832d714f38f64e8f8e7b57ad657798538e1588d8"
+  },
+  {
+    "binary": "arcweft-lang-syntax",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_syntax-278fbfc627f5a266.exe",
+    "sha256": "d960d0c3ab5fe404ea15e97e7fba038fd528321d49d8257ca7d8c42018902a42"
+  }
+]

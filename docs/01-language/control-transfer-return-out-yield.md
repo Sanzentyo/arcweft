@@ -134,6 +134,10 @@ while let .Some(event) = queue.pop_front() {
 ```
 
 Loop scopes may be labeled when an explicit target improves diagnostics or avoids ambiguity.
+`break 'name value` and `continue 'name` select the innermost enclosing `loop`
+with that label, including across inner loops. A nested declaration with the
+same label shadows the outer label. An unknown label or a transfer across a
+closure, Thread, or callable boundary is rejected.
 
 ```arcw
 'events: loop {

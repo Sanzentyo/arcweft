@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "bde560d8f762e95795cce8e13cc71de1555c70cd",
+  "run": "task-final-r3374-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.199s] 6 tests run: 5 passed, 1 failed, 4111 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 6,
+  "passed": 5,
+  "failed": 1,
+  "skipped": 4111,
+  "selectedPackages": 4,
+  "matchedPackages": 4,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_transfers_run_in_native_and_decoded_awbc"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-27T19:37:20.2439953Z"
+}

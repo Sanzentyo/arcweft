@@ -922,6 +922,11 @@ impl Engine {
                         pure_backend,
                     ) {
                         Ok(iterator) => {
+                            self.fiber.frame.control_stack.push(FlowControlStackEntry {
+                                kind: FlowControlStackEntryKind::For {
+                                    source: source_site.clone(),
+                                },
+                            });
                             self.push_for_next(&source_site, iterator, output, pure_backend);
                         }
                         Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
@@ -973,8 +978,8 @@ impl Engine {
                     self.fail_format_aware_eval(error, output, pure_backend);
                 }
             }
-            FlowOp::Break(expr) => {
-                let value = match expr {
+            FlowOp::Break { depth, value } => {
+                let value = match value {
                     Some(expr) => match self.evaluate_expr_with_backend(expr, pure_backend) {
                         Ok(value) => value,
                         Err(error) => {
@@ -985,7 +990,9 @@ impl Engine {
                     None => RuntimeValue::Unit,
                 };
                 let mut value = Some(value);
-                let mut handled = self.break_nearest_loop(&mut value, output, pure_backend);
+                let mut remaining = *depth;
+                let mut handled =
+                    self.break_nearest_loop(&mut remaining, &mut value, output, pure_backend);
                 while !handled {
                     if matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)) {
                         return;
@@ -998,7 +1005,8 @@ impl Engine {
                             return;
                         }
                     }
-                    handled = self.break_nearest_loop(&mut value, output, pure_backend);
+                    handled =
+                        self.break_nearest_loop(&mut remaining, &mut value, output, pure_backend);
                 }
                 if handled {
                     self.advance_if_needed(next_op_index);
@@ -1006,8 +1014,9 @@ impl Engine {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("break"), output);
                 }
             }
-            FlowOp::Continue => {
-                let mut handled = self.continue_nearest_loop(output, pure_backend);
+            FlowOp::Continue { depth } => {
+                let mut remaining = *depth;
+                let mut handled = self.continue_nearest_loop(&mut remaining, output, pure_backend);
                 while !handled {
                     if matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)) {
                         return;
@@ -1020,7 +1029,7 @@ impl Engine {
                             return;
                         }
                     }
-                    handled = self.continue_nearest_loop(output, pure_backend);
+                    handled = self.continue_nearest_loop(&mut remaining, output, pure_backend);
                 }
                 if handled {
                     self.advance_if_needed(next_op_index);
@@ -1603,7 +1612,10 @@ impl Engine {
         };
         let item = match self.next_runtime_iterator_item(&mut iterator, pure_backend) {
             Ok(Some(item)) => item,
-            Ok(None) => return,
+            Ok(None) => {
+                self.pop_loop_frame(output, pure_backend);
+                return;
+            }
             Err(error) => {
                 self.fail_eval(error, output);
                 return;
@@ -1791,6 +1803,7 @@ impl Engine {
                 FlowControlStackEntryKind::Loop { .. }
                     | FlowControlStackEntryKind::While { .. }
                     | FlowControlStackEntryKind::WhileLet { .. }
+                    | FlowControlStackEntryKind::For { .. }
             )
         });
         if is_loop {
@@ -1800,28 +1813,32 @@ impl Engine {
         }
     }
 
-    pub(super) fn discard_pending_until_loop_next(&mut self) {
+    pub(super) fn discard_pending_until_loop_next(&mut self) -> Option<NativeRuntimeContinuation> {
         while let Some(op) = self.fiber.frame.pending_ops.pop_front() {
-            if matches!(
-                op.kind,
-                NativePendingWorkKind::Resume(
-                    NativeRuntimeContinuation::LoopNext { .. }
-                        | NativeRuntimeContinuation::WhileNext { .. }
-                        | NativeRuntimeContinuation::WhileLetNext { .. }
-                )
-            ) {
-                break;
+            if let NativePendingWorkKind::Resume(
+                next @ (NativeRuntimeContinuation::LoopNext { .. }
+                | NativeRuntimeContinuation::WhileNext { .. }
+                | NativeRuntimeContinuation::WhileLetNext { .. }
+                | NativeRuntimeContinuation::ForNext { .. }),
+            ) = op.kind
+            {
+                return Some(next);
             }
         }
+        None
     }
 
     pub(super) fn break_nearest_loop(
         &mut self,
+        remaining: &mut u32,
         value: &mut Option<RuntimeValue>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        self.discard_pending_until_loop_next();
+        if !self.skip_transferred_loops(remaining, output, pure_backend) {
+            return false;
+        }
+        let _ = self.discard_pending_until_loop_next();
         let Some(kind) = self.pop_loop_frame(output, pure_backend) else {
             return false;
         };
@@ -1842,7 +1859,8 @@ impl Engine {
                 }
             }
             FlowControlStackEntryKind::While { .. }
-            | FlowControlStackEntryKind::WhileLet { .. } => {
+            | FlowControlStackEntryKind::WhileLet { .. }
+            | FlowControlStackEntryKind::For { .. } => {
                 if value.as_ref() != Some(&RuntimeValue::Unit) {
                     self.fail_eval(RuntimeEvalError::BreakValueOutsideValueLoop, output);
                 }
@@ -1856,14 +1874,18 @@ impl Engine {
 
     pub(super) fn continue_nearest_loop(
         &mut self,
+        remaining: &mut u32,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
+        if !self.skip_transferred_loops(remaining, output, pure_backend) {
+            return false;
+        }
         if let Err(error) = self.pop_scope_frames_until_loop(output, pure_backend) {
             self.fail_eval(error, output);
             return false;
         }
-        self.discard_pending_until_loop_next();
+        let next = self.discard_pending_until_loop_next();
         let Some(kind) = self
             .fiber
             .frame
@@ -1903,6 +1925,36 @@ impl Engine {
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
+            FlowControlStackEntryKind::For { source } => {
+                let Some(NativeRuntimeContinuation::ForNext {
+                    source: next_source,
+                    iterator,
+                }) = next
+                else {
+                    self.fail_eval(
+                        "native continue lost its original iterator continuation",
+                        output,
+                    );
+                    return false;
+                };
+                if source != &next_source {
+                    self.fail_eval(
+                        "native iterator continuation differs from its loop frame",
+                        output,
+                    );
+                    return false;
+                }
+                let work = [Some(NativePendingWork::resume(
+                    NativeRuntimeContinuation::ForNext {
+                        source: next_source,
+                        iterator,
+                    },
+                ))];
+                match self.prepare_native_work(&work) {
+                    Ok(()) => self.prepend_admitted_native_work(work),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+                }
+            }
             FlowControlStackEntryKind::Scope { .. } => {
                 self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 return false;
@@ -1912,6 +1964,25 @@ impl Engine {
                 self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 return false;
             }
+        }
+        true
+    }
+
+    /// Retire skipped iterations through the ordinary scope/cleanup authority.
+    /// A format-attempt boundary leaves `remaining` intact for its caller to
+    /// abandon that attempt before continuing the same transfer.
+    fn skip_transferred_loops(
+        &mut self,
+        remaining: &mut u32,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> bool {
+        while *remaining > 0 {
+            let _ = self.discard_pending_until_loop_next();
+            if self.pop_loop_frame(output, pure_backend).is_none() {
+                return false;
+            }
+            *remaining -= 1;
         }
         true
     }

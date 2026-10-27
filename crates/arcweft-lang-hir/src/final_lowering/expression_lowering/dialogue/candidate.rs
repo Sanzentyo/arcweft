@@ -712,7 +712,7 @@ impl StagedHirModuleTransaction<'_> {
             // never a generic Error expression or detached reconstruction.
             ExpressionProjection::Thread(_)
             | ExpressionProjection::Choice
-            | ExpressionProjection::Loop => {
+            | ExpressionProjection::Loop(_) => {
                 return Err(HirInvariantFailure::InvalidArenaCommit.into());
             }
             ExpressionProjection::Range {

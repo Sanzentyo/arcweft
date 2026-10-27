@@ -315,7 +315,10 @@ fn lower_variant_map_value(
         Some(local_seed(output, mapped, RuntimeLocalReadMode::Move)),
     )
     .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
-    success.push(RuntimeFlowOpSeed::Break(Some(value)));
+    success.push(RuntimeFlowOpSeed::Break {
+        depth: 0,
+        value: Some(value),
+    });
     let (residual_pattern, residual_value) = match receiver.shape() {
         RuntimeTypeShape::Option { .. } => (
             normalized_variant_binding_pattern_seed(receiver, 1, None),
@@ -354,9 +357,13 @@ fn lower_variant_map_value(
                 pattern: residual_pattern
                     .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                 guard: None,
-                ops: vec![RuntimeFlowOpSeed::Break(Some(residual_value.map_err(
-                    |error| RuntimePlanLowerError::new(error.to_string()),
-                )?))],
+                ops: vec![RuntimeFlowOpSeed::Break {
+                    depth: 0,
+                    value: Some(
+                        residual_value
+                            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                    ),
+                }],
             },
         ],
     });

@@ -12899,3 +12899,21 @@ R3367は対象2件の1 PASS／1 FAIL・478対象外、2.166秒。benchは元の1
 Supersedes: 現状一覧のbench counter期待未達を、対象runのPASSへ更新した。R3347全体の50 FAILは原本のまま保持し、benchの解消1識別子を除いた49件は集合差分としてのみ示す。全CLIを49 FAILとして再実行したとはしない。Generic Match、Source lambda／extern／Need入力Arrayの受入は変更しない。
 
 [実行結果・契約理由・全WIPのGit保全証明](acceptance-evidence/task-cli-parallel-counter-acceptance.json)。
+
+## ラベル付きloopの型付きターゲット移行・中間checkpoint — 2026-10-28
+
+基点bde560d8f762e95795cce8e13cc71de1555c70cd。既存CLI run_json_executes_scope_and_loop_value_bindingsの元sourceは、ラベル付きloopでHIR recoveryとなり、ラベルを除いた診断用copyだけがcheckを通った。現行control-transfer仕様にあるラベルをfixtureから削除せず、Syntaxのoptional name／source span、HIRのloop ownerと解決済みdepth、Native／AWBC、元source codec・意味digestを同じターゲットへ接続する。Semaの別個のbreak_targets_loop走査を削除し、既存HIR制御ターゲットを使う。
+
+R3369 library checkはvariant移行中のalias consumer 6診断で失敗。R3370はruntime-plan／Compiler library check終了0、3,998入力の差分0。R3371 catalog後のR3372は新4件すべてFAIL。文頭labelがcolon dialogueへ入る曖昧性と、HIR source indexのname requirementを修復した。R3373 catalog／R3374 runtimeは6件中5 PASS／1 FAIL。末尾のnested loop式をruntime-planが落としていたことを確認し、loop bodyのstatementとtailを既存value continuationでともに実行する。Unit tailを除く最適化は既存authorityを使い、step／budgetを増やさない。
+
+Native Forの継続は元iteratorをForNextに一つだけ保持し、For frameには元source座標だけを置く。breakではiterator継続を破棄し、continueでは所有した継続を移して再開する。private rollbackのframe admissionも同じ元For headerへ照合する。これは新たなiterator copyやHost taskではない。
+
+最終checkpointのR3375 catalog／R3376 runtimeは12件中8 PASS／4 FAIL、4,111対象外、0.305秒、実exit100。3,998入力・5 executable・catalog終端集合の差分0。Syntaxのlabel/trivia/lifetime ambiguity・missing-body recovery、HIRのunknown label／callable越境拒否、Native source codec depth 1／2の往復、Native／decoded-AWBCのnested value-loop break／continue・同名shadowingがPASSした。
+
+残る4件の具体的根拠: 通常value block内whileはHIR loweringのarena validationで拒否される。通常Forのunlabelled break／continueはSema InvalidOwner。Forを越えて外側loopへ向かう2件はNative実行後のAWBC loweringでactive typed loop targetが不足する。既存のCLI 12-step caseと全55逆依存・workspace check／Clippyは、この入力では未実行。失敗4件を消したり、元budget／step limitを緩めたりせず後続で修復する。
+
+Cargo metadataの全feature／locked解決graphはworkspace 97 package、変更owner 9からの推移的reverse closure 55 package。元のtracked WIP 14件とuntracked実ファイル6件を保持し、held patch SHAは89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31のまま。ユーザーの中間commit許可に基づくcheckpointであり、失敗を含むtreeを最終受入済みとはしない。
+
+Supersedes: 現状一覧の「製品Rustは以前の全53入力から不変」は今回の製品変更により更新する。以前のR3347結果、Generic Matchの受入・公開SHAと151件、CLI benchのPASSは原本のまま履歴として保持する。全goalが未完了という理由で完了cutを未完了へ戻さない。
+
+[実行結果・未達識別子・原本hash](acceptance-evidence/task-labelled-loop-checkpoint-acceptance.json)。

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "commit": "bde560d8f762e95795cce8e13cc71de1555c70cd",
+  "originalWipPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+  "expectedResidualWipPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "canonicalHeldBlobDrift": 0,
+  "rawExpectedHeldFileDrift": 0,
+  "heldTracked": 14,
+  "heldUntracked": 6,
+  "reason": "Advance operational baselines after proved partial-hunk publication; the original user patch remains exactly applied to the new code."
+}

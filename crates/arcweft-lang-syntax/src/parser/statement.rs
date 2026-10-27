@@ -422,7 +422,7 @@ fn thread_flow_await_terminator(
     close: usize,
     thread_flow: bool,
 ) -> Option<(usize, bool)> {
-    if !thread_flow {
+    if !thread_flow || super::expression::labelled_loop_start(parser, start, close) {
         return None;
     }
     let mut delimiters = Vec::<&str>::new();
@@ -534,7 +534,7 @@ fn thread_flow_dialogue_terminator(
     close: usize,
     thread_flow: bool,
 ) -> Option<(usize, bool)> {
-    if !thread_flow {
+    if !thread_flow || super::expression::labelled_loop_start(parser, start, close) {
         return None;
     }
     let head_end = indentation::physical_line_end(parser, start, close);

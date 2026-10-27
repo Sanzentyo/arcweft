@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-27T19:46:57.6425836Z",
+  "base": "bde560d8f762e95795cce8e13cc71de1555c70cd",
+  "status": "implementation_checkpoint_with_known_failures",
+  "selectedTests": 12,
+  "passed": 8,
+  "failed": 4,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_enclosing_iterator_preserves_unlabelled_break_and_continue"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_while"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_continue_crosses_statement_for"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_for"
+    }
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "binaries": 5,
+  "binaryDrift": 0,
+  "reverseClosurePackages": 55,
+  "reverseRuntime": "not run on these bytes",
+  "workspaceCheck": "not run on these bytes",
+  "workspaceClippy": "not run on these bytes",
+  "originalTrackedWip": 14,
+  "originalUntrackedWip": 6,
+  "heldPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "genericMatch": "accepted; no reopening",
+  "checkpointAuthorization": "User explicitly permits intermediate commits without proving the intermediate tree works; continue the remaining implementation after publication.",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3369-labelled-loop-check.json",
+      "bytes": 359,
+      "sha256": "da4c9169e34ad62f1a00844a431409af44969d13a08404b5d83faef0dc7abf15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3369-labelled-loop-check.log",
+      "bytes": 12982,
+      "sha256": "bad3e9e0cca6363ac73f1890c92daad852a3bb0af0f152e95a32e3143ed05b3e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3370-labelled-loop-check.json",
+      "bytes": 357,
+      "sha256": "97ae8dc6d08117a567f0ef97d69c30df4aaca3e3350c8ccf174559d3584af4e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3370-labelled-loop-check.log",
+      "bytes": 83594,
+      "sha256": "64fc7c30323e7e542772e6d88c9fbd81295385e94ae2157b70e7b6864f6ba42f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3370-labelled-loop-check.input-audit.json",
+      "bytes": 361,
+      "sha256": "8429321312deaaab52457bc88e861b1264c5c49e1a828265ede559c822ee8cef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3371-program-fanout-awbc-check.json",
+      "bytes": 668,
+      "sha256": "ae858f8adbdc576923643cf956944959461494db84dd7752aa3be8702545fea0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3371-program-fanout-awbc-check.log",
+      "bytes": 466041,
+      "sha256": "fa289d142426b26e070c92a4d1196b7712df50c3d629fea3ee6ad604d4ac2566"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3371-program-fanout-awbc-check.input-audit.json",
+      "bytes": 536,
+      "sha256": "ac217397499e62f691137a2f412956fcfb279e5f8fe777c5e75d43e024bb8830"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3372-program-fanout-runtime.json",
+      "bytes": 759,
+      "sha256": "924f6a80cd2e408c93e2c82b172aca58522fda5320060b8275780aeeb29b7a7d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3372-program-fanout-runtime.log",
+      "bytes": 700200,
+      "sha256": "b591b1bf4c0d5b72a8e4e4f77d4da46b09d0656023bce1656a25a4e72d38e35f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3372-program-fanout-runtime.terminal-audit.json",
+      "bytes": 1375,
+      "sha256": "5279b03f5e427c476b65a232a7cfc740f465a020b77ec0f991849bfc3937b77b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3372-program-fanout-runtime.binaries-before.json",
+      "bytes": 917,
+      "sha256": "2d497f0eb795f36bd970f0b728f4ba061d556c580d51256838039939744a0b97"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3373-program-fanout-awbc-check.json",
+      "bytes": 700,
+      "sha256": "640ccb59dca122e4f8e3534cee1dae9b841e188f887c4afb6011495e05e445c1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3373-program-fanout-awbc-check.log",
+      "bytes": 878273,
+      "sha256": "cbd3479273995ff8f5495ff2d48591afd3b6abd37b910270efc6481d0cd2800c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3373-program-fanout-awbc-check.input-audit.json",
+      "bytes": 568,
+      "sha256": "b5b9f983cba85acb6f378d46450cae75283772249c5581c82a1eca1137327f39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3374-program-fanout-runtime.json",
+      "bytes": 791,
+      "sha256": "261cde238b073c485fe31175048be62bec820a5a6bfb684585bd192b502ba88f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3374-program-fanout-runtime.log",
+      "bytes": 1337618,
+      "sha256": "1b0c1f843d1b1810b5d96fd0c6bbd7ea6bb0ef404357c4c6602db5677b42ff04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3374-program-fanout-runtime.terminal-audit.json",
+      "bytes": 816,
+      "sha256": "ec2bd95ae47e84f33c17a470d333e48692a4c25aeb55316213833b24b9e5047d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3374-program-fanout-runtime.binaries-before.json",
+      "bytes": 1130,
+      "sha256": "da3ec890f603660bd2aeb8cd2992ad6cac349a02ad384ba57fc99b4b392fc1dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3375-program-fanout-awbc-check.json",
+      "bytes": 700,
+      "sha256": "23842c401e8f119f3255e42e63d5dfe1bb5e1ec3b54d231f0944ba0416655702"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3375-program-fanout-awbc-check.log",
+      "bytes": 880159,
+      "sha256": "c5a0c38feb6e82fa73326f6ff62f5694495014199793f16728358b6e8c47b5ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3375-program-fanout-awbc-check.input-audit.json",
+      "bytes": 568,
+      "sha256": "47f05ec0ecfd7e13d8873ac67ac5c073aee6e63d843bf294ff6e059e8c7e500d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3376-program-fanout-runtime.json",
+      "bytes": 791,
+      "sha256": "9359bff0c851caa3159b11154227ae590ec3a7b4655814015cd4293d82a086a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3376-program-fanout-runtime.log",
+      "bytes": 1393593,
+      "sha256": "54e2475be63d28330f23ea06dacc9688c47fe39a40325880f1845a5e111164ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3376-program-fanout-runtime.terminal-audit.json",
+      "bytes": 1360,
+      "sha256": "c69fe3f9d49b1ae04d74a62d940b85d74608b7f4aa40098f92644a27e9bba283"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3376-program-fanout-runtime.binaries-before.json",
+      "bytes": 1130,
+      "sha256": "4d55f1518e454b4143ab5ce25db42782e60dfedfef7241a89bd7cbda704a0f92"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3371.source-freeze.json",
+      "bytes": 783917,
+      "sha256": "2449b086da0e4da7ca064f2d24cdfcfa743f6c4053a98fbd633e79234c6eeade"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3373.source-freeze.json",
+      "bytes": 784428,
+      "sha256": "078b2bd04a8da0eda8790e209d792d75d5ee51d0c40a7d8386e8099722157c8e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3375.source-freeze.json",
+      "bytes": 784637,
+      "sha256": "8e5300094b68af90621d38f6ce173f1cf94a03d264752c4d5ab897af7e6c3b46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-labelled-loop.reverse-closure.json",
+      "bytes": 12138,
+      "sha256": "23e10180b0327083a12155ad37626d8d5692e2968bb74c02cf12f523c28bdad6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-labelled-loop.owner-measurement.json",
+      "bytes": 10425,
+      "sha256": "9b3b30e487f960e2bc2297856d5bb5801f3614e54f687f725082e604488087fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter.verified.json",
+      "bytes": 4802,
+      "sha256": "8736292089335aeb044cfe032833c7d4d487c5bf597b389daad5892f37a3772d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter.baseline-advance.json",
+      "bytes": 542,
+      "sha256": "84d3d65531b8eeabdbda00c08e21143f7f9a91ee198fc9c387fc71557317d6ea"
+    }
+  ]
+}

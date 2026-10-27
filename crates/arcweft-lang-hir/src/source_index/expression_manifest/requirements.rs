@@ -500,6 +500,9 @@ pub(super) fn expression_requirements(
             add_value_block_requirements(&mut requirements, expression.statements().len());
         }
         HirExprKind::Loop(expression) => {
+            if matches!(projection, ExpressionProjection::Loop(Some(_))) {
+                add_expression_requirement(&mut requirements, HirExprSourceRole::Name, Required);
+            }
             add_value_block_requirements(&mut requirements, expression.statements().len());
         }
         HirExprKind::ComputationBlock(expression) => {

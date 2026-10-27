@@ -254,8 +254,14 @@ pub(super) fn preflight(
             reader.scope()?;
             reader.body()?;
         }
-        31 => reader.optional_expression()?,
-        32 | 43 | 46 => (),
+        31 => {
+            reader.metadata.u32()?;
+            reader.optional_expression()?;
+        }
+        32 => {
+            reader.metadata.u32()?;
+        }
+        43 | 46 => (),
         33 => reader.path()?,
         35 | 41 => {
             reader.text()?;

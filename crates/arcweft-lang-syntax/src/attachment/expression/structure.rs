@@ -264,7 +264,7 @@ fn composite_expression_slots(
         | ExpressionProjection::Block
         | ExpressionProjection::ComputationBlock(_)
         | ExpressionProjection::NamedBlock(_)
-        | ExpressionProjection::Loop
+        | ExpressionProjection::Loop(_)
         | ExpressionProjection::Thread(_)
         | ExpressionProjection::Choice => Vec::new(),
         _ if child_nodes

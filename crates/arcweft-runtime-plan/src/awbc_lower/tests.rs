@@ -1750,8 +1750,14 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
                         )),
                         body: vec![RuntimeFlowOpSeed::If {
                             condition: bool_expr(true),
-                            then_ops: vec![RuntimeFlowOpSeed::Break(Some(string_expr("then")))],
-                            else_ops: vec![RuntimeFlowOpSeed::Break(Some(string_expr("else")))],
+                            then_ops: vec![RuntimeFlowOpSeed::Break {
+                                depth: 0,
+                                value: Some(string_expr("then")),
+                            }],
+                            else_ops: vec![RuntimeFlowOpSeed::Break {
+                                depth: 0,
+                                value: Some(string_expr("else")),
+                            }],
                         }],
                     },
                     RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
@@ -1843,15 +1849,21 @@ fn nested_loops_bind_the_nearest_break_result() {
                         body: vec![
                             RuntimeFlowOpSeed::Loop {
                                 result: Some(binding(inner_result.clone())),
-                                body: vec![RuntimeFlowOpSeed::Break(Some(string_expr("nested")))],
+                                body: vec![RuntimeFlowOpSeed::Break {
+                                    depth: 0,
+                                    value: Some(string_expr("nested")),
+                                }],
                             },
-                            RuntimeFlowOpSeed::Break(Some(RuntimeExprSeed::new(
-                                type_id(1),
-                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                    inner_result,
-                                    RuntimeLocalReadMode::Copy,
+                            RuntimeFlowOpSeed::Break {
+                                depth: 0,
+                                value: Some(RuntimeExprSeed::new(
+                                    type_id(1),
+                                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                        inner_result,
+                                        RuntimeLocalReadMode::Copy,
+                                    )),
                                 )),
-                            ))),
+                            },
                         ],
                     },
                     RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
@@ -1886,7 +1898,7 @@ fn loop_continue_targets_the_verified_backedge_header() {
             main.clone(),
             vec![RuntimeFlowOpSeed::Loop {
                 result: None,
-                body: vec![RuntimeFlowOpSeed::Continue],
+                body: vec![RuntimeFlowOpSeed::Continue { depth: 0 }],
             }],
         )],
         [flow_entry("main", main)],
@@ -1962,7 +1974,10 @@ fn while_break_exits_after_one_positive_iteration() {
         vec![
             RuntimeFlowOpSeed::While {
                 condition: bool_expr(true),
-                body: vec![RuntimeFlowOpSeed::Break(None)],
+                body: vec![RuntimeFlowOpSeed::Break {
+                    depth: 0,
+                    value: None,
+                }],
             },
             RuntimeFlowOpSeed::ReturnExpr(string_expr("after")),
         ],
@@ -1994,7 +2009,7 @@ fn while_continue_targets_its_condition_header() {
         vec![
             RuntimeFlowOpSeed::While {
                 condition: bool_expr(true),
-                body: vec![RuntimeFlowOpSeed::Continue],
+                body: vec![RuntimeFlowOpSeed::Continue { depth: 0 }],
             },
             RuntimeFlowOpSeed::ReturnExpr(unit_expr()),
         ],
@@ -2052,7 +2067,10 @@ fn while_let_tests_pattern_and_guard_before_entering_its_body() {
     let matched = build_while_let_plan(
         RuntimeValue::option_some(RuntimeValue::Bool(true)),
         true,
-        vec![RuntimeFlowOpSeed::Break(None)],
+        vec![RuntimeFlowOpSeed::Break {
+            depth: 0,
+            value: None,
+        }],
     );
     let matched_report = lower_plan(&matched);
     assert_eq!(

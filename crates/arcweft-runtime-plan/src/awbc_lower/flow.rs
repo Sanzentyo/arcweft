@@ -1756,8 +1756,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     frame.restore_scopes_after_branch(outer_scopes);
                 }
             }
-            FlowOp::Break(value) => {
-                self.lower_break(frame, body, value.as_ref(), path);
+            FlowOp::Break { depth, value } => {
+                self.lower_break(frame, body, *depth, value.as_ref(), path);
             }
             FlowOp::ReturnExpr(value) => {
                 if self.cancellation_handler_result.is_some() {
@@ -1784,8 +1784,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     AwbcSafePointKind::Return,
                 );
             }
-            FlowOp::Continue => {
-                self.lower_continue(frame, body, path);
+            FlowOp::Continue { depth } => {
+                self.lower_continue(frame, body, *depth, path);
             }
             FlowOp::Goto(target) => {
                 self.emit_format_attempt_abandons(0);
@@ -3070,11 +3070,16 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         &mut self,
         frame: &mut FrameBuilder,
         body: &mut FlowBodyBuilder,
+        depth: u32,
         value: Option<&RuntimeExpr>,
         path: &str,
     ) {
-        let Some((outer_scope_depth, result, format_attempt_depth)) =
-            self.loop_targets.last().map(|target| {
+        let Some((outer_scope_depth, result, format_attempt_depth)) = self
+            .loop_targets
+            .iter()
+            .rev()
+            .nth(depth as usize)
+            .map(|target| {
                 (
                     target.outer_scope_depth,
                     target.result,
@@ -3118,15 +3123,27 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcSafePointKind::None,
         );
         self.loop_targets
-            .last_mut()
+            .iter_mut()
+            .rev()
+            .nth(depth as usize)
             .expect("break target remains active while its body lowers")
             .exit_jumps
             .push(jump);
     }
 
-    fn lower_continue(&mut self, frame: &mut FrameBuilder, body: &mut FlowBodyBuilder, path: &str) {
-        let Some((header, outer_scope_depth, format_attempt_depth)) =
-            self.loop_targets.last().map(|target| {
+    fn lower_continue(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        depth: u32,
+        path: &str,
+    ) {
+        let Some((header, outer_scope_depth, format_attempt_depth)) = self
+            .loop_targets
+            .iter()
+            .rev()
+            .nth(depth as usize)
+            .map(|target| {
                 (
                     target.header,
                     target.outer_scope_depth,

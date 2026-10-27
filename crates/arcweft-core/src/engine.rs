@@ -864,6 +864,9 @@ pub(crate) enum FlowControlStackEntryKind<
     WhileLet {
         source: NativeSourceOperation,
     },
+    For {
+        source: NativeSourceOperation,
+    },
     /// One source-ordered formatter occurrence. The frame remains the sole
     /// outcome authority until its matching FormatContent expression consumes it.
     FormatAttempt(Format),
@@ -1082,6 +1085,9 @@ impl FlowControlStackEntry {
                     source: source.clone(),
                 }
             }
+            FlowControlStackEntryKind::For { source } => FlowControlStackEntryRollbackImage::For {
+                source: source.clone(),
+            },
         })
     }
 
@@ -1107,6 +1113,9 @@ impl FlowControlStackEntry {
             }
             FlowControlStackEntryRollbackImage::WhileLet { source } => {
                 FlowControlStackEntryKind::WhileLet { source }
+            }
+            FlowControlStackEntryRollbackImage::For { source } => {
+                FlowControlStackEntryKind::For { source }
             }
             FlowControlStackEntryRollbackImage::FormatAttempt(frame) => {
                 FlowControlStackEntryKind::FormatAttempt(

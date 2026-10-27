@@ -15,6 +15,7 @@ use crate::expressions::{
     SyntaxRequiredTokenState,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+use crate::name::SyntaxName;
 use crate::parser::cursor::DocumentParser;
 use crate::parser::pattern::emit_pattern;
 use crate::parser::shadow_recovery::{
@@ -157,6 +158,31 @@ pub(super) fn emit_if_expression(
 /// The loop body is the ordinary value-block owner. `break` and `continue`
 /// therefore remain regular statement identities inside that block and are
 /// resolved by HIR/sema rather than by a second loop-specific syntax tree.
+pub(in crate::parser) fn labelled_loop_start(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> bool {
+    if parser
+        .token_at(start)
+        .is_none_or(|token| token.kind() != SyntaxKind::LifetimeToken)
+    {
+        return false;
+    }
+    let Some(colon) = first_significant(parser, start + 1, end) else {
+        return false;
+    };
+    let Some(keyword) = first_significant(parser, colon + 1, end) else {
+        return false;
+    };
+    parser
+        .token_at(colon)
+        .is_some_and(|token| parser.text_of(token) == ":")
+        && parser
+            .token_at(keyword)
+            .is_some_and(|token| parser.text_of(token) == "loop")
+}
+
 pub(super) fn emit_loop_expression(
     parser: &mut DocumentParser<'_, '_>,
     end: usize,
@@ -164,6 +190,25 @@ pub(super) fn emit_loop_expression(
 ) -> CompletedNode {
     let start_event = parser.event_position();
     let owner = parser.start_projected_owner(SyntaxKind::LoopExpression, role);
+    let mut components = Vec::new();
+    let label = if parser.current_kind() == Some(SyntaxKind::LifetimeToken) {
+        let token = parser.current().expect("selected loop label");
+        let range = token.range();
+        let label = SyntaxName::try_new(parser.text_of(token).strip_prefix('\'').unwrap_or(""));
+        parser.start(SyntaxKind::NameDefinition, SyntaxRole::Label(0));
+        parser.bump();
+        parser.finish();
+        parser.bump_trivia_before(end);
+        parser.bump(); // selected colon
+        parser.bump_trivia_before(end);
+        components.push(PendingExpressionComponent::new(
+            ExpressionComponentRole::Name,
+            SourceRange::new(range.start() + 1, range.end()),
+        ));
+        Some(label)
+    } else {
+        None
+    };
     parser.bump();
     parser.bump_trivia_before(end);
     if parser.at("{") {
@@ -186,7 +231,7 @@ pub(super) fn emit_loop_expression(
     }
     parser.set_expression_projection(
         owner,
-        PendingExpressionProjection::new(ExpressionProjection::Loop, Vec::new()),
+        PendingExpressionProjection::new(ExpressionProjection::Loop(label), components),
     );
     parser.finish();
     CompletedNode { start_event }

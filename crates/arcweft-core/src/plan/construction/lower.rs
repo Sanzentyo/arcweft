@@ -4014,12 +4014,13 @@ impl RuntimePlanBodyConstruction<'_> {
                 )?;
                 FlowOp::ExitScopeBind { pattern, expr }
             }
-            RuntimeFlowOpSeed::Break(value) => FlowOp::Break(
-                value
+            RuntimeFlowOpSeed::Break { depth, value } => FlowOp::Break {
+                depth,
+                value: value
                     .map(|value| self.lower_expression(value))
                     .transpose()?,
-            ),
-            RuntimeFlowOpSeed::Continue => FlowOp::Continue,
+            },
+            RuntimeFlowOpSeed::Continue { depth } => FlowOp::Continue { depth },
             RuntimeFlowOpSeed::Goto(target) => FlowOp::Goto(target),
             RuntimeFlowOpSeed::GotoExpr(target) => FlowOp::GotoExpr(self.lower_expression(target)?),
             RuntimeFlowOpSeed::Return(value) => FlowOp::Return(value),
@@ -5574,7 +5575,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         &mut nested_frames,
                     )?;
                 }
-                FlowOp::Break(value) => {
+                FlowOp::Break { value, .. } => {
                     if let Some(value) = value {
                         self.validate_expression_locals(value, scope, used)?;
                     }
@@ -5595,7 +5596,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         self.validate_expression_locals(capture, scope, used)?;
                     }
                 }
-                FlowOp::Continue
+                FlowOp::Continue { .. }
                 | FlowOp::Goto(_)
                 | FlowOp::Return(_)
                 | FlowOp::CancelCleanup { .. }

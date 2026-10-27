@@ -20,6 +20,9 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
     role: SyntaxRole,
 ) -> Option<CompletedNode> {
     let start = parser.cursor();
+    if super::labelled_loop_start(parser, start, end) {
+        return None;
+    }
     // A speaker colon belongs to the physical head. A later `with:` is the
     // bracket call's line-plan suffix, not another dialogue application.
     let head_end = physical_line_end(parser, start, end);

@@ -138,8 +138,8 @@ impl AotLinearOp {
             | FlowOp::For { .. }
             | FlowOp::ProgramTask { .. }
             | FlowOp::Scope { .. }
-            | FlowOp::Break(_)
-            | FlowOp::Continue
+            | FlowOp::Break { .. }
+            | FlowOp::Continue { .. }
             | FlowOp::Goto(_)
             | FlowOp::GotoExpr(_) => None,
         }
@@ -295,8 +295,8 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::For { .. }
         | FlowOp::ProgramTask { .. }
         | FlowOp::Scope { .. }
-        | FlowOp::Break(_)
-        | FlowOp::Continue
+        | FlowOp::Break { .. }
+        | FlowOp::Continue { .. }
         | FlowOp::Goto(_)
         | FlowOp::GotoExpr(_) => false,
     }
@@ -354,9 +354,10 @@ impl AotOpClass {
             | FlowOp::ApplyGroup { .. } => Self::Await,
             FlowOp::Choice { .. } => Self::Choice,
             FlowOp::Dialogue { .. } => Self::Dialogue,
-            FlowOp::Break(_) | FlowOp::Continue | FlowOp::Goto(_) | FlowOp::GotoExpr(_) => {
-                Self::Jump
-            }
+            FlowOp::Break { .. }
+            | FlowOp::Continue { .. }
+            | FlowOp::Goto(_)
+            | FlowOp::GotoExpr(_) => Self::Jump,
         }
     }
 }
@@ -411,8 +412,8 @@ impl AotProgramStats {
                 | FlowOp::HostCall { .. }
                 | FlowOp::ProjectCall { .. }
                 | FlowOp::ApplyGroup { .. }
-                | FlowOp::Break(_)
-                | FlowOp::Continue
+                | FlowOp::Break { .. }
+                | FlowOp::Continue { .. }
                 | FlowOp::Goto(_)
                 | FlowOp::GotoExpr(_)
                 | FlowOp::Return(_)

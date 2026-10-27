@@ -648,7 +648,10 @@ where
                 }
                 Ok(())
             }
-            Self::Loop { source } | Self::While { source } | Self::WhileLet { source } => {
+            Self::Loop { source }
+            | Self::While { source }
+            | Self::WhileLet { source }
+            | Self::For { source } => {
                 source.admit_retained(admission)?;
                 let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
                 else {
@@ -658,6 +661,7 @@ where
                     (self, source.operation(plan)),
                     (Self::Loop { .. }, Some(crate::plan::FlowOp::Loop { .. }))
                         | (Self::While { .. }, Some(crate::plan::FlowOp::While { .. }))
+                        | (Self::For { .. }, Some(crate::plan::FlowOp::For { .. }))
                         | (
                             Self::WhileLet { .. },
                             Some(crate::plan::FlowOp::WhileLet { .. })

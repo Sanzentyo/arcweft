@@ -59,6 +59,65 @@ fn lower_control_transfer_fixture(source: &str) -> Arc<HirModule> {
         .into_module()
 }
 
+#[test]
+fn labelled_loop_targets_retain_lexical_identity_and_depth() {
+    let module = lower_control_transfer_fixture(
+        "flow main() { let value = 'outer: loop { loop { break 'outer 42 } } }",
+    );
+    let outer = module
+        .expressions()
+        .find_map(|(id, expression)| match expression.kind() {
+            HirExprKind::Loop(value)
+                if value.label().is_some_and(|label| label.as_str() == "outer") =>
+            {
+                Some(id)
+            }
+            _ => None,
+        })
+        .expect("labelled loop owner");
+    let statement = module
+        .statements()
+        .find_map(|(id, statement)| {
+            matches!(statement.kind(), HirStmtKind::Break { .. }).then_some(id)
+        })
+        .expect("break statement");
+    assert_eq!(
+        module.resolve_control_transfer_target(statement).unwrap(),
+        Some(HirControlTransferTarget::Loop {
+            family: HirLoopTargetFamily::LoopExpression,
+            body_owner: HirSemanticBodyOwner::direct_expression(outer),
+            depth: 1,
+        })
+    );
+}
+
+#[test]
+fn labelled_loop_targets_reject_unknown_names_and_callable_crossing() {
+    for source in [
+        "flow main() { let value = 'outer: loop { break 'missing 42 } }",
+        "flow main() { let value = 'outer: loop { let invalid = || { break 'outer 42 }; break 1 } }",
+        "flow main() { let value = 'outer: loop { let invalid = thread { break 'outer 42 }; break 1 } }",
+    ] {
+        let module = lower_control_transfer_fixture(source);
+        let statement = module
+            .statements()
+            .find_map(|(id, statement)| match statement.kind() {
+                HirStmtKind::Break { label: Some(_), .. } => Some(id),
+                _ => None,
+            })
+            .expect("labelled transfer");
+        assert!(
+            matches!(
+                module.resolve_control_transfer_target(statement),
+                Err(HirSemanticPathError::ControlTransfer(
+                    HirControlTransferResolutionError::UnresolvedTarget { .. }
+                ))
+            ),
+            "{source}"
+        );
+    }
+}
+
 fn loop_expression_owner(module: &HirModule, scope: crate::identity::ScopeId) -> Option<ExprId> {
     let scope = module.resolve_scope(scope).ok()?;
     match scope.owner() {
@@ -254,6 +313,7 @@ fn loop_control_transfers_resolve_the_nearest_loop_expression() {
             &HirControlTransferTarget::Loop {
                 family: HirLoopTargetFamily::LoopExpression,
                 body_owner: HirSemanticBodyOwner::direct_expression(expected),
+                depth: 0,
             }
         );
     }
@@ -324,6 +384,7 @@ fn statement_loop_control_transfers_resolve_each_statement_loop_family() {
         let HirControlTransferTarget::Loop {
             family: actual_family,
             body_owner,
+            ..
         } = builder
             .control_transfers
             .get(&statement)

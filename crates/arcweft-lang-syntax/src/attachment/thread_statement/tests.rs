@@ -114,10 +114,28 @@ fn loop_expression(statement: &StatementNode) -> AttachedExpressionNode {
         .expect("loop expression attaches through the shared expression owner")
 }
 
+#[test]
+fn labelled_loop_expression_retains_name_span_and_body() {
+    let body = flow_body("flow main() { 'events: loop { break 'events 42 } }");
+    let AttachedThreadFlowItem::Statement(statement) = &body.items()[0] else {
+        panic!("labelled loop remains an expression statement");
+    };
+    let expression = loop_expression(statement);
+    let ExpressionProjection::Loop(Some(Ok(name))) = expression.projection() else {
+        panic!("labelled loop projection");
+    };
+    assert_eq!(name.as_str(), "events");
+    let span = expression
+        .component(crate::expressions::ExpressionComponentRole::Name)
+        .unwrap();
+    assert_eq!(span.range().end() - span.range().start(), "events".len());
+    assert_loop_expression_body(&expression);
+}
+
 fn assert_loop_expression_body(expression: &AttachedExpressionNode) {
     assert!(matches!(
         expression.projection(),
-        ExpressionProjection::Loop
+        ExpressionProjection::Loop(_)
     ));
     let block = expression
         .block()
@@ -261,7 +279,7 @@ fn thread_expression_reuses_the_same_loop_family_owners() {
     };
     assert!(matches!(
         loop_expression(statement).projection(),
-        ExpressionProjection::Loop
+        ExpressionProjection::Loop(_)
     ));
     assert!(matches!(
         &body.items()[1],

@@ -1786,7 +1786,7 @@ fn child_edges_have_independent_expected_children_and_role_families_for_all_38_v
             vec![16],
         ),
         (
-            HirExprKind::Loop(HirLoopExpr::new(scope, Box::new([]), first)),
+            HirExprKind::Loop(HirLoopExpr::new(None, scope, Box::new([]), first)),
             vec![first],
             vec![17],
         ),

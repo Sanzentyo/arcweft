@@ -488,6 +488,7 @@ impl Engine {
                 Control::Loop { .. }
                 | Control::While { .. }
                 | Control::WhileLet { .. }
+                | Control::For { .. }
                 | Control::FormatAttempt(_) => false,
             })
     }

@@ -10,6 +10,7 @@ mod postfix_bracket;
 pub(super) use call_arguments::emit_parenthesized_call_tail;
 pub(in crate::parser) use colon_dialogue::emit_colon_dialogue_application;
 pub(in crate::parser) use composite::expression_slot;
+pub(in crate::parser) use control::labelled_loop_start;
 
 use self::operators::{binary_binding_power, is_postfix_operator, syntax_binary_operator};
 use self::postfix_bracket::emit_postfix_bracket;
@@ -449,6 +450,9 @@ fn parse_prefix(
         "true" | "false" => emit_literal(parser, role),
         _ if token.kind() == SyntaxKind::EntityReferenceToken => {
             emit_entity_reference(parser, role).0
+        }
+        _ if labelled_loop_start(parser, parser.cursor(), end) => {
+            control::emit_loop_expression(parser, end, role)
         }
         _ if token.kind() == SyntaxKind::LifetimeToken => emit_lifetime_path(parser, role),
         _ if is_literal(token.kind()) => emit_literal(parser, role),

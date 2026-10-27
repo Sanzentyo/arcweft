@@ -1,0 +1,407 @@
+[
+  {
+    "path": "crates/arcweft-cli/src/app/jit.rs",
+    "owner": "arcweft-cli",
+    "bytes": 70729,
+    "physicalLoc": 1938,
+    "beforePhysicalLoc": 1938,
+    "fanIn": 0,
+    "fanOut": 70
+  },
+  {
+    "path": "crates/arcweft-compiler/tests/callable_cases/control_results.rs",
+    "owner": "arcweft-compiler",
+    "bytes": 2628,
+    "physicalLoc": 70,
+    "beforePhysicalLoc": 53,
+    "fanIn": 5,
+    "fanOut": 39
+  },
+  {
+    "path": "crates/arcweft-core/src/aot.rs",
+    "owner": "arcweft-core",
+    "bytes": 15349,
+    "physicalLoc": 446,
+    "beforePhysicalLoc": 445,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/flow.rs",
+    "owner": "arcweft-core",
+    "bytes": 86125,
+    "physicalLoc": 2087,
+    "beforePhysicalLoc": 2056,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan.rs",
+    "owner": "arcweft-core",
+    "bytes": 57710,
+    "physicalLoc": 1678,
+    "beforePhysicalLoc": 1671,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+    "owner": "arcweft-core",
+    "bytes": 18150,
+    "physicalLoc": 427,
+    "beforePhysicalLoc": 424,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/body_semantic/function.rs",
+    "owner": "arcweft-core",
+    "bytes": 40484,
+    "physicalLoc": 1012,
+    "beforePhysicalLoc": 1012,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+    "owner": "arcweft-core",
+    "bytes": 260043,
+    "physicalLoc": 6099,
+    "beforePhysicalLoc": 6098,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+    "owner": "arcweft-core",
+    "bytes": 100956,
+    "physicalLoc": 3075,
+    "beforePhysicalLoc": 3070,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+    "owner": "arcweft-core",
+    "bytes": 45865,
+    "physicalLoc": 1152,
+    "beforePhysicalLoc": 1147,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/construction/source/flow/encoding/fields.rs",
+    "owner": "arcweft-core",
+    "bytes": 23334,
+    "physicalLoc": 593,
+    "beforePhysicalLoc": 590,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+    "owner": "arcweft-core",
+    "bytes": 23426,
+    "physicalLoc": 697,
+    "beforePhysicalLoc": 691,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/construction/source/flow/tests.rs",
+    "owner": "arcweft-core",
+    "bytes": 21306,
+    "physicalLoc": 598,
+    "beforePhysicalLoc": 565,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/entry_inventory.rs",
+    "owner": "arcweft-core",
+    "bytes": 65195,
+    "physicalLoc": 1703,
+    "beforePhysicalLoc": 1703,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/flow_ops.rs",
+    "owner": "arcweft-core",
+    "bytes": 26101,
+    "physicalLoc": 712,
+    "beforePhysicalLoc": 710,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-core/src/pure/aot/body.rs",
+    "owner": "arcweft-core",
+    "bytes": 24891,
+    "physicalLoc": 667,
+    "beforePhysicalLoc": 667,
+    "fanIn": 35,
+    "fanOut": 21
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/expr/control.rs",
+    "owner": "arcweft-lang-hir",
+    "bytes": 13526,
+    "physicalLoc": 555,
+    "beforePhysicalLoc": 544,
+    "fanIn": 11,
+    "fanOut": 9
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/expr/tests.rs",
+    "owner": "arcweft-lang-hir",
+    "bytes": 77668,
+    "physicalLoc": 2134,
+    "beforePhysicalLoc": 2134,
+    "fanIn": 11,
+    "fanOut": 9
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs",
+    "owner": "arcweft-lang-hir",
+    "bytes": 110567,
+    "physicalLoc": 2568,
+    "beforePhysicalLoc": 2555,
+    "fanIn": 11,
+    "fanOut": 9
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/dialogue/candidate.rs",
+    "owner": "arcweft-lang-hir",
+    "bytes": 49418,
+    "physicalLoc": 1146,
+    "beforePhysicalLoc": 1146,
+    "fanIn": 11,
+    "fanOut": 9
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/final_project/semantic_paths.rs",
+    "owner": "arcweft-lang-hir",
+    "bytes": 254180,
+    "physicalLoc": 6782,
+    "beforePhysicalLoc": 6731,
+    "fanIn": 11,
+    "fanOut": 9
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/final_project/semantic_paths/tests.rs",
+    "owner": "arcweft-lang-hir",
+    "bytes": 41450,
+    "physicalLoc": 1152,
+    "beforePhysicalLoc": 1091,
+    "fanIn": 11,
+    "fanOut": 9
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/source_index/block_projection.rs",
+    "owner": "arcweft-lang-hir",
+    "bytes": 96421,
+    "physicalLoc": 2818,
+    "beforePhysicalLoc": 2811,
+    "fanIn": 11,
+    "fanOut": 9
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/projection.rs",
+    "owner": "arcweft-lang-hir",
+    "bytes": 53321,
+    "physicalLoc": 1353,
+    "beforePhysicalLoc": 1347,
+    "fanIn": 11,
+    "fanOut": 9
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/requirements.rs",
+    "owner": "arcweft-lang-hir",
+    "bytes": 41331,
+    "physicalLoc": 1033,
+    "beforePhysicalLoc": 1030,
+    "fanIn": 11,
+    "fanOut": 9
+  },
+  {
+    "path": "crates/arcweft-lang-jit-cranelift/src/body.rs",
+    "owner": "arcweft-lang-jit-cranelift",
+    "bytes": 17848,
+    "physicalLoc": 457,
+    "beforePhysicalLoc": 457,
+    "fanIn": 2,
+    "fanOut": 5
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+    "owner": "arcweft-lang-sema",
+    "bytes": 239016,
+    "physicalLoc": 5594,
+    "beforePhysicalLoc": 5627,
+    "fanIn": 12,
+    "fanOut": 18
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+    "owner": "arcweft-lang-sema",
+    "bytes": 39102,
+    "physicalLoc": 898,
+    "beforePhysicalLoc": 898,
+    "fanIn": 12,
+    "fanOut": 18
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/semantic_coordinate/catalog.rs",
+    "owner": "arcweft-lang-sema",
+    "bytes": 61085,
+    "physicalLoc": 1466,
+    "beforePhysicalLoc": 1464,
+    "fanIn": 12,
+    "fanOut": 18
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/attachment/expression.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 81003,
+    "physicalLoc": 2226,
+    "beforePhysicalLoc": 2226,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/attachment/expression/structure.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 55615,
+    "physicalLoc": 1250,
+    "beforePhysicalLoc": 1250,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/attachment/thread_statement/tests.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 17536,
+    "physicalLoc": 479,
+    "beforePhysicalLoc": 461,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/expressions.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 42784,
+    "physicalLoc": 1314,
+    "beforePhysicalLoc": 1314,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/expressions/pending.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 31291,
+    "physicalLoc": 807,
+    "beforePhysicalLoc": 801,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/parser/expression.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 87625,
+    "physicalLoc": 2533,
+    "beforePhysicalLoc": 2529,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/parser/expression/colon_dialogue.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 4755,
+    "physicalLoc": 124,
+    "beforePhysicalLoc": 121,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/parser/expression/control.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 20599,
+    "physicalLoc": 602,
+    "beforePhysicalLoc": 557,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/parser/shadow_flow_tests.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 25778,
+    "physicalLoc": 720,
+    "beforePhysicalLoc": 694,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/parser/statement.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 88727,
+    "physicalLoc": 2619,
+    "beforePhysicalLoc": 2619,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/parser/statement/dialogue_plan.rs",
+    "owner": "arcweft-lang-syntax",
+    "bytes": 25555,
+    "physicalLoc": 720,
+    "beforePhysicalLoc": 717,
+    "fanIn": 13,
+    "fanOut": 8
+  },
+  {
+    "path": "crates/arcweft-runtime-accelerator/src/compile.rs",
+    "owner": "arcweft-runtime-accelerator",
+    "bytes": 59837,
+    "physicalLoc": 1732,
+    "beforePhysicalLoc": 1732,
+    "fanIn": 3,
+    "fanOut": 29
+  },
+  {
+    "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+    "owner": "arcweft-runtime-plan",
+    "bytes": 153233,
+    "physicalLoc": 3941,
+    "beforePhysicalLoc": 3924,
+    "fanIn": 10,
+    "fanOut": 15
+  },
+  {
+    "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests.rs",
+    "owner": "arcweft-runtime-plan",
+    "bytes": 101386,
+    "physicalLoc": 2629,
+    "beforePhysicalLoc": 2611,
+    "fanIn": 10,
+    "fanOut": 15
+  },
+  {
+    "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+    "owner": "arcweft-runtime-plan",
+    "bytes": 444707,
+    "physicalLoc": 10417,
+    "beforePhysicalLoc": 10406,
+    "fanIn": 10,
+    "fanOut": 15
+  },
+  {
+    "path": "crates/arcweft-runtime-plan/src/final_flow/standard_map.rs",
+    "owner": "arcweft-runtime-plan",
+    "bytes": 14887,
+    "physicalLoc": 395,
+    "beforePhysicalLoc": 388,
+    "fanIn": 10,
+    "fanOut": 15
+  }
+]

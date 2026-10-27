@@ -137,7 +137,7 @@ pub enum ExpressionProjection {
     /// One value-producing `loop { ... }` expression. Its braced value block
     /// remains a structural child of this expression owner; `break`/`continue`
     /// are ordinary statements inside that block.
-    Loop,
+    Loop(Option<Result<SyntaxName, SyntaxNameIssue>>),
     /// One attached or detached Thread with an optional typed source name.
     /// Its statement-only body is owned by the exact Thread syntax node.
     Thread(SyntaxThreadProjection),
@@ -210,7 +210,7 @@ impl ExpressionProjection {
             | Self::Block
             | Self::ComputationBlock(_)
             | Self::NamedBlock(_)
-            | Self::Loop
+            | Self::Loop(_)
             | Self::Thread(_)
             | Self::Choice
             | Self::If { .. }
@@ -331,7 +331,7 @@ impl ExpressionProjection {
             | Self::Placeholder(_)
             | Self::Block
             | Self::ComputationBlock(_)
-            | Self::Loop
+            | Self::Loop(_)
             | Self::Choice => false,
         }
     }

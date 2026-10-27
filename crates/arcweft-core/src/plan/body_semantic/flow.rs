@@ -312,7 +312,11 @@ impl RuntimeBodySemanticContext<'_> {
             }
             FlowOp::Loop { result, .. } => encoder.tag(u8::from(result.is_some())),
             FlowOp::For { evidence, .. } => self.write_iterator(encoder, evidence)?,
-            FlowOp::Break(value) => encoder.tag(u8::from(value.is_some())),
+            FlowOp::Break { depth, value } => {
+                encoder.count(*depth as usize);
+                encoder.tag(u8::from(value.is_some()));
+            }
+            FlowOp::Continue { depth } => encoder.count(*depth as usize),
             FlowOp::Goto(target) => self.write_flow_target(encoder, target)?,
             FlowOp::Return(value) | FlowOp::CancelCleanup { key: value } => encoder.string(value),
             FlowOp::Effect(effect) => effect.encode_body_metadata(encoder)?,
@@ -354,7 +358,6 @@ impl RuntimeBodySemanticContext<'_> {
             | FlowOp::If { .. }
             | FlowOp::While { .. }
             | FlowOp::Scope { .. }
-            | FlowOp::Continue
             | FlowOp::GotoExpr(_)
             | FlowOp::ReturnExpr(_)
             | FlowOp::EnterScope { .. }

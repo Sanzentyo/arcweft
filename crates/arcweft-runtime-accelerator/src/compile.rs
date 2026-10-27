@@ -856,8 +856,8 @@ fn runtime_ops_work_units(ops: &[arcweft_core::plan::FlowOp]) -> usize {
             | FlowOp::WhileLet { .. }
             | FlowOp::For { .. }
             | FlowOp::ProgramTask { .. }
-            | FlowOp::Break(_)
-            | FlowOp::Continue
+            | FlowOp::Break { .. }
+            | FlowOp::Continue { .. }
             | FlowOp::Goto(_)
             | FlowOp::GotoExpr(_)
             | FlowOp::Return(_)

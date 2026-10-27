@@ -179,7 +179,14 @@ pub(super) fn loop_expression_matches(
             statements: block.statements(),
             tail: block.tail(),
             omitted_tail: OmittedTailExpectation::ImplicitUnit,
-            initial_recovery: None,
+            initial_recovery: match attached.projection() {
+                ExpressionProjection::Loop(Some(Err(issue))) => {
+                    Some(HirRecoveryIssue::InvalidName(
+                        crate::final_lowering::name_projection::name_issue(issue),
+                    ))
+                }
+                _ => None,
+            },
         },
         attached,
     )
