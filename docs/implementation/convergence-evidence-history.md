@@ -12547,3 +12547,29 @@ workspace graphの99入力と取り違えない。両集合とも変更0だっ�
 このprivateな検査統合の検証はCore ownerに限定し、前段workspace共有gateを今回の再実行とはしない。
 全53逆依存runtimeとSource parallelのcallback実行は未受入の別境界として保持する。
 [Core全件・新規5件・適用範囲・構造測定・原本24件](acceptance-evidence/task-fanout-progress-owner-checkpoint.json)。
+
+## 元Source Program fanoutの実装checkpoint — 2026-10-27
+
+公開基点 `854648a92fe2e2f1bb4fb267b3d75bf33bb9b2c8`。途中commitの動作確認を
+必須にしないという現在のユーザー指示に従い、既存の24 Rustファイルの作業差分を、
+Nativeの具体的な継続・所有item・worker起動まで進めて保持する。機能の受入ではない。
+
+Program templateは元Flow本体またはFanout kernelを所有する。workerは元Sourceの
+Flow本体とMove capture ABIを持ち、indexを含むinstance transcriptを使用する。
+親のSource admissionで正の動的u32 limitと、複数item時のcapture Copy権限を検査する。
+Native継続は元operationを保持し、未開始itemを一度だけ移動し、開始済みの位置を
+共通partition規則で検査する。結果は元aggregate／child型から構築し、同じbankで
+実launchの結果型を確認してから消費する。Host requestを仮のaggregate実行に使わない。
+Native状態と既存Host AwaitManyの置換、AWBC／Compiler／公開saveの接続は未完了。
+
+R3218はCore／runtime-planのall-target／all-feature／locked checkで終了101、
+compiler-messageのerrorは6件。Source codecのbody bindをScheduleへ誤って付けた
+2種類の移行漏れとNative入口未実装だった。3,991入力の前後差分0。
+R3219は終了101、error 10件。restore context、trait import、live view projection、
+journal error型の5種類をlib／lib-testで重複観測した。3,992入力の前後差分0。
+これらを修復後のR3220はCoreのlib／lib-test／integration計14 compiler unitを生成し、
+runtime-planの`lower_program_fanout`未実装をlib／lib-test各1件として終了101。
+R3220は反復診断用で完全なsource／executable前後auditを行っておらず、runtime合格でもない。
+Native実行、AWBC実行、workspace gate、逆依存runtime、doctest、構造gateは今回未実行。
+
+[実装範囲・全receipt／診断・freeze原本](acceptance-evidence/task-program-fanout-native-implementation-checkpoint.json)。

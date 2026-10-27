@@ -203,6 +203,7 @@ impl RuntimeBodySemanticContext<'_> {
                         producer,
                         delivery,
                         captures,
+                        body,
                         ..
                     },
                 ..
@@ -221,6 +222,38 @@ impl RuntimeBodySemanticContext<'_> {
                     encoder.enter_element();
                     encoder.tag(capture.mode.semantic_tag());
                     self.write_local(encoder, capture.local)?;
+                }
+                match body {
+                    plan::RuntimeProgramTaskBody::Flow(_) => encoder.tag(0),
+                    plan::RuntimeProgramTaskBody::Fanout(fanout) => {
+                        encoder.tag(1);
+                        self.write_local(encoder, fanout.source)?;
+                        self.write_local(encoder, fanout.limit)?;
+                        self.write_local(encoder, fanout.item)?;
+                        let aggregate = producer.outcome().payload_semantic_identity();
+                        let child = fanout.worker.producer.outcome().payload_semantic_identity();
+                        crate::program_types::RuntimeProgramTypes::Plan(self.plan)
+                            .fanout_output_kind(aggregate, child)
+                            .map_err(|_| RuntimeBodySemanticError::InvalidFanoutOutput {
+                                aggregate,
+                                child,
+                            })?;
+                        Self::write_task_reference(
+                            encoder,
+                            RuntimeBodyTaskSource::ProgramProducer {
+                                producer: &fanout.worker.producer,
+                                delivery: fanout.worker.delivery,
+                            },
+                            task_owner,
+                        )?;
+                        encoder.tag(fanout.worker.delivery.semantic_tag());
+                        encoder.count(fanout.worker.captures.len());
+                        for capture in &fanout.worker.captures {
+                            encoder.enter_element();
+                            encoder.tag(capture.mode.semantic_tag());
+                            self.write_local(encoder, capture.local)?;
+                        }
+                    }
                 }
             }
             FlowOp::AwaitMany {

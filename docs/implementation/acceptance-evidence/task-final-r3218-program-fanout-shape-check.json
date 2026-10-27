@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "854648a92fe2e2f1bb4fb267b3d75bf33bb9b2c8",
+  "name": "task-final-r3218-program-fanout-shape-check",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/task-final-r3218-program-fanout-shape-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-26T14:30:43.8946634Z",
+  "finishedAt": "2026-10-26T14:32:19.8313770Z"
+}

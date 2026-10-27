@@ -268,6 +268,12 @@ pub enum RuntimePlanBuildError {
     ForeignLocalSeed,
     #[error("Program task repeats capture local {local:?}")]
     DuplicateProgramTaskCapture { local: RuntimeLocalDeclarationId },
+    #[error(
+        "Program fanout requires ordinary Need producers and an AlwaysStart worker with owned inputs"
+    )]
+    InvalidProgramFanoutWorker,
+    #[error("Program fanout input {local:?} is not owned by its declared capture role")]
+    InvalidProgramFanoutIngress { local: RuntimeLocalDeclarationId },
     #[error("a construction-only function-site handle belongs to another runtime-plan builder")]
     ForeignFunctionSiteSeed,
     #[error("runtime defer site has no executable capture-only Unit function body")]

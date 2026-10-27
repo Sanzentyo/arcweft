@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "task-final-r3220-program-fanout-native-check",
+  "base": "854648a92fe2e2f1bb4fb267b3d75bf33bb9b2c8",
+  "command": "cargo check -p arcweft-core -p arcweft-runtime-plan --all-targets --all-features --locked --message-format json",
+  "exitCode": 101,
+  "startedAt": "2026-10-27T09:32:21.1432270Z",
+  "finishedAt": "2026-10-27T09:35:54.9009414Z",
+  "scope": "iterative compiler diagnostics; no full source/executable input audit"
+}

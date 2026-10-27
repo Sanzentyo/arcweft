@@ -126,6 +126,10 @@ impl Engine {
                 self.resume_await_many_state(*state, output, pure_backend);
                 true
             }
+            FlowFiberStatus::WaitingMany(WaitingManyStatus::Program(state)) => {
+                self.resume_program_fanout_state(*state, output, pure_backend);
+                true
+            }
             waiting @ FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(_)) => {
                 self.fiber.frame.status = waiting;
                 false

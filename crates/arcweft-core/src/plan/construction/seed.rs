@@ -545,7 +545,10 @@ pub enum RuntimeFlowOpSeed {
     ProgramTask {
         name: Option<String>,
         binding: RuntimePatternSeed,
-        template: crate::plan::RuntimeProgramTaskTemplate<RuntimeLocalSeedId, Self>,
+        template: crate::plan::RuntimeProgramTaskTemplate<
+            RuntimeLocalSeedId,
+            crate::plan::RuntimeProgramTaskBody<RuntimeLocalSeedId, Self>,
+        >,
     },
     Scope {
         identity: RuntimeScopeIdentity,

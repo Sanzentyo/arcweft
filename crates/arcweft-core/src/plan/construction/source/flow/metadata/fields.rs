@@ -208,6 +208,46 @@ pub(super) fn preflight(
                 })?;
                 reader.local()?;
             }
+            match reader.metadata.byte()? {
+                0 => {}
+                1 => {
+                    reader.counts.storage(
+                        3 * size_of::<
+                            crate::plan::RuntimeProgramFanout<
+                                crate::plan::RuntimeLocalSeedId,
+                                crate::plan::RuntimeFlowOpSeed,
+                            >,
+                        >() + size_of::<crate::plan::RuntimeProgramFanout>(),
+                    )?;
+                    reader.local()?;
+                    reader.local()?;
+                    reader.local()?;
+                    reader.producer_definition()?;
+                    let tag = reader.metadata.byte()?;
+                    crate::task::ProgramTaskDelivery::from_semantic_tag(tag).ok_or(Error::Tag {
+                        kind: "Program worker delivery",
+                        tag,
+                    })?;
+                    let count = reader.metadata.u32()? as usize;
+                    reader.counts.array::<crate::plan::RuntimeProgramTaskCapture<crate::plan::RuntimeLocalSeedId>>(count)?;
+                    for _ in 0..count {
+                        let tag = reader.metadata.byte()?;
+                        crate::value::RuntimeLocalReadMode::from_semantic_tag(tag).ok_or(
+                            Error::Tag {
+                                kind: "Program worker capture mode",
+                                tag,
+                            },
+                        )?;
+                        reader.local()?;
+                    }
+                }
+                tag => {
+                    return Err(Error::Tag {
+                        kind: "Program task body",
+                        tag,
+                    });
+                }
+            }
             reader.body()?;
         }
         29 => {

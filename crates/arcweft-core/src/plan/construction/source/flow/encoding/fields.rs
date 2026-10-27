@@ -520,7 +520,7 @@ impl Writer {
                         producer,
                         delivery,
                         captures,
-                        ..
+                        body,
                     },
                 ..
             } => {
@@ -531,6 +531,22 @@ impl Writer {
                 for capture in captures {
                     self.byte(capture.mode.semantic_tag())?;
                     self.local(capture.local)?;
+                }
+                match body {
+                    crate::plan::RuntimeProgramTaskBody::Flow(_) => self.byte(0)?,
+                    crate::plan::RuntimeProgramTaskBody::Fanout(fanout) => {
+                        self.byte(1)?;
+                        self.local(fanout.source)?;
+                        self.local(fanout.limit)?;
+                        self.local(fanout.item)?;
+                        self.producer_definition(&fanout.worker.producer, plan)?;
+                        self.byte(fanout.worker.delivery.semantic_tag())?;
+                        self.count(fanout.worker.captures.len())?;
+                        for capture in &fanout.worker.captures {
+                            self.byte(capture.mode.semantic_tag())?;
+                            self.local(capture.local)?;
+                        }
+                    }
                 }
             }
             FlowOp::Scope { identity, .. } | FlowOp::EnterScope { identity } => {

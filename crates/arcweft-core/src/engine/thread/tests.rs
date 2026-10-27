@@ -124,11 +124,11 @@ fn engine_with_carrier(explicit_return: bool, ordinary_need: bool) -> Engine {
                                 policy: TaskPolicy::AlwaysStart,
                                 debug_label: "local Bool result".into(),
                             },
-                            body: if explicit_return {
+                            body: crate::plan::RuntimeProgramTaskBody::Flow(if explicit_return {
                                 vec![RuntimeFlowOpSeed::ReturnExpr(result)]
                             } else {
                                 vec![]
-                            },
+                            }),
                         },
                         name: None,
                         binding: RuntimePatternSeed::new(

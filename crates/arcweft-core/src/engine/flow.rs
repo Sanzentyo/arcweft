@@ -209,6 +209,25 @@ impl Engine {
 
     /// Prepares an original task root before its capture packet is moved.
     /// Task lexical boundaries are runtime continuations, never invented AST.
+    pub(in crate::engine) fn prepare_program_fanout_work(
+        &self,
+        source: NativeSourceOperation,
+    ) -> Result<std::collections::VecDeque<NativePendingWork>, RuntimeEvalError> {
+        let work = [
+            Some(NativePendingWork::resume(
+                NativeRuntimeContinuation::EnterTaskScope,
+            )),
+            Some(NativePendingWork::resume(
+                NativeRuntimeContinuation::ProgramFanout { source },
+            )),
+            Some(NativePendingWork::resume(
+                NativeRuntimeContinuation::ExitTaskScope,
+            )),
+        ];
+        self.prepare_replacement_native_work(&work)?;
+        Ok(work.into_iter().flatten().collect())
+    }
+
     pub(in crate::engine) fn prepare_task_root_work(
         &self,
         position: NativeCodeCursor,

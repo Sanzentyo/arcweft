@@ -1,0 +1,28 @@
+[
+  {
+    "code": "E0599",
+    "message": "no method named `lower_program_fanout` found for mutable reference `&mut awbc_lower::flow::AwbcFlowLowerer<'_, '_>` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\awbc_lower\\flow\\program_task.rs",
+        "line_start": 51,
+        "line_end": 51,
+        "label": null
+      }
+    ],
+    "rendered": "error[E0599]: no method named `lower_program_fanout` found for mutable reference `&mut awbc_lower::flow::AwbcFlowLowerer<'_, '_>` in the current scope\n  --> crates\\arcweft-runtime-plan\\src\\awbc_lower\\flow\\program_task.rs:51:22\n   |\n51 |                 self.lower_program_fanout(&mut frame, &mut body, source, fanout, path)\n   |                      ^^^^^^^^^^^^^^^^^^^^\n   |\nhelp: there is a method `lower_program_task` with a similar name, but with different arguments\n  --> crates\\arcweft-runtime-plan\\src\\awbc_lower\\flow\\program_task.rs:12:5\n   |\n12 | /     pub(crate) fn lower_program_task(\n13 | |         &mut self,\n14 | |         owner: AwbcFunctionId,\n15 | |         source: &RuntimeProgramTaskBodyRef<'_>,\n16 | |         path: &str,\n17 | |     ) {\n   | |_____^\n\n"
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `lower_program_fanout` found for mutable reference `&mut awbc_lower::flow::AwbcFlowLowerer<'_, '_>` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\awbc_lower\\flow\\program_task.rs",
+        "line_start": 51,
+        "line_end": 51,
+        "label": null
+      }
+    ],
+    "rendered": "error[E0599]: no method named `lower_program_fanout` found for mutable reference `&mut awbc_lower::flow::AwbcFlowLowerer<'_, '_>` in the current scope\n  --> crates\\arcweft-runtime-plan\\src\\awbc_lower\\flow\\program_task.rs:51:22\n   |\n51 |                 self.lower_program_fanout(&mut frame, &mut body, source, fanout, path)\n   |                      ^^^^^^^^^^^^^^^^^^^^\n   |\nhelp: there is a method `lower_program_task` with a similar name, but with different arguments\n  --> crates\\arcweft-runtime-plan\\src\\awbc_lower\\flow\\program_task.rs:12:5\n   |\n12 | /     pub(crate) fn lower_program_task(\n13 | |         &mut self,\n14 | |         owner: AwbcFunctionId,\n15 | |         source: &RuntimeProgramTaskBodyRef<'_>,\n16 | |         path: &str,\n17 | |     ) {\n   | |_____^\n\n"
+  }
+]

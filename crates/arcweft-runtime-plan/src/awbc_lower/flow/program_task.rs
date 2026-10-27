@@ -43,7 +43,14 @@ impl AwbcFlowLowerer<'_, '_> {
         let previous_effects = self
             .active_effect_set
             .replace(source.function().invocation_effects().clone());
-        self.lower_ops(&mut frame, &mut body, source.body(), path);
+        match source.body() {
+            arcweft_core::plan::RuntimeProgramTaskKernelRef::Flow(ops) => {
+                self.lower_ops(&mut frame, &mut body, ops, path)
+            }
+            arcweft_core::plan::RuntimeProgramTaskKernelRef::Fanout(fanout) => {
+                self.lower_program_fanout(&mut frame, &mut body, source, fanout, path)
+            }
+        }
         self.active_effect_set = previous_effects;
         let result = self
             .plan

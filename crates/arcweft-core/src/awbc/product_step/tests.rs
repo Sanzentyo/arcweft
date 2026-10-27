@@ -7189,7 +7189,7 @@ fn await_many_original_program_with_thread(
                         policy: TaskPolicy::AlwaysStart,
                         debug_label: "Result fanout child".into(),
                     },
-                    body: ops,
+                    body: crate::plan::RuntimeProgramTaskBody::Flow(ops),
                 },
                 name: None,
                 binding: RuntimePatternSeed::new(
@@ -7287,7 +7287,7 @@ fn await_many_product_program_with_thread(
         crate::plan::FlowOp::ProgramTask {
             template:
                 crate::plan::RuntimeProgramTaskTemplate {
-                    body,
+                    body: crate::plan::RuntimeProgramTaskBody::Flow(body),
                     producer,
                     captures,
                     ..

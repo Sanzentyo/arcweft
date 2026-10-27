@@ -215,10 +215,120 @@ where
     }
 }
 
-impl<A, M> SuspendedValues for FlowFiberStatus<A, WaitingManyStatus<M>>
+impl<H, V, P> SuspendedValues for crate::engine::ProgramFanoutState<H, V, P>
+where
+    for<'a> RuntimeNeedView<'a>: From<&'a H>,
+    V: crate::value::RuntimeStoredValue,
+    P: crate::value::RuntimeStoredValue,
+{
+    fn admit_suspended_values(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        _binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.context
+            .admit_retained(admission, V::admission_origin())?;
+        self.source.admit_retained(admission)?;
+        admission.validate_metadata(&(self.limit, self.next_index))?;
+        for count in [self.items.len(), self.results.len(), self.in_flight.len()] {
+            admission.validate_metadata_collection(count)?;
+        }
+        crate::task::RuntimeFanoutProgress {
+            total: self.items.len(),
+            next_index: self.next_index,
+            limit: self.limit,
+            initialized: true,
+        }
+        .validate(
+            self.in_flight.iter().map(|flight| flight.index),
+            self.results.iter().map(Option::is_some),
+        )
+        .map_err(|error| invalid(&error.to_string()))?;
+        if self
+            .items
+            .iter()
+            .enumerate()
+            .any(|(index, item)| item.is_some() != (index >= self.next_index))
+        {
+            return Err(invalid(
+                "Program fanout item custody differs from its started frontier",
+            ));
+        }
+        let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner().cloned()
+        else {
+            return Err(invalid(
+                "Program fanout requires its original Plan executable",
+            ));
+        };
+        let Some(crate::plan::FlowOp::ProgramTask { template, .. }) = self.source.operation(&plan)
+        else {
+            return Err(invalid("Program fanout lost its original task operation"));
+        };
+        let crate::plan::RuntimeProgramTaskBody::Fanout(fanout) = &template.body else {
+            return Err(invalid("Program fanout lost its original Fanout kernel"));
+        };
+        let base = RuntimeNeedView::from(&self.base);
+        base.admit_retained(admission)?;
+        if base.outcome() != &template.producer.outcome()
+            || plan.task_plan(&template.producer.plan).map(|row| row.key())
+                != Some(base.producer().plan())
+        {
+            return Err(invalid(
+                "Program fanout base differs from its original task",
+            ));
+        }
+        let binding = self.context.instantiation();
+        let item = local_type(&plan, fanout.item, binding)?;
+        for value in self.items.iter().flatten() {
+            admission.validate_owned_typed_borrowed_in_invocation(
+                value.borrowed_value(),
+                item,
+                binding,
+            )?;
+        }
+        let mut correlations = std::collections::BTreeSet::new();
+        for flight in &self.in_flight {
+            admission.validate_metadata(&(flight.index, flight.observed_through))?;
+            let handle = RuntimeNeedView::from(&flight.handle);
+            handle.admit_retained(admission)?;
+            if !correlations.insert(handle.correlation())
+                || handle.correlation().generation != base.correlation().generation
+                || handle.outcome() != &fanout.worker.producer.outcome()
+                || plan
+                    .task_plan(&fanout.worker.producer.plan)
+                    .map(|row| row.key())
+                    != Some(handle.producer().plan())
+            {
+                return Err(invalid(
+                    "Program fanout child differs from its original worker",
+                ));
+            }
+        }
+        for value in self.results.iter().flatten() {
+            admission.validate_owned_borrowed(value.borrowed_value())?;
+            admission.admit_composite(P::admission_origin(), |owner, resources| {
+                fanout
+                    .worker
+                    .producer
+                    .outcome()
+                    .validate_admitted_in_invocation(
+                        value.borrowed_view(),
+                        owner,
+                        binding,
+                        resources,
+                    )?;
+                Ok(())
+            })?;
+        }
+        Ok(())
+    }
+}
+
+impl<A, M, P> SuspendedValues for FlowFiberStatus<A, WaitingManyStatus<M, P>>
 where
     A: SuspendedValues,
     M: SuspendedValues,
+    P: SuspendedValues,
 {
     fn admit_suspended_values(
         &self,
@@ -228,6 +338,9 @@ where
         match self {
             Self::NeedWaiting(state) => state.admit_suspended_values(admission, binding),
             Self::WaitingMany(WaitingManyStatus::Native(state)) => {
+                state.admit_suspended_values(admission, binding)
+            }
+            Self::WaitingMany(WaitingManyStatus::Program(state)) => {
                 state.admit_suspended_values(admission, binding)
             }
             Self::WaitingMany(WaitingManyStatus::Observed(progress)) => {

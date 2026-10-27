@@ -188,7 +188,9 @@ fn fixture(
                         payload: RuntimeTypeSemanticDigest::from_bytes(*unit.as_bytes()),
                     },
                 ),
-                body: vec![RuntimeFlowOpSeed::ReturnExpr(returned.clone())],
+                body: crate::plan::RuntimeProgramTaskBody::Flow(vec![
+                    RuntimeFlowOpSeed::ReturnExpr(returned.clone()),
+                ]),
             },
             name: None,
             binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),

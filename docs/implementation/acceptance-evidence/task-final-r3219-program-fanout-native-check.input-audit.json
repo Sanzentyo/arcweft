@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "run": "task-final-r3219-program-fanout-native-check",
+  "actualExitCode": 101,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3992,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-26T14:44:09.4796705Z"
+}

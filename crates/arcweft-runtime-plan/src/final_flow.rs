@@ -6126,23 +6126,29 @@ fn resolve_flow_tail_holes(
             RuntimeFlowOpSeed::ProgramTask {
                 name,
                 binding,
-                template:
-                    arcweft_core::plan::RuntimeProgramTaskTemplate {
-                        producer,
-                        delivery,
-                        captures,
-                        body,
-                    },
+                mut template,
             } => {
+                template.body =
+                    match template.body {
+                        arcweft_core::plan::RuntimeProgramTaskBody::Flow(body) => {
+                            arcweft_core::plan::RuntimeProgramTaskBody::Flow(
+                                resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+                            )
+                        }
+                        arcweft_core::plan::RuntimeProgramTaskBody::Fanout(mut fanout) => {
+                            fanout.worker.body = resolve_flow_tail_holes(
+                                fanout.worker.body,
+                                child_ids,
+                                child_cursor,
+                                resolved,
+                            )?;
+                            arcweft_core::plan::RuntimeProgramTaskBody::Fanout(fanout)
+                        }
+                    };
                 output.push(RuntimeFlowOpSeed::ProgramTask {
                     name,
                     binding,
-                    template: arcweft_core::plan::RuntimeProgramTaskTemplate {
-                        producer,
-                        delivery,
-                        captures,
-                        body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
-                    },
+                    template,
                 });
             }
             RuntimeFlowOpSeed::Scope { identity, body } => {
@@ -8429,7 +8435,7 @@ impl<'a> FinalFlowLowerer<'a> {
                     .into_iter()
                     .map(arcweft_core::plan::RuntimeProgramTaskCapture::copy)
                     .collect(),
-                body,
+                body: arcweft_core::plan::RuntimeProgramTaskBody::Flow(body),
             },
         }];
         ops.extend(self.lower_flow_tail(tail)?);
@@ -10008,7 +10014,11 @@ mod tests {
         let [
             FlowOp::ProgramTask {
                 name,
-                template: arcweft_core::plan::RuntimeProgramTaskTemplate { body, .. },
+                template:
+                    arcweft_core::plan::RuntimeProgramTaskTemplate {
+                        body: arcweft_core::plan::RuntimeProgramTaskBody::Flow(body),
+                        ..
+                    },
                 ..
             },
         ] = report.plan.flows()[0].body().ops()

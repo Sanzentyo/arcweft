@@ -188,11 +188,10 @@ impl AwbcProductStepExecutor {
         let limits = RuntimeTaskPlanSealLimits::default();
         let mut meter = admission.task_source_meter(limits)?;
         let source = program.awbc_program_source(plan, limits, &mut meter)?;
-        let Some(crate::plan::RuntimeProgramTaskTemplate { producer, .. }) =
-            source.request_endpoint().program_template()
-        else {
+        let Some(template) = source.request_endpoint().program_template() else {
             return Err(ProgramTaskError::MissingSource);
         };
+        let producer = template.producer();
         let frame = parent.active_frame()?;
         let values = captures
             .iter()

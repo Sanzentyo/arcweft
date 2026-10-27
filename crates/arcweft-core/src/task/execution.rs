@@ -89,9 +89,17 @@ impl ProgramTaskLaunch {
         value: &V,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.admit_result_view(value.borrowed_view(), V::admission_origin(), admission)
+    }
+
+    pub(crate) fn admit_result_view(
+        &self,
+        view: crate::value::RuntimeValueView<'_>,
+        origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.receipt.admit_retained(admission)?;
-        admission.admit_composite(V::admission_origin(), |owner, resources| {
-            let view = value.borrowed_view();
+        admission.admit_composite(origin, |owner, resources| {
             resources.validate_view(view, 0, None)?;
             crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
                 view, owner, resources,

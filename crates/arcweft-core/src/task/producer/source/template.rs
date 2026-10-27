@@ -20,6 +20,10 @@ pub(crate) enum RuntimeTaskTemplateArguments<'value, V> {
     ProgramTask {
         captures: &'value [V],
     },
+    FanoutProgramWorker {
+        captures: &'value [V],
+        index: u32,
+    },
     AwaitManyBase {
         captures: &'value [V],
         source: RuntimeValueSource<'value>,
@@ -35,6 +39,7 @@ impl<'value, V: RuntimeStoredValue> RuntimeTaskTemplateArguments<'value, V> {
     fn captures(&self) -> &'value [V] {
         match self {
             Self::ProgramTask { captures }
+            | Self::FanoutProgramWorker { captures, .. }
             | Self::AwaitManyBase { captures, .. }
             | Self::AwaitManyChild { captures, .. } => captures,
         }
@@ -209,9 +214,17 @@ impl RuntimeTaskSourceRef<'_> {
             self.request_endpoint().operation(),
             &arguments,
         ) {
-            (Some(template), _, RuntimeTaskTemplateArguments::ProgramTask { .. }) => {
-                admission.validate_metadata_collection(template.captures.len())?;
-                locals.extend(template.captures.iter().map(|capture| capture.local));
+            (Some(template), _, RuntimeTaskTemplateArguments::ProgramTask { .. })
+                if self.request_endpoint().kind() == EndpointKind::ProgramTask =>
+            {
+                admission.validate_metadata_collection(template.captures().len())?;
+                locals.extend(template.captures().iter().map(|capture| capture.local));
+            }
+            (Some(template), _, RuntimeTaskTemplateArguments::FanoutProgramWorker { .. })
+                if self.request_endpoint().kind() == EndpointKind::AwaitManyChild =>
+            {
+                admission.validate_metadata_collection(template.captures().len())?;
+                locals.extend(template.captures().iter().map(|capture| capture.local));
             }
             (
                 None,
@@ -294,7 +307,7 @@ impl RuntimeTaskSourceRef<'_> {
                 self.request_endpoint().program_template(),
                 self.request_endpoint().operation(),
             ) {
-                (Some(template), _) => template.captures[index].mode,
+                (Some(template), _) => template.captures()[index].mode,
                 (None, Some(FlowOp::AwaitMany { .. })) => crate::value::RuntimeLocalReadMode::Copy,
                 _ => unreachable!("the complete operand grammar was checked"),
             };
@@ -318,12 +331,56 @@ impl RuntimeTaskSourceRef<'_> {
                 )?;
             }
         }
+        if let Some(template) = self.request_endpoint().program_template()
+            && let crate::plan::RuntimeProgramTaskKernelRef::Fanout(fanout) = template.kernel()
+        {
+            let operand = |local| {
+                let position = locals
+                    .iter()
+                    .position(|candidate| *candidate == local)
+                    .expect("the admitted fanout declares its control captures");
+                &captures[position]
+            };
+            let limit = operand(fanout.limit).borrowed_view();
+            if !matches!(limit, RuntimeValueView::Scalar(crate::value::RuntimeScalarView::UInt(
+                crate::value::RuntimeUInt::U32(limit))) if limit != 0)
+            {
+                return Err(RuntimeTaskProducerSourceError::FanoutLimit);
+            }
+            let RuntimeValueView::Sequence(items) = operand(fanout.source).borrowed_view() else {
+                return Err(RuntimeTaskProducerSourceError::SourceShape);
+            };
+            let count = items.len().map_err(AwbcRuntimeValueSnapshotError::from)?;
+            u32::try_from(count)
+                .map_err(|_| RuntimeTaskProducerSourceError::SourceCount { actual: count })?;
+            admission.validate_metadata_collection(count)?;
+            if count > 1 {
+                for capture in &fanout.worker.captures {
+                    if capture.local != fanout.item {
+                        admission.validate_borrowed(operand(capture.local).borrowed_value())?;
+                    }
+                }
+            }
+        }
         let captured: Vec<_> = captures.iter().map(V::borrowed_view).collect();
         let captured = RuntimeValueView::Tuple(RuntimeTupleView::Views(&captured));
         let max_bytes = admission.work().limits().platform_encoded_bytes();
         let digest = match arguments {
             RuntimeTaskTemplateArguments::ProgramTask { .. } => {
                 crate::entry::schema::canonical_runtime_value_view_digest(captured, max_bytes)
+            }
+            RuntimeTaskTemplateArguments::FanoutProgramWorker { index, .. } => {
+                admission.validate_metadata(&index)?;
+                let fields = [
+                    captured,
+                    RuntimeValueView::Scalar(crate::value::RuntimeScalarView::UInt(
+                        crate::value::RuntimeUInt::U32(index),
+                    )),
+                ];
+                crate::entry::schema::canonical_runtime_value_view_digest(
+                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
+                    max_bytes,
+                )
             }
             RuntimeTaskTemplateArguments::AwaitManyBase { source, .. } => {
                 let Some(FlowOp::AwaitMany { target, .. }) = self.request_endpoint().operation()

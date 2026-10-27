@@ -66,6 +66,19 @@ impl Engine {
             self.fail_eval(error, output);
             return;
         }
+        self.complete_admitted_program_task_return(value, explicit, output, backend);
+    }
+
+    pub(super) fn complete_admitted_program_task_return(
+        &mut self,
+        value: crate::value::RuntimeValue,
+        explicit: bool,
+        output: &mut crate::step::RuntimeStepOutput,
+        backend: &mut impl super::RuntimeCallBackend,
+    ) {
+        let super::FlowFiberLaunch::Program(launch) = &self.fiber.launch else {
+            unreachable!("task return is dispatched only with an accepted Program launch")
+        };
         let launch = launch.clone();
         self.fiber.frame.pending_ops.clear();
         self.fiber.frame.await_observer = None;
@@ -118,12 +131,11 @@ impl Engine {
         let source = program
             .original()
             .task_source(&producer.plan, limits, &mut meter)?;
-        let Some(crate::plan::RuntimeProgramTaskTemplate {
-            producer, captures, ..
-        }) = source.request_endpoint().program_template()
-        else {
+        let Some(template) = source.request_endpoint().program_template() else {
             return Err(crate::task::RuntimeTaskProducerSourceError::RequestKind.into());
         };
+        let producer = template.producer();
+        let captures = template.captures();
         admission.validate_metadata_collection(captures.len())?;
         let values = captures
             .iter()
@@ -144,10 +156,17 @@ impl Engine {
         admission.validate_metadata_string(&producer.debug_label)?;
         admission.validate_metadata(&checked.source().assertion())?;
         let instance = NeedProducerInstance::try_from(&checked)?;
-        let body = self
-            .original_body_range(operation, RuntimeFlowBodyRole::Body)
-            .map_err(Box::new)?;
-        let pending_ops = self.prepare_task_root_work(body, false).map_err(Box::new)?;
+        let pending_ops = match template.kernel() {
+            crate::plan::RuntimeProgramTaskKernelRef::Flow(_) => {
+                let body = self
+                    .original_body_range(operation, RuntimeFlowBodyRole::Body)
+                    .map_err(Box::new)?;
+                self.prepare_task_root_work(body, false).map_err(Box::new)?
+            }
+            crate::plan::RuntimeProgramTaskKernelRef::Fanout(_) => self
+                .prepare_program_fanout_work(operation.clone())
+                .map_err(Box::new)?,
+        };
         let (child, next_fiber_id) = self
             .prepare_child_fiber(pending_ops, &[])
             .map_err(Box::new)?;
@@ -166,7 +185,7 @@ impl Engine {
             spec,
             child,
             next_fiber_id,
-            captures: captures.clone(),
+            captures: captures.to_vec(),
         })
     }
 

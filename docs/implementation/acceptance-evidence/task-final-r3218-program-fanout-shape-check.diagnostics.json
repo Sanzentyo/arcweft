@@ -1,0 +1,92 @@
+[
+  {
+    "code": "E0425",
+    "message": "cannot find value `body` in this scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\plan\\construction\\source\\flow\\encoding\\fields.rs",
+        "line_start": 536,
+        "line_end": 536,
+        "byte_start": 20687,
+        "byte_end": 20691,
+        "label": "not found in this scope"
+      }
+    ],
+    "rendered": "error[E0425]: cannot find value `body` in this scope\n   --> crates\\arcweft-core\\src\\plan\\construction\\source\\flow\\encoding\\fields.rs:536:23\n    |\n520 | /                     crate::plan::RuntimeProgramTaskTemplate {\n521 | |                         producer,\n522 | |                         delivery,\n523 | |                         captures,\n524 | |                         ..\n525 | |                     },\n    | |_____________________- this pattern doesn't include `body`, which is available in `RuntimeProgramTaskTemplate`\n...\n536 |                   match body {\n    |                         ^^^^ not found in this scope\n\n"
+  },
+  {
+    "code": "E0425",
+    "message": "cannot find value `body` in this scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\plan\\construction\\source\\flow\\encoding\\fields.rs",
+        "line_start": 536,
+        "line_end": 536,
+        "byte_start": 20687,
+        "byte_end": 20691,
+        "label": "not found in this scope"
+      }
+    ],
+    "rendered": "error[E0425]: cannot find value `body` in this scope\n   --> crates\\arcweft-core\\src\\plan\\construction\\source\\flow\\encoding\\fields.rs:536:23\n    |\n520 | /                     crate::plan::RuntimeProgramTaskTemplate {\n521 | |                         producer,\n522 | |                         delivery,\n523 | |                         captures,\n524 | |                         ..\n525 | |                     },\n    | |_____________________- this pattern doesn't include `body`, which is available in `RuntimeProgramTaskTemplate`\n...\n536 |                   match body {\n    |                         ^^^^ not found in this scope\n    |\nnote: these functions exist but are inaccessible\n   --> crates\\arcweft-core\\src\\plan\\construction\\lower\\static_effect_tests.rs:106:1\n    |\n106 | fn body(effects: Vec<LineEffectRequest>) -> RuntimeFunctionSiteBodySeed {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `crate::plan::construction::lower::static_effect_tests::body`: not accessible\n    |\n   ::: crates\\arcweft-core\\src\\plan\\construction\\source\\content_declarations\\tests.rs:339:1\n    |\n339 | fn body(attempt: &RuntimeFormatAttemptSeedId) -> RuntimeExecutableBodySeed {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `crate::plan::construction::source::content_declarations::tests::body`: not accessible\n    |\n   ::: crates\\arcweft-core\\src\\plan\\construction\\source\\functions\\tests.rs:77:1\n    |\n 77 | fn body(builder: &mut RuntimePlanBuilder, handle: &RuntimeFunctionSiteSeedId, kind: Body) {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `crate::plan::construction::source::functions::tests::body`: not accessible\n    |\n   ::: crates\\arcweft-core\\src\\plan\\construction\\source\\host_calls\\tests.rs:69:1\n    |\n 69 | fn body(host: RuntimeFlowOpSeed) -> RuntimeFunctionSiteBodySeed {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `crate::plan::construction::source::host_calls::tests::body`: not accessible\n    |\n   ::: crates\\arcweft-core\\src\\plan\\construction\\source\\selected_producers\\tests.rs:89:1\n    |\n 89 | fn body(start: RuntimeFlowOpSeed) -> RuntimeFunctionSiteBodySeed {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `crate::plan::construction::source::selected_producers::tests::body`: not accessible\n\n"
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `prepare_program_fanout_work` found for reference `&engine::Engine` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\thread.rs",
+        "line_start": 154,
+        "line_end": 154,
+        "byte_start": 6247,
+        "byte_end": 6274,
+        "label": null
+      }
+    ],
+    "rendered": "error[E0599]: no method named `prepare_program_fanout_work` found for reference `&engine::Engine` in the current scope\n   --> crates\\arcweft-core\\src\\engine\\thread.rs:154:18\n    |\n153 |               crate::plan::RuntimeProgramTaskKernelRef::Fanout(_) => self\n    |  ____________________________________________________________________-\n154 | |                 .prepare_program_fanout_work(operation.clone())\n    | |_________________-^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    |\nhelp: there is a method `prepare_program_task` with a similar name\n    |\n154 -                 .prepare_program_fanout_work(operation.clone())\n154 +                 .prepare_program_task(operation.clone())\n    |\n\n"
+  },
+  {
+    "code": "E0026",
+    "message": "variant `RuntimeLineOperation::Schedule` does not have a field named `body`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\plan\\construction\\source\\flow\\encoding\\fields.rs",
+        "line_start": 385,
+        "line_end": 385,
+        "byte_start": 14549,
+        "byte_end": 14553,
+        "label": "variant `RuntimeLineOperation::Schedule` does not have this field"
+      }
+    ],
+    "rendered": "error[E0026]: variant `RuntimeLineOperation::Schedule` does not have a field named `body`\n   --> crates\\arcweft-core\\src\\plan\\construction\\source\\flow\\encoding\\fields.rs:385:25\n    |\n385 |                         body,\n    |                         ^^^^\n    |                         |\n    |                         variant `RuntimeLineOperation::Schedule` does not have this field\n    |                         help: `RuntimeLineOperation::Schedule` has a field named `delay`\n\n"
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `prepare_program_fanout_work` found for reference `&engine::Engine` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\thread.rs",
+        "line_start": 154,
+        "line_end": 154,
+        "byte_start": 6247,
+        "byte_end": 6274,
+        "label": null
+      }
+    ],
+    "rendered": "error[E0599]: no method named `prepare_program_fanout_work` found for reference `&engine::Engine` in the current scope\n   --> crates\\arcweft-core\\src\\engine\\thread.rs:154:18\n    |\n153 |               crate::plan::RuntimeProgramTaskKernelRef::Fanout(_) => self\n    |  ____________________________________________________________________-\n154 | |                 .prepare_program_fanout_work(operation.clone())\n    | |_________________-^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    |\nhelp: there is a method `prepare_program_task` with a similar name\n    |\n154 -                 .prepare_program_fanout_work(operation.clone())\n154 +                 .prepare_program_task(operation.clone())\n    |\n\n"
+  },
+  {
+    "code": "E0026",
+    "message": "variant `RuntimeLineOperation::Schedule` does not have a field named `body`",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\plan\\construction\\source\\flow\\encoding\\fields.rs",
+        "line_start": 385,
+        "line_end": 385,
+        "byte_start": 14549,
+        "byte_end": 14553,
+        "label": "variant `RuntimeLineOperation::Schedule` does not have this field"
+      }
+    ],
+    "rendered": "error[E0026]: variant `RuntimeLineOperation::Schedule` does not have a field named `body`\n   --> crates\\arcweft-core\\src\\plan\\construction\\source\\flow\\encoding\\fields.rs:385:25\n    |\n385 |                         body,\n    |                         ^^^^\n    |                         |\n    |                         variant `RuntimeLineOperation::Schedule` does not have this field\n    |                         help: `RuntimeLineOperation::Schedule` has a field named `delay`\n\n"
+  }
+]

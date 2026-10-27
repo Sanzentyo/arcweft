@@ -498,15 +498,14 @@ impl FlowOp {
                 then_ops, else_ops, ..
             } => Schema::Branches(then_ops, else_ops),
             Self::Match { arms, .. } => Schema::Match(arms),
+            Self::ProgramTask { template, .. } => {
+                Schema::One(Role::Body, template.body.owned_flow_ops())
+            }
             Self::FormatOperandAttempt { body, .. }
             | Self::Loop { body, .. }
             | Self::While { body, .. }
             | Self::WhileLet { body, .. }
             | Self::For { body, .. }
-            | Self::ProgramTask {
-                template: crate::plan::RuntimeProgramTaskTemplate { body, .. },
-                ..
-            }
             | Self::Scope { body, .. } => Schema::One(Role::Body, body),
             FlowOp::Let { .. }
             | FlowOp::Assign { .. }

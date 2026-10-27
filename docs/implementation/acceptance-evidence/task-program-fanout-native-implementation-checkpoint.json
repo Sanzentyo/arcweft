@@ -1,0 +1,273 @@
+{
+  "version": 1,
+  "base": "854648a92fe2e2f1bb4fb267b3d75bf33bb9b2c8",
+  "recordedAt": "2026-10-27T09:37:57.1584866Z",
+  "status": "intermediate-implementation-checkpoint-not-accepted",
+  "scope": "Original Flow/Fanout Program body grammar, Source worker endpoint, indexed worker instance, Native original-operation continuation, owned unstarted slots and local Program workers, suspended-value admission and inert rollback projection",
+  "userCheckpointInstruction": "Intermediate commits need not be confirmed fully operational; keep concrete implementation and actual failures without marking the feature accepted",
+  "rustPaths": [
+    "crates/arcweft-core/src/aot.rs",
+    "crates/arcweft-core/src/awbc/product_step/program_task.rs",
+    "crates/arcweft-core/src/awbc/product_step/tests.rs",
+    "crates/arcweft-core/src/engine.rs",
+    "crates/arcweft-core/src/engine/fanout.rs",
+    "crates/arcweft-core/src/engine/flow.rs",
+    "crates/arcweft-core/src/engine/flow/resume.rs",
+    "crates/arcweft-core/src/engine/rollback/await_state.rs",
+    "crates/arcweft-core/src/engine/suspend.rs",
+    "crates/arcweft-core/src/engine/thread.rs",
+    "crates/arcweft-core/src/engine/thread/tests.rs",
+    "crates/arcweft-core/src/engine/work.rs",
+    "crates/arcweft-core/src/plan.rs",
+    "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+    "crates/arcweft-core/src/plan/body_semantic/function.rs",
+    "crates/arcweft-core/src/plan/body_semantic/tests/request_endpoints.rs",
+    "crates/arcweft-core/src/plan/construction.rs",
+    "crates/arcweft-core/src/plan/construction/lower.rs",
+    "crates/arcweft-core/src/plan/construction/lower/program_task.rs",
+    "crates/arcweft-core/src/plan/construction/seed.rs",
+    "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+    "crates/arcweft-core/src/plan/construction/source/flow/encoding/fields.rs",
+    "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+    "crates/arcweft-core/src/plan/flow_ops.rs",
+    "crates/arcweft-core/src/plan/task_source/program_body.rs",
+    "crates/arcweft-core/src/plan/task_source/program_body/tests.rs",
+    "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+    "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+    "crates/arcweft-core/src/task/execution.rs",
+    "crates/arcweft-core/src/task/producer/source.rs",
+    "crates/arcweft-core/src/task/producer/source/template.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/flow/program_task.rs",
+    "crates/arcweft-runtime-plan/src/final_flow.rs"
+  ],
+  "coreCompilerUnits": [
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "arcweft_core",
+      "kind": [
+        "lib"
+      ],
+      "test": false,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "record_field_names",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "task_plan_view_prefix",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "awbc_record_type",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "nominal_schema_admission",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "builtin_payload_admission",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "record_admission",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "runtime_id_boundaries",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "api_compile",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "direct_suspension",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "awbc_variant_types",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "task_admission",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "runtime_assertion_identity",
+      "kind": [
+        "test"
+      ],
+      "test": true,
+      "fresh": false
+    },
+    {
+      "package": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+      "target": "arcweft_core",
+      "kind": [
+        "lib"
+      ],
+      "test": true,
+      "fresh": false
+    }
+  ],
+  "checks": [
+    {
+      "run": "R3218",
+      "exit": 101,
+      "compilerErrors": 6,
+      "sourceInputs": 3991,
+      "sourceDrift": 0
+    },
+    {
+      "run": "R3219",
+      "exit": 101,
+      "compilerErrors": 10,
+      "sourceInputs": 3992,
+      "sourceDrift": 0
+    },
+    {
+      "run": "R3220",
+      "exit": 101,
+      "compilerErrors": 2,
+      "scope": "iterative compiler diagnostics; no full input audit",
+      "remaining": "runtime-plan lower_program_fanout not implemented; same error in lib/lib-test"
+    }
+  ],
+  "notRun": [
+    "Native fanout runtime tests",
+    "AWBC fanout execution",
+    "Source parallel execution",
+    "workspace check/Clippy",
+    "reverse-dependency runtime",
+    "doctests",
+    "structural gate"
+  ],
+  "remaining": [
+    "Exercise Native fanout input custody, bounded launch, empty input, Result aggregation, cancellation, resource refusals and rollback",
+    "Complete AWBC Program Fanout row/kernel control and all wire/verifier/source/save consumers",
+    "Connect checked Source parallel producer, callback Flow code and all collection families",
+    "Delete superseded Host-only fanout model after consumer migration"
+  ],
+  "evidence": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-r3219.source-freeze.json",
+      "sha256": "5b8e6088c714547715e7e06fcb4996fd554a61b0797a3fbd6de086a8fcedd6fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-r3218.source-freeze.json",
+      "sha256": "bbfdd5bafa46e967cb7ad6df6e2b02805bdec5684b22af9a7d1900b2a9b6e731"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3219-program-fanout-native-check.log",
+      "sha256": "bdf8b47402d84b5a4e0e760546aa96c82a874ba2f1c2be4f1722afee9d080095"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3219-program-fanout-native-check.json",
+      "sha256": "78d1a8cdb606ed9a8a7ffb148fe48d369158cfab61bf85e5b90ad150d8f3f757"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3219-program-fanout-native-check.input-audit.json",
+      "sha256": "2dc783b2ac9c10c9d76bcff4262559cc93f90a25a48fc1674faba0c6996ad773"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3219-program-fanout-native-check.diagnostics.json",
+      "sha256": "e498044dbb863ddbf68040f65a189ca20056bf7807f2efcc3f5e0a73590ccacf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3218-program-fanout-shape-check.log",
+      "sha256": "504cd445e09a05af7f2da69ac46afc6cc905467b7a0a08f1ea2648d8c693a456"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3218-program-fanout-shape-check.json",
+      "sha256": "3e6d79d66f1c77d24528d07cb348f3b9a39a6f332f828c4f6ba2990a12b39c24"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3218-program-fanout-shape-check.input-audit.json",
+      "sha256": "a5ad09c7c837baee5973506626c01eb7abce6892979afd2e972837be50bd233b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3218-program-fanout-shape-check.diagnostics.json",
+      "sha256": "4f787199bd3f1769c85faa137b9a15f16c6d608352547d46890664d3ab1fbf97"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3220-program-fanout-native-check.log",
+      "sha256": "54b06db4c7dc320bb343a329e8f6c15fd276b2ebd18d680cd7b8d5ae6399ccb6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3220-program-fanout-native-check.json",
+      "sha256": "541124746bd272f4488b41cf9c7f20a7da559e99b27c2e1aa9a1b851523dc7f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3220-program-fanout-native-check.diagnostics.json",
+      "sha256": "10815753366ca13f3542f69cddff4a6ce7d9436d24e135ada974363454d76a26"
+    }
+  ],
+  "ownershipReview": {
+    "owner": "arcweft-core::engine::fanout",
+    "path": "crates/arcweft-core/src/engine/fanout.rs",
+    "physicalLoc": 494,
+    "responsibility": "Native scheduling/custody and inert storage of the Source-owned Program Fanout kernel",
+    "authority": "Original Program template and exact accepted ProgramTaskLaunch; runtime state holds only progress and owned values",
+    "publicSurface": "State carrier is public as part of the existing public WaitingManyStatus; fields/constructors remain engine-owned",
+    "direction": "Core/plan/task/value only; no I/O, frontend or backend dependencies",
+    "scanner": "not-run-at-this-intermediate-checkpoint"
+  }
+}

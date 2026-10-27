@@ -198,6 +198,14 @@ impl<'a> OriginalRequestEndpoint<'a> {
     ) -> plan::RuntimeTaskSemanticBinding<plan::RuntimeLineTaskGroupSeedId> {
         use plan::RuntimeTaskSemanticBinding as Binding;
         match self.kind {
+            EndpointKind::ProgramTask
+                if matches!(
+                    self.program_template().map(|template| template.kernel()),
+                    Some(plan::RuntimeProgramTaskKernelRef::Fanout(_))
+                ) =>
+            {
+                Binding::AwaitManyBase
+            }
             EndpointKind::AwaitManyBase => Binding::AwaitManyBase,
             EndpointKind::AwaitManyChild => Binding::AwaitManyChild,
             EndpointKind::FunctionRoot
@@ -213,6 +221,17 @@ impl<'a> OriginalRequestEndpoint<'a> {
     ) -> Option<&'a plan::RuntimeTaskPlanBuildCoordinate> {
         match (self.kind, self.source) {
             (
+                EndpointKind::ProgramTask,
+                ProducerEndpointSource::Operation(plan::FlowOp::ProgramTask {
+                    template:
+                        plan::RuntimeProgramTaskTemplate {
+                            body: plan::RuntimeProgramTaskBody::Fanout(fanout),
+                            ..
+                        },
+                    ..
+                }),
+            ) => Some(&fanout.worker.producer.plan),
+            (
                 EndpointKind::AwaitManyBase,
                 ProducerEndpointSource::Operation(plan::FlowOp::AwaitMany { target, .. }),
             ) => Some(&target.child.definition.plan),
@@ -225,18 +244,18 @@ impl<'a> OriginalRequestEndpoint<'a> {
         let ProducerEndpointSource::Operation(operation) = self.source else {
             return None;
         };
+        if let Some(template) = self.program_template() {
+            return Some(Source::ProgramProducer {
+                producer: template.producer(),
+                delivery: template.delivery(),
+            });
+        }
         match self.kind {
             EndpointKind::HostTask => match operation {
                 plan::FlowOp::HostCall { target, .. } => Some(Source::Host(target)),
                 _ => None,
             },
-            EndpointKind::ProgramTask => {
-                self.program_template()
-                    .map(|template| Source::ProgramProducer {
-                        producer: &template.producer,
-                        delivery: template.delivery,
-                    })
-            }
+            EndpointKind::ProgramTask => None,
             EndpointKind::MakeNeed => match operation {
                 plan::FlowOp::StartNeedProducer { target, .. } => Some(Source::Start(target)),
                 _ => None,
@@ -342,17 +361,27 @@ impl<'a> OriginalRequestEndpoint<'a> {
         }
     }
     pub(super) fn program_captures(&self) -> Option<&'a [crate::plan::RuntimeProgramTaskCapture]> {
-        self.program_template()
-            .map(|template| template.captures.as_slice())
+        self.program_template().map(|template| template.captures())
     }
 
     /// Borrows the Program contract from this endpoint's actual Source owner.
-    pub(crate) fn program_template(&self) -> Option<&'a plan::RuntimeProgramTaskTemplate> {
+    pub(crate) fn program_template(&self) -> Option<plan::RuntimeProgramTaskTemplateRef<'a>> {
         match (self.kind, self.source) {
             (
                 EndpointKind::ProgramTask,
                 ProducerEndpointSource::Operation(plan::FlowOp::ProgramTask { template, .. }),
-            ) => Some(template),
+            ) => Some(plan::RuntimeProgramTaskTemplateRef::Root(template)),
+            (
+                EndpointKind::AwaitManyChild,
+                ProducerEndpointSource::Operation(plan::FlowOp::ProgramTask {
+                    template:
+                        plan::RuntimeProgramTaskTemplate {
+                            body: plan::RuntimeProgramTaskBody::Fanout(fanout),
+                            ..
+                        },
+                    ..
+                }),
+            ) => Some(plan::RuntimeProgramTaskTemplateRef::Worker(&fanout.worker)),
             _ => None,
         }
     }
@@ -931,6 +960,14 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         use plan::FlowOp as Op;
         match op {
             Op::HostCall { .. } => &[EndpointKind::HostTask],
+            Op::ProgramTask {
+                template:
+                    plan::RuntimeProgramTaskTemplate {
+                        body: plan::RuntimeProgramTaskBody::Fanout(_),
+                        ..
+                    },
+                ..
+            } => &[EndpointKind::ProgramTask, EndpointKind::AwaitManyChild],
             Op::ProgramTask { .. } => &[EndpointKind::ProgramTask],
             Op::StartNeedProducer { .. } => &[EndpointKind::MakeNeed],
             Op::AwaitMany { .. } => &[EndpointKind::AwaitManyBase, EndpointKind::AwaitManyChild],

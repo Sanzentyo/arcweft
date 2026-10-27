@@ -1,6 +1,7 @@
 //! Admission from semantic seeds into the sole executable carriers.
 
 mod pattern;
+mod program_task;
 
 // Each variant owns its admission temporaries. Keeping them in separate call
 // frames prevents an exhaustive dispatch's unrelated branch storage from
@@ -3948,36 +3949,16 @@ impl RuntimePlanBodyConstruction<'_> {
                     ) => require_same("Program task result payload", payload, *item)?,
                     _ => return invalid_projection("Program task result binding", binding.ty()),
                 }
+                let captures = self.lower_program_captures(captures)?;
+                let body = self.lower_program_body(&producer, &captures, body)?;
                 FlowOp::ProgramTask {
                     name,
                     binding,
                     template: crate::plan::RuntimeProgramTaskTemplate {
                         producer,
                         delivery,
-                        captures: {
-                            let mut selected = std::collections::BTreeSet::new();
-                            captures
-                                .into_iter()
-                                .map(|capture| {
-                                    let (local, _) = capture
-                                        .local
-                                        .resolve(&self.issuer)
-                                        .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
-                                    if !selected.insert(local) {
-                                        return Err(
-                                            RuntimePlanBuildError::DuplicateProgramTaskCapture {
-                                                local,
-                                            },
-                                        );
-                                    }
-                                    Ok(crate::plan::RuntimeProgramTaskCapture {
-                                        local,
-                                        mode: capture.mode,
-                                    })
-                                })
-                                .collect::<Result<_, _>>()?
-                        },
-                        body: self.lower_flow_ops(body)?,
+                        captures,
+                        body,
                     },
                 }
             }
@@ -5488,6 +5469,25 @@ impl RuntimePlanBodyConstruction<'_> {
                         nested.insert(capture.local);
                     }
                     let mut nested_frames = Vec::new();
+                    let body = match body {
+                        crate::plan::RuntimeProgramTaskBody::Flow(body) => body.as_slice(),
+                        crate::plan::RuntimeProgramTaskBody::Fanout(fanout) => {
+                            for local in [fanout.source, fanout.limit] {
+                                require_local_in_scope(local, &nested)?;
+                                used.insert(local);
+                            }
+                            let mut worker = BTreeSet::new();
+                            for capture in &fanout.worker.captures {
+                                if capture.local != fanout.item {
+                                    require_local_in_scope(capture.local, &nested)?;
+                                    used.insert(capture.local);
+                                }
+                                worker.insert(capture.local);
+                            }
+                            nested = worker;
+                            fanout.worker.body.as_slice()
+                        }
+                    };
                     self.validate_flow_operation_locals_inner(
                         body,
                         &mut nested,

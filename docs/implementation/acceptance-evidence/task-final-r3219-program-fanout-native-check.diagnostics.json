@@ -1,0 +1,152 @@
+[
+  {
+    "code": "E0277",
+    "message": "the trait bound `RuntimeValueRestoreContext<'_>: From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 115,
+        "line_end": 115,
+        "byte_start": 4245,
+        "byte_end": 4256,
+        "label": "unsatisfied trait bound"
+      }
+    ],
+    "rendered": "error[E0277]: the trait bound `RuntimeValueRestoreContext<'_>: From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not satisfied\n   --> crates\\arcweft-core\\src\\engine\\fanout.rs:115:37\n    |\n115 |                 .into_live_admitted(Some(owner))\n    |                  ------------------ ^^^^^^^^^^^ unsatisfied trait bound\n    |                  |\n    |                  required by a bound introduced by this call\n    |\nhelp: the trait `From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not implemented for `RuntimeValueRestoreContext<'_>`\n      but trait `From<&outcome::RuntimeProgramOwner>` is implemented for it\n   --> crates\\arcweft-core\\src\\value\\awbc_save\\materialization.rs:52:1\n    |\n 52 | impl<'a> From<&'a RuntimeProgramOwner> for RuntimeValueRestoreContext<'a> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: for that trait implementation, expected `&outcome::RuntimeProgramOwner`, found `std::option::Option<&outcome::RuntimeProgramOwner>`\n    = note: required for `std::option::Option<&outcome::RuntimeProgramOwner>` to implement `Into<RuntimeValueRestoreContext<'_>>`\nnote: required by a bound in `RuntimeNeedHandleSaveSnapshot::into_live_admitted`\n   --> crates\\arcweft-core\\src\\task\\need_handle.rs:130:23\n    |\n128 |     pub(crate) fn into_live_admitted<'a>(\n    |                   ------------------ required by a bound in this associated function\n129 |         self,\n130 |         context: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,\n    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RuntimeNeedHandleSaveSnapshot::into_live_admitted`\n\n"
+  },
+  {
+    "code": "E0277",
+    "message": "the trait bound `RuntimeValueRestoreContext<'_>: From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 133,
+        "line_end": 133,
+        "byte_start": 4960,
+        "byte_end": 4971,
+        "label": "unsatisfied trait bound"
+      }
+    ],
+    "rendered": "error[E0277]: the trait bound `RuntimeValueRestoreContext<'_>: From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not satisfied\n   --> crates\\arcweft-core\\src\\engine\\fanout.rs:133:49\n    |\n133 | ...                   .into_live_admitted(Some(owner))\n    |                        ------------------ ^^^^^^^^^^^ unsatisfied trait bound\n    |                        |\n    |                        required by a bound introduced by this call\n    |\nhelp: the trait `From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not implemented for `RuntimeValueRestoreContext<'_>`\n      but trait `From<&outcome::RuntimeProgramOwner>` is implemented for it\n   --> crates\\arcweft-core\\src\\value\\awbc_save\\materialization.rs:52:1\n    |\n 52 | impl<'a> From<&'a RuntimeProgramOwner> for RuntimeValueRestoreContext<'a> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: for that trait implementation, expected `&outcome::RuntimeProgramOwner`, found `std::option::Option<&outcome::RuntimeProgramOwner>`\n    = note: required for `std::option::Option<&outcome::RuntimeProgramOwner>` to implement `Into<RuntimeValueRestoreContext<'_>>`\nnote: required by a bound in `RuntimeNeedHandleSaveSnapshot::into_live_admitted`\n   --> crates\\arcweft-core\\src\\task\\need_handle.rs:130:23\n    |\n128 |     pub(crate) fn into_live_admitted<'a>(\n    |                   ------------------ required by a bound in this associated function\n129 |         self,\n130 |         context: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,\n    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RuntimeNeedHandleSaveSnapshot::into_live_admitted`\n\n"
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `borrowed_value` found for reference `&value::RuntimeValue` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 220,
+        "line_end": 220,
+        "byte_start": 8576,
+        "byte_end": 8590,
+        "label": null
+      }
+    ],
+    "rendered": "error[E0599]: no method named `borrowed_value` found for reference `&value::RuntimeValue` in the current scope\n   --> crates\\arcweft-core\\src\\engine\\fanout.rs:220:50\n    |\n220 |                         .validate_borrowed(value.borrowed_value())\n    |                                                  ^^^^^^^^^^^^^^\n    |\n    = help: items from traits can only be used if the trait is in scope\nhelp: trait `RuntimeStoredValue` which provides `borrowed_value` is implemented but not in scope; perhaps you want to import it\n    |\n  3 + use crate::value::storage::RuntimeStoredValue;\n    |\nhelp: there is a method `borrowed_view` with a similar name\n    |\n220 -                         .validate_borrowed(value.borrowed_value())\n220 +                         .validate_borrowed(value.borrowed_view())\n    |\n\n"
+  },
+  {
+    "code": "E0308",
+    "message": "mismatched types",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 342,
+        "line_end": 342,
+        "byte_start": 13925,
+        "byte_end": 13929,
+        "label": "expected `RuntimeValueView<'_>`, found `LiveRuntimeValueView<'_>`"
+      }
+    ],
+    "rendered": "error[E0308]: mismatched types\n   --> crates\\arcweft-core\\src\\engine\\fanout.rs:342:17\n    |\n341 |             launch.admit_result_view(\n    |                    ----------------- arguments to this method are incorrect\n342 |                 view,\n    |                 ^^^^ expected `RuntimeValueView<'_>`, found `LiveRuntimeValueView<'_>`\n    |\nnote: method defined here\n   --> crates\\arcweft-core\\src\\task\\execution.rs:95:19\n    |\n 95 |     pub(crate) fn admit_result_view(\n    |                   ^^^^^^^^^^^^^^^^^\n 96 |         &self,\n 97 |         view: crate::value::RuntimeValueView<'_>,\n    |         ----------------------------------------\n\n"
+  },
+  {
+    "code": "E0277",
+    "message": "the trait bound `RuntimeNeedHandleError: From<task::TaskEnsureError>` is not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 458,
+        "line_end": 458,
+        "byte_start": 18500,
+        "byte_end": 18532,
+        "label": "unsatisfied trait bound"
+      }
+    ],
+    "rendered": "error[E0277]: the trait bound `RuntimeNeedHandleError: From<task::TaskEnsureError>` is not satisfied\n    --> crates\\arcweft-core\\src\\engine\\fanout.rs:458:14\n     |\n 458 |             .ensure_program_task_with_binding(spec, |receipt| {\n     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound\n     |\nhelp: the trait `From<task::TaskEnsureError>` is not implemented for `RuntimeNeedHandleError`\n      but trait `From<task::identity::TaskIdentityError>` is implemented for it\n    --> crates\\arcweft-core\\src\\task\\need_handle.rs:188:16\n     |\n 188 |     Identity(#[from] TaskIdentityError),\n     |                ^^^^\n     = help: for that trait implementation, expected `task::identity::TaskIdentityError`, found `task::TaskEnsureError`\nnote: required by a bound in `producer::NeedProducerRegistry::ensure_program_task_with_binding`\n    --> crates\\arcweft-core\\src\\task\\producer.rs:2624:12\n     |\n2618 |     pub(crate) fn ensure_program_task_with_binding<T, E>(\n     |                   -------------------------------- required by a bound in this associated function\n...\n2624 |         E: From<TaskEnsureError>,\n     |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `NeedProducerRegistry::ensure_program_task_with_binding`\n\n"
+  },
+  {
+    "code": "E0277",
+    "message": "the trait bound `RuntimeValueRestoreContext<'_>: From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 115,
+        "line_end": 115,
+        "byte_start": 4245,
+        "byte_end": 4256,
+        "label": "unsatisfied trait bound"
+      }
+    ],
+    "rendered": "error[E0277]: the trait bound `RuntimeValueRestoreContext<'_>: From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not satisfied\n   --> crates\\arcweft-core\\src\\engine\\fanout.rs:115:37\n    |\n115 |                 .into_live_admitted(Some(owner))\n    |                  ------------------ ^^^^^^^^^^^ unsatisfied trait bound\n    |                  |\n    |                  required by a bound introduced by this call\n    |\nhelp: the trait `From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not implemented for `RuntimeValueRestoreContext<'_>`\n      but trait `From<&outcome::RuntimeProgramOwner>` is implemented for it\n   --> crates\\arcweft-core\\src\\value\\awbc_save\\materialization.rs:52:1\n    |\n 52 | impl<'a> From<&'a RuntimeProgramOwner> for RuntimeValueRestoreContext<'a> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: for that trait implementation, expected `&outcome::RuntimeProgramOwner`, found `std::option::Option<&outcome::RuntimeProgramOwner>`\n    = note: required for `std::option::Option<&outcome::RuntimeProgramOwner>` to implement `Into<RuntimeValueRestoreContext<'_>>`\nnote: required by a bound in `need_handle::RuntimeNeedHandleSaveSnapshot::into_live_admitted`\n   --> crates\\arcweft-core\\src\\task\\need_handle.rs:130:23\n    |\n128 |     pub(crate) fn into_live_admitted<'a>(\n    |                   ------------------ required by a bound in this associated function\n129 |         self,\n130 |         context: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,\n    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RuntimeNeedHandleSaveSnapshot::into_live_admitted`\n\n"
+  },
+  {
+    "code": "E0277",
+    "message": "the trait bound `RuntimeValueRestoreContext<'_>: From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 133,
+        "line_end": 133,
+        "byte_start": 4960,
+        "byte_end": 4971,
+        "label": "unsatisfied trait bound"
+      }
+    ],
+    "rendered": "error[E0277]: the trait bound `RuntimeValueRestoreContext<'_>: From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not satisfied\n   --> crates\\arcweft-core\\src\\engine\\fanout.rs:133:49\n    |\n133 | ...                   .into_live_admitted(Some(owner))\n    |                        ------------------ ^^^^^^^^^^^ unsatisfied trait bound\n    |                        |\n    |                        required by a bound introduced by this call\n    |\nhelp: the trait `From<std::option::Option<&outcome::RuntimeProgramOwner>>` is not implemented for `RuntimeValueRestoreContext<'_>`\n      but trait `From<&outcome::RuntimeProgramOwner>` is implemented for it\n   --> crates\\arcweft-core\\src\\value\\awbc_save\\materialization.rs:52:1\n    |\n 52 | impl<'a> From<&'a RuntimeProgramOwner> for RuntimeValueRestoreContext<'a> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: for that trait implementation, expected `&outcome::RuntimeProgramOwner`, found `std::option::Option<&outcome::RuntimeProgramOwner>`\n    = note: required for `std::option::Option<&outcome::RuntimeProgramOwner>` to implement `Into<RuntimeValueRestoreContext<'_>>`\nnote: required by a bound in `need_handle::RuntimeNeedHandleSaveSnapshot::into_live_admitted`\n   --> crates\\arcweft-core\\src\\task\\need_handle.rs:130:23\n    |\n128 |     pub(crate) fn into_live_admitted<'a>(\n    |                   ------------------ required by a bound in this associated function\n129 |         self,\n130 |         context: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,\n    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RuntimeNeedHandleSaveSnapshot::into_live_admitted`\n\n"
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `borrowed_value` found for reference `&value::RuntimeValue` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 220,
+        "line_end": 220,
+        "byte_start": 8576,
+        "byte_end": 8590,
+        "label": null
+      }
+    ],
+    "rendered": "error[E0599]: no method named `borrowed_value` found for reference `&value::RuntimeValue` in the current scope\n   --> crates\\arcweft-core\\src\\engine\\fanout.rs:220:50\n    |\n220 |                         .validate_borrowed(value.borrowed_value())\n    |                                                  ^^^^^^^^^^^^^^\n    |\n    = help: items from traits can only be used if the trait is in scope\nhelp: trait `RuntimeStoredValue` which provides `borrowed_value` is implemented but not in scope; perhaps you want to import it\n    |\n  3 + use crate::value::storage::RuntimeStoredValue;\n    |\nhelp: there is a method `borrowed_view` with a similar name\n    |\n220 -                         .validate_borrowed(value.borrowed_value())\n220 +                         .validate_borrowed(value.borrowed_view())\n    |\n\n"
+  },
+  {
+    "code": "E0308",
+    "message": "mismatched types",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 342,
+        "line_end": 342,
+        "byte_start": 13925,
+        "byte_end": 13929,
+        "label": "expected `RuntimeValueView<'_>`, found `LiveRuntimeValueView<'_>`"
+      }
+    ],
+    "rendered": "error[E0308]: mismatched types\n   --> crates\\arcweft-core\\src\\engine\\fanout.rs:342:17\n    |\n341 |             launch.admit_result_view(\n    |                    ----------------- arguments to this method are incorrect\n342 |                 view,\n    |                 ^^^^ expected `RuntimeValueView<'_>`, found `LiveRuntimeValueView<'_>`\n    |\nnote: method defined here\n   --> crates\\arcweft-core\\src\\task\\execution.rs:95:19\n    |\n 95 |     pub(crate) fn admit_result_view(\n    |                   ^^^^^^^^^^^^^^^^^\n 96 |         &self,\n 97 |         view: crate::value::RuntimeValueView<'_>,\n    |         ----------------------------------------\n\n"
+  },
+  {
+    "code": "E0277",
+    "message": "the trait bound `need_handle::RuntimeNeedHandleError: From<task::TaskEnsureError>` is not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\engine\\fanout.rs",
+        "line_start": 458,
+        "line_end": 458,
+        "byte_start": 18500,
+        "byte_end": 18532,
+        "label": "unsatisfied trait bound"
+      }
+    ],
+    "rendered": "error[E0277]: the trait bound `need_handle::RuntimeNeedHandleError: From<task::TaskEnsureError>` is not satisfied\n    --> crates\\arcweft-core\\src\\engine\\fanout.rs:458:14\n     |\n 458 |             .ensure_program_task_with_binding(spec, |receipt| {\n     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound\n     |\nhelp: the trait `From<task::TaskEnsureError>` is not implemented for `need_handle::RuntimeNeedHandleError`\n      but trait `From<task::identity::TaskIdentityError>` is implemented for it\n    --> crates\\arcweft-core\\src\\task\\need_handle.rs:188:16\n     |\n 188 |     Identity(#[from] TaskIdentityError),\n     |                ^^^^\n     = help: for that trait implementation, expected `task::identity::TaskIdentityError`, found `task::TaskEnsureError`\nnote: required by a bound in `producer::NeedProducerRegistry::ensure_program_task_with_binding`\n    --> crates\\arcweft-core\\src\\task\\producer.rs:2624:12\n     |\n2618 |     pub(crate) fn ensure_program_task_with_binding<T, E>(\n     |                   -------------------------------- required by a bound in this associated function\n...\n2624 |         E: From<TaskEnsureError>,\n     |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `NeedProducerRegistry::ensure_program_task_with_binding`\n\n"
+  }
+]

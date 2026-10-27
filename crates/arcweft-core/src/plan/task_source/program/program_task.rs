@@ -122,15 +122,12 @@ impl RuntimeTaskSourceProgram {
         let source = original
             .task_source_by_expected_key(&program.source, limits, meter)
             .map_err(|source| Error::Source { task, source })?;
-        let Some(crate::plan::RuntimeProgramTaskTemplate {
-            producer,
-            delivery,
-            captures,
-            ..
-        }) = source.request_endpoint().program_template()
-        else {
+        let Some(template) = source.request_endpoint().program_template() else {
             return Err(mismatch(Field::Kind));
         };
+        let producer = template.producer();
+        let delivery = template.delivery();
+        let captures = template.captures();
         let kernel = executable
             .functions
             .get(program.kernel.index())
@@ -159,7 +156,7 @@ impl RuntimeTaskSourceProgram {
             meter.charge_work(1)?;
             if equal { Ok(()) } else { Err(mismatch(field)) }
         };
-        check(Field::Delivery, program.delivery == *delivery, meter)?;
+        check(Field::Delivery, program.delivery == delivery, meter)?;
         check(
             Field::HandleType,
             row.handle_type.map_payload(|_| ()) == producer.handle_type.map_payload(|_| ()),

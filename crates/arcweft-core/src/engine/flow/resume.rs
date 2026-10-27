@@ -19,6 +19,9 @@ impl Engine {
         let plan = Arc::clone(&self.plan);
         match resume {
             Resume::Bind(bindings) => self.fiber.frame.env.bind_all(bindings),
+            Resume::ProgramFanout { source } => {
+                self.start_program_fanout_state(source, output, backend);
+            }
             Resume::EnterTaskScope => {
                 self.push_scope_frame(crate::scope::RuntimeScopeIdentity::Anonymous);
             }

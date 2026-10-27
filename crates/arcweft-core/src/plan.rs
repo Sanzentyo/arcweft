@@ -1213,11 +1213,90 @@ pub struct RuntimeProgramTaskCapture<Local = RuntimeLocalDeclarationId> {
 /// Seed and admitted forms share this owner; local and operation coordinates
 /// are resolved together by the enclosing plan builder.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeProgramTaskTemplate<Local = RuntimeLocalDeclarationId, Operation = FlowOp> {
+pub struct RuntimeProgramTaskTemplate<
+    Local = RuntimeLocalDeclarationId,
+    Body = RuntimeProgramTaskBody,
+> {
     pub producer: crate::task::NeedProducerDefinition,
     pub delivery: crate::task::ProgramTaskDelivery,
     pub captures: Vec<RuntimeProgramTaskCapture<Local>>,
-    pub body: Vec<Operation>,
+    pub body: Body,
+}
+
+/// Original executable code or a typed local scheduling kernel. Kernel fields
+/// are source-owned operands; runtime continuations never reconstruct Flow AST.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeProgramTaskBody<Local = RuntimeLocalDeclarationId, Operation = FlowOp> {
+    Flow(Vec<Operation>),
+    Fanout(Box<RuntimeProgramFanout<Local, Operation>>),
+}
+
+impl<Local, Operation> RuntimeProgramTaskBody<Local, Operation> {
+    /// The owned Flow region is the ordinary body or the fanout worker code.
+    pub(crate) fn owned_flow_ops(&self) -> &[Operation] {
+        match self {
+            Self::Flow(body) => body,
+            Self::Fanout(fanout) => &fanout.worker.body,
+        }
+    }
+}
+
+/// Finite bounded traversal of an owned collection. Each worker invokes the
+/// original function value and then awaits its returned Need.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeProgramFanout<Local = RuntimeLocalDeclarationId, Operation = FlowOp> {
+    pub source: Local,
+    pub limit: Local,
+    pub item: Local,
+    pub worker: RuntimeProgramTaskTemplate<Local, Vec<Operation>>,
+}
+
+/// Borrowed executable projection. It carries code, not launch authority.
+#[derive(Clone, Copy)]
+pub enum RuntimeProgramTaskKernelRef<'a> {
+    Flow(&'a [FlowOp]),
+    Fanout(&'a RuntimeProgramFanout),
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum RuntimeProgramTaskTemplateRef<'a> {
+    Root(&'a RuntimeProgramTaskTemplate),
+    Worker(&'a RuntimeProgramTaskTemplate<RuntimeLocalDeclarationId, Vec<FlowOp>>),
+}
+
+impl<'a> RuntimeProgramTaskTemplateRef<'a> {
+    pub(crate) const fn producer(self) -> &'a crate::task::NeedProducerDefinition {
+        match self {
+            Self::Root(template) => &template.producer,
+            Self::Worker(template) => &template.producer,
+        }
+    }
+
+    pub(crate) const fn delivery(self) -> crate::task::ProgramTaskDelivery {
+        match self {
+            Self::Root(template) => template.delivery,
+            Self::Worker(template) => template.delivery,
+        }
+    }
+
+    pub(crate) const fn captures(self) -> &'a [RuntimeProgramTaskCapture] {
+        match self {
+            Self::Root(template) => template.captures.as_slice(),
+            Self::Worker(template) => template.captures.as_slice(),
+        }
+    }
+
+    pub(crate) const fn kernel(self) -> RuntimeProgramTaskKernelRef<'a> {
+        match self {
+            Self::Root(template) => match &template.body {
+                RuntimeProgramTaskBody::Flow(body) => {
+                    RuntimeProgramTaskKernelRef::Flow(body.as_slice())
+                }
+                RuntimeProgramTaskBody::Fanout(body) => RuntimeProgramTaskKernelRef::Fanout(body),
+            },
+            Self::Worker(template) => RuntimeProgramTaskKernelRef::Flow(template.body.as_slice()),
+        }
+    }
 }
 
 impl<Local> RuntimeProgramTaskCapture<Local> {

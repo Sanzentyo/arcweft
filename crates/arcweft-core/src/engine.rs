@@ -51,7 +51,9 @@ pub use code_cursor::NativeCodeCursor;
 use code_cursor::NativeSourceOperation;
 pub mod dialogue;
 pub mod eval;
+mod fanout;
 mod frame_progress;
+pub use fanout::ProgramFanoutState;
 mod numeric_map;
 mod presentation;
 #[cfg(test)]
@@ -1363,13 +1365,16 @@ pub enum FlowFiberStatus<A = AwaitState, M = WaitingManyStatus> {
     Failed(String),
 }
 
-type FlowFiberStatusRollbackImage =
-    FlowFiberStatus<AwaitStateRollbackImage, WaitingManyStatus<AwaitManyStateRollbackImage>>;
+type FlowFiberStatusRollbackImage = FlowFiberStatus<
+    AwaitStateRollbackImage,
+    WaitingManyStatus<AwaitManyStateRollbackImage, fanout::ProgramFanoutRollbackImage>,
+>;
 
-impl Clone for WaitingManyStatus<AwaitManyStateRollbackImage> {
+impl Clone for WaitingManyStatus<AwaitManyStateRollbackImage, fanout::ProgramFanoutRollbackImage> {
     fn clone(&self) -> Self {
         match self {
             Self::Native(state) => Self::Native(state.clone()),
+            Self::Program(state) => Self::Program(state.clone()),
             Self::Observed(progress) => Self::Observed(progress.clone()),
         }
     }
@@ -1413,6 +1418,11 @@ impl FlowFiberStatus {
                     progress.clone(),
                 ))
             }
+            Self::WaitingMany(WaitingManyStatus::Program(state)) => {
+                FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Program(Box::new(
+                    state.snapshot_with_admitted_values(owner)?,
+                )))
+            }
             Self::HostCall(state) => FlowFiberStatusRollbackImage::HostCall(state.clone()),
             Self::Choice(state) => FlowFiberStatusRollbackImage::Choice(state.clone()),
             Self::Done(exit) => FlowFiberStatusRollbackImage::Done(exit.clone()),
@@ -1437,6 +1447,11 @@ impl FlowFiberStatus {
             }
             FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Observed(progress)) => {
                 Self::WaitingMany(WaitingManyStatus::Observed(progress))
+            }
+            FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Program(state)) => {
+                Self::WaitingMany(WaitingManyStatus::Program(Box::new(
+                    ProgramFanoutState::from_image_with_admitted_values(*state, owner)?,
+                )))
             }
             FlowFiberStatusRollbackImage::HostCall(state) => Self::HostCall(state),
             FlowFiberStatusRollbackImage::Choice(state) => Self::Choice(state),
@@ -1784,8 +1799,9 @@ pub struct AwaitManyInFlight<H = crate::task::RuntimeNeedHandle> {
 /// Native retains its complete continuation; Product reports a display-only
 /// summary while its verified AWBC fiber remains the continuation authority.
 #[derive(Debug, PartialEq)]
-pub enum WaitingManyStatus<S = AwaitManyState> {
+pub enum WaitingManyStatus<S = AwaitManyState, P = ProgramFanoutState> {
     Native(Box<S>),
+    Program(Box<P>),
     Observed(AwaitManyProgress),
 }
 
@@ -1808,6 +1824,16 @@ impl WaitingManyStatus {
             Self::Observed(progress) => format!(
                 "waiting_many {} {}/{}",
                 progress.task, progress.completed, progress.total
+            ),
+            Self::Program(state) => format!(
+                "waiting_many {} {}/{}",
+                state.base.correlation().task_id,
+                state
+                    .results
+                    .iter()
+                    .filter(|result| result.is_some())
+                    .count(),
+                state.results.len()
             ),
         }
     }
@@ -4750,6 +4776,17 @@ impl Engine {
                 }
                 FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(progress)) => {
                     FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(progress.clone()))
+                }
+                FlowFiberStatus::WaitingMany(WaitingManyStatus::Program(state)) => {
+                    FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(AwaitManyProgress {
+                        task: state.base.correlation().task_id,
+                        completed: state
+                            .results
+                            .iter()
+                            .filter(|result| result.is_some())
+                            .count(),
+                        total: state.results.len(),
+                    }))
                 }
                 FlowFiberStatus::HostCall(state) => FlowFiberStatus::HostCall(state.clone()),
                 FlowFiberStatus::Choice(state) => FlowFiberStatus::Choice(state.clone()),

@@ -389,11 +389,10 @@ impl AotProgramStats {
                 FlowOp::Loop { body, .. }
                 | FlowOp::While { body, .. }
                 | FlowOp::WhileLet { body, .. }
-                | FlowOp::For { body, .. }
-                | FlowOp::ProgramTask {
-                    template: crate::plan::RuntimeProgramTaskTemplate { body, .. },
-                    ..
-                } => self.record_ops(body),
+                | FlowOp::For { body, .. } => self.record_ops(body),
+                FlowOp::ProgramTask { template, .. } => {
+                    self.record_ops(template.body.owned_flow_ops())
+                }
                 FlowOp::Scope { body, .. } => self.record_ops(body),
                 FlowOp::Await { observers, .. } => {
                     for observer in observers {

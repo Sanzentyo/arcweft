@@ -29,6 +29,8 @@ pub(crate) enum RuntimeTaskProducerSourceError {
     SourceShape,
     #[error("AwaitMany source length {actual} exceeds the u32 child-index domain")]
     SourceCount { actual: usize },
+    #[error("Program fanout limit must be a positive u32")]
+    FanoutLimit,
     #[error(transparent)]
     Admission(#[from] AwbcRuntimeValueSnapshotError),
     #[error(transparent)]

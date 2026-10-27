@@ -982,7 +982,36 @@ impl Reader<'_, '_, '_> {
                     producer: self.producer_definition()?,
                     delivery: self.program_task_delivery()?,
                     captures: self.program_task_captures()?,
-                    body: self.body()?,
+                    body: match self.metadata.byte()? {
+                        0 => crate::plan::RuntimeProgramTaskBody::Flow(self.body()?),
+                        1 => {
+                            let source = self.local()?;
+                            let limit = self.local()?;
+                            let item = self.local()?;
+                            let producer = self.producer_definition()?;
+                            let delivery = self.program_task_delivery()?;
+                            let captures = self.program_task_captures()?;
+                            crate::plan::RuntimeProgramTaskBody::Fanout(Box::new(
+                                crate::plan::RuntimeProgramFanout {
+                                    source,
+                                    limit,
+                                    item,
+                                    worker: crate::plan::RuntimeProgramTaskTemplate {
+                                        producer,
+                                        delivery,
+                                        captures,
+                                        body: self.body()?,
+                                    },
+                                },
+                            ))
+                        }
+                        tag => {
+                            return Err(Error::Tag {
+                                kind: "Program task body",
+                                tag,
+                            });
+                        }
+                    },
                 },
             },
             29 => Op::Scope {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::plan::{FlowOp, RuntimeProgramTaskKernelRef};
 
 fn context() -> RuntimeTaskSourceReadContext {
     RuntimeTaskSourceReadContext::new(RuntimeTaskPlanSealLimits::default())
@@ -37,7 +38,7 @@ fn compiler_program_body_borrows_the_original_operation_and_enclosing_function()
                 crate::plan::RuntimeProgramTaskTemplate {
                     producer,
                     captures,
-                    body,
+                    body: crate::plan::RuntimeProgramTaskBody::Flow(body),
                     ..
                 },
             ..
@@ -49,7 +50,10 @@ fn compiler_program_body_borrows_the_original_operation_and_enclosing_function()
     };
     assert!(std::ptr::eq(source.producer(), producer));
     assert!(std::ptr::eq(source.captures(), captures.as_slice()));
-    assert!(std::ptr::eq(source.body(), body.as_slice()));
+    let RuntimeProgramTaskKernelRef::Flow(actual_body) = source.body() else {
+        panic!("the original ordinary Program owns its Flow code")
+    };
+    assert!(std::ptr::eq(actual_body, body.as_slice()));
     let other = crate::plan::task_source::template_tests::thread();
     let mut work = context();
     assert!(matches!(

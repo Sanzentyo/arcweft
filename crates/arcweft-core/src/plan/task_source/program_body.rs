@@ -3,7 +3,7 @@
 
 use super::{RuntimeTaskSourceError, RuntimeTaskSourceRef};
 use crate::plan::{
-    FlowOp, RuntimeFunctionSite, RuntimePlan, RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanRef,
+    RuntimeFunctionSite, RuntimePlan, RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanRef,
     RuntimeTaskPlanSealLimits,
 };
 use crate::task::NeedProducerDefinition;
@@ -39,7 +39,7 @@ impl std::fmt::Debug for RuntimeTaskSourceReadContext {
 pub struct RuntimeProgramTaskBodyRef<'program> {
     source: RuntimeTaskSourceRef<'program>,
     function: &'program RuntimeFunctionSite,
-    template: &'program crate::plan::RuntimeProgramTaskTemplate,
+    template: crate::plan::RuntimeProgramTaskTemplateRef<'program>,
 }
 
 impl RuntimePlan {
@@ -59,11 +59,11 @@ impl RuntimePlan {
         context.meter.charge_work(1).map_err(|error| {
             RuntimeTaskSourceError::Function(crate::plan::RuntimeBodySemanticError::from(error))
         })?;
-        if template.captures.len() > context.limits.max_function_roles as usize {
+        if template.captures().len() > context.limits.max_function_roles as usize {
             context.meter.reject_owner();
             return Err(RuntimeTaskSourceError::Function(
                 crate::plan::RuntimeBodySemanticError::FunctionRoles {
-                    actual: template.captures.len(),
+                    actual: template.captures().len(),
                     maximum: context.limits.max_function_roles,
                 },
             ));
@@ -94,22 +94,22 @@ impl RuntimeProgramTaskBodyRef<'_> {
 
     #[must_use]
     pub const fn producer(&self) -> &NeedProducerDefinition {
-        &self.template.producer
+        self.template.producer()
     }
 
     #[must_use]
     pub const fn delivery(&self) -> crate::task::ProgramTaskDelivery {
-        self.template.delivery
+        self.template.delivery()
     }
 
     #[must_use]
     pub const fn captures(&self) -> &[crate::plan::RuntimeProgramTaskCapture] {
-        self.template.captures.as_slice()
+        self.template.captures()
     }
 
     #[must_use]
-    pub const fn body(&self) -> &[FlowOp] {
-        self.template.body.as_slice()
+    pub const fn body(&self) -> crate::plan::RuntimeProgramTaskKernelRef<'_> {
+        self.template.kernel()
     }
 }
 

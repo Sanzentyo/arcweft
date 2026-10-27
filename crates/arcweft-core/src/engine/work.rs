@@ -120,6 +120,9 @@ pub(super) enum NativeRuntimeContinuation<V = RuntimeValue, I = RuntimeIterator>
     CompleteFormatOperand {
         source: NativeSourceOperation,
     },
+    ProgramFanout {
+        source: NativeSourceOperation,
+    },
     EnterTaskScope,
     ExitTaskScope,
     EnterScheduledScope {
@@ -150,6 +153,7 @@ pub enum NativeRuntimeContinuationKind {
     WhileLetNext,
     ForNext,
     CompleteFormatOperand,
+    ProgramFanout,
     EnterTaskScope,
     ExitTaskScope,
     EnterScheduledScope,
@@ -166,6 +170,7 @@ impl NativeRuntimeContinuationKind {
             Self::WhileLetNext => 3,
             Self::ForNext => 4,
             Self::CompleteFormatOperand => 5,
+            Self::ProgramFanout => 13,
             Self::EnterTaskScope => 11,
             Self::ExitTaskScope => 12,
             Self::EnterScheduledScope => 7,
@@ -186,6 +191,7 @@ impl<V, I> NativeRuntimeContinuation<V, I> {
             Self::CompleteFormatOperand { .. } => {
                 NativeRuntimeContinuationKind::CompleteFormatOperand
             }
+            Self::ProgramFanout { .. } => NativeRuntimeContinuationKind::ProgramFanout,
             Self::EnterTaskScope => NativeRuntimeContinuationKind::EnterTaskScope,
             Self::ExitTaskScope => NativeRuntimeContinuationKind::ExitTaskScope,
             Self::EnterScheduledScope { .. } => NativeRuntimeContinuationKind::EnterScheduledScope,
@@ -232,7 +238,8 @@ impl<V, I> NativePendingWork<V, I> {
                 | NativeRuntimeContinuation::WhileNext { source }
                 | NativeRuntimeContinuation::WhileLetNext { source }
                 | NativeRuntimeContinuation::ForNext { source, .. }
-                | NativeRuntimeContinuation::CompleteFormatOperand { source },
+                | NativeRuntimeContinuation::CompleteFormatOperand { source }
+                | NativeRuntimeContinuation::ProgramFanout { source },
             ) => Some(source.owner()),
             NativePendingWorkKind::Resume(_) => None,
         }
@@ -331,6 +338,9 @@ impl<V, I> NativePendingWork<V, I> {
                 Resume::CompleteFormatOperand { source } => Resume::CompleteFormatOperand {
                     source: source.clone(),
                 },
+                Resume::ProgramFanout { source } => Resume::ProgramFanout {
+                    source: source.clone(),
+                },
                 Resume::EnterTaskScope => Resume::EnterTaskScope,
                 Resume::ExitTaskScope => Resume::ExitTaskScope,
                 Resume::EnterScheduledScope { identity, token } => Resume::EnterScheduledScope {
@@ -383,6 +393,7 @@ impl<V, I> NativePendingWork<V, I> {
                 Resume::CompleteFormatOperand { source } => {
                     Resume::CompleteFormatOperand { source }
                 }
+                Resume::ProgramFanout { source } => Resume::ProgramFanout { source },
                 Resume::EnterTaskScope => Resume::EnterTaskScope,
                 Resume::ExitTaskScope => Resume::ExitTaskScope,
                 Resume::EnterScheduledScope { identity, token } => {
@@ -447,7 +458,8 @@ impl<V, I> NativePendingWork<V, I> {
                     | Resume::WhileNext { source }
                     | Resume::WhileLetNext { source }
                     | Resume::ForNext { source, .. }
-                    | Resume::CompleteFormatOperand { source } => {
+                    | Resume::CompleteFormatOperand { source }
+                    | Resume::ProgramFanout { source } => {
                         source.admit_retained(admission)?;
                         if !matches!(
                             (resume, source.operation(&plan)),
@@ -458,6 +470,16 @@ impl<V, I> NativePendingWork<V, I> {
                                 | (
                                     Resume::CompleteFormatOperand { .. },
                                     Some(FlowOp::FormatOperandAttempt { .. })
+                                )
+                                | (
+                                    Resume::ProgramFanout { .. },
+                                    Some(FlowOp::ProgramTask {
+                                        template: crate::plan::RuntimeProgramTaskTemplate {
+                                            body: crate::plan::RuntimeProgramTaskBody::Fanout(_),
+                                            ..
+                                        },
+                                        ..
+                                    })
                                 )
                         ) {
                             return Err(invalid(

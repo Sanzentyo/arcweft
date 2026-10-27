@@ -912,12 +912,14 @@ pub(crate) fn owned_program_need_fixture(
                                 debug_label: "original owned Program input".into(),
                             },
                             captures: vec![],
-                            body: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                                string,
-                                RuntimeExprSeedKind::Value(RuntimeValue::String(
-                                    "owned result".into(),
+                            body: crate::plan::RuntimeProgramTaskBody::Flow(vec![
+                                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                                    string,
+                                    RuntimeExprSeedKind::Value(RuntimeValue::String(
+                                        "owned result".into(),
+                                    )),
                                 )),
-                            ))],
+                            ]),
                         },
                         name: None,
                         binding: RuntimePatternSeed::new(
@@ -949,7 +951,9 @@ pub(crate) fn owned_program_need_fixture(
                                 debug_label: "owned Program capture".into(),
                             },
                             captures: vec![RuntimeProgramTaskCapture { local: input, mode }],
-                            body: vec![RuntimeFlowOpSeed::ReturnExpr(result)],
+                            body: crate::plan::RuntimeProgramTaskBody::Flow(vec![
+                                RuntimeFlowOpSeed::ReturnExpr(result),
+                            ]),
                         },
                         name: None,
                         binding: RuntimePatternSeed::new(
@@ -1109,7 +1113,9 @@ fn program_context(
                 policy: TaskPolicy::AlwaysStart,
                 debug_label: "thread source".into(),
             },
-            body: vec![RuntimeFlowOpSeed::ReturnExpr(unit_value.clone())],
+            body: crate::plan::RuntimeProgramTaskBody::Flow(vec![RuntimeFlowOpSeed::ReturnExpr(
+                unit_value.clone(),
+            )]),
         },
         name: None,
         binding: RuntimePatternSeed::new(handle, RuntimePatternSeedKind::Discard),
