@@ -12573,3 +12573,35 @@ R3220は反復診断用で完全なsource／executable前後auditを行ってお
 Native実行、AWBC実行、workspace gate、逆依存runtime、doctest、構造gateは今回未実行。
 
 [実装範囲・全receipt／診断・freeze原本](acceptance-evidence/task-program-fanout-native-implementation-checkpoint.json)。
+## Native Program fanoutのcontroller検証とSource計測修復 — 2026-10-27
+
+公開基点 `783eead4044a9407ed877043f136dc9f887fcb95`。R3222の初回2ケースは
+worker itemのphysical placement未登録で構築失敗した。元Fanoutのitemを所有する
+executable grammarで正規にclaimした。R3224はzero-limitケースがPASSし、decoded Sourceの
+storage計測57780／58892不一致で失敗。Boxのseed／admitted本体をmaterializerでも課金し、
+preflightと同じ計測に揃えた。元のdebug assertion・上限は維持した。
+
+R3226／R3229は新しいfixtureの256回というdriver guardが不足した。R3229では実際に
+256 op、11／17完了、次workerはrunningであり、停止ではなかった。投入したbranchと
+5個の遅延op、親／controllerのpollに合わせてguardを`64 + 32 * input length`とした。
+入力数、limit、48組の構成、遅延op、各stepの製品1-op予算と所有権assertionは維持した。
+R3227のgeneric context検査追加に伴う3コンパイル失敗も原本に保持する。既存のdyn検査を
+変更せず`Self: Sized`で互換性を保ち、live／inert共通slot参照では元のscope／slot逆順を保持した。
+
+R3231はCore library全2,062／2,062 PASS、skip 0、91.350秒。入力数0／1／3／17、
+動的limit 1／2／5、元／decoded Source、各step rollbackの有無の48条件で元Bool workerを
+実行し、入力順、起動数N+1、最大in-flight、itemの一回移動とLocalOnlyを確認した。
+ゼロlimitでは親入力とjournal frontierを保持する。改変したlimit 0／正の別limit、
+消費済みitem再挿入を拒否し、元imageは同じ状態へ復元した。3 new caseも終端へ全照合した。
+各3,993入力と元1 executableの前後差分0で、実行ファイルは移動・コピーしていない。
+
+R3232 Core Clippyはall-target／all-feature／locked、警告あり終了0。
+R3233構造gateはblocking 0。実装checkpoint前からの37 Rust path／2 ownerを測定し、
+新規fanout owner 503 LOCと独立fixtureの責任、Source、格納とlayer方向をレビューした。
+R3234 Core doctestは75／75 PASS、3.39秒。各source input guardも差分0。
+workspace check／Clippy、全53逆依存runtime、他ownerのTier2／表示parityは今回未実行。
+
+この結果はBool worker controllerの範囲である。callback F、Result、affine、cancelの
+統合実行と、AWBC／Compilerの接続を受け入れた結果ではない。
+[全結果・失敗・fixture guard訂正・原本](acceptance-evidence/task-program-fanout-native-controller-acceptance.json)、
+[構造レビュー](acceptance-evidence/task-program-fanout-native-structure-review.json)。

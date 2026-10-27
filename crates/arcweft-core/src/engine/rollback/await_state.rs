@@ -221,6 +221,43 @@ where
     V: crate::value::RuntimeStoredValue,
     P: crate::value::RuntimeStoredValue,
 {
+    fn admit_frame_context<W: crate::value::RuntimeStoredValue>(
+        &self,
+        env: &crate::value::RuntimeEnv<W>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
+            return Err(invalid("Program fanout has no original Plan frame"));
+        };
+        let Some(crate::plan::FlowOp::ProgramTask { template, .. }) = self.source.operation(plan)
+        else {
+            return Err(invalid("Program fanout has no original task operation"));
+        };
+        let crate::plan::RuntimeProgramTaskBody::Fanout(fanout) = &template.body else {
+            return Err(invalid("Program fanout has no original kernel"));
+        };
+        if !matches!(env.get_stored(fanout.limit).map(W::borrowed_view),
+            Some(crate::value::RuntimeValueView::Scalar(crate::value::RuntimeScalarView::UInt(
+                crate::value::RuntimeUInt::U32(limit)))) if limit == self.limit)
+            || env.get_stored(fanout.source).is_some()
+        {
+            return Err(invalid(
+                "Program fanout control inputs differ from its original frame",
+            ));
+        }
+        let all_started = !self.items.is_empty() && self.next_index == self.items.len();
+        for capture in &fanout.worker.captures {
+            if capture.local != fanout.item
+                && env.get_stored(capture.local).is_some() == all_started
+            {
+                return Err(invalid(
+                    "Program fanout capture custody differs from its original frame",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn admit_suspended_values(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
@@ -330,6 +367,17 @@ where
     M: SuspendedValues,
     P: SuspendedValues,
 {
+    fn admit_frame_context<V: crate::value::RuntimeStoredValue>(
+        &self,
+        env: &crate::value::RuntimeEnv<V>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        if let Self::WaitingMany(WaitingManyStatus::Program(state)) = self {
+            state.admit_frame_context(env, admission)?;
+        }
+        Ok(())
+    }
+
     fn admit_suspended_values(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,

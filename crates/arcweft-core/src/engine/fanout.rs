@@ -9,6 +9,9 @@ use crate::value::{
 };
 use std::sync::Arc;
 
+#[cfg(test)]
+mod tests;
+
 /// Native continuation state owns unstarted items and completed results.
 /// Worker code and capture declarations remain in the original executable.
 #[derive(Debug, PartialEq)]
@@ -409,6 +412,12 @@ impl Engine {
                 state.context.instantiation(),
                 &mut admission,
             )
+            .map_err(|error| error.to_string())?;
+        admission
+            .validate_metadata_string(&producer.debug_label)
+            .map_err(|error| error.to_string())?;
+        admission
+            .validate_metadata(&checked.source().assertion())
             .map_err(|error| error.to_string())?;
         let spec = crate::task::TaskSpec {
             generation: self.generation,

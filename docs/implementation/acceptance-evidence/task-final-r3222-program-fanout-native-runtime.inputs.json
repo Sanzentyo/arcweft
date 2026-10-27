@@ -1,0 +1,22 @@
+[
+  {
+    "path": "crates/arcweft-core/src/engine/fanout.rs",
+    "sha256": "10c37ba1c45fdb4ddb62ddc80bcecbb4762b785e6c41d5fe5d683368d5447c64"
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/fanout/tests.rs",
+    "sha256": "f54a14dfc0965fff32463b130523c77c51df9b9ead7ee7bfed678654ad5ff2fb"
+  },
+  {
+    "path": "Cargo.toml",
+    "sha256": "6cfd574e747bfcf1ab15f4cd05622689a03da72cf1e78a83db536129785ed93b"
+  },
+  {
+    "path": "Cargo.lock",
+    "sha256": "312ec8b3a9cc4f240cf193c64cec64ebff50c107082ab8fcaf95de98c4d8b608"
+  },
+  {
+    "path": "crates/arcweft-core/Cargo.toml",
+    "sha256": "c278fb7fe5c4ad0a90556ca3d71be6c27bbba3146e5ffe5a294c118638701d88"
+  }
+]

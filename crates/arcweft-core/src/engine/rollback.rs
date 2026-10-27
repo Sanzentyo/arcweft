@@ -20,6 +20,17 @@ pub(super) trait SuspendedValues {
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>;
+
+    fn admit_frame_context<V: crate::value::RuntimeStoredValue>(
+        &self,
+        _env: &crate::value::RuntimeEnv<V>,
+        _admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
 }
 
 fn admit_default_packet(
@@ -422,6 +433,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         self.status
             .admit_suspended_values(admission, self.env.function_instantiation())?;
         self.env.admit_retained(admission)?;
+        self.status.admit_frame_context(&self.env, admission)?;
         O::admit_queue(
             &self.pending_ops,
             admission,

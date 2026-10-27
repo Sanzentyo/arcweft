@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "run": "task-final-r3231-program-fanout-core-runtime",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast"
+  ],
+  "sourceInputs": 3993,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T10:20:13.4773617Z"
+}

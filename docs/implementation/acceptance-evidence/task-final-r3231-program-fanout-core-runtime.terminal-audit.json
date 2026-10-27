@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+  "run": "task-final-r3231-program-fanout-core-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  91.350s] 2062 tests run: 2062 passed, 0 skipped",
+  "caseRowSource": "complete-live-status-before-terminal-summary",
+  "executed": 2062,
+  "passed": 2062,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3993,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-27T10:26:07.3117242Z"
+}

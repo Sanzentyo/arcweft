@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "R3226",
+  "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+  "exitCode": 100,
+  "command": "cargo nextest run -p arcweft-core --lib --all-features --locked -E test(engine::fanout::tests::) --no-tests fail",
+  "startedAt": "2026-10-27T09:57:23.0423415Z",
+  "finishedAt": "2026-10-27T09:57:26.8645265Z",
+  "scope": "two Native controller cases, no full input audit"
+}

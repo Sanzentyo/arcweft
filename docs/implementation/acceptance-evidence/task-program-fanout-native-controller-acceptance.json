@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+  "recordedAt": "2026-10-27T10:36:13.3425330Z",
+  "status": "Core-controller-owner-cases-verified; full Source-parallel acceptance pending",
+  "rustPaths": [
+    "crates/arcweft-core/src/engine/fanout.rs",
+    "crates/arcweft-core/src/engine/fanout/tests.rs",
+    "crates/arcweft-core/src/engine/rollback.rs",
+    "crates/arcweft-core/src/engine/rollback/await_state.rs",
+    "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+    "crates/arcweft-core/src/plan/local_declarations/placement.rs",
+    "crates/arcweft-core/src/value/env.rs"
+  ],
+  "runtime": {
+    "version": 1,
+    "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+    "run": "task-final-r3231-program-fanout-core-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  91.350s] 2062 tests run: 2062 passed, 0 skipped",
+    "caseRowSource": "complete-live-status-before-terminal-summary",
+    "executed": 2062,
+    "passed": 2062,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3993,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-27T10:26:07.3117242Z"
+  },
+  "mandatoryCases": [
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::fanout::tests::native_program_fanout_rejects_zero_limit_before_moving_parent_inputs_or_publishing"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::fanout::tests::native_program_fanout_restore_rejects_changed_limit_and_consumed_item_frontiers"
+    },
+    {
+      "status": "PASS",
+      "binary": "arcweft-core",
+      "test": "engine::fanout::tests::native_program_fanout_runs_original_workers_and_restores_every_owned_frontier"
+    }
+  ],
+  "scenarios": {
+    "sourceCounts": [
+      0,
+      1,
+      3,
+      17
+    ],
+    "dynamicLimits": [
+      1,
+      2,
+      5
+    ],
+    "originalAndDecodedSource": true,
+    "withAndWithoutEveryStepRollback": true,
+    "combinations": 48,
+    "workerCode": "Original Flow body returns its moved Bool item, with five authored delay operations on true",
+    "maxOpsPerStep": 1,
+    "localOnlyHostRequests": 0,
+    "localOnlyProgramTerminals": 0,
+    "exactLaunchCount": "source length + one aggregate",
+    "ownedSlots": "started prefix is empty; unstarted suffix retains each item"
+  },
+  "negativeCases": [
+    "zero limit rejects before parent input movement/journal publication",
+    "inert zero limit rejected",
+    "inert positive changed limit rejected against actual frame",
+    "consumed item reintroduced into started prefix rejected",
+    "original inert image still restores identically after rejected candidates"
+  ],
+  "checks": [
+    {
+      "version": 1,
+      "name": "task-final-r3232-program-fanout-core-clippy",
+      "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+      "exitCode": 0,
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "startedAt": "2026-10-27T10:23:26.5103359Z",
+      "finishedAt": "2026-10-27T10:25:59.7288044Z"
+    },
+    {
+      "version": 1,
+      "name": "task-final-r3233-program-fanout-structure",
+      "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-program-fanout-native-structure-report"
+      ],
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3233-program-fanout-structure.log",
+      "exitCode": 0,
+      "startedAt": "2026-10-27T10:24:11.601907Z",
+      "finishedAt": "2026-10-27T10:24:18.6055914Z"
+    },
+    {
+      "version": 1,
+      "name": "task-final-r3234-program-fanout-core-doctest",
+      "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+      "exitCode": 0,
+      "command": [
+        "test",
+        "--doc",
+        "-p",
+        "arcweft-core",
+        "--all-features",
+        "--locked"
+      ],
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3234-program-fanout-core-doctest.log",
+      "startedAt": "2026-10-27T10:28:20.8055997Z",
+      "finishedAt": "2026-10-27T10:31:46.6021125Z"
+    }
+  ],
+  "doctest": {
+    "passed": 75,
+    "failed": 0,
+    "ignored": 0,
+    "seconds": 3.39
+  },
+  "dependencyGraph": {
+    "reuse": "Previously resolved Core/runtime-plan 53 reverse dependencies",
+    "manifestAndLockInputsCompared": 100,
+    "manifestAndLockDrift": 0,
+    "note": "All 99 workspace manifests/root lock plus one standalone fixture manifest are unchanged; no new reverse-dependency runtime run"
+  },
+  "repairs": [
+    {
+      "evidence": "R3222",
+      "failure": "2/2 fixture runs rejected as LocalPlacement::Unowned for worker item",
+      "fix": "Claim the original Fanout item through the owning executable placement grammar"
+    },
+    {
+      "evidence": "R3224",
+      "failure": "decoded Source footprint storage 57780 versus 58892",
+      "fix": "Materializing reader charges the same boxed seed/admitted kernel storage as count/preflight; exact assertion and limits retained"
+    },
+    {
+      "evidence": "R3226/R3229",
+      "failure": "New fixture driver stopped after 256 operations at 11/17 completions with a worker still running",
+      "fix": "Size this new fixture driver as 64 + 32 * input length, accounting for its authored branch/delays and parent/controller polls; all 48 combinations and production one-op budget retained"
+    },
+    {
+      "evidence": "R3227",
+      "failure": "Generic frame-context method broke existing dyn tests; concrete scope slot lookup unavailable for inert storage",
+      "fix": "Keep object safety through Self: Sized, borrow generic stored slots in their original reverse scope/slot order, remove replaced concrete lookup"
+    }
+  ],
+  "limitations": [
+    "Bool worker controller fixtures do not execute the Source callback F or Result/affine/cancel integration",
+    "AWBC lower_program_fanout remains unimplemented; R3220 Core/runtime-plan check is still a recorded compiler failure",
+    "Compiler parallel intrinsic and typed Program producer remain disconnected",
+    "No new workspace check/Clippy, full 53 reverse-dependency runtime, Tier2, Native public save or Native/Web parity claim"
+  ],
+  "evidence": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3223-program-fanout-native-catalog.log",
+      "sha256": "0168be715e89a12aef964acfdf60c1e38bafd89a438255736733192420f5f4cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3223-program-fanout-native-catalog.json",
+      "sha256": "7c81aa3b59b30352e5f637448798a7a25205b764740b39142586aa3b78684ccd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3222-program-fanout-native-runtime.log",
+      "sha256": "32973ee94df2e0d6760d0b435b40fffcb68cb2730612ebfbfe29ff06989ea1fa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3222-program-fanout-native-runtime.json",
+      "sha256": "8bce9f2bbfa815e5e472d203b8e1bef16c41400de7534ce941693a0f6b407198"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3222-program-fanout-native-runtime.inputs.json",
+      "sha256": "54e4b868fdd78d8b0c2158aa45822f284bdee6cbf7ca6c6524124e056ed21e39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3221-program-fanout-native-catalog.log",
+      "sha256": "fc2b9a0a0a89ab7311309f90e4c6bafaa558e01f42edba278c6a2716e294c0fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3221-program-fanout-native-catalog.json",
+      "sha256": "574941df8ebec920a847ec904198dc1a8e7e17a22dfdfcb8165386fc372ef9f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3231-program-fanout-core-runtime.binaries-before.json",
+      "sha256": "e927baf88026a7b6137f74dd10132fd00d43fb23d5cc779fa1063ef399e9ce19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3230-program-fanout-core-catalog.log",
+      "sha256": "676db29ff9dad927c9241c5d88ab12fa8ede2ca300bd763ea3e41edc2ff4c122"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3230-program-fanout-core-catalog.json",
+      "sha256": "6ba7483a8638947f8094ae6fd8d7535fc1ac47b55ba28cc14a5c5a02f50d7b75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3230-program-fanout-core-catalog.inventory.json",
+      "sha256": "7d4a71ccf11624d2f62e6ede2e38a119b3165d65ba132f91fa09bb40b60865a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3229-program-fanout-native-runtime.log",
+      "sha256": "9b8408a31f19d02059567295d245fed61ccc2e7919a1db0db2ec7b837e950391"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3229-program-fanout-native-runtime.json",
+      "sha256": "5ec16c49ee8f1104768100071813f49d59e33323dc3aad1d9482e2638878091a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3228-program-fanout-native-catalog.log",
+      "sha256": "f5257b9056c28f6f3b8c05f5f05c791f3900caebdf6e7504f351c6e63ae44a00"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3228-program-fanout-native-catalog.json",
+      "sha256": "0860f09ced96a9ee97837dcb758498e34e12607dd050cf8fdf5d99816b034ca0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3227-program-fanout-native-catalog.log",
+      "sha256": "eebd07869e746a5189d16f208244382243ba04a21b46e501626fbe113c4d09dc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3227-program-fanout-native-catalog.json",
+      "sha256": "73a62a0d64f3eb559f354626ce5cc4c3cbf6ee8d0c33651fc2a39acb9a51ddbb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3226-program-fanout-native-runtime.log",
+      "sha256": "cd242b41984c097c2e9a95b2251aa87cc7bf07f8a20e3d8672206d5c66b4ff2d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3226-program-fanout-native-runtime.json",
+      "sha256": "e8fa7bbef49163473feb0b0d23566544428003a85355e5d34f1bb9de35f572bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3225-program-fanout-native-catalog.log",
+      "sha256": "68485d150677ba4467da19cde4f16e8d5cf5ca4f080e275454f888d541891ff9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3225-program-fanout-native-catalog.json",
+      "sha256": "056c5498c21bd830d625f9b807754fd6793779df6f383e3d690b120ca316f392"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3224-program-fanout-native-runtime.log",
+      "sha256": "af15c82292383a9ba2e8472d83a26a1f0ff394b3a1aaaee3073a47fd9b8e52b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3224-program-fanout-native-runtime.json",
+      "sha256": "7ea34a2ef2f1a286db202e5a0ed353300c308f8806adc8aad3be7c72fd9e5c48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3233-program-fanout-structure.input-audit.json",
+      "sha256": "c841f812a4e09086ac3909cb08d5f72c5d92760019f8a0dbd21d885819530450"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3232-program-fanout-core-clippy.log",
+      "sha256": "846b10f0b339ce9fc052849db3de0ff2e9b7c97b4b6546c4c43b43188aaea507"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3232-program-fanout-core-clippy.json",
+      "sha256": "018b05a10ca7073a9cacdc710cc7a634ddaf7cada54d8352ae2a9098275f1bfd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3232-program-fanout-core-clippy.input-audit.json",
+      "sha256": "3246ccdfdb0e1d8413cdf3437f36d90ec7d2679aa66e0851f07ebe4657d7730b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3231-program-fanout-core-runtime.terminal-audit.json",
+      "sha256": "8e358c696c040cc452a62c96e27ec66e8887236ffe2d1fc933998d4e625d1fbb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3231-program-fanout-core-runtime.log",
+      "sha256": "13bc3aa7fbbb3dd507e9019bc62c45f8eaf4cc1055e7eeef23aad140fc14511f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3231-program-fanout-core-runtime.json",
+      "sha256": "2dab369ca44744add91013c1a350c86a714346648bc7f6cb5d668368433b0b51"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3231-program-fanout-core-runtime.input-audit.json",
+      "sha256": "e5a381f44ef61653cffb47dfaba9cf88daaceeac1ba2adf40a4926c1f1b49e97"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3234-program-fanout-core-doctest.json",
+      "sha256": "761a845f43a386ea3c9328c5a27339c8ba88145e06e49ddc2da76988c7fbf258"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3234-program-fanout-core-doctest.input-audit.json",
+      "sha256": "7598e9b9fe0dc29fc026b2097c056998b7bad34b32d2e1a27393fc6f9cef0b71"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3233-program-fanout-structure.log",
+      "sha256": "998cce1fd93571c6e6e1895ed0df7d178537576e309be6b238a12f5d7aec2684"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3233-program-fanout-structure.json",
+      "sha256": "e3fd10f6b0a307d8b61008b5b86a27a51497b98a18df088fd9a190435703a03a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3234-program-fanout-core-doctest.log",
+      "sha256": "7fc348a76bb2abfed8b09802cd674f97958528cd0772acb14485d2652b976e9a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-r3231.source-freeze.json",
+      "sha256": "b94fdc2a8b8ccf5efc50780de5e452dd9d93d59f189527ca8f14edc5b4b357cd"
+    }
+  ],
+  "structure": "task-program-fanout-native-structure-review.json"
+}

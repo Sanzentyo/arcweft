@@ -985,6 +985,14 @@ impl Reader<'_, '_, '_> {
                     body: match self.metadata.byte()? {
                         0 => crate::plan::RuntimeProgramTaskBody::Flow(self.body()?),
                         1 => {
+                            self.counts.storage(
+                                3 * size_of::<
+                                    crate::plan::RuntimeProgramFanout<
+                                        RuntimeLocalSeedId,
+                                        RuntimeFlowOpSeed,
+                                    >,
+                                >() + size_of::<crate::plan::RuntimeProgramFanout>(),
+                            )?;
                             let source = self.local()?;
                             let limit = self.local()?;
                             let item = self.local()?;

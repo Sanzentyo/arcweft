@@ -238,6 +238,18 @@ impl RuntimeEnvRollbackImage {
 }
 
 impl<V> RuntimeEnv<V> {
+    fn slot(&self, local: RuntimeLocalDeclarationId) -> Option<&RuntimeLocalSlot<V>> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.slots.iter().rev().find(|slot| slot.local() == local))
+    }
+
+    /// Borrows the nearest physical slot without changing live/inert custody.
+    pub(crate) fn get_stored(&self, local: RuntimeLocalDeclarationId) -> Option<&V> {
+        self.slot(local)?.value.as_ref()
+    }
+
     pub(crate) fn validate_presentation_context(
         &self,
         program: &RuntimeProgramOwner,
@@ -653,7 +665,7 @@ impl RuntimeEnv {
     }
 
     pub fn get(&self, local: RuntimeLocalDeclarationId) -> Option<&RuntimeValue> {
-        self.slot(local)?.value.as_ref()
+        self.get_stored(local)
     }
 
     /// Removes and returns the nearest binding for one admitted local. This is
@@ -661,10 +673,6 @@ impl RuntimeEnv {
     /// before their consuming instruction commits.
     pub(crate) fn take(&mut self, local: RuntimeLocalDeclarationId) -> Option<RuntimeValue> {
         self.slot_mut(local)?.value.take()
-    }
-
-    fn slot(&self, local: RuntimeLocalDeclarationId) -> Option<&RuntimeLocalSlot> {
-        self.scopes.iter().rev().find_map(|scope| scope.slot(local))
     }
 
     fn slot_mut(&mut self, local: RuntimeLocalDeclarationId) -> Option<&mut RuntimeLocalSlot> {
@@ -1004,13 +1012,6 @@ impl RuntimeScope {
 
     fn set_ref(&mut self, local: RuntimeLocalDeclarationId, value: &RuntimeValue) {
         self.set(local, value.clone());
-    }
-
-    fn slot(&self, local: RuntimeLocalDeclarationId) -> Option<&RuntimeLocalSlot> {
-        self.slots
-            .iter()
-            .rev()
-            .find(|binding| binding.local == local)
     }
 
     fn slot_mut(&mut self, local: RuntimeLocalDeclarationId) -> Option<&mut RuntimeLocalSlot> {

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "name": "task-final-r3233-program-fanout-structure",
+  "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-program-fanout-native-structure-report"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3233-program-fanout-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-27T10:24:11.6019070Z",
+  "finishedAt": "2026-10-27T10:24:18.6055914Z"
+}

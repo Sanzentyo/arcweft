@@ -1,0 +1,436 @@
+{
+  "version": 1,
+  "comparisonBase": "854648a92fe2e2f1bb4fb267b3d75bf33bb9b2c8",
+  "inspectedHead": "783eead4044a9407ed877043f136dc9f887fcb95",
+  "workingTree": "dirty: Native controller validation fixes and original user WIP",
+  "measuredAt": "2026-10-27T10:32:41.8931774Z",
+  "blockingViolations": 0,
+  "changedFiles": [
+    {
+      "path": "crates/arcweft-core/src/aot.rs",
+      "owner": "arcweft-core",
+      "bytes": 15300,
+      "physicalLoc": 445,
+      "basePhysicalLoc": 446,
+      "growth": -1,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 10132,
+      "physicalLoc": 264,
+      "basePhysicalLoc": 265,
+      "growth": -1,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 322499,
+      "physicalLoc": 8177,
+      "basePhysicalLoc": 8177,
+      "growth": 0,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "owner": "arcweft-core",
+      "bytes": 231150,
+      "physicalLoc": 5742,
+      "basePhysicalLoc": 5705,
+      "growth": 37,
+      "classification": "production",
+      "embeddedTestLoc": 819
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/fanout.rs",
+      "owner": "arcweft-core",
+      "bytes": 20099,
+      "physicalLoc": 503,
+      "basePhysicalLoc": 0,
+      "growth": 503,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/fanout/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 16959,
+      "physicalLoc": 384,
+      "basePhysicalLoc": 0,
+      "growth": 384,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow.rs",
+      "owner": "arcweft-core",
+      "bytes": 84961,
+      "physicalLoc": 2056,
+      "basePhysicalLoc": 2037,
+      "growth": 19,
+      "classification": "production",
+      "embeddedTestLoc": 111
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow/resume.rs",
+      "owner": "arcweft-core",
+      "bytes": 6549,
+      "physicalLoc": 154,
+      "basePhysicalLoc": 151,
+      "growth": 3,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/rollback.rs",
+      "owner": "arcweft-core",
+      "bytes": 47401,
+      "physicalLoc": 1171,
+      "basePhysicalLoc": 1159,
+      "growth": 12,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/rollback/await_state.rs",
+      "owner": "arcweft-core",
+      "bytes": 17128,
+      "physicalLoc": 412,
+      "basePhysicalLoc": 251,
+      "growth": 161,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/suspend.rs",
+      "owner": "arcweft-core",
+      "bytes": 89090,
+      "physicalLoc": 2163,
+      "basePhysicalLoc": 2159,
+      "growth": 4,
+      "classification": "production",
+      "embeddedTestLoc": 46
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread.rs",
+      "owner": "arcweft-core",
+      "bytes": 9461,
+      "physicalLoc": 234,
+      "basePhysicalLoc": 215,
+      "growth": 19,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/thread/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 25048,
+      "physicalLoc": 688,
+      "basePhysicalLoc": 688,
+      "growth": 0,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/work.rs",
+      "owner": "arcweft-core",
+      "bytes": 25502,
+      "physicalLoc": 632,
+      "basePhysicalLoc": 610,
+      "growth": 22,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan.rs",
+      "owner": "arcweft-core",
+      "bytes": 57486,
+      "physicalLoc": 1671,
+      "basePhysicalLoc": 1592,
+      "growth": 79,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+      "owner": "arcweft-core",
+      "bytes": 18017,
+      "physicalLoc": 424,
+      "basePhysicalLoc": 391,
+      "growth": 33,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/function.rs",
+      "owner": "arcweft-core",
+      "bytes": 40473,
+      "physicalLoc": 1012,
+      "basePhysicalLoc": 975,
+      "growth": 37,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/tests/request_endpoints.rs",
+      "owner": "arcweft-core",
+      "bytes": 14566,
+      "physicalLoc": 390,
+      "basePhysicalLoc": 388,
+      "growth": 2,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction.rs",
+      "owner": "arcweft-core",
+      "bytes": 179209,
+      "physicalLoc": 4393,
+      "basePhysicalLoc": 4387,
+      "growth": 6,
+      "classification": "production",
+      "embeddedTestLoc": 840
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "owner": "arcweft-core",
+      "bytes": 259968,
+      "physicalLoc": 6098,
+      "basePhysicalLoc": 6098,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 281
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 5659,
+      "physicalLoc": 129,
+      "basePhysicalLoc": 0,
+      "growth": 129,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+      "owner": "arcweft-core",
+      "bytes": 100871,
+      "physicalLoc": 3070,
+      "basePhysicalLoc": 3067,
+      "growth": 3,
+      "classification": "production",
+      "embeddedTestLoc": 91
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+      "owner": "arcweft-core",
+      "bytes": 45720,
+      "physicalLoc": 1147,
+      "basePhysicalLoc": 1110,
+      "growth": 37,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/encoding/fields.rs",
+      "owner": "arcweft-core",
+      "bytes": 23205,
+      "physicalLoc": 590,
+      "basePhysicalLoc": 574,
+      "growth": 16,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+      "owner": "arcweft-core",
+      "bytes": 23309,
+      "physicalLoc": 691,
+      "basePhysicalLoc": 651,
+      "growth": 40,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/flow_ops.rs",
+      "owner": "arcweft-core",
+      "bytes": 26016,
+      "physicalLoc": 710,
+      "basePhysicalLoc": 711,
+      "growth": -1,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/local_declarations/placement.rs",
+      "owner": "arcweft-core",
+      "bytes": 25819,
+      "physicalLoc": 670,
+      "basePhysicalLoc": 658,
+      "growth": 12,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body.rs",
+      "owner": "arcweft-core",
+      "bytes": 4055,
+      "physicalLoc": 117,
+      "basePhysicalLoc": 117,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program_body/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 5282,
+      "physicalLoc": 153,
+      "basePhysicalLoc": 149,
+      "growth": 4,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 12261,
+      "physicalLoc": 320,
+      "basePhysicalLoc": 323,
+      "growth": -3,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/template_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 55153,
+      "physicalLoc": 1492,
+      "basePhysicalLoc": 1486,
+      "growth": 6,
+      "classification": "test",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/task/execution.rs",
+      "owner": "arcweft-core",
+      "bytes": 22842,
+      "physicalLoc": 653,
+      "basePhysicalLoc": 645,
+      "growth": 8,
+      "classification": "production",
+      "embeddedTestLoc": 31
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer/source.rs",
+      "owner": "arcweft-core",
+      "bytes": 15264,
+      "physicalLoc": 355,
+      "basePhysicalLoc": 353,
+      "growth": 2,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/task/producer/source/template.rs",
+      "owner": "arcweft-core",
+      "bytes": 22059,
+      "physicalLoc": 495,
+      "basePhysicalLoc": 438,
+      "growth": 57,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/value/env.rs",
+      "owner": "arcweft-core",
+      "bytes": 83033,
+      "physicalLoc": 2149,
+      "basePhysicalLoc": 2148,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 1064
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow/program_task.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 4497,
+      "physicalLoc": 105,
+      "basePhysicalLoc": 98,
+      "growth": 7,
+      "classification": "production",
+      "embeddedTestLoc": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 443814,
+      "physicalLoc": 10397,
+      "basePhysicalLoc": 10387,
+      "growth": 10,
+      "classification": "production",
+      "embeddedTestLoc": 664
+    }
+  ],
+  "packages": [
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+      "workspace_fan_in": "5",
+      "workspace_fan_out": "10",
+      "development_workspace_fan_in": "5",
+      "development_workspace_fan_out": "0"
+    }
+  ],
+  "growthOver300": [
+    "crates/arcweft-core/src/engine/fanout.rs",
+    "crates/arcweft-core/src/engine/fanout/tests.rs"
+  ],
+  "ownerDispositions": [
+    {
+      "owner": "arcweft-core",
+      "disposition": "Original Program template owns executable Flow/Fanout, worker ingress and Source identity; Native state owns only values/progress",
+      "reason": "The new Native fanout module keeps launch/capture preparation, queue transitions and inert projections together. Original body views borrow one template; no invented Flow AST, Host aggregate wrapper, backend/IO dependency or legacy Source reader is added. Physical item initialization belongs to local placement; boxed kernel accounting belongs to both count and materialization grammar. Frame context checks use one generic nearest-slot lookup retaining reverse scope/slot shadowing; the replaced concrete helper was removed. The bounded Bool worker fixtures are separate and do not claim Source callback/Result/affine/cancel acceptance."
+    },
+    {
+      "owner": "arcweft-runtime-plan",
+      "disposition": "Consume original Program body kind and actual owned worker code",
+      "reason": "The existing lowering owner reads the Core-owned template and original context. AWBC Fanout lowering is explicitly still missing and R3220 retains its compiler failure. No scan result or Core test is promoted into AWBC/Compiler acceptance."
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-native-structure-public_type_duplicates.csv",
+      "sha256": "ebf8314840f2e0f221a4807fa014f201a6ac505a289adeb1d634e636c5c21375"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-native-structure-package_metrics.csv",
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-native-structure-findings.md",
+      "sha256": "e095836dd2c1a36d5f1a9ee60f28c66d4aec04d56317f11f179059be02f8b01b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-native-structure-file_metrics.csv",
+      "sha256": "102334802caf31424e34f964e3a927bf3451aca285a86d5ed25ede1995eb8e81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-native-structure-dependency_edges.csv",
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    }
+  ]
+}

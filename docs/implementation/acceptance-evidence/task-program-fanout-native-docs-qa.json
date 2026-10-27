@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+  "rustfmtOwnedRust": 7,
+  "rustfmtExit": 0,
+  "relativeLinks": 63,
+  "statusCommitIds": 32,
+  "historicalPrefixUnchanged": true,
+  "originalUntracked": 6,
+  "originalUntrackedHashDrift": 0,
+  "problems": []
+}

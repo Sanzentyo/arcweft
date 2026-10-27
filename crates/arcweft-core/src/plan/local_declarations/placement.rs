@@ -64,7 +64,7 @@ pub enum RuntimeLocalInitialization {
     ProjectCallResult,
     ScheduledCapture,
     MatchCandidate,
-    /// The enclosing invocation temporarily installs each joined request item.
+    /// A fanout worker receives each owned source item at its checked ingress.
     AwaitManyItem,
 }
 
@@ -313,6 +313,18 @@ impl RuntimeLocalDeclarationTableBuilder {
             if let FlowOp::AwaitMany { target, .. } = op {
                 self.claim(
                     target.item_binding,
+                    RuntimeLocalPlacement {
+                        owner,
+                        initialization: RuntimeLocalInitialization::AwaitManyItem,
+                        mutable: false,
+                    },
+                )?;
+            }
+            if let FlowOp::ProgramTask { template, .. } = op
+                && let crate::plan::RuntimeProgramTaskBody::Fanout(fanout) = &template.body
+            {
+                self.claim(
+                    fanout.item,
                     RuntimeLocalPlacement {
                         owner,
                         initialization: RuntimeLocalInitialization::AwaitManyItem,

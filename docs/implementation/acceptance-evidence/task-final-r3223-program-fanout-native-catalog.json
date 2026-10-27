@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "R3223",
+  "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+  "exitCode": 0,
+  "command": "cargo nextest list -p arcweft-core --lib --all-features --locked -E test(engine::fanout::tests::) --message-format json",
+  "startedAt": "2026-10-27T09:49:44.4009619Z",
+  "finishedAt": "2026-10-27T09:51:17.1039094Z"
+}

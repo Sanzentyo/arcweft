@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "task-final-r3231-program-fanout-core-runtime",
+  "base": "783eead4044a9407ed877043f136dc9f887fcb95",
+  "exitCode": 0,
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast"
+  ],
+  "startedAt": "2026-10-27T10:18:37.3113074Z",
+  "finishedAt": "2026-10-27T10:20:10.6729745Z",
+  "catalogCases": 2062,
+  "binaryCount": 1,
+  "binaryDrift": 0,
+  "scope": "complete Core library; all features/locked; default nextest concurrency",
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3231-program-fanout-core-runtime.log"
+}
