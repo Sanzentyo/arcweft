@@ -12853,3 +12853,19 @@ R3345は対象2件PASS・2,064対象外、0.080秒。予算0／1のまま全matc
 [red／green原本・source freeze・所有境界・直前公開full SHA](acceptance-evidence/task-native-host-reply-checkpoint.json)。
 
 続報: R3346の全53 package・全target／feature／locked buildは終了0。入力3,998件・差分0、runtime対象7,393件・既存ignored 39件・named caseは50 packageと照合した。build完了をruntimeの合格へ拡張せず、R3347の終端を待つ。
+
+## Native Host reply の全53逆依存終端 — 2026-10-28
+
+検証入力は基点8049c7319442f783bac8513106f7c80a48521e85＋3 Rust path、実装公開は869ce75bc957532b3e40a8b5b35855510c333f3b。全45 pathの公開blob差分0、元WIP保持・空indexを照合した。全53 build R3346とruntime R3347の固定入力は同じ3,998件で、終端のsource差分0を確認した。
+
+R3347は全target／feature／lockedで7,393実行、7,343 PASS／50 FAIL／39 ignored、1,427.130秒（81 slow）。全catalogと実終端集合の差分0。実行leaseの221 harness＋4 subprocess executableに差分0。旧R3177の227 binaryという数値を今回の225 executableへ転記しない。named caseは50 package、3 packageはbuildのみ。
+
+Core 2,119／2,119、Compiler 624／624、Sema 1,357／1,357、runtime-plan 161／161、LSP 223／223 PASS。Generic Matchの既受入151件、以前の必須owner／Source 17件、capture 8件もすべてPASS。新規失敗識別子0、残るCLIは641 PASS／50 FAILで前回と同じ50識別子。native_thread_quota_rejection_publishes_no_child_or_taskは今回PASSとなり、旧quota診断期待の修復を再確認した。識別子の一致を全診断の一致とはしない。
+
+parallel runは既定budget 1・12 stepで未完了、read／submitted 0。benchは既定budget 32・12 stepのままmeasured／file assertion validated、実行47 op、read 3／write 1、scheduled完了4／direct Host call 4／completed_tasks 8。bench fixtureの期待4との不一致は保持する。completed_tasksがdirectを含む現行契約を理由に、実測8をcounter実装の不具合とはしない。R3337の実行51 opと今回47 opは別入力として保持し、元call instructionの実行量を削ったことにはしない。
+
+R3348 Core全target Clippyは終了0（警告3,502）、R3349 Core doctestは76／76 PASS。Cargo入力100件と依存／公開APIは不変で、R3325構造scanner／graphと今回3 pathのowner実測を再利用した。全体goal、CLI 50件、Source affine／高度な取消等の別受入範囲を一括完了とはしない。
+
+Supersedes: 現状一覧のR3335 owner、R3256取消owner、R3177全体runという重複した検証入力3行を、対象を包含する今回の全53終端1行へ整理した。過去の件数・失敗・SHA・原本は削除せず履歴へ保持する。進行中だったR3346–R3349も実際の終端へ更新した。Generic Matchを未完了へ戻す変更ではない。
+
+[全結果・package内訳・必須151／17／8件・最新CLI原JSON・公開照合](acceptance-evidence/task-native-host-reply-reverse-acceptance.json)。

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "catalog": "R3346",
+  "runtime": "R3347",
+  "status": "Catalog presence only; no runtime PASS claim",
+  "groups": [
+    {
+      "group": "generic",
+      "required": 151,
+      "missing": []
+    },
+    {
+      "group": "requiredOwnerAndSource",
+      "required": 17,
+      "missing": []
+    },
+    {
+      "group": "currentCapture",
+      "required": 8,
+      "missing": []
+    }
+  ]
+}

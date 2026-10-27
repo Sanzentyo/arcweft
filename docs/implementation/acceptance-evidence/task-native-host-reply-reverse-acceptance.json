@@ -1,0 +1,535 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "base": "8049c7319442f783bac8513106f7c80a48521e85",
+  "publishedSource": "869ce75bc957532b3e40a8b5b35855510c333f3b",
+  "status": "Native Host reply owner and reverse closure accepted with the same 50 CLI failure identifiers; whole goal remains incomplete",
+  "scope": {
+    "subprocessExecutables": 4,
+    "namedCasePackages": 50,
+    "sourceInputs": 3998,
+    "locked": true,
+    "allTargets": true,
+    "sourceDrift": 0,
+    "executables": 225,
+    "selectedPackages": 53,
+    "allFeatures": true,
+    "harnesses": 221,
+    "catalogCaseDrift": 0,
+    "nextest": "default ignored policy",
+    "executableDrift": 0
+  },
+  "runtime": {
+    "failed": 50,
+    "ignored": 39,
+    "summary": "Summary [1427.130s] 7393 tests run: 7343 passed (81 slow), 50 failed, 39 skipped",
+    "passed": 7343,
+    "run": "R3347",
+    "buildOnlyPackages": [
+      "arcweft",
+      "arcweft-bundle-assets",
+      "arcweft-render-web"
+    ],
+    "executed": 7393,
+    "seconds": 1427.13,
+    "exitCode": 100
+  },
+  "packages": [
+    {
+      "package": "arcweft-adapter-desktop",
+      "executed": 7,
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "executed": 13,
+      "passed": 13,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "executed": 31,
+      "passed": 31,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-mcp-client",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "executed": 14,
+      "passed": 14,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "executed": 54,
+      "passed": 54,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "executed": 37,
+      "passed": 37,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "executed": 69,
+      "passed": 69,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "executed": 6,
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-bundle",
+      "executed": 329,
+      "passed": 329,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-character-view",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-cli",
+      "executed": 691,
+      "passed": 641,
+      "failed": 50
+    },
+    {
+      "package": "arcweft-compiler",
+      "executed": 624,
+      "passed": 624,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-core",
+      "executed": 2119,
+      "passed": 2119,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-debug-model",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "executed": 22,
+      "passed": 22,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-dialogue",
+      "executed": 69,
+      "passed": 69,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-glyphon",
+      "executed": 24,
+      "passed": 24,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "executed": 10,
+      "passed": 10,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-lang-jit-cranelift",
+      "executed": 25,
+      "passed": 25,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "executed": 1357,
+      "passed": 1357,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-launch",
+      "executed": 45,
+      "passed": 45,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-lsp",
+      "executed": 223,
+      "passed": 223,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-player-native",
+      "executed": 63,
+      "passed": 63,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-player-scene",
+      "executed": 128,
+      "passed": 128,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "executed": 13,
+      "passed": 13,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-player-web",
+      "executed": 36,
+      "passed": 36,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-project",
+      "executed": 42,
+      "passed": 42,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-project-loader",
+      "executed": 158,
+      "passed": 158,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-rag",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-render-text",
+      "executed": 20,
+      "passed": 20,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-render-wgpu",
+      "executed": 147,
+      "passed": 147,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-resource-manifest",
+      "executed": 20,
+      "passed": 20,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-resource-model",
+      "executed": 37,
+      "passed": 37,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "executed": 126,
+      "passed": 126,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "executed": 12,
+      "passed": 12,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "executed": 177,
+      "passed": 177,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "executed": 72,
+      "passed": 72,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "executed": 161,
+      "passed": 161,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-scheduler",
+      "executed": 17,
+      "passed": 17,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-save",
+      "executed": 35,
+      "passed": 35,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-test",
+      "executed": 3,
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-text-layout",
+      "executed": 58,
+      "passed": 58,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-text-model",
+      "executed": 34,
+      "passed": 34,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-tooling",
+      "executed": 27,
+      "passed": 27,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-verify",
+      "executed": 8,
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "executed": 14,
+      "passed": 14,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-verify-oxiz",
+      "executed": 5,
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-verify-z3",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-view",
+      "executed": 201,
+      "passed": 201,
+      "failed": 0
+    }
+  ],
+  "requiredGroups": [
+    {
+      "group": "generic",
+      "executed": 151,
+      "passed": 151,
+      "failed": 0
+    },
+    {
+      "group": "requiredOwnerAndSource",
+      "executed": 17,
+      "passed": 17,
+      "failed": 0
+    },
+    {
+      "group": "currentCapture",
+      "executed": 8,
+      "passed": 8,
+      "failed": 0
+    }
+  ],
+  "failureComparison": {
+    "newIds": 0,
+    "remaining": 50,
+    "allRemainingIn": "arcweft-cli",
+    "recovered": [
+      "arcweft-compiler::flow_include native_thread_quota_rejection_publishes_no_child_or_task"
+    ],
+    "identifiersOnly": true,
+    "baseline": "R3177"
+  },
+  "gates": {
+    "clippy": {
+      "exitCode": 0,
+      "scope": "Core all targets/all features/locked",
+      "run": "R3348",
+      "warnings": 3502
+    },
+    "structure": {
+      "unchangedCargoInputs": 100,
+      "review": "task-native-host-reply-owner-review.json",
+      "dependencyEdgesAdded": 0,
+      "reusedScanner": "R3325",
+      "publicApiAdded": 0
+    },
+    "doctests": {
+      "run": "R3349",
+      "package": "arcweft-core",
+      "passed": 76,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  "strictCli": {
+    "interpretation": "Keep the unchanged strict test failures. completed_tasks includes scheduled work and direct Host calls by the maintained contract; 8 = 4 + 4 is not demonstrated to be a counter defect. Original fixture I/O quantities and operation limits remain unchanged.",
+    "run": {
+      "completedTasks": 3,
+      "steps": 12,
+      "maxOps": 1,
+      "submitted": 0,
+      "finalStatus": "running",
+      "completedHostCalls": 3,
+      "readOps": 0,
+      "lastStop": "BudgetExhausted"
+    },
+    "bench": {
+      "writeOps": 1,
+      "fileAssertion": "validated",
+      "readOps": 3,
+      "status": "measured",
+      "completedHostCalls": 4,
+      "fixtureExpectedCompletedTasks": 4,
+      "executedOps": 47,
+      "scheduledCompleted": 4,
+      "steps": 12,
+      "maxOps": 32,
+      "completedTasks": 8
+    }
+  },
+  "accepted": [
+    "Native idle Host wait consumes no source operation.",
+    "Matching replies enter their exact original frames before instruction execution, survive zero/one-op exhaustion and private rollback.",
+    "The three changed Core paths pass their full reverse runtime without a new failure identifier; existing failure diagnostics remain separately inspectable.",
+    "Generic Match 151, prior required owner/Source 17 and capture 8 pass on this exact runtime input."
+  ],
+  "limitations": [
+    "The 50 CLI failures keep whole-workspace acceptance incomplete.",
+    "The full run freezes 221 harnesses and 4 subprocess executables; it does not claim a 227-binary census from the older R3177 run.",
+    "Ignored Tier 2 cases were not run here. Previously accepted Tier 2 evidence remains scoped to its original inputs.",
+    "Native tiers without a public typed save contract retain their documented unsupported-tier behavior."
+  ],
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3347-cli-bench-output.json",
+      "bytes": 11465,
+      "sha256": "f51d6a1d8919085ee0e9103906289fa01331955de1fa113f1aedd3b6973ca16d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3347-cli-run-output.json",
+      "bytes": 27756,
+      "sha256": "ec90fd00483c9c371b70384c233c7dd3e3f13c81fa13d323e000f1d10b37263b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3347-program-fanout-runtime.binaries-before.json",
+      "bytes": 54136,
+      "sha256": "87b416abf5fc382db00a07fdfc798960a1812c3f010f5881e1b40680ef511916"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3347-program-fanout-runtime.cases.json",
+      "bytes": 1551142,
+      "sha256": "4c50d9dbeb1b6958fcaa31bac8bb1b59d645d6866e7b8b24484a47295bf2ee63"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3347-program-fanout-runtime.json",
+      "bytes": 2609,
+      "sha256": "74a3068176bb3dad80d803b97794068ff75cb2aff730c69597fe7d4438fe3f60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3347-program-fanout-runtime.log",
+      "bytes": 5428508,
+      "sha256": "0b49a63e532844fb509bc192736848ea2d7430b07779f8d6a9bbd69e85433697"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3347-program-fanout-runtime.terminal-audit.json",
+      "bytes": 9004,
+      "sha256": "3ae41e7a18cdf3bffa1ee5c628578876a96ac4d3c5787c55ddf56ce5ab56d0a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3348-program-fanout-runtime-clippy.input-audit.json",
+      "bytes": 336,
+      "sha256": "a3e9a2e4b6bf7d6fd1f64a5f6961aac03438bd09a72ef26d8efc6cab09a11482"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3348-program-fanout-runtime-clippy.json",
+      "bytes": 468,
+      "sha256": "083aa4ddd96f5e06d7bc939368fd49cde7df3a8b91a78284e099d6f7c8707e33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3348-program-fanout-runtime-clippy.log",
+      "bytes": 2853140,
+      "sha256": "17277b67160a1d41ea2cb532d76ad775ddf6512fc04d99ff24a4e0b1d39b6d9a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3349-program-fanout-runtime-doctests.input-audit.json",
+      "bytes": 328,
+      "sha256": "8ebf910653e2b5339853decabb07fc2355f76392b06379c64b441c43b05a5b15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3349-program-fanout-runtime-doctests.json",
+      "bytes": 460,
+      "sha256": "1c4d5b7e9eb96ccf362ed93bef8e7ef82379c52d7ef073a204519184055f9384"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3349-program-fanout-runtime-doctests.log",
+      "bytes": 79537,
+      "sha256": "0842f1bf7e6c5404e0d5f460fc2462acb7672f928a455179a20618c55f49fb62"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-native-host-reply-required-case-inventory.json",
+      "bytes": 429,
+      "sha256": "dad3263027217f2f42be0ca85c5e31ee3c5b4c7bb8440abad8c510f8a83daf82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-native-host-reply-reverse-case-audit.json",
+      "bytes": 66134,
+      "sha256": "f993b96856629bd94704c7c1c5d6ec0b63e8d35e5683a9c151493f03e8b789f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-native-host-reply.verified.json",
+      "bytes": 8448,
+      "sha256": "61226b770f3fe70f99f779d93efea12f60c127f4ebec126bfe4dcb86fb6ff38c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3347.source-freeze.json",
+      "bytes": 781674,
+      "sha256": "51764acab999e602252bfb82ca5151d4255f98bdde3ef3490364d267278b7e49"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3348.source-freeze.json",
+      "bytes": 781674,
+      "sha256": "51764acab999e602252bfb82ca5151d4255f98bdde3ef3490364d267278b7e49"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3349.source-freeze.json",
+      "bytes": 781674,
+      "sha256": "51764acab999e602252bfb82ca5151d4255f98bdde3ef3490364d267278b7e49"
+    }
+  ],
+  "documentation": {
+    "brokenLinks": 0,
+    "unclosedFences": 0,
+    "heldFiles": 20,
+    "audit": "docs/implementation/acceptance-evidence/task-native-host-reply-reverse-documentation-audit.json",
+    "documents": 129,
+    "relativeLinks": 614,
+    "heldDrift": 0
+  }
+}
