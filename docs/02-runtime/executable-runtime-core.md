@@ -953,10 +953,14 @@ as repeated bindings of the same declaration. Incoming capture packets still
 contain complete values. Parameter-storage extraction validates the full typed
 inventory before moving any register, without cloning the frame.
 
-Suspension reasons are dialogue, choice, await, await-many, host call, and
-budget yield. `FiberSuspension<V, O, N>` owns one exhaustive grammar for live
+Suspension reasons are dialogue, choice, await, await-many, original Program
+fanout, host call, and budget yield. `FiberSuspension<V, O, N>` owns one exhaustive grammar for live
 values, opaque targets, and Need handles and their inert save representations.
-Only the private inert capabilities implement its codec. Retained records,
+Only the private inert capabilities implement its codec and cloning. VM and
+compiled exits return a `FiberSuspensionNotice` containing the resume target and
+reason kind; the fiber retains the single live suspension. Dispatch validates
+that notice against the actual fiber instead of replacing it with a second copy.
+Retained records,
 including dialogue value bindings, reject unknown fields. Before projecting or
 constructing a frame, admission checks the reached original terminator, resume
 point, function, immutable layout and type binding. It then checks retained
@@ -973,6 +977,16 @@ partition and each original template before construction. This is enough to
 resume deterministically after host events, snapshot/replay, or hand-off between
 VM and compiled code.
 
+An original Program fanout retains its source items in optional owned slots,
+the positive dynamic limit, indexed worker Needs, and ordered result slots.
+Started item slots are vacant. Free captures remain in the original controller
+frame: earlier workers receive admitted unrestricted copies, and the final
+worker moves the original captures. Empty input launches no worker. The
+controller's accepted Program task owns aggregate publication; it does not mint
+an additional Host base task. Admission checks the original controller and
+worker Source, capture ABI, consumed source slot, frame custody, and progress
+partition before reconstructing live state from an inert public save.
+
 Invariants:
 
 - active frame function equals cursor function;
@@ -988,9 +1002,10 @@ Invariants:
   resumes the caller at `return_to.resume`, and writes the value to
   `return_to.destination`; a root return alone makes the fiber terminal.
 
-`FiberCheckpoint` owns a clone of the complete state and is used only around a
-compiled-region transaction. It is not a persistence format; save/replay
-versioning is a later request.
+`FiberCheckpoint` owns an inert projection of the complete state and its original
+program owner for a compiled-region transaction. Restoring it admits the original
+source and resource obligations; the checkpoint itself is not a persistence
+format.
 
 ## 9. Shared frames, resume points, safe points, and suspension
 
@@ -1153,7 +1168,7 @@ or type lease cannot replace it or authorize Source readmission.
 |---|---|
 | `Continue { next }` | validate safe point; set cursor; retain deterministic mutations; charge consumed budget |
 | `HostRequest(request)` | validate HostCall resume; store host suspension; return request |
-| `Suspended(state)` | map reason to expected resume kind; store suspension |
+| `Suspended(notice)` | validate notice against the fiber's owned suspension and expected resume kind; retain that suspension |
 | `Returned(value)` | mark root/call result according to frame policy |
 | `BudgetExhausted { resume }` | validate BudgetYield resume; store budget suspension |
 | `Failed(failure)` | restore entry checkpoint, charge consumed work, materialize typed trap/source map |

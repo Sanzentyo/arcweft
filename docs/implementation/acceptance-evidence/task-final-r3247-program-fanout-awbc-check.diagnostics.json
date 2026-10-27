@@ -1,0 +1,35 @@
+[
+  {
+    "code": "E0599",
+    "message": "no method named `step` found for struct `ArcweftRuntimeExecutor` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\awbc_lower\\tests\\program_fanout.rs",
+        "line_start": 342,
+        "label": "method not found in `ArcweftRuntimeExecutor`"
+      }
+    ]
+  },
+  {
+    "code": "E0308",
+    "message": "mismatched types",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\awbc_lower\\tests\\program_fanout.rs",
+        "line_start": 357,
+        "label": "expected `RuntimePayload`, found `&RuntimePayload`"
+      }
+    ]
+  },
+  {
+    "code": "E0599",
+    "message": "no method named `fiber` found for struct `ArcweftRuntimeExecutor` in the current scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-runtime-plan\\src\\awbc_lower\\tests\\program_fanout.rs",
+        "line_start": 385,
+        "label": "method not found in `ArcweftRuntimeExecutor`"
+      }
+    ]
+  }
+]

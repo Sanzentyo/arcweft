@@ -321,7 +321,7 @@ pub enum VmLineOperationArgument {
 #[derive(Debug, PartialEq)]
 pub enum VmExit {
     Running,
-    Suspended(FiberSuspensionReason),
+    Suspended(super::fiber::FiberSuspensionNotice),
     Returned(Option<RuntimeValue>),
     /// The actual task fiber retains its return value until Product retirement.
     TaskReturned,
@@ -382,7 +382,7 @@ pub enum VmNestedCallExit {
     DialogueResultSelected(RuntimeValue),
     Cancelled,
     Trapped(FiberTrap),
-    Suspended(FiberSuspensionReason),
+    Suspended(super::fiber::FiberSuspensionNotice),
     BudgetYield(FiberSafePoint),
 }
 
@@ -3099,6 +3099,20 @@ fn execute_terminator(
             let admitted = context
                 .ok_or(VmError::MissingExecutionContext)?
                 .admitted_program(program)?;
+            if matches!(
+                &admitted.task_plans[plan.index()].execution,
+                crate::awbc::schema::AwbcTaskPlanExecution::Program(_)
+            ) {
+                if !matches!(fiber.root, super::fiber::AwbcFiberRoot::Task(task) if task == *plan) {
+                    return Err(VmError::Runtime(
+                        "Program Fanout requires its own admitted task root".into(),
+                    ));
+                }
+                let state = fiber
+                    .active_frame_mut()?
+                    .take_program_fanout_inputs(admitted, *plan, *source, *binding)?;
+                return suspend(fiber, *resume, FiberSuspensionReason::ProgramFanout(state));
+            }
             let (captured, sequence) = fiber
                 .active_frame_mut()?
                 .take_await_many_inputs(admitted, *plan, *source)?;
@@ -3239,11 +3253,13 @@ fn suspend(
     resume: AwbcResumePointId,
     reason: FiberSuspensionReason,
 ) -> Result<VmExit, VmError> {
-    fiber.suspend(FiberSuspension {
+    let suspension = FiberSuspension {
         resume: FiberResumeTarget::Declared(resume),
-        reason: reason.clone(),
-    })?;
-    Ok(VmExit::Suspended(reason))
+        reason,
+    };
+    let notice = suspension.notice();
+    fiber.suspend(suspension)?;
+    Ok(VmExit::Suspended(notice))
 }
 
 /// Executes one closed project-call group against its program-owned callable
@@ -4115,7 +4131,7 @@ pub(crate) fn terminal_exit(fiber: &mut FiberState) -> VmExit {
             .suspension
             .as_ref()
             .map_or(VmExit::Running, |suspension| {
-                VmExit::Suspended(suspension.reason.clone())
+                VmExit::Suspended(suspension.notice())
             }),
         None => VmExit::Running,
     }

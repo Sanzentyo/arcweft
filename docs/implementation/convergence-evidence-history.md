@@ -12651,3 +12651,28 @@ AWBCの所有入力移動・worker実行・停止状態・公開保存復元も�
 [実行・失敗と修復・原本](acceptance-evidence/task-program-fanout-awbc-lowering-acceptance.json)、
 [構造と所有者の判断](acceptance-evidence/task-program-fanout-awbc-structure-review.json)、
 [実際のCargo graph](acceptance-evidence/task-program-fanout-awbc-graph-reuse.json)。
+
+## AWBC Program Fanoutの実行・公開保存復元 — 2026-10-27
+
+公開main b7db2c9dcb38063880f4157495abbd53461650c3 を基点に、21 Rustファイルで
+元Program controllerの入力移動、worker起動、結果移動、公開保存復元を接続した。
+free captureは元frameに保持し、最後のworkerへMove、それ以前は実保持値の
+Unrestricted検査後にCopyする。controller自身のaccepted taskが集約を返す。
+VM／生成codeの停止exitはresumeとkindの通知だけを返し、単一のlive停止値をfiberに保持する。
+parity／HostCall／Awaitのconsumerも実fiberを参照する形へ移行した。
+
+R3244はcompile 6 errors、R3245・R3246は各1 error、R3247はfixture import由来の
+3 errorsで終了101。修復後のR3248 catalogはCore／runtime-plan／runtime-codegen
+3 library 2,204件・除外0、R3249は2,204／2,204 PASS、84.883秒。
+各3,997入力、実行binary 3件の前後hash差分0、catalogと全終端集合の差分0。
+新規fixtureは入力数0／1／3／17×limit 1／2／5×元／canonical decoded AWBC×
+各step公開save復元有無の48条件で、1-op既定予算、元Bool worker、入力順、
+起動数N+1、並列上限、LocalOnly、停止中item所有状態を確認した。
+Source並列入口、callback F、Result／最低index Err、affine、cancel、全collection familyは
+このfixtureの受入範囲外。取消をInput errorとして扱う現在の分岐も未受入として保持する。
+元tracked WIP 14件とuntracked実ファイル6件は変更していない。
+[初回失敗・実装・終端・原本](acceptance-evidence/task-program-fanout-awbc-runtime-checkpoint.json)。
+
+R3250の4 package全target・全feature・locked checkは終了0。R3251の同対象Clippyは
+警告6,523メッセージあり終了0。R3252構造gateはblocking 0、21 Rust path／4 ownerを測定。
+R3253 Core doctestは76／76 PASS、compile-failを含む。各3,997入力の差分0。

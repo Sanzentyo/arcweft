@@ -1653,13 +1653,27 @@ impl super::AwbcProductStepExecutor {
                         },
                     )),
                     VmExit::Trapped(trap) => Err(ProductStepError::ActivationTrap(trap)),
-                    VmExit::Suspended(crate::awbc::fiber::FiberSuspensionReason::HostCall {
-                        call,
-                        args,
-                        ..
-                    }) => {
+                    VmExit::Suspended(notice)
+                        if notice.kind == crate::awbc::fiber::FiberSuspensionKind::HostCall =>
+                    {
+                        let Some(crate::awbc::fiber::FiberSuspension {
+                            reason:
+                                crate::awbc::fiber::FiberSuspensionReason::HostCall {
+                                    call, args, ..
+                                },
+                            ..
+                        }) = candidate
+                            .as_ref()
+                            .expect("activation fiber remains owned")
+                            .suspension
+                            .as_ref()
+                        else {
+                            return Err(ProductStepError::Internal(
+                                "HostCall notice has no original suspended argument owner".into(),
+                            ));
+                        };
                         let (pending, request) =
-                            self.activation_host_call_request(call, &args, None)?;
+                            self.activation_host_call_request(*call, args, None)?;
                         frame.pending_activation_host_call = Some(pending);
                         frame.phase = ProductDialoguePhase::Activating {
                             fiber: candidate.take().expect("activation fiber remains owned"),
@@ -3979,22 +3993,41 @@ fn awbc_await_many_handle_owners(
     execution: crate::runtime_id::ExecutionInstanceId,
     fiber: &FiberState,
 ) -> Result<Vec<(RuntimeLineHandleToken, RuntimeOwnedSlotId)>, ProductStepError> {
-    let Some(crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state)) = fiber
+    let Some(reason) = fiber
         .suspension
         .as_ref()
         .map(|suspension| &suspension.reason)
     else {
         return Ok(Vec::new());
     };
+    let (plan, count, results) = match reason {
+        crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state) => {
+            (state.plan, state.items.len(), &state.results)
+        }
+        crate::awbc::fiber::FiberSuspensionReason::ProgramFanout(state) => {
+            (state.plan, state.items.len(), &state.results)
+        }
+        _ => return Ok(Vec::new()),
+    };
     let frame = fiber.active_frame()?.instance;
     let mut owners = Vec::new();
-    for (index, value) in state.items.iter().enumerate() {
+    for index in 0..count {
+        let value = match reason {
+            crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state) => {
+                Some(&state.items[index])
+            }
+            crate::awbc::fiber::FiberSuspensionReason::ProgramFanout(state) => {
+                state.items[index].as_ref()
+            }
+            _ => unreachable!("one fanout state was selected before value traversal"),
+        };
+        let Some(value) = value else { continue };
         let index = u32::try_from(index).map_err(|_| LineRuntimeError::OwnedSlotOverflow)?;
         let owner = RuntimeOwnedSlotId::AwbcAwaitManyItem {
             execution,
             fiber: fiber.instance,
             frame,
-            plan: state.plan,
+            plan,
             index,
         };
         owners.extend(
@@ -4003,7 +4036,7 @@ fn awbc_await_many_handle_owners(
                 .map(|handle| (handle.token().clone(), owner)),
         );
     }
-    for (index, value) in state.results.iter().enumerate() {
+    for (index, value) in results.iter().enumerate() {
         let Some(value) = value else {
             continue;
         };
@@ -4012,7 +4045,7 @@ fn awbc_await_many_handle_owners(
             execution,
             fiber: fiber.instance,
             frame,
-            plan: state.plan,
+            plan,
             index,
         };
         owners.extend(

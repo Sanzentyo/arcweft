@@ -29,6 +29,7 @@ use thiserror::Error;
 mod await_many;
 mod format;
 mod input;
+mod program_fanout;
 mod program_task;
 pub(crate) use program_task::PreparedProgramTaskFiber;
 mod return_context;
@@ -39,6 +40,7 @@ mod terminal;
 mod validation;
 use crate::value::{InertRuntimeValueStorage, RuntimeStoredValue};
 pub use await_many::{FiberAwaitManyInFlight, FiberAwaitManyState};
+pub use program_fanout::FiberProgramFanoutState;
 pub use stream::FiberStreamState;
 pub use terminal::FiberTerminalValue;
 trait InertFiberNeed: Serialize + serde::de::DeserializeOwned {}
@@ -699,7 +701,7 @@ impl FiberStatus {
 /// use arcweft_core::awbc::fiber::FiberSuspension;
 /// fn encode_live(state: &FiberSuspension) { let _ = serde_json::to_vec(state); }
 /// ```
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(
     deny_unknown_fields,
     bound(
@@ -736,7 +738,7 @@ impl<V, O, N> FiberSuspension<V, O, N> {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(
     deny_unknown_fields,
     bound(
@@ -771,12 +773,56 @@ pub enum FiberSuspensionReason<
         observer: Option<crate::awbc::schema::AwbcAwaitObserverResume>,
     },
     AwaitMany(FiberAwaitManyState<V, N>),
+    ProgramFanout(FiberProgramFanoutState<V, N>),
     HostCall {
         call: AwbcHostCallId,
         args: Vec<V>,
         destination: Option<AwbcRegisterId>,
     },
     BudgetYield,
+}
+
+/// Metadata-only notification; the fiber retains every suspended live value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FiberSuspensionNotice {
+    pub resume: FiberResumeTarget,
+    pub kind: FiberSuspensionKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FiberSuspensionKind {
+    Dialogue,
+    Choice,
+    Await,
+    AwaitMany,
+    ProgramFanout,
+    HostCall,
+    BudgetYield,
+}
+
+impl<V, O, N> FiberSuspension<V, O, N> {
+    #[must_use]
+    pub const fn notice(&self) -> FiberSuspensionNotice {
+        FiberSuspensionNotice {
+            resume: self.resume,
+            kind: self.reason.kind(),
+        }
+    }
+}
+
+impl<V, O, N> FiberSuspensionReason<V, O, N> {
+    #[must_use]
+    pub const fn kind(&self) -> FiberSuspensionKind {
+        match self {
+            Self::Dialogue { .. } => FiberSuspensionKind::Dialogue,
+            Self::Choice { .. } => FiberSuspensionKind::Choice,
+            Self::Await { .. } => FiberSuspensionKind::Await,
+            Self::AwaitMany(_) => FiberSuspensionKind::AwaitMany,
+            Self::ProgramFanout(_) => FiberSuspensionKind::ProgramFanout,
+            Self::HostCall { .. } => FiberSuspensionKind::HostCall,
+            Self::BudgetYield => FiberSuspensionKind::BudgetYield,
+        }
+    }
 }
 
 /// Owned captures transferred from a Dialogue terminator into its suspension.
@@ -1059,6 +1105,16 @@ impl AwbcFiberStateSnapshot {
                 FiberSuspensionReason::HostCall { args, .. } => {
                     for value in args {
                         visit(value)?;
+                    }
+                }
+                FiberSuspensionReason::ProgramFanout(state) => {
+                    for value in state.items.iter().chain(&state.results).flatten() {
+                        visit(value)?;
+                    }
+                    for child in &state.in_flight {
+                        for value in child.handle.request_values() {
+                            visit(value)?;
+                        }
                     }
                 }
                 FiberSuspensionReason::Await {
@@ -1885,6 +1941,16 @@ impl FiberState {
                 }
                 FiberSuspensionReason::HostCall { args, .. } => {
                     visit_value_slice(args, &mut visitor)?;
+                }
+                FiberSuspensionReason::ProgramFanout(state) => {
+                    for value in state.items.iter().chain(&state.results).flatten() {
+                        visit_value_graph(value, &mut visitor)?;
+                    }
+                    for child in &state.in_flight {
+                        for value in child.handle.request_values() {
+                            visit_value_graph(value, &mut visitor)?;
+                        }
+                    }
                 }
                 FiberSuspensionReason::Await {
                     target: FiberAwaitTarget::Need { need, .. },
@@ -6774,9 +6840,13 @@ mod tests {
             .unwrap();
         let first = crate::awbc::vm::step(&program, &mut fiber, Default::default()).unwrap();
         assert!(matches!(
-            first.exit,
-            crate::awbc::vm::VmExit::Suspended(FiberSuspensionReason::Await { .. })
+            fiber.suspension.as_ref().map(|s| &s.reason),
+            Some(FiberSuspensionReason::Await { .. })
         ));
+        assert_eq!(
+            first.exit,
+            crate::awbc::vm::VmExit::Suspended(fiber.suspension.as_ref().unwrap().notice())
+        );
         assert!(
             fiber
                 .active_frame()
@@ -6917,12 +6987,16 @@ mod tests {
 
         let second = crate::awbc::vm::step(&program, &mut fiber, Default::default()).unwrap();
         assert!(matches!(
-            second.exit,
-            crate::awbc::vm::VmExit::Suspended(FiberSuspensionReason::Await {
+            fiber.suspension.as_ref().map(|s| &s.reason),
+            Some(FiberSuspensionReason::Await {
                 target: FiberAwaitTarget::Need { need: id, .. },
                 ..
-            }) if id == need
+            }) if *id == need
         ));
+        assert_eq!(
+            second.exit,
+            crate::awbc::vm::VmExit::Suspended(fiber.suspension.as_ref().unwrap().notice())
+        );
         assert!(
             fiber
                 .active_frame()

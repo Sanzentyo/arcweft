@@ -991,10 +991,15 @@ entry agent @entry.agent.controller {
         .expect("AWBC controller reaches its host boundary");
         match output.exit {
             arcweft_core::awbc::vm::VmExit::Running => {}
-            arcweft_core::awbc::vm::VmExit::Suspended(
-                arcweft_core::awbc::fiber::FiberSuspensionReason::HostCall { call, args, .. },
-            ) => {
-                host_call = Some((call, args));
+            arcweft_core::awbc::vm::VmExit::Suspended(notice)
+                if notice.kind == arcweft_core::awbc::fiber::FiberSuspensionKind::HostCall =>
+            {
+                let arcweft_core::awbc::fiber::FiberSuspensionReason::HostCall { call, .. } =
+                    &fiber.suspension.as_ref().unwrap().reason
+                else {
+                    panic!("HostCall notice retains its actual HostCall owner")
+                };
+                host_call = Some(*call);
                 break;
             }
             arcweft_core::awbc::vm::VmExit::DialogueResultSelected(value) => {
@@ -1003,7 +1008,12 @@ entry agent @entry.agent.controller {
             exit => panic!("Agent AWBC must suspend for its observe call: {exit:?}"),
         }
     }
-    let (call, args) = host_call.expect("Agent AWBC reaches observe within the step budget");
+    let call = host_call.expect("Agent AWBC reaches observe within the step budget");
+    let arcweft_core::awbc::fiber::FiberSuspensionReason::HostCall { args, .. } =
+        &fiber.suspension.as_ref().unwrap().reason
+    else {
+        panic!("observe call arguments remain in their original fiber")
+    };
     assert_eq!(
         program.strings[program.host_calls[call.index()].operation.index()],
         "observe"

@@ -43,6 +43,7 @@ enum DeferredSuspensionDispatch {
         observer: Option<AwbcAwaitObserverResume>,
     },
     AwaitMany,
+    ProgramFanout,
     HostCall {
         call: AwbcHostCallId,
         destination: Option<crate::awbc::schema::AwbcRegisterId>,
@@ -68,6 +69,7 @@ impl DeferredSuspensionDispatch {
                 observer: *observer,
             },
             FiberSuspensionReason::AwaitMany(_) => Self::AwaitMany,
+            FiberSuspensionReason::ProgramFanout(_) => Self::ProgramFanout,
             FiberSuspensionReason::HostCall {
                 call, destination, ..
             } => Self::HostCall {
@@ -1592,6 +1594,9 @@ impl AwbcProductStepExecutor {
                     ));
                 }
             }
+            DeferredSuspensionDispatch::ProgramFanout => {
+                self.fill_program_fanout_for_child(child, output)?;
+            }
             DeferredSuspensionDispatch::HostCall { call, .. } => {
                 if child.pending_host_call.is_none() {
                     let Some(args) = child.fiber.suspension.as_ref().and_then(|suspension| {
@@ -1698,6 +1703,9 @@ impl AwbcProductStepExecutor {
                     journal,
                     pure_backend,
                 ))
+            }
+            DeferredSuspensionDispatch::ProgramFanout => {
+                self.resume_program_fanout_for_child(child, resume, output, journal)
             }
             DeferredSuspensionDispatch::HostCall { call, destination } => Ok(self
                 .resume_deferred_host_call(

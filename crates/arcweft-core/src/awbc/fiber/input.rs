@@ -143,6 +143,116 @@ impl<V> FrameValueContext<'_, V> {
 }
 
 impl super::FiberFrame {
+    pub(crate) fn take_program_fanout_inputs(
+        &mut self,
+        program: &super::super::product_step::AwbcProductProgram,
+        task: super::AwbcTaskPlanId,
+        source_register: super::AwbcRegisterId,
+        binding: Option<super::AwbcPatternId>,
+    ) -> Result<super::FiberProgramFanoutState, FiberStateError> {
+        use crate::awbc::schema::{
+            AwbcProgramFanoutInput, AwbcProgramTaskKernel, AwbcTaskPlanExecution,
+        };
+        let original = program
+            .original_task_source()
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            original.program_owner(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let source_error = |error: crate::plan::task_source::RuntimeAwbcProgramSourceError| {
+            FiberStateError::Snapshot(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: error.to_string(),
+            })
+        };
+        let source = original
+            .awbc_program_source(task, limits, &mut admission.task_source_meter(limits)?)
+            .map_err(source_error)?;
+        let row = program
+            .task_plans
+            .get(task.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let AwbcTaskPlanExecution::Program(body) = &row.execution else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        let AwbcProgramTaskKernel::Fanout {
+            worker,
+            source: source_position,
+            limit,
+            ..
+        } = &body.body
+        else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        if body.kernel != self.function || source_register.0 != *source_position {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        super::validate_frame_layout(
+            program,
+            self.function,
+            self.layout,
+            self.type_instantiation.as_deref(),
+            self.registers.len(),
+            &admission.work(),
+        )?;
+        let worker_source = original
+            .awbc_program_source(*worker, limits, &mut admission.task_source_meter(limits)?)
+            .map_err(source_error)?;
+        let values = (0..body.capture_modes.len())
+            .map(|position| {
+                self.register(super::AwbcRegisterId(
+                    u32::try_from(position).map_err(|_| FiberStateError::InvalidFrame)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let checked = source
+            .template_producer_spec(
+                original,
+                crate::task::RuntimeTaskTemplateArguments::ProgramTask { captures: &values },
+                self.type_instantiation.as_deref(),
+                &mut admission,
+            )
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        admission.validate_metadata(&checked.source().assertion())?;
+        let worker_template = worker_source
+            .request_endpoint()
+            .program_template()
+            .ok_or(FiberStateError::InvalidFrame)?;
+        admission.validate_metadata_string(&worker_template.producer().debug_label)?;
+        let RuntimeValue::UInt(crate::value::RuntimeUInt::U32(limit_value)) =
+            self.register(super::AwbcRegisterId(*limit))?
+        else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        let limit_value = *limit_value;
+        if limit_value == 0 {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        let RuntimeValue::Seq(sequence) = self.register(source_register)? else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        let count = sequence.len();
+        u32::try_from(count).map_err(|_| FiberStateError::InvalidFrame)?;
+        admission.validate_metadata_collection(count)?;
+        admission.validate_metadata_collection(body.capture_modes.len())?;
+        let results = vec![None; count];
+        let RuntimeValue::Seq(sequence) = self.take_register(source_register)? else {
+            unreachable!("owned sequence was preflighted before any input movement")
+        };
+        Ok(super::FiberProgramFanoutState {
+            plan: task,
+            binding,
+            limit: limit_value,
+            items: sequence.into_values().into_iter().map(Some).collect(),
+            next_index: 0,
+            in_flight: Vec::new(),
+            results,
+        })
+    }
+}
+
+impl super::FiberFrame {
     /// Admits the complete `AwaitMany` source and capture batch before preparing
     /// any capture copy or consuming the original sequence register.
     pub(in crate::awbc) fn take_await_many_inputs(
@@ -413,5 +523,67 @@ impl super::FiberFrame {
                     .expect("admitted source is present at its unique transfer commit"),
             })
             .collect())
+    }
+}
+
+impl<V> FrameValueContext<'_, V> {
+    pub(super) fn validate_await_many_site(
+        &self,
+        expected_plan: super::AwbcTaskPlanId,
+        expected_binding: Option<super::AwbcPatternId>,
+        cursor: super::FiberCursor,
+        resume: super::FiberResumeTarget,
+        resources: &mut ValueResourceAdmission,
+    ) -> Result<(), FiberStateError> {
+        resources
+            .work()
+            .charge(0)
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        let super::FiberResumeTarget::Declared(resume) = resume else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        let point = self
+            .program
+            .resume_points
+            .get(resume.index())
+            .ok_or(FiberStateError::UnknownResumePoint(resume.0))?;
+        let function = self
+            .program
+            .functions
+            .get(self.function.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        if point.function != self.function
+            || point.frame_layout != function.frame_layout
+            || cursor.function != self.function
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        resources
+            .work()
+            .charge(0)
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        let block = self
+            .program
+            .blocks
+            .get(cursor.block.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let crate::awbc::schema::AwbcTerminator::AwaitMany {
+            plan,
+            binding,
+            resume: declared_resume,
+            ..
+        } = block.terminator
+        else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        if block.owner != self.function
+            || cursor.instruction_offset != block.instructions.len
+            || plan != expected_plan
+            || binding != expected_binding
+            || declared_resume != resume
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        Ok(())
     }
 }

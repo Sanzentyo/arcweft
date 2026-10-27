@@ -23,13 +23,16 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
         V: RuntimeStoredValue,
         B: Borrow<RuntimeFunctionEffectInstantiation>,
     {
-        let Some(super::FiberSuspension {
-            reason: super::FiberSuspensionReason::AwaitMany(state),
-            ..
-        }) = &self.suspension
-        else {
+        let Some(super::FiberSuspension { reason, .. }) = &self.suspension else {
             return Ok(());
         };
+        if !matches!(
+            reason,
+            super::FiberSuspensionReason::AwaitMany(_)
+                | super::FiberSuspensionReason::ProgramFanout(_)
+        ) {
+            return Ok(());
+        }
         admission.status()?;
         let original = admission.task_source().cloned().ok_or_else(|| {
             crate::value::AwbcRuntimeValueSnapshotError::Message {
@@ -38,14 +41,19 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
             }
         })?;
         let frame = self.frames.last().ok_or(FiberStateError::MissingFrame)?;
-        state
-            .admit_original_source(
+        match reason {
+            super::FiberSuspensionReason::AwaitMany(state) => state.admit_original_source(
                 &original,
                 frame.type_instantiation.as_ref().map(Borrow::borrow),
                 need,
                 admission,
-            )
-            .inspect_err(|error| admission.retain_failure(error.clone()))
+            ),
+            super::FiberSuspensionReason::ProgramFanout(state) => {
+                state.admit_original_source(&original, need, admission)
+            }
+            _ => unreachable!("suspended task state was selected before Source admission"),
+        }
+        .inspect_err(|error| admission.retain_failure(error.clone()))
     }
 
     /// A stopped caller resumes at its callee's authenticated return point;

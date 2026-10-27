@@ -14,6 +14,7 @@ mod lifecycle;
 mod line;
 mod mapping;
 pub mod program;
+mod program_fanout;
 mod program_task;
 mod root;
 mod runtime_id;
@@ -4044,6 +4045,18 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        if matches!(
+            self.fiber.suspension.as_ref().map(|s| &s.reason),
+            Some(FiberSuspensionReason::ProgramFanout(_))
+        ) {
+            self.fail_with_error(
+                ProductStepError::Input(
+                    "Product Entry cannot own an internal Program Fanout controller".into(),
+                ),
+                output,
+            );
+            return;
+        }
         let dialogue = self
             .fiber
             .suspension
@@ -4110,6 +4123,9 @@ impl AwbcProductStepExecutor {
                     observer,
                 } => Dispatch::AwaitNeed(need.correlation(), *item_type, *binding, *observer),
                 FiberSuspensionReason::AwaitMany(_) => Dispatch::AwaitMany,
+                FiberSuspensionReason::ProgramFanout(_) => {
+                    unreachable!("unowned main Program controller was rejected before dispatch")
+                }
                 FiberSuspensionReason::HostCall { call, args, .. } => {
                     if args.iter().all(|value| value.ownership().permits_copy()) {
                         Dispatch::HostCall(*call, args.clone())
@@ -4167,6 +4183,18 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> ProductStepProgress {
+        if matches!(
+            self.fiber.suspension.as_ref().map(|s| &s.reason),
+            Some(FiberSuspensionReason::ProgramFanout(_))
+        ) {
+            self.fail_with_error(
+                ProductStepError::Input(
+                    "Product Entry cannot own an internal Program Fanout controller".into(),
+                ),
+                output,
+            );
+            return false.into();
+        }
         enum Dispatch {
             Choice(AwbcChoiceId, AwbcRegisterId),
             AwaitNeed(
@@ -4254,6 +4282,9 @@ impl AwbcProductStepExecutor {
                 observer,
             } => Dispatch::AwaitNeed(need.correlation(), *item_type, *binding, *observer),
             FiberSuspensionReason::AwaitMany(_) => Dispatch::AwaitMany,
+            FiberSuspensionReason::ProgramFanout(_) => {
+                unreachable!("unowned main Program controller was rejected before dispatch")
+            }
             FiberSuspensionReason::HostCall {
                 call, destination, ..
             } => Dispatch::HostCall(*call, *destination),

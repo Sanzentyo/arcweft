@@ -4,6 +4,56 @@
 use super::*;
 use crate::value::RuntimeLocalReadMode;
 
+pub(crate) struct PreparedOwnedProgramTaskFiber {
+    fiber: FiberState,
+    parameters: Box<[AwbcRegisterId]>,
+}
+
+impl PreparedOwnedProgramTaskFiber {
+    pub(crate) fn bind(mut self, values: Vec<RuntimeValue>) -> FiberState {
+        assert_eq!(values.len(), self.parameters.len());
+        for (value, register) in values.into_iter().zip(self.parameters) {
+            assert!(
+                self.fiber.frames[0].registers[register.index()]
+                    .as_ref()
+                    .is_none()
+            );
+            self.fiber.frames[0].registers[register.index()] = value.into();
+        }
+        self.fiber
+    }
+}
+
+impl PreparedFunctionInputBinding {
+    pub(crate) fn prepare_owned_program_task_fiber(
+        self,
+        program: &AwbcProgram,
+        task: crate::awbc::schema::AwbcTaskPlanId,
+        instance: RuntimeFiberInstanceId,
+        generation: u64,
+        quantum: u64,
+    ) -> Result<PreparedOwnedProgramTaskFiber, FiberStateError> {
+        let Some(crate::awbc::schema::AwbcTaskPlanExecution::Program(body)) = program
+            .task_plans
+            .get(task.index())
+            .map(|row| &row.execution)
+        else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        if self.function != body.kernel {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        let (fiber, parameters) = self.allocate_fiber(
+            program,
+            AwbcFiberRoot::Task(task),
+            instance,
+            generation,
+            quantum.max(1),
+        );
+        Ok(PreparedOwnedProgramTaskFiber { fiber, parameters })
+    }
+}
+
 pub(crate) struct PreparedProgramTaskFiber {
     parent: RuntimeFiberInstanceId,
     frame: RuntimeFrameInstanceId,

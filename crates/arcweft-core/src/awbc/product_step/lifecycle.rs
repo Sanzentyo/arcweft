@@ -468,6 +468,9 @@ impl AwbcProductStepExecutor {
                 queued: std::collections::VecDeque::new(),
             })),
             FiberSuspensionReason::HostCall { call, .. } => self.host_call_status(*call),
+            FiberSuspensionReason::ProgramFanout(_) => FlowFiberStatus::Failed(
+                "Product Entry cannot own an internal Program Fanout controller".into(),
+            ),
             FiberSuspensionReason::AwaitMany(_) | FiberSuspensionReason::BudgetYield => {
                 FlowFiberStatus::Running
             }

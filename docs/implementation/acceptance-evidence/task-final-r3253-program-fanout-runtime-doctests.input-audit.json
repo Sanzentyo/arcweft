@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3253-program-fanout-runtime-doctests",
+  "actualExitCode": 0,
+  "scope": [
+    "test",
+    "--doc",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3997,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T13:14:59.6398473Z"
+}

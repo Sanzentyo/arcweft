@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "run": "task-final-r3251-program-fanout-runtime-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-runtime-codegen",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3997,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T13:13:27.6251532Z"
+}

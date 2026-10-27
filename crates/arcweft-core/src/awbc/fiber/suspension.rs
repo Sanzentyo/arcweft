@@ -4,8 +4,8 @@ use super::{
     AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcRuntimeValueSnapshot, AwbcSaveResult,
     FiberAwaitTarget, FiberCursor, FiberDialogueContentEffectBinding, FiberResumeTarget,
     FiberState, FiberStateError, FiberSuspension, FiberSuspensionReason, FrameValueContext,
-    RuntimeDialogueValueBinding, RuntimeProgramOwner, RuntimeValue,
-    dialogue_target_type_matches_program, validate_cursor,
+    InertFiberNeed, InertRuntimeValueStorage, RuntimeDialogueValueBinding, RuntimeProgramOwner,
+    RuntimeValue, dialogue_target_type_matches_program, validate_cursor,
 };
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::program_types::RuntimeProgramValueType;
@@ -185,6 +185,10 @@ impl<V, O, N> FiberSuspension<V, O, N> {
             }
             (
                 FiberSuspensionReason::AwaitMany(state),
+                super::super::schema::AwbcTerminator::AwaitMany { .. },
+            ) => state.validate_inputs(frame, cursor, self.resume, resources, view, need),
+            (
+                FiberSuspensionReason::ProgramFanout(state),
                 super::super::schema::AwbcTerminator::AwaitMany { .. },
             ) => state.validate_inputs(frame, cursor, self.resume, resources, view, need),
             (
@@ -665,6 +669,9 @@ impl FiberSuspensionReason {
             Self::AwaitMany(state) => {
                 FiberSuspensionReason::AwaitMany(state.snapshot_admitted(owner)?)
             }
+            Self::ProgramFanout(state) => {
+                FiberSuspensionReason::ProgramFanout(state.snapshot_admitted(owner)?)
+            }
             Self::HostCall {
                 call,
                 args,
@@ -795,6 +802,9 @@ impl
             Self::AwaitMany(state) => {
                 FiberSuspensionReason::AwaitMany(state.into_live_admitted(owner)?)
             }
+            Self::ProgramFanout(state) => {
+                FiberSuspensionReason::ProgramFanout(state.into_live_admitted(owner)?)
+            }
             Self::HostCall {
                 call,
                 args,
@@ -806,5 +816,76 @@ impl
             },
             Self::BudgetYield => FiberSuspensionReason::BudgetYield,
         })
+    }
+}
+
+impl<V, O, N> Clone for super::FiberSuspension<V, O, N>
+where
+    V: InertRuntimeValueStorage + Clone,
+    O: InertRuntimeValueStorage + Clone,
+    N: InertFiberNeed + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            resume: self.resume,
+            reason: self.reason.clone(),
+        }
+    }
+}
+
+impl<V, O, N> Clone for super::FiberSuspensionReason<V, O, N>
+where
+    V: InertRuntimeValueStorage + Clone,
+    O: InertRuntimeValueStorage + Clone,
+    N: InertFiberNeed + Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::Dialogue {
+                target,
+                target_type,
+                content,
+                values,
+                effects,
+                line_task_captures,
+                result,
+            } => Self::Dialogue {
+                target: target.clone(),
+                target_type: *target_type,
+                content: *content,
+                values: values.clone(),
+                effects: effects.clone(),
+                line_task_captures: line_task_captures.clone(),
+                result: result.clone(),
+            },
+            Self::Choice {
+                choice,
+                destination,
+            } => Self::Choice {
+                choice: *choice,
+                destination: *destination,
+            },
+            Self::Await {
+                target,
+                binding,
+                observer,
+            } => Self::Await {
+                target: target.clone(),
+                binding: *binding,
+                observer: *observer,
+            },
+            Self::AwaitMany(state) => Self::AwaitMany(state.clone()),
+            Self::ProgramFanout(state) => Self::ProgramFanout(state.clone()),
+            Self::HostCall {
+                call,
+                args,
+                destination,
+            } => Self::HostCall {
+                call: *call,
+                args: args.clone(),
+                destination: *destination,
+            },
+            Self::BudgetYield => Self::BudgetYield,
+        }
     }
 }

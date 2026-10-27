@@ -354,14 +354,23 @@ fn map_vm_exit(
             |error| failed(AwbcTrapCode::InternalInvariant, error.to_string()),
             |next| CompiledStepExit::Continue { next },
         ),
-        VmExit::Suspended(reason) => fiber.suspension.clone().map_or_else(
+        VmExit::Suspended(notice) => fiber.suspension.as_ref().map_or_else(
             || {
                 failed(
                     AwbcTrapCode::InternalInvariant,
-                    format!("missing suspension for {reason:?}"),
+                    format!("missing suspension for {notice:?}"),
                 )
             },
-            CompiledStepExit::Suspended,
+            |suspension| {
+                if suspension.notice() == notice {
+                    CompiledStepExit::Suspended(notice)
+                } else {
+                    failed(
+                        AwbcTrapCode::InternalInvariant,
+                        "VM suspension notice differs from its live owner".into(),
+                    )
+                }
+            },
         ),
         VmExit::Returned(value) => CompiledStepExit::Returned(value),
         VmExit::TaskReturned => failed(

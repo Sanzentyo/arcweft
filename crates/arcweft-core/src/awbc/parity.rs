@@ -88,7 +88,10 @@ impl ParityTrace {
         trace
     }
 
-    pub fn from_compact(output: &VmStepOutput) -> Self {
+    pub fn from_compact(
+        output: &VmStepOutput,
+        fiber: &super::fiber::FiberState,
+    ) -> Result<Self, super::fiber::FiberStateError> {
         let mut trace = Self::default();
         trace
             .events
@@ -97,9 +100,18 @@ impl ParityTrace {
             VmExit::Running => ParityEvent::Stop {
                 reason: "running".to_owned(),
             },
-            VmExit::Suspended(reason) => ParityEvent::Stop {
-                reason: format!("suspended:{reason:?}"),
-            },
+            VmExit::Suspended(notice) => {
+                let suspension = fiber
+                    .suspension
+                    .as_ref()
+                    .ok_or(super::fiber::FiberStateError::InvalidFrame)?;
+                if suspension.notice() != *notice {
+                    return Err(super::fiber::FiberStateError::InvalidFrame);
+                }
+                ParityEvent::Stop {
+                    reason: format!("suspended:{:?}", suspension.reason),
+                }
+            }
             VmExit::Returned(_) | VmExit::TaskReturned => ParityEvent::Stop {
                 reason: "returned".to_owned(),
             },
@@ -117,7 +129,7 @@ impl ParityTrace {
                 reason: "budget_yield".to_owned(),
             },
         });
-        trace
+        Ok(trace)
     }
 
     #[must_use]

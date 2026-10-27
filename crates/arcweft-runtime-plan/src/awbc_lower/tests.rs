@@ -1665,16 +1665,21 @@ fn host_descriptor_interning_preserves_distinct_call_site_values() {
     for message in ["first", "second"] {
         let output =
             vm::step(&report.program, &mut fiber, VmStepOptions::default()).expect("host step");
-        let VmExit::Suspended(arcweft_core::awbc::fiber::FiberSuspensionReason::HostCall {
+        assert_eq!(
+            output.exit,
+            VmExit::Suspended(fiber.suspension.as_ref().unwrap().notice())
+        );
+        let arcweft_core::awbc::fiber::FiberSuspensionReason::HostCall {
             call,
             args,
             destination,
-        }) = output.exit
+        } = &fiber.suspension.as_ref().unwrap().reason
         else {
             panic!("one suspended host call")
         };
         assert_eq!(call.index(), 0);
-        assert_eq!(args, [RuntimeValue::String(message.to_owned())]);
+        assert_eq!(args.as_slice(), [RuntimeValue::String(message.to_owned())]);
+        let destination = *destination;
         let resume = fiber
             .suspension
             .as_ref()

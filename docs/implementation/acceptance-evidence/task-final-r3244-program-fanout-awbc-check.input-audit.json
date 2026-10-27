@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3244-program-fanout-awbc-check",
+  "actualExitCode": 101,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3997,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T12:30:49.5345837Z"
+}

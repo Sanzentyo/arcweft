@@ -59,58 +59,8 @@ impl<V, N> FiberAwaitManyState<V, N> {
         resume: super::FiberResumeTarget,
         resources: &mut ValueResourceAdmission,
     ) -> Result<(), FiberStateError> {
-        resources
-            .work()
-            .charge(0)
-            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        let super::FiberResumeTarget::Declared(resume) = resume else {
-            return Err(FiberStateError::InvalidFrame);
-        };
-        let point = frame
-            .program
-            .resume_points
-            .get(resume.index())
-            .ok_or(FiberStateError::UnknownResumePoint(resume.0))?;
-        let function = frame
-            .program
-            .functions
-            .get(frame.function.index())
-            .ok_or(FiberStateError::InvalidFrame)?;
-        if point.function != frame.function
-            || point.frame_layout != function.frame_layout
-            || cursor.function != frame.function
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        resources
-            .work()
-            .charge(0)
-            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        let block = frame
-            .program
-            .blocks
-            .get(cursor.block.index())
-            .ok_or(FiberStateError::InvalidFrame)?;
-        let crate::awbc::schema::AwbcTerminator::AwaitMany {
-            plan,
-            binding,
-            resume: declared_resume,
-            ..
-        } = block.terminator
-        else {
-            return Err(FiberStateError::InvalidFrame);
-        };
-        if block.owner != frame.function
-            || cursor.instruction_offset != block.instructions.len
-            || plan != self.plan
-            || binding != self.binding
-            || declared_resume != resume
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        Ok(())
+        frame.validate_await_many_site(self.plan, self.binding, cursor, resume, resources)
     }
-
     #[allow(
         clippy::too_many_lines,
         reason = "one progress admission checks index partition, original captures and request/result types, and base/child producer derivation before any value projection"

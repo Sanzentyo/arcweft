@@ -1655,7 +1655,8 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
         ))
     );
     assert_eq!(
-        crate::awbc::parity::ParityTrace::from_compact(&output)
+        crate::awbc::parity::ParityTrace::from_compact(&output, &fiber)
+            .unwrap()
             .events
             .last(),
         Some(&crate::awbc::parity::ParityEvent::Stop {
@@ -3369,8 +3370,12 @@ fn project_call_retained_callable_survives_snapshot_and_rejoins_next_group() {
     .expect("first group retains its callable state before the yield");
     assert_eq!(
         output.exit,
-        super::vm::VmExit::Suspended(FiberSuspensionReason::BudgetYield)
+        super::vm::VmExit::Suspended(fiber.suspension.as_ref().unwrap().notice())
     );
+    assert!(matches!(
+        &fiber.suspension.as_ref().unwrap().reason,
+        FiberSuspensionReason::BudgetYield
+    ));
     let RuntimeValue::Callable(retained) = fiber
         .active_frame()
         .expect("caller frame")
@@ -7985,8 +7990,12 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
 
     assert_eq!(
         output.exit,
-        super::vm::VmExit::Suspended(FiberSuspensionReason::BudgetYield)
+        super::vm::VmExit::Suspended(fiber.suspension.as_ref().unwrap().notice())
     );
+    assert!(matches!(
+        &fiber.suspension.as_ref().unwrap().reason,
+        FiberSuspensionReason::BudgetYield
+    ));
     assert_eq!(fiber.frames.len(), 2);
     assert_eq!(fiber.cursor.function, AwbcFunctionId(1));
     assert_eq!(
@@ -8103,11 +8112,15 @@ fn expression_apply_surfaces_host_call_from_the_dynamic_callee() {
     .expect("dynamic callee reaches host call");
     assert_eq!(
         output.exit,
-        super::vm::VmExit::Suspended(FiberSuspensionReason::HostCall {
+        super::vm::VmExit::Suspended(fiber.suspension.as_ref().unwrap().notice())
+    );
+    assert_eq!(
+        &fiber.suspension.as_ref().unwrap().reason,
+        &FiberSuspensionReason::HostCall {
             call: AwbcHostCallId(0),
             args: Vec::new(),
             destination: None,
-        })
+        }
     );
     assert_eq!(
         fiber

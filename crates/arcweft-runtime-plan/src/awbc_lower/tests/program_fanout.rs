@@ -289,3 +289,129 @@ fn original_program_fanout_lowers_to_typed_kernels_and_roundtrips_canonical_awbc
         }
     }
 }
+
+#[test]
+fn original_program_fanout_executes_owned_workers_and_roundtrips_every_public_save_frontier() {
+    use arcweft_core::awbc::fiber::FiberSuspensionReason;
+    use arcweft_core::awbc::product_step::{AwbcProductExecutorSaveSnapshot, AwbcProductProgram};
+    use arcweft_core::engine::FlowFiberStatus;
+    use arcweft_core::executor::{
+        ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
+    };
+    use arcweft_core::plan::FlowEvent;
+    use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
+    use arcweft_core::value::RuntimePayload;
+
+    for count in [0, 1, 3, 17] {
+        let items: Vec<_> = (0..count).map(|index| index % 3 != 1).collect();
+        let expected = RuntimePayload::from(RuntimeValue::Seq(RuntimeSeq::values(
+            items.iter().copied().map(RuntimeValue::Bool).collect(),
+        )));
+        for limit in [1, 2, 5] {
+            for decode in [false, true] {
+                for restore in [false, true] {
+                    let plan = fixture(&items, limit);
+                    let report = lower_plan(&plan);
+                    let program = if decode {
+                        AwbcProgram::decode_canonical(
+                            &report.program.encode_canonical().unwrap(),
+                            Default::default(),
+                        )
+                        .unwrap()
+                    } else {
+                        report.program
+                    };
+                    let product = AwbcProductProgram::admit(
+                        Arc::new(program),
+                        Default::default(),
+                        Default::default(),
+                        Default::default(),
+                        None,
+                    )
+                    .unwrap();
+                    let mut executor =
+                        ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
+                            product.clone(),
+                            plan.seal_flow_invocation(flow_id("native_program_fanout"), [])
+                                .unwrap(),
+                        )
+                        .unwrap();
+                    let mut max_flights = 0;
+                    let mut ready = 0;
+                    let mut finished = false;
+                    for _ in 0..(64 + count * 32) {
+                        let step = executor
+                            .step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+                        assert!(step.stats.executed_ops <= 1);
+                        assert!(
+                            step.output.diagnostics.is_empty(),
+                            "count={count} limit={limit} decode={decode} restore={restore}: {:?}",
+                            step.output.diagnostics
+                        );
+                        assert!(step.output.requests.tasks.is_empty());
+                        assert!(step.output.requests.program_task_completions.is_empty());
+                        assert!(step.output.requests.host_calls.is_empty());
+                        for event in &step.output.flow_events {
+                            if let FlowEvent::AwaitReady {
+                                value: Some(value), ..
+                            } = event
+                            {
+                                assert_eq!(value, &expected);
+                                ready += 1;
+                            }
+                        }
+                        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
+                            executor.snapshot().unwrap()
+                        else {
+                            unreachable!()
+                        };
+                        for child in &snapshot.child_fibers {
+                            if let Some(suspension) = &child.fiber.suspension {
+                                if let FiberSuspensionReason::ProgramFanout(state) =
+                                    &suspension.reason
+                                {
+                                    max_flights = max_flights.max(state.in_flight.len());
+                                    assert!(state.in_flight.len() <= limit as usize);
+                                    for (index, value) in state.items.iter().enumerate() {
+                                        assert_eq!(
+                                            value.is_some(),
+                                            index >= state.next_index as usize
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        let saved = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &product)
+                            .unwrap();
+                        let done =
+                            matches!(executor.fiber().frame.status, FlowFiberStatus::Done(_));
+                        if done {
+                            assert_eq!(saved.need_producers.task_admissions.len(), count + 1);
+                        }
+                        if restore {
+                            let decoded =
+                                serde_json::from_slice(&serde_json::to_vec(&saved).unwrap())
+                                    .unwrap();
+                            let rebound = executor.bind_product_save_snapshot(decoded).unwrap();
+                            executor = executor
+                                .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(
+                                    rebound,
+                                ))
+                                .unwrap();
+                        }
+                        if done {
+                            finished = true;
+                            break;
+                        }
+                    }
+                    assert!(
+                        finished,
+                        "count={count} limit={limit} decode={decode} restore={restore}"
+                    );
+                    assert_eq!(ready, 1);
+                    assert_eq!(max_flights, count.min(limit as usize));
+                }
+            }
+        }
+    }
+}

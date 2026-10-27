@@ -79,8 +79,8 @@ fn direct_call_reaches_need_await_on_the_same_fiber() {
     .expect("callee reaches its unresolved Need");
 
     assert!(matches!(
-        suspended.exit,
-        VmExit::Suspended(FiberSuspensionReason::Await {
+        fiber.suspension.as_ref().map(|s| &s.reason),
+        Some(FiberSuspensionReason::Await {
             target: FiberAwaitTarget::Need {
                 need,
                 item_type: AwbcTypeId(1),
@@ -90,6 +90,10 @@ fn direct_call_reaches_need_await_on_the_same_fiber() {
             observer: None,
         }) if need.correlation() == fixture_need("need.profile").correlation()
     ));
+    assert_eq!(
+        suspended.exit,
+        VmExit::Suspended(fiber.suspension.as_ref().unwrap().notice())
+    );
     assert_eq!(fiber.status, FiberStatus::Suspended);
     assert_eq!(fiber.frames.len(), 2);
     assert_eq!(

@@ -1,0 +1,11 @@
+{
+  "code": "E0277",
+  "message": "the trait bound `VmNestedCallExit: Clone` is not satisfied",
+  "spans": [
+    {
+      "file_name": "crates\\arcweft-core\\src\\awbc\\vm.rs",
+      "line_start": 345,
+      "label": "the trait `Clone` is not implemented for `VmNestedCallExit`"
+    }
+  ]
+}

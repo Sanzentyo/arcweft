@@ -1,0 +1,68 @@
+[
+  {
+    "code": "E0433",
+    "message": "cannot find type `RuntimeFiberInstanceId` in this scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\product_step\\program_fanout.rs",
+        "line_start": 153,
+        "label": "use of undeclared type `RuntimeFiberInstanceId`"
+      }
+    ]
+  },
+  {
+    "code": "E0277",
+    "message": "the trait bound `value::RuntimeValue: InertRuntimeValueStorage` is not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\vm.rs",
+        "line_start": 385,
+        "label": "unsatisfied trait bound"
+      }
+    ]
+  },
+  {
+    "code": "E0277",
+    "message": "the trait bound `RuntimeOpaqueValue: InertRuntimeValueStorage` is not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\vm.rs",
+        "line_start": 385,
+        "label": "unsatisfied trait bound"
+      }
+    ]
+  },
+  {
+    "code": "E0277",
+    "message": "the trait bound `RuntimeNeedHandle: InertFiberNeed` is not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\vm.rs",
+        "line_start": 385,
+        "label": "unsatisfied trait bound"
+      }
+    ]
+  },
+  {
+    "code": "E0599",
+    "message": "the method `clone` exists for enum `fiber::FiberSuspensionReason`, but its trait bounds were not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\vm.rs",
+        "line_start": 3258,
+        "label": "method cannot be called on `fiber::FiberSuspensionReason` due to unsatisfied trait bounds"
+      }
+    ]
+  },
+  {
+    "code": "E0599",
+    "message": "the method `clone` exists for enum `fiber::FiberSuspensionReason`, but its trait bounds were not satisfied",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\vm.rs",
+        "line_start": 4132,
+        "label": "method cannot be called on `fiber::FiberSuspensionReason` due to unsatisfied trait bounds"
+      }
+    ]
+  }
+]

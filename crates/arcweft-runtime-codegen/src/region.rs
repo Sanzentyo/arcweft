@@ -2,7 +2,7 @@ use crate::artifact::CodeRegionId;
 use crate::policy::ProgramGenerationId;
 use arcweft_core::awbc::fiber::{
     FiberResumeTarget, FiberSafePoint, FiberState, FiberStateError, FiberStatus, FiberSuspension,
-    FiberSuspensionReason, FiberTrap,
+    FiberSuspensionNotice, FiberSuspensionReason, FiberTrap,
 };
 use arcweft_core::awbc::product_step::AwbcProductProgram;
 use arcweft_core::awbc::schema::{
@@ -65,7 +65,7 @@ pub struct CompiledRegionResult {
 pub enum CompiledStepExit {
     Continue { next: FiberSafePoint },
     HostRequest(CompiledHostRequest),
-    Suspended(FiberSuspension),
+    Suspended(FiberSuspensionNotice),
     Returned(Option<RuntimeValue>),
     BudgetExhausted { resume: AwbcResumePointId },
     Failed(RuntimeFailure),
@@ -300,13 +300,19 @@ fn apply_exit(
             })?;
             Ok(CompiledTransition::HostRequest(request))
         }
-        CompiledStepExit::Suspended(suspension) => {
+        CompiledStepExit::Suspended(notice) => {
+            let suspension = fiber
+                .suspension
+                .as_ref()
+                .ok_or(CompiledApplyError::InvalidSafePoint)?;
+            if fiber.status != FiberStatus::Suspended || suspension.notice() != notice {
+                return Err(CompiledApplyError::InvalidSafePoint);
+            }
             let expected = suspension_kind(&suspension.reason);
             let resume = suspension
                 .declared_resume()
                 .ok_or(CompiledApplyError::InvalidSafePoint)?;
             validate_resume(program, fiber, resume, expected)?;
-            fiber.suspend(suspension)?;
             Ok(CompiledTransition::Suspended)
         }
         CompiledStepExit::Returned(value) => {
@@ -431,7 +437,9 @@ const fn suspension_kind(reason: &FiberSuspensionReason) -> AwbcSafePointKind {
         FiberSuspensionReason::Dialogue { .. } => AwbcSafePointKind::Dialogue,
         FiberSuspensionReason::Choice { .. } => AwbcSafePointKind::Choice,
         FiberSuspensionReason::Await { .. } => AwbcSafePointKind::Await,
-        FiberSuspensionReason::AwaitMany(_) => AwbcSafePointKind::AwaitMany,
+        FiberSuspensionReason::AwaitMany(_) | FiberSuspensionReason::ProgramFanout(_) => {
+            AwbcSafePointKind::AwaitMany
+        }
         FiberSuspensionReason::HostCall { .. } => AwbcSafePointKind::HostCall,
         FiberSuspensionReason::BudgetYield => AwbcSafePointKind::BudgetYield,
     }

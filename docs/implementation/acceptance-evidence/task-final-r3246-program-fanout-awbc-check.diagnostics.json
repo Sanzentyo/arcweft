@@ -1,0 +1,11 @@
+{
+  "code": "E0277",
+  "message": "the trait bound `VmError: Clone` is not satisfied",
+  "spans": [
+    {
+      "file_name": "crates\\arcweft-core\\src\\pure\\program_context.rs",
+      "line_start": 32,
+      "label": "unsatisfied trait bound"
+    }
+  ]
+}

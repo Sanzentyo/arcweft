@@ -1,0 +1,284 @@
+{
+  "version": 1,
+  "base": "b7db2c9dcb38063880f4157495abbd53461650c3",
+  "dirty": true,
+  "sourceInputs": 3997,
+  "sourceDrift": 0,
+  "blocking": 0,
+  "metrics": [
+    {
+      "path": "crates/arcweft-compiler/src/project/entry_tests.rs",
+      "owner": "arcweft-compiler",
+      "bytes": "47110",
+      "physical_lines": "1454",
+      "code_lines": "1376",
+      "classification": "test",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 1444
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/await_many.rs",
+      "owner": "arcweft-core",
+      "bytes": "15139",
+      "physical_lines": "397",
+      "code_lines": "374",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 447
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+      "owner": "arcweft-core",
+      "bytes": "23542",
+      "physical_lines": "589",
+      "code_lines": "565",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 417
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/program_fanout.rs",
+      "owner": "arcweft-core",
+      "bytes": "13151",
+      "physical_lines": "338",
+      "code_lines": "320",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": "5829",
+      "physical_lines": "159",
+      "code_lines": "148",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 109
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/suspension.rs",
+      "owner": "arcweft-core",
+      "bytes": "33905",
+      "physical_lines": "891",
+      "code_lines": "881",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 810
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/validation.rs",
+      "owner": "arcweft-core",
+      "bytes": "15022",
+      "physical_lines": "382",
+      "code_lines": "362",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 374
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "owner": "arcweft-core",
+      "bytes": "284142",
+      "physical_lines": "7473",
+      "code_lines": "6973",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "1880",
+      "basePhysicalLines": 7399
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/parity.rs",
+      "owner": "arcweft-core",
+      "bytes": "9978",
+      "physical_lines": "283",
+      "code_lines": "267",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 271
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+      "owner": "arcweft-core",
+      "bytes": "22996",
+      "physical_lines": "563",
+      "code_lines": "546",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 560
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "owner": "arcweft-core",
+      "bytes": "180350",
+      "physical_lines": "4251",
+      "code_lines": "4157",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "74",
+      "basePhysicalLines": 4218
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+      "owner": "arcweft-core",
+      "bytes": "16328",
+      "physical_lines": "398",
+      "code_lines": "391",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "owner": "arcweft-core",
+      "bytes": "120789",
+      "physical_lines": "2927",
+      "code_lines": "2883",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 2919
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "owner": "arcweft-core",
+      "bytes": "239923",
+      "physical_lines": "5957",
+      "code_lines": "5676",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 5926
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": "330610",
+      "physical_lines": "9021",
+      "code_lines": "8696",
+      "classification": "test",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 9008
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "owner": "arcweft-core",
+      "bytes": "219894",
+      "physical_lines": "5462",
+      "code_lines": "5257",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 5446
+    },
+    {
+      "path": "crates/arcweft-core/tests/direct_suspension.rs",
+      "owner": "arcweft-core",
+      "bytes": "37408",
+      "physical_lines": "1057",
+      "code_lines": "999",
+      "classification": "test",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 1053
+    },
+    {
+      "path": "crates/arcweft-runtime-codegen/src/awbc_region.rs",
+      "owner": "arcweft-runtime-codegen",
+      "bytes": "15132",
+      "physical_lines": "422",
+      "code_lines": "399",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 413
+    },
+    {
+      "path": "crates/arcweft-runtime-codegen/src/region.rs",
+      "owner": "arcweft-runtime-codegen",
+      "bytes": "15798",
+      "physical_lines": "446",
+      "code_lines": "414",
+      "classification": "production",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 438
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests/program_fanout.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": "18901",
+      "physical_lines": "417",
+      "code_lines": "414",
+      "classification": "test",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 291
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": "100742",
+      "physical_lines": "2611",
+      "code_lines": "2534",
+      "classification": "test",
+      "is_rust": "true",
+      "embedded_test_lines": "0",
+      "basePhysicalLines": 2606
+    }
+  ],
+  "packages": [
+    {
+      "package": "arcweft-compiler",
+      "manifest": "crates/arcweft-compiler/Cargo.toml",
+      "workspace_fan_in": "3",
+      "workspace_fan_out": "24",
+      "development_workspace_fan_in": "2",
+      "development_workspace_fan_out": "10"
+    },
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "manifest": "crates/arcweft-runtime-codegen/Cargo.toml",
+      "workspace_fan_in": "1",
+      "workspace_fan_out": "1",
+      "development_workspace_fan_in": "0",
+      "development_workspace_fan_out": "0"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+      "workspace_fan_in": "5",
+      "workspace_fan_out": "10",
+      "development_workspace_fan_in": "5",
+      "development_workspace_fan_out": "0"
+    }
+  ],
+  "disposition": [
+    "Core owns the exhaustive live/inert fiber suspension and original Source admissions. Program fanout state and scheduler are cohesive child modules of those owners; no I/O or higher-layer dependency is added. The shared AwaitMany site proof remains on FrameValueContext, avoiding duplicated admission logic.",
+    "ProductStep owns real worker lifetime, registry receipts and Ready transfers. The new module does not introduce a Host base or duplicate capture authority; free captures remain in the original frame. Existing large fiber/line/product owners remain cohesive state-machine/schema visitors and consumers of the same exhaustive suspension grammar.",
+    "Codegen owns compiled transition validation; the metadata-only notice migrates its actual VM mapping and dispatcher together. Compiler and runtime-plan fixtures follow the real consumer/lowering boundaries. Splitting these consumers only for numeric LOC would widen internal APIs without a new owner."
+  ],
+  "pending": [
+    "Cancellation and full callback/Result/affine semantics remain unaccepted; this cut proves the Bool worker path and every-step public save only."
+  ],
+  "scanned": 3105
+}

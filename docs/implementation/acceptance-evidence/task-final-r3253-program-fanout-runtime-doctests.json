@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "b7db2c9dcb38063880f4157495abbd53461650c3",
+  "command": [
+    "test",
+    "--doc",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3253-program-fanout-runtime-doctests.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-27T13:12:49.5705097Z",
+  "finishedAt": "2026-10-27T13:14:58.6206297Z"
+}
