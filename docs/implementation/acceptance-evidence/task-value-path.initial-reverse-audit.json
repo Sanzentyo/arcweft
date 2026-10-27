@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "sourceCheckpoint": "8b0e60eb781fb1149176388bd6e5cd48f36a3ce1",
+  "run": "task-final-r3416-program-fanout-runtime",
+  "executed": 3911,
+  "passed": 3864,
+  "failed": 47,
+  "ignored": 23,
+  "newFailureCount": 2,
+  "newFailures": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::compile_time_scalars::declaration_defaults_reject_effectful_and_path_expressions"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::line_context_alias_cannot_call_voice_handle"
+    }
+  ],
+  "cli": {
+    "passed": 646,
+    "executed": 691,
+    "failed": 45
+  },
+  "packages": [
+    {
+      "package": "arcweft-adapter-sema",
+      "executed": 13,
+      "passed": 13,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "executed": 31,
+      "passed": 31,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-mcp-client",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "executed": 37,
+      "passed": 37,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "executed": 69,
+      "passed": 69,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-cli",
+      "executed": 691,
+      "passed": 646,
+      "failed": 45
+    },
+    {
+      "package": "arcweft-compiler",
+      "executed": 634,
+      "passed": 634,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "executed": 1357,
+      "passed": 1355,
+      "failed": 2
+    },
+    {
+      "package": "arcweft-lsp",
+      "executed": 223,
+      "passed": 223,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-player-native",
+      "executed": 63,
+      "passed": 63,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-player-scene",
+      "executed": 128,
+      "passed": 128,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-player-web",
+      "executed": 36,
+      "passed": 36,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-project-loader",
+      "executed": 158,
+      "passed": 158,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "executed": 177,
+      "passed": 177,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "executed": 72,
+      "passed": 72,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "executed": 161,
+      "passed": 161,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-test",
+      "executed": 3,
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-tooling",
+      "executed": 27,
+      "passed": 27,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-verify",
+      "executed": 8,
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "executed": 14,
+      "passed": 14,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-verify-oxiz",
+      "executed": 5,
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-verify-z3",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0
+    }
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "catalogDrift": 0,
+  "executableCount": 115,
+  "executableDrift": 0,
+  "status": "Historical initial diagnostic checkpoint: two change-caused Sema failures require follow-up; not accepted",
+  "repair": "TextProxy default cause classification must recognize UnknownValuePath; the line-alias rejection fixture must assert its new exact path and source"
+}

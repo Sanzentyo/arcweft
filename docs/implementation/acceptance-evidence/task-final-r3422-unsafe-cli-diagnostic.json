@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "5d1ed0411d1f5314f4a0dcb2a9cff5475d3f21d1",
+  "executable": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+  "executableSha256": "71a8730e9db79e3015c228e2dd69251dff01b0157be7e2db64843a8c6c440499",
+  "command": [
+    "unsafe",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3422-unsafe-cli-diagnostic.arcw",
+    "--json"
+  ],
+  "input": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3422-unsafe-cli-diagnostic.arcw",
+  "inputSha256": "cf748e527fefbc0317ea2a03161004781b50d7fea1ffa79ade18a3986392af87",
+  "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3422-unsafe-cli-diagnostic.stdout.json",
+  "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3422-unsafe-cli-diagnostic.stderr.log",
+  "exitCode": 1,
+  "startedAt": "2026-10-27T22:48:48.7227795Z",
+  "finishedAt": "2026-10-27T22:48:50.3419429Z"
+}

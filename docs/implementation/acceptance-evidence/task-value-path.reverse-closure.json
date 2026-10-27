@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "base": "5d1ed0411d1f5314f4a0dcb2a9cff5475d3f21d1",
+  "owners": [
+    "arcweft-lang-sema"
+  ],
+  "metadata": "task-value-path.metadata.json",
+  "workspacePackages": 97,
+  "closure": [
+    {
+      "name": "arcweft-adapter-sema",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-adapter-sema\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-agent-mcp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-agent-mcp\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-agent-mcp-client",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-agent-mcp-client\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-agent-repl",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-agent-runner",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-agent-runner\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-cli",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-compiler",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-lang-sema",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-lang-sema\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-lsp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-lsp\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-player-native",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-player-native\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-player-scene",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-player-web",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-player-web\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-project-loader",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-project-loader\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-runtime-driver",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-driver\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-runtime-host",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-host\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-runtime-plan",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-plan\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-test",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-test\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-tooling",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-tooling\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-verify",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-verify\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-verify-lsp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-verify-lsp\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-verify-oxiz",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-verify-oxiz\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-verify-z3",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-verify-z3\\Cargo.toml"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "base": "5d1ed0411d1f5314f4a0dcb2a9cff5475d3f21d1",
+  "sourceCheckpoint": "d16dd07d7a4764b81cefc6a9632d796b2d8cc0d6",
+  "observedDirtyState": {
+    "tracked": 14,
+    "untrackedFiles": 6,
+    "deliveredSemaFilesDirty": 0,
+    "at": "2026-10-27T23:12:53.6727136Z"
+  },
+  "rows": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 46426,
+      "physicalLoc": 1220,
+      "growth": 35,
+      "sha256": "dc42f75ac564fd35514ddd4d857c7f00986493381d88f00672a85552e4651360"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 239283,
+      "physicalLoc": 5599,
+      "growth": 5,
+      "sha256": "3427688a0abdc280ac213c47c2a89c811b20d9442a14f1b1af78f99bdbd2e5b8"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/tests.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "unit-test",
+      "bytes": 70309,
+      "physicalLoc": 1858,
+      "growth": 22,
+      "sha256": "2281eba91ef7f7e22ce41d87400dd1b9d6dfb6cc01297cafcedeb543fe0d9e3a"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 39656,
+      "physicalLoc": 797,
+      "growth": 1,
+      "sha256": "53485bcad5fe3e2c2d47a0144d13a3b1751631c5171648b3426ca30a86ae5973"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "unit-test",
+      "bytes": 386746,
+      "physicalLoc": 11037,
+      "growth": 9,
+      "sha256": "c22b7b9db4f1f9c926d2e00fcb6c9c32875a880e7b23896e245d79605c1dd634"
+    }
+  ],
+  "directWorkspaceFanIn": 12,
+  "directWorkspaceFanOut": 14,
+  "reverseClosure": 22,
+  "ownership": "FinalSemanticAnalysisError retains one typed HIR path and source span for an authored unresolved value. The analyzer keeps normal value/callable/closed-variant resolution precedence; TextProxy maps the new error into its existing authored-default diagnostic cause. Tests remain with their transaction and line-capability owners.",
+  "sizeDisposition": "The error owner crosses 1200 LOC at 1220 LOC and receives this explicit cohesion review. The 5599-LOC expression evaluator retains its existing responsibility and state ownership; the patch changes one terminal path outcome. Existing large final-analysis test owners receive changes to existing cases, without new shared state or helper APIs. No arbitrary file split or visibility widening is introduced.",
+  "dependencyDisposition": "No Cargo or dependency changes, no AST/source reconstruction, no new side table, no I/O or unsafe, and no additional state owner; syntax -> HIR -> sema direction remains unchanged."
+}

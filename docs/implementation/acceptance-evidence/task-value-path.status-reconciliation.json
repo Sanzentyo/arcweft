@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "base": "d16dd07d7a4764b81cefc6a9632d796b2d8cc0d6",
+  "historyPrefixBytes": 1482614,
+  "historyPrefixSha256": "39201fe819cefe3f2a7e02a08a034aa79d26034b8927f7c3c8d42877edb41a82",
+  "historyPrefixDrift": 0,
+  "appendedBytes": 4136,
+  "reason": "Replace superseded current remaining-count descriptions with the latest actual run; preserve historical results and full SHAs"
+}

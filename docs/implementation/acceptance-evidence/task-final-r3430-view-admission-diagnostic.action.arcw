@@ -1,0 +1,1 @@
+pub view Minimal(dialogue: DialogueView) { Button("").on_click { dialogue.primary_action } }

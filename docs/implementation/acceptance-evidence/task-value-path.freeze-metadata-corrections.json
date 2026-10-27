@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "at": "2026-10-27T22:44:56.8503460Z",
+  "corrections": [
+    {
+      "path": "task-program-fanout-runtime-r3414.source-freeze.json",
+      "beforeSha256": "702e380f53f5c3e79e64385a9b53c38d01d86a21bca6841840b3013db5460ebd",
+      "afterSha256": "9a7ff9f5addf6c972061048ed815185df411b21402246960a6b6551d83b9d801",
+      "oldScope": "Diagnostic for duplicate Move rejection and unused test import cleanup, before R3168 focused catalog",
+      "oldPartialStaging": [
+        "crates/arcweft-cli/tests/check/cli_runtime_bench.rs"
+      ],
+      "newScope": "Source-backed unresolved value-path diagnostics; three Sema-owned Rust files, resolved 22-package reverse closure; actual run command selects the validation scope.",
+      "reason": "Inherited descriptive labels from an earlier source-freeze template were stale. Correct metadata only; base, source paths/hashes, commands, observed results and timestamps are unchanged."
+    },
+    {
+      "path": "task-program-fanout-runtime-r3415.source-freeze.json",
+      "beforeSha256": "702e380f53f5c3e79e64385a9b53c38d01d86a21bca6841840b3013db5460ebd",
+      "afterSha256": "9a7ff9f5addf6c972061048ed815185df411b21402246960a6b6551d83b9d801",
+      "oldScope": "Diagnostic for duplicate Move rejection and unused test import cleanup, before R3168 focused catalog",
+      "oldPartialStaging": [
+        "crates/arcweft-cli/tests/check/cli_runtime_bench.rs"
+      ],
+      "newScope": "Source-backed unresolved value-path diagnostics; three Sema-owned Rust files, resolved 22-package reverse closure; actual run command selects the validation scope.",
+      "reason": "Inherited descriptive labels from an earlier source-freeze template were stale. Correct metadata only; base, source paths/hashes, commands, observed results and timestamps are unchanged."
+    }
+  ]
+}

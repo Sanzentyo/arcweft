@@ -1,0 +1,673 @@
+{
+  "version": 1,
+  "sourceCheckpoint": "d16dd07d7a4764b81cefc6a9632d796b2d8cc0d6",
+  "testedBase": "8b0e60eb781fb1149176388bd6e5cd48f36a3ce1",
+  "status": "Source-backed unresolved value-path diagnostics and specialized TextProxy defaults validated; remaining CLI failures are separate",
+  "contract": "Missing ordinary values retain the typed HIR path and exact source span, with sema.value.unknown_symbol. Internal value-resolution invariants remain separate. Normal callable and closed-variant resolution precedence is unchanged.",
+  "focused": {
+    "executed": 4,
+    "run": "R3424",
+    "sourceDrift": 0,
+    "summary": "Summary [   2.247s] 4 tests run: 4 passed, 3930 skipped",
+    "passed": 4,
+    "catalogDrift": 0
+  },
+  "initial": {
+    "executed": 3911,
+    "run": "R3416",
+    "resolution": "Migrate TextProxy authored-default cause classification and strengthen the existing line-alias rejection to assert the exact line path/span; no assertion relaxation",
+    "artifact": "task-value-path.initial-reverse-audit.json",
+    "failed": 47,
+    "passed": 3864,
+    "newSemaFailures": 2
+  },
+  "final": {
+    "cli": {
+      "failed": 45,
+      "passed": 646,
+      "executed": 691
+    },
+    "ignored": 23,
+    "passed": 3866,
+    "executed": 3911,
+    "packages": [
+      {
+        "package": "arcweft-adapter-sema",
+        "executed": 13,
+        "passed": 13,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-agent-mcp",
+        "executed": 31,
+        "passed": 31,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-agent-mcp-client",
+        "executed": 2,
+        "passed": 2,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-agent-repl",
+        "executed": 37,
+        "passed": 37,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-agent-runner",
+        "executed": 69,
+        "passed": 69,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-cli",
+        "executed": 691,
+        "passed": 646,
+        "failed": 45
+      },
+      {
+        "package": "arcweft-compiler",
+        "executed": 634,
+        "passed": 634,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-lang-sema",
+        "executed": 1357,
+        "passed": 1357,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-lsp",
+        "executed": 223,
+        "passed": 223,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-player-native",
+        "executed": 63,
+        "passed": 63,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-player-scene",
+        "executed": 128,
+        "passed": 128,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-player-web",
+        "executed": 36,
+        "passed": 36,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-project-loader",
+        "executed": 158,
+        "passed": 158,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-runtime-driver",
+        "executed": 177,
+        "passed": 177,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-runtime-host",
+        "executed": 72,
+        "passed": 72,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-runtime-plan",
+        "executed": 161,
+        "passed": 161,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-test",
+        "executed": 3,
+        "passed": 3,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-tooling",
+        "executed": 27,
+        "passed": 27,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-verify",
+        "executed": 8,
+        "passed": 8,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-verify-lsp",
+        "executed": 14,
+        "passed": 14,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-verify-oxiz",
+        "executed": 5,
+        "passed": 5,
+        "failed": 0
+      },
+      {
+        "package": "arcweft-verify-z3",
+        "executed": 2,
+        "passed": 2,
+        "failed": 0
+      }
+    ],
+    "failureSetArtifact": "task-final-r3425-program-fanout-runtime.terminal-audit.json",
+    "run": "R3425",
+    "failed": 45,
+    "summary": "Summary [ 911.105s] 3911 tests run: 3866 passed (76 slow), 45 failed, 23 skipped",
+    "selectedPackages": 22,
+    "newFailures": 0,
+    "matchedPackages": 22
+  },
+  "recoveredFromR3405": [
+    "profile_check_rejects_ambient_route_params",
+    "verify_json_reports_invalid_proof_body",
+    "verify_json_reports_unknown_proof_dependency"
+  ],
+  "recoveredChangeCausedSemaCases": [
+    "final_analysis::tests::compile_time_scalars::declaration_defaults_reject_effectful_and_path_expressions",
+    "final_analysis::tests::line_context_alias_cannot_call_voice_handle"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "catalogDrift": 0,
+  "executables": 115,
+  "harnesses": 111,
+  "subprocessExecutables": 4,
+  "executableDrift": 0,
+  "checks": [
+    {
+      "run": "task-final-r3426-workspace-check",
+      "exitCode": 0,
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "warningMessages": 268,
+      "sourceInputs": 3998,
+      "sourceDrift": 0
+    },
+    {
+      "run": "task-final-r3427-workspace-clippy",
+      "exitCode": 0,
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "warningMessages": 8685,
+      "sourceInputs": 3998,
+      "sourceDrift": 0
+    },
+    {
+      "run": "task-final-r3428-sema-doctest",
+      "exitCode": 0,
+      "command": [
+        "test",
+        "--doc",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-features",
+        "--locked"
+      ],
+      "warningMessages": 194,
+      "sourceInputs": 3998,
+      "sourceDrift": 0
+    },
+    {
+      "run": "task-final-r3429-structure-gate",
+      "exitCode": 0,
+      "command": [
+        "structure-audit-gate"
+      ],
+      "warningMessages": 0,
+      "sourceInputs": 3998,
+      "sourceDrift": 0
+    }
+  ],
+  "doctests": {
+    "failed": 0,
+    "passed": 2,
+    "ignored": 0
+  },
+  "structure": {
+    "filesScanned": 3236,
+    "rustFiles": 3106,
+    "blockingViolations": 0,
+    "physicalRustLoc": 1760973,
+    "reviewTriggers": 382,
+    "ownerReview": "task-value-path.final-owner-review.json",
+    "workspacePackages": 97
+  },
+  "cargoChanges": 0,
+  "runtimeBudgetChanges": 0,
+  "workloadOrAssertionRelaxation": false,
+  "originalTrackedWip": 14,
+  "originalUntrackedWip": 6,
+  "heldPatchSha256": "c2d8505dd38877f745816d0a4fc5234e1ac29e7ce0064505fe95d6377a64fd15",
+  "reuse": "R3405 remains the broader 55-package evidence for unchanged Core/HIR/Syntax and accepted Generic Match/loop contracts. R3425 is a fresh complete Sema 22-package closure, not a fresh 55-package run.",
+  "genericMatch": "Accepted; not reopened",
+  "loopControl": "Accepted; not reopened",
+  "hirFrameRepair": "Accepted; not reopened",
+  "viewObservation": {
+    "run": "R3430",
+    "status": "Five authored View admission probes: action admitted; basic Text/dialogue.speaker and Panels containing that Text denied in type-check; record-form Panel denied by HIR readiness. No repair or general View acceptance claim."
+  },
+  "unsafeObservation": {
+    "status": "Observed no-admissible-final-type rejection; unresolved, not repaired in this slice",
+    "stage": "type-check",
+    "run": "R3422",
+    "exitCode": 1,
+    "code": "sema.final_analysis"
+  },
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-callable-proof.baseline-update.json",
+      "bytes": 610,
+      "sha256": "bffb271a570c65dda79f3fa0ec63c093d1f4a8089dcb8870d282d8258eb64df9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3414-program-fanout-awbc-check.input-audit.json",
+      "bytes": 1184,
+      "sha256": "a15eb8d8db23a25bbadb99ebee6bcb4cc67c0e5f587337b5b73f59a11e0f9ca5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3414-program-fanout-awbc-check.json",
+      "bytes": 1316,
+      "sha256": "0defbacc0f4a035cb588cf25c6d735bcca03dc095066cba6e46c541691f11c32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3414-program-fanout-awbc-check.log",
+      "bytes": 759047,
+      "sha256": "e08540d94ea4029850ad865f1d7a9db8ec64bf697fcd93e21fbb55149a1b88de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3415-program-fanout-runtime.binaries-before.json",
+      "bytes": 27543,
+      "sha256": "209460bde5f8716c9ae67f3c049d509dd9db34b57e29a6595242df5944c70a94"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3415-program-fanout-runtime.json",
+      "bytes": 1540,
+      "sha256": "fc8aceac75fbec2504232360612cdac8c407c4a697a10591710823e9846eba71"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3415-program-fanout-runtime.log",
+      "bytes": 1238396,
+      "sha256": "5c30d49bbf03643351dbbdc33f98d9eb82d504f66ffcf898f0892427b16cc4d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3415-program-fanout-runtime.terminal-audit.json",
+      "bytes": 1162,
+      "sha256": "b90b91b8c1e416f2068d1ca47cf6615ffc9747b1e015ebd5a5d4209eb3183f39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3416-program-fanout-runtime.binaries-before.json",
+      "bytes": 27543,
+      "sha256": "209460bde5f8716c9ae67f3c049d509dd9db34b57e29a6595242df5944c70a94"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3416-program-fanout-runtime.json",
+      "bytes": 1407,
+      "sha256": "34da3a2f04d5b6064330449715c8430a0f4c3a30a0e3f67bb5b209148ef30098"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3416-program-fanout-runtime.log",
+      "bytes": 4377217,
+      "sha256": "cdf62db9ee0726200626982f6d6c2ae563617dc0110e16d75bb2a7580f9adc4a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3416-program-fanout-runtime.terminal-audit.json",
+      "bytes": 8585,
+      "sha256": "d4d263a1e61c8b9d546ef7a61348912499edb5d7f90d6113e732c06f6881858c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3422-unsafe-cli-diagnostic.arcw",
+      "bytes": 178,
+      "sha256": "cf748e527fefbc0317ea2a03161004781b50d7fea1ffa79ade18a3986392af87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3422-unsafe-cli-diagnostic.json",
+      "bytes": 1054,
+      "sha256": "e60b82c2674b53cedd8c9aefb75662f1764bd6acd0ac6be420435dc9cde127f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3422-unsafe-cli-diagnostic.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3422-unsafe-cli-diagnostic.stdout.json",
+      "bytes": 540,
+      "sha256": "ad6c8462099218422f2b0be94cd597f9f1cc59a5ff95fca86ef73f5457be9f12"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3423-program-fanout-awbc-check.input-audit.json",
+      "bytes": 1184,
+      "sha256": "e455b270c545bccaa488b2745de417e9b0041c5cc5c47b12f8c927501fe78e21"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3423-program-fanout-awbc-check.json",
+      "bytes": 1316,
+      "sha256": "ac81ec04fba9ab8eae2a3ba953dd4897490c0306043e42dd748a9b07581eadc2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3423-program-fanout-awbc-check.log",
+      "bytes": 759047,
+      "sha256": "0d46132aa1985017c4d3ff82c486de98a30b20711110f0090e89aeb76d56a2a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3424-program-fanout-runtime.binaries-before.json",
+      "bytes": 27543,
+      "sha256": "4a552daabcb40d97deb620673891bc7c8a50695408fd0f5a5c4b000fb0070763"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3424-program-fanout-runtime.json",
+      "bytes": 1659,
+      "sha256": "6a2f2087317e066b247ea7e9138918184121363d4f9ebf2609c829e69b27a478"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3424-program-fanout-runtime.log",
+      "bytes": 1238372,
+      "sha256": "65c2d4fe944f91e36113e3816d7de83195de3cd5f0d4c096c108fa111ccf1e7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3424-program-fanout-runtime.terminal-audit.json",
+      "bytes": 1162,
+      "sha256": "398f696020e06967e7c3be8ba0a09b5047f62e0dc49bce8b12f3a879dbd7fc72"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3425-program-fanout-runtime.binaries-before.json",
+      "bytes": 27543,
+      "sha256": "4a552daabcb40d97deb620673891bc7c8a50695408fd0f5a5c4b000fb0070763"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3425-program-fanout-runtime.json",
+      "bytes": 1407,
+      "sha256": "e11bd92b473681ac25dbd55966ffa0eb0e88e3507438cbd7bf0d44461569efb9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3425-program-fanout-runtime.log",
+      "bytes": 4375034,
+      "sha256": "56795967bdda43c7c9297704ea8f7a9ade22632d7be1ee48b4b2b05fef636b96"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3425-program-fanout-runtime.terminal-audit.json",
+      "bytes": 8224,
+      "sha256": "ce5e0627ec7e8550683386e086ebd995e6cf1925b64f71499746ecc577b215da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3426-workspace-check.input-audit.json",
+      "bytes": 309,
+      "sha256": "8b0c3cb5423dc4a805feae266a18407daaefce4bf9c9acacb9c197d41b899381"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3426-workspace-check.json",
+      "bytes": 441,
+      "sha256": "aa1d4f8ce42401e67e586a942bf52b0b6aa9c8cf5148330cf1fcc25aa678da87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3426-workspace-check.log",
+      "bytes": 106247,
+      "sha256": "b6400bd8460ca93f6368e04d6883ac1b3a5144fc60daf2ca39c6d0e6800eb76b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3427-workspace-clippy.input-audit.json",
+      "bytes": 311,
+      "sha256": "201d97de5b4ac0638f1c2e2146fadddbb42ee8285f6ab212e5e0b327c5ec0f5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3427-workspace-clippy.json",
+      "bytes": 443,
+      "sha256": "213f02d083fea945e8ccf8a3f494bb74c97ca957cb55aed169e5359a38ace6b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3427-workspace-clippy.log",
+      "bytes": 6709607,
+      "sha256": "9b5f13deab8528b09c84f2ba68603577b7949de464894763527a6b1e91a009d8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3428-sema-doctest.input-audit.json",
+      "bytes": 314,
+      "sha256": "371c421969794794c4a8d414b31cc490ba6d84a605b8afe065cd23c9474b7145"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3428-sema-doctest.json",
+      "bytes": 446,
+      "sha256": "3ce9a1c352d3b079c6020df495ad1d41c910d20ccec98698092a29afd8aaa2c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3428-sema-doctest.log",
+      "bytes": 82511,
+      "sha256": "2607d494356892eea0c9a59fcb9279b7c1fd6edb75b04d897c764d9a73624b8a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3429-structure-gate.input-audit.json",
+      "bytes": 241,
+      "sha256": "ffeaa79cd4a275370df4d159fcb3b49eff3509e7d0bb75918f0e09d377f1febc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3429-structure-gate.json",
+      "bytes": 373,
+      "sha256": "4a6d8660291f5ade6ce81b40b655b72fd34a68b113c7daf2d01ba154ef96d361"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3429-structure-gate.log",
+      "bytes": 64943,
+      "sha256": "03e50db0b492e140e3a4be13cf533f249e542c6d7c416110d588e7c5985fe14d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.action.arcw",
+      "bytes": 93,
+      "sha256": "865861787469b5016a7e9b7087f817599664b4875467c27c56dd6d7524d664cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.action.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.action.stdout.json",
+      "bytes": 725,
+      "sha256": "a81a1a3bab4e379dd2371d84245fd73ec01b5fdac44c737081e2dd029188dbe6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.basic.arcw",
+      "bytes": 68,
+      "sha256": "376f02494335a055c05887d3b63ca8d58ed70aae635cb5d7389b89d48afc46df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.basic.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.basic.stdout.json",
+      "bytes": 540,
+      "sha256": "e0cbf5fcd9902dc5185aee47d3062b209c6f2c3611cd437b9a6dcd55eee84a6e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.callback.arcw",
+      "bytes": 80,
+      "sha256": "e4e337f3c022b4a0048491b3d91202d85fefdd67b878561dec45995bcb273678"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.callback.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.callback.stdout.json",
+      "bytes": 540,
+      "sha256": "a0fde84eb34d918c70c78f35340b4b0e809ced34c1dcf9902c525aec7ee7440b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.json",
+      "bytes": 6667,
+      "sha256": "4e2be7aec4e5c8a4ad5bd0752229e8c5a9deb0cd2bab7e59f8ea43148ea88bd1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.record.arcw",
+      "bytes": 78,
+      "sha256": "86dc16540fba81a28fa926a2c0145cc56052405788e1a072fc1655bfd6a0ea04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.record.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.record.stdout.json",
+      "bytes": 570,
+      "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.sized.arcw",
+      "bytes": 139,
+      "sha256": "030a0210c353784b3ba775b3677d14a75ba87ae6de0bf0cb8d35e43d5efb93d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.sized.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3430-view-admission-diagnostic.sized.stdout.json",
+      "bytes": 540,
+      "sha256": "e4572f66cc18cc18f9e89a9141e988aed82267008911bcce7a6c652319a2dcf3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3414.inventory.json",
+      "bytes": 986707,
+      "sha256": "32eb692226cb557847174a843f684d0c37afa3ef5ec2604fcbf7d0c0dbe32e45"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3414.source-freeze.json",
+      "bytes": 781820,
+      "sha256": "9a7ff9f5addf6c972061048ed815185df411b21402246960a6b6551d83b9d801"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3415.inventory.json",
+      "bytes": 990618,
+      "sha256": "6f915be7a95d173d7d7ac8f61a1c6883d208f9f5068243ee1344336bd5e0ebb3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3415.source-freeze.json",
+      "bytes": 781820,
+      "sha256": "9a7ff9f5addf6c972061048ed815185df411b21402246960a6b6551d83b9d801"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3416.source-freeze.json",
+      "bytes": 781820,
+      "sha256": "9a7ff9f5addf6c972061048ed815185df411b21402246960a6b6551d83b9d801"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3423.inventory.json",
+      "bytes": 986707,
+      "sha256": "32eb692226cb557847174a843f684d0c37afa3ef5ec2604fcbf7d0c0dbe32e45"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3423.source-freeze.json",
+      "bytes": 781749,
+      "sha256": "11f9d47c41bf11119c85cdf123a04d2400ca0b2f75f66b9460077335436495c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3424.inventory.json",
+      "bytes": 990616,
+      "sha256": "1f26b38187fab7f77b20f6db7f085e44213f8f1d427541e228b724795bbc41d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3424.source-freeze.json",
+      "bytes": 781748,
+      "sha256": "95808001b440982b9522a3e6f1f4267437c565b0d64b1b4647b25caa06fed4b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3425.source-freeze.json",
+      "bytes": 781748,
+      "sha256": "95808001b440982b9522a3e6f1f4267437c565b0d64b1b4647b25caa06fed4b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3426.source-freeze.json",
+      "bytes": 781748,
+      "sha256": "aa1c6be3b91272f3f6c8c0f0c4fbafacff4573f91270d2c45b18e2f42d8fa4b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3427.source-freeze.json",
+      "bytes": 781748,
+      "sha256": "aa1c6be3b91272f3f6c8c0f0c4fbafacff4573f91270d2c45b18e2f42d8fa4b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3428.source-freeze.json",
+      "bytes": 781748,
+      "sha256": "aa1c6be3b91272f3f6c8c0f0c4fbafacff4573f91270d2c45b18e2f42d8fa4b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3429.source-freeze.json",
+      "bytes": 781748,
+      "sha256": "95808001b440982b9522a3e6f1f4267437c565b0d64b1b4647b25caa06fed4b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-value-path-consumers.verified.json",
+      "bytes": 2079,
+      "sha256": "654698758fb94f55e03943b7f22b92dad8dfc33d7a215f6e56c983cd32822e79"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-value-path-source.verified.json",
+      "bytes": 2233,
+      "sha256": "791f3ad4a094841c38b2951352b3103305c32a48406985d6ced684dbc832f3e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-value-path.final-owner-review.json",
+      "bytes": 3021,
+      "sha256": "8a27ffa2ab35d7dad967b83186eff16abd67c3da866890baf0d24e95e58e37cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-value-path.freeze-metadata-corrections.json",
+      "bytes": 1858,
+      "sha256": "85f7cb25c87b22e045fa61c1c7b2874382c59fc1ec1a8785865e2cf14ead548b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-value-path.initial-reverse-audit.json",
+      "bytes": 3734,
+      "sha256": "bfdaff13e38565ea42c835a72d3da5f9d93029b15c71bbe53f92756038afcd25"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-value-path.inverse-tree.json",
+      "bytes": 500,
+      "sha256": "ed42555b9c97793fc84971540a8ea9396ec23e3464209cc1c06a388d634a2c17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-value-path.inverse-tree.log",
+      "bytes": 6598,
+      "sha256": "79b6486c695b29be74daee0afe4fd1f19781a4d2842989fd04a28cb3d556c21f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-value-path.metadata.json",
+      "bytes": 4287233,
+      "sha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-value-path.reverse-closure.json",
+      "bytes": 4850,
+      "sha256": "cc42a15dc92df58baaa4aa66c6420820a800f0be1027e617e8f281bdf25d7175"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "status": "ok",
+  "input": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3430-view-admission-diagnostic.action.arcw",
+  "emit": "check",
+  "output": null,
+  "syntax_warnings": 0,
+  "flows": 0,
+  "line_task_groups": 0,
+  "verifier_diagnostics": 0,
+  "obligations": 0,
+  "unsafe_audits": 0,
+  "semantic": {
+    "types": 1,
+    "locals": 1,
+    "captures": 1,
+    "expressions": 8,
+    "patterns": 1,
+    "statements": 0,
+    "items": 1,
+    "calls": 1,
+    "call_diagnostics": 0,
+    "logical_argument_checks": 1,
+    "resolver_invocations": 1,
+    "candidate_argument_probes": 1,
+    "selected_replay_argument_visits": 0,
+    "retained_argument_fact_publications": 1
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "commit": "5d1ed0411d1f5314f4a0dcb2a9cff5475d3f21d1",
+  "oldBaselineWipSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "newBaselineWipSha256": "c2d8505dd38877f745816d0a4fc5234e1ac29e7ce0064505fe95d6377a64fd15",
+  "originalUserPatchPreserved": true,
+  "heldBlobDrift": 0,
+  "sourceCodeBlob": "8f580aa0cf5eede5469c3ec83d35266913fa24e1",
+  "workingBlob": "d55c9413c93554c5788b8a4b1e645b68f5814b13",
+  "reason": "The same exact user patch remains over the newly published owned code. Only its Git diff base, code blob hash and line offsets changed."
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "8b0e60eb781fb1149176388bd6e5cd48f36a3ce1",
+  "command": [
+    "cargo",
+    "tree",
+    "--workspace",
+    "--invert",
+    "arcweft-lang-sema",
+    "--all-features",
+    "--locked",
+    "--target",
+    "all"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-27T23:03:05.4770003Z",
+  "finishedAt": "2026-10-27T23:03:12.9816966Z",
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-value-path.inverse-tree.log"
+}

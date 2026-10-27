@@ -12993,3 +12993,51 @@ grammarとProof章は旧body-local clauseの設計説明を削除し、現行の
 Supersedes: 最新全体R3405の48失敗のうち、上記2識別子を後続PASSとして閉じる。残る46識別子は集合差分であり、新しい全CLI 46 FAILの実測ではない。Generic Match、loop制御、HIR frameの受入を戻さない。
 
 [対象結果・診断・仕様同期・WIP保全](acceptance-evidence/task-cli-callable-proof-acceptance.json)、[残る識別子と由来](acceptance-evidence/task-cli-remaining-failures-after-proof-fixtures.json)。
+
+## 未定義値パス診断・TextProxy default原因分類の修復 -- 2026-10-28
+
+製品sourceの公開は8b0e60eb781fb1149176388bd6e5cd48f36a3ce1と
+d16dd07d7a4764b81cefc6a9632d796b2d8cc0d6。前者は3ファイルの診断型・source-backed拒否と
+再試行検証、後者はTextProxyの既存原因分類とline alias拒否fixtureの移行である。
+両cutの親・tree・全blob・non-forced remote headを照合した。
+保持WIPは14 trackedと6 untracked実ファイル、残存patch SHA-256は
+c2d8505dd38877f745816d0a4fc5234e1ac29e7ce0064505fe95d6377a64fd15で一致した。
+
+R3414の22 package catalogに続くR3415は対象2／2 PASS、2.453秒。
+最初の全22逆依存R3416は3,911実行／3,864 PASS／47 FAIL／23 ignored、935.575秒で、
+従来のCLI 45失敗と変更起因Sema 2失敗を確認した。この失敗を成功へ書き換えない。
+TextProxy宣言defaultの未定義pathが専用のInvalidTextProxyDeclarationsへ分類されなくなった点と、
+line aliasの拒否fixtureが旧ValueResolutionFailedを期待していた点を修復した。
+TextProxyのscalar種別・原因・名前に対する既存assertionは維持し、
+line aliasは新しい型付きpathと正確なlineのspanまで追加照合した。
+R3423 catalog終了0、R3424の対象4／4 PASS（2.247秒）の後、同じ全22を再実行した。
+
+R3425は3911実行／3866 PASS／45 FAIL／23 ignoredで終端した。
+CLIは691実行／646 PASS／45 FAIL、Semaを含むowner別の件数と全失敗識別子は
+[最終受入と全原本](acceptance-evidence/task-value-path-acceptance.json)へ保持した。
+元R3405からproof fixture 2件とroute_params拒否の計3件を回復し、新しい失敗識別子は0。
+3,998入力・111 harness＋4 subprocess executable、catalog／終端／source／executableの差分は0。
+元のloop value bindingとparallel benchのPASS、parallel runの12-step／budget 1未達を混同しない。
+
+R3426 workspace checkとR3427 workspace Clippy（全target／feature／locked）は終了0。
+R3428 Sema doctestは2 PASS／0 FAIL／0 ignored。R3429の構造gateは97 packageを対象に、
+3,236 file／Rust 3,106 file／1,760,973 LOC、review trigger 382・blocking違反0で終了した。
+1,220 LOCとなったerror ownerと、既存の大きいexpression／test ownerの責務・state・依存方向を
+[owner review](acceptance-evidence/task-value-path.final-owner-review.json)に記録した。
+Cargo・runtime budget・workload・copy／capture条件の緩和はない。
+
+現状一覧の訂正・整理理由：
+旧「R3405 48 FAIL、後続2 PASSから46件」という現状説明は、実測したR3425 CLI結果へ置換した。
+headerの重複した全55結果と末尾の50／49／48件の列挙も、現在の残作業説明から削除した。
+R3405と以前の件数・失敗・full SHA・raw logは、既存履歴と原本に保持している。
+今回の22逆依存を新しい55 package runとはしない。Generic Match、loop、HIR frameの既受入は維持する。
+R3414／R3415 source-freezeのtemplate由来の古いscope／partialStagingラベルは、
+理由と変更前後SHAを残してmetadataだけ訂正した。実入力hash、command、結果、日時は変更していない。
+
+R3422のunsafe一覧probeはtype-checkでsema.final_analysisのno-admissible-final-type拒否を観測した。
+この別件は未修復のままraw source／JSONを保持し、監査一覧の成功や型問題の解消を主張しない。
+R3430ではauthored Viewの最小入力5件を観測した。Buttonのaction指定は受理され、
+Textのdialogue.speaker参照と同じTextを子に持つcall-form Panelはtype-checkで、record-form PanelはHIR readinessで拒否された。
+この未修復の切り分け結果もraw source／JSONへ保持し、View全体の受入を主張しない。
+現状一覧ではView全体の最終受入未確認を維持した上で、従来の抽象的なsource-shape留保を、
+現行dialogue View仕様の具体的な未達と最小再現へ置換した。既受入のcallable-owner認証は維持する。
