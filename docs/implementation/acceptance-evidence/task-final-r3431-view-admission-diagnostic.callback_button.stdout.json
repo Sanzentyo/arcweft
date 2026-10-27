@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "status": "denied",
+  "stage": "type-check",
+  "diagnostics": [
+    {
+      "module": null,
+      "stage": "type-check",
+      "diagnostic": {
+        "severity": "error",
+        "code": "sema.call.non_callable_target",
+        "message": "the called expression does not have a callable type",
+        "span": {
+          "source": {
+            "id": "arcweft-project://task-final-r3431-view-admission-diagnostic.callback_button/task-final-r3431-view-admission-diagnostic.callback_button.arcw",
+            "revision": "7efb277d2885b4e6b6fdfdfc98ebf96c67990ba8f2b26058be0cbd42a2adcb56",
+            "source_len": 46
+          },
+          "start": 21,
+          "end": 43
+        },
+        "labels": [
+          {
+            "style": "primary",
+            "span": {
+              "source": {
+                "id": "arcweft-project://task-final-r3431-view-admission-diagnostic.callback_button/task-final-r3431-view-admission-diagnostic.callback_button.arcw",
+                "revision": "7efb277d2885b4e6b6fdfdfc98ebf96c67990ba8f2b26058be0cbd42a2adcb56",
+                "source_len": 46
+              },
+              "start": 21,
+              "end": 43
+            },
+            "message": null
+          }
+        ],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    }
+  ]
+}

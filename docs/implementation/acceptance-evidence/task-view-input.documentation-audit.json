@@ -1,0 +1,19 @@
+{
+  "base": "bf4c1de39e4a0323316075bae64eb9d24790d947",
+  "changed": [
+    "docs/01-language/dialogue-character-methods-and-views.md",
+    "docs/01-language/dialogue-views-and-hooks.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "checkedDocuments": 129,
+  "relativeLinks": 624,
+  "brokenLinks": [],
+  "unclosedFences": [],
+  "statusCommitIds": 35,
+  "unretainedIds": [],
+  "evidenceChanges": [],
+  "heldFiles": 20,
+  "heldDrift": 0,
+  "rustCargoRun": false
+}

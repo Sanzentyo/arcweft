@@ -1,0 +1,1 @@
+pub view Minimal(dialogue: DialogueView) { Text(dialogue.character.display_name) }

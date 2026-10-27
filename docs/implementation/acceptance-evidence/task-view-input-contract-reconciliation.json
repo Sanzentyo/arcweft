@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "base": "bf4c1de39e4a0323316075bae64eb9d24790d947",
+  "sourceCheckpoint": "d16dd07d7a4764b81cefc6a9632d796b2d8cc0d6",
+  "run": "task-final-r3431-view-admission-diagnostic",
+  "status": "Reconcile stale flat speaker examples with the existing accepted nested Character contract; retain the independent container-body admission gap",
+  "contract": "DialogueView.character: DialogueCharacter, whose id: CharacterId and display_name: String are Character-owned. content/occurrence/stage/reveal/primary_action remain root projections.",
+  "authority": [
+    "docs/01-language/character-dialogue.md#view-projection",
+    "crates/arcweft-lang-sema/src/dialogue_view.rs",
+    "crates/arcweft-lang-sema/src/env/base.rs"
+  ],
+  "admitted": [
+    "Text literal",
+    "Text(dialogue.character.display_name)",
+    "RichText(dialogue.content)",
+    "Panel()"
+  ],
+  "unresolved": [
+    "Container body attachment: Panel() { Button(\"\") } is rejected as non-callable; the record-form container surface is also rejected"
+  ],
+  "correction": "The R3430 flat dialogue.speaker rejection is real but is not a new defect in the accepted nested Text projection. Correct current classification, leave all old probe bytes/results intact, and preserve callable-owner acceptance.",
+  "productionChanges": 0,
+  "cargoChanges": 0,
+  "rustEvidenceReuse": "R3425 complete 22-package run and R3426/R3427/R3428/R3429 gates retain their original inputs and scope. This cut only updates documentation and records read-only CLI probes.",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.callback_button.arcw",
+      "sha256": "6b232edc40ae0ff94ae6adab53dba3499e5759905680a10fdb77ee8f6983ef19",
+      "bytes": 46
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.callback_button.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.callback_button.stdout.json",
+      "sha256": "da256b9341e0b26c3a3c915575fbadc8018cb9e633e752a7fdbf7fa407f6dbb3",
+      "bytes": 1337
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.empty_panel.arcw",
+      "sha256": "9191332bb5b5d7e1c66e3756741616a964d2babcb9916c7bdaf701977ffeae1a",
+      "bytes": 31
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.empty_panel.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.empty_panel.stdout.json",
+      "sha256": "9ff1d33c9822ef2db17ecd0ee30c002e8176a7e57881476336b957a8ebcd530e",
+      "bytes": 730
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.json",
+      "sha256": "7e031720ffd8b90fe23b9c5e511039624565744370cafb769c8839a633cb5fa3",
+      "bytes": 8816
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.literal.arcw",
+      "sha256": "cd3ef726e01719f027a0270905e178cd7ea662e0a7c5288c9614148ab50366a8",
+      "bytes": 34
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.literal.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.literal.stdout.json",
+      "sha256": "a2b5c6f0f8408fc118a15aa6c0ff1a13074b3d149add3b6669f67f0f13b0218a",
+      "bytes": 726
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.named_part.arcw",
+      "sha256": "65f4ca46a00fb0560943f883e1151e05b31e401b517b05931157a44a5dd5f255",
+      "bytes": 43
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.named_part.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.named_part.stdout.json",
+      "sha256": "e3ab0598a8d9003d5cb31b071f8593914d0b354248ff9fca3522f0a4c70319ba",
+      "bytes": 539
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.nested.arcw",
+      "sha256": "9a59d30f6df64a3feb95520f85de3b807244b275013e5a88383af2fc56d3659f",
+      "bytes": 83
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.nested.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.nested.stdout.json",
+      "sha256": "f95a45efe2ba96a1bd5228995bc251cb652dd0b2056eafd8bb022b1d8766993a",
+      "bytes": 725
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.record_empty.arcw",
+      "sha256": "a70d07e7d0ac2f6d59b8d1a421d2a2194c2739368322ba9500dc8dd1ee1b876f",
+      "bytes": 32
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.record_empty.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.record_empty.stdout.json",
+      "sha256": "7ecf778b9d0cb72815785ebc4974e5b2f2054c10f9570cc6ed75db8a14dc21ac",
+      "bytes": 539
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.rich.arcw",
+      "sha256": "831f8599a17f1d7af88b106ff3cf3483c9304d5fd956454d68bd2ade776eb367",
+      "bytes": 72
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.rich.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3431-view-admission-diagnostic.rich.stdout.json",
+      "sha256": "4ece6d8b4594a682716e3668593e0f40c664b5af73eee29c5eae115fe6822f2c",
+      "bytes": 723
+    }
+  ],
+  "observedOtherRejection": "The named part argument is rejected by the current element-argument schema. This probe alone does not establish another missing implementation."
+}

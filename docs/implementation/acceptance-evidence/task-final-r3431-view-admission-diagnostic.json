@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "base": "bf4c1de39e4a0323316075bae64eb9d24790d947",
+  "executable": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+  "executableSha256": "16386bf402adbdb442dce6323cb4406bdb6c44a95975ab6d9d5fafe0fd94c253",
+  "cases": [
+    {
+      "case": "literal",
+      "command": [
+        "check",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.literal.arcw",
+        "--json"
+      ],
+      "input": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.literal.arcw",
+      "inputSha256": "cd3ef726e01719f027a0270905e178cd7ea662e0a7c5288c9614148ab50366a8",
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.literal.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.literal.stderr.log",
+      "exitCode": 0,
+      "status": "ok",
+      "stage": null,
+      "diagnostics": [],
+      "startedAt": "2026-10-27T23:34:30.1048005Z",
+      "finishedAt": "2026-10-27T23:34:30.3781701Z"
+    },
+    {
+      "case": "nested",
+      "command": [
+        "check",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.nested.arcw",
+        "--json"
+      ],
+      "input": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.nested.arcw",
+      "inputSha256": "9a59d30f6df64a3feb95520f85de3b807244b275013e5a88383af2fc56d3659f",
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.nested.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.nested.stderr.log",
+      "exitCode": 0,
+      "status": "ok",
+      "stage": null,
+      "diagnostics": [],
+      "startedAt": "2026-10-27T23:34:30.3859004Z",
+      "finishedAt": "2026-10-27T23:34:30.6096922Z"
+    },
+    {
+      "case": "rich",
+      "command": [
+        "check",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.rich.arcw",
+        "--json"
+      ],
+      "input": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.rich.arcw",
+      "inputSha256": "831f8599a17f1d7af88b106ff3cf3483c9304d5fd956454d68bd2ade776eb367",
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.rich.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.rich.stderr.log",
+      "exitCode": 0,
+      "status": "ok",
+      "stage": null,
+      "diagnostics": [],
+      "startedAt": "2026-10-27T23:34:30.6110293Z",
+      "finishedAt": "2026-10-27T23:34:30.7767593Z"
+    },
+    {
+      "case": "empty_panel",
+      "command": [
+        "check",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.empty_panel.arcw",
+        "--json"
+      ],
+      "input": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.empty_panel.arcw",
+      "inputSha256": "9191332bb5b5d7e1c66e3756741616a964d2babcb9916c7bdaf701977ffeae1a",
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.empty_panel.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.empty_panel.stderr.log",
+      "exitCode": 0,
+      "status": "ok",
+      "stage": null,
+      "diagnostics": [],
+      "startedAt": "2026-10-27T23:34:30.7783443Z",
+      "finishedAt": "2026-10-27T23:34:30.9644009Z"
+    },
+    {
+      "case": "callback_button",
+      "command": [
+        "check",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.callback_button.arcw",
+        "--json"
+      ],
+      "input": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.callback_button.arcw",
+      "inputSha256": "6b232edc40ae0ff94ae6adab53dba3499e5759905680a10fdb77ee8f6983ef19",
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.callback_button.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.callback_button.stderr.log",
+      "exitCode": 1,
+      "status": "denied",
+      "stage": "type-check",
+      "diagnostics": [
+        {
+          "code": "sema.call.non_callable_target",
+          "message": "the called expression does not have a callable type",
+          "span": {
+            "source": {
+              "id": "arcweft-project://task-final-r3431-view-admission-diagnostic.callback_button/task-final-r3431-view-admission-diagnostic.callback_button.arcw",
+              "revision": "7efb277d2885b4e6b6fdfdfc98ebf96c67990ba8f2b26058be0cbd42a2adcb56",
+              "source_len": 46
+            },
+            "start": 21,
+            "end": 43
+          }
+        }
+      ],
+      "startedAt": "2026-10-27T23:34:30.9655916Z",
+      "finishedAt": "2026-10-27T23:34:31.1240569Z"
+    },
+    {
+      "case": "record_empty",
+      "command": [
+        "check",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.record_empty.arcw",
+        "--json"
+      ],
+      "input": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.record_empty.arcw",
+      "inputSha256": "a70d07e7d0ac2f6d59b8d1a421d2a2194c2739368322ba9500dc8dd1ee1b876f",
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.record_empty.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.record_empty.stderr.log",
+      "exitCode": 1,
+      "status": "denied",
+      "stage": "type-check",
+      "diagnostics": [
+        {
+          "code": "sema.final_analysis",
+          "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 5, kind: Expr }) has no admissible final type",
+          "span": null
+        }
+      ],
+      "startedAt": "2026-10-27T23:34:31.1255582Z",
+      "finishedAt": "2026-10-27T23:34:31.2683095Z"
+    },
+    {
+      "case": "named_part",
+      "command": [
+        "check",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.named_part.arcw",
+        "--json"
+      ],
+      "input": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.named_part.arcw",
+      "inputSha256": "65f4ca46a00fb0560943f883e1151e05b31e401b517b05931157a44a5dd5f255",
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.named_part.stdout.json",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3431-view-admission-diagnostic.named_part.stderr.log",
+      "exitCode": 1,
+      "status": "denied",
+      "stage": "type-check",
+      "diagnostics": [
+        {
+          "code": "sema.final_analysis",
+          "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 7, kind: Expr }) has no admissible final type",
+          "span": null
+        }
+      ],
+      "startedAt": "2026-10-27T23:34:31.2704692Z",
+      "finishedAt": "2026-10-27T23:34:31.4751005Z"
+    }
+  ],
+  "status": "Read-only admission probes for the remaining authored View boundary; no source repair or acceptance claim"
+}

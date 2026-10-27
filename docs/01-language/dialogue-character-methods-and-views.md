@@ -336,7 +336,7 @@ pub style phone_message {
 
 pub view PhoneMessage(dialogue: DialogueView) {
     Panel {
-        Text(dialogue.speaker)
+        Text(dialogue.character.display_name)
         RichText(dialogue.content)
             .style(@style.phone_message)
     }

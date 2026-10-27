@@ -13041,3 +13041,22 @@ Textのdialogue.speaker参照と同じTextを子に持つcall-form Panelはtype-
 この未修復の切り分け結果もraw source／JSONへ保持し、View全体の受入を主張しない。
 現状一覧ではView全体の最終受入未確認を維持した上で、従来の抽象的なsource-shape留保を、
 現行dialogue View仕様の具体的な未達と最小再現へ置換した。既受入のcallable-owner認証は維持する。
+## Dialogue Viewの旧flat field記述の訂正とcontainer bodyの切り分け -- 2026-10-28
+
+Supersedes: bf4c1de39e4a0323316075bae64eb9d24790d947の現状一覧で、
+R3430のText(dialogue.speaker)拒否を「現行仕様のTextの未達」とした分類を訂正する。
+R3430の実入力・失敗・結果は変更しない。currentなcharacter-dialogue.md、
+SemaのDialogueCharacterProjection／standard DialogueView recordは、既に
+dialogue.character.id／dialogue.character.display_nameを一つの型付き契約としている。
+他の2章に残ったspeaker: String／dialogue.speakerは、この受入済み契約と不一致だった。
+旧fieldをaliasとして再実装せず、field表、custom modelのroot field、例をnested Characterへ揃えた。
+
+同じ製品source d16dd07d7a4764b81cefc6a9632d796b2d8cc0d6のCLIで実行したR3431は、
+Text literal、Text(dialogue.character.display_name)、RichText(dialogue.content)、空Panelを受理した。
+一方、Textを含まないPanel() { Button("") }はsema.call.non_callable_target、
+bare Panel {}とnamed part argumentも拒否された。7入力のsource・stdout・stderr・receiptを保持する。
+container bodyの未達をTextのfield不一致と区別し、既受入のText projectionと
+retained View callable-owner認証を未実装へ戻さない。container bodyの修復は、この資料cutでは行っていない。
+
+製品・Rust・Cargoの変更は0。R3425全22逆依存と共有gateの実測は、元の入力と適用範囲で保持する。
+[訂正根拠・実測・検証再利用の範囲](acceptance-evidence/task-view-input-contract-reconciliation.json)。

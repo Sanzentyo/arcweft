@@ -17,12 +17,14 @@ Related:
 
 `DialogueView` is a public nominal record from the standard prelude. Ordinary
 type checking and LSP completion, hover, definition, and signature help expose
-its fields. The standard contract includes the speaker projection, rich
+its fields. The standard contract includes the nested Character projection, rich
 content, occurrence and stage identity, reveal state, and typed primary action.
 
 | Field | Type |
 | --- | --- |
-| `speaker` | `String` |
+| `character` | `DialogueCharacter` |
+| `character.id` | `CharacterId` |
+| `character.display_name` | `String` |
 | `content` | `DialogueContent` |
 | `occurrence` | `DialogueOccurrenceId` |
 | `stage` | `DialogueOccurrenceStage` |
@@ -42,7 +44,7 @@ from the member spelling.
 ```arcw
 pub view StandardDialogueShape(dialogue: DialogueView) {
     Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px) {
-        Text(dialogue.speaker)
+        Text(dialogue.character.display_name)
             .x(85.6px).y(480.8px)
             .width(1108.8px).height(28px)
         RichText(dialogue.content)
@@ -79,7 +81,7 @@ pub style main_dialogue {
 pub view MainDialogue(dialogue: DialogueView) {
     Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px,
           part = main_dialogue) {
-        Text(dialogue.speaker)
+        Text(dialogue.character.display_name)
             .x(85.6px).y(480.8px)
             .width(1108.8px).height(28px)
         RichText(dialogue.content)
@@ -155,7 +157,7 @@ Projects may assign the standard role to an ordinary nominal record:
 ```arcw
 #[dialogue_view]
 pub struct PhoneDialogueView {
-    speaker: String
+    character: DialogueCharacter
     content: DialogueContent
     occurrence: DialogueOccurrenceId
     stage: DialogueOccurrenceStage
@@ -164,7 +166,8 @@ pub struct PhoneDialogueView {
 }
 ```
 
-The compiler requires exactly these six fields with the listed types. Additional
+The compiler requires exactly these six root fields with the listed types. The
+nested Character projection follows the [Character-owned contract](character-dialogue.md#view-projection). Additional
 project data belongs in another ordinary View parameter because the dialogue
 runtime does not supply arbitrary projections. A role declaration does not
 create another View grammar or bypass nominal type checking. The View signature

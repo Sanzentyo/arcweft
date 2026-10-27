@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "base": "bf4c1de39e4a0323316075bae64eb9d24790d947",
+  "historyPrefixBytes": 1486750,
+  "historyPrefixSha256": "e5fb2d6f1eb5756bcdd0ca5d08c34f210d4c6e3ddd3234cdbd86c2d2a129a03b",
+  "historyPrefixDrift": 0,
+  "appendedBytes": 1666,
+  "reason": "Correct stale-field classification from R3430 using accepted nested Character authority and R3431 probes; preserve old input/results"
+}
