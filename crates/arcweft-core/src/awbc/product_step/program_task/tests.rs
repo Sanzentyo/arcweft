@@ -229,6 +229,7 @@ fn owned_program_entry_code(
             payload: AwbcTypeId(2),
         },
         execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
+            body: crate::awbc::schema::AwbcProgramTaskKernel::Flow,
             delivery,
             source: body.task_plan().key().into(),
             kernel: AwbcFunctionId(0),

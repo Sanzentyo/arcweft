@@ -9,6 +9,53 @@ use arcweft_core::plan::{
 };
 
 impl AwbcFlowLowerer<'_, '_> {
+    fn lower_program_fanout(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        source: &RuntimeProgramTaskBodyRef<'_>,
+        fanout: &arcweft_core::plan::RuntimeProgramFanout,
+        path: &str,
+    ) {
+        let Some(task) =
+            self.inventory
+                .intern_program_task(self.plan, &source.producer().plan, path)
+        else {
+            return;
+        };
+        let source_type = self.local_type(fanout.source);
+        let collection = frame.local(fanout.source, source_type);
+        let payload = self
+            .plan
+            .type_table()
+            .id_for_semantic(arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes(
+                *source.producer().handle_type.payload_type().as_bytes(),
+            ))
+            .expect("original Fanout Source owns its aggregate payload");
+        let payload = admitted_plan_type(self.inventory, self.plan, payload);
+        let result = frame.temp(payload);
+        let binding = self.inventory.intern_pattern(AwbcPattern::Bind {
+            target: result,
+            mutable: false,
+            expected: Some(payload),
+        });
+        body.suspend(self.inventory, AwbcSafePointKind::AwaitMany, |resume| {
+            AwbcTerminator::AwaitMany {
+                plan: task,
+                source: collection,
+                binding: Some(binding),
+                resume,
+            }
+        });
+        body.terminate(
+            self.inventory,
+            AwbcTerminator::Return {
+                value: Some(result),
+            },
+            AwbcSafePointKind::CallableBoundary,
+        );
+    }
+
     pub(crate) fn lower_program_task(
         &mut self,
         owner: AwbcFunctionId,

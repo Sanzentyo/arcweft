@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "base": "65437c438bb56a5794f45de1d1f11419f4aab6b3",
+  "recordedAt": "2026-10-27T11:18:22.0940444Z",
+  "status": "implementation-checkpoint; runtime Program Fanout input/state integration pending",
+  "rustPaths": [
+    "crates/arcweft-core/src/awbc/codec/runtime.rs",
+    "crates/arcweft-core/src/awbc/codec/runtime/task_tests.rs",
+    "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+    "crates/arcweft-core/src/awbc/product_step/tests.rs",
+    "crates/arcweft-core/src/awbc/schema.rs",
+    "crates/arcweft-core/src/awbc/verify.rs",
+    "crates/arcweft-core/src/awbc/verify/code.rs",
+    "crates/arcweft-core/src/awbc/verify/program_task.rs",
+    "crates/arcweft-core/src/awbc/verify/structure.rs",
+    "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+    "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/flow/program_task.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/tests.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/tests/program_fanout.rs"
+  ],
+  "contract": "Version-one AWBC Program rows distinguish Flow/Fanout, retain original worker Source and parent capture ABI positions, and require exact worker ingress and output type relations.",
+  "check": {
+    "run": "task-final-r3236-program-fanout-awbc-check",
+    "exitCode": 0,
+    "sourceInputs": 3994,
+    "sourceDrift": 0,
+    "scope": "Core/runtime-plan all-targets all-features locked; 13 Rust implementation paths; excludes the two subsequently added lowering-test paths"
+  },
+  "initialFailure": {
+    "run": "task-final-r3235-program-fanout-awbc-check",
+    "exitCode": 101,
+    "errors": 2,
+    "uniqueErrors": 1,
+    "cause": "New verifier called bind_pattern instead of existing validate_pattern",
+    "fixedBy": "R3236",
+    "sourceInputs": 3994,
+    "sourceDrift": 0
+  },
+  "pendingAtCheckpoint": [
+    "R3237 Core/runtime-plan nextest catalog and new lowering fixture compilation",
+    "Actual Program Fanout input movement, worker scheduling and suspended ownership in AWBC",
+    "Canonical save/restore and end-to-end Source parallel acceptance",
+    "Clippy, structural gate and changed-contract downstream/final acceptance"
+  ],
+  "genericMatchReopened": false,
+  "originalHeldTracked": 14,
+  "originalHeldUntracked": 6,
+  "archivedEvidence": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3235-program-fanout-awbc-check.log",
+      "sha256": "537e4de7107c400d6427f0f7407eb4868aeb77101447f36206451f8f62f08c7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3235-program-fanout-awbc-check.json",
+      "sha256": "70b2817dec4ba9c1ec34dd0718e6b39731c26c0b3615c13036eddea89d443a79"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3235-program-fanout-awbc-check.input-audit.json",
+      "sha256": "a0a96da260bcfea7bf46a17c8b8a09b97f522a943c8ef16923972cc9a0976ae8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3235-program-fanout-awbc-check.diagnostics.json",
+      "sha256": "bd0f8e0a723fc46318b0f3b02be407a930c95581459a022e4c7b955d88521126"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3236-program-fanout-awbc-check.log",
+      "sha256": "b2b769b07484bb4c521d459c91fd62054faa85ad85a1530993d8f985b422f9e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3236-program-fanout-awbc-check.json",
+      "sha256": "4fd6e3578dbd563c783af4592c3cf1ee9d70a254ccd9b283cbee778429db21bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3236-program-fanout-awbc-check.input-audit.json",
+      "sha256": "c2582b22932597bfcc3f5dadd7112ec8c211fa0f4270ce94348a737ca9a82289"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-r3235.source-freeze.json",
+      "sha256": "d7a2b987334749345c0d1e2c76147cb39ad34142bd2b8420f50d5b5e50f91ffd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-r3236.source-freeze.json",
+      "sha256": "bc602ab90215cfb81d87d725732cae3278dae22575de4337a76f85153616b974"
+    }
+  ]
+}

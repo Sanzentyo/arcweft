@@ -1698,6 +1698,42 @@ impl AwbcInventory {
             return Some(*task);
         }
         let producer = source.producer();
+        let body = match source.body() {
+            arcweft_core::plan::RuntimeProgramTaskKernelRef::Flow(_) => {
+                arcweft_core::awbc::schema::AwbcProgramTaskKernel::Flow
+            }
+            arcweft_core::plan::RuntimeProgramTaskKernelRef::Fanout(fanout) => {
+                let position = |local| {
+                    table_index(
+                        source
+                            .captures()
+                            .iter()
+                            .position(|capture| capture.local == local)
+                            .expect("admitted Fanout controls and free inputs are parent captures"),
+                    )
+                };
+                let worker = self.intern_program_task(plan, &fanout.worker.producer.plan, path)?;
+                arcweft_core::awbc::schema::AwbcProgramTaskKernel::Fanout {
+                    worker,
+                    source: position(fanout.source),
+                    limit: position(fanout.limit),
+                    inputs: fanout
+                        .worker
+                        .captures
+                        .iter()
+                        .map(|capture| {
+                            if capture.local == fanout.item {
+                                arcweft_core::awbc::schema::AwbcProgramFanoutInput::Item
+                            } else {
+                                arcweft_core::awbc::schema::AwbcProgramFanoutInput::Capture {
+                                    position: position(capture.local),
+                                }
+                            }
+                        })
+                        .collect(),
+                }
+            }
+        };
         let Some(payload_type) = self.semantic_type(RuntimeSemanticTypeId::from_bytes(
             *producer.handle_type.payload_type().as_bytes(),
         )) else {
@@ -1733,6 +1769,7 @@ impl AwbcInventory {
                         .iter()
                         .map(|capture| capture.mode)
                         .collect(),
+                    body,
                 },
             ),
         };

@@ -7690,6 +7690,7 @@ fn await_many_product_program_with_thread(
             handle_type: producer.handle_type.map_payload(|_| AwbcTypeId(7)),
             execution: crate::awbc::schema::AwbcTaskPlanExecution::Program(
                 crate::awbc::schema::AwbcProgramTaskPlan {
+                    body: crate::awbc::schema::AwbcProgramTaskKernel::Flow,
                     delivery: crate::task::ProgramTaskDelivery::HostMetadata,
                     source: original.task_plan(&producer.plan).unwrap().key().into(),
                     kernel: AwbcFunctionId(0),

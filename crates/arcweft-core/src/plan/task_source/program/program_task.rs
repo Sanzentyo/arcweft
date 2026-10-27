@@ -36,6 +36,9 @@ pub(crate) enum RuntimeAwbcProgramSourceField {
     CaptureType { index: usize },
     CaptureMode { index: usize },
     Delivery,
+    FanoutWorker,
+    FanoutControls,
+    FanoutInput { index: usize },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -169,6 +172,76 @@ impl RuntimeTaskSourceProgram {
         )?;
         for (index, (capture, mode)) in captures.iter().zip(&program.capture_modes).enumerate() {
             check(Field::CaptureMode { index }, capture.mode == *mode, meter)?;
+        }
+        match (template.kernel(), &program.body) {
+            (
+                crate::plan::RuntimeProgramTaskKernelRef::Flow(_),
+                crate::awbc::schema::AwbcProgramTaskKernel::Flow,
+            ) => {}
+            (
+                crate::plan::RuntimeProgramTaskKernelRef::Fanout(fanout),
+                crate::awbc::schema::AwbcProgramTaskKernel::Fanout {
+                    worker,
+                    source: source_position,
+                    limit,
+                    inputs,
+                },
+            ) => {
+                meter.charge_work(1)?;
+                if inputs.len() > limits.max_function_roles as usize {
+                    return Err(Error::Roles {
+                        task,
+                        actual: inputs.len(),
+                        maximum: limits.max_function_roles,
+                    });
+                }
+                check(
+                    Field::FanoutControls,
+                    captures
+                        .get(*source_position as usize)
+                        .is_some_and(|capture| capture.local == fanout.source)
+                        && captures
+                            .get(*limit as usize)
+                            .is_some_and(|capture| capture.local == fanout.limit),
+                    meter,
+                )?;
+                let worker_row = executable
+                    .task_plans
+                    .get(worker.index())
+                    .ok_or_else(|| mismatch(Field::FanoutWorker))?;
+                let AwbcTaskPlanExecution::Program(worker_body) = &worker_row.execution else {
+                    return Err(mismatch(Field::FanoutWorker));
+                };
+                let worker_source = original
+                    .task_source(&fanout.worker.producer.plan, limits, meter)
+                    .map_err(|source| Error::Source { task, source })?;
+                check(
+                    Field::FanoutWorker,
+                    worker_body.source == worker_source.task_plan().key().into(),
+                    meter,
+                )?;
+                check(
+                    Field::CaptureCount,
+                    inputs.len() == fanout.worker.captures.len(),
+                    meter,
+                )?;
+                for (index, (input, capture)) in
+                    inputs.iter().zip(&fanout.worker.captures).enumerate()
+                {
+                    let same = match input {
+                        crate::awbc::schema::AwbcProgramFanoutInput::Item => {
+                            capture.local == fanout.item
+                        }
+                        crate::awbc::schema::AwbcProgramFanoutInput::Capture { position } => {
+                            captures.get(*position as usize).is_some_and(|parent| {
+                                parent.local == capture.local && capture.local != fanout.item
+                            })
+                        }
+                    };
+                    check(Field::FanoutInput { index }, same, meter)?;
+                }
+            }
+            _ => return Err(mismatch(Field::Kind)),
         }
         check(
             Field::Kernel,

@@ -213,6 +213,7 @@ impl Wire for AwbcTaskPlanExecution {
                 program.kernel.write_wire(writer)?;
                 program.delivery.write_wire(writer)?;
                 program.capture_modes.write_wire(writer)?;
+                program.body.write_wire(writer)?;
             }
         }
         Ok(())
@@ -232,9 +233,77 @@ impl Wire for AwbcTaskPlanExecution {
                 kernel: AwbcFunctionId::read_wire(reader)?,
                 delivery: crate::task::ProgramTaskDelivery::read_wire(reader)?,
                 capture_modes: Vec::<crate::value::RuntimeLocalReadMode>::read_wire(reader)?,
+                body: crate::awbc::schema::AwbcProgramTaskKernel::read_wire(reader)?,
             })),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "task execution",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for crate::awbc::schema::AwbcProgramTaskKernel {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Flow => writer.write_u8(0),
+            Self::Fanout {
+                worker,
+                source,
+                limit,
+                inputs,
+            } => {
+                writer.write_u8(1);
+                worker.write_wire(writer)?;
+                source.write_wire(writer)?;
+                limit.write_wire(writer)?;
+                inputs.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Flow),
+            1 => Ok(Self::Fanout {
+                worker: AwbcTaskPlanId::read_wire(reader)?,
+                source: u32::read_wire(reader)?,
+                limit: u32::read_wire(reader)?,
+                inputs: Vec::<crate::awbc::schema::AwbcProgramFanoutInput>::read_wire(reader)?,
+            }),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "Program task kernel",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for crate::awbc::schema::AwbcProgramFanoutInput {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Item => writer.write_u8(0),
+            Self::Capture { position } => {
+                writer.write_u8(1);
+                position.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Item),
+            1 => Ok(Self::Capture {
+                position: u32::read_wire(reader)?,
+            }),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "Program fanout input",
                 tag,
                 offset,
             }),

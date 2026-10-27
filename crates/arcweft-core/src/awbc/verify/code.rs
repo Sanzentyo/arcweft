@@ -3751,98 +3751,185 @@ fn apply_terminator(
         } => {
             check_index(program.task_plans.len(), plan.0, "task_plans", &at)?;
             let task = &program.task_plans[plan.index()];
-            let host = task
-                .host()
-                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                    at: at.clone(),
-                    message: "AwaitMany requires a Host task".into(),
-                })?;
-            if !matches!(&host.kind, AwbcHostTaskPlanKind::AwaitMany { .. }) {
-                return Err(AwbcVerifyError::InvalidInvariant {
-                    at: at.clone(),
-                    message: "await-many references a single-task plan".to_owned(),
-                });
-            }
-            let source_ty = read_register(verifier, function, block, *source, state)?;
-            let item_type = match runtime_shape(program, source_ty) {
-                Some(
-                    AwbcRuntimeTypeShape::Sequence { item, .. }
-                    | AwbcRuntimeTypeShape::Array { item, .. },
-                ) => *item,
-                _ => return invalid_type(&at, "await-many exact sequence source"),
-            };
-            if !state.copy_proofs[source.index()].permits_copy() {
-                return invalid_type(&at, "await-many source with admitted deep Copy ownership");
-            }
-            if let AwbcHostTaskPlanKind::AwaitMany {
-                captures,
-                request_function,
-                child,
-                ..
-            } = &host.kind
-            {
-                let capture_types = &program.signatures[program.functions
-                    [request_function.index()]
-                .signature
-                .index()]
-                .params;
-                for (capture, expected) in captures.iter().zip(capture_types) {
-                    let actual = read_register(verifier, function, block, *capture, state)?;
-                    require_compatible(program, *expected, actual, &at)?;
-                    if !state.copy_proofs[capture.index()].permits_copy() {
+            match &task.execution {
+                crate::awbc::schema::AwbcTaskPlanExecution::Program(body) => {
+                    let crate::awbc::schema::AwbcProgramTaskKernel::Fanout {
+                        source: position,
+                        limit,
+                        inputs,
+                        ..
+                    } = &body.body
+                    else {
+                        return invalid_type(&at, "AwaitMany original Program Fanout kernel");
+                    };
+                    if body.kernel.index() != function {
                         return invalid_type(
                             &at,
-                            "await-many capture with admitted deep Copy ownership",
+                            "Fanout entered only through its own admitted Program kernel",
                         );
                     }
-                }
-                let child_host = program.task_plans[child.index()].host().ok_or_else(|| {
-                    AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "AwaitMany child requires a Host template".into(),
+                    let layout =
+                        &program.frame_layouts[program.functions[function].frame_layout.index()];
+                    let parameters = positional_parameter_registers(layout);
+                    if parameters.get(*position as usize) != Some(source) {
+                        return invalid_type(
+                            &at,
+                            "Fanout source is its original capture parameter",
+                        );
                     }
-                })?;
-                let AwbcHostTaskPlanKind::Template {
-                    request_function, ..
-                } = child_host.kind
-                else {
-                    unreachable!("structurally verified child template");
-                };
-                let inputs = &program.signatures[program.functions[request_function.index()]
-                    .signature
-                    .index()]
-                .params;
-                require_compatible(
-                    program,
-                    *inputs.last().expect("structurally verified child item ABI"),
-                    item_type,
-                    &at,
-                )?;
+                    read_register(verifier, function, block, *source, state)?;
+                    read_register(
+                        verifier,
+                        function,
+                        block,
+                        parameters[*limit as usize],
+                        state,
+                    )?;
+                    for input in inputs {
+                        if let crate::awbc::schema::AwbcProgramFanoutInput::Capture { position } =
+                            input
+                        {
+                            read_register(
+                                verifier,
+                                function,
+                                block,
+                                parameters[*position as usize],
+                                state,
+                            )?;
+                        }
+                    }
+                    let mut next = state.clone();
+                    clear_register(verifier, function, block, *source, &mut next)?;
+                    for input in inputs {
+                        if let crate::awbc::schema::AwbcProgramFanoutInput::Capture { position } =
+                            input
+                        {
+                            clear_register(
+                                verifier,
+                                function,
+                                block,
+                                parameters[*position as usize],
+                                &mut next,
+                            )?;
+                        }
+                    }
+                    if let Some(pattern) = binding {
+                        validate_pattern(
+                            verifier,
+                            function,
+                            block,
+                            *pattern,
+                            task.payload_type(),
+                            Some(AwbcBindMode::Declare),
+                            &mut next,
+                            0,
+                        )?;
+                    }
+                    successors.push((
+                        verify_resume(
+                            verifier,
+                            function,
+                            *resume,
+                            AwbcSafePointKind::AwaitMany,
+                            &at,
+                        )?,
+                        next,
+                    ));
+                }
+                crate::awbc::schema::AwbcTaskPlanExecution::Host(host) => {
+                    if !matches!(&host.kind, AwbcHostTaskPlanKind::AwaitMany { .. }) {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "await-many references a single-task plan".to_owned(),
+                        });
+                    }
+                    let source_ty = read_register(verifier, function, block, *source, state)?;
+                    let item_type = match runtime_shape(program, source_ty) {
+                        Some(
+                            AwbcRuntimeTypeShape::Sequence { item, .. }
+                            | AwbcRuntimeTypeShape::Array { item, .. },
+                        ) => *item,
+                        _ => return invalid_type(&at, "await-many exact sequence source"),
+                    };
+                    if !state.copy_proofs[source.index()].permits_copy() {
+                        return invalid_type(
+                            &at,
+                            "await-many source with admitted deep Copy ownership",
+                        );
+                    }
+                    if let AwbcHostTaskPlanKind::AwaitMany {
+                        captures,
+                        request_function,
+                        child,
+                        ..
+                    } = &host.kind
+                    {
+                        let capture_types = &program.signatures[program.functions
+                            [request_function.index()]
+                        .signature
+                        .index()]
+                        .params;
+                        for (capture, expected) in captures.iter().zip(capture_types) {
+                            let actual = read_register(verifier, function, block, *capture, state)?;
+                            require_compatible(program, *expected, actual, &at)?;
+                            if !state.copy_proofs[capture.index()].permits_copy() {
+                                return invalid_type(
+                                    &at,
+                                    "await-many capture with admitted deep Copy ownership",
+                                );
+                            }
+                        }
+                        let child_host =
+                            program.task_plans[child.index()].host().ok_or_else(|| {
+                                AwbcVerifyError::InvalidInvariant {
+                                    at: at.clone(),
+                                    message: "AwaitMany child requires a Host template".into(),
+                                }
+                            })?;
+                        let AwbcHostTaskPlanKind::Template {
+                            request_function, ..
+                        } = child_host.kind
+                        else {
+                            unreachable!("structurally verified child template");
+                        };
+                        let inputs = &program.signatures[program.functions
+                            [request_function.index()]
+                        .signature
+                        .index()]
+                        .params;
+                        require_compatible(
+                            program,
+                            *inputs.last().expect("structurally verified child item ABI"),
+                            item_type,
+                            &at,
+                        )?;
+                    }
+                    let mut next = state.clone();
+                    clear_register(verifier, function, block, *source, &mut next)?;
+                    if let Some(pattern) = binding {
+                        validate_pattern(
+                            verifier,
+                            function,
+                            block,
+                            *pattern,
+                            task.payload_type(),
+                            Some(AwbcBindMode::Declare),
+                            &mut next,
+                            0,
+                        )?;
+                    }
+                    successors.push((
+                        verify_resume(
+                            verifier,
+                            function,
+                            *resume,
+                            AwbcSafePointKind::AwaitMany,
+                            &at,
+                        )?,
+                        next,
+                    ));
+                }
             }
-            let mut next = state.clone();
-            clear_register(verifier, function, block, *source, &mut next)?;
-            if let Some(pattern) = binding {
-                validate_pattern(
-                    verifier,
-                    function,
-                    block,
-                    *pattern,
-                    task.payload_type(),
-                    Some(AwbcBindMode::Declare),
-                    &mut next,
-                    0,
-                )?;
-            }
-            successors.push((
-                verify_resume(
-                    verifier,
-                    function,
-                    *resume,
-                    AwbcSafePointKind::AwaitMany,
-                    &at,
-                )?,
-                next,
-            ));
         }
         AwbcTerminator::HostCall {
             call,
@@ -4065,9 +4152,31 @@ fn apply_terminator_copy_and_move_effects(
             outputs.extend(observer.iter().map(|observer| observer.destination));
         }
         AwbcTerminator::AwaitMany {
-            source, binding, ..
+            plan,
+            source,
+            binding,
+            ..
         } => {
             consumed.push(*source);
+            if let crate::awbc::schema::AwbcTaskPlanExecution::Program(body) =
+                &verifier.program.task_plans[plan.index()].execution
+            {
+                if let crate::awbc::schema::AwbcProgramTaskKernel::Fanout { inputs, .. } =
+                    &body.body
+                {
+                    let owner = &verifier.program.functions[function];
+                    let parameters = positional_parameter_registers(
+                        &verifier.program.frame_layouts[owner.frame_layout.index()],
+                    );
+                    for input in inputs {
+                        if let crate::awbc::schema::AwbcProgramFanoutInput::Capture { position } =
+                            input
+                        {
+                            consumed.push(parameters[*position as usize]);
+                        }
+                    }
+                }
+            }
             if let Some(pattern) = binding {
                 extend_pattern_targets(verifier.program, *pattern, &mut outputs)?;
             }

@@ -3,9 +3,57 @@ use crate::awbc::codec::AwbcDecodeBudget;
 use crate::task::TaskHandleType;
 
 #[test]
+fn program_fanout_kernel_codec_preserves_capture_positions_and_rejects_unknown_tags() {
+    use crate::awbc::schema::{AwbcProgramFanoutInput as Input, AwbcProgramTaskKernel as Kernel};
+    let kernel = Kernel::Fanout {
+        worker: AwbcTaskPlanId(7),
+        source: 2,
+        limit: 4,
+        inputs: vec![
+            Input::Capture { position: 0 },
+            Input::Item,
+            Input::Capture { position: 3 },
+        ],
+    };
+    let mut writer = Writer::default();
+    kernel.write_wire(&mut writer).unwrap();
+    let bytes = writer.into_bytes();
+    let budget = AwbcDecodeBudget::default();
+    let mut reader = Reader::new(&bytes, &budget);
+    assert_eq!(Kernel::read_wire(&mut reader).unwrap(), kernel);
+    reader.finish().unwrap();
+    assert_eq!(
+        serde_json::from_value::<Kernel>(serde_json::to_value(&kernel).unwrap()).unwrap(),
+        kernel
+    );
+    for tag in 2..=u8::MAX {
+        let bytes = [tag];
+        let mut reader = Reader::new(&bytes, &budget);
+        assert!(
+            matches!(Kernel::read_wire(&mut reader), Err(AwbcCodecError::UnknownTag { kind: "Program task kernel", tag: actual, offset: 0 }) if actual == tag)
+        );
+        let mut reader = Reader::new(&bytes, &budget);
+        assert!(
+            matches!(Input::read_wire(&mut reader), Err(AwbcCodecError::UnknownTag { kind: "Program fanout input", tag: actual, offset: 0 }) if actual == tag)
+        );
+    }
+    let row = AwbcProgramTaskPlan {
+        source: crate::task::ExpectedTaskPlanKey::new([0x37; 32]),
+        kernel: AwbcFunctionId(0),
+        delivery: crate::task::ProgramTaskDelivery::LocalOnly,
+        capture_modes: vec![],
+        body: Kernel::Flow,
+    };
+    let mut json = serde_json::to_value(row).unwrap();
+    json.as_object_mut().unwrap().remove("body");
+    assert!(serde_json::from_value::<AwbcProgramTaskPlan>(json).is_err());
+}
+
+#[test]
 fn program_capture_modes_are_required_and_unknown_wire_tags_are_rejected() {
     use crate::value::RuntimeLocalReadMode as Mode;
     let row = AwbcProgramTaskPlan {
+        body: crate::awbc::schema::AwbcProgramTaskKernel::Flow,
         delivery: crate::task::ProgramTaskDelivery::HostMetadata,
         source: crate::task::ExpectedTaskPlanKey::new([0x36; 32]),
         kernel: AwbcFunctionId(0),
@@ -42,6 +90,7 @@ fn program_delivery_is_required_and_unknown_wire_tags_are_rejected_before_payloa
     use crate::task::ProgramTaskDelivery as Delivery;
     for delivery in [Delivery::HostMetadata, Delivery::LocalOnly] {
         let row = AwbcProgramTaskPlan {
+            body: crate::awbc::schema::AwbcProgramTaskKernel::Flow,
             source: crate::task::ExpectedTaskPlanKey::new([0x37; 32]),
             kernel: AwbcFunctionId(0),
             delivery,
@@ -139,6 +188,7 @@ fn task_row_codecs_require_full_carrier_independently_of_program_execution() {
             policy: AwbcTaskPolicy::AlwaysStart,
             handle_type,
             execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
+                body: crate::awbc::schema::AwbcProgramTaskKernel::Flow,
                 delivery: crate::task::ProgramTaskDelivery::HostMetadata,
                 source: crate::task::ExpectedTaskPlanKey::new([0x35; 32]),
                 kernel: AwbcFunctionId(0),

@@ -629,18 +629,6 @@ struct AwbcHostCall {
     mode: Immediate | Suspend,
     deterministic: bool,
 }
-struct AwbcTaskPlan {
-    public_id: AwbcStringId,
-    capability: AwbcStringId,
-    operation: AwbcStringId,
-    signature: AwbcSignatureId,
-    class: AwbcTaskClass,
-    priority: i32,
-    cancel_scope: AwbcStringId,
-    policy: JoinSameKey | AlwaysStart,
-    arguments: Vec<{ name: Option<StringId>, spread: bool }>,
-    many: Option<{ item_binding: RegisterId, limit: u32 }>,
-}
 struct AwbcEffectPlan {
     signature: AwbcSignatureId,
     capability: Option<AwbcStringId>,
@@ -648,6 +636,18 @@ struct AwbcEffectPlan {
     resources: Vec<AwbcResourceAccess>,
 }
 ```
+
+Task rows own class, priority, cancellation scope, policy, and the complete
+language handle carrier and Ready payload. Execution is a closed Host/Program
+contract. A Program row asserts its original Source key, kernel, delivery and
+ordered capture modes; these assertions grant no authority without that Source.
+Its body is Flow or Fanout. Fanout names its actual Program worker and the source
+collection and dynamic U32 limit by parent capture positions. Each worker input
+is the next owned item or an explicitly positioned parent capture. Those ABI
+positions are independent of physical registers and are checked against the
+original Source before input movement. The worker is Flow, AlwaysStart, and has
+Move capture ingress. Aggregate and child payloads retain their exact type
+relationship. This shape evolves in place in AWBC version 1.
 
 Task classes preserve the current LocalView/Io/Cpu/GPU/shader/Wasm/asset/audio/TTS/
 BGM/LSP/background set. Effect kinds preserve wait, audio,

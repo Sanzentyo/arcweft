@@ -12605,3 +12605,21 @@ workspace check／Clippy、全53逆依存runtime、他ownerのTier2／表示pari
 統合実行と、AWBC／Compilerの接続を受け入れた結果ではない。
 [全結果・失敗・fixture guard訂正・原本](acceptance-evidence/task-program-fanout-native-controller-acceptance.json)、
 [構造レビュー](acceptance-evidence/task-program-fanout-native-structure-review.json)。
+## AWBC Program fanoutの元Source・kernel・capture ABI checkpoint — 2026-10-27
+
+公開main 65437c438bb56a5794f45de1d1f11419f4aab6b3 を基点に、
+Program rowへFlow／Fanoutの閉じたbody形、実worker row、parent capture位置による
+source／動的limitとworker入力を保持させた。Source照合、構造・所有権検証、version 1
+canonical wireと必須Serde field、元Program kernelのloweringを同じ契約へ移行した。
+現行仕様に残っていたHost専用の旧TaskPlan DTOスケッチも、この共通契約へ訂正した。
+
+R3235は新規検証処理の関数名誤りで終了101、同一原因2診断だった。
+既存のvalidate_patternへ修復したR3236は、Core／runtime-planの全target・全feature・locked
+checkが終了0。各3,994入力の前後差分0。13 Rust実装pathへの検証であり、その後に追加した
+lowering fixtureの2 pathには合格を転用しない。R3237 catalogの
+終端結果はこのcheckpointの証拠に含めていない。実行結果・Clippy・構造gate・横断受入も別途確認する。
+
+実行側のtake_await_many_inputsはHost専用のままであり、Program fanoutの所有入力移動、
+worker schedulingと停止状態・公開保存復元は未接続として区別する。既存Native controllerと
+Generic Matchの受入を戻す判定ではない。
+[実装範囲・初回失敗・修復・原本](acceptance-evidence/task-program-fanout-awbc-lowering-checkpoint.json)。

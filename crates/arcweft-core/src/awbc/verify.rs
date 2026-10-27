@@ -2,6 +2,7 @@
 
 mod callable_specialization;
 mod code;
+mod program_task;
 mod structure;
 
 pub(in crate::awbc) use code::CopyProof;

@@ -1,0 +1,24 @@
+[
+  {
+    "code": "E0425",
+    "message": "cannot find function `bind_pattern` in this scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\verify\\code.rs",
+        "line_start": 3817,
+        "label": "not found in this scope"
+      }
+    ]
+  },
+  {
+    "code": "E0425",
+    "message": "cannot find function `bind_pattern` in this scope",
+    "spans": [
+      {
+        "file_name": "crates\\arcweft-core\\src\\awbc\\verify\\code.rs",
+        "line_start": 3817,
+        "label": "not found in this scope"
+      }
+    ]
+  }
+]

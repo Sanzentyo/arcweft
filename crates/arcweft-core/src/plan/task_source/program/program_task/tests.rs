@@ -132,6 +132,7 @@ fn executable_from(original: RuntimeTaskSourceProgram) -> AwbcProgram {
             policy: AwbcTaskPolicy::AlwaysStart,
             handle_type: producer.handle_type.map_payload(|_| AwbcTypeId(0)),
             execution: AwbcTaskPlanExecution::Program(AwbcProgramTaskPlan {
+                body: crate::awbc::schema::AwbcProgramTaskKernel::Flow,
                 delivery: crate::task::ProgramTaskDelivery::HostMetadata,
                 source: row.key().into(),
                 kernel: AwbcFunctionId(0),

@@ -28,6 +28,7 @@ use arcweft_core::value::{RuntimeLocalReadMode, RuntimeValue};
 use std::sync::Arc;
 
 mod flow_call;
+mod program_fanout;
 mod registry_effect;
 
 fn flow_id(value: &str) -> FlowRuntimeId {

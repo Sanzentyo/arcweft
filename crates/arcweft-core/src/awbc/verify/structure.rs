@@ -1226,6 +1226,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                                 .into(),
                     });
                 }
+                program_task.verify_fanout_contract(program, task, &at)?;
                 continue;
             }
         };

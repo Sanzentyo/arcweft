@@ -2892,6 +2892,27 @@ pub struct AwbcProgramTaskPlan {
     pub kernel: AwbcFunctionId,
     pub delivery: crate::task::ProgramTaskDelivery,
     pub capture_modes: Vec<crate::value::RuntimeLocalReadMode>,
+    pub body: AwbcProgramTaskKernel,
+}
+
+/// Original Program control shape and its capture ABI. Positions refer to the
+/// parent's capture parameters, independently of physical frame registers.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum AwbcProgramTaskKernel {
+    Flow,
+    Fanout {
+        worker: AwbcTaskPlanId,
+        source: u32,
+        limit: u32,
+        inputs: Vec<AwbcProgramFanoutInput>,
+    },
+}
+
+/// Each worker capture is either the next owned item or a parent capture.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum AwbcProgramFanoutInput {
+    Item,
+    Capture { position: u32 },
 }
 
 /// Request shape is recorded exactly once on the common task-plan row.
