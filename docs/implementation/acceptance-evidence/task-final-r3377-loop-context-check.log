@@ -1,0 +1,34 @@
+    Checking serde v1.0.228
+    Checking arcweft-id v0.1.0 (D:\git\arcweft\crates\arcweft-id)
+    Checking arcweft-source v0.1.0 (D:\git\arcweft\crates\arcweft-source)
+    Checking arcweft-lang-syntax v0.1.0 (D:\git\arcweft\crates\arcweft-lang-syntax)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-syntax\src\attachment\snapshot.rs:47:14
+   |
+47 |             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |              ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+47 -             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+47 +             .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: `arcweft-lang-syntax` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-syntax` to apply 1 suggestion)
+    Checking arcweft-lang-hir v0.1.0 (D:\git\arcweft\crates\arcweft-lang-hir)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-hir\src\identity.rs:26:10
+   |
+26 |         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |          ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+26 -         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+26 +         .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: `arcweft-lang-hir` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-hir` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 18.81s

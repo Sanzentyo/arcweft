@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-28。基点bde560d8f762e95795cce8e13cc71de1555c70cd＋ラベル付きloopの型付きターゲット移行。R3376の対象12件は8 PASS／4 FAIL。全55逆依存の再検証は未実行であり、以前の全53結果を今回の入力へ拡張しない。
+確認日: 2026-10-28。基点8152510d2c7d57e39d6e658107be7d5e627ce481＋通常loop本体・意味座標・AWBC For targetの修復。R3379のowner 4,117件は4,114 PASS／3 FAIL、同じ製品Rustに対するR3388 Compiler callable全196件はPASS。全55逆依存catalog R3383はSema rlib不足で失敗。通常Sema library build R3389は終了0、全55 catalogを再確認中。
 元のtracked WIP 14件とuntracked実ファイル6件を保持したcheckoutで確認した。公開済み入力の検証結果を、保持WIPを含むcheckout全体の合格へ拡張しない。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
@@ -16,7 +16,7 @@
 
 | 項目・境界 | 状態 | 根拠と、別途区別する範囲 |
 |---|---|---|
-| ラベル付きloop・通常ブロック内のloop制御 | **実装中・対象8／12 PASS、4 FAIL** | ラベル・source span・HIRターゲットidentity／深さを保持し、Native／AWBC、source codec、意味digestへ接続。通常の入れ子値loopのbreak／continue・同名shadowing、未知ラベル／callable越境拒否、codec往復がPASS。通常ブロック内whileはHIR lowering、通常Forのbreak／continueは意味座標、外側loopへ向かうFor内移譲はAWBC target stackで未達。元のsteps／budgetを維持した既存CLI caseの再実行は未実施。[対象結果と未達4件](acceptance-evidence/task-labelled-loop-checkpoint-acceptance.json)。 |
+| ラベル付きloop・通常ブロック内のloop制御 | **接続・owner検証済み、全55逆依存の受入は未完了** | While／WhileLet／Forは一つのAttachedLoopBodyから普通／Thread本体を選び、意味座標は共通のbody owner prefixに揃える。元の語順を維持し、AWBC iteratorも既存loop target stackに参加する。R3379でCore lib 2,067、HIR lib 955、Syntax lib 727、Compiler lib 172が全PASS。残る3件は制限付きテストhostを実Core iteratorへ接続し、R3388 callable全196／196 PASSで解消した。新14ケースは異なるowner入力の組合せ証拠であり、新しい全4,117 PASS runとはしない。Native、decoded-AWBCの型付き戻り値、実Productの各step private rollbackを確認する。元のsteps／budgetを維持した既存CLI caseは再実行待ち。[修復と検証の範囲](acceptance-evidence/task-loop-context-owner-acceptance.json)。 |
 | Generic Match `.1.2` C3/C5 | **受入・公開済み** | 受入 `850534b9e9bc8c8872f6528dd00050a5e6e7699e`、公開 `f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2`。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件。明示capture移行後のR3347でも同じ151件を全PASSとして終端照合した。完全transcript、uninhabited-domain、Never／let-else、exhaustive-only atomic publicationを含む。[受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)、[公開記録](acceptance-evidence/accepted-generic-phase-note-publication.json)、[最新151件の照合](acceptance-evidence/task-native-host-reply-reverse-acceptance.json)。 |
 | Collection／variant Map | **公開6 familyとArray反復化は対象条件で検証・公開済み** | Vec／Seq／Array／Slice／Option／Resultが公開catalog。Arrayのexact length、直接／retained-prefix、effect／source order、capture、途中保存復元を含む対象46件がPASSした。4,096要素入力も製品既定上限のままPASS。Need／Parser／Streamのschema候補を公開済みとはしない。[修復の検証履歴](convergence-evidence-history.md#array-map反復化の検証--2026-10-24)、[現行契約](../01-language/traits-seq-ranges.md)。 |
 | Presentation引数schema／resource型 | **引数role・resource型移行は検証・公開済み** | `0b5ac5491d245a5386ca1b44547091e50bcb1955`。11 callableのparameterに型付きroleを保持し、UncheckedSupplyのconsumerもversion 1 transcriptに含む。Character固有look、異なるtarget／metadata role、family違いのconsumer拒否を4件と当時の全22逆依存で検証。[roleのowner検証](acceptance-evidence/task-presentation-role-owner-acceptance.json)、[当時の横断結果](acceptance-evidence/task-presentation-role-reverse-acceptance.json)。後続 `fb04fd878622fac57a22db7e2c005ee6daa829ea` はresource kindと再帰型 `Handle<T>`／`SlotRef<T>`を36 pathで共有化し、13／13とR2864全62逆依存で新規失敗0。[型モデルの検証](acceptance-evidence/task-presentation-handle-owner-acceptance.json)。実行ABIは次行の範囲。 |

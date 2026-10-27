@@ -261,15 +261,15 @@ impl AttachedRequiredNestedThreadFlowBody {
     }
 }
 
-/// Required `for` body block, retained until HIR selects its ordinary or
+/// Required loop body block, retained until HIR selects its ordinary or
 /// Thread/Flow statement projection from the enclosing statement context.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AttachedForBody {
-    Block(AttachedForBodyBlock),
+pub enum AttachedLoopBody {
+    Block(AttachedLoopBodyBlock),
     Missing(AstNode<MissingBodyKind>),
 }
 
-impl AttachedForBody {
+impl AttachedLoopBody {
     pub fn thread_flow_body(
         &self,
     ) -> Result<AttachedRequiredNestedThreadFlowBody, SyntaxAccessError> {
@@ -291,15 +291,15 @@ impl AttachedForBody {
     }
 }
 
-/// Exact source-backed Block owner used by a `for` body.
+/// Exact source-backed Block owner used by `while`, `while let`, and `for`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AttachedForBodyBlock {
+pub struct AttachedLoopBodyBlock {
     syntax: AstNode<BlockKind>,
     open: AstNode<OpenBraceKind>,
     close: AstNode<CloseBraceKind>,
 }
 
-impl AttachedForBodyBlock {
+impl AttachedLoopBodyBlock {
     fn from_block(syntax: AstNode<BlockKind>) -> Result<Self, SyntaxAccessError> {
         if syntax.optional_tail()?.is_some() {
             return Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: syntax.id() });
@@ -514,15 +514,15 @@ pub(crate) fn required_nested_thread_flow_body<K: super::node::AstKind>(
     }
 }
 
-pub(crate) fn required_for_body<K: super::node::AstKind>(
+pub(crate) fn required_loop_body<K: super::node::AstKind>(
     owner: &AstNode<K>,
-) -> Result<AttachedForBody, SyntaxAccessError> {
+) -> Result<AttachedLoopBody, SyntaxAccessError> {
     let body = owner
         .syntax()
         .optional_unique_child(SyntaxRole::Body)?
         .ok_or(SyntaxAccessError::InvalidThreadFlowBodyShape { id: owner.id() })?;
     match body.kind() {
-        SyntaxKind::Block => Ok(AttachedForBody::Block(AttachedForBodyBlock::from_block(
+        SyntaxKind::Block => Ok(AttachedLoopBody::Block(AttachedLoopBodyBlock::from_block(
             body.cast()?,
         )?)),
         SyntaxKind::MissingBody => {
@@ -530,7 +530,7 @@ pub(crate) fn required_for_body<K: super::node::AstKind>(
             if !missing.range().is_empty() {
                 return Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: owner.id() });
             }
-            Ok(AttachedForBody::Missing(missing))
+            Ok(AttachedLoopBody::Missing(missing))
         }
         _ => Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: owner.id() }),
     }

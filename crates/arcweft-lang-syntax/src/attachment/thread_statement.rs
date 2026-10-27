@@ -14,7 +14,7 @@ use super::node::{
 use super::source_file::AttachedDelimiterState;
 use super::statement::{invalid, keyword_statement_projection, optional_recovery, require_roles};
 use super::thread_body::{
-    AttachedForBody, AttachedRequiredNestedThreadFlowBody, required_for_body,
+    AttachedLoopBody, AttachedRequiredNestedThreadFlowBody, required_loop_body,
     required_nested_thread_flow_body,
 };
 use super::{AttachedPatternNode, SyntaxAccessError};
@@ -224,7 +224,7 @@ impl AttachedIncludeStatement {
 pub struct AttachedWhileStatement {
     syntax: AstNode<WhileStatementKind>,
     condition: RequiredStatementExpressionNode,
-    body: AttachedRequiredNestedThreadFlowBody,
+    body: AttachedLoopBody,
 }
 
 impl AttachedWhileStatement {
@@ -236,7 +236,7 @@ impl AttachedWhileStatement {
         &self.condition
     }
 
-    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
+    pub const fn body(&self) -> &AttachedLoopBody {
         &self.body
     }
 
@@ -253,7 +253,7 @@ pub struct AttachedWhileLetStatement {
     pattern: AttachedPatternNode,
     scrutinee: RequiredStatementExpressionNode,
     guard: Option<RequiredStatementExpressionNode>,
-    body: AttachedRequiredNestedThreadFlowBody,
+    body: AttachedLoopBody,
 }
 
 impl AttachedWhileLetStatement {
@@ -273,7 +273,7 @@ impl AttachedWhileLetStatement {
         self.guard.as_ref()
     }
 
-    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
+    pub const fn body(&self) -> &AttachedLoopBody {
         &self.body
     }
 
@@ -298,7 +298,7 @@ pub struct AttachedForStatement {
     in_keyword: AstNode<ForInKind>,
     source: RequiredStatementExpressionNode,
     key: Option<RequiredStatementExpressionNode>,
-    body: AttachedForBody,
+    body: AttachedLoopBody,
 }
 
 impl AttachedForStatement {
@@ -322,7 +322,7 @@ impl AttachedForStatement {
         self.key.as_ref()
     }
 
-    pub const fn body(&self) -> &AttachedForBody {
+    pub const fn body(&self) -> &AttachedLoopBody {
         &self.body
     }
 
@@ -473,7 +473,7 @@ impl AstNode<WhileStatementKind> {
         Ok(AttachedWhileStatement {
             syntax: self.clone(),
             condition: required_statement_expression(self, SyntaxRole::Condition)?,
-            body: required_nested_thread_flow_body(self)?,
+            body: required_loop_body(self)?,
         })
     }
 }
@@ -501,7 +501,7 @@ impl AstNode<WhileLetStatementKind> {
                 .semantic()?,
             scrutinee: required_statement_expression(self, SyntaxRole::Scrutinee)?,
             guard,
-            body: required_nested_thread_flow_body(self)?,
+            body: required_loop_body(self)?,
         })
     }
 }
@@ -530,7 +530,7 @@ impl AstNode<ForStatementKind> {
                 .optional_unique_child(SyntaxRole::Key)?
                 .map(|_| required_statement_expression(self, SyntaxRole::Key))
                 .transpose()?,
-            body: required_for_body(self)?,
+            body: required_loop_body(self)?,
         })
     }
 }

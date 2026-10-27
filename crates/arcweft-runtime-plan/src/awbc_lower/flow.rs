@@ -3507,9 +3507,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcSafePointKind::LoopBackedge,
         );
 
-        let scope = frame.enter_scope();
-        self.inventory
-            .push_instruction(AwbcInstruction::EnterScope { scope });
+        let scope = self.enter_iterator_for_scope(frame, condition_block);
         let value_ty = admitted_plan_type(self.inventory, self.plan, evidence.item);
         assert_eq!(
             value_ty,
@@ -3536,12 +3534,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 mode: AwbcBindMode::Declare,
             });
         self.lower_ops(frame, body, input.ops, &format!("{}.body", input.path));
-        if body.terminated {
-            frame.exit_scope();
-            self.reopen_loop_exit_after_terminated_body(body, condition_block);
-            return;
-        }
-        self.close_iterator_for_iteration(frame, body, scope, condition_block);
+        self.finish_iterator_for_body(frame, body, scope, condition_block);
     }
 
     fn lower_trait_call_for(
@@ -3642,9 +3635,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcSafePointKind::LoopBackedge,
         );
 
-        let scope = frame.enter_scope();
-        self.inventory
-            .push_instruction(AwbcInstruction::EnterScope { scope });
+        let scope = self.enter_iterator_for_scope(frame, condition_block);
         let value_ty = admitted_plan_type(self.inventory, self.plan, input.pattern.ty());
         let value = frame.temp(value_ty);
         let unwrap = self.intrinsic(
@@ -3666,12 +3657,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 mode: AwbcBindMode::Declare,
             });
         self.lower_ops(frame, body, input.ops, &format!("{}.body", input.path));
-        if body.terminated {
-            frame.exit_scope();
-            self.reopen_loop_exit_after_terminated_body(body, condition_block);
-            return;
-        }
-        self.close_iterator_for_iteration(frame, body, scope, condition_block);
+        self.finish_iterator_for_body(frame, body, scope, condition_block);
     }
 
     fn trait_method_result_type(
@@ -3751,13 +3737,48 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         condition
     }
 
-    fn reopen_loop_exit_after_terminated_body(
+    fn enter_iterator_for_scope(
         &mut self,
+        frame: &mut FrameBuilder,
+        header: AwbcBlockId,
+    ) -> AwbcScopeId {
+        self.loop_targets.push(LoopLoweringTarget {
+            header,
+            exit_jumps: Vec::new(),
+            outer_scope_depth: frame.scope_depth(),
+            outer_scopes: frame.scope_checkpoint(),
+            format_attempt_depth: self.active_format_attempts.len(),
+            result: None,
+        });
+        let scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope });
+        scope
+    }
+
+    fn finish_iterator_for_body(
+        &mut self,
+        frame: &mut FrameBuilder,
         body: &mut FlowBodyBuilder,
+        scope: AwbcScopeId,
         condition_block: AwbcBlockId,
     ) {
-        let after_block = body.reopen_after_terminated_branch(self.inventory);
-        patch_branch_else_block(self.inventory, condition_block, after_block);
+        let target = self
+            .loop_targets
+            .pop()
+            .expect("For target balances its original body");
+        let exit = if body.terminated {
+            let exit = body.reopen_after_terminated_branch(self.inventory);
+            patch_branch_else_block(self.inventory, condition_block, exit);
+            exit
+        } else {
+            self.close_iterator_for_iteration(frame, body, scope, condition_block);
+            AwbcBlockId(table_index(self.inventory.program.blocks.len()))
+        };
+        frame.restore_scopes_after_branch(target.outer_scopes);
+        for jump in target.exit_jumps {
+            patch_jump_target(self.inventory, jump, exit);
+        }
     }
 
     fn close_active_scopes_for_terminator(&mut self, frame: &mut FrameBuilder) {

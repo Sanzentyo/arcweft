@@ -12,7 +12,7 @@ use crate::attachment::node::{
 };
 use crate::attachment::source_file::AttachedDelimiterState;
 use crate::attachment::{
-    AttachedExpressionNode, AttachedFlowStatementBody, AttachedForBody, AttachedRequiredFlowBody,
+    AttachedExpressionNode, AttachedFlowStatementBody, AttachedLoopBody, AttachedRequiredFlowBody,
     AttachedRequiredNestedThreadFlowBody, AttachedRequiredThreadExpressionBody,
     AttachedThreadExpressionBody, AttachedThreadFlowItem, GrammarIdentityMap,
     RequiredStatementExpressionNode, StatementNode, SyntaxDatabaseId, SyntaxLineageId,
@@ -175,7 +175,7 @@ fn loop_while_while_let_and_for_own_typed_heads_and_thread_flow_bodies() {
         RequiredStatementExpressionNode::Expression(condition)
             if condition.source_text() == "ready"
     ));
-    assert_one_nested_item(while_statement.body());
+    assert_one_nested_item(&while_statement.body().thread_flow_body().unwrap());
     assert!(!while_statement.has_recovery());
 
     let AttachedThreadFlowItem::WhileLet(statement) = &body.items()[2] else {
@@ -193,7 +193,7 @@ fn loop_while_while_let_and_for_own_typed_heads_and_thread_flow_bodies() {
         Some(RequiredStatementExpressionNode::Expression(guard))
             if guard.source_text() == "allowed"
     ));
-    assert_one_nested_item(while_let.body());
+    assert_one_nested_item(&while_let.body().thread_flow_body().unwrap());
     assert!(!while_let.has_recovery());
 
     let AttachedThreadFlowItem::For(statement) = &body.items()[3] else {
@@ -247,7 +247,7 @@ fn for_body_retains_ordinary_statement_block_for_function_context() {
         .cast::<ForStatementKind>()
         .unwrap();
     let statement = statement.semantics().expect("typed For statement");
-    let AttachedForBody::Block(body) = statement.body() else {
+    let AttachedLoopBody::Block(body) = statement.body() else {
         panic!("ordinary For retains its exact Block owner")
     };
     let attached_statements = body.syntax().statements().unwrap();
@@ -315,7 +315,7 @@ fn malformed_loop_family_heads_keep_typed_slots_and_exact_missing_bodies() {
     ));
     assert!(matches!(
         statement.body(),
-        AttachedRequiredNestedThreadFlowBody::Missing(missing) if missing.range().is_empty()
+        AttachedLoopBody::Missing(missing) if missing.range().is_empty()
     ));
     assert!(statement.has_recovery());
 
@@ -337,7 +337,7 @@ fn malformed_loop_family_heads_keep_typed_slots_and_exact_missing_bodies() {
     ));
     assert!(matches!(
         statement.body(),
-        AttachedRequiredNestedThreadFlowBody::Missing(missing) if missing.range().is_empty()
+        AttachedLoopBody::Missing(missing) if missing.range().is_empty()
     ));
     assert!(statement.has_recovery());
 
@@ -355,7 +355,7 @@ fn malformed_loop_family_heads_keep_typed_slots_and_exact_missing_bodies() {
     ));
     assert!(matches!(
         statement.body(),
-        AttachedForBody::Missing(missing) if missing.range().is_empty()
+        AttachedLoopBody::Missing(missing) if missing.range().is_empty()
     ));
     assert!(statement.has_recovery());
 }
@@ -388,16 +388,26 @@ fn loop_family_unclosed_bodies_share_the_typed_missing_close_owner() {
                 ));
             }
             AttachedThreadFlowItem::While(statement) => {
-                let nested = statement.semantics().unwrap().body().clone();
+                let nested = statement
+                    .semantics()
+                    .unwrap()
+                    .body()
+                    .thread_flow_body()
+                    .unwrap();
                 assert_unclosed_nested_body(&nested, head);
             }
             AttachedThreadFlowItem::WhileLet(statement) => {
-                let nested = statement.semantics().unwrap().body().clone();
+                let nested = statement
+                    .semantics()
+                    .unwrap()
+                    .body()
+                    .thread_flow_body()
+                    .unwrap();
                 assert_unclosed_nested_body(&nested, head);
             }
             AttachedThreadFlowItem::For(statement) => {
                 let body = statement.semantics().unwrap().body().clone();
-                let AttachedForBody::Block(body) = body else {
+                let AttachedLoopBody::Block(body) = body else {
                     panic!("authored open brace must retain a For Block for {head}");
                 };
                 assert!(body.is_unclosed());

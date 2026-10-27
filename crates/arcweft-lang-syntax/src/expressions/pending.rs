@@ -412,13 +412,7 @@ fn basic_leaf_components_validate(
         | ExpressionProjection::ComputationBlock(_)
         | ExpressionProjection::Choice => Some(components.is_empty()),
         ExpressionProjection::Loop(None) => Some(components.is_empty()),
-        ExpressionProjection::Loop(Some(name)) => basic_leaf_components_validate(
-            &ExpressionProjection::NamedBlock(name.clone()),
-            owner,
-            roles,
-            components,
-        ),
-        ExpressionProjection::NamedBlock(name) => Some(
+        ExpressionProjection::Loop(Some(name)) | ExpressionProjection::NamedBlock(name) => Some(
             exact_component_roles(roles, components, &[ExpressionComponentRole::Name])
                 && component_range(components, ExpressionComponentRole::Name).is_some_and(
                     |range| match name {

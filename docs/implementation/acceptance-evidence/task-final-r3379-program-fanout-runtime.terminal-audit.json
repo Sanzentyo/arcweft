@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "base": "8152510d2c7d57e39d6e658107be7d5e627ce481",
+  "run": "task-final-r3379-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 239.434s] 4117 tests run: 4114 passed (1 slow), 3 failed, 8 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 4117,
+  "passed": 4114,
+  "failed": 3,
+  "skipped": 8,
+  "selectedPackages": 4,
+  "matchedPackages": 4,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_for"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_continue_crosses_statement_for"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_enclosing_iterator_preserves_unlabelled_break_and_continue"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-27T19:58:46.4487885Z"
+}

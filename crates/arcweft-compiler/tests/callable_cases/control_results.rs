@@ -5,6 +5,68 @@ fn assert_labelled_loop_return(body: &str) {
         format!("flow main() -> i64 {{ {body} }}\nentry cli @entry.main {{ goto @flow.main }}\n");
     assert_native_return(&source, "42");
     assert_awbc_return(&source, RuntimeValue::i64(42));
+    // Loop intrinsics run through the actual Product host, including its
+    // owned iterator state, rather than the dialogue-only scalar test host.
+    let compiled = compile_source(&source).expect("loop source compiles");
+    let lowered = AwbcLowerer::new(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        "loop-control.arcw",
+    )
+    .lower()
+    .expect("loop source lowers to verified AWBC");
+    let encoded = lowered.program.encode_canonical().unwrap();
+    let program = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &encoded,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(program, lowered.program);
+    let mut executor = arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_entry_arc(
+        Arc::new(program),
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+        1,
+    )
+    .unwrap();
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+    for _ in 0..256 {
+        let step =
+            executor.step_with_pure_backend(Default::default(), Default::default(), &mut backend);
+        assert!(step.stats.executed_ops <= 1);
+        assert!(
+            step.output.diagnostics.is_empty(),
+            "{:?}",
+            step.output.diagnostics
+        );
+        assert!(step.output.requests.tasks.is_empty());
+        let snapshot = executor.inert_rollback_image().unwrap();
+        executor = executor
+            .restore_rollback_image(snapshot.clone())
+            .unwrap_or_else(|(_, error)| panic!("loop Product rollback: {error}"));
+        assert_eq!(executor.inert_rollback_image().unwrap(), snapshot);
+        match &executor.fiber().frame.status {
+            arcweft_core::engine::FlowFiberStatus::Running => {}
+            arcweft_core::engine::FlowFiberStatus::Done(exit) => {
+                assert_eq!(
+                    exit,
+                    &arcweft_core::engine::FlowExit::Return("42".to_owned())
+                );
+                // Product has delivered the owned value to its Flow result
+                // consumer. The typed VM result is checked separately above.
+                assert!(matches!(
+                    executor.compact_fiber().terminal,
+                    Some(arcweft_core::awbc::fiber::FiberTerminalValue::ReturnedTransferred)
+                ));
+                assert_eq!(
+                    executor.compact_fiber().return_summary.as_deref(),
+                    Some("42")
+                );
+                return;
+            }
+            status => panic!("loop Product stopped unexpectedly: {status:?}"),
+        }
+    }
+    panic!("loop Product exceeded the unchanged deterministic step limit");
 }
 
 #[test]
@@ -32,6 +94,20 @@ fn labelled_loop_shadowing_selects_the_nearest_same_name() {
 fn labelled_loop_break_crosses_statement_while() {
     assert_labelled_loop_return(
         "let value = 'outer: loop { while true { break 'outer 42i64 } }; return value",
+    );
+}
+
+#[test]
+fn labelled_loop_break_crosses_statement_while_let() {
+    assert_labelled_loop_return(
+        "let value = 'outer: loop { while let .Some(item) = Some(42i64) { break 'outer item } }; return value",
+    );
+}
+
+#[test]
+fn labelled_loop_enclosing_while_preserves_unlabelled_break_and_continue() {
+    assert_labelled_loop_return(
+        "let mut count = 0i64; let value = 'outer: loop { while count < 3i64 { count = count + 1i64; if count < 3i64 { continue }; break }; break 'outer count + 39i64 }; return value",
     );
 }
 

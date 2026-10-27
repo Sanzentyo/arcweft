@@ -5,7 +5,7 @@ use arcweft_lang_syntax::attachment::node::{
 };
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
-    AttachedForBody, AttachedSelectBindingName, AttachedSelectBranch, AttachedSelectStatementForm,
+    AttachedLoopBody, AttachedSelectBindingName, AttachedSelectBranch, AttachedSelectStatementForm,
     StatementNode,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
@@ -45,7 +45,6 @@ impl StagedHirModuleTransaction<'_> {
     ) -> Result<(HirStmtKind, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
         match attached.kind() {
             SyntaxKind::WhileStatement => {
-                Self::require_thread_statement_context(context)?;
                 let attached = attached
                     .cast::<WhileStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -58,17 +57,30 @@ impl StagedHirModuleTransaction<'_> {
                     |insertion| HirStmtRecoveryOperandSlot::WhileCondition { insertion },
                 )?;
                 let condition_poisoned = self.staged_expression_is_poisoned(condition)?;
-                let lowered = self.lower_attached_nested_thread_body(
+                let nested = if context == HirStatementContext::Thread {
+                    Some(
+                        attached
+                            .body()
+                            .thread_flow_body()
+                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+                    )
+                } else {
+                    None
+                };
+                let (body_scope, prepared) = self.prepare_contextual_loop_body(
                     attached.body(),
-                    HirScopeOwner::Stmt(owner),
+                    nested.as_ref(),
+                    owner,
                     outer_scope,
+                    context,
                 )?;
-                let body_recovery = nested_thread_body_recovery(
-                    lowered.recovery.as_ref(),
+                let (body, body_recovery) = self.finish_contextual_loop_body(
+                    attached.body(),
+                    body_scope,
+                    prepared,
+                    &[],
                     HirThreadStmtBodyRole::While,
                 )?;
-                let body = HirContextualStmtBody::try_thread(lowered.body)
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let statement = HirWhileStmt::try_new(condition, body)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let recovery = condition_poisoned
@@ -77,7 +89,6 @@ impl StagedHirModuleTransaction<'_> {
                 Ok((HirStmtKind::While(statement), recovery))
             }
             SyntaxKind::WhileLetStatement => {
-                Self::require_thread_statement_context(context)?;
                 let attached = attached
                     .cast::<WhileLetStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -90,12 +101,23 @@ impl StagedHirModuleTransaction<'_> {
                     |insertion| HirStmtRecoveryOperandSlot::WhileLetScrutinee { insertion },
                 )?;
                 let scrutinee_poisoned = self.staged_expression_is_poisoned(scrutinee)?;
-                let prepared = self.prepare_attached_nested_thread_body(
+                let nested = if context == HirStatementContext::Thread {
+                    Some(
+                        attached
+                            .body()
+                            .thread_flow_body()
+                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+                    )
+                } else {
+                    None
+                };
+                let (body_scope, prepared) = self.prepare_contextual_loop_body(
                     attached.body(),
-                    HirScopeOwner::Stmt(owner),
+                    nested.as_ref(),
+                    owner,
                     outer_scope,
+                    context,
                 )?;
-                let body_scope = prepared.scope();
                 let pattern = self.lower_attached_pattern_binding(
                     attached.pattern(),
                     body_scope,
@@ -116,14 +138,13 @@ impl StagedHirModuleTransaction<'_> {
                     .map(|guard| self.staged_expression_is_poisoned(guard))
                     .transpose()?
                     .unwrap_or(false);
-                let lowered =
-                    self.finish_attached_nested_thread_body(prepared, pattern.locals.clone())?;
-                let body_recovery = nested_thread_body_recovery(
-                    lowered.recovery.as_ref(),
+                let (body, body_recovery) = self.finish_contextual_loop_body(
+                    attached.body(),
+                    body_scope,
+                    prepared,
+                    &pattern.locals,
                     HirThreadStmtBodyRole::WhileLet,
                 )?;
-                let body = HirContextualStmtBody::try_thread(lowered.body)
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let statement =
                     HirWhileLetStmt::try_new(pattern.owner, scrutinee, guard, pattern.locals, body)
                         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
@@ -171,10 +192,10 @@ impl StagedHirModuleTransaction<'_> {
                 )?;
                 let iterator_poisoned = self.staged_expression_is_poisoned(iterator)?;
                 let next_site = match attached.body() {
-                    AttachedForBody::Block(body) => {
+                    AttachedLoopBody::Block(body) => {
                         self.statement_insertion(body.open().range().start())?
                     }
-                    AttachedForBody::Missing(missing) => {
+                    AttachedLoopBody::Missing(missing) => {
                         self.statement_insertion(missing.range().start())?
                     }
                 };
@@ -197,38 +218,13 @@ impl StagedHirModuleTransaction<'_> {
                 } else {
                     None
                 };
-                let (body_scope, prepared) = match context {
-                    HirStatementContext::Thread => {
-                        let prepared = self.prepare_attached_nested_thread_body(
-                            nested_thread_body
-                                .as_ref()
-                                .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
-                            HirScopeOwner::Stmt(owner),
-                            outer_scope,
-                        )?;
-                        (prepared.scope(), Some(prepared))
-                    }
-                    HirStatementContext::Ordinary => {
-                        let scope = match attached.body() {
-                            AttachedForBody::Block(body) => self.allocate_statement_scope(
-                                body.syntax(),
-                                owner,
-                                outer_scope,
-                                HirScopeKind::Block,
-                            )?,
-                            AttachedForBody::Missing(missing) => self.allocate_statement_scope(
-                                missing,
-                                owner,
-                                outer_scope,
-                                HirScopeKind::Block,
-                            )?,
-                        };
-                        (scope, None)
-                    }
-                    HirStatementContext::Predicate | HirStatementContext::Proof => {
-                        return Err(HirInvariantFailure::InvalidArenaCommit.into());
-                    }
-                };
+                let (body_scope, prepared) = self.prepare_contextual_loop_body(
+                    attached.body(),
+                    nested_thread_body.as_ref(),
+                    owner,
+                    outer_scope,
+                    context,
+                )?;
                 let pattern = self.lower_attached_pattern_binding(
                     attached.pattern(),
                     body_scope,
@@ -246,22 +242,13 @@ impl StagedHirModuleTransaction<'_> {
                     .map(|key| self.staged_expression_is_poisoned(key))
                     .transpose()?
                     .unwrap_or(false);
-                let (body, body_recovery) = match prepared {
-                    Some(prepared) => {
-                        let lowered = self
-                            .finish_attached_nested_thread_body(prepared, pattern.locals.clone())?;
-                        let body_recovery = nested_thread_body_recovery(
-                            lowered.recovery.as_ref(),
-                            HirThreadStmtBodyRole::For,
-                        )?;
-                        let body = HirContextualStmtBody::try_thread(lowered.body)
-                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-                        (body, body_recovery)
-                    }
-                    None => {
-                        self.lower_ordinary_for_body(attached.body(), body_scope, &pattern.locals)?
-                    }
-                };
+                let (body, body_recovery) = self.finish_contextual_loop_body(
+                    attached.body(),
+                    body_scope,
+                    prepared,
+                    &pattern.locals,
+                    HirThreadStmtBodyRole::For,
+                )?;
                 let statement = HirForStmt::try_new(
                     source,
                     iterator,
@@ -569,14 +556,83 @@ impl StagedHirModuleTransaction<'_> {
         Ok(expression)
     }
 
-    fn lower_ordinary_for_body(
+    fn prepare_contextual_loop_body<'attached>(
         &mut self,
-        attached: &AttachedForBody,
+        attached: &AttachedLoopBody,
+        nested: Option<
+            &'attached arcweft_lang_syntax::attachment::AttachedRequiredNestedThreadFlowBody,
+        >,
+        owner: StmtId,
+        parent: ScopeId,
+        context: HirStatementContext,
+    ) -> Result<
+        (
+            ScopeId,
+            Option<super::super::thread_body_lowering::PreparedNestedThreadBody<'attached>>,
+        ),
+        HirLowerFailure,
+    > {
+        match context {
+            HirStatementContext::Thread => {
+                let prepared = self.prepare_attached_nested_thread_body(
+                    nested.ok_or(HirInvariantFailure::InvalidArenaCommit)?,
+                    HirScopeOwner::Stmt(owner),
+                    parent,
+                )?;
+                Ok((prepared.scope(), Some(prepared)))
+            }
+            HirStatementContext::Ordinary => {
+                let scope = match attached {
+                    AttachedLoopBody::Block(body) => self.allocate_statement_scope(
+                        body.syntax(),
+                        owner,
+                        parent,
+                        HirScopeKind::Block,
+                    )?,
+                    AttachedLoopBody::Missing(missing) => {
+                        self.allocate_statement_scope(missing, owner, parent, HirScopeKind::Block)?
+                    }
+                };
+                Ok((scope, None))
+            }
+            HirStatementContext::Predicate | HirStatementContext::Proof => {
+                Err(HirInvariantFailure::InvalidArenaCommit.into())
+            }
+        }
+    }
+
+    fn finish_contextual_loop_body(
+        &mut self,
+        attached: &AttachedLoopBody,
+        scope: ScopeId,
+        prepared: Option<super::super::thread_body_lowering::PreparedNestedThreadBody<'_>>,
+        locals: &[LocalId],
+        role: HirThreadStmtBodyRole,
+    ) -> Result<(HirContextualStmtBody, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
+        match prepared {
+            Some(prepared) => {
+                let lowered = self.finish_attached_nested_thread_body(
+                    prepared,
+                    locals.to_vec().into_boxed_slice(),
+                )?;
+                let recovery = nested_thread_body_recovery(lowered.recovery.as_ref(), role)?;
+                let body = HirContextualStmtBody::try_thread(lowered.body)
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                Ok((body, recovery))
+            }
+            None => self.lower_ordinary_loop_body(attached, scope, locals, role),
+        }
+    }
+
+    fn lower_ordinary_loop_body(
+        &mut self,
+        attached: &AttachedLoopBody,
         scope: ScopeId,
         prefix_locals: &[LocalId],
+        role: HirThreadStmtBodyRole,
     ) -> Result<(HirContextualStmtBody, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
         match attached {
-            AttachedForBody::Block(body) => {
+            AttachedLoopBody::Block(body) => {
                 let statements = body
                     .statements()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
@@ -597,23 +653,19 @@ impl StagedHirModuleTransaction<'_> {
                     })
                     .or_else(|| {
                         body.is_unclosed().then_some(HirStmtRecoveryIssue::Thread(
-                            HirThreadStmtRecoveryIssue::UnclosedBody {
-                                role: HirThreadStmtBodyRole::For,
-                            },
+                            HirThreadStmtRecoveryIssue::UnclosedBody { role },
                         ))
                     });
                 let body = HirContextualStmtBody::try_ordinary(scope, lowered.body)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 Ok((body, body_recovery))
             }
-            AttachedForBody::Missing(_) => {
+            AttachedLoopBody::Missing(_) => {
                 self.close_scope_members(scope, prefix_locals.to_vec().into_boxed_slice())?;
                 let body = HirContextualStmtBody::try_ordinary(scope, Box::new([]))
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let recovery = Some(HirStmtRecoveryIssue::Thread(
-                    HirThreadStmtRecoveryIssue::MissingBody {
-                        role: HirThreadStmtBodyRole::For,
-                    },
+                    HirThreadStmtRecoveryIssue::MissingBody { role },
                 ));
                 Ok((body, recovery))
             }

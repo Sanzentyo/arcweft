@@ -1,0 +1,359 @@
+{
+  "version": 1,
+  "commit": "8152510d2c7d57e39d6e658107be7d5e627ce481",
+  "parent": "bde560d8f762e95795cce8e13cc71de1555c70cd",
+  "tree": "08d54d04ff9a80856d5cb097c22e9ceabc8709ac",
+  "remote": "8152510d2c7d57e39d6e658107be7d5e627ce481",
+  "paths": [
+    {
+      "path": "crates/arcweft-cli/src/app/jit.rs",
+      "blob": "4ea21e081a30940f9b3941264ea029304566d5ed"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/callable_cases/control_results.rs",
+      "blob": "ca8172aca9cc98295be0b0ec4da2cbaa64886713"
+    },
+    {
+      "path": "crates/arcweft-core/src/aot.rs",
+      "blob": "4f48e9e102e5a5395521a60eb93837503f850838"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "blob": "4c83ee8bd0993e3df78e6b613849b8923d0a2676"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow.rs",
+      "blob": "bdbb2e1e89330c6f7b346f3ffb31697823589fee"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow/format_attempt.rs",
+      "blob": "3cda4595a457c4482d1eea13a401c83b0862afe4"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/numeric_map.rs",
+      "blob": "fea64ada4a5ede9f3e30ccdd553086c113965e96"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/rollback.rs",
+      "blob": "088c6f3810806d4e5b092bed6f02ecd06341551e"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan.rs",
+      "blob": "16e7a93edaa8abee9fc951f3db670919f3f9f636"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/flow.rs",
+      "blob": "e4f4dfa79be10b43ed681396e1d5663de7ea534a"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/body_semantic/function.rs",
+      "blob": "0f4c0ba26b92c6f08c2c9dfb68764379871c5c8a"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "blob": "ec52a8b6d1479ac3d4a1cd6c05654a3fb7b67adb"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+      "blob": "a078081764f70b48f4feb568d29a6ceffe1d6528"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/decoding.rs",
+      "blob": "82133acfa28e4ce32a877843bdf163b9f3d48758"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/encoding/fields.rs",
+      "blob": "66c9dfa4e30c17353e814ef3379b10a6edc62179"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/metadata/fields.rs",
+      "blob": "c9da8044d2413ccd44673082d9d4f094f24079b7"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/flow/tests.rs",
+      "blob": "f257c5e530ce53631192122da295ad73da2649c0"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/entry_inventory.rs",
+      "blob": "f8b7612dc125aca47688085192c1b2bd9deeab87"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/flow_ops.rs",
+      "blob": "75cc5eed488128147d5b622e92794f39974ff413"
+    },
+    {
+      "path": "crates/arcweft-core/src/pure/aot/body.rs",
+      "blob": "1ad29223583068e134bbd1b8c796c46d86c405be"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/expr/control.rs",
+      "blob": "6afebec6ac2478e686037438ee66952ec4728925"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/expr/tests.rs",
+      "blob": "381697b2428a67bc68871aad23c09286761935cf"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs",
+      "blob": "f3456a34a5f13653510a6e7b772609b91acf629a"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/dialogue/candidate.rs",
+      "blob": "1626eebf2947ce50ea7fb0e797e5baba037da14c"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_project/semantic_paths.rs",
+      "blob": "1ea18b4f0e6d63a1e92ce586ccc045519c6ee5dd"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_project/semantic_paths/tests.rs",
+      "blob": "9d2dcfabf24e8f18fc79697667af5246fa90975c"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/block_projection.rs",
+      "blob": "d3f25798e24d9bb038b19f7dcfc8257517b7baf0"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/projection.rs",
+      "blob": "b623c60e93eb29421b09478f327b6d67593eff50"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/requirements.rs",
+      "blob": "9544606a64f3ab6165c2a5bc717941a721524740"
+    },
+    {
+      "path": "crates/arcweft-lang-jit-cranelift/src/body.rs",
+      "blob": "98a7bcc2ffd41bbf5f1e91f6cba8afa6c18b82cb"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "blob": "38f39e3bc89c22c83d00d02f41607b510696b9d4"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+      "blob": "e2cf01469d71f52f83465c5de94fe71fc1b95acb"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/semantic_coordinate/catalog.rs",
+      "blob": "a6bd53984bbd7aebae6d3b3f92395f5ac92a9831"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/attachment/expression.rs",
+      "blob": "924b86268d1ba07cb980640b75e7a83d25454881"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/attachment/expression/structure.rs",
+      "blob": "e4138e3dc5f687ffa200493336da57fba9d1ea1a"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/attachment/thread_statement/tests.rs",
+      "blob": "b2d43659547bfe62d98ce90b4d27d6ee9afe945a"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/expressions.rs",
+      "blob": "ee036716c4d2b48229ad07a8e18489859d088bad"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/expressions/pending.rs",
+      "blob": "574c82034d0b16447826b1aab92a6daeb31817ce"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/expression.rs",
+      "blob": "4ba5ef4a60c11cf3d55593a73913713d9786fdb3"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/expression/colon_dialogue.rs",
+      "blob": "fc7f6fb8ba6d80b61abff3e144055738222cfd89"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/expression/control.rs",
+      "blob": "ead86d47e817873b709eb72e45d7f7119f7872ea"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/shadow_flow_tests.rs",
+      "blob": "66251935bf8b630b0bf2242338a312c45d59e464"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/statement.rs",
+      "blob": "9be5d20c653eef452c9334d54c41feab0f024d6c"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/statement/dialogue_plan.rs",
+      "blob": "ae0c77aa943a3222fa7252a2ba2b1cf78f1bee25"
+    },
+    {
+      "path": "crates/arcweft-runtime-accelerator/src/compile.rs",
+      "blob": "89b4c738390604db2f928af1f095ad0ebb83223c"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+      "blob": "454d25bf2abb526129093b4ab821697969e2d7e5"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests.rs",
+      "blob": "2f0d6b3d2d2549dbe3b3e2300ccb8d3715741fd1"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "blob": "d663056e82693402e611c4bc5f490f7cbc85d896"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow/standard_map.rs",
+      "blob": "56a4e6d3acd2fafba2212775e21b1d2fb56e5e16"
+    },
+    {
+      "path": "docs/01-language/control-transfer-return-out-yield.md",
+      "blob": "42642145515121ca9893c80a4823b5c05376fbf1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter.baseline-advance.json",
+      "blob": "50544f468707625e00dd81b54507eabe3f3bd091"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter.verified.json",
+      "blob": "4934ad685c0a5fed8c49d1742c24c8b0ce8e8a12"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3369-labelled-loop-check.json",
+      "blob": "97b193a640e3479fb7125e69858f9a895f9fc105"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3369-labelled-loop-check.log",
+      "blob": "5e7c2801e1ef8d32b8046fe916f8f5157d870368"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3370-labelled-loop-check.input-audit.json",
+      "blob": "1185960901bb02fe9583f002d028ba2a99076f83"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3370-labelled-loop-check.json",
+      "blob": "965222881f50b8a96fb46f6ff782a90141b2a91c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3370-labelled-loop-check.log",
+      "blob": "2294f12a3925e7211015f6877cc2cc82942b9684"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3371-program-fanout-awbc-check.input-audit.json",
+      "blob": "701981b50b8f17f47a56417f997f4f2513bb5069"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3371-program-fanout-awbc-check.json",
+      "blob": "aecea33668ad14898da59416f75f42650ec410d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3371-program-fanout-awbc-check.log",
+      "blob": "8900258161b222270315bcffd9d099dcc6455227"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3372-program-fanout-runtime.binaries-before.json",
+      "blob": "a704874bba20edc1e545d084b99ca59a1036d69e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3372-program-fanout-runtime.json",
+      "blob": "225abac0194f4eda49e414b11790ca3a108cb2bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3372-program-fanout-runtime.log",
+      "blob": "6042d4dc84326f045775afbed2a9b7583e70189f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3372-program-fanout-runtime.terminal-audit.json",
+      "blob": "5d1f3ef2406ba12f5e8219213d94cdf2c5a77cdb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3373-program-fanout-awbc-check.input-audit.json",
+      "blob": "634ce2f5f883b563d5ecb6db957fdc2e3dc887c7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3373-program-fanout-awbc-check.json",
+      "blob": "7711250e9a6c9d9cde668933a627ea2c4e8f50dc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3373-program-fanout-awbc-check.log",
+      "blob": "c98f40c6fb200ff6a1bc6bcfc3fc838e0bd9be57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3374-program-fanout-runtime.binaries-before.json",
+      "blob": "900c425bb7f0240c5a63ed04847f62bba2a6cc54"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3374-program-fanout-runtime.json",
+      "blob": "edfcc0d4bcc01ccd425500fb66a0b3a666ff5edc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3374-program-fanout-runtime.log",
+      "blob": "10136d89bac8e2c193c46e64bdd3430e1f5793e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3374-program-fanout-runtime.terminal-audit.json",
+      "blob": "137da08589b0722fe64b5356916265e724f06b45"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3375-program-fanout-awbc-check.input-audit.json",
+      "blob": "4769fd4b359d79ed402c7c80771d9fffc567afdb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3375-program-fanout-awbc-check.json",
+      "blob": "dea0a5a0e8cae8ba5d59bdb54dfb4f0c6989da06"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3375-program-fanout-awbc-check.log",
+      "blob": "c1c077fff645e88d82d8b829a1b199da97049ce6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3376-program-fanout-runtime.binaries-before.json",
+      "blob": "c4aa894e37e6360bf3851c25ffd0b6fa8eed3d17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3376-program-fanout-runtime.json",
+      "blob": "8e2f61b996e166b86facde622a6446509fa937c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3376-program-fanout-runtime.log",
+      "blob": "2ee02947326409ef139016d915dc3c30f8a1b1cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3376-program-fanout-runtime.terminal-audit.json",
+      "blob": "51cf954222b5fd01bb8af856cfb43afecb19ee12"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-labelled-loop-checkpoint-acceptance.json",
+      "blob": "bafa035ce484e6f1e8dea5955ac193de280bbac4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-labelled-loop.owner-measurement.json",
+      "blob": "61b45cf92e5e11e6d78fb3bdc00c3ad72b3e9566"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-labelled-loop.reverse-closure.json",
+      "blob": "3b1cfea2dd2592d99efe6e0dcd6bf6e5ffcb04f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3371.source-freeze.json",
+      "blob": "5a426f46f321314df4693d48ef6ea1e9f00494db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3373.source-freeze.json",
+      "blob": "b85dc67aa19db784033429c879bd5dd81cf5d20a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3375.source-freeze.json",
+      "blob": "c6e9e6733e93346e37bc724bd0797ba51736bb08"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "6b12007f2d6f59368ea2e24883f2abbd5e5d0afe"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "6651f217e703aec151cb754402f72b1bf67bd685"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "79b1299cc6f43cae79887ca27e50f90159ec02dcc03e618bb91712b7ce952596",
+  "heldPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-27T19:48:12.6045106Z"
+}

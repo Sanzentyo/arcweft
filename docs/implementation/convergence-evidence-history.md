@@ -12917,3 +12917,23 @@ Cargo metadataの全feature／locked解決graphはworkspace 97 package、変更o
 Supersedes: 現状一覧の「製品Rustは以前の全53入力から不変」は今回の製品変更により更新する。以前のR3347結果、Generic Matchの受入・公開SHAと151件、CLI benchのPASSは原本のまま履歴として保持する。全goalが未完了という理由で完了cutを未完了へ戻さない。
 
 [実行結果・未達識別子・原本hash](acceptance-evidence/task-labelled-loop-checkpoint-acceptance.json)。
+
+## 通常loop本体と制御座標の統合・owner修復 — 2026-10-28
+
+基点8152510d2c7d57e39d6e658107be7d5e627ce481。前cutの未達4件を、Forだけのsyntax bodyをWhile／WhileLet／For共通のAttachedLoopBodyへ置き換え、enclosing contextでOrdinary／Threadを選ぶ同じloweringとsource validatorへ統合して修復する。通常bodyのsemantic pathも既存のbody owner prefixへ揃え、try_child_edgesの語順は維持する。AWBCのbuilt-in／trait iteratorを既存loop target stackへ接続し、終了jump・continue header・scope restorationを共通に扱う。旧AttachedForBody名とFor専用ordinary-body readerは削除した。
+
+R3377 HIR library checkは終了0。R3378 catalog／R3379 owner runtimeは4,117実行、4,114 PASS／3 FAIL／8既存ignored、239.434秒。Core lib 2,067、HIR lib 955、Syntax lib 727、Compiler lib 172が全PASS。残る3件はAWBC生成・検証を通り、制限付きscalarテストhostのiterator intrinsic未接続で停止した。
+
+後続テストは本物のCore iterator family registryとowned evaluatorをhostへ接続し、元のdecoded-VM RuntimeValue::i64(42) assertionを全ケースで維持する。さらに実ProductをOneOp／max_ops 1、元の256-step guardのまま動かし、全stepでprivate inert imageをrestoreして全image equalityを検査する。Productは所有した戻り値を既にconsumerへ移し、ReturnedTransferredと正確なreturn_summaryを保持する。値を二重保持する誤った期待は採用しない。
+
+R3380はprivate inert imageにserdeを仮定した新fixtureのcompile error 2件。R3382／R3386の各196実行は187 PASS／新9件FAILで、Productの所有移譲後に元の値をまだ保持すると仮定したfixtureが失敗した。実装の既存成功を取り消す根拠にはせず、元のtyped VM returnを残した上で、本来のProduct delivery contractを確認する。最終R3387 catalog／R3388 callable runtimeは196／196 PASS、除外0、23.829秒。3,998入力、1 executable、catalog／終端・byte差分0。new loop 14件はR3379の変更していないCore／HIR／Syntax 5件とR3388のCompiler 9件の組合せであり、新しい全4,117 PASS runとはしない。Native For private every-step restoreはこのfixtureからは主張しない。
+
+R3383の全55 catalogはCompiler catalog_asset_executionがarcweft_lang_semaのrlib不足で失敗し、runtimeは未実行。OS1455は観測せず、原因をメモリ不足へ読み替えない。生成物の移動・削除、再cargo clean、jobs制限は行わず、R3389の通常Sema library buildは終了0・3,998入力差分0。横断catalogを再確認する。
+
+R3384 canonical scannerは終了0／blocking 0。後続はテストhost／assertionの修復のみで、productionの境界・依存は同じ。whole cutのRust 55 pathを実測し、各fileのnet growth 300 LOC超は0。Syntax／HIRのbody所有、semantic pathの語順、runtime-planの既存stackへの接続、Native Forの元iterator継続所有を責務ごとに確認した。ForNextは従来からpending Resume(_)判定でnumeric elisionを拒否するため、新For frameは有効なfusion条件を増やしていない。I/O・依存方向・Cargo契約の変更はない。
+
+元のtracked WIP 14件・untracked実ファイル6件とheld patch SHA 89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31を維持する。workspace check／Clippy、doctest、全55逆依存runtime、既存CLI 12-step caseの最終確認は残る。ユーザーの中間commit許可の範囲で公開して続行し、これを全goalの完了や全consumer受入とはしない。Generic Matchの受入・公開と151件は維持する。
+
+Supersedes: 現状一覧の前cutの未達4件を、今回の修復とowner検証へ更新する。R3376の8 PASS／4 FAILと、その後のfixture失敗・full catalog失敗は原本のまま履歴へ残す。
+
+[最終owner結果・失敗履歴・構造review](acceptance-evidence/task-loop-context-owner-acceptance.json)。

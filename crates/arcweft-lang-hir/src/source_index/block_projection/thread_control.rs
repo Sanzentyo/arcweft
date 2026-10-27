@@ -13,7 +13,7 @@ use arcweft_lang_syntax::attachment::node::{
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
     AttachedDialogueCancelRuleBody, AttachedDialogueCancelRuleIndentedBody,
-    AttachedDialogueCancelRuleStatement, AttachedForBody, AttachedPatternNode,
+    AttachedDialogueCancelRuleStatement, AttachedLoopBody, AttachedPatternNode,
     AttachedRequiredNestedThreadFlowBody, AttachedSelectBindingName, AttachedSelectBranch,
     AttachedSelectStatementForm, AttachedThreadFlowItem, AttachedThreadFlowItemFamily,
     RequiredStatementExpressionNode, StatementNode, SyntaxNodeId,
@@ -103,7 +103,11 @@ pub(super) fn thread_control_statement_evidence(
     kind: &HirStmtKind,
 ) -> Option<StatementEvidence> {
     if context != HirStatementContext::Thread
-        && !(context == HirStatementContext::Ordinary && matches!(kind, HirStmtKind::For(_)))
+        && !(context == HirStatementContext::Ordinary
+            && matches!(
+                kind,
+                HirStmtKind::While(_) | HirStmtKind::WhileLet(_) | HirStmtKind::For(_)
+            ))
     {
         return None;
     }
@@ -115,6 +119,7 @@ pub(super) fn thread_control_statement_evidence(
             owner,
             attached,
             outer_scope,
+            context,
             statement,
         ),
         HirStmtKind::WhileLet(statement) => while_let_evidence(
@@ -124,6 +129,7 @@ pub(super) fn thread_control_statement_evidence(
             owner,
             attached,
             outer_scope,
+            context,
             statement,
         ),
         HirStmtKind::For(statement) => for_evidence(
@@ -280,6 +286,7 @@ fn while_evidence(
     owner: StmtId,
     attached: &StatementNode,
     outer_scope: ScopeId,
+    context: HirStatementContext,
     statement: &HirWhileStmt,
 ) -> Option<StatementEvidence> {
     let attached = attached
@@ -298,16 +305,18 @@ fn while_evidence(
         |insertion| HirStmtRecoveryOperandSlot::WhileCondition { insertion },
     )?;
     let mut generations = BTreeMap::new();
-    let body = nested_body_evidence(
+    let body_recovery = contextual_loop_body_evidence(
         parsed,
         slots,
         arenas,
         owner,
         outer_scope,
+        context,
         statement.body(),
         attached.body(),
         &[],
         &mut generations,
+        HirThreadStmtBodyRole::While,
     )?;
     exact_owned_child_scopes(
         slots,
@@ -326,7 +335,7 @@ fn while_evidence(
     exact_statement_synthetic_expressions(slots, arenas, owner, &expected_synthetics)?;
     let recovery = condition_poisoned
         .then_some(thread_child(HirThreadStmtChildRole::Condition))
-        .or_else(|| nested_body_recovery(body.recovery, HirThreadStmtBodyRole::While));
+        .or_else(|| body_recovery);
     Some(empty_statement(recovery))
 }
 
@@ -337,6 +346,7 @@ fn while_let_evidence(
     owner: StmtId,
     attached: &StatementNode,
     outer_scope: ScopeId,
+    context: HirStatementContext,
     statement: &HirWhileLetStmt,
 ) -> Option<StatementEvidence> {
     let attached = attached
@@ -379,16 +389,18 @@ fn while_let_evidence(
         )?,
         _ => return None,
     };
-    let body = nested_body_evidence(
+    let body_recovery = contextual_loop_body_evidence(
         parsed,
         slots,
         arenas,
         owner,
         outer_scope,
+        context,
         statement.body(),
         attached.body(),
         statement.locals(),
         &mut generations,
+        HirThreadStmtBodyRole::WhileLet,
     )?;
     exact_owned_child_scopes(slots, arenas, outer_scope, owner, &[body_scope])?;
     exact_statement_scope_inventory(slots, arenas, owner, &[body_scope])?;
@@ -410,7 +422,7 @@ fn while_let_evidence(
         .then_some(thread_child(HirThreadStmtChildRole::Pattern))
         .or_else(|| scrutinee_poisoned.then_some(thread_child(HirThreadStmtChildRole::Scrutinee)))
         .or_else(|| guard_poisoned.then_some(thread_child(HirThreadStmtChildRole::Guard)))
-        .or_else(|| nested_body_recovery(body.recovery, HirThreadStmtBodyRole::WhileLet));
+        .or_else(|| body_recovery);
     Some(empty_statement(recovery))
 }
 
@@ -449,8 +461,8 @@ fn for_evidence(
         source_poisoned,
     )?;
     let next_offset = match attached.body() {
-        AttachedForBody::Block(body) => body.open().range().start(),
-        AttachedForBody::Missing(missing) => missing.range().start(),
+        AttachedLoopBody::Block(body) => body.open().range().start(),
+        AttachedLoopBody::Missing(missing) => missing.range().start(),
     };
     let next_poisoned = for_synthetic_matches(
         parsed,
@@ -490,38 +502,19 @@ fn for_evidence(
         (None, None) => false,
         _ => return None,
     };
-    let body_recovery = match (context, statement.body()) {
-        (HirStatementContext::Thread, HirContextualStmtBody::Thread(_)) => {
-            let attached_body = attached.body().thread_flow_body().ok()?;
-            let body = nested_body_evidence(
-                parsed,
-                slots,
-                arenas,
-                owner,
-                outer_scope,
-                statement.body(),
-                &attached_body,
-                statement.locals(),
-                &mut generations,
-            )?;
-            nested_body_recovery(body.recovery, HirThreadStmtBodyRole::For)
-        }
-        (HirStatementContext::Ordinary, HirContextualStmtBody::Ordinary { scope, statements }) => {
-            ordinary_for_body_evidence(
-                parsed,
-                slots,
-                arenas,
-                owner,
-                outer_scope,
-                *scope,
-                statements,
-                attached.body(),
-                statement.locals(),
-                &mut generations,
-            )?
-        }
-        _ => return None,
-    };
+    let body_recovery = contextual_loop_body_evidence(
+        parsed,
+        slots,
+        arenas,
+        owner,
+        outer_scope,
+        context,
+        statement.body(),
+        attached.body(),
+        statement.locals(),
+        &mut generations,
+        HirThreadStmtBodyRole::For,
+    )?;
     exact_owned_child_scopes(slots, arenas, outer_scope, owner, &[body_scope])?;
     exact_statement_scope_inventory(slots, arenas, owner, &[body_scope])?;
     let mut expected_synthetics = vec![
@@ -557,7 +550,56 @@ fn for_evidence(
     clippy::too_many_arguments,
     reason = "the ordinary For-body validator carries one exact owner, scope pair, statement list, prefix locals, and generation ledger"
 )]
-fn ordinary_for_body_evidence(
+fn contextual_loop_body_evidence(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    owner: StmtId,
+    parent: ScopeId,
+    context: HirStatementContext,
+    body: &HirContextualStmtBody,
+    attached: &AttachedLoopBody,
+    locals: &[LocalId],
+    generations: &mut BTreeMap<HirName, LocalGeneration>,
+    role: HirThreadStmtBodyRole,
+) -> Option<Option<HirStmtRecoveryIssue>> {
+    match (context, body) {
+        (HirStatementContext::Thread, HirContextualStmtBody::Thread(_)) => {
+            let nested = attached.thread_flow_body().ok()?;
+            let evidence = nested_body_evidence(
+                parsed,
+                slots,
+                arenas,
+                owner,
+                parent,
+                body,
+                &nested,
+                locals,
+                generations,
+            )?;
+            Some(nested_body_recovery(evidence.recovery, role))
+        }
+        (HirStatementContext::Ordinary, HirContextualStmtBody::Ordinary { scope, statements }) => {
+            ordinary_loop_body_evidence(
+                parsed,
+                slots,
+                arenas,
+                owner,
+                parent,
+                *scope,
+                statements,
+                attached,
+                locals,
+                generations,
+                role,
+            )
+        }
+        _ => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ordinary_loop_body_evidence(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
     arenas: &BlockValidationArenas<'_>,
@@ -565,12 +607,13 @@ fn ordinary_for_body_evidence(
     parent_scope: ScopeId,
     scope: ScopeId,
     statements: &[StmtId],
-    attached: &AttachedForBody,
+    attached: &AttachedLoopBody,
     prefix_locals: &[LocalId],
     generations: &mut BTreeMap<HirName, LocalGeneration>,
+    role: HirThreadStmtBodyRole,
 ) -> Option<Option<HirStmtRecoveryIssue>> {
     match attached {
-        AttachedForBody::Block(body) => {
+        AttachedLoopBody::Block(body) => {
             body.statements().ok()?;
             let evidence = super::statement_block_matches(
                 parsed,
@@ -594,14 +637,12 @@ fn ordinary_for_body_evidence(
                     })
                     .or_else(|| {
                         body.is_unclosed().then_some(HirStmtRecoveryIssue::Thread(
-                            HirThreadStmtRecoveryIssue::UnclosedBody {
-                                role: HirThreadStmtBodyRole::For,
-                            },
+                            HirThreadStmtRecoveryIssue::UnclosedBody { role },
                         ))
                     }),
             )
         }
-        AttachedForBody::Missing(missing) => {
+        AttachedLoopBody::Missing(missing) => {
             if !statements.is_empty() {
                 return None;
             }
@@ -619,9 +660,7 @@ fn ordinary_for_body_evidence(
                 return None;
             }
             Some(Some(HirStmtRecoveryIssue::Thread(
-                HirThreadStmtRecoveryIssue::MissingBody {
-                    role: HirThreadStmtBodyRole::For,
-                },
+                HirThreadStmtRecoveryIssue::MissingBody { role },
             )))
         }
     }

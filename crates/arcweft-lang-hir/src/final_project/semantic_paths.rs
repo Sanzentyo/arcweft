@@ -1466,21 +1466,9 @@ fn validate_body_child_path(
                         }),
                     )
                 }
-                HirBodyKind::Ordinary => {
-                    let HirBodyChildRole::Statement { ordinal } = edge.role() else {
-                        return Err(HirSemanticPathError::InvalidBodyRow {
-                            owner: row.owner().clone(),
-                        });
-                    };
-                    direct(
-                        parent,
-                        HirSemanticPathStep::Statement(HirStatementChildRole::BodyItem {
-                            body: *role,
-                            ordinal,
-                        }),
-                    )
+                HirBodyKind::Ordinary | HirBodyKind::Thread => {
+                    direct(row.path(), HirSemanticPathStep::Body(edge.role()))
                 }
-                HirBodyKind::Thread => direct(row.path(), HirSemanticPathStep::Body(edge.role())),
             }
         }
     };
@@ -6027,7 +6015,16 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             .try_child_edges()
             .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
         {
-            let path = pushed(path, HirSemanticPathStep::Statement(edge.role()));
+            // Ordinary bodies and Thread bodies share the same body owner
+            // prefix. Preserve authored edge order while retaining the body
+            // identity needed by typed loop/control-transfer coordinates.
+            let path = match edge.role() {
+                HirStatementChildRole::BodyItem { body, ordinal } => pushed(
+                    &pushed(path, HirSemanticPathStep::StatementBody(body)),
+                    HirSemanticPathStep::Body(HirBodyChildRole::Statement { ordinal }),
+                ),
+                role => pushed(path, HirSemanticPathStep::Statement(role)),
+            };
             let child_access = if matches!(edge.role(), HirStatementChildRole::Target) {
                 CaptureAccess::Reassign
             } else {

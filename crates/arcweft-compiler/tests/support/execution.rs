@@ -355,7 +355,7 @@ impl VmHost for CharacterDialogueVmHost<'_> {
         &mut self,
         program: &AwbcProgram,
         intrinsic: arcweft_core::awbc::schema::AwbcIntrinsicId,
-        args: Vec<RuntimeValue>,
+        mut args: Vec<RuntimeValue>,
     ) -> Result<Option<RuntimeValue>, VmError> {
         if let Some(identity) = program
             .intrinsics
@@ -371,6 +371,31 @@ impl VmHost for CharacterDialogueVmHost<'_> {
                 evaluate_index_intrinsic(identity, &args).map_err(VmError::Evaluation)?
             {
                 return Ok(Some(value));
+            }
+            if args.len() == 1 {
+                if let Some(family) = identity.builtin_iterator_family() {
+                    return arcweft_core::value::evaluate_core_iter_into_iter_intrinsic(
+                        args.pop().unwrap(),
+                        family,
+                    )
+                    .map(Some)
+                    .map_err(VmError::Evaluation);
+                }
+                let value = match identity {
+                    arcweft_core::value::RuntimeIntrinsic::CoreIterNext => {
+                        arcweft_core::value::evaluate_core_iter_next_intrinsic(args.pop().unwrap())
+                    }
+                    arcweft_core::value::RuntimeIntrinsic::CoreOptionUnwrap => {
+                        arcweft_core::value::evaluate_core_option_unwrap_intrinsic(
+                            args.pop().unwrap(),
+                        )
+                    }
+                    arcweft_core::value::RuntimeIntrinsic::CoreOptionIsSome => {
+                        arcweft_core::value::evaluate_core_option_is_some_intrinsic(&args[0])
+                    }
+                    _ => return Err(VmError::MissingIntrinsic(intrinsic)),
+                };
+                return value.map(Some).map_err(VmError::Evaluation);
             }
         }
         Err(VmError::MissingIntrinsic(intrinsic))

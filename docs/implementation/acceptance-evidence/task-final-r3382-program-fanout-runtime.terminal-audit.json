@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "base": "8152510d2c7d57e39d6e658107be7d5e627ce481",
+  "run": "task-final-r3382-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  21.437s] 196 tests run: 187 passed, 9 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 196,
+  "passed": 187,
+  "failed": 9,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_nested_value_loop"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_while"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_for"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_while_let"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_enclosing_iterator_preserves_unlabelled_break_and_continue"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_shadowing_selects_the_nearest_same_name"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_continue_crosses_nested_value_loop"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_enclosing_while_preserves_unlabelled_break_and_continue"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_continue_crosses_statement_for"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-27T20:01:40.7246286Z"
+}
