@@ -635,7 +635,8 @@ fn authored_final_error_cause(
         | FinalSemanticAnalysisError::TypeResolutionReportMismatch { .. } => {
             Some(TextProxyDeclarationDiagnosticCause::Type)
         }
-        FinalSemanticAnalysisError::ValueResolutionFailed { .. } => {
+        FinalSemanticAnalysisError::UnknownValuePath { .. }
+        | FinalSemanticAnalysisError::ValueResolutionFailed { .. } => {
             Some(TextProxyDeclarationDiagnosticCause::Expression)
         }
         FinalSemanticAnalysisError::UnknownCallTarget { .. }

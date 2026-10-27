@@ -1577,7 +1577,16 @@ fn line_context_alias_cannot_call_voice_handle() {
             | FinalSemanticAnalysisError::CallResolutionFailed { .. }
             | FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. },
         ) => {}
-        Err(FinalSemanticAnalysisError::ValueResolutionFailed { owner }) => {
+        Err(FinalSemanticAnalysisError::UnknownValuePath {
+            owner,
+            path,
+            path_source,
+        }) => {
+            assert_eq!(path.lexical_name(), Some("line"));
+            assert_eq!(
+                &fixture.root_document.text()[path_source.range().as_range()],
+                "line"
+            );
             let module = fixture
                 .project
                 .analysis_view()
