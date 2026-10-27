@@ -12676,3 +12676,36 @@ Source並列入口、callback F、Result／最低index Err、affine、cancel、�
 R3250の4 package全target・全feature・locked checkは終了0。R3251の同対象Clippyは
 警告6,523メッセージあり終了0。R3252構造gateはblocking 0、21 Rust path／4 ownerを測定。
 R3253 Core doctestは76／76 PASS、compile-failを含む。各3,997入力の差分0。
+
+## AWBC Program worker取消の伝播とReady移動前検査 — 2026-10-27
+
+前cutは35f3e68bc74481c4fa562b63341312a2033b45b5として公開した。
+72 path、parent b7db2c9dcb38063880f4157495abbd53461650c3、
+公開tree 8bdd0fd6f702f29093223cb700c8b45e5dc567af、blob差分0、
+patch SHA-256 5eee70af49389f67d3cc492620ffe1e3924dd1fbd284b1c09e2721062711dcdf。
+[公開照合](acceptance-evidence/task-program-fanout-awbc-runtime.verified.json)。
+
+取消をInput errorにしていた分岐を、元の停止状態を保持してから通常のVM unwindへ接続した。
+既存journalにCancel drop boundaryとcleanup観測を渡し、既存Program退役がattached workerの
+退役を待ってから通常Need registryへCancelledを公開する。Ready移動も、実registryの
+取得proofを検査してからin-flight ownerを取り除く順序へ揃えた。
+
+新規fixtureのR3254 compileはRuntimeSchemaLimitsのDefault未実装によるE0277 1件で終了101。
+engine_defaultへ修正し、製品の予算・上限・worker本文を変更していない。
+R3254 wrapperのJSON診断抽出は人間向けstderrを対象外にしており、空配列をerror 0と解釈しない。
+原logに診断を保持する。R3255 catalogは3 library 2,205件・除外0、R3256は
+2,205／2,205 PASS、76.448秒。各3,997入力、実binary 3件の前後hash差分0、
+catalogと全終端集合の差分0。新規は7 Bool入力×limit 1／2／5×元／decoded AWBCの6条件で、
+実際に起動されたworkerを元ownerから復元してVM取消APIを呼び、accepted receiptと親を保持した。
+各step公開save復元、親のCancelled終端、追加起動0、正確なlimit+1 admission、
+attached child退役、診断／Host要求／AwaitReadyなしを確認した。既存48条件も同runでPASS。
+R3257は4 package全target・全feature・locked check終了0、3,997入力差分0。
+Native取消、affine／高度なcleanupを含む取消、Compiler入口・callback F・Result集約は別境界。
+[検証・初回失敗・適用範囲](acceptance-evidence/task-program-fanout-awbc-cancellation-acceptance.json)。
+
+R3258 Core／runtime-plan Clippyは全target・全feature・locked、警告5,533メッセージあり終了0。
+3,997入力差分0。構造はR3252のblocking 0とowner判断を再利用し、変更3 pathを再測定、
+Cargo関連100入力の差分0を確認した。新たな依存・public契約・所有境界の変更はない。
+
+現状のSource parallel行に重複していたrun件数・過去のCompiler診断は、共有gate表と本履歴・原本へ
+集約した。機能の成立範囲と未接続条件を現状行に残し、検証結果やfull SHAは削除していない。

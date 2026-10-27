@@ -256,6 +256,7 @@ impl AwbcProductStepExecutor {
                 "Program Fanout suspension changed during dispatch".into(),
             ));
         };
+        let mut cancelled = false;
         let result = (|| {
             let mut changed = false;
             let mut position = 0;
@@ -271,11 +272,12 @@ impl AwbcProductStepExecutor {
                     })?;
                 match launch.state() {
                     crate::task::RuntimeNeedProducerState::Ready(_) => {
-                        let flight = state.in_flight.remove(position);
-                        let value = self
+                        let proof = self
                             .need_producers
-                            .take_ready_for_correlation(&flight.handle.correlation())
+                            .inspect_ready_take_for_correlation(&handle.correlation())
                             .map_err(|error| ProductStepError::Input(error.to_string()))?;
+                        let flight = state.in_flight.remove(position);
+                        let value = self.need_producers.take_ready_for_need_prepared(proof);
                         state.results[flight.index as usize] = Some(value.into_value());
                         journal.record_owner_value_transfer();
                         changed = true;
@@ -284,9 +286,8 @@ impl AwbcProductStepExecutor {
                         return Err(ProductStepError::Input(error.to_string()));
                     }
                     crate::task::RuntimeNeedProducerState::Cancelled => {
-                        return Err(ProductStepError::Input(
-                            "Program Fanout worker was cancelled".into(),
-                        ));
+                        cancelled = true;
+                        return Ok(true);
                     }
                     crate::task::RuntimeNeedProducerState::ReadyTransferred => {
                         return Err(ProductStepError::Input(
@@ -313,6 +314,15 @@ impl AwbcProductStepExecutor {
                 .reason = FiberSuspensionReason::ProgramFanout(state);
         }
         let changed = result?;
+        if cancelled {
+            // Restore the original suspension owner before admitting unwind.
+            // Its ordinary Program retirement joins already attached workers.
+            let cancellation = crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
+                .map_err(|error| ProductStepError::Internal(error.to_string()))?;
+            journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
+            journal.record_deferred_observations(cancellation.observations);
+            return Ok(true);
+        }
         let started = if child.fiber.status == FiberStatus::Suspended {
             self.fill_program_fanout_for_child(child, output)?
         } else {

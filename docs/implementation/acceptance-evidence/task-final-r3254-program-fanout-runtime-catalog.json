@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "35f3e68bc74481c4fa562b63341312a2033b45b5",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(=awbc_lower::tests::program_fanout::original_program_fanout_propagates_worker_cancellation_through_public_save)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3254-program-fanout-runtime-catalog.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-27T13:20:39.9472389Z",
+  "finishedAt": "2026-10-27T13:23:46.7470342Z"
+}

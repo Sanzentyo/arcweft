@@ -415,3 +415,134 @@ fn original_program_fanout_executes_owned_workers_and_roundtrips_every_public_sa
         }
     }
 }
+
+#[test]
+fn original_program_fanout_propagates_worker_cancellation_through_public_save() {
+    use arcweft_core::awbc::fiber::{
+        AwbcFiberStateSnapshot, FiberSuspensionReason, FiberTerminalValue,
+    };
+    use arcweft_core::awbc::product_step::{
+        AwbcProductChildFiberOwnerSnapshot, AwbcProductExecutorSaveSnapshot, AwbcProductProgram,
+    };
+    use arcweft_core::engine::FlowFiberStatus;
+    use arcweft_core::executor::{
+        ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
+    };
+    use arcweft_core::plan::FlowEvent;
+    use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
+
+    for limit in [1, 2, 5] {
+        for decode in [false, true] {
+            let plan = fixture(&[true, false, true, false, true, false, true], limit);
+            let report = lower_plan(&plan);
+            let program = if decode {
+                AwbcProgram::decode_canonical(
+                    &report.program.encode_canonical().unwrap(),
+                    Default::default(),
+                )
+                .unwrap()
+            } else {
+                report.program
+            };
+            let product = AwbcProductProgram::admit(
+                Arc::new(program),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                None,
+            )
+            .unwrap();
+            let mut executor = ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
+                product.clone(),
+                plan.seal_flow_invocation(flow_id("native_program_fanout"), [])
+                    .unwrap(),
+            )
+            .unwrap();
+            let mut cancelled = false;
+            let mut finished = false;
+            for _ in 0..(64 + 7 * 32) {
+                let step =
+                    executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+                assert!(step.stats.executed_ops <= 1);
+                assert!(
+                    step.output.diagnostics.is_empty(),
+                    "limit={limit} decode={decode}: {:?}",
+                    step.output.diagnostics
+                );
+                assert!(step.output.requests.tasks.is_empty());
+                assert!(step.output.requests.program_task_completions.is_empty());
+                assert!(step.output.requests.host_calls.is_empty());
+                assert!(
+                    !step
+                        .output
+                        .flow_events
+                        .iter()
+                        .any(|event| matches!(event, FlowEvent::AwaitReady { .. }))
+                );
+                let ArcweftRuntimeExecutorSnapshot::AwbcProduct(mut snapshot) =
+                    executor.snapshot().unwrap()
+                else {
+                    unreachable!()
+                };
+                if !cancelled {
+                    let controller = snapshot.child_fibers.iter().find_map(|child| {
+                        matches!(
+                            child.fiber.suspension.as_ref().map(|state| &state.reason),
+                            Some(FiberSuspensionReason::ProgramFanout(state))
+                                if state.in_flight.len() == limit as usize
+                        )
+                        .then_some(child.fiber.instance)
+                    });
+                    if let Some(controller) = controller {
+                        let worker = snapshot
+                            .child_fibers
+                            .iter_mut()
+                            .find(|child| {
+                                matches!(child.owner,
+                                    AwbcProductChildFiberOwnerSnapshot::Program { parent, .. }
+                                        if parent == controller)
+                            })
+                            .unwrap();
+                        // Cancel the actual original worker via the VM unwind API,
+                        // retaining its accepted receipt and enclosing Product owner.
+                        let mut live = worker
+                            .fiber
+                            .clone()
+                            .into_live_for_program(&RuntimeProgramOwner::Awbc(
+                                product.program_arc(),
+                            ))
+                            .unwrap();
+                        arcweft_core::awbc::vm::cancel_fiber(&product, &mut live).unwrap();
+                        worker.fiber = AwbcFiberStateSnapshot::from_live(
+                            &live,
+                            &mut product.retained_value_admission(
+                                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                            ),
+                        )
+                        .unwrap();
+                        cancelled = true;
+                    }
+                }
+                let done = matches!(executor.fiber().frame.status, FlowFiberStatus::Done(_));
+                let saved =
+                    AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &product).unwrap();
+                let decoded = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+                let rebound = executor.bind_product_save_snapshot(decoded).unwrap();
+                executor = executor
+                    .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(rebound))
+                    .unwrap();
+                if done {
+                    assert_eq!(snapshot.fiber.terminal, Some(FiberTerminalValue::Cancelled));
+                    assert!(snapshot.child_fibers.is_empty());
+                    assert_eq!(
+                        saved.need_producers.task_admissions.len(),
+                        limit as usize + 1
+                    );
+                    finished = true;
+                    break;
+                }
+            }
+            assert!(cancelled && finished, "limit={limit} decode={decode}");
+        }
+    }
+}

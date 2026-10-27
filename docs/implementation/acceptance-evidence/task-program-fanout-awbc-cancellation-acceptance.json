@@ -1,0 +1,222 @@
+{
+  "version": 1,
+  "base": "35f3e68bc74481c4fa562b63341312a2033b45b5",
+  "status": "AWBC original Bool worker cancellation propagation accepted in six conditions; broader cancellation semantics remain pending",
+  "rustPaths": [
+    "crates/arcweft-core/src/awbc/fiber/input.rs",
+    "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/tests/program_fanout.rs"
+  ],
+  "checks": [
+    {
+      "run": "R3254",
+      "exitCode": 101,
+      "errors": 1,
+      "code": "E0277",
+      "cause": "New fixture requested Default for RuntimeSchemaLimits; replaced with engine_default without changing production limits",
+      "sourceInputs": 3997,
+      "sourceDrift": 0,
+      "diagnosticExtraction": "Catalog wrapper only parsed JSON compiler-message rows; its empty extracted array was not evidence of zero errors. The human stderr E0277 remains in the raw log."
+    },
+    {
+      "run": "R3255",
+      "exitCode": 0,
+      "catalog": 2205,
+      "excluded": 0,
+      "sourceInputs": 3997,
+      "sourceDrift": 0
+    },
+    {
+      "run": "R3256",
+      "exitCode": 0,
+      "passed": 2205,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 76.448,
+      "sourceInputs": 3997,
+      "sourceDrift": 0,
+      "binaryCount": 3,
+      "binaryDrift": 0,
+      "catalogCaseDrift": 0
+    },
+    {
+      "run": "R3257",
+      "exitCode": 0,
+      "packages": 4,
+      "targets": "all",
+      "features": "all",
+      "sourceInputs": 3997,
+      "sourceDrift": 0
+    },
+    {
+      "run": "R3258",
+      "exitCode": 0,
+      "packages": 2,
+      "targets": "all",
+      "features": "all",
+      "warnings": 5533,
+      "sourceInputs": 3997,
+      "sourceDrift": 0
+    }
+  ],
+  "acceptance": {
+    "conditions": 6,
+    "inputs": 7,
+    "limits": [
+      1,
+      2,
+      5
+    ],
+    "canonicalDecodedAwbc": [
+      false,
+      true
+    ],
+    "publicRestore": "After every step, including after the actual VM cancellation",
+    "cancellation": "Materialize the actual launched original worker fiber, call the public VM unwind API and retain its accepted Product receipt/parent",
+    "requiredOutcome": "Parent fiber Cancelled, no diagnostics or AwaitReady, no new workers, attached workers retired before completion",
+    "exactTaskAdmissions": "Limit workers plus one original controller",
+    "budget": "Unchanged production one-op budget and unchanged worker body"
+  },
+  "implementation": [
+    "Restore the original ProgramFanout suspension before the common VM unwind; record the cancellation drop boundary and cleanup observations in the existing resume journal.",
+    "Existing Program retirement joins attached workers and publishes Cancelled through the ordinary Need registry.",
+    "Inspect the actual Ready take proof before removing the indexed in-flight owner; the subsequent transfer has no fallible validation step.",
+    "Remove the unused AWBC kernel import."
+  ],
+  "remaining": [
+    "Compiler Source parallel ingress and actual callback F",
+    "Native cancellation, affine cancellation and richer cleanup/effect schedules",
+    "Result/minimum-index Err, negative restore identity coverage and all collection families",
+    "Full reverse dependencies and final workspace acceptance"
+  ],
+  "originalHeldTracked": 14,
+  "originalHeldUntracked": 6,
+  "genericMatchReopened": false,
+  "archivedEvidence": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3254-program-fanout-runtime-catalog.log",
+      "sha256": "78f4faea62423b6a44a835dc7cbb97f9bd3965db6830b8c6b0a279416d71356d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3254-program-fanout-runtime-catalog.json",
+      "sha256": "b22dd7cbe00bd1bf9e061490c38c5b970d4a0363a2f7bda2cb3bfa6d5030b8d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3254-program-fanout-runtime-catalog.input-audit.json",
+      "sha256": "3f9abce4b7927be81b5a9a413741fd770a929d27049b20a4bcee9d2759330931"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3254.source-freeze.json",
+      "sha256": "7bdd2f945aceac4a726a5d58a583574b2ada583cc0c3936764d30a5878b1fb4b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3255-program-fanout-runtime-catalog.log",
+      "sha256": "99c7e31efc7f4337db07ede2ff1e51976a6b216d124525bf4d86182c46374cd0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3255-program-fanout-runtime-catalog.json",
+      "sha256": "5431f9b0e04fb8e5b02fe7aecc24ec7c33a4698c59da296f7255e07d13c4d51a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3255-program-fanout-runtime-catalog.input-audit.json",
+      "sha256": "6002d492cbfba570c3ac3172f1a82bd98f6e3aff38e98bc55249b94f0a11d0f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3255.source-freeze.json",
+      "sha256": "301c573d99cff8ae5dcdabb97afc7b33b96dac3ea7d8079647b2cecc4ad1333e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3255.inventory.json",
+      "sha256": "5956a1ba9c3786f1762ee7c46d178d90d88c24f6c650cf30b45e4811a2e12e7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3256-program-fanout-runtime.log",
+      "sha256": "db8c507b9e053af4ac13021981119cc2d358ce84763fdc6ec8b14c0d0c126f51"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3256-program-fanout-runtime.json",
+      "sha256": "3c06f003082d7f8ae29509767205b3d3bffbf0ac73ef35b273d96a0642840296"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3256-program-fanout-runtime.terminal-audit.json",
+      "sha256": "a6f047f4c4db779abb0ed7c3255b67eeb2001d9e206294536cb841820e2cbb37"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3256-program-fanout-runtime.binaries-before.json",
+      "sha256": "84396b344a18d158ec7879f1f17555e5a9b1cec88939db22becabfee730366cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3256.source-freeze.json",
+      "sha256": "acaee7e4080360fcab3d27753b07bdeb841431fc1ea44e9ab17a54a884407839"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3257-program-fanout-awbc-check.log",
+      "sha256": "945c3daf116551b281d14e29c834ee86273521b8d74d1a2274cd1058e2ba1a4e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3257-program-fanout-awbc-check.json",
+      "sha256": "e7b5c6bbd61f04f6f5f3949ccf1c214fbf72bccb12b58ac01364902fa4b9aa18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3257-program-fanout-awbc-check.input-audit.json",
+      "sha256": "e8a9206fddbfdb528c7d9bcd8e585c04fd2f6e6f0d07433518d47967acaf0d3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3257.source-freeze.json",
+      "sha256": "b5dbfcf31e16db270e264368f0de4ad1afa3499368143924ff74aeb316ae565f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3258-program-fanout-runtime-clippy.log",
+      "sha256": "cddd99541ccc8dc24e7878d8ff1b8cf41954b8168823cc58b01afb348a9460cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3258-program-fanout-runtime-clippy.json",
+      "sha256": "ef496a5dd648773c01ed53011474b9bebf85a3b94106c906a3f23b8552999c8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3258-program-fanout-runtime-clippy.input-audit.json",
+      "sha256": "5652b96f2894931f9b9130e70b1dd1f17b62c100b2f3e99f2b145d73dad764f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3258.source-freeze.json",
+      "sha256": "a7bb6da40b5dbdef0fe39ed4bb1a892659d9b871d15431921489145589cb29cd"
+    }
+  ],
+  "structureReuse": {
+    "priorGate": "R3252",
+    "priorReview": "task-program-fanout-awbc-runtime-structure-review.json",
+    "cargoInputs": 100,
+    "cargoDrift": 0,
+    "metrics": [
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+        "owner": "arcweft-core",
+        "bytes": 23495,
+        "physicalLines": 587,
+        "basePhysicalLines": 589,
+        "classification": "production",
+        "embeddedTestLines": 0
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+        "owner": "arcweft-core",
+        "bytes": 16932,
+        "physicalLines": 408,
+        "basePhysicalLines": 398,
+        "classification": "production",
+        "embeddedTestLines": 0
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests/program_fanout.rs",
+        "owner": "arcweft-runtime-plan",
+        "bytes": 24886,
+        "physicalLines": 548,
+        "basePhysicalLines": 417,
+        "classification": "unit-test",
+        "embeddedTestLines": 0
+      }
+    ],
+    "reason": "Private cancellation/Ready transfer changes stay on the original Program scheduler owner; the regression uses the existing actual Source lowering fixture. No dependency, public contract, export or source-owner direction changes; all current files remain below 1200 LOC."
+  },
+  "recordedAt": "2026-10-27T13:32:37.3352077Z"
+}

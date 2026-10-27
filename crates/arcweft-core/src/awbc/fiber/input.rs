@@ -150,9 +150,7 @@ impl super::FiberFrame {
         source_register: super::AwbcRegisterId,
         binding: Option<super::AwbcPatternId>,
     ) -> Result<super::FiberProgramFanoutState, FiberStateError> {
-        use crate::awbc::schema::{
-            AwbcProgramFanoutInput, AwbcProgramTaskKernel, AwbcTaskPlanExecution,
-        };
+        use crate::awbc::schema::{AwbcProgramTaskKernel, AwbcTaskPlanExecution};
         let original = program
             .original_task_source()
             .ok_or(FiberStateError::InvalidFrame)?;
