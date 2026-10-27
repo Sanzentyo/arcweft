@@ -1,7 +1,7 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-27。照合基点は公開main `783eead4044a9407ed877043f136dc9f887fcb95` と本cutのCore修復・検証7 Rustファイル。
-元のtracked WIP 14件とuntracked実ファイル6件を保持している。R3231はCore全2,062件PASS、R3232 Core Clippyは警告あり終了0、R3233構造gateはblocking 0、R3234 Core doctestは75件PASS。元SourceのBool workerを実行するcontrollerの範囲であり、Source callback／Result／affine／cancelの統合受入ではない。AWBC lowerer未実装によるR3220終了101と、以前の各入力の検証結果を保持する。
+確認日: 2026-10-27。照合基点は公開main `67d3640b47048655cbd7267bd478783e1d0d4729`。Core controllerの修復・検証7 Rustファイルを含む公開済み入力を確認した。
+元のtracked WIP 14件とuntracked実ファイル6件を保持したcheckoutで確認した。公開済み入力の検証結果を、保持WIPを含むcheckout全体の合格へ拡張しない。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画や、保持したuntrackedの2026-10-09 CLI修復メモを、そのまま現在の残作業へ転記しない。
@@ -59,11 +59,9 @@
 | 対象・入力 | 実際の結果 | 適用範囲・原本 |
 |---|---|---|
 | 最新Core controller入力（7 Rustファイル） | **R3231 Core library 2,062／2,062 PASS・除外0、R3232 Core Clippy終了0、R3233構造blocking 0、R3234 Core doctest 75／75 PASS** | 各3,993入力とruntimeの1実行ファイルの前後差分0。new case 3件を全catalog集合・終端結果へ照合し、48条件とゼロlimit／改変拒否を実行した。1-op予算と元の遅延処理を維持し、新規fixtureのdriver guardのみ作業量に合わせた。99 workspace manifest／lockとstandalone fixture manifestの計100件が不変のため、全53逆依存graphを再利用した。今回のworkspace check／Clippy・全53 runtimeは未実行。[全結果と原本](acceptance-evidence/task-program-fanout-native-controller-acceptance.json)、[構造・所有者レビュー](acceptance-evidence/task-program-fanout-native-structure-review.json)。|
-| 公開 `351e982ac60961add4d05e1a739325290627d8a1` のprivate Core進行状態検査入力（4 Rustファイル） | R3215はCore library 2,059／2,059 PASS・除外0。新規5ケースも全選択・全PASS。R3216 Core Clippyは全target・全feature・locked、警告あり終了0。R3217構造gateはblocking 0。 | 各3,990入力とruntimeの1実行ファイルの前後差分0。Native／AWBCのmetadata partitionを共通化し、Source・型・ハンドル認証は各contextに保持した。99 manifest／lockが不変のため53逆依存graphを再利用。このcutのworkspace check／Clippy・doctest・全53 runtimeは未実行。後続のProgram fanout実装へ合格を転用しない。[owner・新規5件・範囲と原本](acceptance-evidence/task-fanout-progress-owner-checkpoint.json)。 |
-| Program template統一時のworkspace共有gate入力（23 Rustファイル・2 owner） | R3208のCore／runtime-plan 2 libraryは2,181／2,181 PASS・除外0。R3209 workspace check／R3210 Clippyは全target・全feature・locked、警告あり終了0。R3211 Core doctest 75／75 PASS、R3212構造gateはblocking 0。 | 各3,989入力とruntimeの2実行ファイルの前後差分0。元Source認証・affine capture・LocalOnly・公開save／restoreの15ケースを個別照合した。fresh Cargo graphの全53逆依存runtimeは最新変更後に未実行。Source parallelの実行受入を含まない。[owner・共有gate・初回修復](acceptance-evidence/task-program-template-owner-checkpoint.json)、[構造確認](acceptance-evidence/task-program-template-structure-review.json)。 |
 | Core／runtime-planの全53逆依存runtime | **R3177終端：7,364実行／7,313 PASS／51 FAIL／39 ignored。追加1件は後続修復済み** | 全53 package・全target／全feature／locked、nextest終了100、2,456.410秒（75 slow）。named caseは50 package、buildのみ3 package。全catalog集合、3,989入力・99 manifest／lock・227実行ファイルの差分0。Core 2,095／2,095、runtime-plan 158／158、Sema 1,357／1,357、LSP 223／223、Generic 151／151、以前の必須17／17・capture必須8／8 PASS。Compilerは621 PASS／旧quota診断名期待1 FAILで、R3178／R3179は期待を1行移行した後のflow_include全18／18 PASS、1.952秒、入力・対象1実行ファイルの差分0。既存の全53 packageを同じfeature構成でbuildしたうえで対象1 binaryを実行した。2 runを合算せず、CLIの50失敗を保持する。[全体終端](acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.terminal-audit.json)、[全packageと必須集合](acceptance-evidence/task-program-capture-reverse-acceptance.json)、[後続修復・範囲](acceptance-evidence/task-program-capture-reverse-and-quota-acceptance.json)。 |
 
-R3095のHIR全23逆依存（4,856実行／4,806 PASS／50 FAIL／31 ignored）と、R3172–R3175のcapture共有gateは[検証履歴](convergence-evidence-history.md)に保持する。後続の統合run・共有gateがあるため、過去の結果を別の現状項目として重複掲載しない。
+R3095のHIR逆依存、R3172–R3175のcapture共有gate、R3208–R3212のtemplate共有gate、R3215–R3217のprivate進行状態検査は、入力・件数・失敗・full SHAを[検証履歴](convergence-evidence-history.md)と各receiptに保持する。後続のowner検証へ結果を合算せず、過去の結果を別の現状項目として重複掲載しない。
 
 残るCLI 50件の識別子は[修復後の保持集合](acceptance-evidence/task-program-capture-reverse-and-quota-acceptance.json)、今回51件の原ログ行・診断は[全体runの原診断](acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.failure-recon.json)へ集約した。修復済みのquota期待1件を残作業へ戻さない。R3095の分類とR3121／R3139の結果は検証履歴・原本に保持し、現在の根本原因一覧として重複掲載しない。
 
