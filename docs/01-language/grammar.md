@@ -649,7 +649,7 @@ Guard     := 'when' Expr
 ## Loop / while / for
 
 ```text
-LoopExpr  := 'loop' BlockExpr
+LoopExpr  := (LabelRef ':')? 'loop' BlockExpr
 WhileStmt := 'while' Expr StatementBlock
 WhileLet  := 'while' 'let' Pattern '=' Expr Guard? StatementBlock
 ForStmt   := 'for' Pattern 'in' Expr ('key' '=' Expr)? StatementBlock
@@ -667,7 +667,13 @@ YieldStmt    := 'yield' Expr
 LabelRef     := '\'' Ident
 ```
 
-`break expr` is allowed only in `loop`.
+An unlabeled `break` or `continue` selects the nearest enclosing loop, including
+`while`, `while let`, and `for`. A label selects the innermost enclosing `loop`
+with that label; inner statement loops do not intercept the transfer. The target
+must remain inside the same callable or Thread boundary. See
+[control transfer](control-transfer-return-out-yield.md#break-and-continue).
+
+`break expr` requires its selected target to be a `loop` expression.
 `out` is allowed only in line-plan, cue-block, and content-scope continuations.
 `yield` parses as a statement but is semantically valid only in explicit
 generation contexts: `seq { ... }`, `stream { ... }`, an ordinary `fn` whose

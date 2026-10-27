@@ -176,6 +176,12 @@ Rules:
 - a loop with no reachable break has type Never.
 ```
 
+A loop may declare a label, as in `'chosen: loop { break 'chosen value }`.
+Labeled transfers select that loop even from inside an intervening `while`,
+`while let`, or `for` body. Only breaks targeting the selected loop contribute
+to its result type. See [control transfer](control-transfer-return-out-yield.md#break-and-continue)
+for shadowing and callable boundaries.
+
 Unit loop:
 
 ```arcw
