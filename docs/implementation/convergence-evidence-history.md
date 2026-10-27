@@ -12885,3 +12885,17 @@ R3359は追加case 1／1 PASS・186対象外、1.549秒。R3361はCompiler calla
 [全結果・対象指定・fixture失敗・source freeze・公開照合](acceptance-evidence/task-source-affine-need-input-acceptance.json)。
 
 入力型の固定: 最終fixtureはArray<Need<Result<String,String>>,2>を明示する。未注釈collectionのR3361全187件PASS（25.665秒）を履歴へ保持し、最終型指定のR3363／R3364は全187／187 PASS・除外0、24.686秒、R3365同target Clippyは終了0（警告5,330）と別に記録する。最終入力3,998件と1 binary・catalog／終端集合の差分0。
+
+## CLI parallel の計数期待を現行契約へ整合 — 2026-10-28
+
+基点81e668bcd6ba90b9532dfc1b50efe7eece7deb50。NativeTaskStatsとasync-scheduler仕様は、completed_tasksをscheduled workとsuccessful direct Host callの合計と定義している。parallel fixtureのscheduled-only期待をこのtotalへ流用していたため、runのscheduled 3＋direct 3＝total 6、benchのscheduled 4＋direct 4＝total 8を明示し、structured JSONでそれぞれ検査する。
+
+元のscheduled完了3／4は維持し、directとtotalの正確な件数を追加した。I/O量、task request/event、submitted/dispatched、最大in-flight、parallel batch/tasks/IO、Program terminal、return/file出力のassertion、steps 12、budget 1／32は変更しない。製品Rustの変更ではなく、誤った計数期待を契約へ合わせて強化したtest修復である。
+
+R3367は対象2件の1 PASS／1 FAIL・478対象外、2.166秒。benchは元の12-step条件で全assertionと出力doneがPASSし、runの12-step未達は保持した。R3368 CLI check targetのall feature／locked Clippyは終了0（警告6,106）。3,998入力、test harnessとarcwの2 executable、catalog／終端集合の差分0。
+
+このfileには元からsystem-info steps 8→32のUser WIPがある。元の全User patchを、新counter codeのGit blobだけを置いたalternate indexへ適用し、held全14 working blobが結果のtreeと一致することを確認した。公開indexはcounter codeのみとし、system-info hunkはstageしない。original WIP patch SHA c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678と、公開後に残るpatch SHA 89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31を区別する。raw User patchの内容は公開evidenceへコピーしない。
+
+Supersedes: 現状一覧のbench counter期待未達を、対象runのPASSへ更新した。R3347全体の50 FAILは原本のまま保持し、benchの解消1識別子を除いた49件は集合差分としてのみ示す。全CLIを49 FAILとして再実行したとはしない。Generic Match、Source lambda／extern／Need入力Arrayの受入は変更しない。
+
+[実行結果・契約理由・全WIPのGit保全証明](acceptance-evidence/task-cli-parallel-counter-acceptance.json)。

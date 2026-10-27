@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "base": "81e668bcd6ba90b9532dfc1b50efe7eece7deb50",
+  "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+  "owner": "arcweft-cli",
+  "classification": "integration test",
+  "physicalLoc": 9053,
+  "basePhysicalLoc": 9043,
+  "growth": 10,
+  "workingBytes": 308194,
+  "stagedCodeBytes": 308193,
+  "responsibility": "Existing CLI runtime and benchmark protocol scenarios; this change remains in the two parallel I/O scenario assertions.",
+  "disposition": "Retain the existing scenario owner for this small contract correction. No new state, algorithm, fixture concern, public API or dependency edge is introduced. The existing 8000-line review trigger does not justify widening APIs or splitting unrelated tests for these ten assertion lines. Other scenario responsibilities remain outside this cut.",
+  "structureReuse": "R3325 graph; Cargo inputs remain unchanged."
+}

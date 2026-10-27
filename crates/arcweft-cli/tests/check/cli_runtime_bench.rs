@@ -2163,7 +2163,7 @@ flow main() -> String effects { fs.read(save), log.write } {
         stdout.contains("file.read_text save:a.txt")
             && stdout.contains("file.read_text save:b.txt")
             && stdout.contains("file.read_text save:c.txt")
-            && stdout.contains("\"completed_tasks\": 3")
+            && stdout.contains("\"completed_tasks\": 6")
             && stdout.contains("\"submitted\": 3")
             && stdout.contains("\"dispatched\": 3")
             && stdout.contains("\"max_in_flight\": 2")
@@ -2176,6 +2176,11 @@ flow main() -> String effects { fs.read(save), log.write } {
             && stdout.contains("return done"),
         "run JSON should show bounded traverse fanout and native reads: {stdout}"
     );
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("parallel output is JSON");
+    let native_io = &json["native_io"];
+    assert_eq!(native_io["completed_tasks"], 6);
+    assert_eq!(native_io["completed_host_calls"], 3);
+    assert_eq!(native_io["scheduler"]["completed"], 3);
 }
 
 #[test]
@@ -6556,7 +6561,7 @@ flow parallel_io() -> String effects { fs.read(save), fs.write(save) } {
         stdout.contains("\"status\": \"measured\"")
             && stdout.contains("\"task_requests_median\": 4")
             && stdout.contains("\"task_events_in_median\": 4")
-            && stdout.contains("\"completed_tasks\": 4")
+            && stdout.contains("\"completed_tasks\": 8")
             && stdout.contains("\"submitted\": 4")
             && stdout.contains("\"dispatched\": 4")
             && stdout.contains("\"max_in_flight\": 2")
@@ -6572,6 +6577,11 @@ flow parallel_io() -> String effects { fs.read(save), fs.write(save) } {
         fs::read_to_string(save_dir.join("output.txt")).expect("read virtual output"),
         "done"
     );
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("parallel output is JSON");
+    let native_io = &json["benches"][0]["sections"][0]["measurement"]["native_io"];
+    assert_eq!(native_io["completed_tasks"], 8);
+    assert_eq!(native_io["completed_host_calls"], 4);
+    assert_eq!(native_io["scheduler"]["completed"], 4);
 }
 
 #[test]

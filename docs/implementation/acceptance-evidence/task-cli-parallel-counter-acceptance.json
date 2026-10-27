@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "base": "81e668bcd6ba90b9532dfc1b50efe7eece7deb50",
+  "status": "Bench strict acceptance passes; run 12-step acceptance still fails",
+  "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+  "productionChanges": 0,
+  "contract": "NativeTaskStats and async-scheduler.md define completed_tasks as scheduled work plus successful direct Host calls.",
+  "assertions": {
+    "bench": {
+      "scheduled": 4,
+      "writeOps": 1,
+      "direct": 4,
+      "steps": 12,
+      "pendingMax": 2,
+      "total": 8,
+      "readOps": 3,
+      "maxOps": 32
+    },
+    "preserved": [
+      "Original task_requests/task_events, submitted/dispatched, parallel batch/tasks/IO, Program terminal, return/file output predicates.",
+      "No change to source fixture, steps, budget, task amounts, batch, copy or capture."
+    ],
+    "run": {
+      "maxOps": 1,
+      "pendingMax": 2,
+      "steps": 12,
+      "scheduled": 3,
+      "direct": 3,
+      "total": 6,
+      "readOps": 3
+    },
+    "strengthening": "Retain exact scheduled completion amounts in structured JSON and add direct-call and total completion assertions instead of conflating the total with scheduled-only work."
+  },
+  "checks": {
+    "passingCase": "bench_json_measures_traverse_parallel_file_tasks",
+    "failingCase": "run_json_executes_traverse_parallel_file_tasks",
+    "excluded": 478,
+    "run": "R3367",
+    "failed": 1,
+    "passed": 1,
+    "clippy": {
+      "run": "R3368",
+      "warningMessages": 6106,
+      "exitCode": 0,
+      "allFeatures": true,
+      "locked": true,
+      "target": "arcweft-cli::check"
+    },
+    "seconds": 2.166
+  },
+  "integrity": {
+    "sourceDrift": 0,
+    "executables": 2,
+    "catalogCaseDrift": 0,
+    "executableDrift": 0,
+    "sourceInputs": 3998
+  },
+  "wip": {
+    "actualWorkingBlob": "a5d83b1d30a6d8d6b55b9cd0720178f38e9aba42",
+    "expectedResidualPatchSha256": "89b96912ea46d706ae3df7511179c7bba57b65ef4118414c04ce61b9c1da8d31",
+    "originalUntracked": 6,
+    "originalTracked": 14,
+    "rawUserPatchPublished": false,
+    "canonicalBlobDrift": 0,
+    "proof": "Original complete user patch applied to the new code in an alternate Git index yields every actual held working blob. Only the new code blob is staged.",
+    "codeOnlyBlob": "2dcaae3b1a1a3ca81f0b69e4238b547b88a8df81",
+    "originalPatchSha256": "c2d876f6077bc4651c7910676bc2ea46c030dee3ce9cc265d50a6b1622932678",
+    "unrelatedSystemInfoChange": "Existing steps 8 -> 32 remains unstaged."
+  },
+  "fullRun": "R3347 full CLI 50 failures remains historical evidence. A later targeted bench PASS closes that identifier; no fresh full-CLI count of 49 failures is claimed.",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter.document-baseline-adjustment.json",
+      "bytes": 7774,
+      "sha256": "61b3671770fa47457d1b6be98d17c91f34fb0a7400b6c8985849dcde9c114482"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter.preservation-proof.json",
+      "bytes": 2649,
+      "sha256": "0616f22312a72863058e8856f1b275c2882a1be0b770444dc2a9e9fda05218cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3366-program-fanout-awbc-check.input-audit.json",
+      "bytes": 444,
+      "sha256": "cd5f1e7c80ff6370f50e5d072a5327a0349626cd432f82484ed6ead408a8553c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3366-program-fanout-awbc-check.json",
+      "bytes": 576,
+      "sha256": "02824d14d05fbe31fdf5904cf4422c52198476fa9f01770165a8578bf76a15bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3366-program-fanout-awbc-check.log",
+      "bytes": 171224,
+      "sha256": "59a014c64bf25df14b487ec08c1b08dff402c2016e432902ab3edb26553edf18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3367-program-fanout-runtime.binaries-before.json",
+      "bytes": 415,
+      "sha256": "51c57f16a9e3b23dab50960845d13078ae45b0e3f5dafcb8adb911a7e1ed7638"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3367-program-fanout-runtime.json",
+      "bytes": 667,
+      "sha256": "0e8948327f223d1633f4c4f5f6f66ffc65223201d6f5e8300badbde44cfdf920"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3367-program-fanout-runtime.log",
+      "bytes": 248064,
+      "sha256": "9007d346c9e56d7bfcae940030950ce6c75d4e80f0c6708a26aa1763a962d031"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3367-program-fanout-runtime.terminal-audit.json",
+      "bytes": 771,
+      "sha256": "2f2ea51e89479605035d1aba48712edc1506624b6f929e3678b580a8aa8e69a2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3368-program-fanout-runtime-clippy.input-audit.json",
+      "bytes": 342,
+      "sha256": "9b02745c57ca5988037e3adc74bd4c6cc24eea99f20c309a6ba98a8595d29624"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3368-program-fanout-runtime-clippy.json",
+      "bytes": 474,
+      "sha256": "3c0841f869239ec2e078bbd9b4f792cc8bf5a97a510444cd111a121cffb7829c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3368-program-fanout-runtime-clippy.log",
+      "bytes": 5248899,
+      "sha256": "a95c6ecf866587df8ba6516f6b556655d51b9b8142ba08cceb692667c2859327"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3366.inventory.json",
+      "bytes": 115475,
+      "sha256": "953c6e713b79dd7cce8c0b85523ba002d8bb44f333b549216172b411f057c205"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3366.source-freeze.json",
+      "bytes": 781585,
+      "sha256": "9a5880899136dcaee0471f0181a15a6e273868e9e7c8b4e4a28404cdc3645420"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3367.source-freeze.json",
+      "bytes": 781585,
+      "sha256": "9a5880899136dcaee0471f0181a15a6e273868e9e7c8b4e4a28404cdc3645420"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3368.source-freeze.json",
+      "bytes": 781585,
+      "sha256": "9a5880899136dcaee0471f0181a15a6e273868e9e7c8b4e4a28404cdc3645420"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-affine-need-input.verified.json",
+      "bytes": 15809,
+      "sha256": "14745006d67ed5fa44735a519d57a3df82b0baea60d2a7863e4bcd5a70166598"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter-owner-review.json",
+      "bytes": 914,
+      "sha256": "9dd32b790d2f731b6f4460e684f9f29c0d9129d431d6831fd20f156223a1113e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-cli-remaining-failures-after-parallel-bench.json",
+      "bytes": 8549,
+      "sha256": "f4f1de4cbae3ef5f975046c4c2b3a41bb5b72137ab4f448bec4bca048b005fcc"
+    }
+  ],
+  "documentation": {
+    "heldFiles": 20,
+    "baseline": "Expected working files after applying reviewed counter changes; original user patch preservation is separately proved by Git.",
+    "heldDrift": 0,
+    "brokenLinks": 0,
+    "documents": 129,
+    "relativeLinks": 618,
+    "path": "docs/implementation/acceptance-evidence/task-cli-parallel-counter-documentation-audit.json"
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+  "reason": "Published counter assertions change this file; original user patch is separately proved preserved by applying it to the exact new code in an alternate Git index.",
+  "originalRawWorkingSha256": "d0b10ad3c008e2679e51d5fe34df2f047e7f01fdfb58c2cad149544a23d067fd",
+  "expectedNewWorkingSha256": "6e378301fce67990eef9113eeb45f6adf9804c51fccbaeb4a216dc6a00786899",
+  "originalHeldHashes": [
+    {
+      "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+      "sha256": "750ee6cd6cafa5b322aa61580d13a62e9c28e1147fcfecd48fc769e4627a743e"
+    },
+    {
+      "path": "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+      "sha256": "f8aba5f7befec01033269f75f0b4f4452ac88ff5f66739fce345e85edd11a025"
+    },
+    {
+      "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+      "sha256": "d0b10ad3c008e2679e51d5fe34df2f047e7f01fdfb58c2cad149544a23d067fd"
+    },
+    {
+      "path": "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+      "sha256": "218dead97f656989bf32cb6de98e8b6618512f6d1aed9f607d6bfd3bbb6ff005"
+    },
+    {
+      "path": "crates/arcweft-runtime-host/src/native_task.rs",
+      "sha256": "1565a2fb349d8871e1cd4e6561ea0e4b0e233509c07ed0c0ec76a6ba387dfa8a"
+    },
+    {
+      "path": "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+      "sha256": "6d35acc42641f80464c8a5de987a2b4c0693a91aca7fa15cd21db4c74f5461ac"
+    },
+    {
+      "path": "samples/agent-script/cli-read-resource-smoke.awfagent",
+      "sha256": "ca7e221393117be87128cb8696e328a239c61c4b449b6e40524d353d2d3245f1"
+    },
+    {
+      "path": "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+      "sha256": "09da18e738ac038221b317ed465b489083e5e4ce52ccef0948aaff32fd80b523"
+    },
+    {
+      "path": "samples/agent-script/native-choice-dispatch.arcw",
+      "sha256": "89432207a184ca286203287f8290a4f1f85295adbae1eb8bb3df75078ff3db59"
+    },
+    {
+      "path": "samples/agent-script/native-project-graph-relations.arcw",
+      "sha256": "ca9f2318675fb2761b40cdb3e2f1db8c656333c3bd1df7760abf1ca6713697c5"
+    },
+    {
+      "path": "samples/agent-script/native-visual-regression.arcw",
+      "sha256": "b563a6c3e3598e3f78b91ff3f435e3abe521f3936e5023e528a46b14e8669ace"
+    },
+    {
+      "path": "samples/image-animation.arcw",
+      "sha256": "9173c5fea1fe20729145088cb27d6bbeb98b83da2df977ecc870509494d73b4f"
+    },
+    {
+      "path": "samples/rich-text-full-grammar.arcw",
+      "sha256": "ed62eec83a0b9fd32e422f6a4ecd28bb471e8fcb0a28ef3683bd403c7c4e90fa"
+    },
+    {
+      "path": "samples/rich-text-windows-fonts.arcw",
+      "sha256": "025474ae5424e2249e0afc00e2e8e512dbf5f5ed494c4c1c1505990529e8a868"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/cversions.2.db",
+      "sha256": "0a663bab44fb88a42eaa6baf3ca97d6ca12c908a381ebfe0345b0b6a8cc26718"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{1E4C1AA0-BDDF-4BED-9D46-82216ABE6FC9}.2.ver0x0000000000000001.db",
+      "sha256": "d5e46fe3ef5394cfaa82d43938309cfcefe34cde101a332faa4b03b4495a97c0"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{6AF0698E-D558-4F6E-9B3C-3716689AF493}.2.ver0x0000000000000001.db",
+      "sha256": "fddbe41aa053eb78db27964f6f4dbd3e7b4cfb7146873d12ea134f797b10fd86"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{DDF571F2-BE98-426D-8288-1A9A39C3FDA2}.2.ver0x0000000000000001.db",
+      "sha256": "73218cd563fe76ceb5f4cbf07409dd43f276b1b6e421e115292b684281987b8d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-bench-repair.md",
+      "sha256": "950a9b981f523ec75b732c44c461c436a859f7d1e17b8598c350f8a878fa444d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-observe-repair.md",
+      "sha256": "144da5bd821a03b495ed632e9dcacf53e55cf0aa30d1dd40f894c1339f880100"
+    }
+  ],
+  "expectedHeldHashes": [
+    {
+      "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+      "sha256": "750ee6cd6cafa5b322aa61580d13a62e9c28e1147fcfecd48fc769e4627a743e"
+    },
+    {
+      "path": "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+      "sha256": "f8aba5f7befec01033269f75f0b4f4452ac88ff5f66739fce345e85edd11a025"
+    },
+    {
+      "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+      "sha256": "6e378301fce67990eef9113eeb45f6adf9804c51fccbaeb4a216dc6a00786899"
+    },
+    {
+      "path": "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+      "sha256": "218dead97f656989bf32cb6de98e8b6618512f6d1aed9f607d6bfd3bbb6ff005"
+    },
+    {
+      "path": "crates/arcweft-runtime-host/src/native_task.rs",
+      "sha256": "1565a2fb349d8871e1cd4e6561ea0e4b0e233509c07ed0c0ec76a6ba387dfa8a"
+    },
+    {
+      "path": "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+      "sha256": "6d35acc42641f80464c8a5de987a2b4c0693a91aca7fa15cd21db4c74f5461ac"
+    },
+    {
+      "path": "samples/agent-script/cli-read-resource-smoke.awfagent",
+      "sha256": "ca7e221393117be87128cb8696e328a239c61c4b449b6e40524d353d2d3245f1"
+    },
+    {
+      "path": "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+      "sha256": "09da18e738ac038221b317ed465b489083e5e4ce52ccef0948aaff32fd80b523"
+    },
+    {
+      "path": "samples/agent-script/native-choice-dispatch.arcw",
+      "sha256": "89432207a184ca286203287f8290a4f1f85295adbae1eb8bb3df75078ff3db59"
+    },
+    {
+      "path": "samples/agent-script/native-project-graph-relations.arcw",
+      "sha256": "ca9f2318675fb2761b40cdb3e2f1db8c656333c3bd1df7760abf1ca6713697c5"
+    },
+    {
+      "path": "samples/agent-script/native-visual-regression.arcw",
+      "sha256": "b563a6c3e3598e3f78b91ff3f435e3abe521f3936e5023e528a46b14e8669ace"
+    },
+    {
+      "path": "samples/image-animation.arcw",
+      "sha256": "9173c5fea1fe20729145088cb27d6bbeb98b83da2df977ecc870509494d73b4f"
+    },
+    {
+      "path": "samples/rich-text-full-grammar.arcw",
+      "sha256": "ed62eec83a0b9fd32e422f6a4ecd28bb471e8fcb0a28ef3683bd403c7c4e90fa"
+    },
+    {
+      "path": "samples/rich-text-windows-fonts.arcw",
+      "sha256": "025474ae5424e2249e0afc00e2e8e512dbf5f5ed494c4c1c1505990529e8a868"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/cversions.2.db",
+      "sha256": "0a663bab44fb88a42eaa6baf3ca97d6ca12c908a381ebfe0345b0b6a8cc26718"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{1E4C1AA0-BDDF-4BED-9D46-82216ABE6FC9}.2.ver0x0000000000000001.db",
+      "sha256": "d5e46fe3ef5394cfaa82d43938309cfcefe34cde101a332faa4b03b4495a97c0"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{6AF0698E-D558-4F6E-9B3C-3716689AF493}.2.ver0x0000000000000001.db",
+      "sha256": "fddbe41aa053eb78db27964f6f4dbd3e7b4cfb7146873d12ea134f797b10fd86"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{DDF571F2-BE98-426D-8288-1A9A39C3FDA2}.2.ver0x0000000000000001.db",
+      "sha256": "73218cd563fe76ceb5f4cbf07409dd43f276b1b6e421e115292b684281987b8d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-bench-repair.md",
+      "sha256": "950a9b981f523ec75b732c44c461c436a859f7d1e17b8598c350f8a878fa444d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-observe-repair.md",
+      "sha256": "144da5bd821a03b495ed632e9dcacf53e55cf0aa30d1dd40f894c1339f880100"
+    }
+  ],
+  "originalWipProof": "task-cli-parallel-counter.preservation-proof.json"
+}
