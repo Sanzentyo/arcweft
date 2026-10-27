@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "8049c7319442f783bac8513106f7c80a48521e85",
+  "run": "task-final-r3343-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.056s] 2 tests run: 0 passed, 2 failed, 2064 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2,
+  "passed": 0,
+  "failed": 2,
+  "skipped": 2064,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "engine::dialogue_readiness_tests::native_terminal_root_retains_the_issued_blocked_child_until_resume_and_cleanup"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "engine::dialogue_readiness_tests::native_host_replies_are_retained_before_the_execution_budget_is_spent"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-27T17:18:16.5264589Z"
+}

@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "base": "8049c7319442f783bac8513106f7c80a48521e85",
+  "dirty": true,
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "owner": "arcweft-core",
+      "bytes": 234663,
+      "physicalLoc": 5826,
+      "basePhysicalLoc": 5749,
+      "sha256": "6e4b470a07997892eaa3d4956ec030797e76c0ee2103e0d4ac42b215ecf13781"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/frame_progress.rs",
+      "owner": "arcweft-core",
+      "bytes": 4680,
+      "physicalLoc": 114,
+      "basePhysicalLoc": 115,
+      "sha256": "637221efb9652db1223c130ded7ff80f335482b13f953e6fea7414f5e7bcb3e9"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/suspend.rs",
+      "owner": "arcweft-core",
+      "bytes": 91271,
+      "physicalLoc": 2215,
+      "basePhysicalLoc": 2180,
+      "sha256": "b54d3bd8667823a8f2408b2ab2fe960cfda0fe9f8bc39da1efe7f2eec1ad1d69"
+    }
+  ],
+  "responsibility": "Native Engine step ingress transfers validated Host replies to their original root/child frames. Idle Host waiters are excluded from dispatch.",
+  "disposition": "Existing HostCallState owns request correlation; existing result admission and binding moves the reply to its owning frame. No parallel inbox, copied payload, new codec, public API or dependency edge. Cancellation keeps its existing cleanup route. Regression cases retain zero/one-op budgets and private rollback.",
+  "validation": "R3345 selected two tests passed; full 53 reverse build/runtime and Core Clippy/doctests are pending R3346 through R3349."
+}

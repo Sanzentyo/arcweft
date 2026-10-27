@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "8049c7319442f783bac8513106f7c80a48521e85",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "-E",
+    "test(engine::dialogue_readiness_tests)",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3343-program-fanout-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-27T17:18:13.6414862Z",
+  "finishedAt": "2026-10-27T17:18:15.4689834Z"
+}

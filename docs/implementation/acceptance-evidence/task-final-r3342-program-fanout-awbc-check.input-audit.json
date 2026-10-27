@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "run": "task-final-r3342-program-fanout-awbc-check",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "-E",
+    "test(engine::dialogue_readiness_tests)",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T17:18:04.9106295Z"
+}

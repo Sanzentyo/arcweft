@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "run": "task-final-r3340-program-fanout-awbc-check",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "-E",
+    "test(native_terminal_root_retains_the_issued_blocked_child_until_resume_and_cleanup)",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T17:14:42.4309083Z"
+}

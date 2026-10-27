@@ -858,17 +858,52 @@ impl Engine {
         ));
     }
 
+    /// Deliver replies before spending the source-operation budget. The call
+    /// instruction was charged when it issued the request; reply admission and
+    /// binding belong to the suspended frame, including with a zero-op budget.
+    pub(super) fn latch_host_call_results(
+        &mut self,
+        input: &mut RuntimeStepInput,
+        output: &mut RuntimeStepOutput,
+    ) {
+        self.latch_active_host_call_result(input, output);
+        for index in 0..self.child_fibers.len() {
+            if matches!(&self.child_fibers[index].frame.status,
+                FlowFiberStatus::HostCall(state) if state.result_index(input).is_some())
+            {
+                std::mem::swap(&mut self.fiber, &mut self.child_fibers[index]);
+                self.latch_active_host_call_result(input, output);
+                std::mem::swap(&mut self.fiber, &mut self.child_fibers[index]);
+            }
+        }
+    }
+
+    fn latch_active_host_call_result(
+        &mut self,
+        input: &mut RuntimeStepInput,
+        output: &mut RuntimeStepOutput,
+    ) {
+        if self.fiber.owner.requests_scope_close()
+            || !matches!(&self.fiber.frame.status,
+                FlowFiberStatus::HostCall(state) if state.result_index(input).is_some())
+        {
+            return;
+        }
+        let FlowFiberStatus::HostCall(state) =
+            std::mem::replace(&mut self.fiber.frame.status, FlowFiberStatus::Running)
+        else {
+            unreachable!("the inspected frame still owns its pending Host call")
+        };
+        self.resume_host_call_state(state, input, output);
+    }
+
     pub(super) fn resume_host_call_state(
         &mut self,
         state: HostCallState,
         input: &mut RuntimeStepInput,
         output: &mut RuntimeStepOutput,
     ) {
-        let Some(index) = input
-            .host_call_results
-            .iter()
-            .position(|result| result.id == state.id)
-        else {
+        let Some(index) = state.result_index(input) else {
             self.fiber.frame.status = FlowFiberStatus::HostCall(state);
             return;
         };

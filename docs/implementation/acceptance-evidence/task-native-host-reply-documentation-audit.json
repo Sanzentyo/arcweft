@@ -1,0 +1,18 @@
+{
+  "base": "8049c7319442f783bac8513106f7c80a48521e85",
+  "changed": [
+    "docs/02-runtime/runtime-step-and-executors.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "checkedDocuments": 129,
+  "relativeLinks": 619,
+  "brokenLinks": [],
+  "unclosedFences": [],
+  "statusCommitIds": 32,
+  "unretainedIds": [],
+  "evidenceChanges": [],
+  "heldFiles": 20,
+  "heldDrift": 0,
+  "rustCargoRun": false
+}

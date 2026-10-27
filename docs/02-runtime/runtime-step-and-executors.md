@@ -192,6 +192,14 @@ its last child retires. Fiber selection and stop detection use that same
 readiness, so an idle waiter neither consumes an operation nor hides a runnable
 child. Resuming ready work still consumes the normal operation budget.
 
+Native direct Host replies are admitted and bound to their exact suspended
+root/child frames during step ingress, before the source-operation budget is
+spent. The Host call instruction was charged when it issued its request;
+receiving its reply issues no new instruction. All matching replies enter their
+owning frames even with a zero-op budget, so later replies in the same packet
+survive budget exhaustion and private rollback. A Host waiter with no reply is
+not an executable operation.
+
 Retained child scopes remain executor work after the parent finishes, including
 detached line work. Local join policy governs the parent return gate and does
 not discard that executor ownership. A blocked child at the front of the queue

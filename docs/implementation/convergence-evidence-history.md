@@ -12839,3 +12839,17 @@ R3337のCLI strict 2件は0／2 PASS・478対象外、2.241秒。runは既定bud
 Supersedes: 直前記録の「Hostとtaskの完了counter境界を修復する」という推測を訂正する。NativeTaskStatsの説明と現行async-scheduler仕様は、completed_tasksに直接Host callを含むことを明記している。実測8はscheduled 4＋direct 4で契約と一致し、counter実装を壊して期待値へ合わせる根拠はない。元の失敗・期待値・実測値を保持し、CLI受入の不一致として現状一覧へ集約する。Generic Match、lambda 12条件、bare extern 2条件の受入を戻す理由ではない。
 
 [全結果・red／green・CLI原JSON・前cut公開照合](acceptance-evidence/task-native-readiness-acceptance.json)。
+
+## Native Host reply ingress の実装checkpoint — 2026-10-28
+
+基点は公開main 8049c7319442f783bac8513106f7c80a48521e85。直前公開のparent／tree／patch／全72 pathのblob差分0・元WIP保持は今回の原本へ保存した。変更はCoreの3 Rust pathで、元tracked WIP 14件とuntracked 6件は保持する。
+
+R3341は返答なしのHost waiterが1 opを消費して失敗。R3343では同じidle待機と、予算0で2返答が未保持になる回帰2件が失敗した。既存HostCallStateのcorrelationと既存ownership／type admission・bindingを使い、matching replyをstep ingressで元root／child frameへ移動する。別のinbox／codec／payload copyは追加せず、cancel済みownerは既存cleanupへ進める。
+
+R3345は対象2件PASS・2,064対象外、0.080秒。予算0／1のまま全matching replyをframeへ保持し、private rollback後も追加入力なしでDoneとなる。requestを出す元Host call instructionの課金は維持し、返答の受取りで新しいsource instructionを実行したことにはしない。入力3,998件と実binary 1件・catalog集合の差分0。
+
+ユーザー指定のこまめなcommit／pushに従うcheckpointであり、広域受入の完了記録ではない。全53逆依存・全target／全feature／lockedのcatalog build R3346が進行中で、成功・入力照合後に同scopeのruntime R3347、Core Clippy R3348／doctest R3349を続ける。ソース入力を固定して継続し、実際の終端・失敗集合を後続で記録する。Generic Matchと既存Source受入を未完了へ戻さず、CLI条件も変更していない。
+
+[red／green原本・source freeze・所有境界・直前公開full SHA](acceptance-evidence/task-native-host-reply-checkpoint.json)。
+
+続報: R3346の全53 package・全target／feature／locked buildは終了0。入力3,998件・差分0、runtime対象7,393件・既存ignored 39件・named caseは50 packageと照合した。build完了をruntimeの合格へ拡張せず、R3347の終端を待つ。

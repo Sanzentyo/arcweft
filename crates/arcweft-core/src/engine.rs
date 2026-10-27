@@ -1858,6 +1858,15 @@ pub struct HostCallState {
     pub result_type: HostCallResultType,
 }
 
+impl HostCallState {
+    fn result_index(&self, input: &RuntimeStepInput) -> Option<usize> {
+        input
+            .host_call_results
+            .iter()
+            .position(|result| result.id == self.id)
+    }
+}
+
 /// Suspended choice state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChoiceState {
@@ -2975,6 +2984,7 @@ impl Engine {
             ))
         }));
         let events = self.latch_need_publications(need_states, events, &mut output);
+        self.latch_host_call_results(&mut input, &mut output);
         self.step_stream_plans(&mut output, pure_backend);
 
         while executed_ops < options.budget.max_ops {
@@ -5605,8 +5615,7 @@ fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclaratio
 mod dialogue_readiness_tests {
     use super::*;
 
-    #[test]
-    fn native_terminal_root_retains_the_issued_blocked_child_until_resume_and_cleanup() {
+    fn native_host_child_engine(children: usize) -> Engine {
         use crate::plan::*;
         use crate::task::{NeedProducerFamily, TaskClass};
         let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
@@ -5680,17 +5689,25 @@ mod dialogue_readiness_tests {
             .unwrap();
         let plan = builder.finish().expect("unit plan seals");
         let mut engine = Engine::new(plan);
-        let position = NativeCodeCursor::root(
-            &engine.plan,
-            crate::plan::code::RuntimeCodeOwner::Function(function.id()),
-        )
-        .unwrap();
-        let work = engine.prepare_task_root_work(position, true).unwrap();
-        let (child, next_fiber_id) = engine
-            .prepare_child_fiber(work, &[])
-            .expect("the owning constructor issues the child and lexical scope");
-        engine.child_fibers.push_back(child);
-        engine.next_fiber_id = next_fiber_id;
+        for _ in 0..children {
+            let position = NativeCodeCursor::root(
+                &engine.plan,
+                crate::plan::code::RuntimeCodeOwner::Function(function.id()),
+            )
+            .unwrap();
+            let work = engine.prepare_task_root_work(position, true).unwrap();
+            let (child, next_fiber_id) = engine
+                .prepare_child_fiber(work, &[])
+                .expect("the owning constructor issues the child and lexical scope");
+            engine.child_fibers.push_back(child);
+            engine.next_fiber_id = next_fiber_id;
+        }
+        engine
+    }
+
+    #[test]
+    fn native_terminal_root_retains_the_issued_blocked_child_until_resume_and_cleanup() {
+        let mut engine = native_host_child_engine(1);
         // Natural unit-plan exhaustion uses the existing finish path. This is
         // the retained-queue boundary, not an explicit Return bypass or a
         // change of the child's joined/detached owner.
@@ -5724,6 +5741,10 @@ mod dialogue_readiness_tests {
 
         let blocked = engine.step(RuntimeStepInput::default(), drain);
         assert_eq!(blocked.stop_reason, RuntimeStepStopReason::Blocked);
+        assert_eq!(
+            blocked.stats.executed_ops, 0,
+            "a child without its Host result must not consume an operation"
+        );
         assert_eq!(blocked.fiber_status, FlowFiberStatus::Running);
         assert!(blocked.output.requests.host_calls.is_empty());
         assert_eq!(engine.child_fibers[0].persistent_id, child_id);
@@ -5745,5 +5766,61 @@ mod dialogue_readiness_tests {
         assert!(completed.output.requests.host_calls.is_empty());
         assert!(engine.child_fibers.is_empty());
         assert!(!engine.has_joined_work());
+    }
+
+    #[test]
+    fn native_host_replies_are_retained_before_the_execution_budget_is_spent() {
+        for max_ops in [0, 1] {
+            let mut engine = native_host_child_engine(2);
+            let mut backend = crate::pure::VmRuntimePureCallBackend::default();
+            engine.step_line_only(
+                &RuntimeStepInput::default(),
+                &mut RuntimeStepOutput::default(),
+                &mut backend,
+            );
+            let drain = RuntimeStepOptions {
+                mode: RuntimeStepMode::Drain,
+                budget: crate::step::RuntimeStepBudget { max_ops: 64 },
+                ..RuntimeStepOptions::default()
+            };
+            let issued = engine.step(RuntimeStepInput::default(), drain);
+            assert_eq!(issued.output.requests.host_calls.len(), 2);
+            let resumed = engine.step(
+                RuntimeStepInput {
+                    host_call_results: issued
+                        .output
+                        .requests
+                        .host_calls
+                        .iter()
+                        .map(|request| crate::step::RuntimeHostCallResult {
+                            id: request.id.clone(),
+                            outcome: Ok(RuntimePayload(RuntimeValue::Unit)),
+                        })
+                        .collect(),
+                    ..RuntimeStepInput::default()
+                },
+                RuntimeStepOptions {
+                    budget: crate::step::RuntimeStepBudget { max_ops },
+                    ..drain
+                },
+            );
+            assert!(resumed.stats.executed_ops <= max_ops);
+            assert!(resumed.output.diagnostics.is_empty());
+            assert!(
+                engine
+                    .child_fibers
+                    .iter()
+                    .all(|child| !matches!(child.frame.status, FlowFiberStatus::HostCall(_)))
+            );
+            let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+            let mut restored =
+                Engine::from_rollback_image(engine.inert_rollback_image().unwrap(), &owner)
+                    .unwrap();
+            let completed = restored.step(RuntimeStepInput::default(), drain);
+            assert_eq!(completed.stop_reason, RuntimeStepStopReason::Done);
+            assert!(completed.output.diagnostics.is_empty());
+            assert!(completed.output.requests.host_calls.is_empty());
+            assert!(restored.child_fibers.is_empty());
+        }
     }
 }
