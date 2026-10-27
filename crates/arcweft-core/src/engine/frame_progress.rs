@@ -80,6 +80,19 @@ impl NativeFlowExecutionFrame {
 }
 
 impl Engine {
+    /// Accepted Need publications and local Program results are internal work.
+    /// A waiting fiber without either must not consume another source operation.
+    pub(super) fn fiber_can_attempt_runtime_op(&self, fiber: &FlowFiber) -> bool {
+        !self.fiber_waits_for_join(fiber)
+            && match fiber.frame.status {
+                FlowFiberStatus::NeedWaiting(_)
+                | FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Program(_)) => {
+                    self.fiber_has_internal_work(fiber)
+                }
+                _ => true,
+            }
+    }
+
     pub(super) fn fiber_waits_for_join(&self, fiber: &FlowFiber) -> bool {
         if fiber.owner.requests_scope_close() || !self.has_joined_work_for(fiber.id) {
             return false;
@@ -97,6 +110,6 @@ impl Engine {
     pub(super) fn next_child_fiber_index(&self) -> Option<usize> {
         self.child_fibers
             .iter()
-            .position(|child| !self.fiber_waits_for_join(child))
+            .position(|child| self.fiber_can_attempt_runtime_op(child))
     }
 }

@@ -3262,7 +3262,7 @@ impl Engine {
                 self.fiber.frame.status,
                 FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
             )
-            && !self.fiber_waits_for_join(&self.fiber)
+            && self.fiber_can_attempt_runtime_op(&self.fiber)
     }
 
     /// Joined work controls parent flow completion. Detached line work remains
@@ -4807,8 +4807,12 @@ impl Engine {
         {
             return None;
         }
-        if matches!(&self.fiber.frame.status, FlowFiberStatus::Dialogue(_))
-            && self.fiber_has_internal_work(&self.fiber)
+        if matches!(
+            &self.fiber.frame.status,
+            FlowFiberStatus::Dialogue(_)
+                | FlowFiberStatus::NeedWaiting(_)
+                | FlowFiberStatus::WaitingMany(WaitingManyStatus::Program(_))
+        ) && self.fiber_has_internal_work(&self.fiber)
         {
             return None;
         }
@@ -4883,9 +4887,12 @@ impl Engine {
                 activation.activation(),
                 self.has_joined_dialogue_work(activation.activation()),
             ),
+            FlowFiberStatus::NeedWaiting(state) => self.await_has_pending_work(state),
+            FlowFiberStatus::WaitingMany(WaitingManyStatus::Program(state)) => {
+                self.program_fanout_has_pending_work(state)
+            }
             FlowFiberStatus::Done(_)
             | FlowFiberStatus::Failed(_)
-            | FlowFiberStatus::NeedWaiting(_)
             | FlowFiberStatus::WaitingMany(_)
             | FlowFiberStatus::HostCall(_)
             | FlowFiberStatus::Choice(_) => false,

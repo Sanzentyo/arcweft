@@ -12825,3 +12825,17 @@ R3323は5 library＋Compiler callable integration、全3,897／3,897 PASS／除�
 R3326 doctestはSema／runtime-plan／Compilerで終了0（runtime-plan 2 PASS、他は0件）。
 Coreの76件PASSはsource不変の公開R3303証拠を維持し、今回のrunへ合算しない。
 [全結果・原診断・責任境界](acceptance-evidence/task-source-external-callable-acceptance.json)。
+
+## Native Await／Program fanout の Drain readiness — 2026-10-28
+
+基点は公開main 9b146d096b3b4392130be51c8de2cd1b9dd8c023。元tracked WIP 14件とuntracked 6件を保持し、Coreの5 Rust pathを修復した。直前公開のfull SHA・parent・tree・blob照合も今回の原本に保持した。
+
+R3329は256-op予算のDrainが76 opでBlocked、R3331は32 opで最後のchildを退役しても親AwaitがBlockedとなった。実publication queue／observed cursorとlocal launch終端状態を、fiber選択・内部work判定・hard stopで共有した。R3333は同じ256-op条件・1回のDrain・元の入力順Bool結果・Host work 0でPASS。予算、Source worker、task数、copy／capture条件を弱めていない。
+
+R3335は5 library＋Compiler callable execution全3,898／3,898 PASS・除外0、218.364秒。3,998入力、6 binary、catalog／終端集合の差分0。R3338 Core全target Clippyは終了0（警告3,500）、R3339 Core doctest 76件は全PASS。依存／公開APIは不変で、R3325からCargo入力100件の差分0を確認し、構造scanner／graphを再利用した。今回5 pathの実測とowner判断を追加した。全53逆依存の新しいruntime完了とはしない。
+
+R3337のCLI strict 2件は0／2 PASS・478対象外、2.241秒。runは既定budget 1・12 stepで未完了。benchは既定budget 32・12 stepのままmeasuredとなり、file assertionもvalidated、read 3／write 1／scheduler完了4／最大in-flight 2／parallel batch 1・tasks 2を実測した。bench testはcompleted_tasks期待4に対し実測8で失敗したまま保持する。
+
+Supersedes: 直前記録の「Hostとtaskの完了counter境界を修復する」という推測を訂正する。NativeTaskStatsの説明と現行async-scheduler仕様は、completed_tasksに直接Host callを含むことを明記している。実測8はscheduled 4＋direct 4で契約と一致し、counter実装を壊して期待値へ合わせる根拠はない。元の失敗・期待値・実測値を保持し、CLI受入の不一致として現状一覧へ集約する。Generic Match、lambda 12条件、bare extern 2条件の受入を戻す理由ではない。
+
+[全結果・red／green・CLI原JSON・前cut公開照合](acceptance-evidence/task-native-readiness-acceptance.json)。

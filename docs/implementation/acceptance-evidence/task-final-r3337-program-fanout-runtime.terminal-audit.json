@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "9b146d096b3b4392130be51c8de2cd1b9dd8c023",
+  "run": "task-final-r3337-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   2.241s] 2 tests run: 0 passed, 2 failed, 478 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2,
+  "passed": 0,
+  "failed": 2,
+  "skipped": 478,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_traverse_parallel_file_tasks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_traverse_parallel_file_tasks"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-27T17:06:41.4563462Z"
+}

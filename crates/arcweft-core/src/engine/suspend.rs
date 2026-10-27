@@ -794,6 +794,23 @@ impl Engine {
         Ok(())
     }
 
+    pub(super) fn await_has_pending_work(&self, state: &AwaitState) -> bool {
+        !state.queued.is_empty()
+            || self
+                .need_producers
+                .launch_for_handle(&state.handle)
+                .is_some_and(|launch| {
+                    launch.execution_kind() == crate::task::TaskExecutionKind::Program
+                        && launch.state().is_terminal()
+                })
+            || self
+                .need_publications
+                .get(&state.handle.correlation())
+                .is_some_and(|queue| {
+                    next_need_publication_index(queue, state.observed_through).is_some()
+                })
+    }
+
     /// Selects a publication for one observer. An affine Ready moves out of
     /// the shared queue; only recursively unrestricted publications may be
     /// copied for another observer of the same Need.

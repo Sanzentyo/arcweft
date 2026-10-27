@@ -153,6 +153,20 @@ impl ProgramFanoutState {
     }
 }
 
+impl Engine {
+    pub(super) fn program_fanout_has_pending_work(&self, state: &ProgramFanoutState) -> bool {
+        (state.next_index == state.items.len() && state.in_flight.is_empty())
+            || (state.next_index < state.items.len()
+                && state.in_flight.len() < state.limit as usize
+                && self.task_request_quota_remaining > 0)
+            || state.in_flight.iter().any(|flight| {
+                self.need_producers
+                    .launch_for_handle(&flight.handle)
+                    .is_none_or(|launch| launch.state().is_terminal())
+            })
+    }
+}
+
 fn original_fanout<'a>(
     source: &NativeSourceOperation,
     plan: &'a crate::plan::RuntimePlan,

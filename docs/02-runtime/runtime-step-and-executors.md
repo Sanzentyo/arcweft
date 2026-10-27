@@ -185,6 +185,13 @@ activation's VM quantum is
 replenished only at the next host step, preserving its exact preemption cursor
 and the caller's remaining `max_ops` boundary.
 
+Native Await and Program fanout treat an accepted, unobserved Need publication
+or a terminal local Program launch as internal work. A waiting parent can resume
+that work within the same Drain step; it does not need an empty host turn after
+its last child retires. Fiber selection and stop detection use that same
+readiness, so an idle waiter neither consumes an operation nor hides a runnable
+child. Resuming ready work still consumes the normal operation budget.
+
 Retained child scopes remain executor work after the parent finishes, including
 detached line work. Local join policy governs the parent return gate and does
 not discard that executor ownership. A blocked child at the front of the queue

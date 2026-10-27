@@ -203,6 +203,37 @@ fn fixture(items: &[bool], limit: u32) -> Engine {
 }
 
 #[test]
+fn native_program_fanout_drain_reaches_quiescence_without_empty_host_turns() {
+    let mut engine = fixture(&[true, false, true], 2);
+    let result = engine.step(
+        crate::step::RuntimeStepInput::default(),
+        crate::step::RuntimeStepOptions {
+            mode: crate::step::RuntimeStepMode::Drain,
+            budget: crate::step::RuntimeStepBudget { max_ops: 256 },
+            ..Default::default()
+        },
+    );
+    assert!(result.stats.executed_ops <= 256);
+    assert!(
+        result.output.diagnostics.is_empty(),
+        "{:?}",
+        result.output.diagnostics
+    );
+    assert!(result.output.requests.tasks.is_empty());
+    assert!(result.output.requests.program_task_completions.is_empty());
+    assert_eq!(
+        result.stop_reason,
+        crate::step::RuntimeStepStopReason::Done,
+        "{result:?}"
+    );
+    assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
+    assert!(result.output.flow_events.iter().any(|event| matches!(event,
+        crate::plan::FlowEvent::AwaitReady { value: Some(value), .. }
+        if value.value() == &crate::value::runtime_sequence_values(vec![RuntimeValue::Bool(true), RuntimeValue::Bool(false), RuntimeValue::Bool(true)])
+    )));
+}
+
+#[test]
 fn native_program_fanout_runs_original_workers_and_restores_every_owned_frontier() {
     for count in [0, 1, 3, 17] {
         let input: Vec<_> = (0..count).map(|index| index % 3 == 0).collect();

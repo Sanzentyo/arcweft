@@ -1,0 +1,309 @@
+{
+      "source": "bench.arcw",
+      "syntax_warnings": 0,
+      "line_task_groups": 0,
+      "compiler": {
+        "syntax": {
+          "accepted_source_bytes": 927,
+          "lexer_tokens": 362,
+          "grammar_events": 1043,
+          "top_level_items": 5,
+          "statements": 7,
+          "expressions": 54,
+          "type_nodes": 24,
+          "pattern_nodes": 19,
+          "identity_bearing_nodes": 281,
+          "diagnostic_identities": 0
+        },
+        "semantic": {
+          "types": 14,
+          "locals": 8,
+          "captures": 0,
+          "expressions": 36,
+          "patterns": 19,
+          "statements": 4,
+          "items": 5,
+          "calls": 7,
+          "call_diagnostics": 0,
+          "logical_argument_checks": 8,
+          "resolver_invocations": 7,
+          "candidate_argument_probes": 8,
+          "selected_replay_argument_visits": 0,
+          "retained_argument_fact_publications": 7
+        },
+        "runtime_plan": {
+          "pure_function_candidates": 0,
+          "pure_candidate_functions_seen": 0,
+          "pure_candidate_lower_attempts": 0,
+          "pure_candidate_lower_failures_inferred": 0,
+          "pure_expr_lowered_nodes": 0,
+          "pure_expr_cloned_nodes": 0,
+          "pure_rewrite_expr_visits": 0,
+          "optimized_flows": 0,
+          "optimized_op_slices": 0,
+          "local_use_tail_scans": 0,
+          "local_use_scan_ops": 0,
+          "sequence_map_sum_fusions": 0,
+          "sequence_source_inlines": 0,
+          "pure_call_exprs": 0
+        },
+        "awbc": {
+          "flows": 1,
+          "instructions": 97,
+          "line_task_groups": 0,
+          "stream_plans": 0
+        },
+        "aot": {
+          "flows": 1,
+          "ops": 30,
+          "linear_ops": 14,
+          "branch_ops": 4,
+          "effect_ops": 0,
+          "await_ops": 12,
+          "choice_ops": 0,
+          "dialogue_ops": 0,
+          "jump_ops": 0,
+          "linear_dispatch_flows": 0,
+          "mixed_dispatch_flows": 1
+        }
+      },
+      "phases": [
+        {
+          "name": "read_source",
+          "elapsed_ns": 333300
+        },
+        {
+          "name": "project_compile",
+          "elapsed_ns": 93028300
+        },
+        {
+          "name": "product_awbc_lower",
+          "elapsed_ns": 6254300
+        },
+        {
+          "name": "aot_lower",
+          "elapsed_ns": 13000
+        }
+      ],
+      "benches": [
+        {
+          "id": "bench.parallel_io",
+          "status": "measured",
+          "sections": [
+            {
+              "name": "measure",
+              "status": "measured",
+              "diagnostics": [],
+              "measurement": {
+                "host_system": {
+                  "physical_cores": 12,
+                  "logical_threads": 20,
+                  "available_parallelism": 20
+                },
+                "executor": "bytecode_vm",
+                "executor_stats": {
+                  "aot_fast_path_ops": 0,
+                  "pure_config": {
+                    "backend": "auto",
+                    "workers": "auto",
+                    "resolved_workers": 20,
+                    "worker_pool_active": false,
+                    "batch_min_len": 1024,
+                    "emit_object_artifacts": false,
+                    "math_backend": "auto",
+                    "math_wgpu_min_elements": 67108864
+                  },
+                  "pure_acceleration": {
+                    "annotated": 0,
+                    "inferred": 0,
+                    "jit": 0,
+                    "aot": 0,
+                    "vm": 0
+                  },
+                  "pure_compile": {
+                    "jit_attempts": 0,
+                    "jit_successes": 0,
+                    "jit_failures": 0,
+                    "aot_attempts": 0,
+                    "aot_successes": 0,
+                    "aot_failures": 0,
+                    "auto_jit_selected": 0,
+                    "auto_aot_selected": 0,
+                    "auto_vm_selected": 0,
+                    "auto_jit_deferred": 0,
+                    "auto_jit_promotions": 0,
+                    "auto_jit_skipped_small": 0,
+                    "cache_hits": 0,
+                    "cache_misses": 0,
+                    "object_attempts": 0,
+                    "object_successes": 0,
+                    "object_failures": 0,
+                    "object_bytes": 0,
+                    "compile_elapsed_ns": 48500
+                  },
+                  "math": {
+                    "scalar_calls": 0,
+                    "glam_calls": 0,
+                    "ndarray_calls": 0,
+                    "wgpu_calls": 0,
+                    "fused_matmul_bias_add_calls": 0,
+                    "fallback_calls": 0,
+                    "bytes_borrowed": 0,
+                    "bytes_copied": 0,
+                    "bytes_uploaded": 0,
+                    "bytes_downloaded": 0,
+                    "gpu_buffer_creations": 0,
+                    "gpu_buffer_reuse_hits": 0,
+                    "gpu_staging_buffer_creations": 0,
+                    "gpu_staging_buffer_reuse_hits": 0,
+                    "gpu_reused_dispatches": 0,
+                    "last_backend": null,
+                    "last_auto_reason": null
+                  }
+                },
+                "native_io": {
+                  "completed_tasks": 8,
+                  "completed_host_calls": 4,
+                  "failed_tasks": 0,
+                  "read_ops": 3,
+                  "write_ops": 1,
+                  "system_info_ops": 0,
+                  "bytes_read": 3,
+                  "bytes_written": 4,
+                  "parallel_batches": 1,
+                  "parallel_tasks": 2,
+                  "parallel_io_tasks": 2,
+                  "parallel_system_info_tasks": 0,
+                  "program_task_terminals": 0,
+                  "parallel_workers": 2,
+                  "scheduler_submit_elapsed_ns": 197500,
+                  "scheduler_dispatch_elapsed_ns": 27400,
+                  "host_complete_elapsed_ns": 2989200,
+                  "event_build_elapsed_ns": 85700,
+                  "scheduler_complete_elapsed_ns": 271000,
+                  "scheduler": {
+                    "submitted": 4,
+                    "joined": 0,
+                    "dispatched": 4,
+                    "completed": 4,
+                    "failed": 0,
+                    "cancelled": 0,
+                    "cancel_requested": 0,
+                    "in_flight": 0,
+                    "max_in_flight": 2,
+                    "dispatch_sorts": 0,
+                    "dispatch_sort_items": 0,
+                    "completion_sorts": 0,
+                    "completion_sort_items": 0,
+                    "completion_normalization_passes": 21,
+                    "completion_normalization_checks": 1,
+                    "completion_events_in": 4,
+                    "completion_events_out": 4,
+                    "completion_sort_skipped_items": 4,
+                    "completion_sort_performed_items": 0,
+                    "submitted_by_class": {
+                      "local_view": 0,
+                      "io": 0,
+                      "cpu": 0,
+                      "gpu_prepare": 0,
+                      "shader_compile": 0,
+                      "wasm_call": 0,
+                      "asset_decode": 0,
+                      "audio_decode": 0,
+                      "audio_render": 0,
+                      "tts_synthesis": 0,
+                      "bgm_precompose": 0,
+                      "lsp": 0,
+                      "background": 4
+                    },
+                    "dispatched_by_class": {
+                      "local_view": 0,
+                      "io": 0,
+                      "cpu": 0,
+                      "gpu_prepare": 0,
+                      "shader_compile": 0,
+                      "wasm_call": 0,
+                      "asset_decode": 0,
+                      "audio_decode": 0,
+                      "audio_render": 0,
+                      "tts_synthesis": 0,
+                      "bgm_precompose": 0,
+                      "lsp": 0,
+                      "background": 4
+                    },
+                    "completed_by_class": {
+                      "local_view": 0,
+                      "io": 0,
+                      "cpu": 0,
+                      "gpu_prepare": 0,
+                      "shader_compile": 0,
+                      "wasm_call": 0,
+                      "asset_decode": 0,
+                      "audio_decode": 0,
+                      "audio_render": 0,
+                      "tts_synthesis": 0,
+                      "bgm_precompose": 0,
+                      "lsp": 0,
+                      "background": 4
+                    }
+                  }
+                },
+                "warmup": 0,
+                "iterations": 1,
+                "steps": 12,
+                "per_executed_op_ns": 2232345,
+                "elapsed_ns": {
+                  "min": 113849600,
+                  "median": 113849600,
+                  "max": 113849600
+                },
+                "deterministic": {
+                  "executed_ops_median": 51,
+                  "child_fiber_ticks_median": 5,
+                  "max_child_fibers_median": 3,
+                  "line_effects_median": 0,
+                  "task_requests_median": 4,
+                  "task_events_in_median": 4,
+                  "pure_calls_median": 0,
+                  "math_calls_median": 0,
+                  "math_accelerated_calls_median": 0,
+                  "pure_batch_calls_median": 0,
+                  "pure_batch_items_median": 0,
+                  "pure_flat_batch_calls_median": 0,
+                  "pure_flat_batch_items_median": 0,
+                  "pure_flat_batch_bytes_borrowed_median": 0,
+                  "pure_flatten_materializations_median": 0,
+                  "pure_flatten_bytes_copied_median": 0,
+                  "pure_jit_calls_median": 0,
+                  "pure_aot_calls_median": 0,
+                  "pure_vm_calls_median": 0,
+                  "pure_parallel_policy_checks_median": 0,
+                  "pure_parallel_work_units_median": 0,
+                  "pure_parallel_batches_median": 0,
+                  "pure_parallel_skipped_backend_median": 0,
+                  "pure_parallel_skipped_small_median": 0,
+                  "pure_thread_pool_jobs_median": 0,
+                  "pure_thread_pool_build_elapsed_ns_median": 0,
+                  "pure_arg_stack_packs_median": 0,
+                  "pure_arg_vec_allocations_median": 0,
+                  "pure_arg_bytes_copied_median": 0,
+                  "pure_arg_bytes_borrowed_median": 0,
+                  "pure_result_bytes_copied_median": 0,
+                  "pure_fallbacks_median": 0,
+                  "diagnostics": 4
+                }
+              },
+              "pure_helper": null
+            },
+            {
+              "name": "assert",
+              "status": "validated",
+              "diagnostics": [],
+              "measurement": null,
+              "pure_helper": null
+            }
+          ],
+          "diagnostics": []
+        }
+      ]
+    }

@@ -1,0 +1,683 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "base": "9b146d096b3b4392130be51c8de2cd1b9dd8c023",
+  "status": "Native readiness owner accepted; strict CLI conditions remain unaccepted",
+  "workingTree": {
+    "heldTracked": 14,
+    "sourceDrift": 0,
+    "newRustPaths": 5,
+    "sourceInputs": 3998,
+    "heldUntracked": 6
+  },
+  "implementation": [
+    "Await readiness borrows the actual accepted publication queue/cursor and terminal local Program launch.",
+    "Program fanout readiness uses its existing in-flight launch registry and launch quota.",
+    "Root/child selection and stop detection share readiness; idle Need/Program waiters do not consume an operation or hide runnable children.",
+    "Ready parent Await drains in the same step after the final child retires; resumption still consumes the normal budget."
+  ],
+  "redGreen": {
+    "r3331": "FAIL: 32 operations, parent Await still blocked after all children retired",
+    "r3329": "FAIL: 76 operations, 256 budget, Blocked with an internal controller remaining",
+    "r3333": "PASS: original 256 budget, one Drain invocation reaches Done, original ordered Bool result, no Host work"
+  },
+  "checks": [
+    {
+      "path": "task-final-r3328-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-E",
+        "test(native_program_fanout_drain_reaches_quiescence)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-27T16:46:30.2211957Z",
+      "finishedAt": "2026-10-27T16:48:46.7901255Z"
+    },
+    {
+      "path": "task-final-r3329-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-E",
+        "test(native_program_fanout_drain_reaches_quiescence)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "startedAt": "2026-10-27T16:48:56.6383109Z",
+      "finishedAt": "2026-10-27T16:48:58.7193209Z"
+    },
+    {
+      "path": "task-final-r3330-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-E",
+        "test(native_program_fanout_drain_reaches_quiescence)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-27T16:49:48.8476929Z",
+      "finishedAt": "2026-10-27T16:50:59.3953313Z"
+    },
+    {
+      "path": "task-final-r3331-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-E",
+        "test(native_program_fanout_drain_reaches_quiescence)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "startedAt": "2026-10-27T16:51:07.9137286Z",
+      "finishedAt": "2026-10-27T16:51:10.227724Z"
+    },
+    {
+      "path": "task-final-r3332-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-E",
+        "test(native_program_fanout_drain_reaches_quiescence)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-27T16:54:36.4062801Z",
+      "finishedAt": "2026-10-27T16:55:09.431737Z"
+    },
+    {
+      "path": "task-final-r3333-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-E",
+        "test(native_program_fanout_drain_reaches_quiescence)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-27T16:55:17.5566817Z",
+      "finishedAt": "2026-10-27T16:55:19.4466209Z"
+    },
+    {
+      "path": "task-final-r3334-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-27T16:55:35.948288Z",
+      "finishedAt": "2026-10-27T16:59:47.8029942Z"
+    },
+    {
+      "path": "task-final-r3335-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-27T16:59:58.6477297Z",
+      "finishedAt": "2026-10-27T17:03:39.3910426Z"
+    },
+    {
+      "path": "task-final-r3336-program-fanout-awbc-check.json",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-cli",
+        "--test",
+        "check",
+        "-E",
+        "test(traverse_parallel_file_tasks)",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-27T17:00:12.9367865Z",
+      "finishedAt": "2026-10-27T17:04:24.9839879Z"
+    },
+    {
+      "path": "task-final-r3337-program-fanout-runtime.json",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--test",
+        "check",
+        "-E",
+        "test(traverse_parallel_file_tasks)",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "startedAt": "2026-10-27T17:04:40.7371405Z",
+      "finishedAt": "2026-10-27T17:06:39.7736685Z"
+    },
+    {
+      "path": "task-final-r3338-program-fanout-runtime-clippy.json",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-27T17:04:02.3589336Z",
+      "finishedAt": "2026-10-27T17:06:36.616851Z"
+    },
+    {
+      "path": "task-final-r3339-program-fanout-runtime-doctests.json",
+      "command": [
+        "test",
+        "--doc",
+        "-p",
+        "arcweft-core",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-10-27T17:04:02.3589304Z",
+      "finishedAt": "2026-10-27T17:05:31.1091376Z"
+    }
+  ],
+  "owner": {
+    "passed": 3898,
+    "seconds": 218.364,
+    "run": "R3335",
+    "skipped": 0,
+    "binaryDrift": 0,
+    "executed": 3898,
+    "failed": 0,
+    "binaries": 6,
+    "catalogCaseDrift": 0
+  },
+  "clippy": {
+    "allFeatures": true,
+    "warningMessages": 3500,
+    "allTargets": true,
+    "package": "arcweft-core",
+    "run": "R3338",
+    "exitCode": 0,
+    "locked": true
+  },
+  "doctests": {
+    "failed": 0,
+    "ignored": 0,
+    "package": "arcweft-core",
+    "run": "R3339",
+    "passed": 76
+  },
+  "strictCli": {
+    "cliRun": {
+      "steps": 12,
+      "submitted": 0,
+      "lastFiberStatus": "running",
+      "lastStop": "BudgetExhausted",
+      "maxOps": 1,
+      "readOps": 0
+    },
+    "passed": 0,
+    "seconds": 2.241,
+    "cliBench": {
+      "scheduledCompleted": 4,
+      "parallelBatches": 1,
+      "completedHostCalls": 4,
+      "fileAssertion": "validated",
+      "maxInFlight": 2,
+      "maxOps": 32,
+      "steps": 12,
+      "writeOps": 1,
+      "readOps": 3,
+      "completedTasks": 8,
+      "parallelTasks": 2,
+      "measurement": "measured",
+      "expectedCompletedTasks": 4
+    },
+    "run": "R3337",
+    "excluded": 478,
+    "correction": "Supersedes the previous inference that completed_tasks needs a Host/task boundary repair. NativeTaskStats and async-scheduler.md explicitly include successful direct Host calls; observed 8 = scheduled 4 + direct 4 is consistent. Preserve the unchanged strict fixture failure as an acceptance discrepancy, not a demonstrated counter defect.",
+    "failed": 2,
+    "binaries": 2,
+    "binaryDrift": 0
+  },
+  "structure": {
+    "publicApiChanges": 0,
+    "unchangedGraphInputs": 100,
+    "review": "task-native-readiness-owner-review.json",
+    "graphDrift": 0,
+    "newDependencyEdges": 0,
+    "reusedScanner": "R3325"
+  },
+  "unchangedAcceptance": [
+    "Generic Match remains accepted/published.",
+    "Source lambda 12 and bare extern 2 backend conditions remain accepted and are included in R3335.",
+    "Source task/save/capture quantities, operation budgets, batch/fusion/copy conditions and strict CLI assertions are unchanged.",
+    "Latest full 53-package runtime remains R3177; this cut does not claim a fresh full reverse run."
+  ],
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3328-program-fanout-awbc-check.input-audit.json",
+      "bytes": 448,
+      "sha256": "0c601ec5d7ca8bacf81a16079d655ec0b3b640e660c8ef4d108b5a1911596295"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3328-program-fanout-awbc-check.json",
+      "bytes": 580,
+      "sha256": "446f960c2cb44475a92a4917578128395abf9aa216234a8b60945279fde3cea7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3328-program-fanout-awbc-check.log",
+      "bytes": 432689,
+      "sha256": "60cdd3aa424ba499209ba5c1c1b32cd8d2f7961bcb015fee397b547788c65b88"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3329-program-fanout-runtime.binaries-before.json",
+      "bytes": 202,
+      "sha256": "61699b749d854e9b4d2568488d056806fe81e3f4a3b82023e71c13e1df01c994"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3329-program-fanout-runtime.json",
+      "bytes": 671,
+      "sha256": "9233331aa5bc4640886da3b38beeca3580b36a3f7c01a6bf5ebc99e90895f056"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3329-program-fanout-runtime.log",
+      "bytes": 662308,
+      "sha256": "f501335eeca63d9202bb0dfb6867b7d427b51b0a4869aa96fac2f3516f8f5252"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3329-program-fanout-runtime.terminal-audit.json",
+      "bytes": 814,
+      "sha256": "2be24e2d0ffcf9b1d73376153cdbde358f24235b5bffc429fb8928fdc54919ea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3330-program-fanout-awbc-check.input-audit.json",
+      "bytes": 448,
+      "sha256": "76631df8d727be328a55c10e4b47c0bccfb3bb62d9ee7f14537d300463bd62c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3330-program-fanout-awbc-check.json",
+      "bytes": 580,
+      "sha256": "0e16c5f51ff59150e56968bf0a2f6cc0880049cdd09605b68978dafd562ff962"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3330-program-fanout-awbc-check.log",
+      "bytes": 432689,
+      "sha256": "916170075a81d756e866f45afcecfca29f03cd179697cbac361115984f1f9dbb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3331-program-fanout-runtime.binaries-before.json",
+      "bytes": 202,
+      "sha256": "8e30110a8c107fe3c612fcd2139757cf317edbe03c09b82b68d18f15843121fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3331-program-fanout-runtime.json",
+      "bytes": 671,
+      "sha256": "6eac6dd79d24a19c34a4a87f6d38e675fa74784f6e54da88ed870d18041a961a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3331-program-fanout-runtime.log",
+      "bytes": 665460,
+      "sha256": "df3b8397cfefa0a46414fdd920d773e2cef4f91a94479bd5ec46242e84d97dd1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3331-program-fanout-runtime.terminal-audit.json",
+      "bytes": 814,
+      "sha256": "18014ce027c316ef277d9484b4eaac7d178f47166690cf1d70cb9aa0f4706708"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3332-program-fanout-awbc-check.input-audit.json",
+      "bytes": 448,
+      "sha256": "bbd000c83ed25b47ca68f5341a95a594da98843c30f63d9873fce6d697d04a8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3332-program-fanout-awbc-check.json",
+      "bytes": 580,
+      "sha256": "cef51ac5a9dcd15d4d9dfeab40349bba4b9befb60e43dddd03405823b29f9b40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3332-program-fanout-awbc-check.log",
+      "bytes": 432689,
+      "sha256": "90d14cfcb2c3f39fe40ed303198f17277088844601d891c8a0f16adfa98270fa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3333-program-fanout-runtime.binaries-before.json",
+      "bytes": 202,
+      "sha256": "75a94872e8e5984db58baa93a7f32cc631c5759f04da36df721c1fce4ca6c17f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3333-program-fanout-runtime.json",
+      "bytes": 669,
+      "sha256": "e159ce3185819306c4f30e08f4cdd1f8616b79889075030b5ee3c5af43d36364"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3333-program-fanout-runtime.log",
+      "bytes": 659706,
+      "sha256": "1da54db9f05be6711a47ed6baee6e6cfbf489270e9b184204461acd95ce4eb40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3333-program-fanout-runtime.terminal-audit.json",
+      "bytes": 613,
+      "sha256": "53843b6fff33f176cbb8d84752d27d363e08241e054580a7485c24d4c41da4e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3334-program-fanout-awbc-check.input-audit.json",
+      "bytes": 574,
+      "sha256": "6b2a7845090902480d3b4678270be20510431faef91a6fb335c7a9264416069b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3334-program-fanout-awbc-check.json",
+      "bytes": 706,
+      "sha256": "1e9ba81857de317841ab19da2387517b61eb3ab873ef0d34f49b820791fcfb4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3334-program-fanout-awbc-check.log",
+      "bytes": 756190,
+      "sha256": "465532f6d31a0e486d9dbc8cf01acafb8bc365c9647ad7a81d06e10d529fd990"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3335-program-fanout-runtime.binaries-before.json",
+      "bytes": 1369,
+      "sha256": "f69783f4d0f426c24468d50843b9cb7b9c8222a47a5d0c36fe3255524bf56538"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3335-program-fanout-runtime.json",
+      "bytes": 795,
+      "sha256": "cd36ef84905ddc1891e457b59a7be0eeaa460dbda9757de3b58e5d4340461168"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3335-program-fanout-runtime.log",
+      "bytes": 1284926,
+      "sha256": "6db6396526ac04ff3c8d15dd93a83aa20490550a7a33b8ad8a3f637df0f5fccb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3335-program-fanout-runtime.terminal-audit.json",
+      "bytes": 629,
+      "sha256": "baf9b5b52670ab8173c62c204d14d01bad76bf51f8fc5ac27bdbdf2051a6a826"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3336-program-fanout-awbc-check.input-audit.json",
+      "bytes": 444,
+      "sha256": "726fb14998b3a623dc3e12993d087e18f03ebd23bc03c25bff47bae3b3e64fb8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3336-program-fanout-awbc-check.json",
+      "bytes": 576,
+      "sha256": "f97d37d9cafcc5946de37fd4d5de108c0c78acda74e52869135b3eaa5ead3abc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3336-program-fanout-awbc-check.log",
+      "bytes": 174952,
+      "sha256": "faf595b3452849207098c44ef8c17506c359a5e0b6938d851c837d3a85ada95b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3337-cli-bench-output.json",
+      "bytes": 11460,
+      "sha256": "9560e1bc71f6dda736901356fa0a763817c1a835567eae1cb0ab600cb1d5e012"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3337-cli-run-output.json",
+      "bytes": 27748,
+      "sha256": "6d840e6f698d909efe4b964fc63afde2895976a68c19770ea10c38e855f13f6e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3337-program-fanout-runtime.binaries-before.json",
+      "bytes": 415,
+      "sha256": "f3e958581ab02b5b7761eed7d05cf1ab3b777a2693c22e37f84e30e97fd3a7c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3337-program-fanout-runtime.json",
+      "bytes": 667,
+      "sha256": "9613a9a57413ddb667f711065349bbb66bda2a6d6bf2312504370515cee07672"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3337-program-fanout-runtime.log",
+      "bytes": 260206,
+      "sha256": "c5a13841fb96c4626edaef281b5ead03ef18258522dcb21192f73c299f443b71"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3337-program-fanout-runtime.terminal-audit.json",
+      "bytes": 916,
+      "sha256": "d13de7aa69bbdb8dda8edf4b0024aee2215956cefc0012d1fba2c521d2ce1ccb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3338-program-fanout-runtime-clippy.input-audit.json",
+      "bytes": 336,
+      "sha256": "91a1b479af23c7d5775a8f71d13676e33b8a8dc3a3bfa34789f5a5da85d76d01"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3338-program-fanout-runtime-clippy.json",
+      "bytes": 468,
+      "sha256": "e688a64cb30cbe76f33bf30956f3a59927090a9f89a82fe8f5cc5e05c54c5b26"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3338-program-fanout-runtime-clippy.log",
+      "bytes": 2851678,
+      "sha256": "da3e696241d5bbeb67115b3b309926e19dac7601286a80a238e2631a162953f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3339-program-fanout-runtime-doctests.input-audit.json",
+      "bytes": 328,
+      "sha256": "76ab72612549b7ad46e92ede3a09100fd119d49251410d1ed2c2bcc9bcde3d03"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3339-program-fanout-runtime-doctests.json",
+      "bytes": 460,
+      "sha256": "1ea481a4cd045b2b2581fa1a107c75722e9a3d8cf20b1501b5627e8695c5768e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3339-program-fanout-runtime-doctests.log",
+      "bytes": 79484,
+      "sha256": "1df094bed465b2d7a3b2cefb8d489619036e56757557323eac585f426f87d12a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-native-readiness-owner-review.json",
+      "bytes": 2686,
+      "sha256": "8317a93665cd617cd268b038b984af176afa52224280e66c7a2d2926450c21db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3328.inventory.json",
+      "bytes": 525269,
+      "sha256": "7141692f4c287a54226e7d0ad7de879dec309abf79ab54f274c3dd29666053ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3328.source-freeze.json",
+      "bytes": 781580,
+      "sha256": "cd94025ca6b461141636201507fb207038bbeaf7ed06cb4ffc7ed5e4696fa660"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3329.source-freeze.json",
+      "bytes": 781580,
+      "sha256": "cd94025ca6b461141636201507fb207038bbeaf7ed06cb4ffc7ed5e4696fa660"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3330.inventory.json",
+      "bytes": 525269,
+      "sha256": "7141692f4c287a54226e7d0ad7de879dec309abf79ab54f274c3dd29666053ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3330.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "a060e7622107772befa7c136449433ed9712176fb7652e496931d337570eb9e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3331.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "a060e7622107772befa7c136449433ed9712176fb7652e496931d337570eb9e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3332.inventory.json",
+      "bytes": 525269,
+      "sha256": "7141692f4c287a54226e7d0ad7de879dec309abf79ab54f274c3dd29666053ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3332.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "f901eeb489ad5fcfa46b7dde669202eb312733306c84bc700e49487423bf8c19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3333.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "f901eeb489ad5fcfa46b7dde669202eb312733306c84bc700e49487423bf8c19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3334.inventory.json",
+      "bytes": 997360,
+      "sha256": "bf6ca4da77fe16d519cb7a169ff85f7992e3f2afbd351ac87c629b55dea8a4c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3334.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "f8b31221b00be49c860b8b252bc2b88cef8cdcb19cc6175e6dd3737e39110575"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3335.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "f8b31221b00be49c860b8b252bc2b88cef8cdcb19cc6175e6dd3737e39110575"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3336.inventory.json",
+      "bytes": 115475,
+      "sha256": "953c6e713b79dd7cce8c0b85523ba002d8bb44f333b549216172b411f057c205"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3336.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "ae57ef263004b678542dfadf18244e58e68974417d6b4b4b02519797760bb009"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3337.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "ae57ef263004b678542dfadf18244e58e68974417d6b4b4b02519797760bb009"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3338.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "f8b31221b00be49c860b8b252bc2b88cef8cdcb19cc6175e6dd3737e39110575"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3339.source-freeze.json",
+      "bytes": 781778,
+      "sha256": "f8b31221b00be49c860b8b252bc2b88cef8cdcb19cc6175e6dd3737e39110575"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-source-external-callable.verified.json",
+      "bytes": 24212,
+      "sha256": "cb98fbcf9cb595a488a8d9b0629df310370e46af5ea8e4565332c238545906b1"
+    }
+  ],
+  "documentation": {
+    "heldFiles": 20,
+    "unretainedCommitIds": 0,
+    "heldDrift": 0,
+    "audit": "docs/implementation/acceptance-evidence/task-native-readiness-documentation-audit.json",
+    "documents": 129,
+    "unclosedFences": 0,
+    "relativeLinks": 618,
+    "brokenLinks": 0
+  }
+}

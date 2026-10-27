@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "base": "9b146d096b3b4392130be51c8de2cd1b9dd8c023",
+  "dirty": true,
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "owner": "arcweft-core",
+      "bytes": 231503,
+      "physicalLoc": 5749,
+      "basePhysicalLoc": 5742,
+      "growth": 7,
+      "classification": "production with existing owner tests where present",
+      "sha256": "438755616c62b66091c9bfb8b157bc70a6768eeff4d7d626a2c534bf83bcb86b"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/fanout.rs",
+      "owner": "arcweft-core",
+      "bytes": 20700,
+      "physicalLoc": 517,
+      "basePhysicalLoc": 503,
+      "growth": 14,
+      "classification": "production with existing owner tests where present",
+      "sha256": "4fbd13bead992497b273e38b2ffe4e73d734405330ac36faa23fadd54d76ae09"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/fanout/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 18187,
+      "physicalLoc": 415,
+      "basePhysicalLoc": 384,
+      "growth": 31,
+      "classification": "test",
+      "sha256": "7456495657f61c6dd05bcc7cd66c853819a98ce1f79a6e7fc0a8ff3b889e1558"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/frame_progress.rs",
+      "owner": "arcweft-core",
+      "bytes": 4672,
+      "physicalLoc": 115,
+      "basePhysicalLoc": 102,
+      "growth": 13,
+      "classification": "production with existing owner tests where present",
+      "sha256": "d0770dbfc773728b86e48b9932cfea1f1f6000dba985d45fd3fd722f77902eb2"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/suspend.rs",
+      "owner": "arcweft-core",
+      "bytes": 89764,
+      "physicalLoc": 2180,
+      "basePhysicalLoc": 2163,
+      "growth": 17,
+      "classification": "production with existing owner tests where present",
+      "sha256": "c054103af389451a1c806c3d4d7a78accb16377d168f76bd98c07f8837e46e20"
+    }
+  ],
+  "owner": "Native Engine",
+  "responsibility": "Native fiber selection and stop detection share accepted Need publication and local Program launch readiness. Queue/registry owners retain values; selection borrows only.",
+  "disposition": "Retain cohesive Engine, suspension, and fanout owners. No I/O, public API, dependency, feature, codec, value-copy, or resource-budget change. The new regression belongs to the existing fanout test owner. No file grows by 300 physical lines.",
+  "reusedStructure": "task-final-r3325-program-fanout-runtime-structure",
+  "reverseValidation": "R3335: all 3898 five-library and compiler callable tests passed. Full 53-package reverse acceptance is not claimed.",
+  "graphInputs": 100,
+  "graphInputDrift": 0
+}
