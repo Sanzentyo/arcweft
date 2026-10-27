@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
+use arcweft_lang_hir::leaf::{HirPath, HirPathRoot, HirPathSegment};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
 use thiserror::Error;
@@ -516,6 +517,12 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("semantic value resolution failed for expression {owner:?}")]
     ValueResolutionFailed { owner: ExprId },
+    #[error("unknown symbol `{}`", value_path_label(.path))]
+    UnknownValuePath {
+        owner: ExprId,
+        path: Box<HirPath>,
+        path_source: SourceSpan,
+    },
     #[error("shared callable resolution failed for expression {owner:?}")]
     CallResolutionFailed { owner: ExprId },
     #[error("final call facts could not seal for expression {owner:?}: {error}")]
@@ -729,6 +736,7 @@ impl FinalSemanticAnalysisError {
             Self::BreakValueRequiresLoop { .. } => "sema.break.value_target",
             Self::StatementOperandTypeMismatch { .. } => "sema.statement.operand_type",
             Self::UnknownCallTarget { .. } => "sema.call.unknown_target",
+            Self::UnknownValuePath { .. } => "sema.value.unknown_symbol",
             Self::PropagationErrorMismatch { .. } => "sema.try.error_mismatch",
             Self::EffectUpperBoundExceeded { .. } => "AWF-EFX-001",
             Self::TargetCapabilityUnavailable { .. } => "AWF-EFX-007",
@@ -753,6 +761,14 @@ impl FinalSemanticAnalysisError {
     /// Source-backed semantic rejection retained by the final analyzer.
     pub fn source_diagnostic(&self) -> Option<Diagnostic> {
         match self {
+            Self::UnknownValuePath { path_source, .. } => Some(
+                Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
+                    .with_code(self.diagnostic_code())
+                    .with_label(DiagnosticLabel::primary(
+                        path_source.clone(),
+                        Some("no value is defined for this path".to_owned()),
+                    )),
+            ),
             Self::SignalObservableType { source_span, .. } => Some(
                 Diagnostic::new(
                     DiagnosticSeverity::Error,
@@ -877,6 +893,25 @@ fn break_value_requires_loop_diagnostic(
         target_source.clone(),
         Some("this target loop does not yield a value".to_owned()),
     ))
+}
+
+fn value_path_label(path: &HirPath) -> String {
+    let mut label = match path.root() {
+        HirPathRoot::ImplicitCrate => String::new(),
+        HirPathRoot::Crate => "crate::".to_owned(),
+        HirPathRoot::SelfModule => "self::".to_owned(),
+        HirPathRoot::Super { depth } => "super::".repeat(depth),
+    };
+    for (ordinal, segment) in path.segments().iter().enumerate() {
+        if ordinal != 0 {
+            label.push_str("::");
+        }
+        label.push_str(match segment {
+            HirPathSegment::Identifier(name) => name.as_str(),
+            HirPathSegment::ProjectSymbol(name) => name.as_str(),
+        });
+    }
+    label
 }
 
 fn unknown_call_diagnostic(

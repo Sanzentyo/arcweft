@@ -1165,36 +1165,58 @@ fn contextual_literal_cache_rewrite_rolls_back_and_retry_replaces_baseline() {
 
 #[test]
 fn uncached_expression_failure_retry_cleans_structured_guard() {
-    let fixture = crate::final_analysis::tests::fixture("fn caller() { missing; }\n", None);
-    let module = fixture
-        .project
-        .analysis_view()
-        .expect("executable HIR")
-        .module(&CanonicalModulePath::crate_root())
-        .expect("root module");
-    let owner = module
-        .expressions()
-        .find_map(|(owner, expression)| {
-            matches!(expression.kind(), HirExprKind::Path(_)).then_some(owner)
-        })
-        .expect("unresolved path expression");
-    let cancellation = AtomicBool::new(false);
-    let mut analyzer = Analyzer::new(
-        fixture.project.analysis_view().expect("executable HIR"),
-        &fixture.symbols,
-        FinalSemanticCatalogs::production(&fixture.registered),
-        FinalSemanticAnalysisControl::new(&cancellation),
-    )
-    .expect("analyzer");
+    for (source, missing) in [
+        ("fn caller() { missing; }\n", "missing"),
+        ("fn caller() { missing.value; }\n", "missing"),
+        ("fn caller() { crate::missing; }\n", "crate::missing"),
+    ] {
+        let fixture = crate::final_analysis::tests::fixture(source, None);
+        let module = fixture
+            .project
+            .analysis_view()
+            .expect("executable HIR")
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root module");
+        let owner = module
+            .expressions()
+            .find_map(|(owner, expression)| {
+                matches!(expression.kind(), HirExprKind::Path(_)).then_some(owner)
+            })
+            .expect("unresolved path expression");
+        let cancellation = AtomicBool::new(false);
+        let mut analyzer = Analyzer::new(
+            fixture.project.analysis_view().expect("executable HIR"),
+            &fixture.symbols,
+            FinalSemanticCatalogs::production(&fixture.registered),
+            FinalSemanticAnalysisControl::new(&cancellation),
+        )
+        .expect("analyzer");
 
-    for _ in 0..2 {
-        assert!(matches!(
-            analyzer.check_expression_published(owner, None),
-            Err(FinalSemanticAnalysisError::ValueResolutionFailed {
-                owner: failed
-            }) if failed == owner
-        ));
-        assert!(!analyzer.facts.expressions().contains_key(&owner));
+        for _ in 0..2 {
+            let error = analyzer
+                .check_expression_published(owner, None)
+                .expect_err("unresolved values never publish checked facts");
+            let FinalSemanticAnalysisError::UnknownValuePath {
+                owner: failed,
+                ref path_source,
+                ..
+            } = error
+            else {
+                panic!("the authored unknown value retains its diagnostic: {error:?}");
+            };
+            assert_eq!(failed, owner);
+            assert_eq!(error.to_string(), format!("unknown symbol `{missing}`"));
+            assert_eq!(&source[path_source.range().as_range()], missing);
+            let diagnostic = error.source_diagnostic().expect("source-backed failure");
+            assert_eq!(diagnostic.span(), Some(path_source));
+            assert_eq!(
+                diagnostic
+                    .code()
+                    .map(arcweft_source::DiagnosticCode::as_str),
+                Some("sema.value.unknown_symbol")
+            );
+            assert!(!analyzer.facts.expressions().contains_key(&owner));
+        }
     }
 }
 

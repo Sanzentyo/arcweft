@@ -1811,17 +1811,22 @@ impl Analyzer<'_, '_, '_> {
                 CheckedTypeSelection::Expected,
             )
         } else {
-            let (ty, seed, ordinal) = resolve_closed_variant_path(
+            let resolved = resolve_closed_variant_path(
                 self.catalogs.world.environment().typecheck_env(),
                 path,
                 owner,
             )
-            .map_err(AnalyzerExpressionError::fatal)?
-            .ok_or_else(|| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
-                    owner,
-                })
-            })?;
+            .map_err(AnalyzerExpressionError::fatal)?;
+            let Some((ty, seed, ordinal)) = resolved else {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::UnknownValuePath {
+                        owner,
+                        path: Box::new(path.clone()),
+                        path_source: expression_span(module, owner)
+                            .map_err(AnalyzerExpressionError::fatal)?,
+                    },
+                ));
+            };
             (ty, seed, ordinal, CheckedTypeSelection::Inferred)
         };
         let prepared = super::PreparedVariantExpression::try_new(
