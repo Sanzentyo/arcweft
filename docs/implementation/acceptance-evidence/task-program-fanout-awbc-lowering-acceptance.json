@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "checkpoint": "059ce77df778d91a5aad441844d129bec9effbab",
+  "recordedAt": "2026-10-27T11:41:08.5618666Z",
+  "status": "AWBC lowering, canonical kernel metadata and function-owned frames verified; Fanout-specific Source admission execution and Program fanout runtime/save integration pending",
+  "rustPaths": [
+    "crates/arcweft-core/src/awbc/codec/runtime.rs",
+    "crates/arcweft-core/src/awbc/codec/runtime/task_tests.rs",
+    "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+    "crates/arcweft-core/src/awbc/product_step/tests.rs",
+    "crates/arcweft-core/src/awbc/schema.rs",
+    "crates/arcweft-core/src/awbc/verify.rs",
+    "crates/arcweft-core/src/awbc/verify/code.rs",
+    "crates/arcweft-core/src/awbc/verify/program_task.rs",
+    "crates/arcweft-core/src/awbc/verify/structure.rs",
+    "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+    "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/expr.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/flow/program_task.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/tests.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/tests/program_fanout.rs",
+    "crates/arcweft-runtime-plan/src/awbc_lower/trait_method.rs"
+  ],
+  "initialOwnerRuntime": {
+    "version": 1,
+    "base": "059ce77df778d91a5aad441844d129bec9effbab",
+    "run": "task-final-r3238-program-fanout-libraries-runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [  97.600s] 2191 tests run: 2190 passed, 1 failed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2191,
+    "passed": 2190,
+    "failed": 1,
+    "skipped": 0,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3995,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-runtime-plan",
+        "test": "awbc_lower::tests::program_fanout::original_program_fanout_lowers_to_typed_kernels_and_roundtrips_canonical_awbc"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-27T11:28:14.2721034Z"
+  },
+  "coreReuse": {
+    "run": "task-final-r3238-program-fanout-libraries-runtime",
+    "passed": 2063,
+    "failed": 0,
+    "binaryHashUnchangedAfterRuntimePlanRepair": true,
+    "reason": "Only five runtime-plan Rust inputs changed; Core has no dependency on runtime-plan. The exact Core test executable was rehashed unchanged."
+  },
+  "runtimePlanRepair": {
+    "rootCause": "String diagnostic paths aliased distinct generated kernel frame layouts",
+    "fix": "Frame layout interning is keyed by AwbcFunctionId; all eight callers migrated; conflicting layout on one owner is a diagnostic",
+    "rustPaths": 5,
+    "runtime": {
+      "version": 1,
+      "base": "059ce77df778d91a5aad441844d129bec9effbab",
+      "run": "task-final-r3241-program-fanout-frame-runtime-plan-runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   2.583s] 128 tests run: 128 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 128,
+      "passed": 128,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3995,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-10-27T11:35:53.4129882Z"
+    },
+    "mandatoryCase": "awbc_lower::tests::program_fanout::original_program_fanout_lowers_to_typed_kernels_and_roundtrips_canonical_awbc",
+    "loweringConditions": 6,
+    "rejectedForgeriesPerCondition": 3
+  },
+  "clippy": {
+    "run": "task-final-r3242-program-fanout-libraries-clippy",
+    "exitCode": 0,
+    "warningMessages": 8375,
+    "sourceInputs": 3995,
+    "sourceDrift": 0
+  },
+  "structure": {
+    "run": "task-final-r3243-program-fanout-frame-structure",
+    "exitCode": 0,
+    "blocking": 0,
+    "sourceInputs": 3995,
+    "sourceDrift": 0
+  },
+  "evidenceHandling": {
+    "binaryCopies": 0,
+    "catalogCaseDrift": 0,
+    "runtimeBinaryCounts": [
+      2,
+      1
+    ],
+    "runtimeBinaryDrift": 0,
+    "differentRunsCombinedAsOne": false,
+    "initialRuntimeWrapperExit": 1,
+    "initialRuntimeWrapperExplanation": "The post-audit wrapper incorrectly checked LASTEXITCODE inherited from cargo exit 100. Exact catalog/terminal audit was produced successfully; actual 2190 PASS/1 FAIL is retained. The subsequent wrapper removed that invalid native-status check."
+  },
+  "remainingAcceptance": [
+    "AWBC VM input movement, Program worker scheduling and suspended value ownership",
+    "Actual callback F, Result/minimum-index error, affine/cancel and full Source parallel integration",
+    "Public save/restore and final downstream/workspace/target acceptance"
+  ],
+  "genericMatchReopened": false,
+  "archivedEvidence": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3237-program-fanout-libraries-catalog.log",
+      "sha256": "322c08c528bf9ba22fea77cc9dee440a0132356960d65e03418708eb3d2724fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3237-program-fanout-libraries-catalog.json",
+      "sha256": "55291770efee5212069b54d5190d2afe1dc96e90593247d64409c2f1330981ea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3237-program-fanout-libraries-catalog.input-audit.json",
+      "sha256": "ae8dd290e3c1088746a0d54cb712c4070c36dd498c4b101ae0b7ade9bc0d16d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3238-program-fanout-libraries-runtime.log",
+      "sha256": "14ab34cb591e721ec47995ded2cd1075dece451a0854ca5676955ded02641322"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3238-program-fanout-libraries-runtime.json",
+      "sha256": "0efe3453faf45fd7e8031d17852e11c383d7fc50bc1707a23b38554a81dd2092"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3238-program-fanout-libraries-runtime.terminal-audit.json",
+      "sha256": "f86e087b984f5b274739ed56f435d313ad0bc36a3d747597f9eeaeafc91fdc24"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3238-program-fanout-libraries-runtime.binaries-before.json",
+      "sha256": "644941607aa420d8cd9f43ee1f2de26318d27e04a5f89ca23298e5e122de5a78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3239-program-fanout-awbc-structure.log",
+      "sha256": "fa53506529fa0370097a80e4aa676333d240b2fdfedb905856065ac016525cc1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3239-program-fanout-awbc-structure.json",
+      "sha256": "5b30f636d12e0f26545f41753676ee44f59443185b5dce01120c4d65363a6a85"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3239-program-fanout-awbc-structure.input-audit.json",
+      "sha256": "7ca46012358b5b2c7662210edcd64a858ececba8c30e2c00f63dc38895cf68c7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3240-program-fanout-frame-runtime-plan-catalog.log",
+      "sha256": "1774a3cc065c1372f609793f2576d9ce294c86ce44cdc5a724dcb21b9d7e2fa8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3240-program-fanout-frame-runtime-plan-catalog.json",
+      "sha256": "7f1cd103dc16a55822a88dafe72a92deb45af9f85cb638a7ff063f83d7ab226d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3240-program-fanout-frame-runtime-plan-catalog.input-audit.json",
+      "sha256": "7542ffed3cb6ecd9b0f28664d141ffa9d0fa982981ac87f5a22c52d712af26e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3241-program-fanout-frame-runtime-plan-runtime.log",
+      "sha256": "2b056cde018f89c8ced606ee1bb2deb8158e77965b97171d0fe1f13936844477"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3241-program-fanout-frame-runtime-plan-runtime.json",
+      "sha256": "b2eeab7bc73d860684846e50115fb024d71a11c90d00fa48863d59cd5e562ade"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3241-program-fanout-frame-runtime-plan-runtime.terminal-audit.json",
+      "sha256": "d3edbc0c04823c8bd64ec5b31e9bec0b1b8a66a6a80507a14f6e943c7b0b39ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3241-program-fanout-frame-runtime-plan-runtime.binaries-before.json",
+      "sha256": "1cd1b2992d228d3f1b62c93dd08f7e5d398da7d19e211acb898719146bb17b66"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3243-program-fanout-frame-structure.log",
+      "sha256": "5490a49bc4d1651371cb228fe2ec15bb1cf43e7ffe97389631231d4b7ef0c724"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3243-program-fanout-frame-structure.json",
+      "sha256": "6c14a9415177e0bd7c5df04dc895a786f14d91313bb9f8f7728fd260e433dd74"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3243-program-fanout-frame-structure.input-audit.json",
+      "sha256": "5cac914191091169d8c4135c69b532eb4355fccb3d4cdf85e52553701c11c245"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-r3237.source-freeze.json",
+      "sha256": "d8108cf233dc983e7051b050a4f0f6cd833a9fc7a6937413ec0f22ea692600ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-r3238.source-freeze.json",
+      "sha256": "ce51e8de56e69eae23a96cad8ca407e880ec81a098274989e3922b40e2ee3bea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-frame-r3240.source-freeze.json",
+      "sha256": "540a3f6b368978d7256c7fffcd71cd3bbc5ca8515ec14572da720005ea66053b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-frame-r3241.source-freeze.json",
+      "sha256": "540a3f6b368978d7256c7fffcd71cd3bbc5ca8515ec14572da720005ea66053b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-r3237.inventory.json",
+      "sha256": "ffe125e705593dcfc114f7758b99bcc908a4ab120e19790eb465e5fddd2a2265"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-frame-r3240.inventory.json",
+      "sha256": "63c80510246960af7fea00256c6b34ab88953022b5f5546fdfb9dedb99fe2bb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3242-program-fanout-libraries-clippy.log",
+      "sha256": "f944722d466c03400b9c122b802917828bd66b407235c6b1966a209b830c81a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3242-program-fanout-libraries-clippy.json",
+      "sha256": "b4d46b7365f5df9c0d1a4fd92dc0eeca26edc75d2e7fd50bb43b63d570f4da9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3242-program-fanout-libraries-clippy.input-audit.json",
+      "sha256": "e91bba4a796f3f3038cea090d74c41920efed1eacae81816f1afc601fc27917c"
+    }
+  ],
+  "graphEvidence": "task-program-fanout-awbc-graph-reuse.json",
+  "fanoutSourceAdmission": "Implemented; Fanout-specific branch execution not yet verified. Existing Flow admission cases remain passing. Actual Program start/worker execution remains required.",
+  "documentationAudit": {
+    "documents": 129,
+    "relativeLinks": 619,
+    "brokenLinks": 0,
+    "unclosedFences": 0,
+    "statusCommitIds": 33,
+    "unretainedIds": 0,
+    "changedHistoricalEvidence": 0,
+    "heldFiles": 20,
+    "heldDrift": 0
+  }
+}

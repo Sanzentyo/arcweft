@@ -142,7 +142,7 @@ pub struct AwbcInventory {
     dynamic_type: AwbcTypeId,
     constants: BTreeMap<String, AwbcConstantId>,
     signatures: BTreeMap<String, AwbcSignatureId>,
-    frame_layouts: BTreeMap<String, AwbcFrameLayoutId>,
+    frame_layouts: BTreeMap<AwbcFunctionId, AwbcFrameLayoutId>,
     effects: BTreeMap<AwbcEffectPlan, AwbcEffectPlanId>,
     audio_commands: BTreeMap<String, AwbcAudioCommandId>,
     tasks: BTreeMap<AwbcTaskPlan, AwbcTaskPlanId>,
@@ -883,15 +883,21 @@ impl AwbcInventory {
 
     pub fn intern_frame_layout(
         &mut self,
-        key: String,
+        owner: AwbcFunctionId,
         layout: AwbcFrameLayout,
     ) -> AwbcFrameLayoutId {
-        if let Some(id) = self.frame_layouts.get(&key).copied() {
+        if let Some(id) = self.frame_layouts.get(&owner).copied() {
+            if self.program.frame_layouts[id.index()] != layout {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("function {}", owner.0),
+                    "one function owner has conflicting frame layouts",
+                ));
+            }
             return id;
         }
         let id = AwbcFrameLayoutId(table_index(self.program.frame_layouts.len()));
         self.program.frame_layouts.push(layout);
-        self.frame_layouts.insert(key, id);
+        self.frame_layouts.insert(owner, id);
         id
     }
 

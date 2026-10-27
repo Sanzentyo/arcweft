@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "run": "task-final-r3237-program-fanout-libraries-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3995,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-27T11:24:11.0602352Z"
+}

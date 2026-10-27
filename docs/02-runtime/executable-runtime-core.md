@@ -308,6 +308,9 @@ struct AwbcFrameSlot {
 Parameters must occupy the leading slots and match the function signature in
 order. The single slot vector is simultaneously the VM register file and the
 compiled-region frame contract. A slot never changes type within a function.
+Each function owns its frame layout through its typed function identity.
+Diagnostic paths and display labels cannot identify or merge frame owners;
+conflicting layouts for one owner are a lowering error.
 
 ### 3.5 Functions, blocks, instructions, and resume points
 

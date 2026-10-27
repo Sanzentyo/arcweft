@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "059ce77df778d91a5aad441844d129bec9effbab",
+  "run": "task-final-r3238-program-fanout-libraries-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  97.600s] 2191 tests run: 2190 passed, 1 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2191,
+  "passed": 2190,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 2,
+  "matchedPackages": 2,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3995,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-runtime-plan",
+      "test": "awbc_lower::tests::program_fanout::original_program_fanout_lowers_to_typed_kernels_and_roundtrips_canonical_awbc"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-27T11:28:14.2721034Z"
+}

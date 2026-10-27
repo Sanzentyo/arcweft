@@ -108,9 +108,7 @@ impl AwbcFlowLowerer<'_, '_> {
             .expect("original Program Source owns its payload type");
         let result_type = self.close_executable_body(&mut frame, &mut body, result, false);
         let body = body.finish(self.inventory);
-        let layout = self
-            .inventory
-            .intern_frame_layout(format!("{path}:frame"), frame.finish());
+        let layout = self.inventory.intern_frame_layout(owner, frame.finish());
         for resume in &body.resume_points {
             self.inventory.program.resume_points[resume.index()].frame_layout = layout;
         }

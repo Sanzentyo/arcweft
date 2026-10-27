@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "arcweft-core",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-4c93819f10eae7e8.exe",
+    "sha256": "cc6d48454687fd0a78d8a6712efca6722627517b1010f1326302ce68e8028483"
+  },
+  {
+    "binary": "arcweft-runtime-plan",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-d9ce4addbae836a7.exe",
+    "sha256": "d0300ae9e6957e97e0c5a4a09f402920203ec9271acb17115668ae9247b1c956"
+  }
+]

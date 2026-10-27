@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "059ce77df778d91a5aad441844d129bec9effbab",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3240-program-fanout-frame-runtime-plan-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-27T11:32:10.2585692Z",
+  "finishedAt": "2026-10-27T11:35:13.3312421Z"
+}

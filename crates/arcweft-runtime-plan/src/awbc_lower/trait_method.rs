@@ -60,10 +60,7 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
             trait_method_path(method),
         );
         let body = body.finish(self.inventory);
-        let layout = self.inventory.intern_frame_layout(
-            format!("trait_method.{}:frame", method.id.0),
-            frame.finish(),
-        );
+        let layout = self.inventory.intern_frame_layout(owner, frame.finish());
         let public_id = self.inventory.intern_string(&public_label);
         let result = admitted_plan_type(self.inventory, self.plan, method.result);
         let signature =

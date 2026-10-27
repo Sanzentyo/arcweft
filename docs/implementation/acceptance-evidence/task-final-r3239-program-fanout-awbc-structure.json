@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "059ce77df778d91a5aad441844d129bec9effbab",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-program-fanout-awbc-structure-report"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3239-program-fanout-awbc-structure.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-27T11:27:21.6067511Z",
+  "finishedAt": "2026-10-27T11:27:26.6701400Z"
+}

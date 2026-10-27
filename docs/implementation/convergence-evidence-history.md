@@ -12617,9 +12617,37 @@ R3235は新規検証処理の関数名誤りで終了101、同一原因2診断�
 既存のvalidate_patternへ修復したR3236は、Core／runtime-planの全target・全feature・locked
 checkが終了0。各3,994入力の前後差分0。13 Rust実装pathへの検証であり、その後に追加した
 lowering fixtureの2 pathには合格を転用しない。R3237 catalogの
-終端結果はこのcheckpointの証拠に含めていない。実行結果・Clippy・構造gate・横断受入も別途確認する。
+終端結果はこのcheckpointの証拠に含めていない。実行結果・Clippy・構造gate・横断受入も、このcheckpointには未収録だった。
 
 実行側のtake_await_many_inputsはHost専用のままであり、Program fanoutの所有入力移動、
 worker schedulingと停止状態・公開保存復元は未接続として区別する。既存Native controllerと
 Generic Matchの受入を戻す判定ではない。
 [実装範囲・初回失敗・修復・原本](acceptance-evidence/task-program-fanout-awbc-lowering-checkpoint.json)。
+
+## AWBC Fanout lowering検証とfunction所有frameの修復 — 2026-10-27
+
+公開checkpoint 059ce77df778d91a5aad441844d129bec9effbab で追加したfixtureを含め、
+R3237 catalogは2 library 2,191件・除外0。R3238は2,190 PASS／1 FAIL、97.600秒。
+Coreは新しいkernel codec caseを含む全2,063件PASS、runtime-planは127 PASS／新規1 FAILだった。
+全catalogと終端集合は一致し、3,995入力と実行binary 2件の前後hash差分0。
+
+失敗はParameterLayoutMismatchだった。診断文字列をframe cacheのidentityにしていたため、
+同じpathを持つ親／workerが違う引数layoutを共有した。cacheを実AwbcFunctionIdへ移行し、
+全8呼出側を同じownerへ揃えた。同ownerのlayout不一致は生成診断にして拒否する。
+この5 Rustファイルの修復後、R3240 catalogはruntime-plan全128件・除外0、
+R3241は128／128 PASS、2.583秒。6条件の実Source lowering、canonical往復と、
+条件ごとのcontrol位置交換・自己worker参照・item入力改変の3種を拒否した。
+各3,995入力と実行binary 1件の前後差分0。Coreのbinaryは修復後もhash一致し、
+実Cargo graphにもCoreからruntime-planへの依存経路がないため、Coreの合格を再利用した。
+2 runを一つの2,191件全PASS runとは報告しない。
+
+R3238のwrapperは、監査後にcargo由来のLASTEXITCODE=100を誤って再検査して終了1となった。
+catalog照合済みの終端JSONと実nextest終了100・1失敗を保持し、後続wrapperではこの再検査を除いた。
+R3242 Core／runtime-plan Clippyは全target・全feature・locked、警告8,375メッセージあり終了0。
+R3243構造gateは終了0、blocking 0。各3,995入力の差分0で、18 Rust path／2 ownerを計測した。
+fresh Cargo metadataは全53逆依存を示し、Cargo関連100入力の変更0も確認した。
+今回の全53 runtime・workspace最終受入は未実行。Fanout固有Source照合の実行、
+AWBCの所有入力移動・worker実行・停止状態・公開保存復元も、このlowering検証の範囲外である。
+[実行・失敗と修復・原本](acceptance-evidence/task-program-fanout-awbc-lowering-acceptance.json)、
+[構造と所有者の判断](acceptance-evidence/task-program-fanout-awbc-structure-review.json)、
+[実際のCargo graph](acceptance-evidence/task-program-fanout-awbc-graph-reuse.json)。

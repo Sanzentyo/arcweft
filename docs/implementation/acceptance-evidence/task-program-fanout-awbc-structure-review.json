@@ -1,0 +1,239 @@
+{
+  "version": 1,
+  "base": "65437c438bb56a5794f45de1d1f11419f4aab6b3",
+  "checkpoint": "059ce77df778d91a5aad441844d129bec9effbab",
+  "state": "Published AWBC kernel checkpoint plus five runtime-plan frame-owner repairs; original 14 tracked WIP and 6 untracked files retained",
+  "run": "task-final-r3243-program-fanout-frame-structure",
+  "exitCode": 0,
+  "blocking": 0,
+  "sourceInputs": 3995,
+  "sourceDrift": 0,
+  "measurements": [
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+      "owner": "arcweft-core",
+      "bytes": 58331,
+      "physicalLines": 1656,
+      "basePhysicalLines": 1587,
+      "growth": 69,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime/task_tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 8335,
+      "physicalLines": 217,
+      "basePhysicalLines": 167,
+      "growth": 50,
+      "classification": "test",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 27098,
+      "physicalLines": 717,
+      "basePhysicalLines": 716,
+      "growth": 1,
+      "classification": "test",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 322575,
+      "physicalLines": 8178,
+      "basePhysicalLines": 8177,
+      "growth": 1,
+      "classification": "test",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "owner": "arcweft-core",
+      "bytes": 121355,
+      "physicalLines": 3786,
+      "basePhysicalLines": 3765,
+      "growth": 21,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify.rs",
+      "owner": "arcweft-core",
+      "bytes": 13893,
+      "physicalLines": 349,
+      "basePhysicalLines": 348,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+      "owner": "arcweft-core",
+      "bytes": 264721,
+      "physicalLines": 6769,
+      "basePhysicalLines": 6660,
+      "growth": 109,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 4631,
+      "physicalLines": 130,
+      "basePhysicalLines": 0,
+      "growth": 130,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+      "owner": "arcweft-core",
+      "bytes": 157889,
+      "physicalLines": 3926,
+      "basePhysicalLines": 3925,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task.rs",
+      "owner": "arcweft-core",
+      "bytes": 15448,
+      "physicalLines": 393,
+      "basePhysicalLines": 320,
+      "growth": 73,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/task_source/program/program_task/tests.rs",
+      "owner": "arcweft-core",
+      "bytes": 19549,
+      "physicalLines": 541,
+      "basePhysicalLines": 540,
+      "growth": 1,
+      "classification": "test",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/expr.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 76454,
+      "physicalLines": 1871,
+      "basePhysicalLines": 1872,
+      "growth": -1,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 152908,
+      "physicalLines": 3924,
+      "basePhysicalLines": 3930,
+      "growth": -6,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow/program_task.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 6105,
+      "physicalLines": 150,
+      "basePhysicalLines": 105,
+      "growth": 45,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 105769,
+      "physicalLines": 2539,
+      "basePhysicalLines": 2496,
+      "growth": 43,
+      "classification": "production",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 100548,
+      "physicalLines": 2606,
+      "basePhysicalLines": 2605,
+      "growth": 1,
+      "classification": "test",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests/program_fanout.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 12724,
+      "physicalLines": 291,
+      "basePhysicalLines": 0,
+      "growth": 291,
+      "classification": "test",
+      "embeddedTestLines": 0
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/trait_method.rs",
+      "owner": "arcweft-runtime-plan",
+      "bytes": 9532,
+      "physicalLines": 262,
+      "basePhysicalLines": 265,
+      "growth": -3,
+      "classification": "production",
+      "embeddedTestLines": 0
+    }
+  ],
+  "packages": [
+    {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+      "workspace_fan_in": "5",
+      "workspace_fan_out": "10",
+      "development_workspace_fan_in": "5",
+      "development_workspace_fan_out": "0"
+    }
+  ],
+  "rawReports": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-structure-report/dependency_edges.csv",
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-structure-report/file_metrics.csv",
+      "sha256": "fb11e672e6eae2d555f1d3721a42dcffadfab936e7970f74da22c648aaea7061"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-structure-report/findings.md",
+      "sha256": "d807d21b9cdcc5b2faf61b132211e1f576f2a618a9ff69e143caa7109c7609d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-structure-report/package_metrics.csv",
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-awbc-structure-report/public_type_duplicates.csv",
+      "sha256": "ebf8314840f2e0f221a4807fa014f201a6ac505a289adeb1d634e636c5c21375"
+    }
+  ],
+  "disposition": [
+    "Core owns inert AWBC assertions and original Source admission. Fanout metadata is checked against the retained original worker and capture ABI; it is not a copied executable authority. The 130-line verifier keeps one aggregate/worker contract together, with no I/O or new dependency direction.",
+    "Runtime-plan owns lowering and function-local frame allocation. Its cache now uses the actual AwbcFunctionId, and conflicting layouts on one owner produce an error. Diagnostic text no longer aliases separate owners; every affected caller migrated.",
+    "The 291-line dedicated lowering fixture seals the original typed Program and preserves its worker branch/delay. Six conditions exercise real lowering and canonical decoding; three metadata forgeries are rejected. The construction helper remains cohesive rather than splitting one fixture across files.",
+    "Clippy exits zero with 8375 warning messages across dependencies and repeated targets. New-file warnings were reviewed: cohesive function length, method-reference/default syntax and a fixture-only usize-to-u8 cast over the fixed five-element type/local list. No warning suppression, production budget or assertion weakening was added."
+  ]
+}

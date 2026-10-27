@@ -397,9 +397,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             self.plan,
         )
         .lower(&helper.expr);
-        let layout = self
-            .inventory
-            .intern_frame_layout(format!("pure.{}:frame", helper.name), frame.finish());
+        let layout = self.inventory.intern_frame_layout(owner, frame.finish());
         self.inventory.close_function_block(
             AwbcTerminator::Return { value: Some(value) },
             AwbcSafePointKind::Return,
@@ -886,9 +884,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         }
         let capture_slots = frame.capture_slots();
         let body = body.finish(self.inventory);
-        let layout = self
-            .inventory
-            .intern_frame_layout(format!("{path}:frame"), frame.finish());
+        let layout = self.inventory.intern_frame_layout(owner, frame.finish());
         for resume in body.resume_points {
             if let Some(point) = self.inventory.program.resume_points.get_mut(resume.index()) {
                 point.frame_layout = layout;
@@ -998,9 +994,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             role.allows_implicit_unit_completion(),
         );
         let body = body.finish(self.inventory);
-        let layout = self
-            .inventory
-            .intern_frame_layout(format!("{path}:frame"), frame.finish());
+        let layout = self.inventory.intern_frame_layout(owner, frame.finish());
         for resume in &body.resume_points {
             if let Some(point) = self.inventory.program.resume_points.get_mut(resume.index()) {
                 point.frame_layout = layout;

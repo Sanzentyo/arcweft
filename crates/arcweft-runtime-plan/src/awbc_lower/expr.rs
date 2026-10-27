@@ -1102,7 +1102,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                     AwbcTerminator::Return { value: Some(value) },
                     AwbcSafePointKind::Return,
                 );
-                let layout = inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
+                let layout = inventory.intern_frame_layout(function, frame.finish());
                 let signature =
                     inventory.intern_signature(params, Some(result_type), AwbcEffectSetId(0));
                 inventory.replace_function(
@@ -1199,8 +1199,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                             &expression,
                             &path,
                         );
-                        let layout =
-                            inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
+                        let layout = inventory.intern_frame_layout(function, frame.finish());
                         let block = body.block_start;
                         let block_len = table_range_len(block.0, inventory.program.blocks.len());
                         let params = inputs
@@ -1260,7 +1259,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 }
                 let mut body = ExprBodyBuilder::new(inventory, function);
                 lower_closure_body(inventory, &mut frame, plan, &mut body, &expression, &path);
-                let layout = inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
+                let layout = inventory.intern_frame_layout(function, frame.finish());
                 let block = body.block_start;
                 let block_len = table_range_len(block.0, inventory.program.blocks.len());
                 let params = captures

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "059ce77df778d91a5aad441844d129bec9effbab",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3242-program-fanout-libraries-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-27T11:36:32.9434691Z",
+  "finishedAt": "2026-10-27T11:38:12.6793747Z"
+}
