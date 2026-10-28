@@ -13214,3 +13214,12 @@ Core R3527は重点4/4 PASS。Compiler View R3535は全72/72 PASS、Sema R3538�
 R3516のOS1455ページング不足、R3520/R3524の3失敗、R3525のテスト型エラー、R3529の中間receiver不一致、R3530のExprId参照型エラー、R3532のhandler誤分類と、その後の修復結果は原本を保持した。以前のSema R3522の1,336件は当時の入力に限り、今回の1,337件へ合算しない。
 
 [owner checkpointと全原本](acceptance-evidence/task-dialogue-projection-owner-checkpoint.json)。このcutは重点ownerの検証を満たす中間公開であり、53package逆依存・workspace check/Clippyの最終受入は続行する。受入済みGeneric Matchや個別View境界を未完了へ戻さない。wait(Duration)のlowering欠落とDuration literalの文脈不足はR3514/R3515の個別再現として残し、CLI全43失敗が解消したとは扱わない。
+
+
+### DialogueView修復の公開とworkspace gate — 2026-10-28
+
+Source 968b6be1bdcabf348a5cb3154463f6ab52b17e26 を通常commit／non-forced pushし、parent 69db789809bf1af1021a2b91ad32997c0aea129b、tree 270bbbc9920b8070f26822cb170d236d2e69bb0f、明示224pathの全blobとpatchを照合した。元WIP14・別保持untracked6の差分0、index空を確認した。
+
+R3541はworkspace全97package・全target・全feature・lockedのcheckが終了0／268警告、R3542の同範囲Clippyも終了0／8,694警告。各3,999入力差分0。R3536構造の97package／382review trigger／blocking0とowner metricsを維持する。[公開とgate原本](acceptance-evidence/task-dialogue-projection-workspace-gates.json)。53packageの逆依存runtime matrixは別途進行中であり、このcompile結果から実行合格を推定しない。
+
+CLI資料のplan JSON説明は現行RuntimePlanReport／DialogueContentSpecWireに合わせた。旧line_display_catalog、静的catalogに解決済みframe/style cascadeがあるという説明、現在のline summaryにないflow/callee、reportにないsource policy/handler countの列挙を削除した。現在のstatic template／presentation／inline_styles／sourceとruntime frame生成の責務へ訂正した。Rust変更を伴わない資料訂正として検証する。

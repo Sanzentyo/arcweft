@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3541-dialogue-projection-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T05:56:03.8351898Z",
+  "finishedAt": "2026-10-28T05:58:06.6489249Z"
+}

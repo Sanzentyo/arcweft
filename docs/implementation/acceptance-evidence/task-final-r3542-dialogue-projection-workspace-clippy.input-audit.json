@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "run": "task-final-r3542-dialogue-projection-workspace-clippy",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T06:00:50.2229814Z"
+}

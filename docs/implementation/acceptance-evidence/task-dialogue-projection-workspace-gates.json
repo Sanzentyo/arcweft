@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "sourceCommit": "968b6be1bdcabf348a5cb3154463f6ab52b17e26",
+  "publication": "task-dialogue-projection-source-publication.json",
+  "sourceTree": "270bbbc9920b8070f26822cb170d236d2e69bb0f",
+  "publishedPaths": 224,
+  "publishedPatchSha256": "f6807bbbfce8598dad46bc35c4cdace78184fe5a4eb1d3451261a0880381eac0",
+  "status": "Both complete workspace build gates pass; the 53-package reverse runtime matrix remains running.",
+  "workspacePackages": 97,
+  "gates": [
+    {
+      "run": "task-final-r3541-dialogue-projection-workspace-check",
+      "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "warnings": 268,
+      "sourceInputs": 3999,
+      "sourceDrift": 0
+    },
+    {
+      "run": "task-final-r3542-dialogue-projection-workspace-clippy",
+      "base": "968b6be1bdcabf348a5cb3154463f6ab52b17e26",
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "warnings": 8694,
+      "sourceInputs": 3999,
+      "sourceDrift": 0
+    }
+  ],
+  "structure": "task-dialogue-projection-owner-checkpoint.json",
+  "owners": "The existing Compiler lower module owns projection from accepted semantic facts into runtime facts; it now preserves each receiver directly. Its 10,233 LOC/28 LOC growth retains that single Sans-I/O bridge, no unrelated state, duplicate schema, dependency edge or physical-split-only API. RuntimePlan, Sema, View and Core dispositions and exact metrics remain in the source checkpoint.",
+  "documentationCorrection": "docs/04-tooling/cli.md now follows RuntimePlanReport and DialogueContentSpecWire: root tree/counts, dialogue_content_catalog static template/presentation/inline-style/source records, streams and verifier counts. Deleted stale claims about line_display_catalog, static resolved render frames, line summary flow/callee fields, and source-handler/policy fields absent from this report. Dynamic CharacterDialogue configuration and style resolution belong to display-frame construction. No Rust source changes in this documentation cut.",
+  "notClaimed": "No new CLI full-run, doctest, ignored Tier2 or Native/Web image parity result is inferred from compilation gates. R3543 is a per-package all-feature runtime matrix, separately from workspace feature-union checks.",
+  "preservation": "Original WIP14 and actual untracked6 preserved; published source paths/blob identities and non-forced ref checked.",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3541-dialogue-projection-workspace-check.json",
+      "bytes": 461,
+      "sha256": "432e9e4df2e9e16b35fee1f14516a3901c7c03cc9a544f82fe670b0f847de9a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3541-dialogue-projection-workspace-check.log",
+      "bytes": 108943,
+      "sha256": "9060566464a46f57792d81c56a8c8888611fc80b26ef02e6bc8d6b8039da7250"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3541-dialogue-projection-workspace-check.input-audit.json",
+      "bytes": 329,
+      "sha256": "471785699bdfa7c5d0ece58cbb60d10aa72d6c237e1732b14db5a8ae39042163"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3542-dialogue-projection-workspace-clippy.json",
+      "bytes": 463,
+      "sha256": "860d3e332e10cbf0040edf1fff4ff4da35ca0230be1124d988c2ea3b9517b183"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3542-dialogue-projection-workspace-clippy.log",
+      "bytes": 6722507,
+      "sha256": "9541063adbbf9375a6d64aac0429e5a196ac389fec70d2fbf2f292bba709602c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3542-dialogue-projection-workspace-clippy.input-audit.json",
+      "bytes": 331,
+      "sha256": "e622e223446beb133f11c99fd5920b6d3cb0d3d819288501f143e67f1eb809e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3541.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "27a6a9e415e8c636e11fa9b945b4cc97eb728561105f7feafaf4c64bfd5ea332"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3542.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "cb64b4f43941aecea765587147357f52e9a34b3a77cda0dcc58e2aa76980e2ef"
+    }
+  ]
+}

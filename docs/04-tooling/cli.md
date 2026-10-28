@@ -207,16 +207,18 @@ runtime dry run.
 
 `arcw plan <file.arcw> [--json]` exposes the lowered Sans I/O runtime plan. It
 runs the same parse, HIR, typecheck, verifier, and line-plan lowering path as
-`arcw check`, then prints a compact line/task summary. JSON output contains each
-line plan's flow id, line id, callee, root node kind, child task count, effect
-count, trigger labels, cleanup-stack counts, and verifier diagnostic/obligation
-counts. JSON also includes `line_display_catalog`, the render-text sidecar
-lowered with the runtime plan. Each display spec includes resolved rich-text
-nodes, base styles, inline host events, and `style_contributions` with cascade
-layer, assignment operator, source kind, value, active/shadowed state, and
-source value ranges where available. Generation metadata for `source` and
-`stream` declarations is also included: entity id, item/error type text, source
-policy, handler count, stream op count, and stream yield count.
+`arcw check`, then prints a compact line/task summary. JSON `lines` contains
+each plan's root node tree and counts for child tasks, effects, captures, nodes,
+cancel rules, and cleanup actions. Task nodes include trigger, join/cancel
+policy, and the nested scope tree.
+
+`dialogue_content_catalog` contains static, source-owned line records: line and
+text-key identities, template identity and digest, checked character presentation
+plan, accepted presentation profile and revision, `inline_styles`, and source
+coordinates. Runtime display-frame construction applies the current
+`CharacterDialogue` value and resolves the style cascade. `streams` summarizes
+each stream's identity, item/error types, operation count, and yield count.
+Verifier diagnostic and obligation counts are included at the report root.
 
 ```bash
 arcw plan game/routes/opening.arcw
