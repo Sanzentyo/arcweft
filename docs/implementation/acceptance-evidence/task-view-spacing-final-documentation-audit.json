@@ -1,0 +1,18 @@
+{
+  "base": "811ee59775189cf5eb9910a53a6ed7987f2bd647",
+  "changed": [
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "checkedDocuments": 129,
+  "relativeLinks": 634,
+  "brokenLinks": [],
+  "unclosedFences": [],
+  "statusCommitIds": 40,
+  "unretainedIds": [],
+  "evidenceChanges": [],
+  "heldFiles": 20,
+  "heldDrift": 0,
+  "partialCliOriginalWipProof": true,
+  "rustCargoRun": false
+}

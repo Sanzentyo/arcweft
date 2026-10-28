@@ -1,0 +1,166 @@
+[
+  {
+    "requirement": "Spacing source/codec/provenance/cache/geometry/bounds",
+    "run": "R3508",
+    "passed": 3,
+    "failed": 0,
+    "cases": [
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "spacing::integer_pixel_spacing_reaches_canonical_style_and_physical_child_layout"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "spacing::spacing_conversion_has_exact_nonnegative_fixed_point_bounds"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "spacing::spacing_uses_the_typed_scalar_and_physical_flow_admission"
+      }
+    ]
+  },
+  {
+    "requirement": "Existing element geometry and unsupported-unit rejection",
+    "run": "R3508",
+    "passed": 2,
+    "failed": 0,
+    "cases": [
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "authored_element_geometry_inputs_reach_typed_layout"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "authored_element_geometry_refuses_units_without_a_layout_conversion"
+      }
+    ]
+  },
+  {
+    "requirement": "Actual nonempty Match Source/View authority",
+    "run": "R3508",
+    "passed": 13,
+    "failed": 0,
+    "cases": [
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::admitted_view_awbc_keeps_original_source_through_owned_restore"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::admitted_view_source_reaches_entry_flow_replacement_and_inert_restore"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::complete_product_preflights_all_retained_sources_with_one_exact_allowance"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::decoded_view_source_binding_index_is_bounded_and_rejects_a_changed_product"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::decoded_view_source_reseals_exact_original_bindings_in_a_fresh_namespace"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::every_retained_semantic_field_and_original_coordinate_is_revalidated"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::retained_definitions_round_trip_and_match_only_their_original_checked_owner"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::retained_match_source_is_required_and_rejects_unknown_definition_fields"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::view_binding_join_rejects_missing_extra_duplicate_stale_and_foreign_coordinates"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::view_binding_limits_cover_all_source_bytes_and_failure_leaves_the_slot_unbound"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::view_source_assertions_reject_missing_duplicate_and_foreign_admissions"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::view_task_bindings_resolve_only_in_the_original_completed_core_plan"
+      },
+      {
+        "binary": "arcweft-compiler::view_product",
+        "test": "match_source::view_task_key_ignores_revision_only_replacement_and_tracks_exact_match_admission"
+      }
+    ]
+  },
+  {
+    "requirement": "Budgeted dialogue output/owned-child continuation",
+    "run": "R3508",
+    "passed": 9,
+    "failed": 0,
+    "cases": [
+      {
+        "binary": "arcweft-compiler::evaluated_effects",
+        "test": "dialogue_readiness::authored_capture_steps_reveal_the_same_dialogue_before_native_and_awbc_capture"
+      },
+      {
+        "binary": "arcweft-compiler::evaluated_effects",
+        "test": "dialogue_readiness::decoded_awbc_activation_quantum_and_portable_restore_resume_once_at_the_next_step"
+      },
+      {
+        "binary": "arcweft-compiler::evaluated_effects",
+        "test": "dialogue_readiness::dialogue_drain_finishes_owned_scoped_init_defer_before_reveal"
+      },
+      {
+        "binary": "arcweft-compiler::evaluated_effects",
+        "test": "dialogue_readiness::dialogue_drain_reaches_ready_without_spending_host_steps_on_internal_activation"
+      },
+      {
+        "binary": "arcweft-compiler::evaluated_effects",
+        "test": "dialogue_readiness::dialogue_game_returns_on_reveal_after_non_presentation_init_observations"
+      },
+      {
+        "binary": "arcweft-compiler::evaluated_effects",
+        "test": "dialogue_readiness::dialogue_init_recursive_function_value_preserves_capture_and_one_op_budget"
+      },
+      {
+        "binary": "arcweft-compiler::evaluated_effects",
+        "test": "dialogue_readiness::dialogue_line_output_and_owned_child_resume_once_after_budgeted_activation"
+      },
+      {
+        "binary": "arcweft-compiler::evaluated_effects",
+        "test": "dialogue_readiness::dialogue_one_op_and_drain_budget_yield_keep_the_actual_activation_owner"
+      },
+      {
+        "binary": "arcweft-compiler::evaluated_effects",
+        "test": "dialogue_readiness::failed_dialogue_activation_never_publishes_the_reveal_frame"
+      }
+    ]
+  },
+  {
+    "requirement": "Real deterministic AWFB generator/callbacks",
+    "run": "R3508",
+    "passed": 1,
+    "failed": 0,
+    "cases": [
+      {
+        "binary": "arcweft-bundle::ime_player_rendered",
+        "test": "ime_generator_publishes_deterministic_controls_and_executable_callbacks"
+      }
+    ]
+  },
+  {
+    "requirement": "Original low and one-op Array Map parity",
+    "run": "R3508",
+    "passed": 1,
+    "failed": 0,
+    "cases": [
+      {
+        "binary": "arcweft-cli::check",
+        "test": "source_map_batch_owner_tests::source_array_map_original_low_and_one_op_budgets_keep_native_awbc_parity"
+      }
+    ]
+  }
+]

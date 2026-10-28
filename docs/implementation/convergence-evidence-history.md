@@ -13174,3 +13174,30 @@ R3497はCore／View／Bundle 2,650／2,650 PASS、R3499はCompiler view_product�
 | Need／TaskPlan の共通 seal・Source admission／scheduler | **codec／資源計測の修復はCore全件・全53逆依存で検証済み。全14の最終受入は未確認** | `TaskHandleType` はNeed／ThreadHandleとpayloadを同時に保持し、実行方式から型を分離する。borrowed preflightも同じtag grammarを使用し、descriptorはcarrierとpolicyを一つの制御byteへ保持する。R3118と統合R3121でCore 2,080／2,080 PASS、前回のcodec 39失敗・nodes 3失敗が全PASS。未知tag拒否も確認し、製品の上限・assertionは維持した。[修復照合](acceptance-evidence/task-handle-codec-core-acceptance.json)。sealed plan／元ProgramのSource lease／expected-key、Program capture role、Host／Webの退役metadata公開の受入履歴を維持する。[以前の必須ケース照合](acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.acceptance-audit.json)。全producer／builder／decoder／consumerのF/Q/C/E14、private-codec、View capabilityを含む最終受入は未確認。Host requestの14 variantとNeed producerの10 familyは別分類。 |
 
 [実測・分類・変更範囲](acceptance-evidence/task-common-seal-acceptance.json)、[公開full SHA・tree・blob照合](acceptance-evidence/task-common-seal-source-publication.json)。現状の唯一の一覧は[current-status.md](current-status.md)。
+
+## Row／Column Spacing の typed Style 接続と全逆依存検証 — 2026-10-28
+
+Source baseはd3035b074f7bb7e2fdd41c52006ab9a9431fd295、公開Sourceは811ee59775189cf5eb9910a53a6ed7987f2bd647。新しい並行layoutやscalar interpreterを設けず、元の整数px文法をSemaの共通compile-time scalar factへ確定し、ViewElementArgumentRoleの物理property規則から既存のinline Style／geometryへ接続した。RowはColumnGap、ColumnはRowGap。0を受理し、負値・固定小数点変換overflow・型／重複／対象違い・runtime値を拒否する。version 1、元のwork／budget／capture／assertion条件は維持した。
+
+R3503は新規test期待寸法のi32／u32不一致2か所でcompile終了101。checked変換に修復し、R3504 catalogueとR3505対象3件はPASSした。最初の失敗receipt／log／input freezeは公開checkpointに保持した。R3507 canonical構造gateは97 package、382 review trigger、blocking 0、3,999入力差分0。大きい既存ownerの責任と正当なtyped roleへのproperty集約をmetricsへ記録した。
+
+R3508は全41逆依存packageを選択し、38 packageの4,955件を実行。4,912 PASS（79 slow）／43 FAIL／39 skipped、終了100。全失敗が既存の同じ43 CLI IDで、新規・解消IDとも0。全CLIは692件中649 PASS／43 FAILで23 ignoredを未実行。Compiler 640、Sema 1,358、View 201、Bundle 329は全PASS。Compiler View integration全72件にはSpacing新規3件と実Match Source 13件を含む。実AWFB生成二回の決定性とcallbacks、元の低予算／1-op Array Map parityもPASS。3,999入力・187実行ファイル・catalog／source／終端／実行ファイル差分0。
+
+R3509 workspace全target／全feature checkは終了0・268警告。R3510の同じworkspace Clippyは終了0・8,691警告。各3,999入力差分0。新規Spacing testのcohesiveなcodec／cascade／geometry検査には関数長のClippy警告1件がある。39 ignoredの包括Tier 2、Native/Web画像parity、動的Spacing、Native公開saveの受入へ拡張しない。既存のGeneric Match・loop・HIR・View・共通sealの受入は維持する。
+
+訂正理由: 以前の現状一覧にあったSpacingのcompiler拒否は今回の実装と受入で解消したため、残作業列挙から削除した。CLIはR3494の43件限定runから現行692件の全件runへ更新した。以下の旧一覧行と旧横断表は履歴であり、現在の残作業ではない。
+
+| retained View の operation／slot／capture 全体 | **実装済み範囲あり・全体の最終受入は未確認** | Match／conditional／repeat／local lowering、mount cache／snapshot、Source／resource／restoreの既受入範囲を維持する。残るSpacingのcompiler拒否やNative/Web描画parityを、完了したcallable-owner認証や子ブロックへ戻さない。[確認した未達範囲](acceptance-evidence/task-view-body-reverse-acceptance.json)。 |
+
+| CLI・全 consumer の統合受入 | **R3494で残る43件を限定再実測：0 PASS／43 FAIL。統合受入は未完了** | 先行45件のうち旧期待値2件は、採用契約との矛盾を訂正し、元の2／3-step prefixと追加の実行確認をR3491で検証した。残る43件は同じ識別子集合でFAIL、新規失敗ID 0。現catalogは非ignored 692件／ignored 23件だが、今回の限定runを全692件の再実行・合格件数へ合算しない。先行R3483の全691件646 PASS／45 FAILは履歴へ保持する。[現在の43失敗と適用範囲](acceptance-evidence/task-cli-failures-after-dialogue-contract.json)。 |
+
+## 横断検証の適用範囲
+
+| 対象・入力 | 実際の結果 | 適用範囲・原本 |
+|---|---|---|
+| 対話の現契約・実行確認 | **R3491：12／12 PASS** | 全9 Compiler dialogue_readiness caseと現CLI 3件。実際の対象は2 package、feature統合は従来の16 packageと同じ構成。元の2／3-step prefix、追加の子実行／回収、typed line out実値、既存のquantum／portable saveを含む。3,998入力・102 EXE・catalog／source／終端／EXE差分0。[受入範囲](acceptance-evidence/task-dialogue-prefix-acceptance.json)。 |
+| 残るCLI失敗の限定再実測 | **R3494：43実行／0 PASS／43 FAIL** | R3483の他43 IDと一致。現catalog非ignored 692件の全件runではない。3,998入力・102 EXE・catalog／source／終端／EXE差分0。[現在の識別子](acceptance-evidence/task-cli-failures-after-dialogue-contract.json)。 |
+| 共通sealと実View authorityのowner検証 | **R3497：2,650／2,650 PASS、R3499：69／69 PASS** | Core 2,120・View 201・Bundle 329の全target／全featureと、別runのCompiler view_product全69件。各3,998入力・catalog／source／終端差分0、実行ファイル47／1の差分0。Bundleは実AWFB generatorを二回実行した決定性・codec検査もPASSした。全53逆依存やNative/Web画像parityの新しい合格とはしない。[受入範囲・原本](acceptance-evidence/task-common-seal-acceptance.json)。 |
+| 今回の変更ownerのgate | **R3500通常feature check／R3501全feature Clippy：終了0、R3502 Core doctest：76／76 PASS** | Coreの全target checkは189警告、Core／View／Bundleの全target Clippyは3,845警告、Core doctestは164警告。locked、各3,998入力差分0。privateな抑制・test用getter・説明だけの変更で、アルゴリズム／public API／codec／依存方向／work・budgetは不変。以前のworkspace・全53逆依存の結果は元入力の証拠として保持し、今回の全workspace／Tier 2実行とは扱わない。[現物metrics・選定根拠](acceptance-evidence/task-common-seal-acceptance.json)。 |
+
+[最終受入・全件原本・比較元](acceptance-evidence/task-view-spacing-acceptance.json)、[実装checkpoint・初回失敗](acceptance-evidence/task-view-spacing-owner-checkpoint.json)、[公開full SHA・tree・blob](acceptance-evidence/task-view-spacing-source-publication.json)。唯一の現状一覧は[current-status.md](current-status.md)。

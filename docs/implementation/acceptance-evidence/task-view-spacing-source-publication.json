@@ -1,0 +1,164 @@
+{
+  "version": 1,
+  "commit": "811ee59775189cf5eb9910a53a6ed7987f2bd647",
+  "parent": "d3035b074f7bb7e2fdd41c52006ab9a9431fd295",
+  "tree": "f9ff2a9f77eba0914d6f9b1efb0a5452f2ba6c2a",
+  "remote": "811ee59775189cf5eb9910a53a6ed7987f2bd647",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/src/view.rs",
+      "blob": "f551e262da590338329d3e7246879c50aee246ad"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/view_product.rs",
+      "blob": "fc6423091f99b270ef83a5d86b6a8dde3459ab50"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/view_product/spacing.rs",
+      "blob": "868446d0fa5617260f75515c2f39a7854afbdcee"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "blob": "36f53ed56c48558383bb54bae4c267c0e5092f73"
+    },
+    {
+      "path": "crates/arcweft-view/src/element_argument.rs",
+      "blob": "bb16a407d5680b4650301c5f44a4158dd637d01a"
+    },
+    {
+      "path": "docs/03-presentation/view-reactive.md",
+      "blob": "59d211a192454ccb49adfa27a6dd442914d195f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3503-program-fanout-awbc-check.input-audit.json",
+      "blob": "3d981d6c28b2218ba8b1a7e5e696285f212fa205"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3503-program-fanout-awbc-check.json",
+      "blob": "5059327585af04d971907b2928ca9599496032a4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3503-program-fanout-awbc-check.log",
+      "blob": "60b7a88b2bfad6a804aee5e22d0ea5673292b834"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3504-program-fanout-awbc-check.input-audit.json",
+      "blob": "3f91e7f70c321bf7cc69002cf6c5104b02c4a1ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3504-program-fanout-awbc-check.json",
+      "blob": "f48341f26fe3c1c7df29e64496916548582f73e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3504-program-fanout-awbc-check.log",
+      "blob": "0c683334c662f9c5a735a764fcb030dc577c9450"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3505-program-fanout-runtime.binaries-before.json",
+      "blob": "ad0058b7292226c452de0c3292d53575f436c19e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3505-program-fanout-runtime.json",
+      "blob": "a560d47750e5171b6738608d5a6049bb034d18c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3505-program-fanout-runtime.log",
+      "blob": "24ba0f5d9577ac548d4d380bae6e16a17f5cb7c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3505-program-fanout-runtime.terminal-audit.json",
+      "blob": "78e79cdb57a156c4dc6e626fa13df53b8109d1cb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3507-view-spacing-structure.input-audit.json",
+      "blob": "7f46c91a1cfc66eedc56fa275c30c332fd62eab6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3507-view-spacing-structure.json",
+      "blob": "a1a532574e596c79ce282ea7cf80cb657a07687d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3507-view-spacing-structure.log",
+      "blob": "341901f158350d02fa304e58030016c60f4f0a1d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3503.source-freeze.json",
+      "blob": "1d03efe63bbc5c4f471ee2a2953154417e2667ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3504.inventory.json",
+      "blob": "f5d149720f1f5d014b991642861de2bf488293fa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3504.source-freeze.json",
+      "blob": "58a0c1ebe1142e4f15ef516222d4e93253d9e28c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-spacing-contract-documentation-audit.json",
+      "blob": "310615070add5ce54868fabf62dcfebb73e4474a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-spacing-owner-checkpoint.json",
+      "blob": "4e7c456c75fc27b0ebb242f4f7fdf85480a41f59"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-spacing-structure-dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-spacing-structure-file_metrics.csv",
+      "blob": "200e81c26337365a2d2813592b62256c30b4662b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-spacing-structure-findings.md",
+      "blob": "05b08b2dbb0129ef8e7f1cac233547893a0f4a8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-spacing-structure-package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-spacing-structure-public_type_duplicates.csv",
+      "blob": "529e60a89c8d071d2dc29a20136e9a3fcbcc61c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-spacing.metrics.json",
+      "blob": "6cda3ae2220e15caa2d54c0d4984b87a690e4fbd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-spacing.reverse-closure.json",
+      "blob": "61e27853fcfaf9fadae64039134717be7259cf97"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "357a2a9999c5c6a6c93b95b4782fce8840caaa3dcbd1fc75666f446e587325b2",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/cversions.2.db",
+      "sha256": "0a663bab44fb88a42eaa6baf3ca97d6ca12c908a381ebfe0345b0b6a8cc26718"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{1E4C1AA0-BDDF-4BED-9D46-82216ABE6FC9}.2.ver0x0000000000000001.db",
+      "sha256": "d5e46fe3ef5394cfaa82d43938309cfcefe34cde101a332faa4b03b4495a97c0"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{6AF0698E-D558-4F6E-9B3C-3716689AF493}.2.ver0x0000000000000001.db",
+      "sha256": "fddbe41aa053eb78db27964f6f4dbd3e7b4cfb7146873d12ea134f797b10fd86"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{DDF571F2-BE98-426D-8288-1A9A39C3FDA2}.2.ver0x0000000000000001.db",
+      "sha256": "73218cd563fe76ceb5f4cbf07409dd43f276b1b6e421e115292b684281987b8d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-bench-repair.md",
+      "sha256": "950a9b981f523ec75b732c44c461c436a859f7d1e17b8598c350f8a878fa444d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-observe-repair.md",
+      "sha256": "144da5bd821a03b495ed632e9dcacf53e55cf0aa30d1dd40f894c1339f880100"
+    }
+  ],
+  "indexEmpty": true,
+  "at": "2026-10-28T04:06:23.0071927Z"
+}
