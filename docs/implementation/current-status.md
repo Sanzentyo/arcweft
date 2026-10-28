@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-28。確認したmainはf243a519a73dc0bd528a6d3a6720aec63e0cf5bb。受入と未達は各行の境界・検証範囲で判定する。
+確認日: 2026-10-28。確認したmainはb19bca70cbb4c80b520ac2e396f7e11a6f03ad25。受入と未達は各行の境界・検証範囲で判定する。
 元のtracked WIP 14件とuntracked実ファイル6件を保持したcheckoutで確認した。各検証は凍結入力に限り、公開canonicalと保持WIPの差分を同一視しない。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
@@ -58,7 +58,7 @@
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、受理済みProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗。checkpointに元executable leaseを保持させ、復元先を同leaseのadmitted Productに限定し、Product／activation／codegenの呼出側も同じadmissionへ移行。R2535の新規Core caseはhandleを取り出して破棄した候補から復元でき、同内容の別leaseは元fiberを保って拒否。private checkpointは非Serde。公開wire DTOのJSON／cleanup検証とR2531 compile-fail 2件PASS、detached Bool入力rollbackを維持。公開saveの全資源境界の包括受入は別。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
-| waitのDuration文脈／RuntimePlan投影 | **具体的な未達を再現・修復対象** | 基点69db789809bf1af1021a2b91ad32997c0aea129bのR3514でwait(0.1s)はExpressionTypeUnavailable、R3515でDuration parameterはSemaを通るがWait statementのchecked core projectionがないためruntime-plan-lowerで拒否する。bare waitは文法違反でありこの不具合に含めない。対話・Generic Match等の既受入を戻す根拠とはしない。[再現sourceと診断](acceptance-evidence/task-cli-plan-contract-r3515.json)、[literalの診断](acceptance-evidence/task-cli-plan-contract-r3514.json)。 |
+| waitのDuration文脈／RuntimePlan投影 | **Duration文脈・確定operandはSema検証済み・実行接続は実装中** | R3514のwait(0.1s)拒否へ既存Duration文脈を接続し、checked suspensionが元targetを保持・validationとversion1 transcriptが同じoperandを照合する。R3546 Sema library全1,339件PASS、通常関数・Duration parameter・小数秒・異なるstatementのoperand差し替え拒否を含む。R3515で再現したRuntimePlan Wait投影の欠落は未修復で、Native/AWBCの実待機・停止復帰は未受入。bare waitは文法違反として区別し、他の既受入を戻さない。[変更・実測・残る実行接続](acceptance-evidence/task-wait-sema-owner-checkpoint.json)。 |
 | CLI・全 consumer の統合受入 | **R3508全CLI：649 PASS／43 FAIL。統合受入は未完了** | 現在の全692非ignored件を再実行し、23 ignored件は実行していない。43失敗の識別子はR3494限定runと完全一致し、新規・解消IDとも0。以前の43件限定runを全件の合格件数へ合算せず、今回の全件実測へ更新した。全逆依存では4,955実行／4,912 PASS／同じ43 FAIL、他packageの失敗0。[全件・識別子・適用範囲](acceptance-evidence/task-view-spacing-acceptance.json)。 |
 | LSP signature stampのcache／publication拒否 | **fixture準備順を修復・LSP全223件PASS** | disk-backed alternate environment 6種をrequest admissionより前へ構築する。prepared mutationを同じ型付き代数で保持し、request中はauthority差し替えと検査を行う。19 mutation×cache-hit／post-computeの38組、正確なstale型／cache不変／publication拒否のassertionと10秒deadlineを維持。R3129は223／223 PASS、R3130 Clippyは警告あり・終了0、各3,987入力の前後差分0。[修復と限定影響](acceptance-evidence/task-signature-stamp-staging-acceptance.json)。 |
 | その他のTier 2／Native-Web capture parity | **最終受入未確認** | HIR Tier 2の8件は該当行の範囲。他ownerの本番上限・停止復帰と、Native/Webのcapture・実画像parity全体を満たす最終実行は確認できていない。既存の個別検証は履歴に保持し、未実行を失敗とはしない。 |
@@ -70,7 +70,7 @@
 |---|---|---|
 | Core／Sema／RuntimePlan／Compilerの逆依存 matrix | **R3543：4,406／4,406 PASS・11 package確認／42 package未完了** | 全53のpackage別全feature matrix。実行した10 packageは全PASS、arcweft facadeはnative matching caseなし。Agent REPL／Runner／Browser Benchの3catalogueは容量不足下のlink／write failureで終了101、Bundle catalogueは中断。3,999入力・完了runtimeのcatalog／EXE差分0。incremental cache約266.6GBの削除は自動承認レビューに拒否され未実施・入力待ち。[対象・実測・残対象・原本](acceptance-evidence/task-dialogue-projection-reverse-partial.json)。 |
 | View／Sema／Compilerの全逆依存 | **前回完走 R3508：4,955実行／4,912 PASS／43 FAIL／39 skipped** | 解決済みgraphの41 packageを選択し、実際のtestは38 package。arcweft／bundle-assets／render-webはnativeのmatching caseがなく、workspace gateでcompileした。Compiler 640・Sema 1,358・View 201・Bundle 329件が全PASS、Compiler View integration全72件と実Match Source 13件を含む。3,999入力・187 EXE・catalog／source／終端／EXE差分0。[終端照合・package別件数](acceptance-evidence/task-view-spacing-acceptance.json)。 |
-| workspace gate／構造 | **R3541 check／R3542 Clippy／R3536構造gate：終了0** | workspace全97 packageの全target／全feature・lockedでcheck 268警告、Clippy 8,694警告。各3,999入力差分0。構造は382 review trigger／blocking0、現物metricsと各ownerの責任を記録した。Source 968b6be1bdcabf348a5cb3154463f6ab52b17e26の公開224path/blob照合済み。逆依存runtime・doctest・Tier 2・画像parityの結果は個別に扱う。[実行原本・公開・責任境界](acceptance-evidence/task-dialogue-projection-workspace-gates.json)。 |
+| workspace gate／構造 | **R3547 check／R3549 Clippy／R3548構造gate：終了0** | SemaのWait operand変更を含む凍結入力で、workspace全97package・全target・全feature・locked。check 268警告、Clippy 8,694警告、各3,999入力差分0。構造382review trigger／blocking0。Sema libraryの1,339 PASSと、それ以前のR3543逆依存subsetの入力を混同しない。[実行原本・責任境界](acceptance-evidence/task-wait-sema-owner-checkpoint.json)。 |
 
 過去runの件数・失敗・full SHAは[検証履歴](convergence-evidence-history.md)と各原本へ保持する。異なる入力のrunを最新結果へ合算しない。
 

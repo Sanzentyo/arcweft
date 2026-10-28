@@ -2179,8 +2179,9 @@ fn push_complete_statement_facts(module: &HirModule, input: &mut FinalSemanticAn
                 }))
             }
             HirStmtKind::Yield { .. } => PreparedStatementPayload::Yield,
-            HirStmtKind::Wait { .. } => {
-                PreparedStatementPayload::Suspension(Box::new(CheckedSuspensionStatement::Wait))
+            HirStmtKind::Wait { target } => {
+                let suspension = CheckedSuspensionStatement::Wait { target: *target };
+                PreparedStatementPayload::Suspension(Box::new(suspension))
             }
             HirStmtKind::Let { .. }
             | HirStmtKind::LetElse { .. }

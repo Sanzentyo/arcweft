@@ -366,7 +366,7 @@ impl Analyzer<'_, '_, '_> {
                     });
                 }
                 Ok(PreparedStatementPayload::Suspension(Box::new(
-                    CheckedSuspensionStatement::Wait,
+                    CheckedSuspensionStatement::Wait { target: *target },
                 )))
             }
             HirStmtKind::Let { .. }

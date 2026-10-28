@@ -211,7 +211,7 @@ pub(super) fn expression_requests_for_statement(
         HirStmtKind::Wait { target } => {
             requests.push(StatementScrutineeExpressionRequest {
                 owner: *target,
-                expected: None,
+                expected: Some(StatementScrutineeExpressionType::Duration),
             });
         }
         HirStmtKind::On { trigger, .. } => match trigger {

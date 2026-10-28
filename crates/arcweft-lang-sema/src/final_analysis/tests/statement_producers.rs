@@ -588,7 +588,7 @@ fn p28_wait_producer_requires_a_duration_operand() {
     assert!(matches!(
         report.statement(owner).expect("checked wait statement").payload(),
         CheckedStatementPayload::Suspension(suspension)
-            if matches!(suspension.as_ref(), CheckedSuspensionStatement::Wait)
+            if matches!(suspension.as_ref(), CheckedSuspensionStatement::Wait { .. })
     ));
 
     let wrong_type = fixture("flow row { wait(true) }\n", None);
@@ -607,6 +607,64 @@ fn p28_wait_producer_requires_a_duration_operand() {
         super::analyze(&mark_operand).is_err(),
         "unresolved mark operand must not publish a wait report"
     );
+}
+
+#[test]
+fn wait_duration_context_keeps_fractional_and_computed_operands() {
+    for source in [
+        "flow row { wait(0s) }\n",
+        "flow row { wait(0.1s) }\n",
+        "flow row { wait(0.35s) }\n",
+        "flow row(delay: Duration) { wait(delay) }\n",
+        "fn delay() -> Duration { 0.1s }\nflow row { wait(delay()) }\n",
+    ] {
+        let world = fixture(source, None);
+        let report = super::analyze(&world).expect("the Wait owner provides Duration context");
+        let owner = statement_owner_for_tag(&world, MATRIX[11].tag);
+        let HirStmtKind::Wait { target } = root_module(&world).resolve_stmt(owner).unwrap().kind()
+        else {
+            panic!("Wait fixture")
+        };
+        let CheckedStatementPayload::Suspension(suspension) =
+            report.statement(owner).unwrap().payload()
+        else {
+            panic!("accepted suspension")
+        };
+        assert_eq!(
+            suspension.as_ref(),
+            &CheckedSuspensionStatement::Wait { target: *target }
+        );
+        assert_eq!(
+            report
+                .expression(*target)
+                .and_then(|fact| fact.value_type()),
+            Some(&crate::types::TypeKind::Duration)
+        );
+    }
+}
+
+#[test]
+fn wait_publication_rejects_another_statements_duration_operand() {
+    let world = fixture("flow row {\n    wait(1s)\n    wait(2s)\n}\n", None);
+    let waits = root_module(&world)
+        .statements()
+        .filter_map(|(owner, statement)| match statement.kind() {
+            HirStmtKind::Wait { target } => Some((owner, *target)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(waits.len(), 2);
+    let result = analyze_with_statement_mutation(
+        &world,
+        waits[0].0,
+        PreparedStatementPayload::Suspension(Box::new(CheckedSuspensionStatement::Wait {
+            target: waits[1].1,
+        })),
+    );
+    assert!(matches!(
+        result,
+        Err(FinalSemanticAnalysisError::WrongPayloadFamily)
+    ));
 }
 
 #[test]

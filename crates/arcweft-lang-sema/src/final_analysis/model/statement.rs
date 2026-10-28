@@ -199,7 +199,8 @@ impl CheckedAssignment {
 /// Complete semantic disposition for one suspension statement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedSuspensionStatement {
-    Wait,
+    /// Exact once-evaluated Duration operand admitted by this statement.
+    Wait { target: ExprId },
 }
 
 /// Non-child meaning of one accepted trigger.

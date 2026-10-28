@@ -237,7 +237,17 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::For(_), CheckedStatementPayload::Iteration(iteration)) => {
                 iterations.push(iteration.as_ref().clone())
             }
-            (HirStmtKind::Wait { .. }, CheckedStatementPayload::Suspension(suspension)) => {
+            (HirStmtKind::Wait { target }, CheckedStatementPayload::Suspension(suspension)) => {
+                assert_eq!(
+                    suspension.as_ref(),
+                    &CheckedSuspensionStatement::Wait { target: *target }
+                );
+                assert_eq!(
+                    report
+                        .expression(*target)
+                        .and_then(|fact| fact.value_type()),
+                    Some(&crate::types::TypeKind::Duration)
+                );
                 suspensions.push(suspension.as_ref().clone())
             }
             (HirStmtKind::CancelRule { .. }, CheckedStatementPayload::Trigger(trigger)) => {
@@ -1471,8 +1481,14 @@ fn checked_match_dialogue_wait_reaches_checked_statement_path_and_changes_digest
         two_seconds.match_value_type,
         Some(crate::types::TypeKind::String)
     );
-    assert_eq!(one_second.suspensions, [CheckedSuspensionStatement::Wait]);
-    assert_eq!(two_seconds.suspensions, [CheckedSuspensionStatement::Wait]);
+    assert!(matches!(
+        one_second.suspensions.as_slice(),
+        [CheckedSuspensionStatement::Wait { .. }]
+    ));
+    assert!(matches!(
+        two_seconds.suspensions.as_slice(),
+        [CheckedSuspensionStatement::Wait { .. }]
+    ));
     assert_ne!(one_second.semantic_digest, two_seconds.semantic_digest);
 }
 

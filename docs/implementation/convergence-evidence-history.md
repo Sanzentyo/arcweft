@@ -13234,3 +13234,12 @@ Agent REPLでLNK1140／LNK1201が発生し、D:空き78,458,880byteを実測し�
 D:\git\arcweft\target\debug\incremental はworkspace内の非reparseディレクトリで、304,242file／266,574,182,502byte。削除前に全build process停止と絶対pathを検査したが、削除command自体を自動承認レビューがblocked by policyとして実行前に拒否した。削除は行っておらず、ユーザー入力を要求中。別commandでの削除、artifact移動、debug/profile/jobs変更による迂回は行わない。[中断原本・再開条件・公開照合](acceptance-evidence/task-dialogue-projection-reverse-partial.json)。
 
 現状表の横断範囲に重複していたCLIの同一件数行は削除し、CLI項目を現在値の一か所とした。過去runの原本・SHA・前回完走R3508の適用範囲は保持した。容量不足や全体goalの未達を理由に、完了したGeneric Matchや今回のowner修復を未実装へ戻さない。
+
+
+## waitのDuration文脈と確定operandの意味解析 — 2026-10-28
+
+確認したmain b19bca70cbb4c80b520ac2e396f7e11a6f03ad25。元WIP14・untracked6を保持し、Sema所有8sourceを変更した。wait(0.1s)がDuration文脈を得ない実測の欠落へ、既存のstatement scrutineeのDuration authorityを接続した。Waitのchecked suspensionに元targetを保持し、最終validationで同じWait child／Duration型を要求する。version1 transcriptにも安定operand coordinateを含めた。新たな構文・型resolver・並列fact catalogは作らない。
+
+R3546はSema library全1,339/1,339 PASS、除外0。0s／0.1s／0.35s、Duration parameter、通常関数の戻り値と、別statementの同じDuration型operandへ差し替える負例を含む。既存Bool／mark拒否とMatch statement corpusのassertionを保ち、元Wait childとDuration型の照合を追加した。1 EXE／3,999入力・catalog／終端差分0。R3544 Sema全target check、R3547 workspace全97package・全target・全feature・locked check、R3549同範囲Clippyは終了0。R3548構造は382 review trigger／blocking0。
+
+[owner checkpoint・全原本・責任境界](acceptance-evidence/task-wait-sema-owner-checkpoint.json)。これはSemaのcoherentな中間cutであり、RuntimePlanのsuspension consumerとWait lowering、Coreの評価済みDuration、Native/AWBC・codec・実停止復帰を含む全体の実装を継続する。CLIの新規合格やWaitの実行完了を推定しない。現在のR3543は以前の凍結入力の4,406 PASSと容量不足中断として保持し、今回の1,339件へ合算しない。cache削除は依然未実施であり、debug/profile/jobs・budget・assertionの条件を変更していない。

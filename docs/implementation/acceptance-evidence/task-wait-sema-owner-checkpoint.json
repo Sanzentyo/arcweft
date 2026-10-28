@@ -1,0 +1,260 @@
+{
+  "version": 1,
+  "base": "b19bca70cbb4c80b520ac2e396f7e11a6f03ad25",
+  "status": "Coherent Sema source checkpoint. Duration context and exact suspension operand are verified; complete Wait runtime implementation remains pending.",
+  "change": "Use the existing statement Duration context for wait, including fractional literals. CheckedSuspensionStatement::Wait owns its exact ExprId target. Final validation requires the original Wait child and a completed Duration type, and transcript version1 includes the exact stable operand coordinate.",
+  "tests": {
+    "run": "R3546",
+    "summary": "Summary [  26.710s] 1339 tests run: 1339 passed, 0 skipped",
+    "executed": 1339,
+    "passed": 1339,
+    "failed": 0,
+    "skipped": 0,
+    "catalogCaseDrift": 0,
+    "executables": 1,
+    "executableDrift": 0,
+    "sourceInputs": 3999,
+    "sourceDrift": 0,
+    "cases": "Zero/integer/fractional duration literals, Duration parameter and ordinary function return are accepted. A different statement Duration target is rejected at final publication. Existing Bool and mark rejection and complete accepted Match statement transcript coverage remain."
+  },
+  "gates": [
+    {
+      "run": "task-final-r3544-wait-sema-check",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "warnings": 197,
+      "sourceInputs": 3999,
+      "sourceDrift": 0
+    },
+    {
+      "run": "task-final-r3547-wait-workspace-check",
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "warnings": 268,
+      "sourceInputs": 3999,
+      "sourceDrift": 0
+    },
+    {
+      "run": "task-final-r3548-wait-structure",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--write",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-wait.structure",
+        "--fail-on-blocking"
+      ],
+      "exitCode": 0,
+      "warnings": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0
+    },
+    {
+      "run": "task-final-r3549-wait-workspace-clippy",
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "warnings": 8694,
+      "sourceInputs": 3999,
+      "sourceDrift": 0
+    }
+  ],
+  "structure": {
+    "workspacePackages": 97,
+    "reviewTriggers": 382,
+    "blockingViolations": 0,
+    "reports": [
+      {
+        "path": "docs/implementation/acceptance-evidence/task-wait-sema-structure-dependency_edges.csv",
+        "bytes": 77451,
+        "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+      },
+      {
+        "path": "docs/implementation/acceptance-evidence/task-wait-sema-structure-file_metrics.csv",
+        "bytes": 327790,
+        "sha256": "ed3d78be97628c77e4032baa02156886f006bb6f224659b02741f6719e5cea65"
+      },
+      {
+        "path": "docs/implementation/acceptance-evidence/task-wait-sema-structure-findings.md",
+        "bytes": 122295,
+        "sha256": "2bda1bf2b066e97607b88570eb87c0cadca674bdaf92d3c544a32e2fce123a4a"
+      },
+      {
+        "path": "docs/implementation/acceptance-evidence/task-wait-sema-structure-package_metrics.csv",
+        "bytes": 6444,
+        "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+      },
+      {
+        "path": "docs/implementation/acceptance-evidence/task-wait-sema-structure-public_type_duplicates.csv",
+        "bytes": 17121,
+        "sha256": "fea9a91c5539bf00f0667c602500f9cfb7f7b626e071788eb7075bb7b859de20"
+      }
+    ],
+    "disposition": "task-wait-sema.metrics.json"
+  },
+  "pending": "RuntimePlan currently discards the suspension payload and has no Wait lowering. Migrate global/specialized statement consumers, Core evaluated Duration effect, Native/AWBC execution, source codec and effect ABI together. Exercise actual time advancement, source order, continuation/save/cancel and typed/forged operand rejection. Complete reverse dependencies: Sema closure22 is recorded; Core changes will require the complete Core closure53.",
+  "resources": "No cache deletion, artifact copy/move, profile/debug/jobs change or test/budget reduction. R3543 remains interrupted for its earlier source due disk exhaustion; its 4406 passes are not summed into R3546 or relabeled as new input. The specific cache deletion request remains pending.",
+  "preservation": "Original tracked WIP14 and actual untracked6 remain separate. Generic Match and other accepted boundaries are preserved. This source checkpoint is an intermediate part of the complete implementation, not a smaller replacement objective.",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3544-wait-sema-check.input-audit.json",
+      "bytes": 326,
+      "sha256": "7484c2531faef067b2f5a59aad20097478af7634344ec41d29bdd839a8031abd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3544-wait-sema-check.json",
+      "bytes": 515,
+      "sha256": "af1a203a1d6faba91b06f0acad985b206e446ccf37d75652b661f2e3a3249093"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3544-wait-sema-check.log",
+      "bytes": 83586,
+      "sha256": "8d1fb28a9ccc62cd8df4f9ea9920b4e0e294cefc4edab8de38af8f524d4b7f15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3545-wait-sema-catalog.input-audit.json",
+      "bytes": 373,
+      "sha256": "871bfcf527d4e8c397ea6199368ac1e435c162ccad677e03e2c4e8b4f57c7b64"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3545-wait-sema-catalog.json",
+      "bytes": 505,
+      "sha256": "163202affc95f308d142e69e352b7cfb337691572c5dec4b54a55a9a0a2a7b95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3545-wait-sema-catalog.log",
+      "bytes": 306973,
+      "sha256": "eaae650a22980a3a5b50599cf96c0d5cc81b458d8a1bf6bb63f4d8091e00f463"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3546-program-fanout-runtime.binaries-before.json",
+      "bytes": 212,
+      "sha256": "5c29dfddb3beee8e2dde84ab9191fabedc5b6f4acc70fc85bb2871ad94c5500e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3546-program-fanout-runtime.json",
+      "bytes": 602,
+      "sha256": "f129643157bc3e3e2769edf8aab78cd5eeb81e57b6ca3dc17f895d00cb7c1394"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3546-program-fanout-runtime.log",
+      "bytes": 497451,
+      "sha256": "a48bce4a377f7c6c282333c79abb62803ca56f0c6c2eea01d010df8bf43e9109"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3546-program-fanout-runtime.terminal-audit.json",
+      "bytes": 620,
+      "sha256": "b2a41d67c3ecb27175fffb8f8023b6d7c3d0cf4155a27f8fab6a31fa2f687a7a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3547-wait-workspace-check.input-audit.json",
+      "bytes": 314,
+      "sha256": "68972090e48fa7d5b8c32cf6fb5832e3d284992ccc12dbc65068db2cf34dcee8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3547-wait-workspace-check.json",
+      "bytes": 446,
+      "sha256": "a1af470e581139074b4e626e22cd200acd2629008505077cf78673fa1c211265"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3547-wait-workspace-check.log",
+      "bytes": 106247,
+      "sha256": "ffde941b2b8baee340412f8da2eb7ffa1b3609df4f0b824da8f61c507b0c6155"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3548-wait-structure.input-audit.json",
+      "bytes": 457,
+      "sha256": "cbf989104376d044441a8558c65a986b5ffff04658e8e5343dccaf4dec5da347"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3548-wait-structure.json",
+      "bytes": 716,
+      "sha256": "394380cc76bafb42e78b6d173351d9c5e472ce139fe3eec4d53ed7e4edce1b40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3548-wait-structure.log",
+      "bytes": 65006,
+      "sha256": "375e4d442a26286ce26b6ec9883ab66b233815ec47266a31a62b3cdc76fc1111"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3549-wait-workspace-clippy.input-audit.json",
+      "bytes": 316,
+      "sha256": "62c178a2df751459f758bd08cb396b002b519ba1bbc618bd9deda8ceb4792971"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3549-wait-workspace-clippy.json",
+      "bytes": 448,
+      "sha256": "c89787147a39a268bede5d2ee6a6d80193246b7eddb645c47f1a3b7aa5de2135"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3549-wait-workspace-clippy.log",
+      "bytes": 6719811,
+      "sha256": "8c3a32da2171b59a0e796ed032a03f867a7a2b72bfc9214c4087dc102c1b1fa4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3544.source-freeze.json",
+      "bytes": 782442,
+      "sha256": "73e5ff364c6b761981ad20eb961e42e6a4a8d8f089af90692f2d030e289f5665"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3545.inventory.json",
+      "bytes": 352117,
+      "sha256": "9703e79503ca5f73e02319d1a05b4bd9f6a9ef366af861e13733c3d7ea6700dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3545.source-freeze.json",
+      "bytes": 782442,
+      "sha256": "73e5ff364c6b761981ad20eb961e42e6a4a8d8f089af90692f2d030e289f5665"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3546.source-freeze.json",
+      "bytes": 782442,
+      "sha256": "73e5ff364c6b761981ad20eb961e42e6a4a8d8f089af90692f2d030e289f5665"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3547.source-freeze.json",
+      "bytes": 782442,
+      "sha256": "73e5ff364c6b761981ad20eb961e42e6a4a8d8f089af90692f2d030e289f5665"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3548.source-freeze.json",
+      "bytes": 782442,
+      "sha256": "73e5ff364c6b761981ad20eb961e42e6a4a8d8f089af90692f2d030e289f5665"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3549.source-freeze.json",
+      "bytes": 782442,
+      "sha256": "73e5ff364c6b761981ad20eb961e42e6a4a8d8f089af90692f2d030e289f5665"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-sema.metrics.json",
+      "bytes": 4394,
+      "sha256": "bc89d13dddfade446485141b437b3b40baf9952826649ed1ef504c616652ea71"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-sema.reverse-closure.json",
+      "bytes": 4010,
+      "sha256": "36537de7486dd60233ab5a363cab3c96d9cc9cac9fd32b9853e6e9056610ce4a"
+    }
+  ]
+}

@@ -1482,14 +1482,12 @@ fn write_statement_payload(
         CheckedStatementPayload::Include(target) => {
             transcript_update!(hasher, target.declaration().as_bytes());
         }
-        CheckedStatementPayload::Suspension(suspension) => {
-            transcript_update!(
-                hasher,
-                &[match suspension.as_ref() {
-                    super::CheckedSuspensionStatement::Wait => 0,
-                }]
-            );
-        }
+        CheckedStatementPayload::Suspension(suspension) => match suspension.as_ref() {
+            super::CheckedSuspensionStatement::Wait { target } => {
+                transcript_update!(hasher, &[0]);
+                write_bytes(hasher, &coordinates.expression(*target)?.canonical_bytes()?)?;
+            }
+        },
         CheckedStatementPayload::Yield => {}
     }
     Ok(())

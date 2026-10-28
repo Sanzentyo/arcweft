@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "base": "b19bca70cbb4c80b520ac2e396f7e11a6f03ad25",
+  "workingTree": "Original tracked WIP14/untracked6 plus owned Sema source8",
+  "metrics": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/statement_scrutinee.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 36792,
+      "physicalLoc": 969,
+      "basePhysicalLoc": 969,
+      "growth": 0,
+      "embeddedTestLoc": 0,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "7c51319bc7fa435cc3b1790ec57e45c2adc40d91a40cb3a60547463ba1310b56"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/statements.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 39118,
+      "physicalLoc": 980,
+      "basePhysicalLoc": 980,
+      "growth": 0,
+      "embeddedTestLoc": 0,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "38d48d63dcff5ed3a10ada663d4372938dbe90d4700fe0064436f529da3272fe"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/model/statement.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 16777,
+      "physicalLoc": 597,
+      "basePhysicalLoc": 596,
+      "growth": 1,
+      "embeddedTestLoc": 0,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "751c8b1f2b9920622f11b252eb8755f7f6cfdd51416d90628414ffe9019c40fd"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 195302,
+      "physicalLoc": 4775,
+      "basePhysicalLoc": 4777,
+      "growth": -2,
+      "embeddedTestLoc": 333,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "0ea3186b9ad1987cacb216829c5bf0d45bc4ae665b62ef29100d40ed3e2dbced"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "test",
+      "bytes": 386815,
+      "physicalLoc": 11038,
+      "basePhysicalLoc": 11037,
+      "growth": 1,
+      "embeddedTestLoc": 0,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "398f3381ccf589f5a424b3cf2ab1424856174e59bb7ee1646f03f7b53c4be02e"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/statements.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "test",
+      "bytes": 62860,
+      "physicalLoc": 1690,
+      "basePhysicalLoc": 1674,
+      "growth": 16,
+      "embeddedTestLoc": 0,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "5b7f7d312411f78f16c91bfd1791f1fd5f1a442a9f753b2cb96a7763bc41cb2a"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/statement_producers.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "test",
+      "bytes": 28288,
+      "physicalLoc": 876,
+      "basePhysicalLoc": 818,
+      "growth": 58,
+      "embeddedTestLoc": 0,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "b2c7337f09e152f7e1754acbe28f5dfab759fb8619c586d4e860c9c315af64c8"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 143323,
+      "physicalLoc": 3377,
+      "basePhysicalLoc": 3367,
+      "growth": 10,
+      "embeddedTestLoc": 0,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "f933a7af3f30aa1758d169d4fc9651b89ac160e3afacae7e02f8063811c95a9a"
+    }
+  ],
+  "ownership": "Statement scrutinee selection already owns contextual Duration. The final suspension payload now owns its exact operand, checked against the same HIR child and Duration type before publication. Transcript version1 references that operand coordinate. These changes remain in the existing analyzer/model/validation/transcript owners, without a new parser, resolver, mutable state cluster, dependency edge, codec reader or I/O. Existing large cohesive owners retain their responsibilities; producer and accepted-transcript tests follow the same semantic boundary. RuntimePlan currently discards suspension payload; the next implementation phase must migrate that consumer and Core/AWBC together, not infer runtime completion from Sema."
+}

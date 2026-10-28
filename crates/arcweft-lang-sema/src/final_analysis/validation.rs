@@ -2688,6 +2688,17 @@ pub(super) fn validate_statements(
             CheckedStatementPayload::Iteration(iteration) => {
                 validate_iteration(modules, iteration)?;
             }
+            CheckedStatementPayload::Suspension(suspension) => {
+                let super::CheckedSuspensionStatement::Wait { target } = suspension.as_ref();
+                if !matches!(statement.kind(), arcweft_lang_hir::stmt::HirStmtKind::Wait { target: actual } if actual == target)
+                    || expressions
+                        .get(target)
+                        .and_then(CheckedExpression::value_type)
+                        != Some(&crate::types::TypeKind::Duration)
+                {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+            }
             CheckedStatementPayload::Structural
             | CheckedStatementPayload::Assertion(_)
             | CheckedStatementPayload::Defer(_)
@@ -2698,7 +2709,6 @@ pub(super) fn validate_statements(
             | CheckedStatementPayload::SourceLocale(_)
             | CheckedStatementPayload::Scope(_)
             | CheckedStatementPayload::Include(_)
-            | CheckedStatementPayload::Suspension(_)
             | CheckedStatementPayload::Yield => {}
         }
     }

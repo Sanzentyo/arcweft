@@ -1,0 +1,448 @@
+{
+  "version": 1,
+  "commit": "b19bca70cbb4c80b520ac2e396f7e11a6f03ad25",
+  "parent": "f243a519a73dc0bd528a6d3a6720aec63e0cf5bb",
+  "tree": "2171f5c138515e026ee0f0c5ebd02bf6e4c53ccf",
+  "remote": "b19bca70cbb4c80b520ac2e396f7e11a6f03ad25",
+  "paths": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-gates-publication.json",
+      "blob": "90bf2cff1eb1aa270a4b98e112fd74ec68444e55"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-partial-documentation-audit.json",
+      "blob": "32803c814e1d47a163d9208062fabfa4eb6e28b2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-r3543-stop-processes.json",
+      "blob": "5493a592bdcaa6581e485a54eb976151f5d8fb7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-reverse-matrix.json",
+      "blob": "45780bca72d7ef830f6094d6ad058330dde525f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-reverse-partial.json",
+      "blob": "1c8cdd8e2b4f3f3f2a0b2d3f8c223afaf92f8c26"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3543.source-freeze.json",
+      "blob": "014276845c44cea134b457a80a16a464c7e0125b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-catalog.input-audit.json",
+      "blob": "ce5953c4b54f3487704e1c2007bc8a36047f43e3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-catalog.inventory.json",
+      "blob": "5c238691a77e113d18e2ead19b9e029db45e08d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-catalog.json",
+      "blob": "6ac7ceacf91c9a153c15714e5070ee8fbbc221ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-catalog.log",
+      "blob": "3afb03082da32acbc778afa04c6cb46ae240e0bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-runtime.binaries-before.json",
+      "blob": "07eab8b191049ab968bad24c38fc602828f0bb46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-runtime.json",
+      "blob": "d12635edd3e1e6cf51f8da674359699a38077d33"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-runtime.log",
+      "blob": "e6c650954df130895e73f2e1bb3bf4698ff26749"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-runtime.terminal-audit.json",
+      "blob": "c6ab5eef64bb04e0ccc1a7fc7d353211aca7d6aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-catalog.input-audit.json",
+      "blob": "1409e75b826f7a14a08679fe1feca4c782a8b223"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-catalog.inventory.json",
+      "blob": "a89baf9bbfa90239baff62331d80d1282f3cd66b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-catalog.json",
+      "blob": "94102acd2892f5b374cb1eb292d5e1e4892de5ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-catalog.log",
+      "blob": "0acd6f11c65abcfe632c591ff1ccaf5bbd595be2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-runtime.binaries-before.json",
+      "blob": "ac199523f457aae1e13fb2e71ccf99ca930786cb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-runtime.json",
+      "blob": "2a89874f849295ce45063e0b78fa96410828dfc7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-runtime.log",
+      "blob": "6439eec97d010156251e36b63ab3fbb3d013b427"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-runtime.terminal-audit.json",
+      "blob": "1cb4a1672e39a6f9599a1b0926023d6c08405bef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-catalog.input-audit.json",
+      "blob": "7340ece6e11235379757d38a68263836f7bef1bd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-catalog.inventory.json",
+      "blob": "c01f34a7cf23b8205a83c5eae1e61d012aca7d4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-catalog.json",
+      "blob": "7c90f2bf0e405d3e7c298746c958d50f7367f59b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-catalog.log",
+      "blob": "bd80c69c68ef4fc4663d305b7580e42e3620853f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-catalog.input-audit.json",
+      "blob": "e32eb30e9947fc79d7d8bcd3e0437010ff0f1bc1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-catalog.inventory.json",
+      "blob": "51a82e92524d482deb28c438674df92605f1a889"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-catalog.json",
+      "blob": "cb4a7c492efb7fc5568194326c4abb76989b4baf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-catalog.log",
+      "blob": "698411a5e9ab23e847a66e8899a54d327fdeb623"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-runtime.binaries-before.json",
+      "blob": "e5e64aca4736e50ae526147c602159b17e5463a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-runtime.json",
+      "blob": "079cc4d1f4b3685b6cf35e9e1f6444d66fe39abb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-runtime.log",
+      "blob": "9c922e14437491c4045c8a6bb7dbb2d9e14dfd12"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-runtime.terminal-audit.json",
+      "blob": "235cebc5ad75335d43f359f39e153a3be4cb79ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-runtime.binaries-before.json",
+      "blob": "20ae64801aed9fad6110dc77f3a282addf944d3e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-runtime.json",
+      "blob": "19e4e317e7431b52a0917f50376a97f6f32b1343"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-runtime.log",
+      "blob": "b165c87a55ea8c7a1fc9a316c4b4f4a85e99e882"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-runtime.terminal-audit.json",
+      "blob": "7c70172b30fc39b681ea0953f1a466a71f67d30f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-catalog.input-audit.json",
+      "blob": "627834e1b7950fbecdc5093962452f1dc64f93b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-catalog.inventory.json",
+      "blob": "fe57729c30ffd345df8db7942409d69de4bea116"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-catalog.json",
+      "blob": "b89e45531c9d7bae362b115131c6d906c2a4b688"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-catalog.log",
+      "blob": "698fe1ce0bc82ccf9688151239dbd88ef0db595c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-runtime.binaries-before.json",
+      "blob": "7a364e976dd2153de60ab26ed6d61c78df82de00"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-runtime.json",
+      "blob": "f75f9e047e895c2f0c1f9e1373d6edd5ef185e69"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-runtime.log",
+      "blob": "e6ba0ac4ee12462a988e9bfac1a369bfdf77c6ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-runtime.terminal-audit.json",
+      "blob": "2c639dfa2120ade1223519ce5fc307365d4de02c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-catalog.input-audit.json",
+      "blob": "0db51300a60ee228123967125c51cd228b32b860"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-catalog.inventory.json",
+      "blob": "daa1ca418200384b2443aae658ec81c707377f4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-catalog.json",
+      "blob": "5c795b92d11735edd9782026d3342341ceadef28"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-catalog.log",
+      "blob": "8ed796fe0a7451e51180a297f4d6c5255c5a2340"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-runtime.binaries-before.json",
+      "blob": "4878a0457e52e795c3a0660280dd9d3db8f3b9a5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-runtime.json",
+      "blob": "f99f2fce912ab9e3ac6c46c89d6d1f9e60f3e9f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-runtime.log",
+      "blob": "855acbae7a46b4d9589196d517a0d5fc864f1976"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-runtime.terminal-audit.json",
+      "blob": "c966cb7cec815d70943aadddd5c646536eaa0061"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-repl-catalog.input-audit.json",
+      "blob": "5a6985d29dfda0668530053640befecc971dde5d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-repl-catalog.json",
+      "blob": "2e14f0aed2af7f3cfd67a8ed7990fabf78f29ff1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-repl-catalog.log",
+      "blob": "2d5bb75a92cd85556554df9527fb329fe0844b86"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-runner-catalog.input-audit.json",
+      "blob": "c07f1ca4a640ebecefa9f6db03e6397b737e0d05"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-runner-catalog.json",
+      "blob": "7e3bdebac86def9edd5043bb5c7d9d67a56f8286"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-runner-catalog.log",
+      "blob": "c245b9454ffeff44473862d2eb3530f2c5c07375"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-browser-bench-catalog.input-audit.json",
+      "blob": "3cccf90df59c513414ee9dc9fdaab2f5e7afb39f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-browser-bench-catalog.json",
+      "blob": "d55c1179ca5d80375d47f413b49ad15a30fe8c90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-browser-bench-catalog.log",
+      "blob": "f7d251a6deae3d7de1c97e51a9dcb2e69f7c4928"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-bundle-catalog.log",
+      "blob": "cff3c019d160bc475711a9b15b7a8c8c3ca739ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-catalog.input-audit.json",
+      "blob": "f233e35ede126a75dd97c6d0095a6fafdd34dfe8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-catalog.inventory.json",
+      "blob": "be991eee4ae1d62c065e5acbdceaf4918f3ee596"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-catalog.json",
+      "blob": "67a3d8b8e5bf3f29582d5b93fdc6fd1f96950b68"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-catalog.log",
+      "blob": "d1bfe802c95ca14b93617764582ef2a14336495c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-runtime.binaries-before.json",
+      "blob": "922786d60c6f7a719cf0fd7c89aaf812d6382254"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-runtime.json",
+      "blob": "41969740cf665901490df595653f8ccc0102b623"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-runtime.log",
+      "blob": "5472c14656cddc8922f557d29e08e30b52506185"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-runtime.terminal-audit.json",
+      "blob": "f81f8ec9e5ab227a0c9851925c9ec68c66e52c0e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-catalog.input-audit.json",
+      "blob": "86342eced0eccf86010856ee3f165d43c2cab81f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-catalog.inventory.json",
+      "blob": "3244c814e1ab2cba1a4c8c8e88ec3d5c389908b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-catalog.json",
+      "blob": "95d6df8454a42593dfee38054a930823576efea6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-catalog.log",
+      "blob": "e91bf150248c6597ca69de466a0afce6eda40987"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-runtime.binaries-before.json",
+      "blob": "3e7afc169477c526994e3b05338327f4dbf792c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-runtime.json",
+      "blob": "4dd40a1a8b1a12f2cef227e2192b0262450a2d4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-runtime.log",
+      "blob": "9b8e9d023ee18395095cbc01d0eb6d6e5f7ab476"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-runtime.terminal-audit.json",
+      "blob": "5c581bbf2858465b3c1f795a39c830ee63061918"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-facade-catalog.input-audit.json",
+      "blob": "2ea42cde3b9fdce968abf92037fa9e9f467aab9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-facade-catalog.inventory.json",
+      "blob": "6c422a1a700b68b239c3072beb7e7486a054ad4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-facade-catalog.json",
+      "blob": "79b40b98153c74a4cdc93671279bbbc71f0baadb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-facade-catalog.log",
+      "blob": "152e53ac60fe8791276f09a557fa1e67d56d3309"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-catalog.input-audit.json",
+      "blob": "0919df6f020a817f5794f01b660444733c7b39d4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-catalog.inventory.json",
+      "blob": "5bb452dabf74b442d45660ab2e6b6fa4456d936c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-catalog.json",
+      "blob": "a394b6b07c0e8bacb36a2a9469855f78cab4761a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-catalog.log",
+      "blob": "2d6e6441ecae7b0339405c499e3ffd33153f60cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-runtime.binaries-before.json",
+      "blob": "6c34d8c342e6e39eabc94e6515ba05ff6c1b1d10"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-runtime.json",
+      "blob": "d36b6679e762a94c8b6af5a8cd0c976ec367379a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-runtime.log",
+      "blob": "a37236909baa854400eeda5ccedbfedf24fbbd6c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-runtime.terminal-audit.json",
+      "blob": "0908f26890970ad64f579b83dd9dc9fce2cfd26d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-catalog.input-audit.json",
+      "blob": "8cfbc95b0fecc8c62e0f5e495b9a465cf758ab60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-catalog.inventory.json",
+      "blob": "dafa41bb37b3341fde2c3eaafe053f11a605cbf9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-catalog.json",
+      "blob": "64b047babf7d43278d52946df9ddb0b998d210d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-catalog.log",
+      "blob": "73f13a68c04ced235647190cd7b3f9b6a98b565a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-runtime.binaries-before.json",
+      "blob": "f0baf49cc9aa890adb7a3d5d10633690754ace7d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-runtime.json",
+      "blob": "7bd9ffa75d41421aedaefb844f6685c61e0b7da1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-runtime.log",
+      "blob": "53e06042576c1b4eee62f8f9dcd38be447c867da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-runtime.terminal-audit.json",
+      "blob": "d484981c0244713c5b40010a4d1449c614044a72"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "647ee5db88100aa5ef27f917e4a5981f42551921"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "a7af0e77b33aa23457bc8040b9588b1a2ea40f95"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "4f13e0f27696eb32f62f9b6b1049b40d8b72795b70d69bec938e540b68e181ec",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/cversions.2.db",
+      "sha256": "0a663bab44fb88a42eaa6baf3ca97d6ca12c908a381ebfe0345b0b6a8cc26718"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{1E4C1AA0-BDDF-4BED-9D46-82216ABE6FC9}.2.ver0x0000000000000001.db",
+      "sha256": "d5e46fe3ef5394cfaa82d43938309cfcefe34cde101a332faa4b03b4495a97c0"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{6AF0698E-D558-4F6E-9B3C-3716689AF493}.2.ver0x0000000000000001.db",
+      "sha256": "fddbe41aa053eb78db27964f6f4dbd3e7b4cfb7146873d12ea134f797b10fd86"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{DDF571F2-BE98-426D-8288-1A9A39C3FDA2}.2.ver0x0000000000000001.db",
+      "sha256": "73218cd563fe76ceb5f4cbf07409dd43f276b1b6e421e115292b684281987b8d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-bench-repair.md",
+      "sha256": "950a9b981f523ec75b732c44c461c436a859f7d1e17b8598c350f8a878fa444d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-observe-repair.md",
+      "sha256": "144da5bd821a03b495ed632e9dcacf53e55cf0aa30d1dd40f894c1339f880100"
+    }
+  ],
+  "indexEmpty": true,
+  "at": "2026-10-28T06:33:38.6719882Z"
+}
