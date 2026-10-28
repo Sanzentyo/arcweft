@@ -10,11 +10,11 @@ fn ordinary_view_recovery_cannot_create_exported_part_facts() {
     let source = r#"
 view Card() {
   UnknownContainer {
-    Text("Title").part(title)
+    Text("Title").part(title
   }
 }
 
-flow test {
+flow test() {
   view(@view.Card)
 }
 "#;

@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "base": "0cebe15a4cf6a09504d7541202a5b5f90e8fad62",
+  "sourceStatus": "Argument-context repair and concrete recovery fixture; validated source checkpoint",
+  "constituentCommits": [
+    "02259754a2278e0f9db803c7effbdfd21bf4d62b",
+    "0cebe15a4cf6a09504d7541202a5b5f90e8fad62"
+  ],
+  "fullReverse": {
+    "run": "R3462",
+    "packages": 25,
+    "executed": 5650,
+    "passed": 5603,
+    "failed": 47,
+    "ignored": 31,
+    "seconds": 1022.654,
+    "executables": 124,
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "executableDrift": 0,
+    "retainedFailureIds": 45,
+    "newFailures": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli",
+        "test": "app::bundle::tests::view_part_recovery::ordinary_view_recovery_cannot_create_exported_part_facts"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-compiler::view_product",
+        "test": "authored_nested_views_pass_core_values_locals_aliases_and_defaults"
+      }
+    ],
+    "status": "Actual failing full run retained unchanged; not an all-pass claim"
+  },
+  "corrections": [
+    "The R3462 nested-View regression showed that ordinary positional/named Call arguments inherited ViewValue grammar. The Call argument owner now scopes all argument parsing to Ordinary and restores its enclosing View region. No nominal/builtin-name exception was added.",
+    "The old part-recovery fixture used an unknown but grammatically valid container head as parser recovery. It now supplies an actually unclosed part Call and a current Flow header; every recovery/export/product-rejection assertion remains unchanged.",
+    "Supersedes the initial syntax-stage assumption that all ordinary Call arguments were already isolated. The actual R3462 failure, source freeze and failing public source commit remain historical evidence."
+  ],
+  "focusedRepair": {
+    "run": "R3464",
+    "packages": 5,
+    "executed": 754,
+    "passed": 754,
+    "failed": 0,
+    "skipped": 2706,
+    "seconds": 31.386,
+    "executables": 6,
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "executableDrift": 0,
+    "scope": "All 730 Syntax library cases plus both R3462 regressions and the selected HIR/Sema/Match/AWBC-parentage/state-restore cases. Existing nested View test retains all four argument/alias/default runtime cases and codec assertions."
+  },
+  "gates": {
+    "workspaceDefault": {
+      "run": "R3465",
+      "exitCode": 0,
+      "packages": 97,
+      "allTargets": true,
+      "features": "default",
+      "locked": true,
+      "warnings": 268,
+      "sourceDrift": 0
+    },
+    "workspaceClippy": {
+      "run": "R3466",
+      "exitCode": 0,
+      "packages": 97,
+      "allTargets": true,
+      "features": "all",
+      "locked": true,
+      "warnings": 8688,
+      "sourceDrift": 0
+    },
+    "structure": {
+      "run": "R3467",
+      "exitCode": 0,
+      "packages": 97,
+      "files": 3236,
+      "rustFiles": 3106,
+      "rustPhysicalLoc": 1761710,
+      "reviewTriggers": 382,
+      "blocking": 0,
+      "sourceDrift": 0
+    },
+    "doctests": {
+      "run": "R3468",
+      "exitCode": 0,
+      "packages": [
+        "arcweft-lang-syntax",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-runtime-plan",
+        "arcweft-compiler"
+      ],
+      "results": [
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "warnings": 201,
+      "sourceDrift": 0
+    }
+  },
+  "reuse": "R3462 successful cases are retained with their exact pre-repair generation. R3464 is a separate repair run, not a recomputed 5650-case all-pass result. No full reverse suite was rerun after these three-file changes.",
+  "remaining": "The exact 45 previously failing CLI cases will be rerun on the published repaired source before updating their current count. Full retained View acceptance, including existing Spacing and Native/Web image parity, is outside this focused acceptance.",
+  "ownership": {
+    "files": [
+      {
+        "path": "crates/arcweft-cli/src/app/bundle/tests/view_part_recovery.rs",
+        "bytes": 1776,
+        "physicalLoc": 59,
+        "growth": 0,
+        "sha256": "39df7e02922f7259c0845487d822121c9895ffbf3c5bd7365136f400beb5c2b2"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/parser/expression/call_arguments.rs",
+        "bytes": 10656,
+        "physicalLoc": 310,
+        "growth": 3,
+        "sha256": "7dbdac1f011f2e488f102ab898735437ab57c8fb1985d6e3d2969e075e3a6c2f"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/parser/view_grammar_tests.rs",
+        "bytes": 11321,
+        "physicalLoc": 336,
+        "growth": 21,
+        "sha256": "78e9d24e7e1237a1d0a0169941ee5727e485c35f911a138108909acff65e96a8"
+      }
+    ],
+    "disposition": "The one Call argument owner selects Ordinary grammar for all supply forms and restores the outer parser context. The new success test covers positional/named nominal records even when the record name matches a layout builtin. CLI recovery coverage still rejects publication from malformed syntax. No dependency, public API, codec, version marker, runtime workload, capture or budget was changed."
+  },
+  "artifacts": [
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3461-program-fanout-awbc-check.input-audit.json",
+      "bytes": 1294,
+      "sha256": "ebd78d11775c75f81619f32202dcfe11aec87181b3ae53edc1e21f7267d10029"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3461-program-fanout-awbc-check.json",
+      "bytes": 1426,
+      "sha256": "4b4f1835f55fae0fee26112b4642b1bc918a52ba62c5a25e9bdb13d202a99fa0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3461-program-fanout-awbc-check.log",
+      "bytes": 1051640,
+      "sha256": "6ec35a49495633d9f3b451e69bf0109163ccf60c3478f554588ac51d0b58ac38"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3462-program-fanout-runtime.binaries-before.json",
+      "bytes": 29677,
+      "sha256": "7ff82e56ff3310d5e44fca7b109d42c03514b99b5a25e58e14e8a88098c4b23c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3462-program-fanout-runtime.json",
+      "bytes": 1517,
+      "sha256": "66c8089e1ad03d76af32cc13a30f58669917ef14c33b581572800340eb8fd5b6"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3462-program-fanout-runtime.log",
+      "bytes": 4907975,
+      "sha256": "0edc9a4d4dfe932fe5f981626eb1905c0a92f7fb517a5b6fd0052b4ab89b4880"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3462-program-fanout-runtime.terminal-audit.json",
+      "bytes": 8585,
+      "sha256": "e8785b7aeda1db27a8f410d7b708f125df8702cdec1231020e60beb3cb90faba"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3463-program-fanout-awbc-check.input-audit.json",
+      "bytes": 860,
+      "sha256": "f17ccfb45b4e520566da1b0f97b82050a424e184725d50f1306e663e0d0cb904"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3463-program-fanout-awbc-check.json",
+      "bytes": 992,
+      "sha256": "2b8e4c14297ed50dbd13a23d73c5a7af4eb2ca43d68969cb41c75ccd6daec68b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3463-program-fanout-awbc-check.log",
+      "bytes": 731910,
+      "sha256": "267b278ba7e750bee936a848cbd6c236fe40a3d919ae5b7e8a25f320baf1a16a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3464-program-fanout-runtime.binaries-before.json",
+      "bytes": 1339,
+      "sha256": "bde058930eb1e4cbf9d18a04e457b5e5039513d892738d877fd6d82116f052ed"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3464-program-fanout-runtime.json",
+      "bytes": 1081,
+      "sha256": "bcd5a8cae0cb65ec62db5348ae63f0013c1a20659ee2a61fe844bb436dfaa6e2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3464-program-fanout-runtime.log",
+      "bytes": 1207445,
+      "sha256": "783b7677c8aa49c0933c6fee15ef0210970591846b77df68dc590d57a53dc743"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3464-program-fanout-runtime.terminal-audit.json",
+      "bytes": 622,
+      "sha256": "872e757689517694fdaff25cf632e1e11e0a2c7649a2eedd498d75ab04f36b9d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3465-workspace-check.input-audit.json",
+      "bytes": 286,
+      "sha256": "325f03ea65e88e4b753e2327ca55d5abf31af8ea08610d9cee42ace059b42cb1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3465-workspace-check.json",
+      "bytes": 418,
+      "sha256": "2b0228c4b93e8316a5bbe441c413d535a4b508c36eb5302a7791ae12528eca04"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3465-workspace-check.log",
+      "bytes": 113782,
+      "sha256": "407996f91026082c7dd70e341017a6b2ba0e432c01e633650fa9c0898333f036"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3466-workspace-clippy.input-audit.json",
+      "bytes": 311,
+      "sha256": "09d23d0ac3befd962acc08798a30216d8526750d08b838578f7147375ae6a78c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3466-workspace-clippy.json",
+      "bytes": 443,
+      "sha256": "0c181f36b19b7d537eea22b9a11f1229e8e33ef490d01827a0bd4df3d868adea"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3466-workspace-clippy.log",
+      "bytes": 6715679,
+      "sha256": "c1b60ee494330501b0d77d4becc9ea61b0dd46edcd793b8c5f3a6359f8743854"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3467-structure-gate.input-audit.json",
+      "bytes": 241,
+      "sha256": "a14d7fd482b2aeea516a678832da28d862a209261da2d9795570cc55427cd979"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3467-structure-gate.json",
+      "bytes": 373,
+      "sha256": "53f1ca95230e354f5f26b1a5e6fd65746d2c6d8077bea1ecec5612e60649cca2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3467-structure-gate.log",
+      "bytes": 64943,
+      "sha256": "bcd443ad44bbd614fc5a6eaf3c716f920a68e30710be7117367ff7f4da13f6be"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3468-sema-doctest.input-audit.json",
+      "bytes": 465,
+      "sha256": "684760a02b159151e12aebe676174e8d0ce6894180d14a0f1887f3697b456c56"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3468-sema-doctest.json",
+      "bytes": 597,
+      "sha256": "d18c78e468d1302546bf3b92a5ead73b2f6ba2e739356236f013e1f1889e18fc"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3468-sema-doctest.log",
+      "bytes": 85455,
+      "sha256": "7e994656a69e6862cd955d422f78b9fc4e27f8cf4e4214bfb4c465d0e6c0e857"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3461.inventory.json",
+      "bytes": 1436512,
+      "sha256": "264261345c83df8e945df3e5ae060ef93ac797bc13943d13602e812b83652d84"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3461.source-freeze.json",
+      "bytes": 781613,
+      "sha256": "4958fe0a7c6b89ba8a79091d64f27508a4c6a309f93b36f9e4ff7d63399be13c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3462.source-freeze.json",
+      "bytes": 781613,
+      "sha256": "4958fe0a7c6b89ba8a79091d64f27508a4c6a309f93b36f9e4ff7d63399be13c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3463.inventory.json",
+      "bytes": 897407,
+      "sha256": "0ac8d4a11d58ac2f1c5dacc09135c63fbb7dbfa6853277bcd6c89964d44268ff"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3463.source-freeze.json",
+      "bytes": 781792,
+      "sha256": "8732beb4bd9ed135c32f24f83e402660c74b9668222ef418acd5c305eecdd30d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3464.source-freeze.json",
+      "bytes": 781792,
+      "sha256": "8732beb4bd9ed135c32f24f83e402660c74b9668222ef418acd5c305eecdd30d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3465.source-freeze.json",
+      "bytes": 781792,
+      "sha256": "8732beb4bd9ed135c32f24f83e402660c74b9668222ef418acd5c305eecdd30d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3466.source-freeze.json",
+      "bytes": 781792,
+      "sha256": "8732beb4bd9ed135c32f24f83e402660c74b9668222ef418acd5c305eecdd30d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3467.source-freeze.json",
+      "bytes": 781792,
+      "sha256": "8732beb4bd9ed135c32f24f83e402660c74b9668222ef418acd5c305eecdd30d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3468.source-freeze.json",
+      "bytes": 781792,
+      "sha256": "8732beb4bd9ed135c32f24f83e402660c74b9668222ef418acd5c305eecdd30d"
+    }
+  ]
+}

@@ -110,6 +110,27 @@ fn view_child_bodies_preserve_the_control_regions_that_own_them() {
 }
 
 #[test]
+fn view_call_arguments_keep_nominal_records_in_the_ordinary_expression_grammar() {
+    let source = concat!(
+        "view Tree() {\n",
+        "    Panel() {\n",
+        "        Card(Row { label: \"positional\" })\n",
+        "        Card(payload = Row { label: \"named\" })\n",
+        "    }\n",
+        "}\n",
+    );
+    let built = parse(source);
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(
+        count_kind(&built, SyntaxKind::ViewBodyApplicationExpression),
+        1
+    );
+    assert_eq!(count_kind(&built, SyntaxKind::RecordExpression), 2);
+    assert_eq!(count_kind(&built, SyntaxKind::ClosureExpression), 0);
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn view_defaults_are_typed_but_destructuring_and_header_extensions_are_rejected() {
     let source = concat!(
         "view Broken((left, right): Pair, count: u32 = 1) -> View {\n",

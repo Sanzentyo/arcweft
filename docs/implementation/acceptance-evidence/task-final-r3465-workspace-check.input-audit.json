@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "run": "task-final-r3465-workspace-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--locked"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T01:37:30.5414603Z"
+}
