@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "commit": "f243a519a73dc0bd528a6d3a6720aec63e0cf5bb",
+  "parent": "968b6be1bdcabf348a5cb3154463f6ab52b17e26",
+  "tree": "91a1935d7376b7492a250536be8f4c9f801048e2",
+  "remote": "f243a519a73dc0bd528a6d3a6720aec63e0cf5bb",
+  "paths": [
+    {
+      "path": "docs/04-tooling/cli.md",
+      "blob": "21f0387e36e94792910784a724dc42d0ca5dff2b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-gates-documentation-audit.json",
+      "blob": "5b222f7eb865dfb24d80719c4d0c504d2b63a184"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-source-publication.json",
+      "blob": "383bc14ac64660c0353fe9bd0125124d11e89343"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-workspace-gates.json",
+      "blob": "c9570db2a254577c7bd1d17d5cd2e4349b4c36c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3541-dialogue-projection-workspace-check.input-audit.json",
+      "blob": "7295aebc3834175b77fe68ade5162e03818c78c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3541-dialogue-projection-workspace-check.json",
+      "blob": "7654578f243e64a9cfff83e9546ec8a95efcc2f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3541-dialogue-projection-workspace-check.log",
+      "blob": "935878327eaa5fa8e9431e807293b595651e3045"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3542-dialogue-projection-workspace-clippy.input-audit.json",
+      "blob": "ad10cd12d9241d0df3a20dd10ce54339a9171653"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3542-dialogue-projection-workspace-clippy.json",
+      "blob": "44498a24351b73d26d9d0e1821169fcabd32c8d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3542-dialogue-projection-workspace-clippy.log",
+      "blob": "454af4215452429ee61eff3f11e200ec4d975a54"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3541.source-freeze.json",
+      "blob": "65e34086f5cf1fbdb1903b791aea8f7accdbbe31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3542.source-freeze.json",
+      "blob": "014276845c44cea134b457a80a16a464c7e0125b"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "46823091c64d2c57f270ededc3edd6edbe54a8f6"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "a4ecdea85fabf271c76290dcde0132b7ea2bb4af"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "41b0aa2242f6c4afe948aaef46fdabee99fb5a8716c9c2372fac7c8c431c812c",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/cversions.2.db",
+      "sha256": "0a663bab44fb88a42eaa6baf3ca97d6ca12c908a381ebfe0345b0b6a8cc26718"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{1E4C1AA0-BDDF-4BED-9D46-82216ABE6FC9}.2.ver0x0000000000000001.db",
+      "sha256": "d5e46fe3ef5394cfaa82d43938309cfcefe34cde101a332faa4b03b4495a97c0"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{6AF0698E-D558-4F6E-9B3C-3716689AF493}.2.ver0x0000000000000001.db",
+      "sha256": "fddbe41aa053eb78db27964f6f4dbd3e7b4cfb7146873d12ea134f797b10fd86"
+    },
+    {
+      "path": "%SystemDrive%/ProgramData/Microsoft/Windows/Caches/{DDF571F2-BE98-426D-8288-1A9A39C3FDA2}.2.ver0x0000000000000001.db",
+      "sha256": "73218cd563fe76ceb5f4cbf07409dd43f276b1b6e421e115292b684281987b8d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-bench-repair.md",
+      "sha256": "950a9b981f523ec75b732c44c461c436a859f7d1e17b8598c350f8a878fa444d"
+    },
+    {
+      "path": "docs/implementation/2026-10-09-cli-observe-repair.md",
+      "sha256": "144da5bd821a03b495ed632e9dcacf53e55cf0aa30d1dd40f894c1339f880100"
+    }
+  ],
+  "indexEmpty": true,
+  "at": "2026-10-28T06:13:33.1348177Z"
+}

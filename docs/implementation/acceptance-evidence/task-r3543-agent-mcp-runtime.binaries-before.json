@@ -1,0 +1,17 @@
+[
+  {
+    "binary": "arcweft-agent-mcp",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_mcp-9d1cbad02d50ff7d.exe",
+    "sha256": "64ac1578dac7ca05e9049ff68f2fe3ad75918262912983e2cfae3886fa491b3f"
+  },
+  {
+    "binary": "arcweft-agent-mcp::descriptor_invariants",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\descriptor_invariants-8715f6a3bd62ae85.exe",
+    "sha256": "80146dc3d886a80ffce2507134f6ad9a4e5ffa5e8aba4847e53601dbab9c809e"
+  },
+  {
+    "binary": "arcweft-agent-mcp::repl_command",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_command-71bb8da6ea02b845.exe",
+    "sha256": "1a0a0f6efed69d81ba52363d28c573e772f42c10d0131cf66043add99f918ce3"
+  }
+]

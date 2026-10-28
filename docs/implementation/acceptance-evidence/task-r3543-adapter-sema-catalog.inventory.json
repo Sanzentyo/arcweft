@@ -1,0 +1,96 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::input::digest::tests::dense_type_input_digests_keep_every_container_and_scalar_role",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::input::digest::tests::manifest_digest_changes_with_identity_bearing_content",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::input::digest::tests::manifest_digest_is_independent_of_set_insertion_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::adapter_manifest_applies_effect_capabilities_and_function_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::an_empty_selected_adapter_provides_no_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::opaque_producer_is_source_backed_and_changes_manifest_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::rust_manifest_publishes_source_backed_nominal_metadata_when_enabled",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::source_backed_adapter_facts_are_independent_of_symbol_insertion_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::source_backed_adapter_facts_bind_exact_environment_keys_and_base_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::source_backed_adapter_facts_retain_exact_recursive_type_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::source_backed_callable_input_preserves_groups_defaults_rest_effects_and_docs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::source_backed_owner_is_derived_without_a_caller_selected_mode",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "binary": "arcweft-adapter-sema",
+      "test": "registration::tests::source_backed_standard_input_retains_rust_callable_identity_and_order",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

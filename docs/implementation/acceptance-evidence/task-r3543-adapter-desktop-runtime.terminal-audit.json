@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "968b6be1bdcabf348a5cb3154463f6ab52b17e26",
+  "run": "task-r3543-adapter-desktop-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.089s] 7 tests run: 7 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 7,
+  "passed": 7,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-28T06:19:09.1759137Z"
+}

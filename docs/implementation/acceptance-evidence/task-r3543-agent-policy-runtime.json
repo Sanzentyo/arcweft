@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "968b6be1bdcabf348a5cb3154463f6ab52b17e26",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-agent-policy",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-r3543-agent-policy-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T06:20:47.0044150Z",
+  "finishedAt": "2026-10-28T06:20:49.3437255Z"
+}

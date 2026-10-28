@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-r3543-adapter-sema-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-adapter-sema",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T06:19:22.4812117Z"
+}

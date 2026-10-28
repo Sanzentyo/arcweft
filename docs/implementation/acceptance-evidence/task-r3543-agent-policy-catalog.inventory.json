@@ -1,0 +1,103 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::allowed_trace_retains_its_canonical_public_uri",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::auxiliary_capture_is_not_exposed_by_default",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::canonical_trace_spelling_without_a_seal_receives_a_moderated_uri",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::failed_image_decode_is_withheld",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::gate_masks_image_before_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::json_string_values_are_redacted",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::missing_image_bytes_is_withheld",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::missing_image_metadata_is_withheld",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::moderated_scene_children_receive_distinct_opaque_uris",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::mutated_trace_body_cannot_reuse_a_canonical_public_uri",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::policy_image_decode_rejects_missing_format_bad_stride_and_extent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::policy_raw_decode_uses_declared_pixel_format_with_a_query_uri",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::sanitized_trace_receives_a_moderated_uri",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "binary": "arcweft-agent-policy",
+      "test": "tests::trace_wire_round_trip_drops_canonical_publication_authority",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

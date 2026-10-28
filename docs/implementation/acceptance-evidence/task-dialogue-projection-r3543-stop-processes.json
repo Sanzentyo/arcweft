@@ -1,0 +1,266 @@
+{
+  "version": 1,
+  "reason": "Stop the exact R3543 process tree after observed D: free space 78,458,880 bytes and Agent REPL LNK1140/LNK1201",
+  "root": 20204,
+  "processes": [
+    {
+      "ProcessId": 20204,
+      "ParentProcessId": 32360,
+      "Name": "pwsh.exe",
+      "CreationDate": "2026-10-28T15:01:18.592878+09:00"
+    },
+    {
+      "ProcessId": 68360,
+      "ParentProcessId": 20204,
+      "Name": "conhost.exe",
+      "CreationDate": "2026-10-28T15:01:18.68315+09:00"
+    },
+    {
+      "ProcessId": 8504,
+      "ParentProcessId": 20204,
+      "Name": "rustup.exe",
+      "CreationDate": "2026-10-28T15:23:12.069106+09:00"
+    },
+    {
+      "ProcessId": 74940,
+      "ParentProcessId": 8504,
+      "Name": "cargo.exe",
+      "CreationDate": "2026-10-28T15:23:12.11343+09:00"
+    },
+    {
+      "ProcessId": 39396,
+      "ParentProcessId": 74940,
+      "Name": "cargo-nextest.exe",
+      "CreationDate": "2026-10-28T15:23:12.221631+09:00"
+    },
+    {
+      "ProcessId": 75296,
+      "ParentProcessId": 39396,
+      "Name": "cargo.exe",
+      "CreationDate": "2026-10-28T15:23:13.351322+09:00"
+    },
+    {
+      "ProcessId": 54572,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:23:50.508597+09:00"
+    },
+    {
+      "ProcessId": 55332,
+      "ParentProcessId": 54572,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:38.437669+09:00"
+    },
+    {
+      "ProcessId": 49020,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.438666+09:00"
+    },
+    {
+      "ProcessId": 38760,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.449792+09:00"
+    },
+    {
+      "ProcessId": 21788,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.459979+09:00"
+    },
+    {
+      "ProcessId": 54880,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.4689+09:00"
+    },
+    {
+      "ProcessId": 60680,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.479757+09:00"
+    },
+    {
+      "ProcessId": 32664,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.491668+09:00"
+    },
+    {
+      "ProcessId": 51868,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.502234+09:00"
+    },
+    {
+      "ProcessId": 73764,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.726429+09:00"
+    },
+    {
+      "ProcessId": 44976,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.751919+09:00"
+    },
+    {
+      "ProcessId": 64808,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:38.76957+09:00"
+    },
+    {
+      "ProcessId": 34084,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:39.022724+09:00"
+    },
+    {
+      "ProcessId": 62160,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:39.093326+09:00"
+    },
+    {
+      "ProcessId": 74964,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:39.111012+09:00"
+    },
+    {
+      "ProcessId": 54364,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:39.129259+09:00"
+    },
+    {
+      "ProcessId": 53652,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:39.147121+09:00"
+    },
+    {
+      "ProcessId": 38824,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:39.163385+09:00"
+    },
+    {
+      "ProcessId": 28452,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:39.180235+09:00"
+    },
+    {
+      "ProcessId": 17712,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:39.196727+09:00"
+    },
+    {
+      "ProcessId": 956,
+      "ParentProcessId": 75296,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-28T15:24:39.211728+09:00"
+    },
+    {
+      "ProcessId": 40668,
+      "ParentProcessId": 73764,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:41.331623+09:00"
+    },
+    {
+      "ProcessId": 73972,
+      "ParentProcessId": 54880,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:41.545027+09:00"
+    },
+    {
+      "ProcessId": 50272,
+      "ParentProcessId": 38760,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:41.882806+09:00"
+    },
+    {
+      "ProcessId": 69684,
+      "ParentProcessId": 21788,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:44.296387+09:00"
+    },
+    {
+      "ProcessId": 73476,
+      "ParentProcessId": 28452,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:44.737775+09:00"
+    },
+    {
+      "ProcessId": 75300,
+      "ParentProcessId": 38824,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:45.361176+09:00"
+    },
+    {
+      "ProcessId": 76792,
+      "ParentProcessId": 62160,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:45.36278+09:00"
+    },
+    {
+      "ProcessId": 39768,
+      "ParentProcessId": 60680,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:45.364492+09:00"
+    },
+    {
+      "ProcessId": 73092,
+      "ParentProcessId": 17712,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:45.51298+09:00"
+    },
+    {
+      "ProcessId": 69780,
+      "ParentProcessId": 44976,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:45.627758+09:00"
+    },
+    {
+      "ProcessId": 75620,
+      "ParentProcessId": 64808,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:46.006878+09:00"
+    },
+    {
+      "ProcessId": 70152,
+      "ParentProcessId": 54364,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:46.008788+09:00"
+    },
+    {
+      "ProcessId": 60948,
+      "ParentProcessId": 956,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:46.068044+09:00"
+    },
+    {
+      "ProcessId": 51468,
+      "ParentProcessId": 32664,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:48.428863+09:00"
+    },
+    {
+      "ProcessId": 51304,
+      "ParentProcessId": 34084,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:48.660126+09:00"
+    },
+    {
+      "ProcessId": 67800,
+      "ParentProcessId": 51868,
+      "Name": "link.exe",
+      "CreationDate": "2026-10-28T15:24:50.53277+09:00"
+    }
+  ],
+  "at": "2026-10-28T06:24:52.2276655Z"
+}

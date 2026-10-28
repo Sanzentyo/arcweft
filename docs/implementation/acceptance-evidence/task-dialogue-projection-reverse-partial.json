@@ -1,0 +1,763 @@
+{
+  "version": 1,
+  "base": "f243a519a73dc0bd528a6d3a6720aec63e0cf5bb",
+  "sourceCommit": "968b6be1bdcabf348a5cb3154463f6ab52b17e26",
+  "matrix": "task-dialogue-projection-reverse-matrix.json",
+  "status": "Owner repair remains verified and published. Reverse-consumer validation is incomplete due actual disk exhaustion and a denied cache-cleanup operation.",
+  "scope": "Complete resolved 53-package reverse dependency matrix. Each package uses its own --all-features --locked test profile, all default library/binary/integration targets; packages are built/run serially after an observed OS1455 failure. Workspace check/Clippy cover the complete feature union separately. No jobs/profile/target relocation change.",
+  "selectedPackages": 53,
+  "runtimePackages": 10,
+  "noMatchingNativeCases": "arcweft",
+  "completedPackages": 11,
+  "remainingPackages": [
+    "arcweft-agent-repl",
+    "arcweft-agent-runner",
+    "arcweft-browser-bench",
+    "arcweft-bundle",
+    "arcweft-bundle-assets",
+    "arcweft-character-view",
+    "arcweft-debug-model",
+    "arcweft-debug-sqlite",
+    "arcweft-dialogue",
+    "arcweft-glyphon",
+    "arcweft-host-adapter",
+    "arcweft-lang-jit-cranelift",
+    "arcweft-launch",
+    "arcweft-lsp",
+    "arcweft-player-native",
+    "arcweft-player-scene",
+    "arcweft-player-text-input",
+    "arcweft-player-web",
+    "arcweft-project",
+    "arcweft-project-loader",
+    "arcweft-rag",
+    "arcweft-render-text",
+    "arcweft-render-web",
+    "arcweft-render-wgpu",
+    "arcweft-resource-manifest",
+    "arcweft-resource-model",
+    "arcweft-runtime-accelerator",
+    "arcweft-runtime-codegen",
+    "arcweft-runtime-driver",
+    "arcweft-runtime-host",
+    "arcweft-runtime-scheduler",
+    "arcweft-save",
+    "arcweft-test",
+    "arcweft-text-layout",
+    "arcweft-text-model",
+    "arcweft-tooling",
+    "arcweft-verify",
+    "arcweft-verify-lsp",
+    "arcweft-verify-oxiz",
+    "arcweft-verify-z3",
+    "arcweft-view",
+    "arcweft-cli"
+  ],
+  "executed": 4406.0,
+  "passed": 4406.0,
+  "failedRuntimeCases": 0,
+  "catalogueFailures": [
+    {
+      "package": "arcweft-agent-repl",
+      "status": "catalogue-failed",
+      "exitCode": 101,
+      "catalogue": "task-r3543-agent-repl-catalog"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "status": "catalogue-failed",
+      "exitCode": 101,
+      "catalogue": "task-r3543-agent-runner-catalog"
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "status": "catalogue-failed",
+      "exitCode": 101,
+      "catalogue": "task-r3543-browser-bench-catalog"
+    }
+  ],
+  "completedRuntimeResults": [
+    {
+      "package": "arcweft-core",
+      "status": "passed",
+      "catalogue": "task-r3543-core-catalog",
+      "runtime": "task-r3543-core-runtime",
+      "executed": 2122,
+      "passed": 2122,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 13,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [ 111.095s] 2122 tests run: 2122 passed (1 slow), 0 skipped"
+    },
+    {
+      "package": "arcweft-lang-sema",
+      "status": "passed",
+      "catalogue": "task-r3543-lang-sema-catalog",
+      "runtime": "task-r3543-lang-sema-runtime",
+      "executed": 1361,
+      "passed": 1361,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 5,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [ 163.498s] 1361 tests run: 1361 passed (1 slow), 0 skipped"
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "status": "passed",
+      "catalogue": "task-r3543-runtime-plan-catalog",
+      "runtime": "task-r3543-runtime-plan-runtime",
+      "executed": 162,
+      "passed": 162,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 5,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [  42.672s] 162 tests run: 162 passed, 0 skipped"
+    },
+    {
+      "package": "arcweft-compiler",
+      "status": "passed",
+      "catalogue": "task-r3543-compiler-catalog",
+      "runtime": "task-r3543-compiler-runtime",
+      "executed": 640,
+      "passed": 640,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 25,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [ 184.634s] 640 tests run: 640 passed (3 slow), 0 skipped"
+    },
+    {
+      "package": "arcweft-adapter-desktop",
+      "status": "passed",
+      "catalogue": "task-r3543-adapter-desktop-catalog",
+      "runtime": "task-r3543-adapter-desktop-runtime",
+      "executed": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 2,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   0.089s] 7 tests run: 7 passed, 0 skipped"
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "status": "passed",
+      "catalogue": "task-r3543-adapter-sema-catalog",
+      "runtime": "task-r3543-adapter-sema-runtime",
+      "executed": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 1,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   0.206s] 13 tests run: 13 passed, 0 skipped"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "status": "passed",
+      "catalogue": "task-r3543-agent-mcp-catalog",
+      "runtime": "task-r3543-agent-mcp-runtime",
+      "executed": 31,
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 3,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   0.422s] 31 tests run: 31 passed, 0 skipped"
+    },
+    {
+      "package": "arcweft-agent-mcp-client",
+      "status": "passed",
+      "catalogue": "task-r3543-agent-mcp-client-catalog",
+      "runtime": "task-r3543-agent-mcp-client-runtime",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 1,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   0.035s] 2 tests run: 2 passed, 0 skipped"
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "status": "passed",
+      "catalogue": "task-r3543-agent-policy-catalog",
+      "runtime": "task-r3543-agent-policy-runtime",
+      "executed": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 1,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   0.321s] 14 tests run: 14 passed, 0 skipped"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "status": "passed",
+      "catalogue": "task-r3543-agent-protocol-catalog",
+      "runtime": "task-r3543-agent-protocol-runtime",
+      "executed": 54,
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0,
+      "failureSet": [],
+      "executableCount": 1,
+      "executableDrift": 0,
+      "sourceInputs": 3999,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   8.182s] 54 tests run: 54 passed, 0 skipped"
+    }
+  ],
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "ownerResults": {
+    "core": 2122,
+    "sema": 1361,
+    "runtimePlan": 162,
+    "compiler": 640,
+    "allPassed": true
+  },
+  "interruption": "The exact R3543 root shell and its43 owned processes were stopped; root tool exit -1. The interrupted bundle catalogue has no fabricated Cargo exit or terminal result. All3999 source hashes matched after process termination.",
+  "capacity": {
+    "observedDFreeAtFailure": 78458880,
+    "freeAfterTerminatingTemporaryLinkOutputs": 2297466880,
+    "cache": "D:\\git\\arcweft\\target\\debug\\incremental",
+    "cacheFiles": 304242,
+    "cacheBytes": 266574182502,
+    "cacheExists": true,
+    "ancestorsReparsePoint": false
+  },
+  "diagnostics": "Agent REPL catalogue exit101 includes LNK1140 PDB limit and LNK1201 write failure while the volume is exhausted. Agent Runner catalogue exit101 explicitly reports OS112/full.rmeta write failure. Browser Bench exit101 reports no space on device/C1085/OS112. These are build failures, not executed test failures; retry after capacity recovery before attributing remaining LNK1140 to a per-file PDB limit or source.",
+  "cleanup": "Not performed. Automatic approval review rejected the exact recursive incremental-cache deletion before execution, with reason blocked by policy and no additional detail. Explicit user input is pending. No alternate deletion command, artifact relocation, debug/profile/jobs change or assertion reduction was attempted.",
+  "next": "After authorized capacity recovery, resume only the42 incomplete packages. Build one named test binary at a time where package-wide linking is too expensive, then derive/audit the complete package catalogue and runtime. Reuse the11 completed package results only for unchanged source/toolchain/features/target/profile; do not claim a single feature-union runtime run. Complete affected doctests and final publication audit.",
+  "cli": "CLI was not reached by this matrix. The last complete CLI remains R3508 649 PASS/43 FAIL/23 ignored; no current CLI failure-set comparison is fabricated.",
+  "documentation": "Delete the duplicate cross-validation CLI row; its current counts and source remain solely in the CLI item row. Preserve the previous complete R3508 cross-run as explicitly previous evidence and add this incomplete matrix with its exact scope. Do not reopen accepted Generic Match or other completed boundaries.",
+  "preservation": "Original tracked WIP14 and untracked actual files6 remain held. Runtime budgets, capture/copy rules, work, tests and version1 contracts are unchanged. The full active goal remains incomplete.",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-r3543-stop-processes.json",
+      "bytes": 7133,
+      "sha256": "19eab920e5110626ba0bb7effca115bd71b1e874df5dbafe34077784da1ddf96"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-projection-reverse-matrix.json",
+      "bytes": 8440,
+      "sha256": "0eb88b44f5a8cda438be1477e79cf6b97d899a0b0562f810ce0fdca4bbb44dcd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3543.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "cb64b4f43941aecea765587147357f52e9a34b3a77cda0dcc58e2aa76980e2ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-catalog.input-audit.json",
+      "bytes": 365,
+      "sha256": "5b2946d4f39d4920ed5e07d482fd9ce2d3224c674b938e0a1406751e3e90e77a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-catalog.inventory.json",
+      "bytes": 1764,
+      "sha256": "21a891b9af3ac159de3a9935b4d7092a880be5a651b3a73b0f50e7c57f63d296"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-catalog.json",
+      "bytes": 497,
+      "sha256": "c3f1444c324c9887cf56a3298581c2cc8e930ae4347a15842dc5f05a573be59d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-catalog.log",
+      "bytes": 74871,
+      "sha256": "3bb73e345926d64178c6b3b56e725f84b54c382280098c6b62677e460ecee5c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-runtime.binaries-before.json",
+      "bytes": 490,
+      "sha256": "f9ee02516849afa1ae9084893f1819f41f20b1f8ef2e40f328c9b51d36c90e3d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-runtime.json",
+      "bytes": 589,
+      "sha256": "535df15b6ab2e1841124e205dd9c32b529484378b90dbec84700709d5836c931"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-runtime.log",
+      "bytes": 72440,
+      "sha256": "8cf71df61f14d2a3a926678286c51bd718f9470232d83855be5e41d3e8040deb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-desktop-runtime.terminal-audit.json",
+      "bytes": 603,
+      "sha256": "79656424ceceb8ffc033490bd3637b97b3bdee8a05a4c41e1f787d61b80d7964"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-catalog.input-audit.json",
+      "bytes": 359,
+      "sha256": "9a867a6ef18540e6d854720e1fa8a4c75b6b7f9cb6ea616ced1659d35865d728"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-catalog.inventory.json",
+      "bytes": 3372,
+      "sha256": "a3793541d659785221052accc881ddca75ed71b2cbf36d3e9c206a50cb233835"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-catalog.json",
+      "bytes": 491,
+      "sha256": "121045d2b84a7237ece2bd0dbe2071b943dfe9e494b5737c291765c689b5f134"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-catalog.log",
+      "bytes": 85230,
+      "sha256": "9504dc7c9e5b10a3b735999be460d4970891a71ca01fc1f4f209e3832851bf3d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-runtime.binaries-before.json",
+      "bytes": 218,
+      "sha256": "63d26d311e55b4831f5e5c77c7233dd515d3d90c167bf66d3c82d10b0be3b8c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-runtime.json",
+      "bytes": 583,
+      "sha256": "d062ea5350c76f2ebcfee664479baa0db541d100cced199a13961b4cc8267a5a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-runtime.log",
+      "bytes": 85855,
+      "sha256": "93b2d009f5de882249be676b87bbfe5c703a1323208d6560460e3977c7b787be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-adapter-sema-runtime.terminal-audit.json",
+      "bytes": 604,
+      "sha256": "469ed6b3dc53a04b57b4e3f8376efe2256a9a846d05f4bd34320d4242b149e7a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-catalog.input-audit.json",
+      "bytes": 353,
+      "sha256": "3d3c9d2882de0785d030c33fd0f67a7d0368020ef5d038ee24c5fcc3fd5aa396"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-catalog.inventory.json",
+      "bytes": 7027,
+      "sha256": "af39fb21fcf9b1c669d454ea9ed31115058e050ef0d2d080fe05c0e7686fe015"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-catalog.json",
+      "bytes": 485,
+      "sha256": "43a1412bc798ea90079e552eaa5bfeca86facc126b2b5d8058d4c5b4dfdae124"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-catalog.log",
+      "bytes": 89974,
+      "sha256": "8c1a0e4d5c2b44335b71ef3b7fb63e772d7996cf2fceb945266a67ef8ecf0f2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-catalog.input-audit.json",
+      "bytes": 367,
+      "sha256": "6c48590daddd8b641a876fcebcd611064a209267a4f81e1bbdc1ec19d0487f57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-catalog.inventory.json",
+      "bytes": 525,
+      "sha256": "90de1fe1c171d83bba76625b6f3941f5078c4379e46897a84f44f411231b1397"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-catalog.json",
+      "bytes": 499,
+      "sha256": "45e5e7abb926b6cb85bcc990c1f2a655abb6e6e70f62a67459614af827edeff4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-catalog.log",
+      "bytes": 84957,
+      "sha256": "d1b4529ffca598026db21b1dc5e749c1e07fb71d0e51280d67dd0e93d59b5716"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-runtime.binaries-before.json",
+      "bytes": 226,
+      "sha256": "462bd7dce832ebc1ebbdfaa63941f2a7e034e18aee96b13ed81984f0637d5112"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-runtime.json",
+      "bytes": 591,
+      "sha256": "6bea4529e12de052dd0427ebf2a191d1db3f66007152828534fe2b1383b42c2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-runtime.log",
+      "bytes": 84146,
+      "sha256": "1c7eb2f4c7c04f678bfd49ed583085475a521402bb126420dcdbd8ea0e261e42"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-client-runtime.terminal-audit.json",
+      "bytes": 604,
+      "sha256": "0e39fb099e0b4c732357a194d22bc6b875fc5021f58621613877ecc950403e65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-runtime.binaries-before.json",
+      "bytes": 710,
+      "sha256": "151be400692f4b603df2ebe9adb7aa4943bb0617110e4fe1491845ce81314fbe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-runtime.json",
+      "bytes": 577,
+      "sha256": "565042a7a172a8a54fd756804d8835e6674a667cea0c7ed8efb3e04334e4b905"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-runtime.log",
+      "bytes": 90811,
+      "sha256": "b20a25b3779a723a08ac58ef99c888908a1a6ee53baf3cb149b5a5982376f47f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-mcp-runtime.terminal-audit.json",
+      "bytes": 601,
+      "sha256": "8cbcfc9781f04a6100404f5db39b97ac2cfcc5615522ce56068730c8a6c51013"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-catalog.input-audit.json",
+      "bytes": 359,
+      "sha256": "8a721a36773ce214f4c4d33e1ea6dbb832471c89cd36bbd1704d87106e6a96e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-catalog.inventory.json",
+      "bytes": 3151,
+      "sha256": "45e29e73e5d87b0aa75b64af6daf6f95d88ffcb410fcbbae8466a70533e66b0a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-catalog.json",
+      "bytes": 491,
+      "sha256": "9fd13d3b1387a537f6b6d2d0a883b2ba6cf90edb8e3967776f23a9c6aa4ef6e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-catalog.log",
+      "bytes": 74245,
+      "sha256": "14559072d38c28e227b7d23fedeeb80edb6c1ce28521d1dc442c1de07a8c8f96"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-runtime.binaries-before.json",
+      "bytes": 218,
+      "sha256": "6acb84563dabad6f0ca84e65fb6c4dd63825bdfeca04cad4c1ad3bf638d7b223"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-runtime.json",
+      "bytes": 583,
+      "sha256": "2e61ee23b09b4955ce06ecbbf56f1a333ac2f3d6f32ea134a38f9e279a138dbd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-runtime.log",
+      "bytes": 74179,
+      "sha256": "e5b5c3f56dfe0749a08dc218d0362c3d76f29cfa16e0c6b691f6bd0f22764b17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-policy-runtime.terminal-audit.json",
+      "bytes": 604,
+      "sha256": "f2f14cab2d2e0cc712a5e5f3e322ce16b1ac5177685fe8bc0c803d365e59eb08"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-catalog.input-audit.json",
+      "bytes": 363,
+      "sha256": "0094fa2ca10ccecdafcfd5235cafe495e408b7051382e6a52c972c08d7589c67"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-catalog.inventory.json",
+      "bytes": 13523,
+      "sha256": "b332d9f971c4c98de3dfcbc22bf5ebce302ae524a700b5121bc35b1cff1b163e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-catalog.json",
+      "bytes": 495,
+      "sha256": "834cf109e8c2d6fa33aaca3fded5d2e3b3144716cd59dd6e536c556d21c273ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-catalog.log",
+      "bytes": 80064,
+      "sha256": "ddaec16bb01937d225523cedfcf1db5d124ff79114a24aecd22a872577699b25"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-runtime.binaries-before.json",
+      "bytes": 222,
+      "sha256": "a8b9a55d64c4e1d61a21dbd1d56bcaa56a0a35e5f1fa6c9d196032ec68ea8fc9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-runtime.json",
+      "bytes": 587,
+      "sha256": "342c382141dc79175aba8e3349eb226fdee7a6d27bca97aa9a92508771c805c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-runtime.log",
+      "bytes": 85667,
+      "sha256": "87e5c475b944790890ca83ebbe6da771dbd515d345e91fb59f28cf1c271f23a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-protocol-runtime.terminal-audit.json",
+      "bytes": 606,
+      "sha256": "8d98fa67ef4399c108431faead2fa40448fd60b48457d7084b9c78709b18f755"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-repl-catalog.input-audit.json",
+      "bytes": 357,
+      "sha256": "8979f6aeeaad7d5656d00e192578fca85ad9f04f0ba27d2c35996722aa53bd0c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-repl-catalog.json",
+      "bytes": 489,
+      "sha256": "a4acc6d41f84d0ef9d7f068c2ccaea7e743ecaec6aea8990a16290d22d3d8baf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-repl-catalog.log",
+      "bytes": 117250,
+      "sha256": "f97182b711077352673533eda13587d135336f3c6c8d2d5a045cca800aaeb22b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-runner-catalog.input-audit.json",
+      "bytes": 361,
+      "sha256": "2d7e177266906a104dbf8d9ac940ba3ca5fc48d5842609f661068b85d102d634"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-runner-catalog.json",
+      "bytes": 493,
+      "sha256": "a11742dec3103f3e47be1008fe5eca7ca6de71af0136b5491d9b733b743dd60b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-agent-runner-catalog.log",
+      "bytes": 72421,
+      "sha256": "f2075607e0a7564a587d43db607b6a40c98c2ba86726e2842370e541689ba71f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-browser-bench-catalog.input-audit.json",
+      "bytes": 363,
+      "sha256": "3d138ed2fc8c124e92d4c391ff51b4a8a958f44eebde5e508e72de5d7ea49e2b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-browser-bench-catalog.json",
+      "bytes": 495,
+      "sha256": "555ab109a8922893660927f1670316ee7b3c6e5583fd5debdad257dc3b5306d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-browser-bench-catalog.log",
+      "bytes": 205930,
+      "sha256": "c15cda32b4d076c23a4d213e3a90003440a4024fb0ea60201416bbe29fd96a22"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-bundle-catalog.log",
+      "bytes": 71617,
+      "sha256": "e1961df6b7fa82a6c37b5f615078c9b93084918a65b03636c9ef2bec4a59d93d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-catalog.input-audit.json",
+      "bytes": 351,
+      "sha256": "1afd5153e00c2e504b9f6a6558004c5a670afcf61f7a8d58f0766c56852710dc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-catalog.inventory.json",
+      "bytes": 157606,
+      "sha256": "428ed3354b568e72b5da4b4b8f91643fea704bcd3eb66e4d48a87eb39e75632b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-catalog.json",
+      "bytes": 483,
+      "sha256": "bd3a6ed155b3736a27fa96c241112cc8f3c2cb338216cd8133419b272d28bf1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-catalog.log",
+      "bytes": 189112,
+      "sha256": "6632a7d9a030fe2569fff9acc3b357b15753b0bbf6839916845a64e6361a03f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-runtime.binaries-before.json",
+      "bytes": 6050,
+      "sha256": "fabb1c92044ad9835d97ea5e363641919af85b5f3b9605f8a68b764836def6c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-runtime.json",
+      "bytes": 575,
+      "sha256": "a9210fec1d1df9dfd83501c577c4482736c197e1900f3cdeb4d84310e109b1cb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-runtime.log",
+      "bytes": 265407,
+      "sha256": "2d30f651ea91329c2ed754d3eaabae176f802d96c31ef0db3ebd622e03d0bfdb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-compiler-runtime.terminal-audit.json",
+      "bytes": 613,
+      "sha256": "8cfe5001f135bfa7cb6b155238b1dd94293699af2ac3a72d235c3a21e407b33a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-catalog.input-audit.json",
+      "bytes": 343,
+      "sha256": "0cb86937b164efffd5798f14d8a1d224f974981278df7b74a237490d5530068e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-catalog.inventory.json",
+      "bytes": 536627,
+      "sha256": "9fc5b7b38137a6b0bb8ca2c301d8c16a6b6937a502d5e8d6ad88c44cabd78165"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-catalog.json",
+      "bytes": 475,
+      "sha256": "5facdc2b8eed91ea34613d8d4304809a8980d1f538a6b891f2309b3c79a30493"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-catalog.log",
+      "bytes": 448850,
+      "sha256": "39cf35bf4ffe1e8f1ed32c23d4738f2f8667c78ee1b13c018bc5adc236fef5be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-runtime.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "cb9c14e036b4bcc4ccbe102b8a948fd36269a69d570e8d10c1a217ce861cf6c3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-runtime.json",
+      "bytes": 567,
+      "sha256": "64ea0df5fc6842fd436bd1ed6f913aff168c4d2a04ac64721902b405f2cd89b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-runtime.log",
+      "bytes": 725935,
+      "sha256": "caf7216d96c69a51d11f3af08aa8c7ce2c4adde8da5c05667e6c5277421dd8af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-core-runtime.terminal-audit.json",
+      "bytes": 613,
+      "sha256": "1168ed76d3ced5537163d95ea9a6643e9c04e5eaf3354253e60f972e2fdd9df3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-facade-catalog.input-audit.json",
+      "bytes": 340,
+      "sha256": "072572e7ecfc333491baeade035499ce619bedff9b46c139a459af3b0ba0fbb0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-facade-catalog.inventory.json",
+      "bytes": 38,
+      "sha256": "1b8d7e704c793407cccc2b506b63ac665a2da6fe30f8ec21212e11e0a4fd1462"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-facade-catalog.json",
+      "bytes": 472,
+      "sha256": "9523c24b38425f8cb8623bbbfa6379778ad6e28c022be9e699d9107575b6cdba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-facade-catalog.log",
+      "bytes": 73689,
+      "sha256": "2fd03a6392b0a71da2333f26894948a9ded7492c7a9a349fea4e3fc4055a7e7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-catalog.input-audit.json",
+      "bytes": 353,
+      "sha256": "6bbbd72d10f218d5bde00fdcb60a13d1e5fd858893fb44487258ef75e6dc0f2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-catalog.inventory.json",
+      "bytes": 357297,
+      "sha256": "21c6803746cc236760dc84f077ff81011a35c322983e4ea6c91177d41a71ba09"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-catalog.json",
+      "bytes": 485,
+      "sha256": "328b2839c052537840ef4d986cae57db9af1044ecfba4afe27af0bce179a1d2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-catalog.log",
+      "bytes": 317718,
+      "sha256": "09ad51e3666f0e70db11ee81e61742cc7881ed80db3c2f3cd98489c81e4a73fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-runtime.binaries-before.json",
+      "bytes": 1238,
+      "sha256": "51bcd11cbd09d9fbddf6541d24c8ada1a1e4c3c51f2d7d5338757c510d475728"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-runtime.json",
+      "bytes": 577,
+      "sha256": "59410a516047795a02b970bab1919d524bacb6b7e64555decd4dab8613bfcd81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-runtime.log",
+      "bytes": 509423,
+      "sha256": "02b7fc7fea6e25ab9983af3afa54c5330d120377e01ab4b65989a5dd332fb25b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-lang-sema-runtime.terminal-audit.json",
+      "bytes": 618,
+      "sha256": "91cd12e1f86aaa7371f83ccdde19a971b0bc465ed44025d538f87ba0004cbd9e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-catalog.input-audit.json",
+      "bytes": 359,
+      "sha256": "aa492b48fae789e403d3ddac5c341ddd2d0e1909c5e8d864cd28601e0b3d91b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-catalog.inventory.json",
+      "bytes": 41554,
+      "sha256": "85f5f149811aaf39e7cd17dfe4291912c51ecf71a67efb6ffdc8441d9345e610"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-catalog.json",
+      "bytes": 491,
+      "sha256": "bc0295ca74c1a1554405f38e585baf8cde867eba54d8892c1cdddfe94bd950a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-catalog.log",
+      "bytes": 111845,
+      "sha256": "c28e516e93bb22bcc54b73f90f00d113df34be5af6842572e6698d7d6db383fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-runtime.binaries-before.json",
+      "bytes": 1216,
+      "sha256": "f64e8118e0361719edb19eeea2238337daccf572a52dcbc3dbc81d46d3405ed4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-runtime.json",
+      "bytes": 583,
+      "sha256": "8fa57aa7539436e041c4b28f09c3869073f1a4827da595f3cb7cc54aff37786a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-runtime.log",
+      "bytes": 131072,
+      "sha256": "178160f6b3e811084b435854e4f57d284ecd39d069d6bbda0a458daa06dc0d17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3543-runtime-plan-runtime.terminal-audit.json",
+      "bytes": 608,
+      "sha256": "7a33fc82b019508262b93eff992166fe64d5fa42d8dc537b9390dbe7d44ddb75"
+    }
+  ]
+}

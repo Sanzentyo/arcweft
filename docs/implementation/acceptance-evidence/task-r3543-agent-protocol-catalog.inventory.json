@@ -1,0 +1,383 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "artifact::tests::final_entry_bound_schema_v1_round_trips",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "artifact::tests::mixed_predecessor_and_final_schema_v1_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "artifact::tests::predecessor_agent_item_schema_v1_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "artifact::tests::unsupported_manifest_version_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "ids::tests::agent_run_id_accepts_canonical_segments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "ids::tests::agent_run_id_rejects_noncanonical_spelling_and_uri_delimiters",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "ids::tests::resource_uri_serde_preserves_only_the_transport_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "predicate::tests::compare_predicate_keeps_flat_wire_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "predicate::tests::debug_and_observation_paths_keep_string_wire_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "predicate::tests::json_rejects_empty_all_and_any_predicates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "predicate::tests::json_rejects_nested_empty_predicate_collections",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "predicate::tests::typed_paths_reject_empty_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "presentation::tests::presentation_tree_filter_keeps_matching_objects_and_ancestors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "protocol::tests::invoke_action_keeps_flat_wire_args",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "protocol::tests::scroll_action_uses_region_addressed_milli_pixel_wire_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::canonical_looking_trace_uri_does_not_grant_publication_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::capture_metadata_serializes_selected_layer_capture_ref",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::capture_metadata_serializes_selected_object_image_resource",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::generic_image_object_metadata_does_not_require_rich_text_ref",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::hit_region_serializes_typed_proxy_schema_and_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::hit_test_hit_serializes_capture_refs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::image_pixel_format_is_producer_owned_with_query_uri_and_checked_extents",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::image_resource_metadata_preserves_capture_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::image_resource_metadata_preserves_observed_object_ref",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::observation_report_builds_mcp_style_resources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::observation_report_serializes_stable_snake_case_enums",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::observation_resources_preserve_typed_signal_and_metric_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::observed_rich_text_round_trips_only_the_final_typed_frame_wire",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "tests::view_scope_serializes_and_scrubs_source_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::body_capture_uses_actual_singleton_and_multiglyph_cluster_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::canonical_element_identity_rejects_cross_owner_ref_and_changed_range_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::canonical_wire_quota_counts_all_outer_records_before_serialization",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::capture_membership_rejects_foreign_detached_and_stale_context_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::catalog_admission_bounds_aggregate_text_and_elements_before_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::catalog_canonical_wire_budget_counts_escaping_and_full_envelope_overhead",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::catalog_decode_is_bounded_and_accepts_only_version_one_checked_layouts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::catalog_rejects_duplicate_prepared_target_root_and_owner_ordinal",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::catalog_rejects_scope_only_canonical_wire_overflow_before_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::compact_canonical_envelopes_roundtrip_checked_contexts_and_typed_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::glyph_orientation_and_hit_regions_are_bound_to_the_issued_layout",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::hit_and_standalone_image_envelopes_preserve_issued_context_and_reject_detached_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::issued_catalog_selection_preserves_original_owner_ordinals_and_shares_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::issued_child_hit_cannot_bypass_its_element_reference_with_a_root_region",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::issued_document_and_dialogue_roots_accept_exact_object_hits_and_reject_forged_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::objects_envelope_rejects_duplicate_ids_and_preserves_distinct_shared_context_elements",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::observation_and_objects_envelopes_are_self_contained_and_reject_missing_or_mismatched_contexts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::observation_and_objects_resources_use_the_same_duplicate_identity_admission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::ruby_allocation_catalog_rejects_split_atomic_clusters_and_foreign_body_indices",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::ruby_allocation_wire_is_required_and_charged_to_the_existing_context_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "text_context::tests::ruby_body_capture_joins_only_its_actual_base_partition",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "value::tests::runtime_projection_normalizes_dense_and_columnar_sequences_through_the_same_grammar",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "value::tests::runtime_projection_preserves_entities_and_literal_strings_in_nested_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "value::tests::runtime_projection_refuses_non_finite_and_out_of_range_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "binary": "arcweft-agent-protocol",
+      "test": "value::tests::runtime_projection_uses_the_same_public_line_identity_for_local_and_imported_owners",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

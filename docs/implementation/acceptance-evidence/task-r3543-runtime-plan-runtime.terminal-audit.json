@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "968b6be1bdcabf348a5cb3154463f6ab52b17e26",
+  "run": "task-r3543-runtime-plan-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  42.672s] 162 tests run: 162 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 162,
+  "passed": 162,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-28T06:08:25.9877060Z"
+}

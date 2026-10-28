@@ -13223,3 +13223,14 @@ Source 968b6be1bdcabf348a5cb3154463f6ab52b17e26 を通常commit／non-forced pus
 R3541はworkspace全97package・全target・全feature・lockedのcheckが終了0／268警告、R3542の同範囲Clippyも終了0／8,694警告。各3,999入力差分0。R3536構造の97package／382review trigger／blocking0とowner metricsを維持する。[公開とgate原本](acceptance-evidence/task-dialogue-projection-workspace-gates.json)。53packageの逆依存runtime matrixは別途進行中であり、このcompile結果から実行合格を推定しない。
 
 CLI資料のplan JSON説明は現行RuntimePlanReport／DialogueContentSpecWireに合わせた。旧line_display_catalog、静的catalogに解決済みframe/style cascadeがあるという説明、現在のline summaryにないflow/callee、reportにないsource policy/handler countの列挙を削除した。現在のstatic template／presentation／inline_styles／sourceとruntime frame生成の責務へ訂正した。Rust変更を伴わない資料訂正として検証する。
+
+
+### DialogueView逆依存の完了subsetと容量不足による中断 — 2026-10-28
+
+確認したmain f243a519a73dc0bd528a6d3a6720aec63e0cf5bb、Rust source 968b6be1bdcabf348a5cb3154463f6ab52b17e26。R3543は解決済み53packageをpackage別のall-features／lockedで直列に選択した。Core全2,122、Sema全1,361、RuntimePlan全162、Compiler全640、adapter／Agentの121件を含む10packageの計4,406件が全PASS。arcweft facadeはmatching native caseがなくcatalogue終了0として区別する。11package確認済み、未完了42packageであり、53全体の受入とはしない。
+
+Agent REPLでLNK1140／LNK1201が発生し、D:空き78,458,880byteを実測した。Agent RunnerとBrowser BenchでもOS112／no space on deviceを確認した。これら3catalogueは終了101で実行前の失敗。進行中Bundle catalogueを含むR3543の正確なrootと子43processを停止し、root tool終了-1・3,999入力差分0を照合した。BundleのCargo終了値や未実行caseの失敗数を作らない。CLIには未到達のため、前回R3508の649 PASS／43 FAILを新規結果へ書き換えない。
+
+D:\git\arcweft\target\debug\incremental はworkspace内の非reparseディレクトリで、304,242file／266,574,182,502byte。削除前に全build process停止と絶対pathを検査したが、削除command自体を自動承認レビューがblocked by policyとして実行前に拒否した。削除は行っておらず、ユーザー入力を要求中。別commandでの削除、artifact移動、debug/profile/jobs変更による迂回は行わない。[中断原本・再開条件・公開照合](acceptance-evidence/task-dialogue-projection-reverse-partial.json)。
+
+現状表の横断範囲に重複していたCLIの同一件数行は削除し、CLI項目を現在値の一か所とした。過去runの原本・SHA・前回完走R3508の適用範囲は保持した。容量不足や全体goalの未達を理由に、完了したGeneric Matchや今回のowner修復を未実装へ戻さない。

@@ -1,0 +1,19 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-agent-mcp-client",
+      "binary": "arcweft-agent-mcp-client",
+      "test": "tests::mcp_agent_session_accepts_action_alias_when_canonical_is_absent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp-client",
+      "binary": "arcweft-agent-mcp-client",
+      "test": "tests::mcp_agent_session_connects_and_dispatches_step_frames",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}
