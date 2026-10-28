@@ -1,7 +1,7 @@
 # Arcweft 現状一覧
 
-確認日: 2026-10-28。確認したmainは202e8cfa58c17693920c4b6a68254011d4bd194c。受入と未達は各行の境界・検証範囲で判定する。
-元のtracked WIP 14件とuntracked実ファイル6件を保持したcheckoutで確認した。公開済み入力の検証結果を、保持WIPを含むcheckout全体の合格へ拡張しない。
+確認日: 2026-10-28。確認したmainは218f6270f27d6b663ef6dbc3eaefa5b201469563。受入と未達は各行の境界・検証範囲で判定する。
+元のtracked WIP 14件とuntracked実ファイル6件を保持したcheckoutで確認した。各検証は凍結入力に限り、公開canonicalと保持WIPの差分を同一視しない。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画や、保持したuntrackedの2026-10-09 CLI修復メモを、そのまま現在の残作業へ転記しない。
@@ -17,6 +17,7 @@
 | 項目・境界 | 状態 | 根拠と、別途区別する範囲 |
 |---|---|---|
 | 未定義値パス／宣言defaultの診断 | **当該修復は受入・公開済み** | Source d16dd07d7a4764b81cefc6a9632d796b2d8cc0d6。Semaが型付きHIR pathと正確なSourceSpanを保持し、未定義値をsema.value.unknown_symbolで報告する。通常の値・callable・closed variantの探索順は維持する。TextProxyの専用default診断とline alias拒否も同じエラー型へ移行した。対象4件と全22逆依存で検証し、元のroute_params CLI拒否もPASS。[受入・初回2失敗と修復の原本](acceptance-evidence/task-value-path-acceptance.json)。 |
+| qualified nullary variant のRuntimePlan所有・lowering | **当該境界は検証・公開済み** | Source 218f6270f27d6b663ef6dbc3eaefa5b201469563。意味解析済みのEnum.Caseを既存variant ownerで扱い、global／specialized functionの両factと最終loweringを一致させた。Native／canonical decoded AWBCの実戻り値42、通常field、typed payload pathを含むCompiler 198／198 PASS（R3485、16逆依存のfeature統合下）。line-plan outのtyped plan構築とAWBC codecも確認。CLIの2-step完了とは別の境界。[受入・失敗原本・保全証明](acceptance-evidence/task-qualified-variant-acceptance.json)。 |
 | ラベル付きloop・通常ブロック内のloop制御 | **当該修復は受入・公開済み** | Source 705b3ff1d6df01f153803eed3d2e050f3273e2b3。普通／Thread本体は一つのAttachedLoopBodyで所有し、共通の意味座標を使う。Nativeは元iterator continuationを保持し、AWBCは既存target stackで転送先を選ぶ。R3405の新14件と元の12-step CLI caseがPASS。Native／decoded VMの実戻り値、AWBC Productの各step private rollbackを確認した。全55逆依存の新規失敗0とcheck／Clippy／doctest／wasmで受入。既存CLIの別件48失敗を理由に戻さない。[最終受入と検証範囲](acceptance-evidence/task-loop-source-frame-reverse-acceptance.json)。 |
 | Generic Match `.1.2` C3/C5 | **受入・公開済み** | 受入 `850534b9e9bc8c8872f6528dd00050a5e6e7699e`、公開 `f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2`。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件。明示capture移行後のR3405でも同じ151件を全PASSとして終端照合した。完全transcript、uninhabited-domain、Never／let-else、exhaustive-only atomic publicationを含む。[受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)、[公開記録](acceptance-evidence/accepted-generic-phase-note-publication.json)、[最新151件の照合](acceptance-evidence/task-loop-source-frame-reverse-acceptance.json)。 |
 | Collection／variant Map | **公開6 familyとArray反復化は対象条件で検証・公開済み** | Vec／Seq／Array／Slice／Option／Resultが公開catalog。Arrayのexact length、直接／retained-prefix、effect／source order、capture、途中保存復元を含む対象46件がPASSした。4,096要素入力も製品既定上限のままPASS。Need／Parser／Streamのschema候補を公開済みとはしない。[修復の検証履歴](convergence-evidence-history.md#array-map反復化の検証--2026-10-24)、[現行契約](../01-language/traits-seq-ranges.md)。 |
@@ -53,7 +54,7 @@
 | private fiber checkpoint | **Program handleのSource復元と別lease拒否は修復・owner検証済み** | R2525で、受理済みProgram handleを持つcheckpointが「enclosing admitted Sourceが必要」と失敗。checkpointに元executable leaseを保持させ、復元先を同leaseのadmitted Productに限定し、Product／activation／codegenの呼出側も同じadmissionへ移行。R2535の新規Core caseはhandleを取り出して破棄した候補から復元でき、同内容の別leaseは元fiberを保って拒否。private checkpointは非Serde。公開wire DTOのJSON／cleanup検証とR2531 compile-fail 2件PASS、detached Bool入力rollbackを維持。公開saveの全資源境界の包括受入は別。 |
 | Avro container の決定性・共通出力 | **当該実装 cut は公開・検証済み** | `80e4845d9a23d097a4e60b6a46071c3d2545da93`、lint 整理 `3c7bae39d31250647811a4e2c0b91a08dfd99374`。4 owner の520件と対象33件は PASS。全20 Avro 逆依存／以前の Data 71逆依存の最終受入と、他形式の資源上限はこの結果から推定しない。 |
 | その他の resource limit／data codec | **owner ごとの検証実績を保持・横断最終受入は未確認** | 値・type/source・frame/session admission や形式別 codec の検証記録を履歴に保持する。Avro の結果を JSON／Raw／Arrow／Parquet に転用せず、全体 goal に含まれることだけで個別の上限を未実装にも戻さない。新しい未達を挙げる際は形式・入力・上限・期待拒否点と実測結果を示す。 |
-| CLI・全 consumer の統合受入 | **R3470で未達45件を公開sourceから再実測。統合受入は未完了** | R3425で失敗した45件を限定選択し、202e8cfa58c17693920c4b6a68254011d4bd194cで0 PASS／45 FAIL。同じ識別子集合であり、この限定runを全691 CLI caseの再実行とはしない。View修復の完了は独立した行に保持する。[現在の失敗識別子・範囲](acceptance-evidence/task-cli-failures-after-view-body-arguments.json)、[終端原本](acceptance-evidence/task-final-r3470-program-fanout-runtime.terminal-audit.json)。 |
+| CLI・全 consumer の統合受入 | **R3483で全691件を実測：646 PASS／45 FAIL。統合受入は未完了** | 凍結checkoutの保持WIPを含む入力で検証。失敗識別子は先行R3470の45件と一致し、新規失敗0。現行構文・型へ移行したdialogue 2件はcompile／終了code 0まで進むが、元の2／3-step条件ではfinal dialogue、flow／task event 0、子scheduler完了0でassertionがFAILする。step／budget／assertionは維持。公開canonicalのsystem-info 8-stepと保持したユーザー32-stepを同一視しない。[現在の全CLI結果・失敗識別子](acceptance-evidence/task-cli-failures-after-qualified-variants.json)。 |
 | LSP signature stampのcache／publication拒否 | **fixture準備順を修復・LSP全223件PASS** | disk-backed alternate environment 6種をrequest admissionより前へ構築する。prepared mutationを同じ型付き代数で保持し、request中はauthority差し替えと検査を行う。19 mutation×cache-hit／post-computeの38組、正確なstale型／cache不変／publication拒否のassertionと10秒deadlineを維持。R3129は223／223 PASS、R3130 Clippyは警告あり・終了0、各3,987入力の前後差分0。[修復と限定影響](acceptance-evidence/task-signature-stamp-staging-acceptance.json)。 |
 | その他のTier 2／Native-Web capture parity | **最終受入未確認** | HIR Tier 2の8件は該当行の範囲。他ownerの本番上限・停止復帰と、Native/Webのcapture・実画像parity全体を満たす最終実行は確認できていない。既存の個別検証は履歴に保持し、未実行を失敗とはしない。 |
 | callable proofの現行surface／CLI拒否 | **現行文法へ同期・対象2件で検証済み。形式証明の完了とはしない** | 固定引数group一つ、headerのrequires／ensures、body内の通常proof callを使う。不明callはcheckerで拒否し、well-typed bodyも現在のverifierではmissing proof_bodyとして保持する。旧body-local use／check／assumeの文法・説明を現行仕様から除去し、CLI fixtureも同じauthorityへ揃えた。R3411は2／2 PASS、R3412の資料例はdevで6件受理・未証明obligation 6件、R3413対象Clippy終了0。[現行契約](../01-language/proofs-and-unsafe-audits.md)、[実測と移行理由](acceptance-evidence/task-cli-callable-proof-acceptance.json)。 |
@@ -62,9 +63,9 @@
 
 | 対象・入力 | 実際の結果 | 適用範囲・原本 |
 |---|---|---|
-| View影響の全25逆依存（修復前source） | **R3462：5650実行／5603 PASS／47 FAIL／31 ignored** | 全target／feature／locked、3,998入力、124 EXE、source／catalog／終端／EXE差分0。45件は先行CLIと同じ識別子、2件は今回のView退行。失敗した全runを原本のまま保持する。[全原本](acceptance-evidence/task-view-body-reverse-acceptance.json)。 |
-| 通常引数・回復fixtureの修復 | **R3464：754／754 PASS** | 全730 Syntax library case、2退行、選択したHIR／Sema／Match／AWBC／保存復元を5 package・6 EXEで実行。修復前の成功caseはその世代の証拠として保持し、全25を修復後に再実行したとはしない。[入力と再利用の範囲](acceptance-evidence/task-view-body-reverse-acceptance.json)。 |
-| 共有gate | **workspace check／Clippy、5所有者doctest、構造gateは終了0** | R3465は通常featureの全97 package・全target。R3466は全featureの全97 package・全target。R3468は4 doctest PASS。R3467はblocking0。すべて3,998入力のbyte差分0。[実測・所有境界](acceptance-evidence/task-view-body-reverse-acceptance.json)。 |
+| RuntimePlan／Compilerの全16逆依存 | **R3483：2,172実行／2,127 PASS／45 FAIL／23 ignored** | 全target／feature／locked。Compiler callable_executionだけを別sliceへ分けた。102 EXEと3,998入力、catalog／source／終端／EXE差分0。CLIは全691件で646 PASS／45 FAIL、他の選択consumerはPASS。[全原本・選択根拠](acceptance-evidence/task-qualified-variant-acceptance.json)。 |
+| 同じ16 packageのfeature統合下のCompiler実行 | **R3485：198／198 PASS** | Compiler単独のR3477を全consumerのfeature構成と同じだとは仮定せず、同じ16 package・全target／featureで当該binaryを実行した。通常field、qualified nullary variant、関数owner、line outputのtyped plan／codecを含む。R3483と二つの実runとして保持する。[受入範囲](acceptance-evidence/task-qualified-variant-acceptance.json)。 |
+| 共有gate | **R3486全feature check／R3487全feature Clippy／R3488通常feature check：全97 package・全targetで終了0** | すべてlocked・3,998入力差分0。警告数は268／8,689／268。依存・public API・owner責任が変わらない構造gateはR3467を再利用し、現物のsizeと凝集性判断を記録。public API／実行doc例の変更がなく、doctestの新規実行は主張しない。[gate原本・再利用理由](acceptance-evidence/task-qualified-variant-acceptance.json)。 |
 
 過去runの件数・失敗・full SHAは[検証履歴](convergence-evidence-history.md)と各原本へ保持する。異なる入力のrunを最新結果へ合算しない。
 

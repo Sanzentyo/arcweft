@@ -13125,3 +13125,18 @@ R3462の成功caseはその世代の証拠として保持し、修復後の全25
 Generic Match、loop、callable-owner認証、nested Character projectionを未完了へ戻さない。
 [広域失敗・修復・gate原本](acceptance-evidence/task-view-body-reverse-acceptance.json)、
 [現在のCLI限定実測](acceptance-evidence/task-cli-failures-after-view-body-arguments.json)。
+## qualified nullary variantのRuntimePlan接続 — 2026-10-28
+
+Source 218f6270f27d6b663ef6dbc3eaefa5b201469563（parent e0fb611318a271e0e3759d8ac2dea85bab8a8f28）を中間公開し、remote／tree／88 pathのblobとpatchを照合した。公開時点でCompiler 198 PASS、CLI 2 FAIL、逆依存実行中・workspace gate未実行という状態を明記した。未検証の全体成功を中間commitの条件にしないというユーザー指示に従った。完了判定は下記の後続実測範囲に限る。
+
+R3471–R3473では旧dialogue_style／文脈のない短縮outを含む入力の拒否と、型を明示してもHIR SelectがExpressionVariantを所有できない具体的なRuntimePlan不整合を区別した。RuntimeResolvedVariantのprivateな参照形判定をglobal／specialized functionの両検査で共有し、既存の型identity・layout・payload検査を保って最終loweringへ接続した。現行契約に合わせたCLI 2 fixtureの変更だけをpartial stageし、元のsystem-info 8→32変更は公開コードへ混ぜなかった。別indexで元patchを新canonicalへ適用すると実working blobを再構成でき、他13 trackedとuntracked実6件も保全した。WIP patch本文は作業領域に保ち、証明identityのみ公開した。
+
+R3475は新fixtureのqualified payload constructorが意味解析で拒否され197 PASS／1 FAIL。既存のtyped short payload constructorを使うfixtureへ訂正したR3477は198／198 PASS。R3478/R3479は誤ったmodule付きtest filterで0件となり、--no-tests failが終了4として拒否した。これを成功件数へ入れず、正しい実IDのR3480/R3481を保持した。R3481の2件はcompileとcommand終了0まで進む一方、元の2／3-step・1-op条件でdialogue待機、flow／task event 0、子scheduler完了0となり、変更していないassertionが両方FAILした。進行入力のないheadless driverという現物の観測を記録し、それだけを全原因の証明とはしない。
+
+後続R3483は全16逆依存からCompiler callable_executionだけを別sliceに分け、2,172実行／2,127 PASS（74 slow）／45 FAIL／23 ignored、852.994秒。102 EXE、3,998入力、catalog／source／終端／EXE差分0。失敗識別子はR3470の45件と一致した。今回はCLI全691件も含み646 PASS／45 FAILであり、先行45件だけの限定実測を現在の根拠として使い続けない。Compiler単独とconsumer横断のfeature統合が同一だと仮定せず、同じ16 packageのfeature構成で残るbinaryを実行したR3485も198／198 PASSだった。この二つを一つの架空runへ合算しない。
+
+R3486 workspace全feature check、R3487全feature Clippy、R3488通常feature checkは全97 package・全target・lockedで終了0、各3,998入力差分0。警告数268／8,689／268を隠さない。新たな依存edge／public API／I/O／owner責任を導入しておらず、R3467の構造gateを再利用した。変更ownerの実LOC・fan-in/outと凝集性判断は原本に保持した。新しいdoctest実行は主張しない。
+
+R3470の限定現在欄と旧View中心の横断欄は、上記の新実測と重複させずcurrent-status.mdの一か所へ差し替えた。過去の失敗・test結果・full SHAは削除せず、この履歴と原本へ保持する。qualified nullary variantの受入はNative／decoded AWBCの値・関数ownerとline-output plan／codecに限り、CLI 2-step完了や全体goalの完了とはしない。Generic Match、受入済みloop／HIR frame／View child bodyの判定を戻す根拠は発生していない。
+
+原本: [最終検証と適用範囲](acceptance-evidence/task-qualified-variant-acceptance.json)、[source公開](acceptance-evidence/task-qualified-variant-source-publication.json)、[現在の全CLI結果](acceptance-evidence/task-cli-failures-after-qualified-variants.json)。現状の唯一の一覧は[current-status.md](current-status.md)。

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "commit": "218f6270f27d6b663ef6dbc3eaefa5b201469563",
+  "originalHeldPatchSha256": "c2d8505dd38877f745816d0a4fc5234e1ac29e7ce0064505fe95d6377a64fd15",
+  "currentHeldPatchSha256": "6dd4dd235aedbe9a22634d6faeb23754dba0763abf7fcf15f6c0916f43f2e6ef",
+  "reason": "Exact original CLI user patch reconstruction verified in alternate Git index; published only the two fixture changes. All 14 held changes and 6 untracked files preserved."
+}

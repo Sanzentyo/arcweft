@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "base": "218f6270f27d6b663ef6dbc3eaefa5b201469563",
+  "command": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3487-workspace-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T02:34:04.9093614Z",
+  "finishedAt": "2026-10-28T02:34:47.3620555Z"
+}
