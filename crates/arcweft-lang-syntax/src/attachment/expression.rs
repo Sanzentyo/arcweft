@@ -1131,6 +1131,15 @@ fn candidate_semantic_child_specs(
             ),
         ],
         ExpressionProjection::Call(call) => candidate_call_child_specs(call, builder),
+        ExpressionProjection::ViewBodyApplication([header, body]) => vec![
+            builder.spec(
+                0,
+                *header,
+                ExpressionComponentRole::Operand,
+                SyntaxRole::Callee,
+            ),
+            builder.spec(1, *body, ExpressionComponentRole::Body, SyntaxRole::Body),
+        ],
         ExpressionProjection::Select(_) | ExpressionProjection::PostfixBracket(_) => {
             vec![builder.spec(
                 0,

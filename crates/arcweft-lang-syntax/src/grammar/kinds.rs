@@ -299,6 +299,7 @@ define_syntax_kinds! {
     ThreadExpression,
     ChoiceExpression,
     RangeExpression,
+    ViewBodyApplicationExpression,
     RecordExpression,
     RecordLiteralExpression,
     BinaryExpression,
@@ -724,6 +725,7 @@ impl SyntaxKind {
             | Self::ThreadExpression
             | Self::ChoiceExpression
             | Self::RangeExpression
+            | Self::ViewBodyApplicationExpression
             | Self::RecordExpression
             | Self::RecordLiteralExpression
             | Self::BinaryExpression
@@ -970,6 +972,7 @@ impl SyntaxKind {
             | Self::ThreadExpression
             | Self::ChoiceExpression
             | Self::RangeExpression
+            | Self::ViewBodyApplicationExpression
             | Self::RecordExpression
             | Self::RecordLiteralExpression
             | Self::BinaryExpression
@@ -1240,6 +1243,7 @@ impl SyntaxKind {
                 | Self::ThreadExpression
                 | Self::ChoiceExpression
                 | Self::RangeExpression
+                | Self::ViewBodyApplicationExpression
                 | Self::RecordExpression
                 | Self::RecordLiteralExpression
                 | Self::BinaryExpression

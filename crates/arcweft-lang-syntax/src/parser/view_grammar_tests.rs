@@ -50,7 +50,7 @@ fn canonical_view_owns_fixed_signature_exports_fragment_and_typed_values() {
         "    Panel {\n",
         "        Text(dialogue.character.display_name)\n",
         "        RichText(dialogue.content)\n",
-        "        Style { opacity = 0.5 }\n",
+        "        let props = Settings { opacity = 0.5 }\n",
         "    }.part(panel)\n",
         "}\n",
     );
@@ -63,6 +63,49 @@ fn canonical_view_owns_fixed_signature_exports_fragment_and_typed_values() {
     assert!(count_kind(&built, SyntaxKind::CallExpression) >= 1);
     assert_eq!(count_kind(&built, SyntaxKind::ErrorExpression), 0);
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn view_child_bodies_are_immediate_regions_and_handlers_remain_closures() {
+    let source = concat!(
+        "view Tree(dialogue: DialogueView) {\n",
+        "    Panel {\n",
+        "        let props = Settings { opacity = 0.5 }\n",
+        "        Column(spacing = 16) {\n",
+        "            Text(dialogue.character.display_name)\n",
+        "            Button(\"go\").on_click { dialogue.primary_action }\n",
+        "        }\n",
+        "    }\n",
+        "}\n",
+    );
+    let built = parse(source);
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(
+        count_kind(&built, SyntaxKind::ViewBodyApplicationExpression),
+        2
+    );
+    assert_eq!(count_kind(&built, SyntaxKind::ClosureExpression), 1);
+    assert_eq!(count_kind(&built, SyntaxKind::RecordExpression), 1);
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn view_child_bodies_preserve_the_control_regions_that_own_them() {
+    let source = concat!(
+        "view Tree(show: bool, values: Vec<i64>) {\n",
+        "    if show { Panel { Text(\"if\") } }\n",
+        "    match show { true => Column() { Text(\"yes\") }, false => Text(\"no\") }\n",
+        "    for value in values { Panel { Text(\"item\") } }\n",
+        "}\n",
+    );
+    let built = parse(source);
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(
+        count_kind(&built, SyntaxKind::ViewBodyApplicationExpression),
+        3
+    );
+    assert_eq!(count_kind(&built, SyntaxKind::ClosureExpression), 0);
     assert_eq!(built.green().to_string(), source);
 }
 
@@ -260,7 +303,7 @@ fn unclosed_nested_view_value_stops_before_the_next_declaration() {
         built
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.expression.missing_record_close")
+            .any(|diagnostic| diagnostic.code() == "syntax.expression.missing_block_close")
     );
     assert!(
         built

@@ -179,6 +179,7 @@ define_ast_kinds!(EXPRESSION_MARKERS, Expression;
     NumericBracketSequenceExpressionKind => NumericBracketSequenceExpression,
     ArrayRepeatExpressionKind => ArrayRepeatExpression,
     CallExpressionKind => CallExpression,
+    ViewBodyApplicationExpressionKind => ViewBodyApplicationExpression,
     SelectExpressionKind => SelectExpression,
     PostfixBracketExpressionKind => PostfixBracketExpression,
     AttachedContentApplicationExpressionKind => AttachedContentApplicationExpression,

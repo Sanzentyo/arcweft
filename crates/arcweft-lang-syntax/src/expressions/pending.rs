@@ -115,6 +115,7 @@ impl PendingExpressionProjection {
                 | SyntaxKind::NumericBracketSequenceExpression
                 | SyntaxKind::ArrayRepeatExpression
                 | SyntaxKind::CallExpression
+                | SyntaxKind::ViewBodyApplicationExpression
                 | SyntaxKind::PostfixBracketExpression
                 | SyntaxKind::AttachedContentApplicationExpression
                 | SyntaxKind::PipeExpression
@@ -183,6 +184,10 @@ impl PendingExpressionProjection {
                     SyntaxKind::ArrayRepeatExpression
                 )
                 | (ExpressionProjection::Call(_), SyntaxKind::CallExpression)
+                | (
+                    ExpressionProjection::ViewBodyApplication(_),
+                    SyntaxKind::ViewBodyApplicationExpression
+                )
                 | (
                     ExpressionProjection::Select(_),
                     SyntaxKind::SelectExpression
@@ -719,6 +724,14 @@ fn branch_components_validate(
         }
         ExpressionProjection::Match(projection) => Some(control::match_components_validate(
             projection, roles, components,
+        )),
+        ExpressionProjection::ViewBodyApplication(_) => Some(exact_component_roles(
+            roles,
+            components,
+            &[
+                ExpressionComponentRole::Operand,
+                ExpressionComponentRole::Body,
+            ],
         )),
         ExpressionProjection::Error => Some(exact_component_roles(
             roles,

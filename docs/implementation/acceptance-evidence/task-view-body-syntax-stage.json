@@ -1,0 +1,422 @@
+{
+  "version": 1,
+  "base": "d4691bc2dfcbca287200b8de528be4283f3944a3",
+  "status": "Syntax-owner migration checkpoint; container-body feature is NOT accepted and downstream migration continues",
+  "model": "ViewBodyApplication owns one header expression and an immediate lexical Block. It is distinct from a latent callback closure; no builtin-name parser exception selects it.",
+  "parser": "View value regions inherit their expression context through ordinary blocks and control regions. Arguments/initializers, explicit closures, action callbacks and Threads retain ordinary expression semantics.",
+  "runtime": {
+    "ignored": 0,
+    "sourceDrift": 0,
+    "executableDrift": 0,
+    "executables": 1,
+    "executed": 729,
+    "passed": 729,
+    "run": "R3439",
+    "sourceInputs": 3998,
+    "failed": 0,
+    "summary": "Summary [  38.208s] 729 tests run: 729 passed, 0 skipped",
+    "catalogDrift": 0
+  },
+  "initialFailures": {
+    "R3435": "11 PASS / 1 FAIL: old record-close expectation migrated to block-close without dropping following-declaration checks",
+    "R3433": "1 PASS / 11 FAIL: missing exact projection-kind registration",
+    "R3437": "728 PASS / 1 FAIL: exact identity marker registration missing, then added"
+  },
+  "clippy": {
+    "locked": true,
+    "warningMessages": 87,
+    "allTargets": true,
+    "allFeatures": true,
+    "package": "arcweft-lang-syntax",
+    "run": "R3441",
+    "exitCode": 0
+  },
+  "structure": {
+    "workspacePackages": 97,
+    "physicalRustLoc": 1761156,
+    "exitCode": 0,
+    "blockingViolations": 0,
+    "run": "R3442",
+    "rustFiles": 3106,
+    "reviewTriggers": 382
+  },
+  "downstream": {
+    "diagnostic": "E0004",
+    "unmigratedSites": [
+      "final_lowering/expression_lowering.rs:325",
+      "final_lowering/expression_lowering/dialogue/candidate.rs:495"
+    ],
+    "exitCode": 101,
+    "package": "arcweft-lang-hir",
+    "run": "R3440",
+    "status": "Known migration work; not a passing consumer gate"
+  },
+  "affectedGraph": {
+    "workspacePackages": 97,
+    "reverseClosure": 25,
+    "fullReverseStatus": "not yet run on the incomplete frontend migration",
+    "metadata": "task-view-body.metadata.json",
+    "owners": [
+      "arcweft-lang-syntax",
+      "arcweft-lang-hir",
+      "arcweft-lang-sema",
+      "arcweft-compiler"
+    ]
+  },
+  "ownership": "The parser cursor owns a scoped Ordinary/ViewValue grammar context. The shared Pratt parser owns the braced value operator, and existing block/statement/control grammars own lexical regions. Source-backed projection/attachment/kind registries agree on the two children. Existing large parser owners retain their cohesive cursor/budget/projection responsibility; no I/O, shared global state, unsafe, cross-layer dependency or visibility widening is introduced.",
+  "metrics": [
+    {
+      "path": "crates/arcweft-lang-syntax/src/attachment/expression.rs",
+      "bytes": 81345,
+      "physicalLoc": 2235,
+      "growth": 9,
+      "sha256": "ecbf5ce228ceae5553eb5ad56848b31138b6a5d91a3bbdee30f01b94a0975693"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/attachment/node.rs",
+      "bytes": 23021,
+      "physicalLoc": 626,
+      "growth": 1,
+      "sha256": "9799beae4604acb5f2b379a54ddda8d402dc8ff2baed9734391fad3331506ddb"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/expressions.rs",
+      "bytes": 43059,
+      "physicalLoc": 1318,
+      "growth": 4,
+      "sha256": "99bf266302cf5ce9575526c5beb76fe0e88c060380e7cc0ca2485e5c4bd65143"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/expressions/pending.rs",
+      "bytes": 31608,
+      "physicalLoc": 814,
+      "growth": 13,
+      "sha256": "e1c41d3779daea3799d856f46f6191078b4d5b8f4990aa6e416c4496a464b267"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/grammar/kinds.rs",
+      "bytes": 47334,
+      "physicalLoc": 1416,
+      "growth": 4,
+      "sha256": "5a1d059cc755a74ebb8228cfe5484da2fc662557a2b1b1ae1708889453f4a882"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/cursor.rs",
+      "bytes": 42249,
+      "physicalLoc": 1229,
+      "growth": 26,
+      "sha256": "77f214a04a149880b70be0bb2de2bb1a2f7bbc7d558a7213777f4104644688c6"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/expression.rs",
+      "bytes": 90258,
+      "physicalLoc": 2605,
+      "growth": 72,
+      "sha256": "46df1fb8af77b772f00b0aa20feb66fa6c7d045346a63724d2c98f9bc7e33674"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/expression/control.rs",
+      "bytes": 20889,
+      "physicalLoc": 611,
+      "growth": 9,
+      "sha256": "f81060ba33831686d58123699b45bcfd9e206a7feb728344317eaa994b995e9f"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/statement.rs",
+      "bytes": 88718,
+      "physicalLoc": 2619,
+      "growth": 0,
+      "sha256": "beb01edf5102380de8df30fc52f78e976ce5d826770edd8d18b2f5a0fd2f7aae"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/view_grammar.rs",
+      "bytes": 21609,
+      "physicalLoc": 627,
+      "growth": 2,
+      "sha256": "60e7106b1d691950141e7ec4549191ea0dbba1d9d71aed0e3109528a7eb573c3"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/view_grammar_tests.rs",
+      "bytes": 10588,
+      "physicalLoc": 315,
+      "growth": 43,
+      "sha256": "2a797e75f616f64e791be7b696b3b922a184debbc0f1b91f8876a06e004685e0"
+    }
+  ],
+  "cargoChanges": 0,
+  "originalTrackedWip": 14,
+  "originalUntrackedWip": 6,
+  "featureAcceptanceClaim": false,
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3432-program-fanout-awbc-check.input-audit.json",
+      "bytes": 427,
+      "sha256": "4f8e55e135fb2b6fbfbe7a74c6ca08e0b357d82c93325af4d6d3a0d733bc2df0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3432-program-fanout-awbc-check.json",
+      "bytes": 559,
+      "sha256": "60e44e7e5ee181c461c0d886f38d9c298594f162d1cc06f4a2ba48ad1ebd55b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3432-program-fanout-awbc-check.log",
+      "bytes": 136661,
+      "sha256": "0a5ad25104f11832248d05c1d489db3210d35b4e98501afdbab519158e9bf44f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3433-program-fanout-runtime.binaries-before.json",
+      "bytes": 216,
+      "sha256": "d8b34d6c1b93c68eede046889103c1a07f3065a9ba698236234fd7fbe87394ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3433-program-fanout-runtime.json",
+      "bytes": 650,
+      "sha256": "7fc4fbdefb6f843aef6fe6cb347052741df6db808aa35f562d8d923c6f893a9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3433-program-fanout-runtime.log",
+      "bytes": 236038,
+      "sha256": "062e61063e4c40302e26bca9d1031b8e5ce620284f318b9cf7df3426c6a03ae2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3433-program-fanout-runtime.terminal-audit.json",
+      "bytes": 2694,
+      "sha256": "6f348392b62d67c6d461f5a65cc99f979c50309b2057eaa20470473c4b4b02d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3434-program-fanout-awbc-check.input-audit.json",
+      "bytes": 427,
+      "sha256": "cd2c03c9dd778be4498b1da0e7c7c3a088fa9051ceb6a9246716ffa43ad09d07"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3434-program-fanout-awbc-check.json",
+      "bytes": 559,
+      "sha256": "7b0b8503f0b6553e76f6d251e323e0e82252996884f835dd997eea251a55e90e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3434-program-fanout-awbc-check.log",
+      "bytes": 136300,
+      "sha256": "303fbe0878b536028c7f8e9506f0708f1a03c4bb0c4264c199512b877f56e92a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3435-program-fanout-runtime.binaries-before.json",
+      "bytes": 216,
+      "sha256": "70ea6ae2f3319b2e99227740766160f8701b4cce46dea603982e5c9553f9c7fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3435-program-fanout-runtime.json",
+      "bytes": 650,
+      "sha256": "ce213aba673865ec3df2e53b67925611bb916439f3d76c7204e12f0cc330ad87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3435-program-fanout-runtime.log",
+      "bytes": 228575,
+      "sha256": "6ccef67670097a2dbbf4e5e7e26d1aee344ea0ed136bf4ddc5be974d58c10e32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3435-program-fanout-runtime.terminal-audit.json",
+      "bytes": 818,
+      "sha256": "996aca108c693abe529c9d2992366cb9090c58acb3f0df475128e294672ba9ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3436-program-fanout-awbc-check.input-audit.json",
+      "bytes": 383,
+      "sha256": "09013d61cc2ccd86cedf22a0432be8e90db8c3c8c116f305fa55447ffe3c4556"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3436-program-fanout-awbc-check.json",
+      "bytes": 515,
+      "sha256": "545179f4cf519cc2099a7804173e28c45a3f71101dca61d346a4f9c1a9b7493d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3436-program-fanout-awbc-check.log",
+      "bytes": 119809,
+      "sha256": "45660d49341f892c95434b921b950502816b8bc7b0add67f14c548bddb3bfab8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3437-program-fanout-runtime.binaries-before.json",
+      "bytes": 216,
+      "sha256": "9022ee6504ba549922aee19fd199f381141005ed4fc88e6c086bbc7198d3512f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3437-program-fanout-runtime.json",
+      "bytes": 606,
+      "sha256": "979dce16ab4812c80d393281d1fe944add245a49126c9fc9df4cd222e24abcf3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3437-program-fanout-runtime.log",
+      "bytes": 217105,
+      "sha256": "bb865db220e6c6000d4d66dcc1ddcb973127476c26c05a7f622b61593fac3deb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3437-program-fanout-runtime.terminal-audit.json",
+      "bytes": 812,
+      "sha256": "00a1b14b71f345a88a85bd36fef27a5cce53f4b42d33a8a712a6e6ef508adcb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3438-program-fanout-awbc-check.input-audit.json",
+      "bytes": 383,
+      "sha256": "7c8728465fc50e73735a8e3f376400fc7589bd56c0c8f17103fca38a00cbf2e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3438-program-fanout-awbc-check.json",
+      "bytes": 515,
+      "sha256": "96bf4fa6f00257f3839197388a8dff47f60d107aa5002dc94e956a79351652f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3438-program-fanout-awbc-check.log",
+      "bytes": 119810,
+      "sha256": "d8d6832eb0ef1f04780025493e68d2730e7be59b83b38f9fcde8d58e3e757457"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3439-program-fanout-runtime.binaries-before.json",
+      "bytes": 216,
+      "sha256": "b3e14e58f08fe5d9c36268c1729a9eb3371299c0bc0a7b3d9b2c78f722d2a509"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3439-program-fanout-runtime.json",
+      "bytes": 604,
+      "sha256": "c2cfc3eb8e2f9e8c3b029c31973db91d90318926695134f3fe14457100cb1cc0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3439-program-fanout-runtime.log",
+      "bytes": 216265,
+      "sha256": "cbd4ccb7185a5828782423daa44acda7ee62d7235c2f60f69f69ed696b5ab10c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3439-program-fanout-runtime.terminal-audit.json",
+      "bytes": 616,
+      "sha256": "5f83831ae6f97b6d8681d4d05c0ae6522ae05f564bce58e58f399736b565a6a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3440-hir-consumer-check.input-audit.json",
+      "bytes": 330,
+      "sha256": "f977cb7f41d0bd5c99a67c2b9144d9b52f7d8863b41055aa21906b4ee06ffb8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3440-hir-consumer-check.json",
+      "bytes": 462,
+      "sha256": "bb5199ad8ff36f2e339c9b5a6e022f21ad2ad1fa2a1d6d5a222f3624094fbe9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3440-hir-consumer-check.log",
+      "bytes": 6290,
+      "sha256": "66ae55ac89b5a84f591db0d988d2ef3e5cd16a1f74f454e55f21586760b41839"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3441-syntax-owner-clippy.input-audit.json",
+      "bytes": 333,
+      "sha256": "96f6b00e6568a73d5257a728bc729517cd299ed8585688304fdc97b4c45c2b9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3441-syntax-owner-clippy.json",
+      "bytes": 465,
+      "sha256": "09dcf777116253321a73a07c825c5824a9de338ef46b4fa953ff3650a903912a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3441-syntax-owner-clippy.log",
+      "bytes": 55790,
+      "sha256": "dab1267ddc498012b82b2ff00d748d36fde34cb8d24b5f4df38b8e1a8d0078ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3442-structure-gate.input-audit.json",
+      "bytes": 241,
+      "sha256": "3126270537909b019f2568243c3658dea62d2ff06d026c6226f3c98b1e868650"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3442-structure-gate.json",
+      "bytes": 373,
+      "sha256": "bbb288858fdf7b327356fd720b58c703cc3ddfade48ecc8b51689003e9449c23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3442-structure-gate.log",
+      "bytes": 64943,
+      "sha256": "060a43bdc63f448813d13759a8fe86c27620f61e97b06016e1880f3c2878f2a3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3432.inventory.json",
+      "bytes": 188549,
+      "sha256": "03df7302d21c6019a19682f03c1c82021a010352aef3efc8715c4481a13cab70"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3432.source-freeze.json",
+      "bytes": 782213,
+      "sha256": "b1626eb6303b4dbc56f395b675306eaf525234c29e0f8286bf46ef86641a4223"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3433.source-freeze.json",
+      "bytes": 782213,
+      "sha256": "b1626eb6303b4dbc56f395b675306eaf525234c29e0f8286bf46ef86641a4223"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3434.inventory.json",
+      "bytes": 188549,
+      "sha256": "03df7302d21c6019a19682f03c1c82021a010352aef3efc8715c4481a13cab70"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3434.source-freeze.json",
+      "bytes": 782213,
+      "sha256": "b68bcbde2411b2e9b98e1efd0554daadacfbb263013015a59014f2511e5a3954"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3435.source-freeze.json",
+      "bytes": 782213,
+      "sha256": "b68bcbde2411b2e9b98e1efd0554daadacfbb263013015a59014f2511e5a3954"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3436.inventory.json",
+      "bytes": 187830,
+      "sha256": "9731dc9baf3b76a4cd65ec503a503662a06e690ac5a816f03eb0c697129e1791"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3436.source-freeze.json",
+      "bytes": 782213,
+      "sha256": "66230f98ec4b7685f787391d3e33bc6b823f0e0d5f1e0f7ff28ca6a8a0da788e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3437.source-freeze.json",
+      "bytes": 782213,
+      "sha256": "66230f98ec4b7685f787391d3e33bc6b823f0e0d5f1e0f7ff28ca6a8a0da788e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3438.inventory.json",
+      "bytes": 187830,
+      "sha256": "9731dc9baf3b76a4cd65ec503a503662a06e690ac5a816f03eb0c697129e1791"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3438.source-freeze.json",
+      "bytes": 782271,
+      "sha256": "9e45147cd290f395a7f79160c139b2ac46a3eaba357cfe1d239ad45118745053"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3439.source-freeze.json",
+      "bytes": 782271,
+      "sha256": "9e45147cd290f395a7f79160c139b2ac46a3eaba357cfe1d239ad45118745053"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3440.source-freeze.json",
+      "bytes": 782271,
+      "sha256": "9e45147cd290f395a7f79160c139b2ac46a3eaba357cfe1d239ad45118745053"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3441.source-freeze.json",
+      "bytes": 782271,
+      "sha256": "9e45147cd290f395a7f79160c139b2ac46a3eaba357cfe1d239ad45118745053"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3442.source-freeze.json",
+      "bytes": 782271,
+      "sha256": "9e45147cd290f395a7f79160c139b2ac46a3eaba357cfe1d239ad45118745053"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-body.metadata.json",
+      "bytes": 4287233,
+      "sha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-view-body.reverse-closure.json",
+      "bytes": 5661,
+      "sha256": "79505d96f7d00186ba71ec08cc77d81cd87e1e9cfb146d5cfe488f8407b75ce7"
+    }
+  ]
+}

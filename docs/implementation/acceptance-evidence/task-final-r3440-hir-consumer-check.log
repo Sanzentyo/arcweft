@@ -1,0 +1,121 @@
+    Checking arcweft-id v0.1.0 (D:\git\arcweft\crates\arcweft-id)
+    Checking arcweft-source v0.1.0 (D:\git\arcweft\crates\arcweft-source)
+    Checking arcweft-lang-syntax v0.1.0 (D:\git\arcweft\crates\arcweft-lang-syntax)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-syntax\src\attachment\snapshot.rs:47:14
+   |
+47 |             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |              ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+47 -             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+47 +             .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: `arcweft-lang-syntax` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-syntax` to apply 1 suggestion)
+    Checking arcweft-lang-hir v0.1.0 (D:\git\arcweft\crates\arcweft-lang-hir)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-hir\src\identity.rs:26:10
+   |
+26 |         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |          ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+26 -         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+26 +         .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+error[E0004]: non-exhaustive patterns: `&ExpressionProjection::ViewBodyApplication(_)` not covered
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue\candidate.rs:495:38
+    |
+495 |         let (kind, recovery) = match projection {
+    |                                      ^^^^^^^^^^ pattern `&ExpressionProjection::ViewBodyApplication(_)` not covered
+    |
+note: `ExpressionProjection` defined here
+   --> crates\arcweft-lang-syntax\src\expressions.rs:45:1
+    |
+ 45 | pub enum ExpressionProjection {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 73 |     ViewBodyApplication([SyntaxExpressionSlot; 2]),
+    |     ------------------- not covered
+    = note: the matched value is of type `&ExpressionProjection`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+872 ~             },
+873 +             &ExpressionProjection::ViewBodyApplication(_) => todo!()
+    |
+
+error[E0004]: non-exhaustive patterns: `&ExpressionProjection::ViewBodyApplication(_)` not covered
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering.rs:325:15
+    |
+325 |         match attached.projection() {
+    |               ^^^^^^^^^^^^^^^^^^^^^ pattern `&ExpressionProjection::ViewBodyApplication(_)` not covered
+    |
+note: `ExpressionProjection` defined here
+   --> crates\arcweft-lang-syntax\src\expressions.rs:45:1
+    |
+ 45 | pub enum ExpressionProjection {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 73 |     ViewBodyApplication([SyntaxExpressionSlot; 2]),
+    |     ------------------- not covered
+    = note: the matched value is of type `&ExpressionProjection`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+386 ~             },
+387 +             &ExpressionProjection::ViewBodyApplication(_) => todo!()
+    |
+
+For more information about this error, try `rustc --explain E0004`.
+warning: `arcweft-lang-hir` (lib) generated 1 warning
+error: could not compile `arcweft-lang-hir` (lib) due to 2 previous errors; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+error[E0004]: non-exhaustive patterns: `&arcweft_lang_syntax::expressions::ExpressionProjection::ViewBodyApplication(_)` not covered
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering\dialogue\candidate.rs:495:38
+    |
+495 |         let (kind, recovery) = match projection {
+    |                                      ^^^^^^^^^^ pattern `&arcweft_lang_syntax::expressions::ExpressionProjection::ViewBodyApplication(_)` not covered
+    |
+note: `arcweft_lang_syntax::expressions::ExpressionProjection` defined here
+   --> crates\arcweft-lang-syntax\src\expressions.rs:45:1
+    |
+ 45 | pub enum ExpressionProjection {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 73 |     ViewBodyApplication([SyntaxExpressionSlot; 2]),
+    |     ------------------- not covered
+    = note: the matched value is of type `&arcweft_lang_syntax::expressions::ExpressionProjection`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+872 ~             },
+873 +             &arcweft_lang_syntax::expressions::ExpressionProjection::ViewBodyApplication(_) => todo!()
+    |
+
+error[E0004]: non-exhaustive patterns: `&arcweft_lang_syntax::expressions::ExpressionProjection::ViewBodyApplication(_)` not covered
+   --> crates\arcweft-lang-hir\src\final_lowering\expression_lowering.rs:325:15
+    |
+325 |         match attached.projection() {
+    |               ^^^^^^^^^^^^^^^^^^^^^ pattern `&arcweft_lang_syntax::expressions::ExpressionProjection::ViewBodyApplication(_)` not covered
+    |
+note: `arcweft_lang_syntax::expressions::ExpressionProjection` defined here
+   --> crates\arcweft-lang-syntax\src\expressions.rs:45:1
+    |
+ 45 | pub enum ExpressionProjection {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 73 |     ViewBodyApplication([SyntaxExpressionSlot; 2]),
+    |     ------------------- not covered
+    = note: the matched value is of type `&arcweft_lang_syntax::expressions::ExpressionProjection`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+386 ~             },
+387 +             &arcweft_lang_syntax::expressions::ExpressionProjection::ViewBodyApplication(_) => todo!()
+    |
+
+warning: `arcweft-lang-hir` (lib test) generated 1 warning (1 duplicate)
+error: could not compile `arcweft-lang-hir` (lib test) due to 2 previous errors; 1 warning emitted

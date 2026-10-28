@@ -253,6 +253,14 @@ pub(super) struct DocumentParser<'source, 'events> {
     empty_offset: usize,
     events: &'events mut Vec<SyntaxEvent>,
     budget: &'events mut GrammarBudget,
+    expression_context: ExpressionContext,
+}
+
+/// Expression grammar selected by the owning lexical region.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ExpressionContext {
+    Ordinary,
+    ViewValue,
 }
 
 impl<'source, 'events> DocumentParser<'source, 'events> {
@@ -269,6 +277,7 @@ impl<'source, 'events> DocumentParser<'source, 'events> {
             empty_offset: 0,
             events,
             budget,
+            expression_context: ExpressionContext::Ordinary,
         }
     }
 
@@ -286,7 +295,24 @@ impl<'source, 'events> DocumentParser<'source, 'events> {
             empty_offset,
             events,
             budget,
+            expression_context: ExpressionContext::Ordinary,
         }
+    }
+
+    pub(super) const fn expression_context(&self) -> ExpressionContext {
+        self.expression_context
+    }
+
+    pub(super) fn with_expression_context<R>(
+        &mut self,
+        context: ExpressionContext,
+        emit: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let outer = self.expression_context;
+        self.expression_context = context;
+        let result = emit(self);
+        self.expression_context = outer;
+        result
     }
 
     pub(super) fn is_at_end(&self) -> bool {

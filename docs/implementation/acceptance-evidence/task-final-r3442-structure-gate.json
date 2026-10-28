@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "base": "d4691bc2dfcbca287200b8de528be4283f3944a3",
+  "command": [
+    "structure-audit-gate"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3442-structure-gate.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T00:27:38.5577140Z",
+  "finishedAt": "2026-10-28T00:27:45.1903335Z"
+}

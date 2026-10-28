@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "d4691bc2dfcbca287200b8de528be4283f3944a3",
+  "run": "task-final-r3437-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  31.131s] 729 tests run: 728 passed, 1 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 729,
+  "passed": 728,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::node::tests::every_identity_bearing_kind_has_one_exact_marker_contract"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-28T00:15:03.1567454Z"
+}

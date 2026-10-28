@@ -16,7 +16,7 @@ use crate::expressions::{
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::name::SyntaxName;
-use crate::parser::cursor::DocumentParser;
+use crate::parser::cursor::{DocumentParser, ExpressionContext};
 use crate::parser::pattern::emit_pattern;
 use crate::parser::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
@@ -26,12 +26,19 @@ use crate::parser::statement::emit_braced_block;
 
 pub(super) fn emit_block_expression(
     parser: &mut DocumentParser<'_, '_>,
-    _end: usize,
+    end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
     let start_event = parser.event_position();
     let owner = parser.start_projected_owner(SyntaxKind::BlockExpression, role);
-    emit_block_contents(parser, SyntaxRole::Body);
+    crate::parser::statement::emit_braced_block_until(
+        parser,
+        end,
+        SyntaxKind::FunctionItem,
+        SyntaxKind::Block,
+        SyntaxRole::Body,
+        "syntax.expression.missing_block_close",
+    );
     parser.set_expression_projection(
         owner,
         PendingExpressionProjection::new(ExpressionProjection::Block, Vec::new()),
@@ -449,7 +456,9 @@ fn emit_match_arm(
     let guard = if parser.at("when") {
         parser.bump();
         parser.bump_trivia_before(arrow);
-        let guard = emit_expression_node(parser, arrow, SyntaxRole::Guard);
+        let guard = parser.with_expression_context(ExpressionContext::Ordinary, |parser| {
+            emit_expression_node(parser, arrow, SyntaxRole::Guard)
+        });
         let slot = completed_slot(parser, guard);
         let range = parser
             .completed_range(guard.start_event)

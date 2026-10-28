@@ -358,7 +358,7 @@ fn emit_block_sequence(
         }
 
         parser.finish();
-        emit_item_expression(parser, significant_end, SyntaxRole::Tail, item_kind);
+        let _ = emit_expression_node(parser, significant_end, SyntaxRole::Tail);
         bump_until(parser, close);
         has_tail = true;
         break;
@@ -832,7 +832,7 @@ fn emit_statement_kind(
             );
         }
         SyntaxKind::ExpressionStatement => {
-            emit_item_expression(parser, child_end, SyntaxRole::Initializer, item_kind);
+            let _ = emit_expression_node(parser, child_end, SyntaxRole::Initializer);
         }
         _ => bump_until(parser, child_end),
     }
@@ -2423,7 +2423,7 @@ fn emit_match_arm(
                 statement_kind,
                 SyntaxKind::ExpressionStatement | SyntaxKind::ErrorStatement
             ) {
-                emit_item_expression(parser, end, SyntaxRole::Body, item_kind);
+                let _ = emit_expression_node(parser, end, SyntaxRole::Body);
             } else {
                 emit_statement_kind(
                     parser,

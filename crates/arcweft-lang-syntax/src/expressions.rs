@@ -68,6 +68,9 @@ pub enum ExpressionProjection {
     /// One ordinary parenthesized or callback-block Call and its exact
     /// source-produced recovery state.
     Call(SyntaxCallProjection),
+    /// A View value header and its immediately evaluated child body. The body
+    /// is a lexical View region, not a latent function callback.
+    ViewBodyApplication([SyntaxExpressionSlot; 2]),
     /// One authored target followed by an ordinary dot and a present or
     /// source-owned missing member.
     Select(SyntaxSelectedMember),
@@ -195,6 +198,7 @@ impl ExpressionProjection {
             | Self::NumericBracketSequence(_)
             | Self::ArrayRepeat(_)
             | Self::Call(_)
+            | Self::ViewBodyApplication(_)
             | Self::Select(_)
             | Self::Pipe(_)
             | Self::Try { .. }
@@ -265,7 +269,7 @@ impl ExpressionProjection {
                 slots.iter().copied().any(SyntaxExpressionSlot::is_missing)
             }
             Self::NumericBracketSequence(sequence) => sequence.has_recovery(),
-            Self::ArrayRepeat(slots) | Self::Pipe(slots) => {
+            Self::ArrayRepeat(slots) | Self::Pipe(slots) | Self::ViewBodyApplication(slots) => {
                 slots.iter().copied().any(SyntaxExpressionSlot::is_missing)
             }
             Self::Call(call) => call.has_recovery(),

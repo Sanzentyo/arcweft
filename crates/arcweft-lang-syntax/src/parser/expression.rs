@@ -17,7 +17,7 @@ use self::postfix_bracket::emit_postfix_bracket;
 
 use arcweft_source::SourceRange;
 
-use super::cursor::DocumentParser;
+use super::cursor::{DocumentParser, ExpressionContext};
 use super::lexer::{
     LiteralLexemePart, typed_entity_reference, typed_lifetime_registry_path, typed_literal,
 };
@@ -66,7 +66,19 @@ pub(super) struct CompletedNode {
 }
 
 pub(super) fn emit_expression(parser: &mut DocumentParser<'_, '_>, end: usize, role: SyntaxRole) {
-    let _ = emit_expression_node(parser, end, role);
+    parser.with_expression_context(ExpressionContext::Ordinary, |parser| {
+        let _ = emit_expression_node(parser, end, role);
+    });
+}
+
+pub(super) fn emit_view_expression(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+) {
+    parser.with_expression_context(ExpressionContext::ViewValue, |parser| {
+        let _ = emit_expression_node(parser, end, role);
+    });
 }
 
 /// Emits an indentation-owned block as the same typed Block expression used
@@ -209,6 +221,15 @@ fn parse_binding_power(
         {
             bump_until(parser, application.start);
             left = emit_typed_call(parser, end, left, role, application);
+            continue;
+        }
+
+        if operator == "{"
+            && parser.expression_context() == ExpressionContext::ViewValue
+            && parser.completed_kind(left.start_event) != Some(SyntaxKind::SelectExpression)
+        {
+            bump_until(parser, operator_index);
+            left = emit_view_body_application(parser, end, left, role);
             continue;
         }
 
@@ -426,9 +447,10 @@ fn parse_prefix(
         ".." | "..=" => emit_prefix_range(parser, end, role, text == "..="),
         "try" => emit_prefix_operand(parser, end, SyntaxKind::TryExpression, role, false),
         "await" => emit_prefix_operand(parser, end, SyntaxKind::AwaitExpression, role, false),
-        "thread" if composite::has_braced_body(parser, end) => {
-            composite::emit_thread_expression(parser, end, role)
-        }
+        "thread" if composite::has_braced_body(parser, end) => parser
+            .with_expression_context(ExpressionContext::Ordinary, |parser| {
+                composite::emit_thread_expression(parser, end, role)
+            }),
         "result" | "option" | "seq" | "stream" if composite::has_braced_body(parser, end) => {
             composite::emit_computation_block(parser, end, role)
         }
@@ -442,7 +464,9 @@ fn parse_prefix(
         "{" => composite::emit_braced_expression(parser, end, role),
         "if" => control::emit_if_expression(parser, end, role),
         "match" => control::emit_match_expression(parser, end, role),
-        "|" | "||" => composite::emit_closure(parser, end, role),
+        "|" | "||" => parser.with_expression_context(ExpressionContext::Ordinary, |parser| {
+            composite::emit_closure(parser, end, role)
+        }),
         _ if syntax_binary_operator(text).is_some() => {
             emit_missing_left_binary(parser, end, role, text)
         }
@@ -459,7 +483,8 @@ fn parse_prefix(
         _ if matches!(
             token.kind(),
             SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
-        ) && composite::is_nominal_record_head(parser, end) =>
+        ) && parser.expression_context() != ExpressionContext::ViewValue
+            && composite::is_nominal_record_head(parser, end) =>
         {
             composite::emit_record_expression(parser, end, role)
         }
@@ -1021,7 +1046,54 @@ fn emit_error(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) -> Complete
     CompletedNode { start_event }
 }
 
+fn emit_view_body_application(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    header: CompletedNode,
+    role: SyntaxRole,
+) -> CompletedNode {
+    let header_range = parser
+        .completed_range(header.start_event)
+        .expect("a View body header retains its exact expression range");
+    let header_slot = completed_slot(parser, header);
+    let owner = parser.insert_projected_start(
+        header.start_event,
+        SyntaxKind::ViewBodyApplicationExpression,
+        role,
+    );
+    parser.set_start_role(header.start_event + 1, SyntaxRole::Callee);
+    let body = control::emit_block_expression(parser, end, SyntaxRole::Body);
+    let body_range = parser
+        .completed_range(body.start_event)
+        .expect("a View child body retains its lexical block range");
+    parser.set_expression_projection(
+        owner,
+        PendingExpressionProjection::new(
+            ExpressionProjection::ViewBodyApplication([header_slot, completed_slot(parser, body)]),
+            vec![
+                PendingExpressionComponent::new(ExpressionComponentRole::Operand, header_range),
+                PendingExpressionComponent::new(ExpressionComponentRole::Body, body_range),
+            ],
+        ),
+    );
+    parser.finish();
+    CompletedNode {
+        start_event: header.start_event,
+    }
+}
+
 fn emit_callback_block_call(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    left: CompletedNode,
+    role: SyntaxRole,
+) -> CompletedNode {
+    parser.with_expression_context(ExpressionContext::Ordinary, |parser| {
+        emit_callback_block_call_in_context(parser, end, left, role)
+    })
+}
+
+fn emit_callback_block_call_in_context(
     parser: &mut DocumentParser<'_, '_>,
     end: usize,
     left: CompletedNode,

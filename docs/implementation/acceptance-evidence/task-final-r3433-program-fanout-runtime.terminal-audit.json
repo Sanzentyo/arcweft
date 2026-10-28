@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "base": "d4691bc2dfcbca287200b8de528be4283f3944a3",
+  "run": "task-final-r3433-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.141s] 12 tests run: 1 passed, 11 failed, 717 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 12,
+  "passed": 1,
+  "failed": 11,
+  "skipped": 717,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::rest_parameter_is_retained_as_typed_invalid_parameter"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::malformed_export_retains_typed_export_recovery_children"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_defaults_are_typed_but_destructuring_and_header_extensions_are_rejected"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::canonical_view_owns_fixed_signature_exports_fragment_and_typed_values"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_child_bodies_preserve_the_control_regions_that_own_them"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_missing_parameters_and_where_clause_recover_without_losing_the_body"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::misplaced_export_is_typed_and_following_sibling_is_preserved"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_child_bodies_are_immediate_regions_and_handlers_remain_closures"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::keyword_parameter_is_not_admitted_as_a_view_binding"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_header_and_trailing_recovery_roles_are_distinct"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::unclosed_nested_view_value_stops_before_the_next_declaration"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-28T00:09:59.5844141Z"
+}

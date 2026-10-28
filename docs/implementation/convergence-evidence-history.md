@@ -13060,3 +13060,17 @@ retained View callable-owner認証を未実装へ戻さない。container body�
 
 製品・Rust・Cargoの変更は0。R3425全22逆依存と共有gateの実測は、元の入力と適用範囲で保持する。
 [訂正根拠・実測・検証再利用の範囲](acceptance-evidence/task-view-input-contract-reconciliation.json)。
+## View子ブロックの構文所有者移行 -- 2026-10-28
+
+基点d4691bc2dfcbca287200b8de528be4283f3944a3。Viewの子ブロックは遅延closureではなく、
+headerと通常Blockを持つViewBodyApplicationとして解析する。通常の引数・let initializer・明示closureと
+action handlerは既存の文脈を保ち、Viewのif／match／loop内で即時実行のscopeを維持する。
+Syntax所有者11ファイルの変更であり、container body全体の受入はまだ主張しない。
+
+R3439はSyntax library全729/729PASS（38.208秒）。R3433の11失敗はprojection-kind登録、
+R3435の1失敗はrecord-closeからblock-closeへの回復診断、R3437の1失敗はAST marker登録を修復した。
+各途中の失敗もraw結果として保持する。R3441 Clippyはexit0、R3442構造gateはblocking0。
+R3440のHIR consumer checkはexit101で、ExpressionProjectionの未移行2分岐がE0004。
+この既知の移行途中を公開する。25 packageの推移的consumer検証と後段実装は引き続き必要。
+既受入のGeneric Match、loop、Text projection、View callable-owner認証を未完了へ戻さない。
+[実測・入力freeze・所有境界](acceptance-evidence/task-view-body-syntax-stage.json)。

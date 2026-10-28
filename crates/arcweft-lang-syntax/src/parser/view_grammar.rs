@@ -3,9 +3,9 @@
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::DocumentParser;
+use super::cursor::{DocumentParser, ExpressionContext};
 use super::declaration::emit_retained_declaration_header;
-use super::expression::emit_expression;
+use super::expression::{emit_expression, emit_view_expression};
 use super::lexer::LexToken;
 use super::path::emit_path;
 use super::pattern::emit_pattern;
@@ -389,15 +389,17 @@ fn emit_view_fragment(parser: &mut DocumentParser<'_, '_>, body_end: usize) {
             )
             && super::statement::is_statement_start(parser, parser.cursor(), entry_end)
         {
-            super::statement::emit_statement_fragment(
-                parser,
-                entry_end,
-                SyntaxRole::Element(ordinal),
-            );
+            parser.with_expression_context(ExpressionContext::ViewValue, |parser| {
+                super::statement::emit_statement_fragment(
+                    parser,
+                    entry_end,
+                    SyntaxRole::Element(ordinal),
+                );
+            });
         } else if is_value {
             let value_start = parser.cursor();
             let event_start = parser.event_position();
-            emit_expression(parser, entry_end, SyntaxRole::Element(ordinal));
+            emit_view_expression(parser, entry_end, SyntaxRole::Element(ordinal));
             if parser.started_kind_since(event_start, SyntaxKind::ErrorExpression) {
                 parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
                     "syntax.view.invalid_value",
