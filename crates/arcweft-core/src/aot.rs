@@ -263,7 +263,8 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
             | RuntimeEffectExpr::SignalWrite { .. }
             | RuntimeEffectExpr::MetricWrite { .. }
             | RuntimeEffectExpr::EmitEvent { .. } => true,
-            RuntimeEffectExpr::Panic(_)
+            RuntimeEffectExpr::Wait(_)
+            | RuntimeEffectExpr::Panic(_)
             | RuntimeEffectExpr::Fail(_)
             | RuntimeEffectExpr::Bail(_)
             | RuntimeEffectExpr::Ensure { .. }

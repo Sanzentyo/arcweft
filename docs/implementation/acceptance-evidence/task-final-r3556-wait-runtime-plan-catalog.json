@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "2e02c67c59e8bff24e0302ab84225c0baf232c8e",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3556-wait-runtime-plan-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T20:34:28.5628253Z",
+  "finishedAt": "2026-10-28T20:39:20.8739402Z"
+}

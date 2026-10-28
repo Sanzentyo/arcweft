@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "run": "task-final-r3566-wait-syntax-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-syntax",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4001,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T21:05:37.9176161Z"
+}

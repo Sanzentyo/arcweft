@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "2e02c67c59e8bff24e0302ab84225c0baf232c8e",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3552-wait-sema-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-28T20:25:33.9900922Z",
+  "finishedAt": "2026-10-28T20:25:45.3909155Z",
+  "freeBefore": 495207698432,
+  "freeAfter": 495132790784
+}

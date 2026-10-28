@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "2e02c67c59e8bff24e0302ab84225c0baf232c8e",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-syntax",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3566-wait-syntax-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T21:04:36.9723295Z",
+  "finishedAt": "2026-10-28T21:05:34.8613983Z"
+}

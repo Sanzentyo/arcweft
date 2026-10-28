@@ -43,6 +43,7 @@ impl PreparedRuntimeEvaluatedEffectSource<'_> {
             }
             cursor.finish()?;
             Ok(match row.kind {
+                Kind::Wait => Effect::Wait(first),
                 Kind::Log(level) => Effect::Log {
                     level: level.to_owned(),
                     message: first,

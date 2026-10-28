@@ -2886,11 +2886,13 @@ fn add_goto_cleanup_effect(program: &mut AwbcProgram) {
         effects: AwbcEffectSetId(0),
     });
     let constant = AwbcConstantId(program.constants.len().try_into().unwrap());
-    program.constants.push(AwbcConstant::Unit);
+    program.constants.push(AwbcConstant::DurationNanos(0));
     program.effect_plans.push(AwbcEffectPlan {
         signature,
         capability: None,
-        payload: crate::awbc::schema::AwbcEffectPayload::Wait(vec![constant]),
+        payload: crate::awbc::schema::AwbcEffectPayload::Wait(
+            crate::awbc::schema::AwbcWaitDuration::Constant(constant),
+        ),
         resources: Vec::new(),
     });
 }
@@ -2908,7 +2910,10 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
         runtime_type(1, AwbcRuntimeTypeShape::Unit),
         runtime_type(2, AwbcRuntimeTypeShape::String),
     ];
-    program.constants = vec![AwbcConstant::Unit, AwbcConstant::String(AwbcStringId(1))];
+    program.constants = vec![
+        AwbcConstant::DurationNanos(0),
+        AwbcConstant::String(AwbcStringId(1)),
+    ];
     program.signatures.push(AwbcSignature {
         params: Vec::new(),
         result: None,
@@ -2917,7 +2922,9 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
     program.effect_plans = vec![AwbcEffectPlan {
         signature: AwbcSignatureId(1),
         capability: None,
-        payload: crate::awbc::schema::AwbcEffectPayload::Wait(vec![AwbcConstantId(0)]),
+        payload: crate::awbc::schema::AwbcEffectPayload::Wait(
+            crate::awbc::schema::AwbcWaitDuration::Constant(AwbcConstantId(0)),
+        ),
         resources: Vec::new(),
     }];
     program.frame_layouts = vec![
@@ -4898,16 +4905,15 @@ fn verifier_rejects_function_kind_role_mismatch_at_the_function_owner() {
 }
 
 #[test]
-fn wait_effect_wire_round_trip_preserves_and_rejects_wrong_static_arity() {
+fn wait_effect_wire_round_trip_preserves_input_source_and_rejects_wrong_duration_arity() {
     let mut program = minimal_program();
     program.constants = vec![AwbcConstant::Unit, AwbcConstant::Unit];
     program.effect_plans = vec![AwbcEffectPlan {
         signature: AwbcSignatureId(0),
         capability: None,
-        payload: crate::awbc::schema::AwbcEffectPayload::Wait(vec![
-            AwbcConstantId(0),
-            AwbcConstantId(1),
-        ]),
+        payload: crate::awbc::schema::AwbcEffectPayload::Wait(
+            crate::awbc::schema::AwbcWaitDuration::Input,
+        ),
         resources: Vec::new(),
     }];
 
@@ -4919,6 +4925,60 @@ fn wait_effect_wire_round_trip_preserves_and_rejects_wrong_static_arity() {
     assert_eq!(decoded.effect_plans[0].kind(), AwbcEffectKind::Wait);
     assert!(matches!(
         decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
+    ));
+}
+
+#[test]
+fn wait_verifier_requires_exact_duration_input_or_constant_and_no_result() {
+    use crate::awbc::schema::{AwbcEffectPayload, AwbcWaitDuration};
+    let mut program = minimal_program();
+    let duration = AwbcTypeId(program.runtime_types.len().try_into().unwrap());
+    program
+        .runtime_types
+        .push(runtime_type(240, AwbcRuntimeTypeShape::Duration));
+    let signature = AwbcSignatureId(program.signatures.len().try_into().unwrap());
+    program.signatures.push(AwbcSignature {
+        params: vec![duration],
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.effect_plans.push(AwbcEffectPlan {
+        signature,
+        capability: None,
+        payload: AwbcEffectPayload::Wait(AwbcWaitDuration::Input),
+        resources: Vec::new(),
+    });
+    program
+        .verify(Default::default(), Default::default())
+        .unwrap();
+    for params in [vec![], vec![duration, duration], vec![AwbcTypeId(0)]] {
+        let mut wrong = program.clone();
+        wrong.signatures[signature.index()].params = params;
+        assert!(matches!(
+            wrong.verify(Default::default(), Default::default()),
+            Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
+        ));
+    }
+    let mut wrong = program.clone();
+    wrong.signatures[signature.index()].result = Some(duration);
+    assert!(matches!(
+        wrong.verify(Default::default(), Default::default()),
+        Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
+    ));
+
+    program.signatures[signature.index()].params.clear();
+    let constant = AwbcConstantId(program.constants.len().try_into().unwrap());
+    program
+        .constants
+        .push(AwbcConstant::DurationNanos(350_000_000));
+    program.effect_plans[0].payload = AwbcEffectPayload::Wait(AwbcWaitDuration::Constant(constant));
+    program
+        .verify(Default::default(), Default::default())
+        .unwrap();
+    program.constants[constant.index()] = AwbcConstant::Unit;
+    assert!(matches!(
+        program.verify(Default::default(), Default::default()),
         Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
     ));
 }

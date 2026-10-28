@@ -450,7 +450,7 @@ fn emit_cancel_rule(
             bump_until(parser, end);
         }
     } else if let Some(colon) = colon {
-        emit_indented_cancel_rule_body(parser, colon, end, owner_start, item_kind);
+        emit_indented_cancel_rule_body(parser, colon, end, owner_start);
     } else if result_arrow.is_some() {
         let at = parser.current_offset();
         parser.start(SyntaxKind::DialogueCancelRuleBody, SyntaxRole::Body);
@@ -486,7 +486,6 @@ fn emit_indented_cancel_rule_body(
     colon: usize,
     end: usize,
     owner_start: usize,
-    item_kind: SyntaxKind,
 ) {
     let interval = indented_suite_interval(parser, owner_start, colon, end);
     parser.start(SyntaxKind::DialogueCancelRuleBody, SyntaxRole::Body);
@@ -544,7 +543,6 @@ fn emit_indented_cancel_rule_body(
             super::emit_thread_flow_item(
                 parser,
                 significant_end,
-                item_kind,
                 ordinal,
                 dialogue_plan.map(DialoguePlanInterval::owner_end),
             );

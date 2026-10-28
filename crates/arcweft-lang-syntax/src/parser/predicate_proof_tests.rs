@@ -1077,6 +1077,49 @@ fn shared_statement_families_keep_typed_identity_and_children() {
 }
 
 #[test]
+fn thread_wait_owns_its_flow_grammar_inside_an_ordinary_function() {
+    let source = "fn launch() {\n wait(ready, timeout = 1s)\n let child = thread {\n if ready { wait(0.35s) }\n }\n}\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::WaitStatement),
+        1
+    );
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::CallExpression),
+        1
+    );
+    let mut pending: Vec<&rowan::GreenNodeData> = vec![built.green()];
+    let mut threads = 0;
+    while let Some(node) = pending.pop() {
+        if node.kind() == rowan::SyntaxKind(SyntaxKind::ThreadExpression as u16) {
+            threads += 1;
+            assert_eq!(green_kind_count(node, SyntaxKind::WaitStatement), 1);
+            assert_eq!(green_kind_count(node, SyntaxKind::CallExpression), 0);
+        }
+        pending.extend(node.children().filter_map(|child| match child {
+            rowan::NodeOrToken::Node(node) => Some(node),
+            rowan::NodeOrToken::Token(_) => None,
+        }));
+    }
+    assert_eq!(threads, 1);
+}
+
+#[test]
+fn malformed_thread_wait_recovers_inside_its_body_before_the_next_function() {
+    let source = "fn launch() { thread { wait 0.35s } }\nfn after() { true }\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    assert!(!built.diagnostics().is_empty());
+    assert_eq!(built.green().to_string(), source);
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::WaitStatement),
+        1
+    );
+    assert_eq!(green_kind_count(built.green(), SyntaxKind::FunctionItem), 2);
+}
+
+#[test]
 fn on_mark_statement_uses_the_typed_mark_trigger_shape() {
     let source = "{ on mark(@.checkpoint) => lemma(); }\n";
     let built = parse_test_statement_block(&document(source)).unwrap();

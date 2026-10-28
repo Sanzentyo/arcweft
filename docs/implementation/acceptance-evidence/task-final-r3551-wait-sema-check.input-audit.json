@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3551-wait-sema-check",
+  "actualExitCode": 101,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 4000,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T20:24:28.8014554Z"
+}

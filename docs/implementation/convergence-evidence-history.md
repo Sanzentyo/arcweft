@@ -13243,3 +13243,24 @@ D:\git\arcweft\target\debug\incremental はworkspace内の非reparseディレク
 R3546はSema library全1,339/1,339 PASS、除外0。0s／0.1s／0.35s、Duration parameter、通常関数の戻り値と、別statementの同じDuration型operandへ差し替える負例を含む。既存Bool／mark拒否とMatch statement corpusのassertionを保ち、元Wait childとDuration型の照合を追加した。1 EXE／3,999入力・catalog／終端差分0。R3544 Sema全target check、R3547 workspace全97package・全target・全feature・locked check、R3549同範囲Clippyは終了0。R3548構造は382 review trigger／blocking0。
 
 [owner checkpoint・全原本・責任境界](acceptance-evidence/task-wait-sema-owner-checkpoint.json)。これはSemaのcoherentな中間cutであり、RuntimePlanのsuspension consumerとWait lowering、Coreの評価済みDuration、Native/AWBC・codec・実停止復帰を含む全体の実装を継続する。CLIの新規合格やWaitの実行完了を推定しない。現在のR3543は以前の凍結入力の4,406 PASSと容量不足中断として保持し、今回の1,339件へ合算しない。cache削除は依然未実施であり、debug/profile/jobs・budget・assertionの条件を変更していない。
+
+## 全体 cargo clean と Sema Wait 公開の保全 — 2026-10-29
+
+確認mainは `2e02c67c59e8bff24e0302ab84225c0baf232c8e`。元の14 tracked WIPと6 untracked実ファイルは保持する。Sema Wait operandの公開は同commitで、親 `b19bca70cbb4c80b520ac2e396f7e11a6f03ad25`、tree `a2637176ab3f41a60f6b70d5f4ad3694cd56f072`。46 pathのblob差分0とremote一致を[公開照合](acceptance-evidence/task-wait-sema-source-publication.json)へ保持した。
+
+R3543の容量不足を受けたincremental-only削除は自動承認レビューで実行前に拒否されていた。後続のユーザー回答「cargo clean で全体を削除する」を受け、Cargo／rustc／link／当該testが実行中でないこと、workspaceとCargo metadataのtargetがそれぞれ `D:/git/arcweft` と `D:/git/arcweft/target` でreparse pointでないことを確認して、同checkoutで `cargo clean` を実行した。終了0、365,787 file／486.5GiB削除、D:空き2,157,076,480 bytesから497,055,129,600 bytesへ回復。[実行原本と選択](acceptance-evidence/task-wait-cargo-clean-20261029.json)。
+
+訂正理由: 「削除未実施・入力待ち」はこの明示回答と成功結果により現在形ではなくなったため、現状一覧から削除した。旧R3543の中断・42 package未受入・raw logはそのまま保持し、clean成功をruntime合格へ読み替えない。全体cleanなので既存のtarget実行ファイルも削除される。今後はソースと記録を保持した新しいbuildを検証し、以前のEXEを再利用したとは報告しない。
+## Waitの型付き投影とThread文法ownerの接続 — 2026-10-29
+
+確認mainは2e02c67c59e8bff24e0302ab84225c0baf232c8e。元の14 tracked WIP／6 untracked実ファイルを保持し、今回のRust変更は29 path。Semaのexact checked operandをRuntimePlanのglobal／instance両factへ保持し、元HIR childとDuration型を照合する。Flowの既存value continuationを用いるので、call・branch・generic producerをSourceから評価する経路を捨てない。Coreのcount/preflight／Source codec／body metadataとmaterialize、AWBCのcodec／verifier／Product mappingをversion1のまま揃えた。WaitのAWBC payloadは、静的Choice packet等のConstantと実行時Inputを明示する単一のgrammarで、空引数からのfallbackやfake zero-duration host descriptorは置かない。
+
+現行仕様のThread内waitをgeneric関数へ入れると、Thread-body itemが外側FunctionItemの分類を引き継いでAgent callとなった。Thread／Flow／line-plan item emitter自体がFlow文法contextを所有し、子statementへ渡す境界に修復した。通常fn内の選択callは維持する。R3559の最初のfixtureは通常fn内でDuration waitを呼んでおり、別契約のAgent Predicate APIを選択するため不正だった。初期説明の「呼出し引数が拒否された」は誤りで、診断位置はwait(delay)だったことを訂正する。不正fixtureはnegativeとして残し、R3562の正当なgeneric Thread不具合とは分ける。
+
+R3550／R3551／R3552のcompile failureと修復、R3559／R3562の各5 PASS／1 FAIL、R3565の新しいCST testのcompile failureをrawのまま保持する。R3555 Core library 2,074／2,074、R3567 Syntax library 732／732、最終文法入力のR3573 RuntimePlan library 132／132、R3569 Compiler flow_effects 6／6がPASS。Compilerの新testは7 Source条件の投影とcanonical decoded AWBCを検証し、実時間待機を実行したものではない。各4,001入力のrun中差分、catalogと実行ファイル差分は0。Coreのsource／dependency入力は後続変更の影響を受けず、RuntimePlanは文法修復後に再実行した。
+
+R3553の3 owner checkは文法修復前の入力で終了0。最終R3571はSyntax／Core／RuntimePlan／Compilerの全target・全feature・locked Clippy終了0、6,645警告。構造R3570は97 package／382 review trigger／blocking0。Cargo manifest／lockの100入力差分0で、Syntax追加後の逆依存は55 package。現在入力の全55 matrixは未実行で、旧R3543の53 package matrix途中結果と合算しない。[owner検証・失敗・原本・責任境界](acceptance-evidence/task-wait-projection-owner-checkpoint.json)。
+
+訂正理由: 元の「RuntimePlan Wait投影が未修復」はSource投影とcodecの検証により現在形ではなくなったので、現状一覧から除いた。Sema受入、Generic Matchその他の完了境界は維持する。実行側にはまだduration suspensionがなく、論理dtによる停止復帰と保存／取消／置換は同じgoalの実装中として残す。LogicalWaitの値grammar往復をexecutor save受入へ読み替えない。
+
+現状整理の訂正理由: 構造gateの現在欄は最終R3570の一か所へ集約し、R3548の重複した現在形を削除した。R3548の実測は既存Sema owner原本と履歴に保持する。R3547／R3549の全workspace結果は、その時点のSema入力に限る前回記録として示し、後続Core／AWBC／Thread文法入力の全workspace合格にはしない。

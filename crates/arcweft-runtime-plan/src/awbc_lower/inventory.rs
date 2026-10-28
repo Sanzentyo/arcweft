@@ -1596,6 +1596,25 @@ impl AwbcInventory {
         effect: &RuntimeEffectExpr,
         declared_effects: &RuntimeEffectSet,
     ) -> Option<AwbcEffectPlanId> {
+        if let RuntimeEffectExpr::Wait(duration) = effect {
+            let Some(duration_type) = self.plan_type(duration.ty()) else {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    "effect.wait_duration_type",
+                    "wait Duration type was not admitted from its runtime plan",
+                ));
+                return None;
+            };
+            let effects = self.intern_effect_set(declared_effects);
+            let signature = self.intern_signature(vec![duration_type], None, effects);
+            return Some(self.intern_effect_plan(AwbcEffectPlan {
+                signature,
+                capability: None,
+                payload: arcweft_core::awbc::schema::AwbcEffectPayload::Wait(
+                    arcweft_core::awbc::schema::AwbcWaitDuration::Input,
+                ),
+                resources: Vec::new(),
+            }));
+        }
         if let RuntimeEffectExpr::RegistryWrite { key, value } = effect {
             let Some(value_type) = self.plan_type(value.ty()) else {
                 self.diagnostic(AwbcLowerDiagnostic::error(

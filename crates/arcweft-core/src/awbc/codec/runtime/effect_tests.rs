@@ -18,6 +18,56 @@ fn registry_plan() -> AwbcEffectPlan {
 }
 
 #[test]
+fn wait_duration_source_roundtrips_rejects_truncation_unknown_tag_and_old_serde_payload() {
+    use crate::awbc::schema::AwbcWaitDuration;
+    for source in [
+        AwbcWaitDuration::Constant(AwbcConstantId(128)),
+        AwbcWaitDuration::Input,
+    ] {
+        let plan = AwbcEffectPlan {
+            signature: AwbcSignatureId(0),
+            capability: None,
+            payload: AwbcEffectPayload::Wait(source),
+            resources: Vec::new(),
+        };
+        let mut writer = Writer::default();
+        plan.write_wire(&mut writer).unwrap();
+        let mut bytes = writer.into_bytes();
+        for end in 0..bytes.len() {
+            assert!(
+                AwbcEffectPlan::read_wire(&mut Reader::new(
+                    &bytes[..end],
+                    &AwbcDecodeBudget::default()
+                ))
+                .is_err()
+            );
+        }
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(AwbcEffectPlan::read_wire(&mut reader).unwrap(), plan);
+        reader.finish().unwrap();
+        // Kind, signature and absent capability precede the sole Duration source.
+        bytes[3] = 255;
+        assert!(matches!(
+            AwbcEffectPlan::read_wire(&mut Reader::new(&bytes, &AwbcDecodeBudget::default())),
+            Err(AwbcCodecError::UnknownTag {
+                kind: "wait Duration source",
+                tag: 255,
+                ..
+            })
+        ));
+    }
+    assert!(serde_json::from_str::<AwbcEffectPayload>(r#"{"wait":[0]}"#).is_err());
+    assert!(AwbcEffectPayload::try_from((AwbcEffectKind::Wait, vec![])).is_err());
+    assert!(
+        AwbcEffectPayload::try_from((
+            AwbcEffectKind::Wait,
+            vec![AwbcConstantId(0), AwbcConstantId(1)]
+        ))
+        .is_err()
+    );
+}
+
+#[test]
 fn audio_effect_decoder_rejects_every_incomplete_typed_payload() {
     let plan = AwbcEffectPlan {
         signature: AwbcSignatureId(0),

@@ -412,7 +412,7 @@ impl RuntimeProjectFunctionStatementPayload {
             | Self::Select
             | Self::SourceLocale
             | Self::Include(_)
-            | Self::Suspension
+            | Self::Suspension(_)
             | Self::Yield => {}
         }
     }

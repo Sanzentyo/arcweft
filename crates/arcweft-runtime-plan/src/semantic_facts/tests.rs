@@ -9,6 +9,8 @@ mod dialogue_target;
 mod registry_write;
 #[path = "tests/scope_continuations.rs"]
 mod scope_continuations;
+#[path = "tests/suspension.rs"]
+mod suspension;
 use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_core::entry::{

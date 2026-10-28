@@ -271,6 +271,17 @@ must not fabricate HIR or syntax identity. Both paths emit the stable code
 
 Ordinary line-plan `wait(...)` admits only `Duration`. A mark trigger retains
 its typed `RuntimeDialogueMarkId`; it cannot become a string wait target.
+The checked suspension retains its exact operand. RuntimePlan lowers that operand
+through the ordinary Flow value continuation, including calls and branches, into
+one evaluated Wait effect. Materialization accepts the typed Duration value and
+never parses a formatted label.
+
+The version-one AWBC Wait payload declares one Duration source: `Input` consumes
+the sole parameter of an exact Duration signature; `Constant` names a Duration
+constant and has no parameters. Static effect packets, including Choice effects,
+use the constant source without a register context. These are alternatives in
+one payload grammar; neither source falls back to the other. Both have no result.
+The decoder rejects unknown source tags and the former array-shaped Serde payload.
 
 `yield` is not a line effect. It lowers only through Stream generation plans;
 a dialogue line plan must use `out` for line-scope values.

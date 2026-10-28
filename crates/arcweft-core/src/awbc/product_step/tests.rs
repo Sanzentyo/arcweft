@@ -5669,7 +5669,9 @@ fn wait_effect_mapping_accepts_only_a_typed_duration_target() {
     ));
 
     let non_duration = constant_string(&mut program, ".checkpoint");
-    effect_test_arguments_mut(&mut program, effect)[0] = non_duration;
+    program.effect_plans[effect.index()].payload = crate::awbc::schema::AwbcEffectPayload::Wait(
+        crate::awbc::schema::AwbcWaitDuration::Constant(non_duration),
+    );
     let mapped = program.map_product_effect(effect, &[]);
     let MappedEffect::Unsupported(diagnostic) = mapped else {
         panic!("a non-Duration wait target must not become a runtime wait request");
@@ -5680,7 +5682,8 @@ fn wait_effect_mapping_accepts_only_a_typed_duration_target() {
         "AWBC wait target must evaluate to Duration"
     );
 
-    effect_test_arguments_mut(&mut program, effect).clear();
+    program.effect_plans[effect.index()].payload =
+        crate::awbc::schema::AwbcEffectPayload::Wait(crate::awbc::schema::AwbcWaitDuration::Input);
     let mapped = program.map_product_effect(effect, &[]);
     let MappedEffect::Unsupported(diagnostic) = mapped else {
         panic!("a missing wait target must not become an empty runtime expression");
@@ -5689,6 +5692,19 @@ fn wait_effect_mapping_accepts_only_a_typed_duration_target() {
     assert_eq!(
         diagnostic.message,
         "AWBC wait effect is missing its Duration target"
+    );
+
+    assert!(matches!(program.map_product_effect(effect,
+        &[RuntimeValue::Duration(crate::time::LogicalDuration::from_nanos(350_000_000))]),
+        MappedEffect::Line(LineEffectRequest::Wait(crate::effect::RuntimeWaitTarget::Duration(duration)))
+        if duration.as_nanos() == 350_000_000));
+    assert!(
+        matches!(program.map_product_effect(effect, &[RuntimeValue::Bool(true)]),
+        MappedEffect::Unsupported(diagnostic) if diagnostic.category == RuntimeDiagnosticCategory::Type)
+    );
+    assert!(
+        matches!(program.map_product_effect(effect, &[RuntimeValue::Unit, RuntimeValue::Unit]),
+        MappedEffect::Unsupported(diagnostic) if diagnostic.category == RuntimeDiagnosticCategory::Internal)
     );
 }
 
@@ -7854,9 +7870,8 @@ fn effect_test_arguments_mut(
     effect: AwbcEffectPlanId,
 ) -> &mut Vec<AwbcConstantId> {
     match &mut program.effect_plans[effect.index()].payload {
-        crate::awbc::schema::AwbcEffectPayload::Wait(args)
-        | crate::awbc::schema::AwbcEffectPayload::Assert(args) => args,
-        payload => panic!("fixture expects a Wait or Assert argument role: {payload:?}"),
+        crate::awbc::schema::AwbcEffectPayload::Assert(args) => args,
+        payload => panic!("fixture expects an Assert argument role: {payload:?}"),
     }
 }
 

@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "base": "2e02c67c59e8bff24e0302ab84225c0baf232c8e",
+  "metrics": [
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "owner": "arcweft-compiler",
+      "physicalLoc": 10235,
+      "basePhysicalLoc": 10233,
+      "growth": 2,
+      "sha256": "28435f6df787af2616cb77a9c22167404240781fa18d92b5a7890e415a195b6f"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/flow_effects.rs",
+      "owner": "arcweft-compiler",
+      "physicalLoc": 268,
+      "basePhysicalLoc": 215,
+      "growth": 53,
+      "sha256": "7eab717bd6bf85ef94efbb233ab49a786db34b284608236f223efa3e5f0645f5"
+    },
+    {
+      "path": "crates/arcweft-core/src/aot.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 447,
+      "basePhysicalLoc": 446,
+      "growth": 1,
+      "sha256": "bda57329bce67f957077c5ed068f731f10e972c12d42bcd2dc6ae1e953da8573"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 1678,
+      "basePhysicalLoc": 1656,
+      "growth": 22,
+      "sha256": "8a229e362098b96dbae9c70a973665ce780c548ad733d5066aa1ce62579c4d48"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/codec/runtime/effect_tests.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 159,
+      "basePhysicalLoc": 109,
+      "growth": 50,
+      "sha256": "857fcb2a32f4a484500bf69d53c21e29da2d18121fd53df3811bda4f585091b7"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/mapping.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 603,
+      "basePhysicalLoc": 594,
+      "growth": 9,
+      "sha256": "8e40c1cd31a8d81ec17aa801008839b48d02b266f7ebab56d4702b1e9278c9a9"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 8193,
+      "basePhysicalLoc": 8178,
+      "growth": 15,
+      "sha256": "b778273c0b517d68a976b8d0b70432f3af8a7bc7d811a8fd9fea02ba611855f5"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 3786,
+      "basePhysicalLoc": 3786,
+      "growth": 0,
+      "sha256": "496079b42d00bb90136c707f8c420a6cfc2f59e4736c218227341efd7beaecc7"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema/effect_payload.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 169,
+      "basePhysicalLoc": 153,
+      "growth": 16,
+      "sha256": "8f9076c6bf1ad71bc662c8cfc2db40d95c0d601f0612a10f1e565a39830f5a3b"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 9081,
+      "basePhysicalLoc": 9021,
+      "growth": 60,
+      "sha256": "643c3c1ef4473fbad406feefa67b887bf27388ef91b3031f6ef266756a3e65ab"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 3953,
+      "basePhysicalLoc": 3926,
+      "growth": 27,
+      "sha256": "62f7afdcaf2857f9bd5b43d436f24fa823ff5c8839d0ebb7e767cc8f8f6ceb51"
+    },
+    {
+      "path": "crates/arcweft-core/src/effect.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 998,
+      "basePhysicalLoc": 971,
+      "growth": 27,
+      "sha256": "86730c52fdfabbdd588d4e8b748bd13582c0f785d53331552cf67680bc00dca8"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 6111,
+      "basePhysicalLoc": 6104,
+      "growth": 7,
+      "sha256": "3e7d31343af8e9030fcb90595f42c0ec767d05b988b99d23f0b48e298aa88e45"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/evaluated_effects/cursor.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 192,
+      "basePhysicalLoc": 190,
+      "growth": 2,
+      "sha256": "429952db32f06f83b572d0a2b1f8e21a97acdda843176d7fd85b6b1182bb9c8b"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/evaluated_effects/decoding.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 119,
+      "basePhysicalLoc": 118,
+      "growth": 1,
+      "sha256": "feb2effc62cf90d4da457fd4e6d10afafc00643af675e399d67bf159acc04c1d"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/evaluated_effects/encoding.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 259,
+      "basePhysicalLoc": 255,
+      "growth": 4,
+      "sha256": "7ed9d5b30085cb607fec991f4fd4baf26cdc4c917e16f67d53343c6b955f0916"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/source/evaluated_effects/tests.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 735,
+      "basePhysicalLoc": 693,
+      "growth": 42,
+      "sha256": "cbd25b20602774c2c29e04a61c08ca23bfa3c8a1e8973eb5d2ccebcc9dfc6b75"
+    },
+    {
+      "path": "crates/arcweft-core/src/time.rs",
+      "owner": "arcweft-core",
+      "physicalLoc": 123,
+      "basePhysicalLoc": 65,
+      "growth": 58,
+      "sha256": "4e927942202b83a675a6caf1619a3bc41fcb587708d0575d08be5875fedb0a9b"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/predicate_proof_tests.rs",
+      "owner": "arcweft-lang-syntax",
+      "physicalLoc": 1727,
+      "basePhysicalLoc": 1684,
+      "growth": 43,
+      "sha256": "34c19298055784d19dd5e151061332fdf8a6064b5226b7c5e770be2a1a72c73c"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/statement.rs",
+      "owner": "arcweft-lang-syntax",
+      "physicalLoc": 2620,
+      "basePhysicalLoc": 2619,
+      "growth": 1,
+      "sha256": "ff86cb01d4b8abe1c1a6018a229f6774ac049e59f28b7ceb81ff1a213e2cab33"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/statement/dialogue_plan.rs",
+      "owner": "arcweft-lang-syntax",
+      "physicalLoc": 718,
+      "basePhysicalLoc": 720,
+      "growth": -2,
+      "sha256": "812c87524275d80346ab4531986af99f4b676e1ea19d873a564062dd99b35809"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+      "owner": "arcweft-runtime-plan",
+      "physicalLoc": 2558,
+      "basePhysicalLoc": 2539,
+      "growth": 19,
+      "sha256": "682334381ee9c32b388bfedc377b8eaa90f92f2087eb0d60132e4d726568fc58"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "owner": "arcweft-runtime-plan",
+      "physicalLoc": 10448,
+      "basePhysicalLoc": 10421,
+      "growth": 27,
+      "sha256": "dc9d40d6965d3ee37cbd278f36fd13b644922999286d1c18041fa5ede65bc01a"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "owner": "arcweft-runtime-plan",
+      "physicalLoc": 15297,
+      "basePhysicalLoc": 15252,
+      "growth": 45,
+      "sha256": "4471cffdfbadde8a3b568f1e1c011bdcbbacf500d722e8b450c635f5293d0970"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+      "owner": "arcweft-runtime-plan",
+      "physicalLoc": 3176,
+      "basePhysicalLoc": 3176,
+      "growth": 0,
+      "sha256": "517c798d932eb3597ee73b757497f53789f632d1e778b4425e1a973111f59458"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests.rs",
+      "owner": "arcweft-runtime-plan",
+      "physicalLoc": 4535,
+      "basePhysicalLoc": 4533,
+      "growth": 2,
+      "sha256": "dc8a99b19f63d94808271ba22aca7c4c38e0ef29c213c13802bcc8eb1d1ed300"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+      "owner": "arcweft-runtime-plan",
+      "physicalLoc": 419,
+      "basePhysicalLoc": 419,
+      "growth": 0,
+      "sha256": "d5db0e09bbf7cf9762046a7034d210ccf5d11a62ed33857dd409e718fe846d77"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/suspension.rs",
+      "owner": "arcweft-runtime-plan",
+      "physicalLoc": 69,
+      "basePhysicalLoc": 0,
+      "growth": 69,
+      "sha256": "bf6dbe0fce676005debf56a2e5f1b4f04879041d488a22e3b46f224bdf4ca556"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests/suspension.rs",
+      "owner": "arcweft-runtime-plan",
+      "physicalLoc": 86,
+      "basePhysicalLoc": 0,
+      "growth": 86,
+      "sha256": "7c512c1e2e80588cad4746518e33349fc90f254f6416e7f00c22597946174b8d"
+    }
+  ],
+  "ownershipReview": [
+    "Sema owns the exact Wait operand. RuntimePlan retains the same payload in global and instance facts, rejecting missing, duplicate, unrelated and non-Duration operands. One scoped query supplies the existing Flow value continuation; no fabricated callsite or reconstructed operand.",
+    "Core owns typed Duration conversion and the pure positive remaining-time primitive. Counted Source codec and body metadata use the existing version1 owners and visitors. Type admission precedes child lowering; AOT excludes evaluated Wait from scalar fusion.",
+    "AWBC owns one explicit Duration-source payload: Input or Constant for static packets without a register context. Codec, Serde, verifier, Product mapping and RuntimePlan producer share that choice. No empty-argument fallback, fake zero-duration host descriptor, Dynamic signature or legacy reader.",
+    "Syntax gives Thread/Flow/line-plan item emission its own Flow grammar context before classifying and emitting nested statement bodies. The enclosing declaration context and obsolete indented cancellation-body parameter are removed from that path; ordinary function calls retain their selected-call grammar."
+  ]
+}

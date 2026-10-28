@@ -36,7 +36,7 @@ use arcweft_interaction_model::input::InputActionId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 mod effect_payload;
-pub use effect_payload::{AwbcEffectPayload, AwbcEffectPayloadError};
+pub use effect_payload::{AwbcEffectPayload, AwbcEffectPayloadError, AwbcWaitDuration};
 
 /// Defines a closed AWBC-owned one-byte enum together with its sole numeric
 /// inventory, allocation-free decoder, and numeric structured-data contract.

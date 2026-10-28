@@ -7,6 +7,7 @@ use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::task::semantic::TaskSemanticMeter;
 
 pub(super) enum Kind<'a> {
+    Wait,
     Log(&'a str),
     Signal,
     Metric,
@@ -169,6 +170,7 @@ impl<'a> Cursor<'a> {
                 Kind::Registry(RegistryKeySource::new(self.frame()?)),
                 self.frame()?,
             ),
+            11 => (Kind::Wait, self.frame()?),
             _ => return Err(self.invalid("effect tag")),
         };
         Ok(Row {

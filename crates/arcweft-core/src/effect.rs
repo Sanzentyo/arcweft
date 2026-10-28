@@ -62,6 +62,8 @@ impl LineEffectRequest {
 /// instruction instead of being preserved as source-text labels.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeEffectExpr<Expression = RuntimeExpr> {
+    /// A logical-clock wait whose Duration is evaluated exactly once.
+    Wait(Expression),
     Log {
         level: String,
         message: Expression,
@@ -116,6 +118,8 @@ pub enum RuntimeEffectMaterializeError {
     ArgumentCount { expected: usize, actual: usize },
     #[error("runtime assertion condition must evaluate to Bool")]
     AssertionConditionNotBool,
+    #[error("runtime wait target must evaluate to Duration")]
+    WaitTargetNotDuration,
     #[error("registry writes require their original program and owning execution context")]
     RegistryContextRequired,
     #[error(transparent)]
@@ -222,6 +226,7 @@ impl<Expression> RuntimeEffectExpr<Expression> {
         mut visit: impl FnMut(&'expression Expression),
     ) {
         match self {
+            Self::Wait(duration) => visit(duration),
             Self::Log {
                 message, fields, ..
             } => {
@@ -259,6 +264,7 @@ impl<Expression> RuntimeEffectExpr<Expression> {
     /// Mutable counterpart of `argument_exprs`, preserving the same ABI order.
     pub fn argument_exprs_mut(&mut self) -> Vec<&mut Expression> {
         match self {
+            Self::Wait(duration) => vec![duration],
             Self::Log {
                 message, fields, ..
             } => {
@@ -297,6 +303,7 @@ impl<Expression> RuntimeEffectExpr<Expression> {
         mut map: impl FnMut(Expression) -> Result<Target, Error>,
     ) -> Result<RuntimeEffectExpr<Target>, Error> {
         Ok(match self {
+            Self::Wait(duration) => RuntimeEffectExpr::Wait(map(duration)?),
             Self::Log {
                 level,
                 message,
@@ -377,11 +384,12 @@ impl<Expression> RuntimeEffectFieldExpr<Expression> {
 
 impl RuntimeEffectExpr {
     /// Returns the host-effect descriptor for expressions that use the host
-    /// request ABI. Typed `Drop` and registry writes require their owning
-    /// execution context and have no context-free host-effect descriptor.
+    /// request ABI. Logical-clock `Wait` has an evaluated Duration input rather
+    /// than a static host descriptor. Typed `Drop` and registry writes require
+    /// their owning execution context.
     pub fn host_descriptor(&self) -> Option<LineEffectRequest> {
         let descriptor = match self {
-            Self::Drop { .. } | Self::RegistryWrite { .. } => return None,
+            Self::Wait(_) | Self::Drop { .. } | Self::RegistryWrite { .. } => return None,
             Self::Log { level, fields, .. } => LineEffectRequest::Log(RuntimeLog {
                 level: level.clone(),
                 message: String::new(),
@@ -428,7 +436,7 @@ impl RuntimeEffectExpr {
         values: &[RuntimeValue],
     ) -> Result<Option<LineEffectRequest>, RuntimeEffectMaterializeError> {
         self.require_context_free()?;
-        if self.host_descriptor().is_none() {
+        if matches!(self, Self::Drop { .. }) {
             return Ok(None);
         }
         let expected = self.argument_exprs().len();
@@ -446,8 +454,13 @@ impl RuntimeEffectExpr {
                 return Ok(None);
             }
         }
-        let labels = values.iter().map(runtime_value_label).collect::<Vec<_>>();
+        let labels = if matches!(self, Self::Wait(_)) {
+            Vec::new()
+        } else {
+            values.iter().map(runtime_value_label).collect::<Vec<_>>()
+        };
         Ok(Some(match self {
+            Self::Wait(_) => LineEffectRequest::Wait(RuntimeWaitTarget::try_from(&values[0])?),
             Self::Log { level, fields, .. } => LineEffectRequest::Log(RuntimeLog {
                 level: level.clone(),
                 message: labels[0].clone(),
@@ -495,7 +508,8 @@ impl RuntimeEffectExpr {
             Self::RegistryWrite { .. } => {
                 Err(RuntimeEffectMaterializeError::RegistryContextRequired)
             }
-            Self::Log { .. }
+            Self::Wait(_)
+            | Self::Log { .. }
             | Self::SignalWrite { .. }
             | Self::MetricWrite { .. }
             | Self::EmitEvent { .. }
@@ -659,6 +673,17 @@ pub enum RuntimeWaitTarget {
     Duration(LogicalDuration),
 }
 
+impl TryFrom<&RuntimeValue> for RuntimeWaitTarget {
+    type Error = RuntimeEffectMaterializeError;
+
+    fn try_from(value: &RuntimeValue) -> Result<Self, Self::Error> {
+        match value {
+            RuntimeValue::Duration(duration) => Ok(Self::Duration(*duration)),
+            _ => Err(RuntimeEffectMaterializeError::WaitTargetNotDuration),
+        }
+    }
+}
+
 /// Structured log request preserved for defmt-style template interning later.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeLog {
@@ -750,6 +775,7 @@ impl RuntimeEffectExpr {
         encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
     ) {
         encoder.tag(match self {
+            Self::Wait(_) => 11,
             Self::Log { .. } => 0,
             Self::SignalWrite { .. } => 1,
             Self::MetricWrite { .. } => 2,
@@ -807,7 +833,8 @@ impl RuntimeEffectExpr {
                     RuntimeAssertionProfile::DebugOnly => 1,
                 });
             }
-            Self::SignalWrite { .. }
+            Self::Wait(_)
+            | Self::SignalWrite { .. }
             | Self::MetricWrite { .. }
             | Self::Panic(_)
             | Self::Fail(_)

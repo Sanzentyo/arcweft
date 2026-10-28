@@ -1,0 +1,47 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "authored_and_inferred_flow_effects_authorize_ordinary_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "authored_flow_permissions_keep_unused_members_and_scopes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "curried_prefix_has_argument_effects_but_keeps_body_effects_latent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "curried_terminal_application_executes_the_body_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "static_and_dynamic_flow_transfers_change_the_active_effect_scope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "wait_operands_reach_one_typed_awbc_input_through_global_and_specialized_bodies",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

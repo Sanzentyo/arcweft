@@ -178,6 +178,10 @@ fn emit(
     writer.raw(DOMAIN)?;
     writer.byte(1)?;
     match effect {
+        Effect::Wait(duration) => {
+            writer.byte(11)?;
+            writer.expression(duration, counts, resources, meter)?;
+        }
         Effect::Log {
             level,
             message,

@@ -349,7 +349,8 @@ LinePlanAttach := 'with' Block
                 | 'with' ':' Newline IndentedItems
                 | 'with' ':' LinePlanItem
 LinePlanItem   := InitBlock | ThreadBlock | DeferBlock | OnBlock
-                | LetStmt | TimedCue | CancelRule | OutStmt | ScopeStmt | ExprStmt
+                | LetStmt | WaitStmt | TimedCue | CancelRule | OutStmt | ScopeStmt | ExprStmt
+WaitStmt       := 'wait' '(' Expr ')'
 InitBlock      := 'init' Block | 'init' ':' Newline IndentedItems
 ThreadBlock    := 'thread' ThreadModifier? Ident? Block
                 | 'thread' ThreadModifier? Ident? ':' Newline IndentedItems
@@ -371,6 +372,12 @@ TriggerExpr    := 'input' '(' Pattern ')'
                 | 'scope' '(' Pattern ')'
 OutStmt        := 'out' Expr
 ```
+
+Thread, Flow, and line-plan execution bodies own this statement context, including
+nested statement bodies, independently of an enclosing function declaration.
+Their `wait(expr)` statement requires Duration. An ordinary function body parses
+the same head as an ordinary selected call; the Agent `wait` API takes a Predicate
+and timeout. Entering a Thread body does not inherit that call-only context.
 
 `with:` and flat `=== with ===` fences are sugar for the same line-plan model as
 `with { ... }`. Inside a line plan, flat fences such as `=== start ===` and

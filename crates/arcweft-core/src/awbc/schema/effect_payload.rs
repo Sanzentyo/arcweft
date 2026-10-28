@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum AwbcEffectPayload {
-    Wait(Vec<AwbcConstantId>),
+    Wait(AwbcWaitDuration),
     Audio(AwbcAudioCommandId),
     Call(Vec<AwbcConstantId>),
     Log(Vec<AwbcConstantId>),
@@ -32,6 +32,15 @@ pub enum AwbcEffectPayload {
     },
 }
 
+/// One typed Duration source. Static packets (including Choice effects) have
+/// no register context; executable effects consume their sole Duration input.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum AwbcWaitDuration {
+    Constant(AwbcConstantId),
+    Input,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("AWBC effect {kind:?} requires its typed payload")]
 pub struct AwbcEffectPayloadError {
@@ -43,7 +52,12 @@ impl TryFrom<(AwbcEffectKind, Vec<AwbcConstantId>)> for AwbcEffectPayload {
 
     fn try_from((kind, args): (AwbcEffectKind, Vec<AwbcConstantId>)) -> Result<Self, Self::Error> {
         Ok(match kind {
-            AwbcEffectKind::Wait => Self::Wait(args),
+            AwbcEffectKind::Wait => {
+                let [constant] = args.as_slice() else {
+                    return Err(AwbcEffectPayloadError { kind });
+                };
+                Self::Wait(AwbcWaitDuration::Constant(*constant))
+            }
             AwbcEffectKind::Call => Self::Call(args),
             AwbcEffectKind::Log => Self::Log(args),
             AwbcEffectKind::SignalWrite => Self::SignalWrite(args),
@@ -129,8 +143,8 @@ impl AwbcEffectPayload {
     #[must_use]
     pub fn static_args(&self) -> &[AwbcConstantId] {
         match self {
-            Self::Wait(args)
-            | Self::Call(args)
+            Self::Wait(AwbcWaitDuration::Constant(constant)) => std::slice::from_ref(constant),
+            Self::Call(args)
             | Self::Log(args)
             | Self::SignalWrite(args)
             | Self::MetricWrite(args)
@@ -147,7 +161,9 @@ impl AwbcEffectPayload {
             | Self::Select(args)
             | Self::Break(args)
             | Self::Continue(args) => args,
-            Self::Audio(_) | Self::RegistryWrite { .. } => &[],
+            Self::Wait(AwbcWaitDuration::Input) | Self::Audio(_) | Self::RegistryWrite { .. } => {
+                &[]
+            }
         }
     }
 }

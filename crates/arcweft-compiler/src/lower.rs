@@ -1582,6 +1582,9 @@ fn project_runtime_semantic_fact_inventories(
         }
         match statement.payload() {
             CheckedStatementPayload::Include(target) => input.push_include(target.clone()),
+            CheckedStatementPayload::Suspension(suspension) => {
+                input.push_suspension(owner, suspension.as_ref().clone());
+            }
             CheckedStatementPayload::Scope(identity) => {
                 let module = project
                     .modules()
@@ -1662,7 +1665,6 @@ fn project_runtime_semantic_fact_inventories(
             | CheckedStatementPayload::UnsafeAudit(_)
             | CheckedStatementPayload::Select(_)
             | CheckedStatementPayload::SourceLocale(_)
-            | CheckedStatementPayload::Suspension(_)
             | CheckedStatementPayload::Yield => {}
         }
     }
@@ -8794,8 +8796,8 @@ fn runtime_executable_semantic_facts<'abi>(
             ) => RuntimeProjectFunctionStatementPayload::Include(target.clone()),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Suspension,
-                CheckedStatementPayload::Suspension(_),
-            ) => RuntimeProjectFunctionStatementPayload::Suspension,
+                CheckedStatementPayload::Suspension(suspension),
+            ) => RuntimeProjectFunctionStatementPayload::Suspension(suspension.as_ref().clone()),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Yield,
                 CheckedStatementPayload::Yield,

@@ -19,6 +19,7 @@ use std::{
 
 mod flow_include;
 mod nominal_definitions;
+mod suspension;
 pub use nominal_definitions::RuntimeNominalDefinition;
 
 use arcweft_character::presentation_name::CharacterPresentationCatalogData;
@@ -5816,6 +5817,10 @@ pub struct RuntimePlanSemanticFactInput {
     local_declarations: Vec<(LocalId, RuntimeLocalDeclarationFact)>,
     flows: Vec<(ItemId, RuntimeFlowFact)>,
     includes: Vec<arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget>,
+    suspensions: Vec<(
+        StmtId,
+        arcweft_lang_sema::final_analysis::CheckedSuspensionStatement,
+    )>,
     expression_scopes: Vec<(ExprId, crate::semantic_facts::RuntimeScopeFact)>,
     statement_scopes: Vec<(StmtId, crate::semantic_facts::RuntimeScopeFact)>,
     thread_producers: Vec<(
@@ -5888,6 +5893,7 @@ impl RuntimePlanSemanticFactInput {
             local_declarations: Vec::new(),
             flows: Vec::new(),
             includes: Vec::new(),
+            suspensions: Vec::new(),
             expression_scopes: Vec::new(),
             statement_scopes: Vec::new(),
             thread_producers: Vec::new(),
@@ -6000,6 +6006,14 @@ impl RuntimePlanSemanticFactInput {
         target: arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget,
     ) {
         self.includes.push(target);
+    }
+
+    pub fn push_suspension(
+        &mut self,
+        owner: StmtId,
+        suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionStatement,
+    ) {
+        self.suspensions.push((owner, suspension));
     }
 
     /// Stages the accepted normalized type of one selected runtime-domain
@@ -6356,6 +6370,7 @@ pub struct RuntimePlanSemanticFacts {
     local_declarations: BTreeMap<LocalId, RuntimeLocalDeclarationFact>,
     flows: BTreeMap<ItemId, RuntimeFlowFact>,
     includes: BTreeMap<StmtId, arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget>,
+    suspensions: BTreeMap<StmtId, arcweft_lang_sema::final_analysis::CheckedSuspensionStatement>,
     expression_scopes: BTreeMap<ExprId, crate::semantic_facts::RuntimeScopeFact>,
     statement_scopes: BTreeMap<StmtId, crate::semantic_facts::RuntimeScopeFact>,
     thread_producers: BTreeMap<ExprId, arcweft_lang_sema::CheckedExpressionProducerDefinition>,
@@ -6750,6 +6765,23 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => facts.checked_local_place_access(source),
             Self::ProjectInstance(facts) => facts.local_uses().place_access_at(source),
+        }
+    }
+
+    pub fn suspension(
+        self,
+        owner: StmtId,
+    ) -> Option<&'facts arcweft_lang_sema::final_analysis::CheckedSuspensionStatement> {
+        match self {
+            Self::Global(facts) => facts.suspensions.get(&owner),
+            Self::ProjectInstance(facts) => {
+                facts.statement(owner).and_then(|row| match row.payload() {
+                    RuntimeProjectFunctionStatementPayload::Suspension(suspension) => {
+                        Some(suspension)
+                    }
+                    _ => None,
+                })
+            }
         }
     }
     pub fn checked_local_value_transfer(
@@ -8037,6 +8069,13 @@ impl RuntimePlanSemanticFacts {
             runtime_owners,
             &instance_statement_owners,
             input.includes,
+        )?;
+        let suspensions = suspension::admit_global(
+            &modules,
+            runtime_owners,
+            &instance_statement_owners,
+            &expression_types,
+            input.suspensions,
         )?;
         let expression_scopes = collect_unique(
             input.expression_scopes,
@@ -9676,6 +9715,7 @@ impl RuntimePlanSemanticFacts {
             local_declarations,
             flows,
             includes,
+            suspensions,
             expression_scopes,
             statement_scopes,
             thread_producers,
@@ -11018,6 +11058,8 @@ pub enum RuntimeSemanticFactsError {
     InvalidIncludeTarget { statement: StmtId },
     #[error("Include statement {statement:?} has no checked target fact")]
     MissingIncludeTarget { statement: StmtId },
+    #[error("suspension statement {statement:?} has no exact checked Duration operand")]
+    InvalidSuspension { statement: StmtId },
     #[error("producer definition does not belong to its exact expression and local-use authority")]
     InvalidProducerDefinition { expression: ExprId },
     #[error("checked local use at {site:?} does not belong to the accepted HIR generation")]
@@ -11280,6 +11322,7 @@ pub enum RuntimeSemanticFactFamily {
     SyntheticUse,
     FlowIdentity,
     Include,
+    Suspension,
     ExpressionScope,
     StatementScope,
     ThreadProducer,
@@ -14242,13 +14285,15 @@ fn validate_project_function_semantic_catalog(
                     target,
                 )?;
             }
+            RuntimeProjectFunctionStatementPayload::Suspension(suspension) => {
+                suspension::validate(&modules, &expression_types, row.owner(), suspension)?;
+            }
             RuntimeProjectFunctionStatementPayload::Structural
             | RuntimeProjectFunctionStatementPayload::Assertion(_)
             | RuntimeProjectFunctionStatementPayload::ControlTransfer
             | RuntimeProjectFunctionStatementPayload::UnsafeAudit
             | RuntimeProjectFunctionStatementPayload::Select
             | RuntimeProjectFunctionStatementPayload::SourceLocale
-            | RuntimeProjectFunctionStatementPayload::Suspension
             | RuntimeProjectFunctionStatementPayload::Yield => {}
         }
     }

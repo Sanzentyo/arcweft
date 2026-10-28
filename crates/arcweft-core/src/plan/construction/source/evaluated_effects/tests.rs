@@ -154,6 +154,10 @@ fn fixture_with_registry_key(key: arcweft_id::LifetimeRegistryKey) -> RuntimePla
             profile,
         });
     }
+    effects.push(Effect::Wait(value(
+        RuntimeCheckedType::Duration,
+        RuntimeValue::Duration(crate::time::LogicalDuration::from_nanos(350_000_000)),
+    )));
     let ops = effects
         .into_iter()
         .map(RuntimeFlowOpSeed::EvaluatedEffect)
@@ -287,7 +291,7 @@ fn finish(
 fn evaluated_effect_sources_restore_all_kinds_six_drop_policies_assertion_profiles_fields_and_semantics()
  {
     let plan = fixture();
-    assert_eq!(effects(&plan).count(), 17);
+    assert_eq!(effects(&plan).count(), 18);
     let (mut source, functions) = source(&plan, meter());
     replay(&plan, &mut source, &functions, false).unwrap();
     let restored = finish(source).unwrap();
@@ -365,6 +369,44 @@ fn registry_effect_sources_preserve_all_selectors_and_refuse_context_free_execut
                 RuntimeCheckedType::Bool.semantic_identity_digest()
             );
         }
+    }
+}
+
+#[test]
+fn wait_effect_materializes_only_one_typed_duration_after_source_roundtrip() {
+    use crate::effect::{LineEffectRequest, RuntimeEffectMaterializeError, RuntimeWaitTarget};
+    use crate::time::LogicalDuration;
+
+    let plan = fixture();
+    let (mut source, functions) = source(&plan, meter());
+    replay(&plan, &mut source, &functions, false).unwrap();
+    let restored = finish(source).unwrap();
+    let effect = effects(&restored)
+        .find(|effect| matches!(effect, RuntimeEffectExpr::Wait(_)))
+        .unwrap();
+    assert!(effect.host_descriptor().is_none());
+    let duration = LogicalDuration::from_nanos(350_000_000);
+    assert_eq!(
+        effect.materialize(&[RuntimeValue::Duration(duration)]),
+        Ok(Some(LineEffectRequest::Wait(RuntimeWaitTarget::Duration(
+            duration
+        ))))
+    );
+    assert_eq!(
+        effect.materialize(&[]),
+        Err(RuntimeEffectMaterializeError::ArgumentCount {
+            expected: 1,
+            actual: 0
+        })
+    );
+    for wrong in [
+        RuntimeValue::Bool(true),
+        RuntimeValue::String("0.35s".into()),
+    ] {
+        assert_eq!(
+            effect.materialize(&[wrong]),
+            Err(RuntimeEffectMaterializeError::WaitTargetNotDuration)
+        );
     }
 }
 

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "2e02c67c59e8bff24e0302ab84225c0baf232c8e",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "flow_effects",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3558-wait-compiler-flow-effects-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T20:41:41.2037565Z",
+  "finishedAt": "2026-10-28T20:48:16.5506239Z"
+}

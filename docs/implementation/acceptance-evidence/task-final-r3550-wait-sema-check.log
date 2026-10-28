@@ -1,0 +1,466 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling serde_core v1.0.228
+    Checking cfg-if v1.0.4
+   Compiling getrandom v0.3.4
+   Compiling serde v1.0.228
+   Compiling shlex v1.3.0
+   Compiling find-msvc-tools v0.1.9
+   Compiling autocfg v1.5.0
+   Compiling thiserror v2.0.18
+    Checking memchr v2.8.0
+    Checking stable_deref_trait v1.2.1
+    Checking either v1.15.0
+   Compiling zmij v1.0.21
+    Checking cpufeatures v0.3.0
+    Checking equivalent v1.0.2
+    Checking arrayref v0.3.9
+   Compiling serde_json v1.0.150
+    Checking hashbrown v0.17.1
+    Checking arrayvec v0.7.6
+    Checking constant_time_eq v0.4.2
+    Checking itoa v1.0.18
+    Checking litemap v0.8.2
+    Checking simd-adler32 v0.3.9
+   Compiling crc32fast v1.5.0
+    Checking writeable v0.6.4
+    Checking adler2 v2.0.1
+   Compiling icu_locale_fallback_data v2.3.0
+    Checking utf8_iter v1.0.4
+    Checking arcweft-data v0.1.0 (D:\git\arcweft\crates\arcweft-data)
+   Compiling icu_properties_data v2.3.0
+   Compiling num-traits v0.2.19
+    Checking aho-corasick v1.1.4
+    Checking smallvec v1.15.1
+    Checking regex-syntax v0.8.10
+    Checking miniz_oxide v0.8.9
+    Checking fdeflate v0.3.7
+    Checking indexmap v2.14.0
+    Checking bitflags v2.11.1
+   Compiling icu_plurals_data v2.3.0
+   Compiling icu_list_data v2.3.0
+   Compiling icu_casemap_data v2.3.0
+   Compiling icu_locale_data v2.3.0
+   Compiling icu_normalizer_data v2.3.0
+    Checking ryu v1.0.23
+   Compiling icu_decimal_data v2.3.0
+    Checking typenum v1.20.1
+   Compiling icu_experimental_data v0.6.0
+   Compiling version_check v0.9.5
+    Checking flate2 v1.1.9
+   Compiling jobserver v0.1.34
+    Checking pxfm v0.1.29
+    Checking regex-automata v0.4.14
+    Checking color_quant v1.1.0
+    Checking weezl v0.1.12
+    Checking byteorder-lite v0.1.0
+    Checking zune-core v0.5.1
+    Checking png v0.18.1
+   Compiling cc v1.2.62
+    Checking quick-error v2.0.1
+   Compiling syn v2.0.117
+   Compiling syn v3.0.6
+    Checking bytemuck v1.25.0
+   Compiling zerocopy v0.8.48
+    Checking image-webp v0.2.4
+    Checking unicode-segmentation v1.13.3
+    Checking gif v0.14.2
+    Checking zune-jpeg v0.5.15
+   Compiling generic-array v0.14.7
+   Compiling rustversion v1.0.22
+    Checking semver v1.0.28
+    Checking text-size v1.1.1
+   Compiling pkg-config v0.3.33
+    Checking countme v3.0.1
+    Checking rustc-hash v1.1.0
+    Checking hashbrown v0.14.5
+    Checking num-integer v0.1.46
+   Compiling strsim v0.11.1
+   Compiling ident_case v1.0.1
+    Checking hybrid-array v0.4.14
+   Compiling prettyplease v0.2.37
+    Checking winnow v1.0.3
+    Checking log v0.4.29
+   Compiling libm v0.2.16
+   Compiling zstd-safe v7.2.4
+    Checking crypto-common v0.1.7
+   Compiling blake3 v1.8.5
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+    Checking block-buffer v0.10.4
+   Compiling rustc_version v0.4.1
+    Checking rand_core v0.9.5
+    Checking toml_parser v1.1.2+spec-1.1.0
+    Checking toml_datetime v1.1.1+spec-1.1.0
+    Checking crypto-common v0.2.2
+    Checking rowan v0.16.1
+    Checking block-buffer v0.12.1
+    Checking digest v0.10.7
+    Checking serde_spanned v1.1.1
+   Compiling bigdecimal v0.4.10
+   Compiling snap v1.1.1
+    Checking const-oid v0.10.2
+    Checking toml_writer v1.1.1+spec-1.1.0
+   Compiling curve25519-dalek v4.1.3
+    Checking serde_bytes v0.11.19
+    Checking cpufeatures v0.2.17
+   Compiling syn v1.0.109
+    Checking foldhash v0.2.0
+    Checking base64 v0.22.1
+   Compiling heck v0.5.0
+    Checking unicode-linebreak v0.1.5
+    Checking toml v1.1.2+spec-1.1.0
+    Checking digest v0.11.3
+    Checking uuid v1.23.3
+   Compiling zerovec-derive v0.11.6
+    Checking hashbrown v0.16.1
+   Compiling memoffset v0.9.1
+    Checking sha2 v0.11.0
+    Checking subtle v2.6.1
+    Checking zeroize v1.9.0
+    Checking ciborium-io v0.2.2
+    Checking once_cell v1.21.4
+    Checking regex-lite v0.1.9
+    Checking strum v0.27.2
+    Checking signature v2.2.0
+   Compiling synstructure v0.13.2
+   Compiling darling_core v0.23.0
+    Checking sha2 v0.10.9
+    Checking rmp v0.8.15
+    Checking ed25519 v2.2.3
+   Compiling ahash v0.8.12
+    Checking encoding_rs v0.8.35
+   Compiling fnv v1.0.7
+   Compiling beef v0.5.2
+   Compiling num-conv v0.2.2
+   Compiling regex-syntax v0.6.29
+   Compiling time-core v0.1.9
+    Checking arraydeque v0.5.1
+   Compiling thiserror v1.0.69
+    Checking tracing-core v0.1.36
+    Checking hashlink v0.11.1
+    Checking bstr v1.13.0
+    Checking windows-link v0.2.1
+    Checking moxcms v0.8.1
+    Checking deranged v0.5.8
+    Checking pin-project-lite v0.2.17
+    Checking powerfmt v0.2.0
+    Checking windows-sys v0.61.2
+    Checking rowan v0.15.19
+    Checking arc-swap v1.9.2
+    Checking itertools v0.10.5
+   Compiling time-macros v0.2.31
+   Compiling target-triple v1.0.0
+    Checking globset v0.4.19
+   Compiling arcweft-data-derive-support v0.1.0 (D:\git\arcweft\crates\arcweft-data-derive-support)
+    Checking serde_ignored v0.1.14
+    Checking glob v0.3.3
+   Compiling serde_derive v1.0.228
+   Compiling zerofrom-derive v0.1.7
+   Compiling thiserror-impl v2.0.18
+   Compiling yoke-derive v0.8.2
+   Compiling displaydoc v0.2.6
+   Compiling zerocopy-derive v0.8.48
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling strum_macros v0.27.2
+   Compiling serde_repr v0.1.20
+    Checking yaml-rust2 v0.11.0
+   Compiling tracing-attributes v0.1.31
+   Compiling thiserror-impl v1.0.69
+    Checking time v0.3.53
+    Checking winapi-util v0.1.11
+   Compiling arcweft-rust-abi-macros v0.1.0 (D:\git\arcweft\crates\arcweft-rust-abi-macros)
+    Checking termcolor v1.4.1
+   Compiling darling_macro v0.23.0
+   Compiling arcweft-data-derive v0.1.0 (D:\git\arcweft\crates\arcweft-data-derive)
+    Checking zerofrom v0.1.8
+    Checking fixed_decimal v0.7.2
+   Compiling darling v0.23.0
+   Compiling bon-macros v3.9.3
+    Checking tracing v0.1.44
+   Compiling logos-derive v0.12.1
+    Checking image v0.25.10
+    Checking ed25519-dalek v2.2.0
+    Checking yoke v0.8.3
+    Checking arcweft-id v0.1.0 (D:\git\arcweft\crates\arcweft-id)
+    Checking num-bigint v0.4.6
+    Checking arcweft-need v0.1.0 (D:\git\arcweft\crates\arcweft-need)
+    Checking arcweft-layout v0.1.0 (D:\git\arcweft\crates\arcweft-layout)
+    Checking arcweft-codec-json v0.1.0 (D:\git\arcweft\crates\arcweft-codec-json)
+    Checking arcweft-rust-abi v0.1.0 (D:\git\arcweft\crates\arcweft-rust-abi)
+    Checking json-spanned-value v0.2.2
+    Checking rmp-serde v1.3.1
+    Checking trybuild v1.0.116
+    Checking logos v0.12.1
+    Checking arcweft-serde-bridge v0.1.0 (D:\git\arcweft\crates\arcweft-serde-bridge)
+    Checking arcweft-save v0.1.0 (D:\git\arcweft\crates\arcweft-save)
+    Checking arcweft-source v0.1.0 (D:\git\arcweft\crates\arcweft-source)
+    Checking arcweft-interaction-model v0.1.0 (D:\git\arcweft\crates\arcweft-interaction-model)
+    Checking arcweft-manifest-model v0.1.0 (D:\git\arcweft\crates\arcweft-manifest-model)
+    Checking arcweft-rich-text-schema v0.1.0 (D:\git\arcweft\crates\arcweft-rich-text-schema)
+    Checking arcweft-ref v0.1.0 (D:\git\arcweft\crates\arcweft-ref)
+    Checking zerovec v0.11.8
+    Checking zerotrie v0.2.5
+    Checking arcweft-image v0.1.0 (D:\git\arcweft\crates\arcweft-image)
+    Checking zstd v0.13.3
+    Checking arcweft-character v0.1.0 (D:\git\arcweft\crates\arcweft-character)
+    Checking arcweft-lang-syntax v0.1.0 (D:\git\arcweft\crates\arcweft-lang-syntax)
+    Checking arcweft-adapter-context v0.1.0 (D:\git\arcweft\crates\arcweft-adapter-context)
+    Checking num-rational v0.4.2
+    Checking bon v3.9.3
+    Checking arcweft-audio-core v0.1.0 (D:\git\arcweft\crates\arcweft-audio-core)
+    Checking arcweft-presentation v0.1.0 (D:\git\arcweft\crates\arcweft-presentation)
+    Checking tinystr v0.8.4
+    Checking potential_utf v0.1.5
+    Checking icu_pattern v0.5.0
+    Checking icu_collections v2.3.0
+    Checking icu_locale_core v2.3.0
+    Checking ppv-lite86 v0.2.21
+    Checking half v2.7.1
+    Checking rand_chacha v0.9.0
+    Checking taplo v0.14.0
+    Checking ciborium-ll v0.2.2
+    Checking rand v0.9.4
+    Checking ciborium v0.2.2
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-syntax\src\attachment\snapshot.rs:47:14
+   |
+47 |             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |              ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+47 -             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+47 +             .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+    Checking icu_provider v2.3.1
+    Checking apache-avro v0.21.0
+    Checking icu_locale_fallback v2.3.0
+    Checking icu_properties v2.3.0
+    Checking icu_normalizer v2.3.0
+    Checking icu_plurals v2.3.0
+    Checking icu_locale v2.3.1
+    Checking icu_list v2.3.0
+    Checking icu_decimal v2.3.0
+    Checking arcweft-codec-avro v0.1.0 (D:\git\arcweft\crates\arcweft-codec-avro)
+    Checking icu_casemap v2.3.0
+    Checking icu_experimental v0.6.0
+warning: `arcweft-lang-syntax` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-syntax` to apply 1 suggestion)
+    Checking arcweft-lang-hir v0.1.0 (D:\git\arcweft\crates\arcweft-lang-hir)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-hir\src\identity.rs:26:10
+   |
+26 |         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |          ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+26 -         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+26 +         .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `HostRestartPolicy`
+  --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:23:5
+   |
+23 |     HostRestartPolicy, NeedProducerInvocationFrontier, NeedProducerInvocationToken,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `runtime_sequence_values`
+  --> crates\arcweft-core\src\awbc\product_step.rs:87:5
+   |
+87 |     runtime_sequence_values, runtime_value_label,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:21:43
+   |
+21 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+24 |     SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
+   |                                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:68:33
+   |
+68 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeAwbcProgramSourceField`
+  --> crates\arcweft-core\src\plan\task_source\program.rs:27:62
+   |
+27 | pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:17:5
+   |
+17 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIdExhausted`
+  --> crates\arcweft-core\src\presentation\resources.rs:10:43
+   |
+10 |     ExecutionInstanceId, RuntimeIdCursor, RuntimeIdExhausted, RuntimeIdNamespace,
+   |                                           ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:58:32
+   |
+58 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+warning: `arcweft-lang-hir` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-hir` to apply 1 suggestion)
+error[E0004]: non-exhaustive patterns: `&RuntimeEffectExpr::Wait(_)` not covered
+   --> crates\arcweft-core\src\aot.rs:261:50
+    |
+261 |         FlowOp::EvaluatedEffect(effect) => match effect {
+    |                                                  ^^^^^^ pattern `&RuntimeEffectExpr::Wait(_)` not covered
+    |
+note: `RuntimeEffectExpr` defined here
+   --> crates\arcweft-core\src\effect.rs:64:10
+    |
+ 64 | pub enum RuntimeEffectExpr<Expression = RuntimeExpr> {
+    |          ^^^^^^^^^^^^^^^^^
+ 65 |     /// A logical-clock wait whose Duration is evaluated exactly once.
+ 66 |     Wait(Expression),
+    |     ---- not covered
+    = note: the matched value is of type `&RuntimeEffectExpr`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+272 ~             | RuntimeEffectExpr::Assert { .. } => false,
+273 ~             &RuntimeEffectExpr::Wait(_) => todo!(),
+    |
+
+For more information about this error, try `rustc --explain E0004`.
+warning: `arcweft-core` (lib) generated 27 warnings
+error: could not compile `arcweft-core` (lib) due to 1 previous error; 27 warnings emitted

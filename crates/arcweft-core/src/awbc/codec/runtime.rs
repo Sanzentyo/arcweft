@@ -939,6 +939,13 @@ impl Wire for AwbcEffectPlan {
         self.signature.write_wire(writer)?;
         self.capability.write_wire(writer)?;
         match &self.payload {
+            AwbcEffectPayload::Wait(duration) => match duration {
+                crate::awbc::schema::AwbcWaitDuration::Constant(constant) => {
+                    writer.write_u8(0);
+                    constant.write_wire(writer)?;
+                }
+                crate::awbc::schema::AwbcWaitDuration::Input => writer.write_u8(1),
+            },
             AwbcEffectPayload::Audio(command) => command.write_wire(writer)?,
             AwbcEffectPayload::RegistryWrite { key, value_type } => {
                 writer.write_registry_key(key)?;
@@ -954,6 +961,21 @@ impl Wire for AwbcEffectPlan {
         let signature = AwbcSignatureId::read_wire(reader)?;
         let capability = Option::<AwbcStringId>::read_wire(reader)?;
         let payload = match kind {
+            AwbcEffectKind::Wait => {
+                use crate::awbc::schema::AwbcWaitDuration;
+                let offset = reader.offset();
+                AwbcEffectPayload::Wait(match reader.read_u8()? {
+                    0 => AwbcWaitDuration::Constant(AwbcConstantId::read_wire(reader)?),
+                    1 => AwbcWaitDuration::Input,
+                    tag => {
+                        return Err(AwbcCodecError::UnknownTag {
+                            kind: "wait Duration source",
+                            tag,
+                            offset,
+                        });
+                    }
+                })
+            }
             AwbcEffectKind::Audio => {
                 AwbcEffectPayload::Audio(AwbcAudioCommandId::read_wire(reader)?)
             }

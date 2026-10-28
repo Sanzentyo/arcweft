@@ -5861,6 +5861,9 @@ struct FinalFlowLowerer<'a> {
 
 #[derive(Clone)]
 enum RuntimeFlowValueContinuation {
+    Wait {
+        tail: RuntimeFlowTail,
+    },
     For {
         pattern: RuntimePatternSeed,
         evidence: RuntimeIteratorEvidenceSeed,
@@ -6617,6 +6620,7 @@ impl<'a> FinalFlowLowerer<'a> {
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match kind {
             HirStmtKind::Scope(scope) => self.lower_scope_statement(id, scope.body(), tail),
+            HirStmtKind::Wait { .. } => self.lower_wait_statement(id, tail),
             HirStmtKind::Let {
                 pattern: owner,
                 initializer,
@@ -6661,6 +6665,7 @@ impl<'a> FinalFlowLowerer<'a> {
         kind: &HirStmtKind,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match kind {
+            HirStmtKind::Wait { .. } => self.lower_wait_statement(id, RuntimeFlowTail::None),
             HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(format!(
                 "defer {id:?} requires scope-owned runtime registration"
             ))),
@@ -6988,6 +6993,21 @@ impl<'a> FinalFlowLowerer<'a> {
                 "final-HIR statement {id:?} family {unsupported:?} has no checked core projection"
             ))),
         }
+    }
+
+    fn lower_wait_statement(
+        &mut self,
+        statement: StmtId,
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let Some(arcweft_lang_sema::final_analysis::CheckedSuspensionStatement::Wait { target }) =
+            self.semantic_facts.facts().suspension(statement)
+        else {
+            return Err(RuntimePlanLowerError::new(format!(
+                "Wait statement {statement:?} has no checked Duration operand"
+            )));
+        };
+        self.lower_flow_value(*target, RuntimeFlowValueContinuation::Wait { tail })
     }
 
     fn loop_transfer_depth(&self, statement: StmtId) -> Result<u32, RuntimePlanLowerError> {
@@ -8727,6 +8747,13 @@ impl<'a> FinalFlowLowerer<'a> {
                         value,
                     },
                 ));
+                ops
+            }
+            RuntimeFlowValueContinuation::Wait { tail } => {
+                let mut ops = vec![RuntimeFlowOpSeed::EvaluatedEffect(
+                    RuntimeEvaluatedEffectSeed::Wait(value),
+                )];
+                ops.extend(self.lower_flow_tail(tail)?);
                 ops
             }
             RuntimeFlowValueContinuation::Return => {

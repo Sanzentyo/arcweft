@@ -337,7 +337,6 @@ fn emit_block_sequence(
                 emit_thread_flow_item(
                     parser,
                     end,
-                    item_kind,
                     statement,
                     dialogue_plan.map(dialogue_plan::DialoguePlanInterval::owner_end),
                 );
@@ -376,10 +375,12 @@ fn emit_block_sequence(
 fn emit_thread_flow_item(
     parser: &mut DocumentParser<'_, '_>,
     end: usize,
-    item_kind: SyntaxKind,
     ordinal: u32,
     dialogue_owner_end: Option<usize>,
 ) {
+    // This execution body owns Flow grammar, including nested statement bodies;
+    // an enclosing function declaration cannot turn its waits into Agent calls.
+    let item_kind = SyntaxKind::FlowItem;
     let role = SyntaxRole::ThreadFlowItem(ordinal);
     let classification_end = dialogue_owner_end.unwrap_or(end);
     let kind = classify_thread_flow_item(parser, classification_end, item_kind);

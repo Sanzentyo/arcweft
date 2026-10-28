@@ -4943,6 +4943,13 @@ impl RuntimePlanBodyConstruction<'_> {
         // Boolean policies remain at their original conversion point: failure
         // cannot lower a later message or change the first diagnostic.
         match effect {
+            RuntimeEvaluatedEffectSeed::Wait(duration) => {
+                let ty = self.resolve_seed_type("wait Duration operand", duration.ty())?;
+                self.require_projection("wait Duration operand", ty, |projection| {
+                    matches!(projection, RuntimePlanTypeProjection::Duration)
+                })?;
+                Ok(RuntimeEffectExpr::Wait(self.lower_expression(duration)?))
+            }
             RuntimeEvaluatedEffectSeed::Ensure { condition, message } => {
                 let condition = self.lower_expression(condition)?;
                 self.require_bool("ensure condition", condition.ty())?;

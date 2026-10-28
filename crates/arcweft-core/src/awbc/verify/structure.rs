@@ -1734,6 +1734,34 @@ fn verify_effect_payload_shape(
     let parameter_count = program.signatures[effect.signature.index()].params.len();
     match effect.kind() {
         AwbcEffectKind::Audio => Ok(()),
+        AwbcEffectKind::Wait => {
+            use crate::awbc::schema::AwbcWaitDuration;
+            let AwbcEffectPayload::Wait(duration) = effect.payload else {
+                unreachable!("effect kind is derived from its payload");
+            };
+            let signature = &program.signatures[effect.signature.index()];
+            let valid = signature.result.is_none()
+                && match duration {
+                    AwbcWaitDuration::Constant(constant) => {
+                        signature.params.is_empty()
+                            && matches!(
+                                program.constants.get(constant.index()),
+                                Some(AwbcConstant::DurationNanos(_))
+                            )
+                    }
+                    AwbcWaitDuration::Input => matches!(signature.params.as_slice(), [ty]
+                    if matches!(program.runtime_types.get(ty.index()).map(AwbcRuntimeType::shape), Some(AwbcRuntimeTypeShape::Duration))),
+                };
+            if valid {
+                Ok(())
+            } else {
+                Err(malformed_effect_payload(
+                    effect_index,
+                    effect.kind(),
+                    "wait requires one exact Duration source and no result",
+                ))
+            }
+        }
         AwbcEffectKind::RegistryWrite => {
             let AwbcEffectPayload::RegistryWrite { key, value_type } = &effect.payload else {
                 unreachable!("effect kind is derived from its payload");
@@ -1877,8 +1905,7 @@ fn verify_effect_payload_shape(
             parameter_count,
             2,
         ),
-        AwbcEffectKind::Wait
-        | AwbcEffectKind::Return
+        AwbcEffectKind::Return
         | AwbcEffectKind::Goto
         | AwbcEffectKind::Close
         | AwbcEffectKind::Select

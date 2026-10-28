@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "run": "task-final-r3571-wait-sema-check",
+  "actualExitCode": 0,
+  "scope": [
+    "clippy",
+    "-p",
+    "arcweft-lang-syntax",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-runtime-plan",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 4001,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T21:15:46.9314863Z"
+}

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "run": "task-final-r3572-wait-runtime-plan-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4001,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T21:18:32.0643340Z"
+}

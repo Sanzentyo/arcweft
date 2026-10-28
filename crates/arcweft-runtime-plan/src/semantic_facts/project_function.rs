@@ -1153,7 +1153,7 @@ pub enum RuntimeProjectFunctionStatementPayload {
     SourceLocale,
     Scope(crate::semantic_facts::RuntimeScopeFact),
     Include(arcweft_lang_sema::final_analysis::CheckedIncludeFlowTarget),
-    Suspension,
+    Suspension(arcweft_lang_sema::final_analysis::CheckedSuspensionStatement),
     Yield,
 }
 
@@ -1176,7 +1176,7 @@ impl RuntimeProjectFunctionStatementPayload {
             Self::SourceLocale => CheckedExecutableRuntimeStatementFactFamily::SourceLocale,
             Self::Scope(_) => CheckedExecutableRuntimeStatementFactFamily::Scope,
             Self::Include(_) => CheckedExecutableRuntimeStatementFactFamily::Include,
-            Self::Suspension => CheckedExecutableRuntimeStatementFactFamily::Suspension,
+            Self::Suspension(_) => CheckedExecutableRuntimeStatementFactFamily::Suspension,
             Self::Yield => CheckedExecutableRuntimeStatementFactFamily::Yield,
         }
     }

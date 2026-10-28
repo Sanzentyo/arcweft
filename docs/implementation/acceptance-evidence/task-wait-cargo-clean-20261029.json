@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "date": "2026-10-29",
+  "base": "2e02c67c59e8bff24e0302ab84225c0baf232c8e",
+  "authorization": "Explicit user reply: cargo clean で全体を削除する",
+  "workspace": "D:/git/arcweft",
+  "targetDirectory": "D:/git/arcweft/target",
+  "command": [
+    "cargo",
+    "clean"
+  ],
+  "exitCode": 0,
+  "removedFiles": 365787,
+  "removedGiB": 486.5,
+  "freeBytesBefore": 2157076480,
+  "freeBytesAfter": 497055129600,
+  "priorAutomaticRejection": "The prior incremental-only Remove-Item operation was rejected before execution. This run follows the subsequent explicit cargo clean selection.",
+  "log": "task-wait-cargo-clean-20261029.log",
+  "completedLogSha256": "31c8477e3100a08def17710e0635655f0102dc25c9ef3364f7b080c984906932"
+}

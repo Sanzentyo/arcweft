@@ -101,23 +101,32 @@ impl AwbcProgram {
                     "registry writes require their original program and execution context",
                 ));
             }
-            AwbcEffectKind::Wait => match static_args.first() {
-                Some(RuntimeValue::Duration(duration)) => {
-                    LineEffectRequest::Wait(RuntimeWaitTarget::Duration(*duration))
-                }
-                Some(_) => {
-                    return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
-                        RuntimeDiagnosticCategory::Type,
-                        "AWBC wait target must evaluate to Duration",
-                    ));
-                }
-                None => {
+            AwbcEffectKind::Wait => {
+                use crate::awbc::schema::{AwbcEffectPayload, AwbcWaitDuration};
+                let AwbcEffectPayload::Wait(source) = plan.payload else {
+                    unreachable!("effect kind is derived from its payload");
+                };
+                let duration = match source {
+                    AwbcWaitDuration::Constant(_) => static_args.first(),
+                    AwbcWaitDuration::Input if dynamic_args.len() == 1 => dynamic_args.first(),
+                    AwbcWaitDuration::Input => None,
+                };
+                let Some(duration) = duration else {
                     return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Internal,
                         "AWBC wait effect is missing its Duration target",
                     ));
+                };
+                match RuntimeWaitTarget::try_from(duration) {
+                    Ok(duration) => LineEffectRequest::Wait(duration),
+                    Err(_) => {
+                        return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Type,
+                            "AWBC wait target must evaluate to Duration",
+                        ));
+                    }
                 }
-            },
+            }
             AwbcEffectKind::Audio => match plan
                 .audio()
                 .and_then(|audio| program.audio_commands.get(audio.index()))

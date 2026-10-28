@@ -145,6 +145,59 @@ fn authored_and_inferred_flow_effects_authorize_ordinary_calls() {
 }
 
 #[test]
+fn wait_operands_reach_one_typed_awbc_input_through_global_and_specialized_bodies() {
+    use arcweft_core::awbc::schema::{AwbcEffectPayload, AwbcRuntimeTypeShape, AwbcWaitDuration};
+    for source in [
+        "flow main { wait(0.1s) }",
+        "fn delay() -> Duration { 0.35s }\nflow main { wait(delay()) }",
+        "fn delay(value: Duration) -> Duration { value }\nflow main { wait(delay(0.35s)) }",
+        "fn delay<T>(value: T) -> Duration { 0.35s }\nflow main { wait(delay(42i64)) }",
+        "fn launch<T>(value: T, delay: Duration) -> ThreadHandle<T> effects { control.spawn } {\n thread {\n wait(delay)\n return value\n }\n}\nflow main { let child = launch(42i64, 0.35s) }",
+        "fn launch<T>(value: T, delay: Duration) -> ThreadHandle<T> effects { control.spawn } {\n thread {\n if true { wait(delay) }\n return value\n }\n}\nflow main { let child = launch(42i64, 0.35s) }",
+        "flow main { wait(if true { 0.1s } else { 0.35s }) }",
+    ] {
+        let source = format!("{source}\nentry cli @entry.main {{ goto @flow.main }}\n");
+        let compiled =
+            compile_source(&source).unwrap_or_else(|error| panic!("{source}: {error:?}"));
+        let program = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "wait.arcw")
+            .lower()
+            .expect("checked Wait lowers into a verified Duration input")
+            .program;
+        let waits = program
+            .effect_plans
+            .iter()
+            .filter(|effect| matches!(effect.payload, AwbcEffectPayload::Wait(_)))
+            .collect::<Vec<_>>();
+        assert!(!waits.is_empty(), "{source}");
+        for effect in waits {
+            assert_eq!(
+                effect.payload,
+                AwbcEffectPayload::Wait(AwbcWaitDuration::Input)
+            );
+            let signature = &program.signatures[effect.signature.index()];
+            let [duration] = signature.params.as_slice() else {
+                panic!("one Wait operand")
+            };
+            assert!(matches!(
+                program.runtime_types[duration.index()].shape(),
+                AwbcRuntimeTypeShape::Duration
+            ));
+            assert_eq!(signature.result, None);
+            assert!(effect.static_args().is_empty());
+        }
+        let bytes = program.encode_canonical().unwrap();
+        let decoded = AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap();
+        decoded
+            .verify(Default::default(), Default::default())
+            .unwrap();
+        assert_eq!(decoded.effect_plans, program.effect_plans);
+    }
+    // An ordinary function resolves wait as the Agent Predicate API; it does
+    // not acquire the dedicated Flow/Thread/line-plan statement grammar.
+    assert!(compile_source("fn pause(delay: Duration) { wait(delay) }\nflow main { pause(0.35s) }\nentry cli @entry.main { goto @flow.main }\n").is_err());
+}
+
+#[test]
 fn authored_flow_permissions_keep_unused_members_and_scopes() {
     let compiled = compile_source(
         "fn read() -> i64 effects { fs.read } { 42i64 }\n\
