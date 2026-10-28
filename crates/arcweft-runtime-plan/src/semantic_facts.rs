@@ -3114,6 +3114,15 @@ pub struct RuntimeResolvedVariant {
 }
 
 impl RuntimeResolvedVariant {
+    /// Reference forms admitted by checked variant resolution. A qualified
+    /// enum member is a Select; it does not become a record-field projection.
+    fn accepts_expression_kind(kind: &HirExprKind) -> bool {
+        matches!(
+            kind,
+            HirExprKind::ShortVariant(_) | HirExprKind::Path(_) | HirExprKind::Select(_)
+        )
+    }
+
     fn try_new(
         owner: RuntimeVariantOwner,
         ordinal: u32,
@@ -8344,7 +8353,7 @@ impl RuntimePlanSemanticFacts {
                 runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::ExpressionVariant,
-                |kind| matches!(kind, HirExprKind::ShortVariant(_) | HirExprKind::Path(_)),
+                RuntimeResolvedVariant::accepts_expression_kind,
             )?;
             validate_variant(&modules, variant)?;
         }
@@ -13815,7 +13824,7 @@ fn validate_project_function_semantic_catalog(
                 validate_record_expression_fact(modules, owner, record)?;
             }
             RuntimeProjectFunctionExpressionPayload::Variant(variant) => {
-                if !matches!(hir, HirExprKind::ShortVariant(_) | HirExprKind::Path(_)) {
+                if !RuntimeResolvedVariant::accepts_expression_kind(hir) {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
                 validate_variant(modules, variant)?;

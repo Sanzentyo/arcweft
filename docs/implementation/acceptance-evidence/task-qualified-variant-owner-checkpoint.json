@@ -1,0 +1,492 @@
+{
+  "version": 1,
+  "base": "e0fb611318a271e0e3759d8ac2dea85bab8a8f28",
+  "status": "Intermediate source checkpoint, explicitly authorized without requiring every intermediate commit to be green. Full reverse runtime is live and workspace gates are pending; this is not final acceptance.",
+  "problem": "R3473: a checked qualified nullary enum member is HIR Select, but RuntimePlan rejected Select as ExpressionVariant in both global and specialized-function semantic facts.",
+  "change": "RuntimeResolvedVariant owns the admitted reference forms. Both fact admission sites use it. FinalExprLowerer uses the checked variant fact for Path/Select and existing unit-variant lowering; ordinary fields, constructor calls, identity/layout/payload checks and contract version 1 remain intact.",
+  "focused": {
+    "run": "R3477",
+    "executed": 198,
+    "passed": 198,
+    "failed": 0,
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "executableDrift": 0,
+    "scope": "Native and canonical decoded AWBC return 42 from qualified nullary values in both Flow and function owners; a typed short payload constructor and ordinary field tests remain. Qualified line output compiles to a typed plan and round-trips canonical AWBC; this is not a CLI completion claim."
+  },
+  "priorFocusedFailure": {
+    "run": "R3475",
+    "executed": 198,
+    "passed": 197,
+    "failed": 1,
+    "reason": "The new mixed fixture attempted a qualified payload constructor outside the accepted qualified nullary path. It now uses the existing typed short payload constructor; every native/AWBC result assertion remains. No production or semantic acceptance was weakened to accept it."
+  },
+  "cli": {
+    "run": "R3481",
+    "executed": 2,
+    "passed": 0,
+    "failed": 2,
+    "sourceDrift": 0,
+    "executableDrift": 0,
+    "change": "Declare RunOutcome and qualify line output; replace obsolete colon Thread with its current ordinary body. Keep original 2/3 steps, one-op/default budgets and every output/scheduler assertion.",
+    "remaining": "Both commands compile and exit 0 but their unchanged assertions fail. Final status is dialogue, 1 operation executes per step, no flow events or task requests are reported, and child scheduler completions remain 0. The headless step driver supplies no dialogue advance input. This observation does not yet establish all causes of noncompletion."
+  },
+  "selectionCorrection": {
+    "catalog": "R3478",
+    "runtime": "R3479",
+    "actualRuntimeExitCode": 4,
+    "selected": 0,
+    "reason": "The CLI check target exports these tests without the Rust source module prefix. Incorrect qualified filters selected zero tests and --no-tests fail rejected that run. R3480/R3481 use the actual two catalog IDs; the failed zero-test run is retained and never counted as a pass."
+  },
+  "reverse": {
+    "catalog": "R3482",
+    "catalogExitCode": 0,
+    "selectedPackages": 16,
+    "selectedCases": 2172,
+    "runtime": "R3483",
+    "status": "running at checkpoint",
+    "excludedBinary": "Compiler callable_execution was run separately as R3477. A follow-up slice under the full 16-package feature activation will close feature-unification evidence."
+  },
+  "gates": "Workspace all-feature check/Clippy and default-feature check pending after frozen nextest completes. No all-pass claim.",
+  "ownership": {
+    "metrics": "task-qualified-variant.metrics.json",
+    "disposition": "RuntimeResolvedVariant owns one private family-admission invariant for its global/function consumers; FinalExprLowerer reuses the exact checked selection. No second variant catalog, source reconstruction, public API widening, dependency edge, unsafe boundary or I/O was added. Existing semantic_facts (15220 LOC) and final_expr (3625 LOC) remain cohesive admission/lowering owners; growth is 9 and 2 LOC. Compiler integration growth is 49 LOC. CLI fixture file (9085 LOC, growth 3) remains the existing runtime-report owner; splitting it for this two-fixture migration would not change its ownership.",
+    "structuralReuse": "Reuse R3467 graph/ownership gate: dependencies and the reviewed responsibilities are unchanged. This is a private admission correction, not a new ownership boundary. Exact current metrics are retained."
+  },
+  "wipProof": "task-qualified-variant.cli-preservation-proof.json",
+  "artifacts": [
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3471-plan-nested-character-fixed-signature.arcw",
+      "bytes": 624,
+      "sha256": "ab8c8b5cc1615a05e73c4c7f5eac84232767db13bce670d6f911dc635830807e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3471-plan-nested-character-fixed-signature.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3471-plan-nested-character-fixed-signature.stdout",
+      "bytes": 1750,
+      "sha256": "ae09121de8e2ed11d949cfda79048368c22df8773c45bb52e18ac7125850ec8a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3471-plan-nested-character.arcw",
+      "bytes": 622,
+      "sha256": "2584f0287e116cfca29e670220af8fec3248a27cc07190dfbc20f97fff7f5612"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3471-plan-nested-character.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3471-plan-nested-character.stdout",
+      "bytes": 1686,
+      "sha256": "627e8457f153728424f2a0baebbbac7d6d751997ba8eac576219599e8ecbb765"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3471-plan-original.arcw",
+      "bytes": 622,
+      "sha256": "70fad7d19d06bbf115f313233e858d3cf161a4193ff95e9e32b500e1a205e6b8"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3471-plan-original.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3471-plan-original.stdout",
+      "bytes": 1654,
+      "sha256": "c312bd10c139304f03fcf043dfa817ffea2789525ff44dab6fa93ae611157d94"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-canonical-ref.arcw",
+      "bytes": 137,
+      "sha256": "39729fb5eb222031858c86aee8e5e315394438097014455a151c6882655f7944"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-canonical-ref.stderr",
+      "bytes": 181,
+      "sha256": "8957842dd2a90d8b7a5fdf211077f5f88223eb9f47520b40678e91c21b25bf72"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-canonical-ref.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-original.arcw",
+      "bytes": 150,
+      "sha256": "55ec27d06c79152f67d248509b107eb24e76294a0515b5661090e26a5c103188"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-original.stderr",
+      "bytes": 181,
+      "sha256": "8957842dd2a90d8b7a5fdf211077f5f88223eb9f47520b40678e91c21b25bf72"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-original.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-typed-result-canonical-ref.arcw",
+      "bytes": 178,
+      "sha256": "62cfdded3ea4f82424111fd34a1cff4eefbe8633fc2291d190c94e0699a2282c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-typed-result-canonical-ref.stderr",
+      "bytes": 181,
+      "sha256": "fb3759d78856a3d1e5de38475dda267095d9bc3cc053dc36a253dd41fe0acb0b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-typed-result-canonical-ref.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-typed-result.arcw",
+      "bytes": 191,
+      "sha256": "7df9d23290b55a5cfcb89ec07fc5e7798145d0e964efccb830181c3d10ee41bb"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-typed-result.stderr",
+      "bytes": 181,
+      "sha256": "fb3759d78856a3d1e5de38475dda267095d9bc3cc053dc36a253dd41fe0acb0b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3472-runtime-typed-result.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3473-runtime-bound-out.arcw",
+      "bytes": 198,
+      "sha256": "0a990c2e4165b5a85d291348f79612dd92826ab5e4ca62b15879b77e71f2d7e2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3473-runtime-bound-out.stderr",
+      "bytes": 181,
+      "sha256": "cd2a0bc9e3669a957b0583b3e66c851ccc1d81db725bab9c3972c20e34a4fe90"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3473-runtime-bound-out.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3473-runtime-explicit-out-type.arcw",
+      "bytes": 188,
+      "sha256": "2d293e9218921378cb10d97fe62104d3c969b435cc3926fc46fdcb29247894e6"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3473-runtime-explicit-out-type.stderr",
+      "bytes": 213,
+      "sha256": "3e73f87d1fda7d61d0e91914b664b5be40d70ee9dccecbd7ae5a81150a0d1d88"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3473-runtime-explicit-out-type.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3473-runtime-qualified-out.arcw",
+      "bytes": 182,
+      "sha256": "8b5109a62f347ad80becd3e1f774253ae23fa53c6b63e8d7fdc2ec5be83c2f9c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3473-runtime-qualified-out.stderr",
+      "bytes": 213,
+      "sha256": "3e73f87d1fda7d61d0e91914b664b5be40d70ee9dccecbd7ae5a81150a0d1d88"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3473-runtime-qualified-out.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-runtime-line-output-r3473.json",
+      "bytes": 2310,
+      "sha256": "1dc5407dfa1aa8a4169b591e60572ff30f0a577517b65e1b596fd3d7b12a3167"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-runtime-plan-probe-r3471.json",
+      "bytes": 7134,
+      "sha256": "2e358ecd185493e79a6701db95f76df3001d8268b9e0579ea6182eecd08e47dd"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-runtime-typed-result-r3472.json",
+      "bytes": 4575,
+      "sha256": "0d4f3cb5fbfe770beaffbd0b38a777e10354275b3518cbb9ff87d80a3979ae72"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3474-program-fanout-awbc-check.input-audit.json",
+      "bytes": 408,
+      "sha256": "6b2126dfe8ab017429c1fc50c65a08d395771695e3932634c4bd1134ea9c7a30"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3474-program-fanout-awbc-check.json",
+      "bytes": 540,
+      "sha256": "4b94dff28913fb6236486c7284687938e2add6ff308739bc8d82aceed11a17df"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3474-program-fanout-awbc-check.log",
+      "bytes": 110069,
+      "sha256": "821d1a4f59009dd628c9c431c5e9a5e1d94a6581d34e09e4583d48d178792354"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3475-program-fanout-runtime.binaries-before.json",
+      "bytes": 232,
+      "sha256": "83bdcbe43e9284c77455d97987752ebd286fd239d8fd9ebb25fe108fe00f5fb0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3475-program-fanout-runtime.json",
+      "bytes": 631,
+      "sha256": "3baf3760d93098bd98b8c2ce0a4753850d081646b0a8d71b32af0b4ca907ec90"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3475-program-fanout-runtime.log",
+      "bytes": 137390,
+      "sha256": "d85d2f42d8b96d11939e6ae3a12814c53e7140a95f865f426317bd3c68329fbc"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3475-program-fanout-runtime.terminal-audit.json",
+      "bytes": 828,
+      "sha256": "b9015380ba407b1891abdb664a05397cba27ada836fdc38b537c353264257e69"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3476-program-fanout-awbc-check.input-audit.json",
+      "bytes": 408,
+      "sha256": "e2d7e0333dc7d71c7486a7ad17d016e815caf7123c63e3c2e3446fb163d38fb6"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3476-program-fanout-awbc-check.json",
+      "bytes": 540,
+      "sha256": "480c028450d1bde0e32eb5d96eba5ea31108e6713c6da6c4706d49386136b114"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3476-program-fanout-awbc-check.log",
+      "bytes": 109982,
+      "sha256": "f02408e3f7e49dc70f8600ffe67d52347f0b3b6575ee574c1420314dec2cdecf"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3477-program-fanout-runtime.binaries-before.json",
+      "bytes": 232,
+      "sha256": "19c6ef86410b2dc9cee9538d1251c55647cda10a77f76350c800d25bfb3fd02d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3477-program-fanout-runtime.json",
+      "bytes": 629,
+      "sha256": "8e1f0b6a9abb7e8b2033123c1101e3cf30aa6f58749145c91f807489e0ae2705"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3477-program-fanout-runtime.log",
+      "bytes": 135492,
+      "sha256": "35c54f2f1501d902860907417e3e93462594b7f403da76427498d305ffaa9784"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3477-program-fanout-runtime.terminal-audit.json",
+      "bytes": 616,
+      "sha256": "29478ed2bbe5d295a1603fcd32a2a763911a0461ba1d86afd4094c772b7579d1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3478-program-fanout-awbc-check.input-audit.json",
+      "bytes": 544,
+      "sha256": "5f6382cca87171655505ea2b076d99f55419bd6186a61e6db6a067326c8cfc80"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3478-program-fanout-awbc-check.json",
+      "bytes": 676,
+      "sha256": "1b062739ba8f4a08c500b16414f4c4ecc3fa7bc5f1272b192836ab475097e27e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3478-program-fanout-awbc-check.log",
+      "bytes": 172290,
+      "sha256": "39c22f41468c28b957e511dc1d7c946f3b4cf0eebc5a083c1fcf3524e51b7802"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3479-program-fanout-runtime.binaries-before.json",
+      "bytes": 403,
+      "sha256": "cc4a7d1de6076f50bd84f9b714f52380f14d661b2d790619032a66b1218028db"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3479-program-fanout-runtime.json",
+      "bytes": 765,
+      "sha256": "85dfcf793f74aa82e38a282da52d27ac31f937a38d0d037edf26406e109541f6"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3479-program-fanout-runtime.log",
+      "bytes": 220305,
+      "sha256": "1b46939afca4a49511be340b03c500690e27c234e106c5fc142eed0e460b6a97"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3480-program-fanout-awbc-check.input-audit.json",
+      "bytes": 506,
+      "sha256": "867019b9acdf90d1e0d1b9f458ee0a5055aae3d6e2b002aae59aa4195cd9817a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3480-program-fanout-awbc-check.json",
+      "bytes": 638,
+      "sha256": "e8811ece50394eaa53903c06cc956c8e5aa12bf6eb95cda5826fc25f3b7889bf"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3480-program-fanout-awbc-check.log",
+      "bytes": 171603,
+      "sha256": "d3d84ee7fd7f4631941281acb0512d86ad562fa99dd336d7aaa4626c479b6aaa"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3481-program-fanout-runtime.binaries-before.json",
+      "bytes": 403,
+      "sha256": "cc4a7d1de6076f50bd84f9b714f52380f14d661b2d790619032a66b1218028db"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3481-program-fanout-runtime.json",
+      "bytes": 729,
+      "sha256": "c1b9c0914d987eb18f8649bf2ab5142a6ebbcde601dfe1199852c60f1430dc9d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3481-program-fanout-runtime.log",
+      "bytes": 240535,
+      "sha256": "62b5d2305419b3a81e75efad0d7e692a81dd1b87fa975f407b8dac364505792e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3481-program-fanout-runtime.terminal-audit.json",
+      "bytes": 901,
+      "sha256": "7f6a33634bac785ea1dc1bb804be04b965c6340688fc20c32d7cff945c949959"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3482-program-fanout-awbc-check.input-audit.json",
+      "bytes": 1037,
+      "sha256": "5b87b6607e6bb3e4bec2eb97813fbf8ea5ecb9d1439df3657da9bf4416fc5e37"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3482-program-fanout-awbc-check.json",
+      "bytes": 1169,
+      "sha256": "bc7804c1b367d6fb7a99a07f109a642172b9400a2fd1bff5eb163d1171433c5d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3482-program-fanout-awbc-check.log",
+      "bytes": 468087,
+      "sha256": "e814377b69014440b993a1f9a0ad45da26c80533b10a4857b1b57ee11c796bd3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3474.inventory.json",
+      "bytes": 47143,
+      "sha256": "19ca5f33905d901299c425fec6559d9b3228518698cd8e33267ebbffdf0ad7d7"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3474.source-freeze.json",
+      "bytes": 781799,
+      "sha256": "3cbf0b821dbc41b99e4093b61eb8d8b31df87236380a20d1fa5f2c88513072b0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3475.source-freeze.json",
+      "bytes": 781799,
+      "sha256": "3cbf0b821dbc41b99e4093b61eb8d8b31df87236380a20d1fa5f2c88513072b0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3476.inventory.json",
+      "bytes": 47143,
+      "sha256": "19ca5f33905d901299c425fec6559d9b3228518698cd8e33267ebbffdf0ad7d7"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3476.source-freeze.json",
+      "bytes": 781799,
+      "sha256": "9885f5dd78ea4ec3f33c1363a5ec2c1f70dc30ecf4003f51087ef5e7d179a091"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3477.source-freeze.json",
+      "bytes": 781799,
+      "sha256": "9885f5dd78ea4ec3f33c1363a5ec2c1f70dc30ecf4003f51087ef5e7d179a091"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3478.inventory.json",
+      "bytes": 115454,
+      "sha256": "e3f6d43f76ae35e70e931e0b3318db9d79600b286866563b34bfb29376bf50ae"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3478.source-freeze.json",
+      "bytes": 782049,
+      "sha256": "5ffa34b6a6758f2c7cf3ba844a8a33b9180b749afadcd8e9d36d3a4f5fc026e7"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3479.source-freeze.json",
+      "bytes": 782048,
+      "sha256": "ece93c272f31e7e51a86b12e129bdb2f5a42392587ac329e8281eab7bbc3746d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3480.inventory.json",
+      "bytes": 115452,
+      "sha256": "8ed1c937cd6b294c864ce0bcf4474bd7228776135ee3fe87ea96d3d2b220ba06"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3480.source-freeze.json",
+      "bytes": 782049,
+      "sha256": "9ec60314b8ffd1524de5c8306e78888fa545dea7d3a132cd94b27dc4ebeb1915"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3481.source-freeze.json",
+      "bytes": 782049,
+      "sha256": "9ec60314b8ffd1524de5c8306e78888fa545dea7d3a132cd94b27dc4ebeb1915"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3482.inventory.json",
+      "bytes": 537385,
+      "sha256": "4da58ea3b5c9500eccc08030e39d2b0c8ce3ae2fea9c9d74e60d65898d7a4d48"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3482.source-freeze.json",
+      "bytes": 782065,
+      "sha256": "494e8faa62cdc4028f3f646308fa618f241799a5c1d948c1b39b63f9571593a0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-qualified-variant.arcweft-compiler.reverse-tree.log",
+      "bytes": 1538,
+      "sha256": "f1770f65131c57fa44870cae924fe247d1323ff00726bf6d5f099cb74cf364bc"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-qualified-variant.arcweft-runtime-plan.reverse-tree.log",
+      "bytes": 4174,
+      "sha256": "d415ed8032ecac9c3c656899633e29a0e3169515316ffb1e0eafe385acbccdfd"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-qualified-variant.cli-preservation-proof.json",
+      "bytes": 2678,
+      "sha256": "2e5c197643bfff06167f564fe6151e7eacb4f26d6aec5e28e09fb43e9bb23f1f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-qualified-variant.cli-step-observation.json",
+      "bytes": 12324,
+      "sha256": "2ad4da86cd70502bc84862a5a355c08a972221191daeff86116848e3ae535d5c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-qualified-variant.metrics.json",
+      "bytes": 1472,
+      "sha256": "982921e8131476c4efd9e06aba3710b527dc174443bd2cfb35c99b8035743834"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-qualified-variant.reverse-closure.json",
+      "bytes": 3865,
+      "sha256": "9e5070f0408d844e081150be6d341247bfedc8cb6023220b9dbd8d52d8d0f9a0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-view-body.metadata.json",
+      "bytes": 4287233,
+      "sha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56"
+    }
+  ],
+  "privatePreservationPatchHashes": [
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-qualified-variant.expected-residual-wip.patch",
+      "bytes": 33550,
+      "sha256": "6dd4dd235aedbe9a22634d6faeb23754dba0763abf7fcf15f6c0916f43f2e6ef"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-qualified-variant.original-user.patch",
+      "bytes": 623,
+      "sha256": "63412f7537fcd8a2b94062e643fa67daec5b21b77c258ea707ce4cfa9f692941"
+    }
+  ],
+  "preservationPatchStorage": "Original WIP patch bytes remain in task-local scratch and the unchanged working tree; only their verification identities are committed, avoiding publication of unrelated user edits as evidence."
+}

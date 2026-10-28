@@ -1718,3 +1718,52 @@ flow main() -> i64 {{ {body} }}
         assert_awbc_return(&source, RuntimeValue::i64(7));
     }
 }
+
+#[test]
+fn qualified_nullary_variants_preserve_global_and_function_owners_in_native_and_awbc() {
+    const SOURCE: &str = r#"
+enum Choice { Done, Data i64 }
+fn selected() -> Choice { Choice.Done }
+flow main() -> i64 {
+    let direct = Choice.Done
+    let from_function = selected()
+    let payload: Choice = .Data(7i64)
+    return match (direct, from_function, payload) {
+        (.Done, .Done, .Data(value)) => value + 35i64,
+        _ => 0i64,
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
+fn qualified_nullary_variant_line_output_reaches_typed_plan_and_awbc() {
+    let compiled = compile_source(
+        r#"
+enum Outcome { Done }
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    alice()[hello[p]]
+    with:
+        out Outcome.Done
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("the checked enum member remains the line output's variant owner");
+    assert_eq!(compiled.plan.line_task_groups().len(), 1);
+    let program = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "line-out.arcw")
+        .lower()
+        .expect("line output lowers through the same variant selection")
+        .program;
+    let bytes = program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded, program);
+}

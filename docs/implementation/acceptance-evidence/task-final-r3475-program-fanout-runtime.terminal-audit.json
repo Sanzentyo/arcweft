@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "e0fb611318a271e0e3759d8ac2dea85bab8a8f28",
+  "run": "task-final-r3475-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  24.481s] 198 tests run: 197 passed, 1 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 198,
+  "passed": 197,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "qualified_nullary_variants_preserve_global_and_function_owners_in_native_and_awbc"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-28T02:04:24.7170774Z"
+}

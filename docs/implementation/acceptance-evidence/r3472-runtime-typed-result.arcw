@@ -1,0 +1,12 @@
+enum RunOutcome { Done }
+
+entry cli @entry.run { goto @flow.run }
+
+pub character alice {
+}
+
+flow run() -> RunOutcome {
+    @<character.alice>()[待って。[p]]
+    with:
+        out .Done
+}

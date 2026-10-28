@@ -1,0 +1,30 @@
+
+pub view PlanDialogue(dialogue: DialogueView) {
+    Panel {
+        Text(dialogue.character_display_name)
+        RichText(dialogue.content)
+    }
+}
+
+pub character alice {
+    dialogue_style {
+        rich_text {
+            ruby {
+                size = 14px
+            }
+            text {
+                color = "#202122"
+            }
+        }
+    }
+}
+
+flow plan {
+    let alice_preset = alice(text_color="#404142")
+    alice_preset(text_color="#505152")[|[待](ま)って。[mark @.release][p]]
+    with:
+        thread motion:
+            wait(0.1s)
+        on mark(@.release):
+            log.info("release")
+}

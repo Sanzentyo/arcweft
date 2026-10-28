@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "run": "task-final-r3480-program-fanout-awbc-check",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-cli",
+    "--test",
+    "check",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(=run_json_steps_runtime_plan) | test(=run_json_observes_line_child_tasks_through_scheduler)",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T02:09:00.9674825Z"
+}

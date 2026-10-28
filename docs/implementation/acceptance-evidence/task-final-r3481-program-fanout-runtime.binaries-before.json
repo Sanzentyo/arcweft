@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "subprocess::arcw",
+    "path": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+    "sha256": "1174d3205e53a5bc282502b2fd40cea7edbe30bbd998a5a3c68dcda3e90e9788"
+  },
+  {
+    "binary": "arcweft-cli::check",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\check-ec297a2953b4cba4.exe",
+    "sha256": "f5ea697a7df570de63d5422c450971bb3ee533d6abd4eec2454d90514bd394a7"
+  }
+]

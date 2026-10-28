@@ -851,10 +851,12 @@ entry cli @entry.run { goto @flow.run }
 pub character alice {
 }
 
-flow run {
+enum RunOutcome { Done }
+
+flow run() -> Unit {
     @<character.alice>()[待って。[p]]
     with:
-        out .Done
+        out RunOutcome.Done
 }
 ",
     );
@@ -2290,8 +2292,9 @@ pub character alice {
 flow main() -> String {
     alice()[待って。[p]]
     with:
-        thread motion:
+        thread motion {
             log.info("motion")
+        }
     return "done"
 }
 "#,

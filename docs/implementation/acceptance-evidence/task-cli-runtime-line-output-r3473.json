@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "run": "R3473",
+  "base": "e0fb611318a271e0e3759d8ac2dea85bab8a8f28",
+  "probes": [
+    {
+      "name": "qualified-out",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3473-runtime-qualified-out.arcw",
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3473-runtime-qualified-out.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3473-runtime-qualified-out.stderr",
+      "stdoutHead": "",
+      "stderrHead": "error[compiler.runtime_semantic_projection]: expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 16, kind: Expr }) cannot own a ExpressionVariant runtime semantic fact\r\n"
+    },
+    {
+      "name": "explicit-out-type",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3473-runtime-explicit-out-type.arcw",
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3473-runtime-explicit-out-type.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3473-runtime-explicit-out-type.stderr",
+      "stdoutHead": "",
+      "stderrHead": "error[compiler.runtime_semantic_projection]: expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 16, kind: Expr }) cannot own a ExpressionVariant runtime semantic fact\r\n"
+    },
+    {
+      "name": "bound-out",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3473-runtime-bound-out.arcw",
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3473-runtime-bound-out.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3473-runtime-bound-out.stderr",
+      "stdoutHead": "",
+      "stderrHead": "error[sema.final_analysis]: semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 17, kind: Expr }) has no admissible final type\r\n"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "status": "denied",
+  "stage": "readiness",
+  "diagnostics": [
+    {
+      "module": "crate",
+      "stage": "parse",
+      "diagnostic": {
+        "severity": "error",
+        "code": "syntax.character.unknown_member",
+        "message": "Character body accepts only `display`",
+        "span": {
+          "source": {
+            "id": "arcweft-project://r3471-plan-nested-character/r3471-plan-nested-character.arcw",
+            "revision": "3127b12119b41b38027b592908b51c7adfd05bb2db8e3ca9cf560d67d959116f",
+            "source_len": 622
+          },
+          "start": 177,
+          "end": 191
+        },
+        "labels": [
+          {
+            "style": "primary",
+            "span": {
+              "source": {
+                "id": "arcweft-project://r3471-plan-nested-character/r3471-plan-nested-character.arcw",
+                "revision": "3127b12119b41b38027b592908b51c7adfd05bb2db8e3ca9cf560d67d959116f",
+                "source_len": 622
+              },
+              "start": 177,
+              "end": 191
+            },
+            "message": null
+          }
+        ],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    },
+    {
+      "module": null,
+      "stage": "readiness",
+      "diagnostic": {
+        "severity": "error",
+        "code": "hir.project.analysis",
+        "message": "HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+        "span": null,
+        "labels": [],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    }
+  ]
+}

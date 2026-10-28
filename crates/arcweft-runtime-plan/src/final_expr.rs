@@ -725,7 +725,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             HirExprKind::EntityReference(_) => {
                 RuntimeExprSeedKind::EntityRef(self.entity_reference(id)?)
             }
-            HirExprKind::Path(_) if self.expression_variant(id).is_some() => {
+            HirExprKind::Path(_) | HirExprKind::Select(_)
+                if self.expression_variant(id).is_some() =>
+            {
                 self.lower_unit_variant(id)?
             }
             HirExprKind::Path(_) => self.lower_path(id)?,

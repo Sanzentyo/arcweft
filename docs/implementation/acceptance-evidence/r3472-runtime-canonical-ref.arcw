@@ -1,0 +1,11 @@
+
+entry cli @entry.run { goto @flow.run }
+
+pub character alice {
+}
+
+flow run {
+    alice()[待って。[p]]
+    with:
+        out .Done
+}

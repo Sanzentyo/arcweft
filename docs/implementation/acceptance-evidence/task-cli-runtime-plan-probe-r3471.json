@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "base": "e0fb611318a271e0e3759d8ac2dea85bab8a8f28",
+  "run": "R3471",
+  "executable": "D:/git/arcweft/target/debug/arcw.exe",
+  "executableSha256": "1411f0828ea08a157e6c77fafdb74cec2ff5c8626a892c526cae066a5f3dce63",
+  "executableDrift": 0,
+  "probes": [
+    {
+      "name": "original",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3471-plan-original.arcw",
+      "sourceSha256": "70fad7d19d06bbf115f313233e858d3cf161a4193ff95e9e32b500e1a205e6b8",
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3471-plan-original.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3471-plan-original.stderr",
+      "stdoutHead": "{\n  \"version\": 1,\n  \"status\": \"denied\",\n  \"stage\": \"readiness\",\n  \"diagnostics\": [\n    {\n      \"module\": \"crate\",\n      \"stage\": \"parse\",\n      \"diagnostic\": {\n        \"severity\": \"error\",\n        \"code\": \"syntax.character.unknown_member\",\n        \"message\": \"Character body accepts only `display`\",\n        \"span\": {\n          \"source\": {\n            \"id\": \"arcweft-project://r3471-plan-original/r3471-plan-original.arcw\",\n            \"revision\": \"58cebf5b9a7bd90b329e23f7a8c9b765d5f60fd45d4482b1510b03074d76231d\",\n            \"source_len\": 622\n          },\n          \"start\": 177,\n          \"end\": 191\n        },\n        \"labels\": [\n          {\n            \"style\": \"primary\",\n            \"span\": {\n              \"source\": {\n                \"id\": \"arcweft-project://r3471-plan-original/r3471-plan-original.arcw\",\n                \"revision\": \"58cebf5b9a7bd90b329e23f7a8c9b765d5f60fd45d4482b1510b03074d76231d\",\n                \"source_len\": 622\n              },\n              \"start\": 177,\n              \"end\": 191\n            },\n            \"message\": null\n          }\n        ],\n        \"notes\": [],\n        \"suggestions\": [],\n        \"commands\": []\n      }\n    },\n    {\n      \"module\": null,\n      \"stage\": \"readiness\",\n      \"diagnostic\": {\n        \"severity\": \"error\",\n        \"code\": \"hir.project.analysis\",\n        \"message\": \"HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter s",
+      "stderrHead": ""
+    },
+    {
+      "name": "nested-character",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3471-plan-nested-character.arcw",
+      "sourceSha256": "2584f0287e116cfca29e670220af8fec3248a27cc07190dfbc20f97fff7f5612",
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3471-plan-nested-character.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3471-plan-nested-character.stderr",
+      "stdoutHead": "{\n  \"version\": 1,\n  \"status\": \"denied\",\n  \"stage\": \"readiness\",\n  \"diagnostics\": [\n    {\n      \"module\": \"crate\",\n      \"stage\": \"parse\",\n      \"diagnostic\": {\n        \"severity\": \"error\",\n        \"code\": \"syntax.character.unknown_member\",\n        \"message\": \"Character body accepts only `display`\",\n        \"span\": {\n          \"source\": {\n            \"id\": \"arcweft-project://r3471-plan-nested-character/r3471-plan-nested-character.arcw\",\n            \"revision\": \"3127b12119b41b38027b592908b51c7adfd05bb2db8e3ca9cf560d67d959116f\",\n            \"source_len\": 622\n          },\n          \"start\": 177,\n          \"end\": 191\n        },\n        \"labels\": [\n          {\n            \"style\": \"primary\",\n            \"span\": {\n              \"source\": {\n                \"id\": \"arcweft-project://r3471-plan-nested-character/r3471-plan-nested-character.arcw\",\n                \"revision\": \"3127b12119b41b38027b592908b51c7adfd05bb2db8e3ca9cf560d67d959116f\",\n                \"source_len\": 622\n              },\n              \"start\": 177,\n              \"end\": 191\n            },\n            \"message\": null\n          }\n        ],\n        \"notes\": [],\n        \"suggestions\": [],\n        \"commands\": []\n      }\n    },\n    {\n      \"module\": null,\n      \"stage\": \"readiness\",\n      \"diagnostic\": {\n        \"severity\": \"error\",\n        \"code\": \"hir.project.analysis\",\n        \"message\": \"HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has requ",
+      "stderrHead": ""
+    },
+    {
+      "name": "nested-character-fixed-signature",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3471-plan-nested-character-fixed-signature.arcw",
+      "sourceSha256": "ab8c8b5cc1615a05e73c4c7f5eac84232767db13bce670d6f911dc635830807e",
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3471-plan-nested-character-fixed-signature.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3471-plan-nested-character-fixed-signature.stderr",
+      "stdoutHead": "{\n  \"version\": 1,\n  \"status\": \"denied\",\n  \"stage\": \"readiness\",\n  \"diagnostics\": [\n    {\n      \"module\": \"crate\",\n      \"stage\": \"parse\",\n      \"diagnostic\": {\n        \"severity\": \"error\",\n        \"code\": \"syntax.character.unknown_member\",\n        \"message\": \"Character body accepts only `display`\",\n        \"span\": {\n          \"source\": {\n            \"id\": \"arcweft-project://r3471-plan-nested-character-fixed-signature/r3471-plan-nested-character-fixed-signature.arcw\",\n            \"revision\": \"dc537535a530e2610f3b7ece2fede5a3e76e151e19bcdc005a9c137aee63359e\",\n            \"source_len\": 624\n          },\n          \"start\": 177,\n          \"end\": 191\n        },\n        \"labels\": [\n          {\n            \"style\": \"primary\",\n            \"span\": {\n              \"source\": {\n                \"id\": \"arcweft-project://r3471-plan-nested-character-fixed-signature/r3471-plan-nested-character-fixed-signature.arcw\",\n                \"revision\": \"dc537535a530e2610f3b7ece2fede5a3e76e151e19bcdc005a9c137aee63359e\",\n                \"source_len\": 624\n              },\n              \"start\": 177,\n              \"end\": 191\n            },\n            \"message\": null\n          }\n        ],\n        \"notes\": [],\n        \"suggestions\": [],\n        \"commands\": []\n      }\n    },\n    {\n      \"module\": null,\n      \"stage\": \"readiness\",\n      \"diagnostic\": {\n        \"severity\": \"error\",\n        \"code\": \"hir.project.analysis\",\n        \"message\": \"HIR module `crate` at HirSnapshotId { module: HirModuleId { database: ",
+      "stderrHead": ""
+    }
+  ]
+}

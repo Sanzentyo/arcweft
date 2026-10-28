@@ -1,0 +1,50 @@
+[
+  {
+    "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+    "owner": "arcweft-runtime-plan",
+    "bytes": 595005,
+    "physicalLoc": 15220,
+    "basePhysicalLoc": 15211,
+    "growth": 9,
+    "classification": "production",
+    "fanIn": 10,
+    "fanOut": 10,
+    "sha256": "981ad8e9560d6a65764b060d337c4003dd240816d8df5bb592d98bbd552ca9eb"
+  },
+  {
+    "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+    "owner": "arcweft-runtime-plan",
+    "bytes": 148092,
+    "physicalLoc": 3625,
+    "basePhysicalLoc": 3623,
+    "growth": 2,
+    "classification": "production",
+    "fanIn": 10,
+    "fanOut": 10,
+    "sha256": "b28bc9be3fe30cf0f6d6a0967a8528c5f35ba0c441b1270ba43473494aad1cb4"
+  },
+  {
+    "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+    "owner": "arcweft-compiler",
+    "bytes": 50299,
+    "physicalLoc": 1769,
+    "basePhysicalLoc": 1720,
+    "growth": 49,
+    "classification": "integration-test",
+    "fanIn": 5,
+    "fanOut": 34,
+    "sha256": "040ff32df8972bf11ebfca9c3174281a4ceb4a5c2a186008a5a5e6a085b46c79"
+  },
+  {
+    "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "owner": "arcweft-cli",
+    "bytes": 309650,
+    "physicalLoc": 9085,
+    "basePhysicalLoc": 9082,
+    "growth": 3,
+    "classification": "integration-test",
+    "fanIn": 0,
+    "fanOut": 55,
+    "sha256": "24561111c3299e95831b952b969290cab423a4565c39d53204861d154580ca4c"
+  }
+]

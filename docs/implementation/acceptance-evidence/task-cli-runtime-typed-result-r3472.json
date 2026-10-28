@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "base": "e0fb611318a271e0e3759d8ac2dea85bab8a8f28",
+  "run": "R3472",
+  "exe": "D:/git/arcweft/target/debug/arcw.exe",
+  "exeSha256": "1411f0828ea08a157e6c77fafdb74cec2ff5c8626a892c526cae066a5f3dce63",
+  "exeDrift": 0,
+  "probes": [
+    {
+      "name": "original",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-original.arcw",
+      "sourceSha256": "55ec27d06c79152f67d248509b107eb24e76294a0515b5661090e26a5c103188",
+      "command": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-original.arcw",
+        "--entry",
+        "entry.run",
+        "--steps",
+        "2",
+        "--json"
+      ],
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-original.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-original.stderr",
+      "stdoutHead": "",
+      "stderrHead": "error[sema.final_analysis]: semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 14, kind: Expr }) has no admissible final type\r\n"
+    },
+    {
+      "name": "typed-result",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-typed-result.arcw",
+      "sourceSha256": "7df9d23290b55a5cfcb89ec07fc5e7798145d0e964efccb830181c3d10ee41bb",
+      "command": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-typed-result.arcw",
+        "--entry",
+        "entry.run",
+        "--steps",
+        "2",
+        "--json"
+      ],
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-typed-result.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-typed-result.stderr",
+      "stdoutHead": "",
+      "stderrHead": "error[sema.final_analysis]: semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 16, kind: Expr }) has no admissible final type\r\n"
+    },
+    {
+      "name": "canonical-ref",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-canonical-ref.arcw",
+      "sourceSha256": "39729fb5eb222031858c86aee8e5e315394438097014455a151c6882655f7944",
+      "command": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-canonical-ref.arcw",
+        "--entry",
+        "entry.run",
+        "--steps",
+        "2",
+        "--json"
+      ],
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-canonical-ref.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-canonical-ref.stderr",
+      "stdoutHead": "",
+      "stderrHead": "error[sema.final_analysis]: semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 14, kind: Expr }) has no admissible final type\r\n"
+    },
+    {
+      "name": "typed-result-canonical-ref",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-typed-result-canonical-ref.arcw",
+      "sourceSha256": "62cfdded3ea4f82424111fd34a1cff4eefbe8633fc2291d190c94e0699a2282c",
+      "command": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-typed-result-canonical-ref.arcw",
+        "--entry",
+        "entry.run",
+        "--steps",
+        "2",
+        "--json"
+      ],
+      "exitCode": 1,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-typed-result-canonical-ref.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3472-runtime-typed-result-canonical-ref.stderr",
+      "stdoutHead": "",
+      "stderrHead": "error[sema.final_analysis]: semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 16, kind: Expr }) has no admissible final type\r\n"
+    }
+  ]
+}
