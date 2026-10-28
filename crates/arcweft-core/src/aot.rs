@@ -306,7 +306,8 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
 pub(crate) fn effect_changes_control(effect: &LineEffectRequest) -> bool {
     matches!(
         effect,
-        LineEffectRequest::Return(_)
+        LineEffectRequest::Wait(_)
+            | LineEffectRequest::Return(_)
             | LineEffectRequest::Goto(_)
             | LineEffectRequest::Panic(_)
             | LineEffectRequest::Fail(_)

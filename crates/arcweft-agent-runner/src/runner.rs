@@ -694,6 +694,7 @@ where
                     return Err(AgentRunError::ControllerFailed(message));
                 }
                 FlowFiberStatus::Running
+                | FlowFiberStatus::DurationWaiting(_)
                 | FlowFiberStatus::Dialogue(_)
                 | FlowFiberStatus::NeedWaiting(_)
                 | FlowFiberStatus::WaitingMany(_)

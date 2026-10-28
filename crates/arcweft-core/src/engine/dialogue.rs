@@ -2638,7 +2638,17 @@ impl Engine {
                 .into_iter()
                 .map(|expression| self.evaluate_dialogue_expr(state, expression, pure_backend))
                 .collect::<Result<Vec<_>, _>>()?;
-            return effect.materialize(&values).map_err(Into::into);
+            let request = effect.materialize(&values)?;
+            if let Some(LineEffectRequest::Wait(crate::effect::RuntimeWaitTarget::Duration(
+                duration,
+            ))) = &request
+            {
+                state.execution.status = crate::time::LogicalWait::start(*duration).map_or(
+                    super::FlowFiberStatus::Running,
+                    super::FlowFiberStatus::DurationWaiting,
+                );
+            }
+            return Ok(request);
         }
         let RuntimeEffectExpr::Drop { target, policy } = effect else {
             unreachable!("non-drop effects were handled above");

@@ -242,6 +242,7 @@ fn run_route_flow(
             FlowFiberStatus::Done(FlowExit::Done) => NativeHttpResponse::new(204, String::new()),
             FlowFiberStatus::Failed(message) => NativeHttpResponse::new(500, message.clone()),
             FlowFiberStatus::Running
+            | FlowFiberStatus::DurationWaiting(_)
             | FlowFiberStatus::Dialogue(_)
             | FlowFiberStatus::NeedWaiting(_)
             | FlowFiberStatus::WaitingMany(_)

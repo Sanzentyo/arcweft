@@ -851,7 +851,12 @@ impl DialogueActivationStore {
         }
         match frame.phase {
             DialogueRuntimePhase::Activating => {
-                frame.pending_line_operation.is_none() && frame.pending_host_call.is_none()
+                frame.pending_line_operation.is_none()
+                    && frame.pending_host_call.is_none()
+                    && !matches!(
+                        frame.execution.status,
+                        super::super::FlowFiberStatus::DurationWaiting(_)
+                    )
             }
             DialogueRuntimePhase::Ready => {
                 !joined_work
@@ -1230,6 +1235,11 @@ impl DialogueActivationStore {
             let mut transaction = next
                 .begin_transaction(&activation)
                 .map_err(|source| DialogueIngressError::for_activation(&activation, source))?;
+            transaction
+                .frame_mut()
+                .execution
+                .status
+                .advance_duration_wait(dt);
             if transaction.frame().phase == DialogueRuntimePhase::Ready {
                 transaction.frame_mut().elapsed =
                     transaction.frame().elapsed.checked_add(dt).ok_or_else(|| {

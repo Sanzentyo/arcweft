@@ -86,6 +86,7 @@ impl Engine {
         !self.fiber_waits_for_join(fiber)
             && match fiber.frame.status {
                 FlowFiberStatus::NeedWaiting(_)
+                | FlowFiberStatus::DurationWaiting(_)
                 | FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Program(_))
                 | FlowFiberStatus::HostCall(_) => self.fiber_has_internal_work(fiber),
                 _ => true,

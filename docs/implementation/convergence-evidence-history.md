@@ -13264,3 +13264,10 @@ R3553の3 owner checkは文法修復前の入力で終了0。最終R3571はSynta
 訂正理由: 元の「RuntimePlan Wait投影が未修復」はSource投影とcodecの検証により現在形ではなくなったので、現状一覧から除いた。Sema受入、Generic Matchその他の完了境界は維持する。実行側にはまだduration suspensionがなく、論理dtによる停止復帰と保存／取消／置換は同じgoalの実装中として残す。LogicalWaitの値grammar往復をexecutor save受入へ読み替えない。
 
 現状整理の訂正理由: 構造gateの現在欄は最終R3570の一か所へ集約し、R3548の重複した現在形を削除した。R3548の実測は既存Sema owner原本と履歴に保持する。R3547／R3549の全workspace結果は、その時点のSema入力に限る前回記録として示し、後続Core／AWBC／Thread文法入力の全workspace合格にはしない。
+
+
+Wait投影の公開: d82fb9eb74187733bae1ee5da6307d761834d385、親2e02c67c59e8bff24e0302ab84225c0baf232c8e、tree d5b07afb877c25ee011c6d72ba0fd6df58ea3785。153 pathのindex bytesとraw artifactsを照合し、remote／commit／tree／blob差分0を確認した。元tracked WIP 14件のpatch SHA256は5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920aのまま、別途保持6件と空indexも確認。[公開照合](acceptance-evidence/task-wait-projection-source-publication.json)。
+
+
+## 2026-10-29 Native Duration wait execution
+Inspected main d82fb9eb74187733bae1ee5da6307d761834d385 with held tracked WIP14 / untracked files6. R3574/3575 all-target compile failures are retained and repaired at the status consumers. R3581 executes five Native source tests: partial/exact/over/zero durations, computed operands, sequential waits, child scheduling, OneOp and zero-operation budgets. R3583 is the complete Core library run, including private Native rollback with exact owner and maximum remaining time. Raw inputs/catalogues/cases/EXE receipts are retained. This supersedes only the Native data-only statement in the earlier Wait projection note; AWBC timed suspension and final cross-backend acceptance are still pending. Individual accepted features are not reopened. See [Native checkpoint](acceptance-evidence/task-wait-native-owner-checkpoint.json).

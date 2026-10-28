@@ -143,6 +143,7 @@ impl Engine {
                 true
             }
             status @ (FlowFiberStatus::Running
+            | FlowFiberStatus::DurationWaiting(_)
             | FlowFiberStatus::Done(_)
             | FlowFiberStatus::Failed(_)) => {
                 self.fiber.frame.status = status;

@@ -58,7 +58,7 @@ impl Engine {
             return false;
         }
         if let Some(effect) = outcome.request {
-            self.emit_line_effect(effect, output, pure_backend);
+            self.emit_execution_effect(effect, output, pure_backend);
         }
         true
     }

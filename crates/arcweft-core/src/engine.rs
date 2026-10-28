@@ -47,6 +47,7 @@ pub mod audio;
 #[cfg(test)]
 mod child_poll_tests;
 mod code_cursor;
+mod duration_wait;
 pub use code_cursor::NativeCodeCursor;
 use code_cursor::NativeSourceOperation;
 pub mod dialogue;
@@ -1365,6 +1366,7 @@ impl DialogueExecutionStatus {
 #[derive(Debug, PartialEq)]
 pub enum FlowFiberStatus<A = AwaitState, M = WaitingManyStatus> {
     Running,
+    DurationWaiting(crate::time::LogicalWait),
     Dialogue(DialogueExecutionStatus),
     NeedWaiting(Box<A>),
     WaitingMany(M),
@@ -1393,6 +1395,7 @@ impl Clone for FlowFiberStatusRollbackImage {
     fn clone(&self) -> Self {
         match self {
             Self::Running => Self::Running,
+            Self::DurationWaiting(wait) => Self::DurationWaiting(*wait),
             Self::Dialogue(activation) => Self::Dialogue(activation.clone()),
             Self::NeedWaiting(state) => Self::NeedWaiting(state.clone()),
             Self::WaitingMany(state) => Self::WaitingMany(state.clone()),
@@ -1411,6 +1414,7 @@ impl FlowFiberStatus {
     ) -> Result<FlowFiberStatusRollbackImage, String> {
         Ok(match self {
             Self::Running => FlowFiberStatusRollbackImage::Running,
+            Self::DurationWaiting(wait) => FlowFiberStatusRollbackImage::DurationWaiting(*wait),
             Self::Dialogue(activation) => {
                 FlowFiberStatusRollbackImage::Dialogue(activation.clone())
             }
@@ -1445,6 +1449,7 @@ impl FlowFiberStatus {
     ) -> Result<Self, String> {
         Ok(match image {
             FlowFiberStatusRollbackImage::Running => Self::Running,
+            FlowFiberStatusRollbackImage::DurationWaiting(wait) => Self::DurationWaiting(wait),
             FlowFiberStatusRollbackImage::Dialogue(activation) => Self::Dialogue(activation),
             FlowFiberStatusRollbackImage::NeedWaiting(state) => Self::NeedWaiting(Box::new(
                 AwaitState::from_image_with_admitted_values(*state, owner)?,
@@ -1902,6 +1907,9 @@ impl FlowFiberStatus {
     fn runtime_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
+            Self::DurationWaiting(wait) => {
+                format!("duration_waiting {}ns", wait.remaining().as_nanos())
+            }
             Self::Dialogue(_) => "dialogue".to_owned(),
             Self::NeedWaiting(state) => format!("need_waiting {}", state.handle.need_id()),
             Self::WaitingMany(state) => state.runtime_status_label(),
@@ -1917,6 +1925,9 @@ impl FlowFiberStatus {
     fn debug_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
+            Self::DurationWaiting(wait) => {
+                format!("duration_waiting {}ns", wait.remaining().as_nanos())
+            }
             Self::Dialogue(_) => "dialogue".to_owned(),
             Self::NeedWaiting(state) => format!("need_waiting {}", state.handle.need_id()),
             Self::WaitingMany(state) => state.debug_status_label(),
@@ -1932,6 +1943,7 @@ impl FlowFiberStatus {
     fn compact_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
+            Self::DurationWaiting(_) => "duration_waiting".to_owned(),
             Self::Dialogue(_) => "dialogue".to_owned(),
             Self::NeedWaiting(_) => "need_waiting".to_owned(),
             Self::WaitingMany(_) => "waiting_many".to_owned(),
@@ -2969,6 +2981,7 @@ impl Engine {
                 diagnostic.to_string(),
             ));
         }
+        self.latch_duration_waits(input.dt);
         if !self.run_root_phase(std::mem::take(&mut input.root_events), &mut output) {
             let stats = RuntimeStepStats {
                 executed_ops,
@@ -4759,6 +4772,7 @@ impl Engine {
             && matches!(
                 self.fiber.frame.status,
                 FlowFiberStatus::Done(_)
+                    | FlowFiberStatus::DurationWaiting(_)
                     | FlowFiberStatus::NeedWaiting(_)
                     | FlowFiberStatus::WaitingMany(_)
                     | FlowFiberStatus::HostCall(_)
@@ -4770,6 +4784,7 @@ impl Engine {
         } else {
             match &self.fiber.frame.status {
                 FlowFiberStatus::Running => FlowFiberStatus::Running,
+                FlowFiberStatus::DurationWaiting(wait) => FlowFiberStatus::DurationWaiting(*wait),
                 FlowFiberStatus::Dialogue(activation) => {
                     FlowFiberStatus::Dialogue(activation.clone())
                 }
@@ -4816,6 +4831,11 @@ impl Engine {
     }
 
     fn hard_stop_reason(&self, output: &RuntimeStepOutput) -> Option<RuntimeStepStopReason> {
+        if matches!(self.fiber.frame.status, FlowFiberStatus::DurationWaiting(_))
+            && self.has_runnable_child_fibers()
+        {
+            return None;
+        }
         if self.root_has_pending_reduction()
             && !matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_))
         {
@@ -4864,7 +4884,9 @@ impl Engine {
                     RuntimeStepStopReason::Blocked
                 })
             }
-            FlowFiberStatus::NeedWaiting(_) => Some(RuntimeStepStopReason::Blocked),
+            FlowFiberStatus::NeedWaiting(_) | FlowFiberStatus::DurationWaiting(_) => {
+                Some(RuntimeStepStopReason::Blocked)
+            }
             FlowFiberStatus::Running if self.fiber_waits_for_join(&self.fiber) => Some(
                 if output.has_presentation_visible_output() || output.has_host_requests() {
                     RuntimeStepStopReason::Output
@@ -4912,6 +4934,7 @@ impl Engine {
             }
             FlowFiberStatus::Done(_)
             | FlowFiberStatus::Failed(_)
+            | FlowFiberStatus::DurationWaiting(_)
             | FlowFiberStatus::WaitingMany(_)
             | FlowFiberStatus::HostCall(_)
             | FlowFiberStatus::Choice(_) => false,

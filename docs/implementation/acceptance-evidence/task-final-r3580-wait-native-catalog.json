@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "d82fb9eb74187733bae1ee5da6307d761834d385",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "flow_wait",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3580-wait-native-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T22:04:42.2725974Z",
+  "finishedAt": "2026-10-28T22:05:10.2725615Z"
+}

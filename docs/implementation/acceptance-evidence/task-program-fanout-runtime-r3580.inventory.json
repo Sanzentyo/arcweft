@@ -1,0 +1,40 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_child_wait_progresses_while_its_parent_has_a_longer_wait",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_computed_wait_consumes_only_later_step_durations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_wait_ages_at_ingress_without_spending_a_zero_operation_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_wait_overshoot_does_not_age_a_later_wait",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_zero_wait_never_requires_elapsed_time",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

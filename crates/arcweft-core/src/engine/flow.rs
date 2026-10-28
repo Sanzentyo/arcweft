@@ -1060,7 +1060,7 @@ impl Engine {
                 let FlowOp::Effect(effect) = op.into_owned() else {
                     unreachable!("selected effect");
                 };
-                self.emit_line_effect(effect, output, pure_backend);
+                self.emit_execution_effect(effect, output, pure_backend);
                 if !self.apply_control_effects(output, pure_backend) {
                     self.advance_if_needed(next_op_index);
                 }

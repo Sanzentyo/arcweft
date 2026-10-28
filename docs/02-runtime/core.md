@@ -276,6 +276,16 @@ through the ordinary Flow value continuation, including calls and branches, into
 one evaluated Wait effect. Materialization accepts the typed Duration value and
 never parses a formatted label.
 
+A positive Duration suspends its executing frame after evaluating the operand
+once. Only later runtime-step ingress applies `RuntimeStepInput.dt` to its
+remaining time; the step that starts a wait does not age it. Zero completes
+without suspension. Partial elapsed time preserves the remainder, and elapsed
+time beyond completion is not applied to a subsequent wait. This uses relative
+logical time without a host clock or an overflowing absolute deadline. Time
+ingress also applies when the operation budget is zero; the budget still prevents
+execution of the resumed continuation. Other runnable frames may progress while
+one frame waits.
+
 The version-one AWBC Wait payload declares one Duration source: `Input` consumes
 the sole parameter of an exact Duration signature; `Constant` names a Duration
 constant and has no parameters. Static effect packets, including Choice effects,
