@@ -2178,10 +2178,36 @@ fn execute_instruction(
             let args = fiber
                 .active_frame_mut()?
                 .take_register_values(program, args)?;
+            let wait = match program
+                .effect_plans
+                .get(effect.index())
+                .map(|plan| &plan.payload)
+            {
+                Some(super::schema::AwbcEffectPayload::Wait(source)) => {
+                    crate::time::LogicalWait::start(
+                        source
+                            .resolve(program, &args)
+                            .map_err(|error| VmError::Runtime(error.to_string()))?,
+                    )
+                }
+                _ => None,
+            };
             observations.push(VmObservation::Effect {
                 effect: *effect,
                 args,
             });
+            if let Some(wait) = wait {
+                let mut next = fiber.cursor;
+                next.instruction_offset = next
+                    .instruction_offset
+                    .checked_add(1)
+                    .ok_or(FiberStateError::InvalidFrame)?;
+                fiber.suspend(FiberSuspension {
+                    resume: FiberResumeTarget::Exact(next),
+                    reason: FiberSuspensionReason::DurationWait(wait),
+                })?;
+                return Ok(InstructionControl::Yield);
+            }
         }
         AwbcInstruction::RegisterCleanup { args, .. } => {
             FiberScopeCleanup::validate_registration_inputs(

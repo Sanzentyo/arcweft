@@ -13,6 +13,38 @@ use crate::task::RuntimeNeedHandleSaveSnapshot;
 use crate::value::{RuntimeNeedView, RuntimeValueView};
 
 impl<V, O, N> FiberSuspension<V, O, N> {
+    pub(super) fn duration_wait_resume(
+        &self,
+        program: &AwbcProgram,
+        cursor: FiberCursor,
+    ) -> Result<FiberCursor, FiberStateError> {
+        let FiberSuspensionReason::DurationWait(_) = &self.reason else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        let FiberResumeTarget::Exact(next) = self.resume else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        let super::super::schema::AwbcInstruction::EmitEffect { effect, .. } =
+            super::instruction_at_site(program, cursor)?
+        else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        if !matches!(
+            program
+                .effect_plans
+                .get(effect.index())
+                .map(|plan| &plan.payload),
+            Some(super::super::schema::AwbcEffectPayload::Wait(_))
+        ) || next.function != cursor.function
+            || next.block != cursor.block
+            || Some(next.instruction_offset) != cursor.instruction_offset.checked_add(1)
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        validate_cursor(program, next)?;
+        Ok(next)
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "One closed suspension algebra authenticates original sites before retained value construction"
@@ -36,6 +68,10 @@ impl<V, O, N> FiberSuspension<V, O, N> {
         }
         let resume = match self.resume {
             FiberResumeTarget::Exact(exact) => {
+                if matches!(self.reason, FiberSuspensionReason::DurationWait(_)) {
+                    self.duration_wait_resume(frame.program, cursor)?;
+                    return Ok(());
+                }
                 if !matches!(self.reason, FiberSuspensionReason::BudgetYield) || exact != cursor {
                     return Err(FiberStateError::InvalidFrame);
                 }
@@ -681,6 +717,7 @@ impl FiberSuspensionReason {
                 args: args.iter().map(value).collect::<Result<_, _>>()?,
                 destination: *destination,
             },
+            Self::DurationWait(wait) => FiberSuspensionReason::DurationWait(*wait),
             Self::BudgetYield => FiberSuspensionReason::BudgetYield,
         })
     }
@@ -814,6 +851,7 @@ impl
                 args: args.into_iter().map(value).collect::<Result<_, _>>()?,
                 destination,
             },
+            Self::DurationWait(wait) => FiberSuspensionReason::DurationWait(wait),
             Self::BudgetYield => FiberSuspensionReason::BudgetYield,
         })
     }
@@ -885,6 +923,7 @@ where
                 args: args.clone(),
                 destination: *destination,
             },
+            Self::DurationWait(wait) => Self::DurationWait(*wait),
             Self::BudgetYield => Self::BudgetYield,
         }
     }

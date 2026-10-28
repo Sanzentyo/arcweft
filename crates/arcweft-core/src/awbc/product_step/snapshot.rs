@@ -2186,7 +2186,8 @@ impl AwbcProductExecutorSnapshot {
                 (None, Some(suspension))
                     if matches!(
                         &suspension.reason,
-                        crate::awbc::fiber::FiberSuspensionReason::BudgetYield
+                        crate::awbc::fiber::FiberSuspensionReason::DurationWait(_)
+                            | crate::awbc::fiber::FiberSuspensionReason::BudgetYield
                     ) => {}
                 (None, Some(suspension))
                     if matches!(

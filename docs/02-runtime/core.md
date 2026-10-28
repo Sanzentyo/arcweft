@@ -293,6 +293,15 @@ use the constant source without a register context. These are alternatives in
 one payload grammar; neither source falls back to the other. Both have no result.
 The decoder rejects unknown source tags and the former array-shaped Serde payload.
 
+The AWBC fiber retains a positive remaining duration in `DurationWait`. Its cursor
+stays on the original `EmitEffect` Wait instruction; its exact resume cursor is
+the next instruction in the same function and block. Save admission authenticates
+both against the admitted program before restoring the frame. Completion clears
+the suspension without evaluating its operand again. Cancellation retires it with
+the ordinary fiber, and compatible program replacement preserves the remaining
+time while validating that its source instruction is still Wait. Dialogue
+activation uses its own existing fiber and transactional time ingress.
+
 `yield` is not a line effect. It lowers only through Stream generation plans;
 a dialogue line plan must use `out` for line-scope values.
 

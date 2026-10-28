@@ -42,6 +42,40 @@ pub enum AwbcWaitDuration {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub(crate) enum AwbcWaitDurationError {
+    #[error("AWBC wait effect is missing its Duration target")]
+    Operands,
+    #[error("AWBC wait target must evaluate to Duration")]
+    Target,
+}
+
+impl AwbcWaitDuration {
+    pub(crate) fn resolve(
+        self,
+        program: &super::AwbcProgram,
+        inputs: &[crate::value::RuntimeValue],
+    ) -> Result<crate::time::LogicalDuration, AwbcWaitDurationError> {
+        match self {
+            Self::Constant(id) if inputs.is_empty() => {
+                let Some(super::AwbcConstant::DurationNanos(nanos)) =
+                    program.constants.get(id.index())
+                else {
+                    return Err(AwbcWaitDurationError::Target);
+                };
+                Ok(crate::time::LogicalDuration::from_nanos(*nanos))
+            }
+            Self::Input if inputs.len() == 1 => {
+                let crate::effect::RuntimeWaitTarget::Duration(duration) =
+                    crate::effect::RuntimeWaitTarget::try_from(&inputs[0])
+                        .map_err(|_| AwbcWaitDurationError::Target)?;
+                Ok(duration)
+            }
+            Self::Constant(_) | Self::Input => Err(AwbcWaitDurationError::Operands),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("AWBC effect {kind:?} requires its typed payload")]
 pub struct AwbcEffectPayloadError {
     pub kind: AwbcEffectKind,

@@ -35,6 +35,7 @@ enum AwaitNeedPublicationKind {
 }
 
 enum DeferredSuspensionDispatch {
+    DurationWait,
     BudgetYield,
     AwaitNeed {
         correlation: crate::task::TaskCorrelation,
@@ -54,6 +55,7 @@ enum DeferredSuspensionDispatch {
 impl DeferredSuspensionDispatch {
     fn from_reason(reason: &FiberSuspensionReason) -> Self {
         match reason {
+            FiberSuspensionReason::DurationWait(_) => Self::DurationWait,
             FiberSuspensionReason::BudgetYield => Self::BudgetYield,
             FiberSuspensionReason::Await {
                 target:
@@ -1581,6 +1583,7 @@ impl AwbcProductStepExecutor {
         }
         match dispatch {
             DeferredSuspensionDispatch::AwaitNeed { .. }
+            | DeferredSuspensionDispatch::DurationWait
             | DeferredSuspensionDispatch::BudgetYield => {}
             DeferredSuspensionDispatch::AwaitMany => {
                 let diagnostics = output.diagnostics.len();
@@ -1653,6 +1656,7 @@ impl AwbcProductStepExecutor {
         let dispatch = DeferredSuspensionDispatch::from_reason(&suspension.reason);
         let Some(resume) = resume else {
             return match dispatch {
+                DeferredSuspensionDispatch::DurationWait => Ok(false),
                 DeferredSuspensionDispatch::BudgetYield => {
                     child
                         .fiber
@@ -1721,7 +1725,9 @@ impl AwbcProductStepExecutor {
                 "deferred child suspended on a product-owned dialogue or choice boundary"
                     .to_owned(),
             )),
-            DeferredSuspensionDispatch::BudgetYield => Ok(false),
+            DeferredSuspensionDispatch::DurationWait | DeferredSuspensionDispatch::BudgetYield => {
+                Ok(false)
+            }
         }
     }
 

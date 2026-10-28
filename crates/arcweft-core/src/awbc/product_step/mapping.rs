@@ -102,27 +102,24 @@ impl AwbcProgram {
                 ));
             }
             AwbcEffectKind::Wait => {
-                use crate::awbc::schema::{AwbcEffectPayload, AwbcWaitDuration};
+                use crate::awbc::schema::AwbcEffectPayload;
                 let AwbcEffectPayload::Wait(source) = plan.payload else {
                     unreachable!("effect kind is derived from its payload");
                 };
-                let duration = match source {
-                    AwbcWaitDuration::Constant(_) => static_args.first(),
-                    AwbcWaitDuration::Input if dynamic_args.len() == 1 => dynamic_args.first(),
-                    AwbcWaitDuration::Input => None,
-                };
-                let Some(duration) = duration else {
-                    return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
-                        RuntimeDiagnosticCategory::Internal,
-                        "AWBC wait effect is missing its Duration target",
-                    ));
-                };
-                match RuntimeWaitTarget::try_from(duration) {
-                    Ok(duration) => LineEffectRequest::Wait(duration),
-                    Err(_) => {
+                match source.resolve(program, dynamic_args) {
+                    Ok(duration) => LineEffectRequest::Wait(RuntimeWaitTarget::Duration(duration)),
+                    Err(error) => {
+                        let category = match error {
+                            crate::awbc::schema::AwbcWaitDurationError::Operands => {
+                                RuntimeDiagnosticCategory::Internal
+                            }
+                            crate::awbc::schema::AwbcWaitDurationError::Target => {
+                                RuntimeDiagnosticCategory::Type
+                            }
+                        };
                         return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
-                            RuntimeDiagnosticCategory::Type,
-                            "AWBC wait target must evaluate to Duration",
+                            category,
+                            error.to_string(),
                         ));
                     }
                 }

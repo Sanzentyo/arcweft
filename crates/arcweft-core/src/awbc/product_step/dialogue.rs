@@ -83,6 +83,13 @@ impl ProductDialogueStore {
                 pending.is_none()
                     && frame.pending_activation_host_call.is_none()
                     && !self.activation_budget_exhausted()
+                    && !matches!(
+                        fiber
+                            .suspension
+                            .as_ref()
+                            .map(|suspension| &suspension.reason),
+                        Some(crate::awbc::fiber::FiberSuspensionReason::DurationWait(_))
+                    )
                     && !super::line::fiber_has_scoped_defer_inflight(fiber)
             }
             super::ProductDialoguePhase::Reducing { line_task }
@@ -275,6 +282,7 @@ impl ProductDialogueStore {
 
     pub(super) fn latch_step_input(
         &mut self,
+        program: &crate::awbc::schema::AwbcProgram,
         dt: LogicalDuration,
         content_events: &[RuntimeDialogueContentEvent],
         advances: &[DialogueActivationId],
@@ -372,6 +380,16 @@ impl ProductDialogueStore {
                 .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?;
 
             let mut transaction = self.registry.begin_transaction(activation)?;
+            if let super::ProductDialoguePhase::Activating { fiber, .. }
+            | super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
+                state: super::ProductDialogueClosingState::Activation { fiber, .. },
+                ..
+            }) = &mut transaction.frame_mut().phase
+                && let Err(error) = fiber.advance_duration_wait(program, dt)
+            {
+                self.registry.restore_transaction(transaction)?;
+                return Err(error.into());
+            }
             if transaction.frame().is_ingress_ready() {
                 transaction.frame_mut().elapsed_nanos += dt.as_nanos();
             }

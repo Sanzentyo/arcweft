@@ -1,0 +1,283 @@
+{
+  "version": 1,
+  "commit": "a32e0058223d2536105321e0424bae196ae8c08f",
+  "parent": "d82fb9eb74187733bae1ee5da6307d761834d385",
+  "tree": "cd1b7eaea68e103c1b29c39fae0a700f5c6be6e0",
+  "remote": "a32e0058223d2536105321e0424bae196ae8c08f",
+  "paths": [
+    {
+      "path": "crates/arcweft-agent-runner/src/runner.rs",
+      "blob": "d5cf423630d6bd10a4b24d66b88902b618c95d0d"
+    },
+    {
+      "path": "crates/arcweft-cli/src/app/runtime/script_test.rs",
+      "blob": "dee7f2a6ead01a8caf8cfd9d20d6c40aa73a8790"
+    },
+    {
+      "path": "crates/arcweft-cli/src/server_adapter.rs",
+      "blob": "d877fb227dbe036bbade0bfb322d958540ab5b6f"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/flow_wait.rs",
+      "blob": "33b028b283d17f54b10cdd06803bf345b2b8473d"
+    },
+    {
+      "path": "crates/arcweft-core/src/aot.rs",
+      "blob": "6c56df782ddfbbeb989ce8ba6154892fd98d4042"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/parity.rs",
+      "blob": "420cc7923005dcf431395ff1b7424588db852825"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "blob": "6e5fdd39c197caed6b82e90f220e777001502a8e"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/audio.rs",
+      "blob": "e09f5f33db4d410f1ec1f3ffdba857666f89500b"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/dialogue.rs",
+      "blob": "25c97ceda8d389333f368d461b780e7e88e6c92f"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+      "blob": "e18a9c2d0348bdc2577172c840c387a16a6bb661"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/duration_wait.rs",
+      "blob": "f80e7946c2ce4a5b67a612c11185b296e04527f3"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow.rs",
+      "blob": "6f7117c479b17ec2d8625606d05194e78a0736aa"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/frame_progress.rs",
+      "blob": "ca62c6089d769c2eb974c2e7061d6d43361cdd88"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/suspend.rs",
+      "blob": "6a14be006e0e294f37386b7faf50c4cb0aa119c1"
+    },
+    {
+      "path": "docs/02-runtime/core.md",
+      "blob": "5d750e265d64a7bb6869d657c48d27bd22a93314"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3574-wait-sema-check.input-audit.json",
+      "blob": "5e899484915e6395208b8ddecdcd049970ea7747"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3574-wait-sema-check.json",
+      "blob": "80125c22dcd122bb3e5f8ebb43a13cf7c90aeed9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3574-wait-sema-check.log",
+      "blob": "ee93ca4b77c3d83b31b26605f5b11035dda0ba6a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3575-wait-sema-check.input-audit.json",
+      "blob": "38a4c290e1601a7ebfcf68a734fdc9c6a3dd44d4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3575-wait-sema-check.json",
+      "blob": "ba51adf415f2a5adbc21e13ead972fb160d11d7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3575-wait-sema-check.log",
+      "blob": "642c3eeac37956053a3f3b146a40c66c47b70f77"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3576-wait-native-catalog.input-audit.json",
+      "blob": "31ed375a0c91d032f715a8d8e79f426918428909"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3576-wait-native-catalog.json",
+      "blob": "414b7fbae8e187d521fcaac98f86ad195b856839"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3576-wait-native-catalog.log",
+      "blob": "328232f167aeaca23438de204d39a608855df000"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3577-program-fanout-runtime.binaries-before.json",
+      "blob": "7903879e84a897d446d9d0854f103c90eb0b23f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3577-program-fanout-runtime.json",
+      "blob": "2f10d7656e063f2df7c3312d2725fd191d057f0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3577-program-fanout-runtime.log",
+      "blob": "e052c452cee5a5f00e20cf363d6df7c36c42a137"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3577-program-fanout-runtime.terminal-audit.json",
+      "blob": "57e2888fc3188663d19082abdf5fa437d305eea7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3580-wait-native-catalog.input-audit.json",
+      "blob": "c963494198fb4169d223ada2658a5ccd63057ab5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3580-wait-native-catalog.json",
+      "blob": "8496951bc21c99b99e3d3aa39f775d21569c5b1b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3580-wait-native-catalog.log",
+      "blob": "53df71755ffec4d3c2a6acce02ab0ee3a03bc1a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3581-program-fanout-runtime.binaries-before.json",
+      "blob": "6a261ca0b36d1bd9e083d599c743f2c01714661d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3581-program-fanout-runtime.json",
+      "blob": "2593859d5e07ba4e93e2ed0ee06da46249f20069"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3581-program-fanout-runtime.log",
+      "blob": "9e40280df911ce7631687545b7001eded6b87990"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3581-program-fanout-runtime.terminal-audit.json",
+      "blob": "7abcbc680e57ba490d22d5205ad5b01a51aad8ce"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3582-wait-core-catalog.input-audit.json",
+      "blob": "5949eb2d234b183e913d61fde791a5373021c337"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3582-wait-core-catalog.json",
+      "blob": "14bf31b3fe4ba8c5ba41fe0b4408b4fb99f0c95d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3582-wait-core-catalog.log",
+      "blob": "010d4b885f009e623e3a2dab8f5c79a52fb052ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3583-program-fanout-runtime.binaries-before.json",
+      "blob": "cd923f5ea6f5229ebc0188ab4a9415b6336de815"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3583-program-fanout-runtime.json",
+      "blob": "d2455aea9dadb1e3bcfeeb8da6c2e4fdc14d0f09"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3583-program-fanout-runtime.log",
+      "blob": "772b61d8a76ce9dd757d1d29e1a322d6742319f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3583-program-fanout-runtime.terminal-audit.json",
+      "blob": "917be994765d866f6cf5a0e7db05f7592fa4f52d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3584-wait-structure.input-audit.json",
+      "blob": "c0312f9d0aa08f2b179c33305df2056cea96ab9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3584-wait-structure.json",
+      "blob": "33602f4e708a3ca5f25622accd800f4d5c513d32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3584-wait-structure.log",
+      "blob": "ee0f779367fe7946db063bf355784396faed7fa3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3574.source-freeze.json",
+      "blob": "6c53b5c693af3ad7e9e50040595dc39d8441489a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3575.source-freeze.json",
+      "blob": "52d1f48d2d46a0c37650cd4a0a87bad10a7afc69"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3576.inventory.json",
+      "blob": "9749b210ff9ce7b0267420f3da8e6081161f609c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3576.source-freeze.json",
+      "blob": "88c05a1f7c36629ca61625db8625594912d81895"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3577.source-freeze.json",
+      "blob": "88c05a1f7c36629ca61625db8625594912d81895"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3580.inventory.json",
+      "blob": "890d43bbdb321b7dfcceb056cbd8f7b31c170b78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3580.source-freeze.json",
+      "blob": "204b4e7afb167dca91d6c2dbd4902a8b3c7e2651"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3581.source-freeze.json",
+      "blob": "204b4e7afb167dca91d6c2dbd4902a8b3c7e2651"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3582.inventory.json",
+      "blob": "ad8ffbb37ba09872eae2cc9d3e372f79e8f2a07f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3582.source-freeze.json",
+      "blob": "204b4e7afb167dca91d6c2dbd4902a8b3c7e2651"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3583.source-freeze.json",
+      "blob": "204b4e7afb167dca91d6c2dbd4902a8b3c7e2651"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3584.source-freeze.json",
+      "blob": "204b4e7afb167dca91d6c2dbd4902a8b3c7e2651"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-native-doc-audit.json",
+      "blob": "56ad61af56ab74c6eab06b4ea389df796fbaf993"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-native-owner-checkpoint.json",
+      "blob": "47febf289089f3e1c89d2806e14e7d46c9d56894"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-native-structure-dependency_edges.csv",
+      "blob": "4d41103d4bd2937fcbb46faca29d5aa3bd100110"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-native-structure-file_metrics.csv",
+      "blob": "7d020143bcb8bfbefa5e91e0c195ffac6a000f7e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-native-structure-findings.md",
+      "blob": "b1528e1d7ed7c1a7002a311db0984d90f8ba26f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-native-structure-package_metrics.csv",
+      "blob": "4aa8dcb795042cb8690d4f03bb1d5b8bb07c91b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-native-structure-public_type_duplicates.csv",
+      "blob": "c5316f459caa096782798bbcc64f500700ead5a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-projection-source-publication.json",
+      "blob": "98d233e2f3db079b1e4f14d794a73e6ce10f66de"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "8886b86aa560a7e5186eb771a5ef4e0553e488d5"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "f8e5f6501c6efeec9064e54555761516742355b5"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "93f51848694c7f00776cb4b79c123f5dae08af48a13cd9c388bd566ee95a9968",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-28T22:14:00.1437782Z"
+}

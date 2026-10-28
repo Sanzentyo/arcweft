@@ -1654,6 +1654,24 @@ impl super::AwbcProductStepExecutor {
                     )),
                     VmExit::Trapped(trap) => Err(ProductStepError::ActivationTrap(trap)),
                     VmExit::Suspended(notice)
+                        if notice.kind == crate::awbc::fiber::FiberSuspensionKind::DurationWait =>
+                    {
+                        frame.phase = ProductDialoguePhase::Activating {
+                            fiber: candidate.take().expect("activation fiber remains owned"),
+                            pending: None,
+                        };
+                        Ok(ProductActivationProgress {
+                            progressed: false,
+                            executed_ops: usize::from(step.executed > 0),
+                            presented: None,
+                            reducer: LineTaskActivation::default(),
+                            pure_stats: Some(candidate_stats),
+                            execution,
+                            host_calls: Vec::new(),
+                            host_result_take: None,
+                        })
+                    }
+                    VmExit::Suspended(notice)
                         if notice.kind == crate::awbc::fiber::FiberSuspensionKind::HostCall =>
                     {
                         let Some(crate::awbc::fiber::FiberSuspension {

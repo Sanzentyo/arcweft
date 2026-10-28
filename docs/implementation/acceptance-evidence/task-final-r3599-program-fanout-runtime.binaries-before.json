@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "arcweft-compiler::evaluated_effects",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\evaluated_effects-c04bdf4d9e7db4b9.exe",
+    "sha256": "76c6c88e638b460cb8da67af9d8be47c354bd7adc5a58efc56a32ebac00feadd"
+  },
+  {
+    "binary": "arcweft-compiler::flow_wait",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\flow_wait-e112705d400d34c6.exe",
+    "sha256": "2378a0408f52ba0a8d7b1b62152e3bd4f897e8bc5312b242054e98809b7c2d96"
+  }
+]

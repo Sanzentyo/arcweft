@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "a32e0058223d2536105321e0424bae196ae8c08f",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-wait-awbc.structure",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3600-wait-structure.log",
+  "exitCode": 0,
+  "reportDirectory": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-wait-awbc.structure",
+  "startedAt": "2026-10-28T23:03:36.1080993Z",
+  "finishedAt": "2026-10-28T23:03:40.0082899Z"
+}

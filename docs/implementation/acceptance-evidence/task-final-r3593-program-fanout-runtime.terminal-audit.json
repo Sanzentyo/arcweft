@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "a32e0058223d2536105321e0424bae196ae8c08f",
+  "run": "task-final-r3593-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  83.196s] 2075 tests run: 2074 passed, 1 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2075,
+  "passed": 2074,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::wait_effect_mapping_accepts_only_a_typed_duration_target"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-28T22:57:07.1113186Z"
+}

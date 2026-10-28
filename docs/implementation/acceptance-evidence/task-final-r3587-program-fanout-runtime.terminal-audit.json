@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "a32e0058223d2536105321e0424bae196ae8c08f",
+  "run": "task-final-r3587-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.785s] 15 tests run: 14 passed, 1 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 15,
+  "passed": 14,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_child_wait_can_finish_while_parent_waits_and_is_saved"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-28T22:34:46.0633393Z"
+}

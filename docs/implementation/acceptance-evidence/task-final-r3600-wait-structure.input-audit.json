@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3600-wait-structure",
+  "actualExitCode": 0,
+  "scope": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-wait-awbc.structure",
+    "--fail-on-blocking"
+  ],
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T23:03:42.0035398Z"
+}

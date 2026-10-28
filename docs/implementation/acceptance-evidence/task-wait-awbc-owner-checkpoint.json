@@ -1,0 +1,628 @@
+{
+  "version": 1,
+  "date": "2026-10-29",
+  "base": "a32e0058223d2536105321e0424bae196ae8c08f",
+  "workingTree": "main; original tracked WIP14 and untracked files6 retained",
+  "status": "AWBC timed execution/source checkpoint; Core rerun and current workspace gates pending",
+  "boundary": "Positive relative wait, original opcode/exact resume admission, ordinary/selected lowering, per-step public save, cold restore, cancellation, compatible/incompatible body replacement, generic Thread captures, loop continuations and Dialogue activation/reveal",
+  "sourcePaths": [
+    {
+      "path": "crates/arcweft-compiler/tests/evaluated_effects/dialogue_readiness.rs",
+      "owner": "arcweft-compiler",
+      "bytes": 29612,
+      "physicalLoc": 744,
+      "basePhysicalLoc": 613,
+      "growth": 131,
+      "classification": "test",
+      "embeddedTestLoc": 0,
+      "sha256": "ac859839dcd986321acfa4d346dfbc422416a4f62300bb59905532c2ce5a44ec",
+      "directFanIn": 5,
+      "directFanOut": 39
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/flow_wait.rs",
+      "owner": "arcweft-compiler",
+      "bytes": 23859,
+      "physicalLoc": 653,
+      "basePhysicalLoc": 162,
+      "growth": 491,
+      "classification": "test",
+      "embeddedTestLoc": 0,
+      "sha256": "3362930e72e84cc431d27bb752502c334997e85f06a7754fc8ceb59bd1ca014d",
+      "directFanIn": 5,
+      "directFanOut": 39
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "owner": "arcweft-core",
+      "bytes": 285846,
+      "physicalLoc": 7514,
+      "basePhysicalLoc": 7473,
+      "growth": 41,
+      "classification": "production",
+      "embeddedTestLoc": 1880,
+      "sha256": "ccdd6ca5c960cfe20724c8e90f910dbc43eb82dfc104888a6a69f973fba17929",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/suspension.rs",
+      "owner": "arcweft-core",
+      "bytes": 35532,
+      "physicalLoc": 930,
+      "basePhysicalLoc": 891,
+      "growth": 39,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "sha256": "ff70324c18a534ffb26ebff8236605ce5fbe530dada304c182226727db9c10a9",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "owner": "arcweft-core",
+      "bytes": 240828,
+      "physicalLoc": 5976,
+      "basePhysicalLoc": 5967,
+      "growth": 9,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "sha256": "558ff2c7f20f1f2f1f12120cf2da987e71e39d08358d1008c6b70b2b4a9c28d5",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+      "owner": "arcweft-core",
+      "bytes": 23044,
+      "physicalLoc": 570,
+      "basePhysicalLoc": 552,
+      "growth": 18,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "sha256": "96d8ec1d1f22e48e786936aaf5e11ca57b6d9489bf943e941c052b86d0d0a82e",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+      "owner": "arcweft-core",
+      "bytes": 23197,
+      "physicalLoc": 566,
+      "basePhysicalLoc": 563,
+      "growth": 3,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "sha256": "d530c6dec986340c0270d2ce1e7b1c481b12fd467007194ed6639b0496e3c65e",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "owner": "arcweft-core",
+      "bytes": 181298,
+      "physicalLoc": 4269,
+      "basePhysicalLoc": 4251,
+      "growth": 18,
+      "classification": "production",
+      "embeddedTestLoc": 74,
+      "sha256": "df0f597f37d773a08b1d7e3d0005af62d8e746e8db1c3be58131fc2d3b5b54b5",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/mapping.rs",
+      "owner": "arcweft-core",
+      "bytes": 24614,
+      "physicalLoc": 600,
+      "basePhysicalLoc": 603,
+      "growth": -3,
+      "classification": "production",
+      "embeddedTestLoc": 170,
+      "sha256": "1420f2ab2e4abbf2e1ab45c7988c735c4381e02ff05eb560327af171296d9a7d",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+      "owner": "arcweft-core",
+      "bytes": 181380,
+      "physicalLoc": 4278,
+      "basePhysicalLoc": 4277,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 180,
+      "sha256": "87dce2ea5caf4a4940ac4f80d320eb619f18dec523d003464c7315c4bf1e10b4",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "owner": "arcweft-core",
+      "bytes": 121081,
+      "physicalLoc": 2933,
+      "basePhysicalLoc": 2927,
+      "growth": 6,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "sha256": "ecdd09eb4bd575434409b09ed3396c212139b54ae2d21d987e45ed51a3c3da9f",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "owner": "arcweft-core",
+      "bytes": 121427,
+      "physicalLoc": 3787,
+      "basePhysicalLoc": 3786,
+      "growth": 1,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "sha256": "08086576d534929e27480eda8b06949e2c1d562e2d405c94e9f7d8f8730cdb78",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema/effect_payload.rs",
+      "owner": "arcweft-core",
+      "bytes": 7776,
+      "physicalLoc": 203,
+      "basePhysicalLoc": 169,
+      "growth": 34,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "sha256": "b6b9de234c3bb27beea786eeab33f31f0b936bcc16c14cd52c00eb4c4c4709dc",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "owner": "arcweft-core",
+      "bytes": 220967,
+      "physicalLoc": 5488,
+      "basePhysicalLoc": 5462,
+      "growth": 26,
+      "classification": "production",
+      "embeddedTestLoc": 0,
+      "sha256": "3cb5391ae9cbc217d4ff6b333c5650359b8e1aec3967c50ed71d7b0c920aecd1",
+      "directFanIn": 35,
+      "directFanOut": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/duration_wait.rs",
+      "owner": "arcweft-core",
+      "bytes": 3061,
+      "physicalLoc": 71,
+      "basePhysicalLoc": 71,
+      "growth": 0,
+      "classification": "production",
+      "embeddedTestLoc": 28,
+      "sha256": "d42c6e5d6df4dc3eb957bec25cf9fab9f903cce8901e06ec39e2a1f68df7d491",
+      "directFanIn": 35,
+      "directFanOut": 21
+    }
+  ],
+  "runtimeResults": [
+    {
+      "run": "task-final-r3587-program-fanout-runtime",
+      "actualExitCode": 100,
+      "executed": 15,
+      "passed": 14,
+      "failed": 1,
+      "sourceInputs": 4003,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   0.785s] 15 tests run: 14 passed, 1 failed, 0 skipped",
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::flow_wait",
+          "test": "decoded_awbc_child_wait_can_finish_while_parent_waits_and_is_saved"
+        }
+      ]
+    },
+    {
+      "run": "task-final-r3589-program-fanout-runtime",
+      "actualExitCode": 100,
+      "executed": 66,
+      "passed": 65,
+      "failed": 1,
+      "sourceInputs": 4003,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   3.420s] 66 tests run: 65 passed, 1 failed, 0 skipped",
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "dialogue_readiness::dialogue_duration_wait_blocks_reveal_until_later_logical_time"
+        }
+      ]
+    },
+    {
+      "run": "task-final-r3591-program-fanout-runtime",
+      "actualExitCode": 0,
+      "executed": 67,
+      "passed": 67,
+      "failed": 0,
+      "sourceInputs": 4003,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   4.419s] 67 tests run: 67 passed, 0 skipped",
+      "failureSet": []
+    },
+    {
+      "run": "task-final-r3593-program-fanout-runtime",
+      "actualExitCode": 100,
+      "executed": 2075,
+      "passed": 2074,
+      "failed": 1,
+      "sourceInputs": 4003,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [  83.196s] 2075 tests run: 2074 passed, 1 failed, 0 skipped",
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::wait_effect_mapping_accepts_only_a_typed_duration_target"
+        }
+      ]
+    },
+    {
+      "run": "task-final-r3599-program-fanout-runtime",
+      "actualExitCode": 0,
+      "executed": 67,
+      "passed": 67,
+      "failed": 0,
+      "sourceInputs": 4003,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "summary": "Summary [   2.499s] 67 tests run: 67 passed, 0 skipped",
+      "failureSet": []
+    }
+  ],
+  "ownershipReview": [
+    "LogicalWait remains the single relative-time authority shared with Native. AWBC FiberState owns its DurationWait; original cursor and exact next instruction authenticate the state before public snapshot frame construction. No host clock, fake Need, source reconstruction, duplicated value model or legacy reader.",
+    "AwbcWaitDuration owns explicit Constant/Input resolution used by the VM and Product effect mapper. Its crate-private structured error retains existing arity/Internal and target/Type diagnostics. Only the real Wait opcode acquires a fiber suspension.",
+    "The Product executor advances its existing main/child fibers once at ingress; its dialogue registry advances the existing activation fiber in the original transaction. Blocked activation polls preserve custody without executing source or publishing reveal. Child-presence status masking uses actual internal work; returned/cancelled parents still await their children.",
+    "Compiler flow_wait and dialogue_readiness test the same execution boundary through actual checked Source, canonical decoded programs and original schema contexts. Their growth is cohesive timed execution coverage. Large Core fiber, suspension and line owners retain their existing state/admission/transaction responsibilities; no dependencies or public APIs were widened merely to split files."
+  ],
+  "failuresRetained": [
+    "R3585: test helper moved the plan while its entry was borrowed; invocation sealing moved after lowering.",
+    "R3587: 14/15 PASS. Existing Product facade masked a suspended parent whenever any child existed. Fixed through actual internal work while retaining joined-parent completion.",
+    "R3589: 65/66 PASS. A pending Dialogue DurationWait notice was still rejected as unsupported; migrated that activation exit without charging an operation or revealing content.",
+    "R3593: Core 2074/2075 PASS before diagnostic repair. Shared resolver changed an existing target message and its missing-input classification. Restored both existing messages and structured categories; assertions unchanged. Full Core rerun still pending at this cut."
+  ],
+  "currentEvidence": [
+    "R3599 executes all 67 selected tests on the final source: flow_wait18 and evaluated_effects49. Both binary hashes and all4003 source inputs match; case drift0.",
+    "R3600 structure gate exits0. Frozen source unchanged. Earlier Native library2075 PASS remains scoped to its Native source checkpoint."
+  ],
+  "structuralSummary": [
+    "workspace packages: 97",
+    "review triggers: 382",
+    "blocking violations: 0"
+  ],
+  "remaining": [
+    "Rerun the complete Core library after the diagnostic-preservation repair.",
+    "Run current workspace all-target/all-feature check and Clippy, relevant doctests and the 55-package reverse acceptance matrix.",
+    "This checkpoint does not claim comprehensive cancellation of every task family, Tier2 or Native/Web image parity; earlier scoped accepted features are retained."
+  ],
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3585-wait-sema-check.input-audit.json",
+      "bytes": 399,
+      "sha256": "e0055ce6713e5cc0c63b4ff8874e3457c06965597db1cd9b90aa8882319161d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3585-wait-sema-check.json",
+      "bytes": 592,
+      "sha256": "dddb45186eedf030dc7bb72093f778909391e00bb884183f712382c9be63ecd4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3585-wait-sema-check.log",
+      "bytes": 101533,
+      "sha256": "d3b869fe5756bfd77e3d46494895171b66782dba1a88107b337eecf5919d77ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3586-wait-awbc-catalog.input-audit.json",
+      "bytes": 391,
+      "sha256": "fde985f6b4fecf7b956d161fa7ad7695855032fc4fc800a053873d2dfe282038"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3586-wait-awbc-catalog.json",
+      "bytes": 523,
+      "sha256": "d198f494e3281319ff6b87a3d698ea42a88dc5ca9e6fd2cedd26afb7ef46ded3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3586-wait-awbc-catalog.log",
+      "bytes": 88254,
+      "sha256": "8ac0f3f19a7d3db335e31deb5f71254680082ed29a454e3c9292a1acf6d649cd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3587-program-fanout-runtime.binaries-before.json",
+      "bytes": 214,
+      "sha256": "1512f7e028b548188e2bac1189afb081c9680419b364265369934151b13517ff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3587-program-fanout-runtime.json",
+      "bytes": 622,
+      "sha256": "c6e70e5df7b2e2915e7433ecc4637069365f87620633247581716de1569fc9c4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3587-program-fanout-runtime.log",
+      "bytes": 88208,
+      "sha256": "07ee1527b7605665c77d8905c8d2e6b76cb84526ea5d57923ee69c53769a7857"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3587-program-fanout-runtime.terminal-audit.json",
+      "bytes": 800,
+      "sha256": "e99a007e9c83257271acdaef12dbb7773b4adb55bac2ba722ced429ae53dc5cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3588-wait-awbc-catalog.input-audit.json",
+      "bytes": 432,
+      "sha256": "4d087509c770ed04b63513366ac4206a03ceb1fac39e042aa92ab98cedb220b2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3588-wait-awbc-catalog.json",
+      "bytes": 564,
+      "sha256": "e427197826a038ec44bea336203aaf8cc063995a3c84f64bba8eed783855dd11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3588-wait-awbc-catalog.log",
+      "bytes": 95972,
+      "sha256": "1c8d0146bcc975b41fc88d9d39fa03a3e45183c74e6eb79eefecd4f621e52f29"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3589-program-fanout-runtime.binaries-before.json",
+      "bytes": 471,
+      "sha256": "0377fb16873225a232c872c91905d4f77569736570e2768fd669033baa81b260"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3589-program-fanout-runtime.json",
+      "bytes": 663,
+      "sha256": "3de1a433fa6e62352f8617cfc4e20ec2d8e8761ff029c837360d662cd26177e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3589-program-fanout-runtime.log",
+      "bytes": 104613,
+      "sha256": "9965443769c2b7fec9c5d601bc1dd9734876ffc9be7eeaf510b7520b4fc7bd5c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3589-program-fanout-runtime.terminal-audit.json",
+      "bytes": 823,
+      "sha256": "d7595617c8a37ace6613f2d31e9a15bb04021ce35f863f4cfcb353d23a11f0f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3590-wait-awbc-catalog.input-audit.json",
+      "bytes": 432,
+      "sha256": "9be632f598dff8ff01b8eec5a16b38a1a52ff01b2e0dd36438824ba167371fa1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3590-wait-awbc-catalog.json",
+      "bytes": 564,
+      "sha256": "0394a5f2ede1a8fc3380b5d29e8fc02b1a29ae3453329c16a1a252a2ae836c60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3590-wait-awbc-catalog.log",
+      "bytes": 96143,
+      "sha256": "ebb5b832f8ef3ebbd415ae23ea2e45318f5cde964901cbf0eedbd94ae103ddfa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3591-program-fanout-runtime.binaries-before.json",
+      "bytes": 471,
+      "sha256": "ae614106cfcd01c766962dc954006980dce368f36156001b81a9499c08a73b9c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3591-program-fanout-runtime.json",
+      "bytes": 661,
+      "sha256": "871809cd40992e5a930d5303d4b243b0737b1754ced3d60a8643d33cd71baf8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3591-program-fanout-runtime.log",
+      "bytes": 102369,
+      "sha256": "16dfcec1553f053d918023ca2c5eafadd66e052ab0f177a99e7d01dcf4cc3dec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3591-program-fanout-runtime.terminal-audit.json",
+      "bytes": 612,
+      "sha256": "3b94717067728d301a70c41e13a21c53c9d9492b8cf3c79d34d300cc13b65658"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3592-wait-core-catalog.input-audit.json",
+      "bytes": 368,
+      "sha256": "7290ef9fbdfc4f98fda6351051f197a4f43d7369be0cc836a8e5b223d797a472"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3592-wait-core-catalog.json",
+      "bytes": 500,
+      "sha256": "6f72882838eae493f09c282a0cd453832296c00f7674717507fc0f091734aae2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3592-wait-core-catalog.log",
+      "bytes": 387579,
+      "sha256": "21d245f89510ccd63547dc459fcff6f10ffac974d60547e76d288655eec3a14a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3593-program-fanout-runtime.binaries-before.json",
+      "bytes": 202,
+      "sha256": "32d4fef1964521200e610aab0ee7c3239d4c087b2e1041bf5e3f27af3247fb19"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3593-program-fanout-runtime.json",
+      "bytes": 599,
+      "sha256": "4ed7ef2a965a5f42f6381e984fcc534b6576cfbd1a4c4b4ebac2c7de2ac29e87"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3593-program-fanout-runtime.log",
+      "bytes": 664273,
+      "sha256": "8819d2293a780d9f426611b4cb3f91af9f80a51cc3385f599e26732bee1f29f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3593-program-fanout-runtime.terminal-audit.json",
+      "bytes": 810,
+      "sha256": "603fd3a14e501a79d2c0fff1d0f0edd5f12723a9e7dbc96332256c59b75eae53"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3598-wait-awbc-catalog.input-audit.json",
+      "bytes": 432,
+      "sha256": "c5bbd8d9248caf21439c85ab5b09da021fa37c17798e5d112214e9c46485b5da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3598-wait-awbc-catalog.json",
+      "bytes": 564,
+      "sha256": "22f519fc802d346805fd6d71bc4a8add8391dce7ba06fdb4abfadf754fa0444f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3598-wait-awbc-catalog.log",
+      "bytes": 96143,
+      "sha256": "9a806d0ca4ddee4b41a45ddabed26d4be94d261563f9cd44a6cb034e1400dae1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3599-program-fanout-runtime.binaries-before.json",
+      "bytes": 471,
+      "sha256": "310fdf8588c277ca77ccf6fe84610e51e99f518a43864fe723b716b17ef04d14"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3599-program-fanout-runtime.json",
+      "bytes": 661,
+      "sha256": "cc322c4f6206d96426a37b9212bf61cc6ac025e4587bd50269797a1d563bc55f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3599-program-fanout-runtime.log",
+      "bytes": 102369,
+      "sha256": "51e0f58590f3ed68143db6a8d0ecd299a83dd837acdf642da831d585eeb436b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3599-program-fanout-runtime.terminal-audit.json",
+      "bytes": 612,
+      "sha256": "489c07fd544e4748f619b2000c7e079fcc94846eaa0c65d392a6b8a0613ff32b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3600-wait-structure.input-audit.json",
+      "bytes": 462,
+      "sha256": "7cf1f397799407b9ebaa25dd1e9eb55991a9575173f44255ebd393030475db0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3600-wait-structure.json",
+      "bytes": 726,
+      "sha256": "c61b0899210754943ab659acc719b6e385c056553e6a2f7d60c7ae0956258a2f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3600-wait-structure.log",
+      "bytes": 65011,
+      "sha256": "75a35bada944c155bdc4839c4e625cfe54efc877af9d6e9ea531e84fcfe6fdb4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3585.source-freeze.json",
+      "bytes": 783226,
+      "sha256": "4f2f7e60dfa761544e8d1d1396c5bb8e685e4254583a009421be7836747235b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3586.inventory.json",
+      "bytes": 3613,
+      "sha256": "c36b611b2e51b982c6daf8ce0fdc97edae02861a64afcde1bbb7490c3a4a8a25"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3586.source-freeze.json",
+      "bytes": 783226,
+      "sha256": "ffa925620ed3331eed30b21e0ae3abbb5b895267940d53b4e66c5664031c77e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3587.source-freeze.json",
+      "bytes": 783226,
+      "sha256": "ffa925620ed3331eed30b21e0ae3abbb5b895267940d53b4e66c5664031c77e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3588.inventory.json",
+      "bytes": 16419,
+      "sha256": "858aca2d3bec257b3c629cd3f3d513eeaa8efa760008eebe95509127e955f377"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3588.source-freeze.json",
+      "bytes": 783304,
+      "sha256": "a3e7754509ecb128881a704086f96cc19008979bae20b5c92677e91614b19ce2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3589.source-freeze.json",
+      "bytes": 783304,
+      "sha256": "a3e7754509ecb128881a704086f96cc19008979bae20b5c92677e91614b19ce2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3590.inventory.json",
+      "bytes": 16699,
+      "sha256": "07bbdaac442e947225b10b580768f90f2a839b7ef993c958495e97faba331032"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3590.source-freeze.json",
+      "bytes": 783362,
+      "sha256": "ca87545664b27d85bfbf4b00b87ff7dfe26fc0d5f8c35927292caedeee712fb5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3591.source-freeze.json",
+      "bytes": 783362,
+      "sha256": "ca87545664b27d85bfbf4b00b87ff7dfe26fc0d5f8c35927292caedeee712fb5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3592.inventory.json",
+      "bytes": 525761,
+      "sha256": "c9732904ad535f53a9cfcd683d158af267aeeeea7cfdaa1ac6b173be2fce3d1a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3592.source-freeze.json",
+      "bytes": 783362,
+      "sha256": "ca87545664b27d85bfbf4b00b87ff7dfe26fc0d5f8c35927292caedeee712fb5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3593.source-freeze.json",
+      "bytes": 783362,
+      "sha256": "ca87545664b27d85bfbf4b00b87ff7dfe26fc0d5f8c35927292caedeee712fb5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3598.inventory.json",
+      "bytes": 16699,
+      "sha256": "07bbdaac442e947225b10b580768f90f2a839b7ef993c958495e97faba331032"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3598.source-freeze.json",
+      "bytes": 783409,
+      "sha256": "78ef46014b98ce5deb1258dae623561870c34f3049a15175b5a880fbcd23c937"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3599.source-freeze.json",
+      "bytes": 783409,
+      "sha256": "78ef46014b98ce5deb1258dae623561870c34f3049a15175b5a880fbcd23c937"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3600.source-freeze.json",
+      "bytes": 783409,
+      "sha256": "78ef46014b98ce5deb1258dae623561870c34f3049a15175b5a880fbcd23c937"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-awbc-structure-dependency_edges.csv",
+      "bytes": 77451,
+      "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-awbc-structure-file_metrics.csv",
+      "bytes": 328194,
+      "sha256": "b1c0ace1e4b181264e1a3a324e2f183524e48c3843ab8935ddb37ddf67802c1e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-awbc-structure-findings.md",
+      "bytes": 122295,
+      "sha256": "e1961c9a87104170c7ea13ee554bc230be529c48f33098ad7f3a97cbd126e3ff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-awbc-structure-package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-awbc-structure-public_type_duplicates.csv",
+      "bytes": 17121,
+      "sha256": "f27d5c216b14bda98177f53c9ae93f0cc13a173393b6af9c02325bdc1ea28bc1"
+    }
+  ]
+}

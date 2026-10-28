@@ -2350,11 +2350,16 @@ impl AwbcProductStepExecutor {
         let advances = std::mem::take(&mut input.dialogue_advances);
         let line_outcomes = std::mem::take(&mut input.line_outcomes);
         let diagnostics = self.dialogues.latch_step_input(
+            &self.program,
             input.dt,
             &content_events,
             &advances,
             &line_outcomes,
         )?;
+        self.fiber.advance_duration_wait(&self.program, input.dt)?;
+        for child in &mut self.child_fibers {
+            child.fiber.advance_duration_wait(&self.program, input.dt)?;
+        }
         self.dialogues.prepare_activation_budget(&self.program)?;
         Ok(diagnostics)
     }
@@ -4143,7 +4148,9 @@ impl AwbcProductStepExecutor {
                         Dispatch::InvalidHostCall
                     }
                 }
-                FiberSuspensionReason::BudgetYield => Dispatch::Other,
+                FiberSuspensionReason::DurationWait(_) | FiberSuspensionReason::BudgetYield => {
+                    Dispatch::Other
+                }
             };
             (suspension.declared_resume(), dispatch)
         }) else {
@@ -4298,7 +4305,9 @@ impl AwbcProductStepExecutor {
             FiberSuspensionReason::HostCall {
                 call, destination, ..
             } => Dispatch::HostCall(*call, *destination),
-            FiberSuspensionReason::Dialogue { .. } => Dispatch::Other,
+            FiberSuspensionReason::DurationWait(_) | FiberSuspensionReason::Dialogue { .. } => {
+                Dispatch::Other
+            }
             FiberSuspensionReason::BudgetYield => Dispatch::BudgetYield,
         };
         let Some(resume) = declared_resume else {

@@ -17,6 +17,30 @@ impl<A, M> FlowFiberStatus<A, M> {
     }
 }
 
+impl Engine {
+    pub(super) fn latch_duration_waits(&mut self, elapsed: LogicalDuration) {
+        self.fiber.frame.status.advance_duration_wait(elapsed);
+        for child in &mut self.child_fibers {
+            child.frame.status.advance_duration_wait(elapsed);
+        }
+    }
+
+    /// Instruction dispatch owns suspension; static observation/cleanup packets
+    /// do not acquire an execution frame through ordinary effect publication.
+    pub(super) fn emit_execution_effect(
+        &mut self,
+        effect: LineEffectRequest,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        if let LineEffectRequest::Wait(RuntimeWaitTarget::Duration(duration)) = &effect {
+            self.fiber.frame.status = LogicalWait::start(*duration)
+                .map_or(FlowFiberStatus::Running, FlowFiberStatus::DurationWaiting);
+        }
+        self.emit_line_effect(effect, output, pure_backend);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -43,29 +67,5 @@ mod tests {
             crate::plan::RuntimePlanBuilder::new().finish().unwrap(),
         ));
         assert!(Engine::from_rollback_image(image, &foreign).is_err());
-    }
-}
-
-impl Engine {
-    pub(super) fn latch_duration_waits(&mut self, elapsed: LogicalDuration) {
-        self.fiber.frame.status.advance_duration_wait(elapsed);
-        for child in &mut self.child_fibers {
-            child.frame.status.advance_duration_wait(elapsed);
-        }
-    }
-
-    /// Instruction dispatch owns suspension; static observation/cleanup packets
-    /// do not acquire an execution frame through ordinary effect publication.
-    pub(super) fn emit_execution_effect(
-        &mut self,
-        effect: LineEffectRequest,
-        output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) {
-        if let LineEffectRequest::Wait(RuntimeWaitTarget::Duration(duration)) = &effect {
-            self.fiber.frame.status = LogicalWait::start(*duration)
-                .map_or(FlowFiberStatus::Running, FlowFiberStatus::DurationWaiting);
-        }
-        self.emit_line_effect(effect, output, pure_backend);
     }
 }

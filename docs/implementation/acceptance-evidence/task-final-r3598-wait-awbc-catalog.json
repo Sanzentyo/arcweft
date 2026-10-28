@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "a32e0058223d2536105321e0424bae196ae8c08f",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "flow_wait",
+    "--test",
+    "evaluated_effects",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3598-wait-awbc-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T22:58:02.7484656Z",
+  "finishedAt": "2026-10-28T23:03:00.7484415Z"
+}

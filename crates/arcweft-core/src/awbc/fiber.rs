@@ -751,6 +751,9 @@ pub enum FiberSuspensionReason<
     O = crate::value::RuntimeOpaqueValue,
     N = crate::task::RuntimeNeedHandle,
 > {
+    /// The cursor remains on the original Wait instruction until its exact
+    /// following instruction is resumed by later logical-time ingress.
+    DurationWait(crate::time::LogicalWait),
     Dialogue {
         /// Before Product admission this carries the terminator target. The
         /// Product dialogue registry owns it after presentation, so a live
@@ -791,6 +794,7 @@ pub struct FiberSuspensionNotice {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FiberSuspensionKind {
+    DurationWait,
     Dialogue,
     Choice,
     Await,
@@ -814,6 +818,7 @@ impl<V, O, N> FiberSuspensionReason<V, O, N> {
     #[must_use]
     pub const fn kind(&self) -> FiberSuspensionKind {
         match self {
+            Self::DurationWait(_) => FiberSuspensionKind::DurationWait,
             Self::Dialogue { .. } => FiberSuspensionKind::Dialogue,
             Self::Choice { .. } => FiberSuspensionKind::Choice,
             Self::Await { .. } => FiberSuspensionKind::Await,
@@ -1125,7 +1130,9 @@ impl AwbcFiberStateSnapshot {
                         visit(value)?;
                     }
                 }
-                FiberSuspensionReason::Choice { .. } | FiberSuspensionReason::BudgetYield => {}
+                FiberSuspensionReason::DurationWait(_)
+                | FiberSuspensionReason::Choice { .. }
+                | FiberSuspensionReason::BudgetYield => {}
             }
         }
         if let Some(terminal) = &self.terminal {
@@ -1960,7 +1967,9 @@ impl FiberState {
                         visit_value_graph(value, &mut visitor)?;
                     }
                 }
-                FiberSuspensionReason::Choice { .. } | FiberSuspensionReason::BudgetYield => {}
+                FiberSuspensionReason::DurationWait(_)
+                | FiberSuspensionReason::Choice { .. }
+                | FiberSuspensionReason::BudgetYield => {}
             }
         }
         for stream in &self.streams {
@@ -3279,6 +3288,38 @@ impl FiberState {
             "validated Await handle register stays vacant"
         );
         *slot = RuntimeValue::NeedHandle(need).into();
+        Ok(())
+    }
+
+    /// Advances an existing Duration suspension once at runtime-step ingress.
+    /// Zero elapsed time preserves it; completion resumes the exact instruction
+    /// after the authenticated Wait without evaluating its operands again.
+    pub fn advance_duration_wait(
+        &mut self,
+        program: &AwbcProgram,
+        elapsed: crate::time::LogicalDuration,
+    ) -> Result<(), FiberStateError> {
+        let Some(suspension) = self.suspension.as_ref() else {
+            return Ok(());
+        };
+        let FiberSuspensionReason::DurationWait(wait) = &suspension.reason else {
+            return Ok(());
+        };
+        self.require_status(FiberStatus::Suspended)?;
+        if self.active_frame()?.function != self.cursor.function {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        let next = suspension.duration_wait_resume(program, self.cursor)?;
+        if let Some(wait) = wait.advance(elapsed) {
+            self.suspension
+                .as_mut()
+                .expect("validated suspension")
+                .reason = FiberSuspensionReason::DurationWait(wait);
+        } else {
+            self.cursor = next;
+            self.status = FiberStatus::Running;
+            self.suspension = None;
+        }
         Ok(())
     }
 

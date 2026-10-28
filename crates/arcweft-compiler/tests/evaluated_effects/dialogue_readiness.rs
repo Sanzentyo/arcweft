@@ -226,6 +226,137 @@ fn dialogue_drain_reaches_ready_without_spending_host_steps_on_internal_activati
 }
 
 #[test]
+fn dialogue_duration_wait_blocks_reveal_until_later_logical_time() {
+    let source = INIT_SOURCE.replace("log.info(\"two\")", "wait(0.1s)");
+    with_both_executors(&source, |backend, step| {
+        let first = step(
+            RuntimeStepInput {
+                dt: LogicalDuration::from_nanos(u64::MAX),
+                ..Default::default()
+            },
+            options(RuntimeStepMode::Drain, 64),
+        );
+        assert!(first.output.diagnostics.is_empty(), "{backend}: {first:?}");
+        assert!(reveal_owners(&first).is_empty(), "{backend}: {first:?}");
+        assert_eq!(log_messages(&first.output.effects.line), ["one"]);
+        let FlowFiberStatus::Dialogue(status) = &first.fiber_status else {
+            panic!("{backend}: {first:?}")
+        };
+        let activation = status.activation().clone();
+        assert_eq!(status.phase(), DialogueRuntimePhase::Activating);
+        for dt in [0, 99_999_999] {
+            let pending = step(
+                RuntimeStepInput {
+                    dt: LogicalDuration::from_nanos(dt),
+                    ..Default::default()
+                },
+                options(RuntimeStepMode::Drain, 64),
+            );
+            assert!(
+                pending.output.diagnostics.is_empty(),
+                "{backend}: {pending:?}"
+            );
+            assert!(reveal_owners(&pending).is_empty());
+            assert!(log_messages(&pending.output.effects.line).is_empty());
+            assert!(
+                pending.stats.executed_ops <= 1,
+                "a blocked activation must not busy drain: {backend}: {pending:?}"
+            );
+        }
+        let finished = step(
+            RuntimeStepInput {
+                dt: LogicalDuration::from_nanos(1),
+                ..Default::default()
+            },
+            options(RuntimeStepMode::Drain, 64),
+        );
+        assert!(
+            finished.output.diagnostics.is_empty(),
+            "{backend}: {finished:?}"
+        );
+        assert_eq!(ready(&finished, backend), activation);
+        assert_eq!(reveal_owners(&finished), [activation]);
+        assert_eq!(log_messages(&finished.output.effects.line), ["three"]);
+    });
+}
+
+#[test]
+fn decoded_awbc_dialogue_duration_wait_public_save_resumes_the_same_activation_once() {
+    let source = INIT_SOURCE.replace("log.info(\"two\")", "wait(0.1s)");
+    let (compiled, program, _) = compiled_program(&source);
+    let mut original = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 65_536).unwrap();
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        RuntimeProgramOwner::Awbc(original.program_arc()),
+    );
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let first = original.step_with_pure_backend(
+        Default::default(),
+        options(RuntimeStepMode::Drain, 64),
+        &mut backend,
+    );
+    assert!(first.output.diagnostics.is_empty(), "{first:?}");
+    assert!(reveal_owners(&first).is_empty());
+    assert_eq!(log_messages(&first.output.effects.line), ["one"]);
+    let FlowFiberStatus::Dialogue(status) = &first.fiber_status else {
+        panic!("{first:?}")
+    };
+    let activation = status.activation().clone();
+    let partial = original.step_with_pure_backend(
+        RuntimeStepInput {
+            dt: LogicalDuration::from_nanos(40_000_000),
+            ..Default::default()
+        },
+        options(RuntimeStepMode::Drain, 64),
+        &mut backend,
+    );
+    assert!(partial.output.diagnostics.is_empty(), "{partial:?}");
+    assert!(reveal_owners(&partial).is_empty());
+    let snapshot = original.snapshot().unwrap();
+    let inert =
+        AwbcProductExecutorSaveSnapshot::from_live(&snapshot, original.admitted_program()).unwrap();
+    let bytes = serde_json::to_vec(&inert).unwrap();
+    let decoded: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(decoded, inert);
+    let program = original.program_arc();
+    drop(original);
+    let fresh = AwbcProductStepExecutor::for_entry_arc(program, AwbcEntryId(0), 65_536).unwrap();
+    let bound = decoded
+        .into_live_for_program(fresh.admitted_program())
+        .unwrap();
+    let mut restored = fresh.restore_snapshot_owned(bound).unwrap();
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        RuntimeProgramOwner::Awbc(restored.program_arc()),
+    );
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let completed = restored.step_with_pure_backend(
+        RuntimeStepInput {
+            dt: LogicalDuration::from_nanos(60_000_000),
+            ..Default::default()
+        },
+        options(RuntimeStepMode::Drain, 64),
+        &mut backend,
+    );
+    assert!(completed.output.diagnostics.is_empty(), "{completed:?}");
+    assert_eq!(ready(&completed, "restored-awbc"), activation);
+    assert_eq!(reveal_owners(&completed), [activation]);
+    assert_eq!(log_messages(&completed.output.effects.line), ["three"]);
+    let waiting = restored.step_with_pure_backend(
+        Default::default(),
+        options(RuntimeStepMode::Drain, 64),
+        &mut backend,
+    );
+    assert!(waiting.output.diagnostics.is_empty(), "{waiting:?}");
+    assert!(reveal_owners(&waiting).is_empty());
+    assert!(log_messages(&waiting.output.effects.line).is_empty());
+}
+
+#[test]
 fn dialogue_one_op_and_drain_budget_yield_keep_the_actual_activation_owner() {
     with_both_executors(INIT_SOURCE, |backend, step| {
         let (owner, tick) = (0..64)

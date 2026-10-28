@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "run": "task-final-r3598-wait-awbc-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "flow_wait",
+    "--test",
+    "evaluated_effects",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T23:03:02.8506219Z"
+}

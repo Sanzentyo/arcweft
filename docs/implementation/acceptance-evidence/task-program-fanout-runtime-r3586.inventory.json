@@ -1,0 +1,110 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_child_wait_can_finish_while_parent_waits_and_is_saved",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_compatible_body_replacement_keeps_elapsed_wait_and_uses_new_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_cold_restore_uses_the_original_instruction_and_remainder",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_preserves_remaining_time_through_each_step_public_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_rejects_a_replaced_source_instruction_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_rejects_forged_resume_status_and_source_without_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_resumes_under_zero_budget_without_executing_its_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_zero_and_sequential_waits_keep_the_original_time_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "effectful_duration_operand_is_evaluated_once_across_native_and_awbc_suspension",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_child_wait_progresses_while_its_parent_has_a_longer_wait",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_computed_wait_consumes_only_later_step_durations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_wait_ages_at_ingress_without_spending_a_zero_operation_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_wait_overshoot_does_not_age_a_later_wait",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_zero_wait_never_requires_elapsed_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "standalone_awbc_cancellation_retires_wait_without_executing_the_tail",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}
