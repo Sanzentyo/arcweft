@@ -219,8 +219,9 @@ pub use model::{
     CheckedTryOperand, CheckedTryOperandAuthorityViolation, CheckedTypeSelection, CheckedTypeValue,
     CheckedTypedBinding, CheckedTypedExpressionResult, CheckedUnsafeAudit, CheckedValueResolution,
     CheckedVariantCase, CheckedVariantOwner, CheckedVariantOwnerError, CheckedVariantOwnerKind,
-    CheckedVariantResolution, CheckedViewCall, CheckedViewElementArgument, CheckedViewElementCall,
-    PostfixBracketResolution, RegisteredSemanticValueId,
+    CheckedVariantResolution, CheckedViewCall, CheckedViewContainerBody,
+    CheckedViewElementArgument, CheckedViewElementCall, PostfixBracketResolution,
+    RegisteredSemanticValueId,
 };
 pub(crate) use nominal_schema::RuntimeNominalProjectionSeal;
 pub use nominal_schema::{

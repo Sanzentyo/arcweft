@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3444-hir-consumer-check",
+  "actualExitCode": 101,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T00:38:32.4540712Z"
+}

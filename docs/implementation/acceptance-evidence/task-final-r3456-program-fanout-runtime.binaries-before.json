@@ -1,0 +1,22 @@
+[
+  {
+    "binary": "arcweft-compiler",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-1aa9cecc91523281.exe",
+    "sha256": "9c4d28bb18dac654a33fb9bf0647e6c652075fffdc248e276bb3ba6baf1a6732"
+  },
+  {
+    "binary": "arcweft-lang-hir",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_hir-e851fb60e209d62a.exe",
+    "sha256": "1550c43d6d319cd1e30224c5af945f8bea960b2202c68cd44256708ede8e266b"
+  },
+  {
+    "binary": "arcweft-lang-sema",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-6b86fc072d3b9ae4.exe",
+    "sha256": "061cec222be94e76db6c237a5acdc7d6ead95d08e23f46a08db84cf8c958b267"
+  },
+  {
+    "binary": "arcweft-compiler::view_product",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_product-21a6213c00600645.exe",
+    "sha256": "ea37e051f0a4e13a8149110a943e6de5c312c7458efb38b96a88affd2713b03e"
+  }
+]

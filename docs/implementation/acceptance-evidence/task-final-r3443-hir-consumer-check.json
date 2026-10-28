@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "02259754a2278e0f9db803c7effbdfd21bf4d62b",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-lang-hir",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3443-hir-consumer-check.log",
+  "exitCode": 101,
+  "startedAt": "2026-10-28T00:35:53.9657867Z",
+  "finishedAt": "2026-10-28T00:36:19.1845157Z"
+}

@@ -1854,6 +1854,28 @@ pub enum CheckedViewCall {
     Element(CheckedViewElementCall),
     Text,
     RichText,
+    ContainerBody(CheckedViewContainerBody),
+}
+
+/// Accepted immediate child region, referring to its checked constructor once.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedViewContainerBody {
+    header: ExprId,
+    body: ExprId,
+}
+
+impl CheckedViewContainerBody {
+    pub(crate) const fn new(header: ExprId, body: ExprId) -> Self {
+        Self { header, body }
+    }
+
+    pub const fn header(&self) -> ExprId {
+        self.header
+    }
+
+    pub const fn body(&self) -> ExprId {
+        self.body
+    }
 }
 
 /// The builtin element and its source-ordered, schema-checked arguments.

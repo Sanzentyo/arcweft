@@ -916,6 +916,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             | HirExprKind::Loop(_)
             | HirExprKind::Thread(_)
             | HirExprKind::Choice(_)
+            | HirExprKind::ViewBodyApplication(_)
             | HirExprKind::Borrow(_)
             | HirExprKind::Dereference(_) => {
                 return Err(format!(

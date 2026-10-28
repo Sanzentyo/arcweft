@@ -930,6 +930,8 @@ fn expression_resolution_matches(
     resolution: &CheckedExpressionResolution,
 ) -> bool {
     match (kind, resolution) {
+        (HirExprKind::ViewBodyApplication(_),
+         CheckedExpressionResolution::ViewCall(super::CheckedViewCall::ContainerBody(_))) => true,
         (HirExprKind::Literal(authored), CheckedExpressionResolution::Literal(checked)) => {
             authored == checked
         }
@@ -1201,6 +1203,51 @@ fn validate_expression_resolution(
     coordinates: &SemanticCoordinateIndex<'_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     match resolution {
+        CheckedExpressionResolution::ViewCall(super::CheckedViewCall::ContainerBody(
+            application,
+        )) => {
+            let authored = modules
+                .get(&owner.module())
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
+                .resolve_expr(owner)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            let HirExprKind::ViewBodyApplication(authored) = authored.kind() else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            if authored.header() != application.header() || authored.body() != application.body() {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let header = expressions
+                .get(&application.header())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let layout = match header.resolution() {
+                CheckedExpressionResolution::ViewCall(super::CheckedViewCall::Element(element)) => {
+                    element.element().is_layout_container()
+                }
+                CheckedExpressionResolution::CompileTimeCallee(
+                    super::CheckedCompileTimeCallee::View(crate::types::ViewCallableId::Element(
+                        element,
+                    )),
+                ) => element.is_layout_container(),
+                _ => false,
+            };
+            let body = expressions
+                .get(&application.body())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let expected = if body.value_type() == Some(&TypeKind::Never) {
+                TypeKind::Never
+            } else {
+                TypeKind::ViewValue
+            };
+            (layout
+                && ty == &expected
+                && matches!(
+                    body.value_type(),
+                    Some(TypeKind::ViewValue | TypeKind::Unit | TypeKind::Never)
+                ))
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
         CheckedExpressionResolution::RegistryAddress(_) => {
             Err(FinalSemanticAnalysisError::WrongPayloadFamily)
         }

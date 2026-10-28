@@ -259,6 +259,8 @@ pub(crate) enum CheckedExpressionChildRole {
     BinaryLeft,
     BinaryRight,
     ClosureBody,
+    ViewHeader,
+    ViewBody,
     BlockTail,
     LoopTail,
     Condition,
@@ -393,6 +395,8 @@ impl CheckedExpressionChildRole {
             Self::BinaryLeft => 0x100D,
             Self::BinaryRight => 0x100E,
             Self::ClosureBody => 0x100F,
+            Self::ViewHeader => 0x1040,
+            Self::ViewBody => 0x1041,
             Self::BlockTail => 0x1010,
             Self::LoopTail => 0x1011,
             Self::Condition => 0x1012,
@@ -510,6 +514,8 @@ impl CheckedExpressionChildRole {
             | Self::BinaryLeft
             | Self::BinaryRight
             | Self::ClosureBody
+            | Self::ViewHeader
+            | Self::ViewBody
             | Self::BlockTail
             | Self::LoopTail
             | Self::Condition

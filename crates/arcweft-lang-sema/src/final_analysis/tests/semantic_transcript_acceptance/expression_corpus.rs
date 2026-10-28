@@ -138,6 +138,7 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
     HirExprKind::NumericBracketSequence(_) => NumericBracketSequence => Accepted,
     HirExprKind::ArrayRepeat(_) => ArrayRepeat => Accepted,
     HirExprKind::Call(_) => Call => Accepted,
+    HirExprKind::ViewBodyApplication(_) => ViewBodyApplication => Accepted,
     HirExprKind::Select(_) => Select => Accepted,
     HirExprKind::Index(_) => Index => Accepted,
     HirExprKind::Pipe(_) => Pipe => Accepted,
@@ -672,6 +673,16 @@ fn checked_match_ordinary_expression_corpus_retains_families_and_meaning() {
 
 fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
     let mut rows = vec![
+        ExpressionCorpusRow {
+            name: "immediate View child bodies under Match",
+            exact_path_families: false,
+            source: "view Main(flag: bool) { match flag { true => Panel() { Text(\"first\") }, false => Column { Text(\"second\") } } }".to_owned(),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::ViewBodyApplication, ExprShapeFamily::Block, ExprShapeFamily::Match],
+            resolutions: &[ExpressionResolutionFamily::ViewCall],
+            values: &[ValueResolutionFamily::Local],
+            selects: &[],
+        },
         ExpressionCorpusRow {
             name: "binary scalar",
             exact_path_families: false,

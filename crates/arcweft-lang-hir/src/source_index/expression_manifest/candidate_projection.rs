@@ -798,6 +798,13 @@ impl<'a, 'capture> CandidateValidationCursor<'a, 'capture> {
                 recovery = expected_recovery;
                 call_projection_matches(actual, expected)
             }
+            (
+                HirExprKind::ViewBodyApplication(actual),
+                ExpressionProjection::ViewBodyApplication(_),
+            ) => {
+                matches!(children.as_slice(), [header, body]
+                    if actual.header() == header.id && actual.body() == body.id)
+            }
             (HirExprKind::Select(actual), ExpressionProjection::Select(expected)) => {
                 if matches!(expected, SyntaxSelectedMember::Missing) && recovery.is_none() {
                     recovery = Some(HirRecoveryIssue::MissingOperand {

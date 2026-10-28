@@ -1,0 +1,226 @@
+[
+  {
+    "path": "crates/arcweft-compiler/src/persistent.rs",
+    "bytes": 75351,
+    "physicalLoc": 1946,
+    "growth": 1,
+    "classification": "production",
+    "sha256": "e8f180d216f118fc1bbc05bfcb448a999446dd282275c22fdc60d53a68c99144"
+  },
+  {
+    "path": "crates/arcweft-compiler/src/view.rs",
+    "bytes": 119557,
+    "physicalLoc": 2961,
+    "growth": 65,
+    "classification": "production",
+    "sha256": "3c9f9e73bb731f210032a1b0e44f59c67ea9987abcc4e496964b68b63890318d"
+  },
+  {
+    "path": "crates/arcweft-compiler/tests/view_product.rs",
+    "bytes": 237159,
+    "physicalLoc": 6136,
+    "growth": 63,
+    "classification": "test",
+    "sha256": "4d57b54533ea909a0de63214ff55b71ee121542aeeb0ad75ec62ea3e281a9fa5"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/body_edges.rs",
+    "bytes": 20130,
+    "physicalLoc": 576,
+    "growth": 1,
+    "classification": "production",
+    "sha256": "1e1ef81c451be44777942ef66296859edf0e163ace55155120a317d4405b4200"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/expr.rs",
+    "bytes": 29062,
+    "physicalLoc": 756,
+    "growth": 9,
+    "classification": "production",
+    "sha256": "462f2e6b71a3da23925f8e4290b07aed22a5931f6893d8a94e483628a0cb0bdc"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/expr/child_edges.rs",
+    "bytes": 43668,
+    "physicalLoc": 1200,
+    "growth": 18,
+    "classification": "production",
+    "sha256": "aaedae1a4895293456fcb0fe24432a0b5096f912deeed4ddbc023b8e76cb1927"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/expr/control.rs",
+    "bytes": 14018,
+    "physicalLoc": 576,
+    "growth": 21,
+    "classification": "production",
+    "sha256": "e802f7427ca6f99d7e59be848c844e897ab7f899786e8aeb9e2f024894a3adb2"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/expr/owned_body_edges.rs",
+    "bytes": 28703,
+    "physicalLoc": 793,
+    "growth": 1,
+    "classification": "production",
+    "sha256": "4347f9b6e154a3ca83adfea6b56844d814678385e380dfa288cd4ea1d5067696"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/expr/tests.rs",
+    "bytes": 77992,
+    "physicalLoc": 2142,
+    "growth": 8,
+    "classification": "test",
+    "sha256": "914e72c11b8eee1b8c6d9c439f5c3276a2b0e910ee713f4b5fa591f1753621b7"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs",
+    "bytes": 111187,
+    "physicalLoc": 2581,
+    "growth": 13,
+    "classification": "production",
+    "sha256": "8e3eabc9d72430f1acb9dfb82ab07f91bf30d79e8385cbd2a43ccec4e08b88c3"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/dialogue/candidate.rs",
+    "bytes": 49976,
+    "physicalLoc": 1158,
+    "growth": 12,
+    "classification": "production",
+    "sha256": "e5c6b664a12ceace085345a4e829f8a259dc77c4beeac9597627092da311c5dd"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests/view.rs",
+    "bytes": 21585,
+    "physicalLoc": 627,
+    "growth": 61,
+    "classification": "test",
+    "sha256": "e054e2707f6cfddb4dd1474d70519c099b925d011a59aa1387d61f59b05c08e7"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/source_index/expr_projection.rs",
+    "bytes": 39167,
+    "physicalLoc": 1002,
+    "growth": 5,
+    "classification": "production",
+    "sha256": "5e14a23e1e296cd3cedb8c90f4366b3188017c0a6061f41cc471e388c76339fe"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/candidate_projection.rs",
+    "bytes": 63914,
+    "physicalLoc": 1571,
+    "growth": 7,
+    "classification": "production",
+    "sha256": "6a1e1004997a17af3f04d729e460ef5ec1bb3a0a2d666486dbcd1f2aaf795212"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/projection.rs",
+    "bytes": 53547,
+    "physicalLoc": 1357,
+    "growth": 4,
+    "classification": "production",
+    "sha256": "e3580e01d4f2f9e07d12445e3ccb05671434c75abb815b6862410349d721b1e5"
+  },
+  {
+    "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/requirements.rs",
+    "bytes": 41581,
+    "physicalLoc": 1037,
+    "growth": 4,
+    "classification": "production",
+    "sha256": "5e02e3f5fa715bd5d61b444f103001066ef3a60ccd6bc35c415be0c748af84b2"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis.rs",
+    "bytes": 15633,
+    "physicalLoc": 288,
+    "growth": 1,
+    "classification": "production",
+    "sha256": "9bf64a462c4fd82eefd4cd42c6ef00f2e3c5eb6049abc6a9e7b79ea616fae3d5"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+    "bytes": 243128,
+    "physicalLoc": 5688,
+    "growth": 89,
+    "classification": "production",
+    "sha256": "7144fd56798d7117b2274a47690c8ef7422cb56d108ffdee1abd1c1578b73815"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/items.rs",
+    "bytes": 68152,
+    "physicalLoc": 1635,
+    "growth": 1,
+    "classification": "production",
+    "sha256": "7f92b07ce6d1cbf5b44ad5073825623f1df8a7af10c1d79c32b4ffd4edff1937"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/match_edges.rs",
+    "bytes": 76974,
+    "physicalLoc": 1848,
+    "growth": 2,
+    "classification": "production",
+    "sha256": "24f04df946f97d040fbc34963704f959d2dcb93c9158e25b9b60f217fc386d12"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+    "bytes": 114363,
+    "physicalLoc": 3411,
+    "growth": 22,
+    "classification": "production",
+    "sha256": "4770ea4c2a35efa729b1a96fc116af01f2cceb4b536f5194560968f3ff78effc"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+    "bytes": 194997,
+    "physicalLoc": 4769,
+    "growth": 6,
+    "classification": "production",
+    "sha256": "52d6dd4af27d6839f44d136ee531612f3d0d518bd7e6ef950c69931335ea5959"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+    "bytes": 70054,
+    "physicalLoc": 1757,
+    "growth": 11,
+    "classification": "test",
+    "sha256": "c2fc371a4caea3a5264c91c5e4358ef3a229f32eb1bf31e576bfc4eeb749e397"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/view_calls.rs",
+    "bytes": 8745,
+    "physicalLoc": 246,
+    "growth": 41,
+    "classification": "test",
+    "sha256": "fe4c2ed3b8c0c0837a548416893adcb2ae10986793e4cf000c8fbda0c189d771"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+    "bytes": 142593,
+    "physicalLoc": 3362,
+    "growth": 47,
+    "classification": "production",
+    "sha256": "5baa0d99679280a4167196631eda73726c166f73571fc0e7397e894de59b9b9f"
+  },
+  {
+    "path": "crates/arcweft-lang-sema/src/semantic_coordinate.rs",
+    "bytes": 104721,
+    "physicalLoc": 2964,
+    "growth": 6,
+    "classification": "production",
+    "sha256": "0543ce2944b46702dde2fbbf55fb776ed9a4d8b83fe6ecead289e9e5b8c39b92"
+  },
+  {
+    "path": "crates/arcweft-lang-syntax/src/attachment/expression/structure.rs",
+    "bytes": 56131,
+    "physicalLoc": 1260,
+    "growth": 10,
+    "classification": "production",
+    "sha256": "b17d664bea2fba9a29f39f822829326df0ff10a98a6fd3994090608c5098931f"
+  },
+  {
+    "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+    "bytes": 148039,
+    "physicalLoc": 3623,
+    "growth": 1,
+    "classification": "production",
+    "sha256": "ec7bb8ad3ae2675f49b9d50adf2a87b9fa6f9bea4eb0ca5497364118fdb08072"
+  }
+]

@@ -47,6 +47,13 @@ Core の通常関数値や実行 frame へ投影しない。`@view.*` は同じ 
 public identity を参照する entity reference として保持する。local/project の名前が
 builtin View head と同じ場合も、通常の shadowing と visibility に従う。
 
+layout container の `Panel { ... }` と `Panel(...) { ... }` は、header に続いて
+子 View を source order で即時評価する。子ブロックは通常の lexical scope であり、
+closure を作成しない。`let`、`local state`、条件分岐、反復はそれぞれの所有 scope に従う。
+header の引数は一度だけ評価する。子を持てるのは型検査で layout container と確認された
+builtin constructor に限る。Text、RichText、Button などの leaf に子ブロックを付けると
+拒否する。`.on_click { ... }` は引き続き latent handler closure として検査する。
+
 ## Parameter defaults
 
 View の parameter default は宣言型を expected type として検査する通常の式であり、

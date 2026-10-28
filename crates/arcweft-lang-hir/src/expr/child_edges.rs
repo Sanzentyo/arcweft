@@ -135,6 +135,8 @@ pub enum HirExpressionChildRole {
     BinaryLeft,
     BinaryRight,
     ClosureBody,
+    ViewHeader,
+    ViewBody,
     BlockTail,
     LoopTail,
     Condition,
@@ -364,6 +366,18 @@ impl HirExprKind {
                     &mut edges,
                     expression.target(),
                     HirExpressionChildRole::Target,
+                );
+            }
+            Self::ViewBodyApplication(expression) => {
+                push_edge(
+                    &mut edges,
+                    expression.header(),
+                    HirExpressionChildRole::ViewHeader,
+                );
+                push_edge(
+                    &mut edges,
+                    expression.body(),
+                    HirExpressionChildRole::ViewBody,
                 );
             }
             Self::Index(expression) => {
@@ -1110,6 +1124,10 @@ fn recovery_edge_child(
             | (HirExprKind::Unary(_), HirExpressionChildRole::Operand)
             | (HirExprKind::Closure(_), HirExpressionChildRole::ClosureBody)
             | (HirExprKind::Loop(_), HirExpressionChildRole::LoopTail) => ordinal == 0,
+            (HirExprKind::ViewBodyApplication(_), HirExpressionChildRole::ViewHeader) => {
+                ordinal == 0
+            }
+            (HirExprKind::ViewBodyApplication(_), HirExpressionChildRole::ViewBody) => ordinal == 1,
             (HirExprKind::Index(_), HirExpressionChildRole::Index)
             | (HirExprKind::Pipe(_), HirExpressionChildRole::PipeRight)
             | (HirExprKind::Binary(_), HirExpressionChildRole::BinaryRight) => ordinal == 1,

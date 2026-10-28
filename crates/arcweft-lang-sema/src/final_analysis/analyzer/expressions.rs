@@ -3918,6 +3918,9 @@ impl Analyzer<'_, '_, '_> {
         expectation: &AnalyzerExpressionExpectation<'_>,
     ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
         match expression.kind() {
+            HirExprKind::ViewBodyApplication(application) => {
+                self.check_view_container_body(context, module, owner, expression, application)
+            }
             HirExprKind::Call(call) => {
                 if let Some(checked) =
                     self.check_view_call_expression(context, module, expression, call)?
@@ -4500,6 +4503,92 @@ impl Analyzer<'_, '_, '_> {
             effects,
             CheckedExpressionResolution::ViewCall(classification),
         )))
+    }
+
+    fn check_view_container_body(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        expression: &HirExpr,
+        application: &arcweft_lang_hir::expr::HirViewBodyApplication,
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        let item = enclosing_item(module, expression.scope())
+            .map_err(AnalyzerExpressionError::fatal)?
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        if !matches!(
+            module
+                .resolve_item(item)
+                .map_err(|_| AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::InvalidOwner
+                ))?
+                .kind(),
+            HirItemKind::View(_)
+        ) {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
+        let header = application.header();
+        let checked_header = if let Some(crate::types::ViewCallableId::Element(element)) =
+            self.view_direct_callee(module, header)?
+        {
+            if !element.is_layout_container() {
+                return Err(AnalyzerExpressionError::rejected(header));
+            }
+            let checked = CheckedExpression::value(
+                TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::View(
+                    crate::types::ViewCallableId::Element(element),
+                )),
+                super::CheckedTypeSelection::Inferred,
+                EffectSet::new(),
+                CheckedExpressionResolution::CompileTimeCallee(CheckedCompileTimeCallee::View(
+                    crate::types::ViewCallableId::Element(element),
+                )),
+            );
+            self.facts
+                .publish_new_expression(header, checked.clone())
+                .map_err(|_| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
+                })?;
+            checked
+        } else {
+            self.evaluate_expression(context, header, None)?
+                .complete()
+                .cloned()
+                .ok_or_else(|| AnalyzerExpressionError::rejected(header))?
+        };
+        let is_layout_container = match checked_header.resolution() {
+            CheckedExpressionResolution::ViewCall(CheckedViewCall::Element(element)) => {
+                element.element().is_layout_container()
+            }
+            CheckedExpressionResolution::CompileTimeCallee(CheckedCompileTimeCallee::View(
+                crate::types::ViewCallableId::Element(element),
+            )) => element.is_layout_container(),
+            _ => false,
+        };
+        if !is_layout_container {
+            return Err(AnalyzerExpressionError::rejected(header));
+        }
+        let body = self.evaluate_expression(context, application.body(), None)?;
+        if !matches!(
+            body.value_type(),
+            Some(TypeKind::ViewValue | TypeKind::Unit | TypeKind::Never)
+        ) {
+            return Err(AnalyzerExpressionError::rejected(application.body()));
+        }
+        let mut effects = checked_header.effects().clone();
+        effects.union_with(body.effects());
+        Ok(CheckedExpression::value(
+            if body.value_type() == Some(&TypeKind::Never) {
+                TypeKind::Never
+            } else {
+                TypeKind::ViewValue
+            },
+            super::CheckedTypeSelection::Inferred,
+            effects,
+            CheckedExpressionResolution::ViewCall(CheckedViewCall::ContainerBody(
+                crate::final_analysis::CheckedViewContainerBody::new(header, application.body()),
+            )),
+        ))
     }
 
     fn check_style_expression_kind(

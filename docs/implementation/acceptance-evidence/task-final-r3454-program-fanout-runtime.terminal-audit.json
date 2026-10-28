@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "02259754a2278e0f9db803c7effbdfd21bf4d62b",
+  "run": "task-final-r3454-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.114s] 1 test run: 0 passed, 1 failed, 963 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 963,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-hir",
+      "test": "final_lowering::item_lowering::tests::view::view_child_body_freezes_as_an_immediate_block_with_ordered_header_and_body"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-28T00:52:14.1825920Z"
+}

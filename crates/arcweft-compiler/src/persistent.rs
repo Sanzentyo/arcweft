@@ -1250,6 +1250,7 @@ const fn expression_kind_tag(kind: &HirExprKind) -> &'static str {
         HirExprKind::PostfixBracket(_) => "postfix-bracket",
         HirExprKind::Error(_) => "error",
         HirExprKind::ForSynthetic(_) => "for-synthetic",
+        HirExprKind::ViewBodyApplication(_) => "view-body-application",
     }
 }
 

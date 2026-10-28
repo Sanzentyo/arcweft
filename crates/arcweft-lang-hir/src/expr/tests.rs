@@ -1468,6 +1468,8 @@ fn edge_role_tag(role: &HirExpressionChildRole) -> u8 {
         HirExpressionChildRole::RepeatLength => 2,
         HirExpressionChildRole::Callee => 3,
         HirExpressionChildRole::ContentCallee => 60,
+        HirExpressionChildRole::ViewHeader => 61,
+        HirExpressionChildRole::ViewBody => 62,
         HirExpressionChildRole::Argument { .. } => 4,
         HirExpressionChildRole::Target => 5,
         HirExpressionChildRole::Index => 6,
@@ -1551,9 +1553,9 @@ fn nested_path(segments: Vec<HirNestedExpressionPathSegment>) -> HirNestedExpres
 #[test]
 #[allow(
     clippy::too_many_lines,
-    reason = "the independent expected vectors are the differential contract for all 38 HIR families"
+    reason = "the independent expected vectors are the differential contract for every HIR expression family"
 )]
-fn child_edges_have_independent_expected_children_and_role_families_for_all_38_variants() {
+fn child_edges_have_independent_expected_children_and_role_families_for_every_variant() {
     let module = module(150);
     let scope = id::<ScopeId>(module, 1);
     let scope_two = id::<ScopeId>(module, 2);
@@ -1839,15 +1841,21 @@ fn child_edges_have_independent_expected_children_and_role_families_for_all_38_v
         ),
     ];
 
-    assert_eq!(cases.len(), 38);
+    let mut cases = cases;
+    cases.push((
+        HirExprKind::ViewBodyApplication(super::HirViewBodyApplication::new(first, second)),
+        vec![first, second],
+        vec![61, 62],
+    ));
+    assert_eq!(cases.len(), 39);
     let tags = cases
         .iter()
         .map(|(kind, _, _)| kind.semantic_transcript_tag())
         .collect::<Vec<_>>();
     assert_eq!(
         tags,
-        (0x0100_u16..=0x0125_u16).collect::<Vec<_>>(),
-        "expression transcript tags must follow the owner enum order"
+        (0x0100_u16..=0x0126_u16).collect::<Vec<_>>(),
+        "existing expression tags stay stable and the child-body constructor appends one tag"
     );
     assert_eq!(
         tags.iter().collect::<BTreeSet<_>>().len(),

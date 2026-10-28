@@ -1702,6 +1702,8 @@ fn checked_role_from_hir(
         HirExpressionChildRole::BinaryLeft => CheckedExpressionChildRole::BinaryLeft,
         HirExpressionChildRole::BinaryRight => CheckedExpressionChildRole::BinaryRight,
         HirExpressionChildRole::ClosureBody => CheckedExpressionChildRole::ClosureBody,
+        HirExpressionChildRole::ViewHeader => CheckedExpressionChildRole::ViewHeader,
+        HirExpressionChildRole::ViewBody => CheckedExpressionChildRole::ViewBody,
         HirExpressionChildRole::BlockTail => CheckedExpressionChildRole::BlockTail,
         HirExpressionChildRole::LoopTail => CheckedExpressionChildRole::LoopTail,
         HirExpressionChildRole::Condition => CheckedExpressionChildRole::Condition,

@@ -342,6 +342,7 @@ impl StagedHirModuleTransaction<'_> {
                 self.project_collection_expression(attached, owner, scope)
             }
             ExpressionProjection::Call(_)
+            | ExpressionProjection::ViewBodyApplication(_)
             | ExpressionProjection::Select(_)
             | ExpressionProjection::Index(_)
             | ExpressionProjection::AttachedContentApplication(_)
@@ -551,6 +552,18 @@ impl StagedHirModuleTransaction<'_> {
             ExpressionProjection::Call(call) => {
                 let (call, recovery) = self.lower_call_expression(attached, owner, scope, call)?;
                 (HirExprKind::Call(call), recovery)
+            }
+            ExpressionProjection::ViewBodyApplication(_) => {
+                let (children, recovery) = self.lower_composite_children(attached, owner, scope)?;
+                let [header, body] = children.as_ref() else {
+                    return Err(HirInvariantFailure::InvalidArenaCommit.into());
+                };
+                (
+                    HirExprKind::ViewBodyApplication(crate::expr::HirViewBodyApplication::new(
+                        *header, *body,
+                    )),
+                    recovery,
+                )
             }
             ExpressionProjection::Select(member) => {
                 let (children, mut recovery) =

@@ -1,4 +1,5 @@
 use super::*;
+use crate::final_analysis::CheckedViewCall;
 use crate::{callable::CheckedCallableExecution, types::CompileTimeCallableType};
 use arcweft_lang_hir::symbol::CallableDeclarationOwner;
 
@@ -85,6 +86,46 @@ fn retained_view_calls_use_selected_catalog_binding_for_direct_and_alias_heads()
         );
         assert_view_calls(&fixture(&source, None), 1);
     }
+}
+
+#[test]
+fn retained_view_child_bodies_require_layout_headers_and_keep_lexical_locals() {
+    let world = fixture(
+        "view Main() { Panel() { let label = \"child\"; Column { Text(label) } } }\n",
+        None,
+    );
+    let report = analyze(&world).expect("immediate nested child regions");
+    assert_eq!(
+        report
+            .expressions()
+            .filter(|(_, fact)| matches!(
+                fact.resolution(),
+                CheckedExpressionResolution::ViewCall(CheckedViewCall::ContainerBody(_))
+            ))
+            .count(),
+        2
+    );
+    assert!(
+        report
+            .expressions()
+            .all(|(_, fact)| !matches!(fact.resolution(), CheckedExpressionResolution::Closure(_)))
+    );
+    for header in ["Button()", "Text(\"leaf\")", "RichText(\"leaf\")", "1i64"] {
+        let source = format!("view Main() {{ {header} {{ Text(\"invalid\") }} }}\n");
+        let rejected = fixture(&source, None);
+        assert!(
+            analyze(&rejected).is_err(),
+            "leaf header must reject children: {source}"
+        );
+    }
+    let shadowed = fixture(
+        "view Panel() { Text(\"shadow\") }\nview Main() { Panel { Text(\"invalid\") } }\n",
+        None,
+    );
+    assert!(
+        analyze(&shadowed).is_err(),
+        "a project declaration cannot impersonate a builtin container"
+    );
 }
 
 #[test]

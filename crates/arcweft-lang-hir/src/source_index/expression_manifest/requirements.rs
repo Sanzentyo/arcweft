@@ -208,6 +208,10 @@ pub(super) fn expression_requirements(
             );
         }
         HirExprKind::Call(expression) => add_call_requirements(&mut requirements, expression),
+        HirExprKind::ViewBodyApplication(_) => {
+            add_expression_requirement(&mut requirements, HirExprSourceRole::Operand, Required);
+            add_expression_requirement(&mut requirements, HirExprSourceRole::Body, Required);
+        }
         HirExprKind::Select(_) => {
             add_expression_requirement(&mut requirements, HirExprSourceRole::Target, Required);
             add_expression_requirement(

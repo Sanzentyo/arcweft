@@ -2339,6 +2339,7 @@ fn write_expression_shape_atoms(
         | HirExprKind::Path(_)
         | HirExprKind::ShortVariant(_)
         | HirExprKind::ArrayRepeat(_)
+        | HirExprKind::ViewBodyApplication(_)
         | HirExprKind::Select(_)
         | HirExprKind::Index(_)
         | HirExprKind::Pipe(_)
@@ -2897,6 +2898,10 @@ fn write_resolution_payload(
                     write_child_expression_digest(hasher, expression_digests, argument.value())?;
                 }
             }
+            if let super::CheckedViewCall::ContainerBody(application) = view {
+                write_child_expression_digest(hasher, expression_digests, application.header())?;
+                write_child_expression_digest(hasher, expression_digests, application.body())?;
+            }
         }
         CheckedExpressionResolution::StyleValue(value) => {
             transcript_update!(hasher, &[9]);
@@ -3232,6 +3237,7 @@ const fn view_call_tag(value: &super::CheckedViewCall) -> u8 {
         super::CheckedViewCall::Element(_) => 0,
         super::CheckedViewCall::Text => 1,
         super::CheckedViewCall::RichText => 2,
+        super::CheckedViewCall::ContainerBody(_) => 3,
     }
 }
 

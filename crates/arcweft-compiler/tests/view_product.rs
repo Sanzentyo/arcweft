@@ -378,9 +378,13 @@ fn retained_state_handler_publishes_update_only_on_routed_event() {
 entry cli @entry.main { goto @flow.main }
 flow main() -> String { return "done" }
 view Main() {
+  Panel() {
+   Column {
     local state mut caption: String = "first"
     Text(caption)
     Button("change").on_click(|| { caption = "second"; () })
+   }
+  }
 }
 "#,
         "arcweft-test://retained-state-command",
@@ -414,6 +418,54 @@ view Main() {
     let mut runtime = BundleViewRuntime::try_new_with_awbc(product, text, awbc).unwrap();
     let frame = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
     assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    let nodes = &frame.mounts[0].style_nodes;
+    let panel = nodes
+        .iter()
+        .find(|node| {
+            matches!(
+                node.kind,
+                arcweft_runtime_driver::view_runtime::BundleViewStyleNodeKind::Element {
+                    element: arcweft_view::ViewElementKind::Panel,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    let column = nodes
+        .iter()
+        .find(|node| {
+            matches!(
+                node.kind,
+                arcweft_runtime_driver::view_runtime::BundleViewStyleNodeKind::Element {
+                    element: arcweft_view::ViewElementKind::Column,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    assert!(panel.parent.is_none());
+    assert_eq!(
+        column
+            .parent
+            .as_ref()
+            .map(|parent| (parent.path.clone(), parent.instruction)),
+        Some((panel.path.clone(), panel.instruction))
+    );
+    assert!(
+        nodes
+            .iter()
+            .filter(|node| matches!(
+                node.kind,
+                arcweft_runtime_driver::view_runtime::BundleViewStyleNodeKind::Text { .. }
+                    | arcweft_runtime_driver::view_runtime::BundleViewStyleNodeKind::Element {
+                        element: arcweft_view::ViewElementKind::Button,
+                        ..
+                    }
+            ))
+            .all(|node| node.parent.as_ref().is_some_and(
+                |parent| parent.path == column.path && parent.instruction == column.instruction
+            ))
+    );
     assert!(
         matches!(&frame.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == "first")
     );
@@ -433,6 +485,17 @@ view Main() {
     let snapshot = runtime.snapshot().unwrap();
     assert!(
         matches!(&snapshot.mounts[0].local_state[0].value, RuntimeValue::String(value) if value == "second")
+    );
+    runtime
+        .restore(&snapshot, std::slice::from_ref(&handle))
+        .unwrap();
+    let restored = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(restored.diagnostics.is_empty(), "{restored:#?}");
+    assert!(matches!(&restored.mounts[0].text[0].value,
+        BundleViewTextValue::Plain { value } if value == "second"));
+    assert_eq!(
+        restored.mounts[0].style_nodes,
+        updated.mounts[0].style_nodes
     );
 }
 

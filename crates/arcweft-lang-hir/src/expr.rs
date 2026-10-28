@@ -48,6 +48,7 @@ pub use self::control::{
     HirBlockExpr, HirClosureExpr, HirClosureParameter, HirComputationBlockExpr,
     HirComputationBlockKind, HirExprError, HirGenericExprIssue, HirIfExpr, HirIfLetExpr,
     HirLoopExpr, HirMatchArm, HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName,
+    HirViewBodyApplication,
 };
 pub use self::for_synthetic::HirForSyntheticExpr;
 pub use self::owned_body_edges::{
@@ -157,6 +158,7 @@ pub enum HirExprKind {
     NumericBracketSequence(HirNumericSequence),
     ArrayRepeat(HirArrayRepeatExpr),
     Call(HirCallInvocation),
+    ViewBodyApplication(HirViewBodyApplication),
     Select(HirSelectExpr),
     Index(HirIndexExpr),
     Pipe(HirPipeExpr),
@@ -279,6 +281,7 @@ impl HirExprKind {
             Self::PostfixBracket(_) => 0x0123,
             Self::Error(_) => 0x0124,
             Self::ForSynthetic(_) => 0x0125,
+            Self::ViewBodyApplication(_) => 0x0126,
         }
     }
 
@@ -327,6 +330,7 @@ impl HirExprKind {
             | Self::BracketSequence(_)
             | Self::NumericBracketSequence(_)
             | Self::ArrayRepeat(_)
+            | Self::ViewBodyApplication(_)
             | Self::Select(_)
             | Self::Index(_)
             | Self::Pipe(_)
@@ -390,6 +394,7 @@ impl HirExprKind {
             | Self::Tuple(_)
             | Self::BracketSequence(_)
             | Self::ArrayRepeat(_)
+            | Self::ViewBodyApplication(_)
             | Self::Index(_)
             | Self::Pipe(_)
             | Self::Try(_)
@@ -478,6 +483,10 @@ impl HirExprKind {
                 validate_expr(expected, expression.length())
             }
             Self::Call(expression) => expression.validate_module(expected),
+            Self::ViewBodyApplication(expression) => {
+                validate_expr(expected, expression.header())?;
+                validate_expr(expected, expression.body())
+            }
             Self::Select(expression) => validate_expr(expected, expression.target()),
             Self::Index(expression) => {
                 validate_expr(expected, expression.target())?;

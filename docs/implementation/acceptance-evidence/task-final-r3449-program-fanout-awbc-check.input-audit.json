@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "run": "task-final-r3449-program-fanout-awbc-check",
+  "actualExitCode": 101,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-hir",
+    "-p",
+    "arcweft-lang-sema",
+    "-p",
+    "arcweft-compiler",
+    "--lib",
+    "--test",
+    "view_product",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(view_child) | test(expression_corpus) | test(retained_state_handler)",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T00:47:51.1056058Z"
+}

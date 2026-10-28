@@ -13074,3 +13074,24 @@ R3440のHIR consumer checkはexit101で、ExpressionProjectionの未移行2分�
 この既知の移行途中を公開する。25 packageの推移的consumer検証と後段実装は引き続き必要。
 既受入のGeneric Match、loop、Text projection、View callable-owner認証を未完了へ戻さない。
 [実測・入力freeze・所有境界](acceptance-evidence/task-view-body-syntax-stage.json)。
+## View子ブロックのHIR・意味解析・View program接続 -- 2026-10-28
+
+基点02259754a2278e0f9db803c7effbdfd21bf4d62b、所有者Rust28ファイルの変更。
+構文所有者の途中cutに続き、通常ASTのheader/body列挙、HIR payload／scope／source manifest、
+意味解析のexact layout/header/body proof、semantic transcript、永続化の式tag、
+compilerの共通open→body→close経路へ接続した。裸のheaderは既存CompileTimeCallee、
+parenthesized headerは既存CheckedViewElementCallを保持し、引数catalogを複写しない。
+pure runtime expressionへView bodyを流さず、通常のView evaluatorが即時scopeを実行する。
+
+R3458は対象22/22PASS（2.296秒、3package／4EXE／3,998入力、source/catalog/EXE drift0）。
+leafとshadowed constructorの拒否、39-family child edge、nested local、
+Match transcript、Panel/Column内のretained stateとAWBC click handler、
+実frameのparent identity、更新後snapshotのrestoreを検証した。
+R3459の5所有者Clippyはexit0、warning6,498件。R3460構造gateは97package、
+3,236file／Rust3,106file／1,761,686physical LOC、blocking0。
+
+R3452の18PASS/4FAIL、診断trace付きR3454の実際の失敗、R3456の19PASS/3FAIL、
+各compile失敗はraw履歴として保持する。診断用traceは最終sourceから削除した。
+全25逆依存・workspace・Native/Web描画parityはこのcutでは未実行。
+Spacingの既存compiler拒否も解消したとは主張しない。Generic Matchその他の受入済み機能は完了を維持する。
+[現世代の入力freeze・実測・所有境界](acceptance-evidence/task-view-body-lowering-stage.json)。

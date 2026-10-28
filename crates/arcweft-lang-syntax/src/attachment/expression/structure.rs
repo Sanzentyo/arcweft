@@ -209,7 +209,9 @@ fn composite_expression_slots(
                     .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })
             })
             .collect::<Result<Vec<_>, _>>()?,
-        ExpressionProjection::ArrayRepeat(slots) | ExpressionProjection::Pipe(slots) => slots
+        ExpressionProjection::ArrayRepeat(slots)
+        | ExpressionProjection::Pipe(slots)
+        | ExpressionProjection::ViewBodyApplication(slots) => slots
             .iter()
             .copied()
             .enumerate()
@@ -1096,6 +1098,8 @@ fn record_component_range(
 
 fn semantic_child_role(projection: &ExpressionProjection, ordinal: u32) -> Option<SyntaxRole> {
     match projection {
+        ExpressionProjection::ViewBodyApplication(_) if ordinal == 0 => Some(SyntaxRole::Callee),
+        ExpressionProjection::ViewBodyApplication(_) if ordinal == 1 => Some(SyntaxRole::Body),
         ExpressionProjection::Tuple(_) | ExpressionProjection::BracketSequence(_) => {
             Some(SyntaxRole::Element(ordinal))
         }
@@ -1163,6 +1167,12 @@ fn semantic_child_component(
     ordinal: u32,
 ) -> Option<(ExpressionComponentRole, arcweft_source::SourceRange)> {
     let role = match projection {
+        ExpressionProjection::ViewBodyApplication(_) if ordinal == 0 => {
+            ExpressionComponentRole::Operand
+        }
+        ExpressionProjection::ViewBodyApplication(_) if ordinal == 1 => {
+            ExpressionComponentRole::Body
+        }
         ExpressionProjection::Tuple(_) | ExpressionProjection::BracketSequence(_) => {
             ExpressionComponentRole::Element { ordinal }
         }

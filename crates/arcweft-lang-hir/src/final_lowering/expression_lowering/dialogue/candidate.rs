@@ -601,6 +601,18 @@ impl StagedHirModuleTransaction<'_> {
                 let (call, recovery) = self.lower_candidate_call(node, scope, cursor, call)?;
                 (HirExprKind::Call(call), recovery)
             }
+            ExpressionProjection::ViewBodyApplication(_) => {
+                let (children, recovery) = self.lower_candidate_children(node, scope, cursor)?;
+                let [header, body] = children.as_ref() else {
+                    return Err(HirInvariantFailure::InvalidArenaCommit.into());
+                };
+                (
+                    HirExprKind::ViewBodyApplication(crate::expr::HirViewBodyApplication::new(
+                        *header, *body,
+                    )),
+                    recovery,
+                )
+            }
             ExpressionProjection::Select(member) => {
                 let (children, mut recovery) =
                     self.lower_candidate_children(node, scope, cursor)?;

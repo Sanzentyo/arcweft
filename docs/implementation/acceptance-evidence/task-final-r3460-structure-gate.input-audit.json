@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "run": "task-final-r3460-structure-gate",
+  "actualExitCode": 0,
+  "scope": [
+    "structure-audit-gate"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T00:58:47.6513656Z"
+}

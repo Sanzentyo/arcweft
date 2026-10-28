@@ -79,6 +79,11 @@ impl HirExprKind {
                     HirExprSourceRole::RepeatValue | HirExprSourceRole::RepeatLength
                 ),
             ),
+            Self::ViewBodyApplication(_) => admit(
+                owner,
+                role,
+                matches!(role, HirExprSourceRole::Operand | HirExprSourceRole::Body),
+            ),
             Self::Call(expression) => match role {
                 HirExprSourceRole::CallCallee
                     if matches!(expression.callee(), HirCallCallee::Value { .. }) =>

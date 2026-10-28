@@ -1834,6 +1834,28 @@ impl AuthoredViewBodyLowerer<'_> {
         if matches!(checked.value_type(), Some(TypeKind::CompileTimeCallable(_))) {
             return Ok(());
         }
+        if let CheckedExpressionResolution::ViewCall(CheckedViewCall::ContainerBody(application)) =
+            checked.resolution()
+        {
+            let header = self
+                .analysis
+                .expression(application.header())
+                .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+            return match header.resolution() {
+                CheckedExpressionResolution::ViewCall(CheckedViewCall::Element(element)) => self
+                    .lower_element(
+                        element.element(),
+                        element.arguments(),
+                        Some(application.body()),
+                    ),
+                CheckedExpressionResolution::CompileTimeCallee(
+                    arcweft_lang_sema::final_analysis::CheckedCompileTimeCallee::View(
+                        arcweft_lang_sema::types::ViewCallableId::Element(element),
+                    ),
+                ) => self.lower_element(*element, &[], Some(application.body())),
+                _ => Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }),
+            };
+        }
         let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
@@ -1851,100 +1873,12 @@ impl AuthoredViewBodyLowerer<'_> {
         };
         match kind {
             CheckedViewCall::Element(element_call) => {
-                let element = element_call.element();
-                if element_call.arguments().iter().any(|argument| {
-                    matches!(
-                        argument.role(),
-                        arcweft_view::ViewElementArgumentRole::Label
-                            | arcweft_view::ViewElementArgumentRole::Enabled
-                    ) && !element.is_action_control()
-                        || argument.role() == arcweft_view::ViewElementArgumentRole::Spacing
-                }) {
-                    return Err(ViewProjectLowerError::MissingCheckedViewProjection {
-                        owner: self.owner,
-                    });
-                }
-                let styles = self.lower_element_style(element_call)?;
-                let ordinal = self.element_ordinal;
-                self.element_ordinal = self.element_ordinal.checked_add(1).ok_or(
-                    ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
-                )?;
-                let target = format!("node.{}.{}", self.view.as_str(), ordinal);
-                self.output
-                    .instructions
-                    .push(ViewProgramInstruction::OpenElement {
-                        element,
-                        target: Some(target.clone()),
-                        styles,
-                        part: None,
-                        key: None,
-                        source: None,
-                    });
-                if element.is_action_control() {
-                    let label = format!("button.label.{}.{}", self.view.as_str(), ordinal);
-                    let mut label_kind = ViewTextSourceKind::Literal {
-                        value: arcweft_view::ViewElementArgumentRole::DEFAULT_LABEL.to_owned(),
-                    };
-                    let mut inputs = Vec::new();
-                    for argument in element_call.arguments().iter().filter(|argument| {
-                        matches!(
-                            argument.role(),
-                            arcweft_view::ViewElementArgumentRole::Label
-                                | arcweft_view::ViewElementArgumentRole::Enabled
-                        )
-                    }) {
-                        let program = ViewExpressionLowerer {
-                            module: self.module,
-                            project: self.project,
-                            analysis: self.analysis,
-                            world: self.registered_world,
-                            owner: self.owner,
-                            view: self.view,
-                            parameters: self.parameters,
-                            locals: &self.locals,
-                            output: self.output,
-                        }
-                        .lower(argument.value())?;
-                        match argument.role() {
-                            arcweft_view::ViewElementArgumentRole::Label => {
-                                label_kind = ViewTextSourceKind::Program { program };
-                                inputs.push(arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label { text_source: label.clone() });
-                            }
-                            arcweft_view::ViewElementArgumentRole::Enabled => {
-                                inputs.push(arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { value: arcweft_view::ViewExpressionValue::Program { program } });
-                            }
-                            _ => unreachable!("element argument projection was checked"),
-                        }
-                    }
-                    if !inputs.iter().any(|input| matches!(input, arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label { .. })) {
-                        inputs.push(arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label { text_source: label.clone() });
-                    }
-                    if !inputs.iter().any(|input| matches!(input, arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { .. })) {
-                        inputs.push(arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { value: arcweft_view::ViewExpressionValue::constant(arcweft_view::ViewElementArgumentRole::DEFAULT_ENABLED) });
-                    }
-                    self.output.text.sources.push(ViewTextSourceRecord {
-                        public_id: label.clone(),
-                        kind: label_kind,
-                        source: None,
-                    });
-                    self.output.action_buttons.push(ViewActionButtonResource {
-                        public_id: target.clone(),
-                        view: Some(self.view.as_str().to_owned()),
-                        containing_scroll_region: None,
-                        inputs: inputs.into_boxed_slice(),
-                        action: ViewActionButtonActionResource::Noop,
-                        bounds: ViewRuntimeButtonBounds::new(
-                            VIEW_ROOT_X_MILLI,
-                            VIEW_ROOT_Y_MILLI,
-                            VIEW_TEXT_WIDTH_MILLI,
-                            VIEW_TEXT_LINE_HEIGHT_MILLI,
-                        ),
-                        source: None,
-                    });
-                }
-                self.output
-                    .instructions
-                    .push(ViewProgramInstruction::CloseElement);
+                self.lower_element(element_call.element(), element_call.arguments(), None)?
+            }
+            CheckedViewCall::ContainerBody(_) => {
+                return Err(ViewProjectLowerError::MissingCheckedViewProjection {
+                    owner: self.owner,
+                });
             }
             CheckedViewCall::Text | CheckedViewCall::RichText => {
                 let [HirCallArgument::Positional { .. }] = call.arguments() else {
@@ -1964,6 +1898,137 @@ impl AuthoredViewBodyLowerer<'_> {
         Ok(())
     }
 
+    fn lower_element(
+        &mut self,
+        element: arcweft_view::ViewElementKind,
+        arguments: &[arcweft_lang_sema::final_analysis::CheckedViewElementArgument],
+        body: Option<ExprId>,
+    ) -> Result<(), ViewProjectLowerError> {
+        if arguments.iter().any(|argument| {
+            matches!(
+                argument.role(),
+                arcweft_view::ViewElementArgumentRole::Label
+                    | arcweft_view::ViewElementArgumentRole::Enabled
+            ) && !element.is_action_control()
+                || argument.role() == arcweft_view::ViewElementArgumentRole::Spacing
+        }) {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        }
+        let styles = self.lower_element_style(arguments)?;
+        let ordinal = self.element_ordinal;
+        self.element_ordinal = self
+            .element_ordinal
+            .checked_add(1)
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        let target = format!("node.{}.{}", self.view.as_str(), ordinal);
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::OpenElement {
+                element,
+                target: Some(target.clone()),
+                styles,
+                part: None,
+                key: None,
+                source: None,
+            });
+        if element.is_action_control() {
+            let label = format!("button.label.{}.{}", self.view.as_str(), ordinal);
+            let mut label_kind = ViewTextSourceKind::Literal {
+                value: arcweft_view::ViewElementArgumentRole::DEFAULT_LABEL.to_owned(),
+            };
+            let mut inputs = Vec::new();
+            for argument in arguments.iter().filter(|argument| {
+                matches!(
+                    argument.role(),
+                    arcweft_view::ViewElementArgumentRole::Label
+                        | arcweft_view::ViewElementArgumentRole::Enabled
+                )
+            }) {
+                let program = ViewExpressionLowerer {
+                    module: self.module,
+                    project: self.project,
+                    analysis: self.analysis,
+                    world: self.registered_world,
+                    owner: self.owner,
+                    view: self.view,
+                    parameters: self.parameters,
+                    locals: &self.locals,
+                    output: self.output,
+                }
+                .lower(argument.value())?;
+                match argument.role() {
+                    arcweft_view::ViewElementArgumentRole::Label => {
+                        label_kind = ViewTextSourceKind::Program { program };
+                        inputs.push(
+                            arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label {
+                                text_source: label.clone(),
+                            },
+                        );
+                    }
+                    arcweft_view::ViewElementArgumentRole::Enabled => {
+                        inputs.push(
+                            arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled {
+                                value: arcweft_view::ViewExpressionValue::Program { program },
+                            },
+                        );
+                    }
+                    _ => unreachable!("element argument projection was checked"),
+                }
+            }
+            if !inputs.iter().any(|input| {
+                matches!(
+                    input,
+                    arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label { .. }
+                )
+            }) {
+                inputs.push(
+                    arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label {
+                        text_source: label.clone(),
+                    },
+                );
+            }
+            if !inputs.iter().any(|input| {
+                matches!(
+                    input,
+                    arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { .. }
+                )
+            }) {
+                inputs.push(
+                    arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled {
+                        value: arcweft_view::ViewExpressionValue::constant(
+                            arcweft_view::ViewElementArgumentRole::DEFAULT_ENABLED,
+                        ),
+                    },
+                );
+            }
+            self.output.text.sources.push(ViewTextSourceRecord {
+                public_id: label.clone(),
+                kind: label_kind,
+                source: None,
+            });
+            self.output.action_buttons.push(ViewActionButtonResource {
+                public_id: target.clone(),
+                view: Some(self.view.as_str().to_owned()),
+                containing_scroll_region: None,
+                inputs: inputs.into_boxed_slice(),
+                action: ViewActionButtonActionResource::Noop,
+                bounds: ViewRuntimeButtonBounds::new(
+                    VIEW_ROOT_X_MILLI,
+                    VIEW_ROOT_Y_MILLI,
+                    VIEW_TEXT_WIDTH_MILLI,
+                    VIEW_TEXT_LINE_HEIGHT_MILLI,
+                ),
+                source: None,
+            });
+        }
+        if let Some(body) = body {
+            self.lower_value(body)?;
+        }
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::CloseElement);
+        Ok(())
+    }
     fn lower_nested_view(
         &mut self,
         value: ExprId,
@@ -2078,7 +2143,7 @@ impl AuthoredViewBodyLowerer<'_> {
 
     fn lower_element_style(
         &mut self,
-        call: &arcweft_lang_sema::final_analysis::CheckedViewElementCall,
+        arguments: &[arcweft_lang_sema::final_analysis::CheckedViewElementArgument],
     ) -> Result<Vec<arcweft_view::style::ViewStyleApplicationTarget>, ViewProjectLowerError> {
         use arcweft_lang_sema::{
             checked_rich_text::LengthUnit, final_analysis::CheckedCompileTimeScalar,
@@ -2093,7 +2158,7 @@ impl AuthoredViewBodyLowerer<'_> {
         };
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
         let mut declarations = Vec::new();
-        for argument in call.arguments() {
+        for argument in arguments {
             let property = match argument.role() {
                 ViewElementArgumentRole::X => ViewPropertyKind::Left,
                 ViewElementArgumentRole::Y => ViewPropertyKind::Top,

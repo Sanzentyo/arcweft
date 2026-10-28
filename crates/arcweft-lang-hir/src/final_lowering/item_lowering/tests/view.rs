@@ -88,6 +88,67 @@ fn view_freeze_rejects_a_derived_identity_from_a_different_module() {
     );
 }
 
+#[test]
+fn view_child_body_freezes_as_an_immediate_block_with_ordered_header_and_body() {
+    use crate::expr::{HirExprKind, HirExpressionChildRole, HirViewBodyApplication};
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-view-child-body",
+        "view Main() { Panel() { let label = \"child\"; Column { Text(label) } } }\n",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    let (_, _, declaration) = view(&module, 0);
+    let [HirViewBodyEntry::Value(root)] = declaration.body() else {
+        panic!("one root View value");
+    };
+    let resolve = |id| {
+        module
+            .arenas()
+            .expressions()
+            .resolve(module.slots(), id)
+            .unwrap()
+    };
+    let HirExprKind::ViewBodyApplication(application) = resolve(*root).kind() else {
+        panic!("typed child-body owner");
+    };
+    let assert_application = |application: &HirViewBodyApplication| {
+        let edges = HirExprKind::ViewBodyApplication(application.clone()).child_edges();
+        assert_eq!(edges.len(), 2);
+        assert_eq!(edges[0].child(), application.header());
+        assert_eq!(edges[0].role(), &HirExpressionChildRole::ViewHeader);
+        assert_eq!(edges[1].child(), application.body());
+        assert_eq!(edges[1].role(), &HirExpressionChildRole::ViewBody);
+        assert!(matches!(
+            resolve(application.body()).kind(),
+            HirExprKind::Block(_)
+        ));
+    };
+    assert_application(application);
+    assert!(matches!(
+        resolve(application.header()).kind(),
+        HirExprKind::Call(_)
+    ));
+    let HirExprKind::Block(body) = resolve(application.body()).kind() else {
+        unreachable!()
+    };
+    assert_eq!(body.statements().len(), 1);
+    assert_ne!(body.scope(), declaration.body_scope());
+    let HirExprKind::ViewBodyApplication(nested) = resolve(body.tail()).kind() else {
+        panic!("nested container is a child value, not a callback");
+    };
+    assert_application(nested);
+    assert!(matches!(
+        resolve(nested.header()).kind(),
+        HirExprKind::Path(_)
+    ));
+}
+
 fn revise_view(
     transaction: &mut StagedHirModuleTransaction<'_>,
     owner: crate::identity::ItemId,

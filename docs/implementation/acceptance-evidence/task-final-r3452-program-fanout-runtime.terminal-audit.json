@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "base": "02259754a2278e0f9db803c7effbdfd21bf4d62b",
+  "run": "task-final-r3452-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   2.436s] 22 tests run: 18 passed, 4 failed, 2517 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 22,
+  "passed": 18,
+  "failed": 4,
+  "skipped": 2517,
+  "selectedPackages": 3,
+  "matchedPackages": 3,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-hir",
+      "test": "final_lowering::item_lowering::tests::view::view_child_body_freezes_as_an_immediate_block_with_ordered_header_and_body"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::view_product",
+      "test": "retained_state_handler_publishes_update_only_on_routed_event"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_expression_corpus_tracks_accepted_root_families"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::semantic_transcript_acceptance::view_calls::retained_view_child_bodies_require_layout_headers_and_keep_lexical_locals"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-28T00:49:25.0495972Z"
+}

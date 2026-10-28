@@ -304,6 +304,7 @@ impl HirExprKind {
             | Self::NumericBracketSequence(_)
             | Self::ArrayRepeat(_)
             | Self::Call(_)
+            | Self::ViewBodyApplication(_)
             | Self::Select(_)
             | Self::Index(_)
             | Self::Pipe(_)

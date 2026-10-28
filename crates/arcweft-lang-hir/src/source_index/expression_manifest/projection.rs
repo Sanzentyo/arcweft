@@ -105,6 +105,7 @@ pub(super) fn expression_payload_matches(
         (HirExprKind::Call(actual), ExpressionProjection::Call(expected)) => {
             call_projection_matches(actual, expected)
         }
+        (HirExprKind::ViewBodyApplication(_), ExpressionProjection::ViewBodyApplication(_)) => true,
         (HirExprKind::Select(actual), ExpressionProjection::Select(expected)) => {
             matches!(
                 (actual.member(), expected),
@@ -714,6 +715,9 @@ pub(super) fn expression_children_match(
         HirExprKind::Tuple(expression) => expression.elements().to_vec(),
         HirExprKind::BracketSequence(expression) => expression.elements().to_vec(),
         HirExprKind::ArrayRepeat(expression) => vec![expression.value(), expression.length()],
+        HirExprKind::ViewBodyApplication(expression) => {
+            vec![expression.header(), expression.body()]
+        }
         HirExprKind::Select(expression) => vec![expression.target()],
         HirExprKind::Index(expression) => vec![expression.target(), expression.index()],
         HirExprKind::Pipe(expression) => vec![expression.left(), expression.right()],

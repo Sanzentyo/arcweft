@@ -462,6 +462,7 @@ fn returned_closure_expression(
             | HirExprKind::NumericBracketSequence(_)
             | HirExprKind::ArrayRepeat(_)
             | HirExprKind::Call(_)
+            | HirExprKind::ViewBodyApplication(_)
             | HirExprKind::Select(_)
             | HirExprKind::Index(_)
             | HirExprKind::Pipe(_)

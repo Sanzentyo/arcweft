@@ -75,6 +75,27 @@ impl HirClosureExpr {
     }
 }
 
+/// A View constructor header with an immediately evaluated lexical child body.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirViewBodyApplication {
+    header: ExprId,
+    body: ExprId,
+}
+
+impl HirViewBodyApplication {
+    pub(crate) const fn new(header: ExprId, body: ExprId) -> Self {
+        Self { header, body }
+    }
+
+    pub const fn header(&self) -> ExprId {
+        self.header
+    }
+
+    pub const fn body(&self) -> ExprId {
+        self.body
+    }
+}
+
 /// Ordinary block expression with one explicit or synthetic tail.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirBlockExpr {
