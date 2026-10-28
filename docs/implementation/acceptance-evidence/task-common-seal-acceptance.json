@@ -1,0 +1,265 @@
+{
+  "version": 1,
+  "base": "261471bfc762cb8dd88c93575a8bece68ffa8ca2",
+  "status": "Existing common atomic public seal reverified; stale pre-switch comments and a module-wide dead-code allowance removed. Three private test-only inspectors now compile only under cfg(test).",
+  "sourceChanges": [
+    "crates/arcweft-core/src/plan/body_semantic/task_image.rs",
+    "crates/arcweft-core/src/plan/body_semantic/task_image/preparation.rs"
+  ],
+  "implementation": {
+    "builder": "RuntimePlanBuilder::finish_with_task_authority -> prepare_task_image -> UnsealedRuntimePlanImage::seal",
+    "decoder": "Strict Source decoding joins the same consuming UnsealedRuntimePlanImage::seal; expected executable/task keys are assertions, not an alternate semantic authority.",
+    "publication": "The original coordinate namespace and preparation meter survive into complete E0..E14/F-Q-C/Task/View checks. The sole coordinate owner is published after successful completion, expected-key comparison and duplicate collection.",
+    "view": "Actual nonempty bindings use current program/revision/source-set admission and original Source coordinates. Revision-only decoration preserves the task key; changing exact Match admission changes it under the already accepted contract.",
+    "unchanged": "No algorithm, public API, schema, dependency, instruction/work/budget/capture condition or version marker changed."
+  },
+  "categories": {
+    "hostRequestVariants": 14,
+    "hostVariantTest": "task::descriptor::tests::every_request_family_uses_the_same_live_inert_descriptor_and_limits",
+    "hostVariantScope": "One Rust test contains fourteen actual request variants, live/inert JSON round trips and matching resource-limit rejections. This is not fourteen tests or an all-adapter execution run.",
+    "needProducerFamilies": 10,
+    "note": "Host request variants, Need producer families and executable E0..E14 rows are different classifications."
+  },
+  "runtime": {
+    "run": "R3497",
+    "summary": "Summary [ 268.784s] 2650 tests run: 2650 passed (2 slow), 0 skipped",
+    "packages": [
+      "arcweft-core",
+      "arcweft-view",
+      "arcweft-bundle"
+    ],
+    "perPackage": {
+      "core": 2120,
+      "view": 201,
+      "bundle": 329
+    },
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "executables": 47,
+    "executableDrift": 0,
+    "requirements": "task-common-seal.owner-requirements.json",
+    "generatedArtifact": "The Bundle rendered-IME test invokes the real AWFB fixture generator twice and checks deterministic bytes/codec/callbacks. It passed; this is not Native/Web image parity."
+  },
+  "actualView": {
+    "run": "R3499",
+    "summary": "Summary [  65.051s] 69 tests run: 69 passed (1 slow), 0 skipped",
+    "binary": "Compiler view_product",
+    "matchSourceCases": 13,
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "executables": 1,
+    "executableDrift": 0,
+    "requirements": "task-common-seal.view-requirements.json",
+    "scope": "The complete 69-case integration binary includes actual nonempty Source bindings, changed/foreign/missing/duplicate admission rejection, fresh namespace reseal, replacement and save/restore."
+  },
+  "gates": {
+    "defaultCoreCheck": {
+      "run": "R3500",
+      "exitCode": 0,
+      "warnings": 189,
+      "allTargets": true,
+      "locked": true
+    },
+    "clippy": {
+      "run": "R3501",
+      "exitCode": 0,
+      "warnings": 3845,
+      "owners": [
+        "arcweft-core",
+        "arcweft-view",
+        "arcweft-bundle"
+      ],
+      "allTargets": true,
+      "allFeatures": true,
+      "locked": true
+    },
+    "coreDoctest": {
+      "run": "R3502",
+      "exitCode": 0,
+      "passed": 76,
+      "failed": 0,
+      "warnings": 164,
+      "allFeatures": true,
+      "locked": true
+    },
+    "inputScope": "Each gate has 3998 frozen inputs and zero source drift. These are not fresh workspace-wide checks."
+  },
+  "ownership": {
+    "graph": "task-common-seal.reverse-closure.json",
+    "metrics": "task-common-seal.metrics.json",
+    "workspacePackages": 97,
+    "transitiveReversePackages": 53,
+    "disposition": "Private cohesive seal owner, 173 and 457 LOC, no new dependency/public boundary or structural trigger. Complete owner plus actual View/Bundle consumers and the Compiler View integration are fresh. Existing broader consumer results retain their original sources; no new full-53/Tier2 acceptance is claimed."
+  },
+  "limits": "This confirms the shared seal/admission and fourteen Host descriptor boundaries. It does not claim all ten producer consumers, scheduler/adapters, all resource limits, Native public save, Tier2 or Native/Web image parity are finally accepted.",
+  "correction": "The old comments described a future atomic task/View switch even though both production builder and strict Source decoder already join the final seal. Remove that stale account instead of reintroducing a second implementation or reopening accepted Generic Match/loop/HIR/View features.",
+  "rawFreezeMap": {
+    "R3496_R3497_R3500_R3501_R3502": "task-program-fanout-runtime-r3496.source-freeze.json",
+    "R3498_R3499": "task-program-fanout-runtime-r3498.source-freeze.json",
+    "note": "Per-run audits and receipts are retained. Repeated inventories of identical source bytes are not copied again."
+  },
+  "artifacts": [
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-common-seal.metrics.json",
+      "bytes": 743,
+      "sha256": "364d46d78745c56de2c4fa0a09ea7e6d09e52b03bd7aa699326ae41795609d2a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-common-seal.owner-requirements.json",
+      "bytes": 18914,
+      "sha256": "3ac9eae3ab3010b705b6915bf5c46edf6ccfc3994df835b5c705f00199f489db"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-common-seal.reverse-closure.json",
+      "bytes": 7628,
+      "sha256": "95eb9f0b043b0b86a9d13cf842ed99ca89ea54f27dd333e2efb074053021ad77"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-common-seal.selected-requirements.json",
+      "bytes": 18224,
+      "sha256": "113aacd0d66a63eaf3808d55200ebd007d3528827605e9ede76f992bc5cd57d2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-common-seal.view-requirements.json",
+      "bytes": 2516,
+      "sha256": "275de524199614052b752aedd02afccd7fceec3e1c10fd4f1017a61c764550fa"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3496-program-fanout-awbc-check.input-audit.json",
+      "bytes": 450,
+      "sha256": "affe49728d804db33713fe48ab26c638962bd7b62c516b1ac865c8e116b92dc4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3496-program-fanout-awbc-check.json",
+      "bytes": 582,
+      "sha256": "f37d8dc25449e67cc5c97528d355f39dda0013925d2acb419383be6f401ff3e4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3496-program-fanout-awbc-check.log",
+      "bytes": 539186,
+      "sha256": "489a04d37bf1b21e9a70a235281a5b39eb425cbfbb46d4556e25dfafae3714f4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3497-program-fanout-runtime.binaries-before.json",
+      "bytes": 11394,
+      "sha256": "af6ad0c06768e168c8c0b26ac06e1c252c2814fee700ab6cf268993494164b2d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3497-program-fanout-runtime.json",
+      "bytes": 671,
+      "sha256": "207161eec6f8becff47762d84a95b25664ba8b770c7fc652d399df7382d0ae58"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3497-program-fanout-runtime.log",
+      "bytes": 868970,
+      "sha256": "6b317c70d120e4e8842c2e1b1de715e3da7f5157b050ca414c7ed19fac086560"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3497-program-fanout-runtime.terminal-audit.json",
+      "bytes": 629,
+      "sha256": "3f88a22e28873d154ef5c2045dfb1da2f9f7d6f430f2fa806da1e19ec52d1e58"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3498-program-fanout-awbc-check.input-audit.json",
+      "bytes": 402,
+      "sha256": "64cd77fadbe0bfc313a61dc0f63a4536a530607f81ccdf94544739d91c7071cf"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3498-program-fanout-awbc-check.json",
+      "bytes": 534,
+      "sha256": "82d6c7362272d707a4507438012c1197992f2b258e3fb33c7347ce5e4182cb33"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3498-program-fanout-awbc-check.log",
+      "bytes": 96008,
+      "sha256": "2f0efc05f943eefd089852fdf578301b5759ff7e0c4ad549a9a7d2476f79335e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3499-program-fanout-runtime.binaries-before.json",
+      "bytes": 220,
+      "sha256": "42bfa9006c1d730ee511effb4f3d0084f99ed0e75d3f2bda93b14ab0a67515f2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3499-program-fanout-runtime.json",
+      "bytes": 623,
+      "sha256": "7b97023c8446cf7afebc59a6b5aae142e2bd0d9b2c223a4cb507a438ddaf387b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3499-program-fanout-runtime.log",
+      "bytes": 102774,
+      "sha256": "28a6afb3cf10a411b7960f04a9c884d2ba527e29db320823a0f4e21b0701e8ab"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3499-program-fanout-runtime.terminal-audit.json",
+      "bytes": 621,
+      "sha256": "7f65abd8c69a5231e2d8225c259605616d1d7bf7d584ba0b9039836bf9421018"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3500-core-default-check.input-audit.json",
+      "bytes": 301,
+      "sha256": "610da5a41dfa26ffe317945ee18685997a7e83a5237a5e500be023c17f021394"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3500-core-default-check.json",
+      "bytes": 433,
+      "sha256": "1a45fe02cf63b0d1504b8f7289a465a819644cad304378452469b8f81c365a99"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3500-core-default-check.log",
+      "bytes": 81061,
+      "sha256": "7a6d4ec958358bfba7f133bf1faa3d66fcd4574f3590ce9dd29d14f6adc9c08c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3501-seal-owner-clippy.input-audit.json",
+      "bytes": 390,
+      "sha256": "946bd1913a69634a0ff6a1acbc015de9f2fb11fd6213dc897d4bcd32f0032c11"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3501-seal-owner-clippy.json",
+      "bytes": 522,
+      "sha256": "7d35bcbdff1a6cb05d40eb861f17f4a66e90291763ffaa513e6b0f143deab891"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3501-seal-owner-clippy.log",
+      "bytes": 3123075,
+      "sha256": "1cd7c823a10d65140b60bca0f8142f5d126d3995519bb6658112e907acdd604e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3502-sema-doctest.input-audit.json",
+      "bytes": 309,
+      "sha256": "bcd49ece811b26f8060a8983879835950126469f8bd1319fcd5f7a22243c3934"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3502-sema-doctest.json",
+      "bytes": 441,
+      "sha256": "2720bd4f7ca65a9d49ba20c548e28e0aef240924485ec221915755e5b572cc75"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3502-sema-doctest.log",
+      "bytes": 79983,
+      "sha256": "ba90416c4641169cbece310101635a9078e28738ceb3ae0cd38d722a928275bf"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3496.inventory.json",
+      "bytes": 661284,
+      "sha256": "6af9479c5467b426c8075ff6d4217b1a99fa8db7d0a94e5bdd79dd333589c8d5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3496.source-freeze.json",
+      "bytes": 781843,
+      "sha256": "f6fea673bdbdaf5e3106b6c3f5686720ed3e618693b97fcd40d987080379e2bb"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3498.inventory.json",
+      "bytes": 17017,
+      "sha256": "9db746862a3b6c3b1ae0e1d5ec08132272e33edca8f97308541e16ddc6823c9f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3498.source-freeze.json",
+      "bytes": 781910,
+      "sha256": "cb1bb5dcabe108691085024046ed766c1a69141f2c87f3bf3e52d3db80d8ba72"
+    }
+  ]
+}

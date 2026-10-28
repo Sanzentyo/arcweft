@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "261471bfc762cb8dd88c93575a8bece68ffa8ca2",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-view",
+    "-p",
+    "arcweft-bundle",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3501-seal-owner-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T03:40:30.4425255Z",
+  "finishedAt": "2026-10-28T03:41:56.9433975Z"
+}

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "base": "261471bfc762cb8dd88c93575a8bece68ffa8ca2",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3500-core-default-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T03:38:00.4492545Z",
+  "finishedAt": "2026-10-28T03:39:01.8703784Z"
+}

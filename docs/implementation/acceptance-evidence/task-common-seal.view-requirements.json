@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "run": "R3499",
+  "status": "All 13 actual original View task-binding/source/expected-key/replacement/restore cases PASS within the 69-case view_product binary",
+  "cases": [
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::admitted_view_awbc_keeps_original_source_through_owned_restore"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::admitted_view_source_reaches_entry_flow_replacement_and_inert_restore"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::complete_product_preflights_all_retained_sources_with_one_exact_allowance"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::decoded_view_source_binding_index_is_bounded_and_rejects_a_changed_product"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::decoded_view_source_reseals_exact_original_bindings_in_a_fresh_namespace"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::every_retained_semantic_field_and_original_coordinate_is_revalidated"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::retained_definitions_round_trip_and_match_only_their_original_checked_owner"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::retained_match_source_is_required_and_rejects_unknown_definition_fields"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_binding_join_rejects_missing_extra_duplicate_stale_and_foreign_coordinates"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_binding_limits_cover_all_source_bytes_and_failure_leaves_the_slot_unbound"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_source_assertions_reject_missing_duplicate_and_foreign_admissions"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_task_bindings_resolve_only_in_the_original_completed_core_plan"
+    },
+    {
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_task_key_ignores_revision_only_replacement_and_tracks_exact_match_admission"
+    }
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "catalogCaseDrift": 0,
+  "executableDrift": 0
+}

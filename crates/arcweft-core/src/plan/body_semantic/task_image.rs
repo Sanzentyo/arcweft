@@ -3,10 +3,6 @@
 
 pub(in crate::plan) mod codec;
 mod preflight;
-#[allow(
-    dead_code,
-    reason = "Private complete E14 preparation remains unexposed until the atomic task/View public switch"
-)]
 mod preparation;
 
 use crate::plan::{RuntimePlanInventory, RuntimeTaskPlanCoordinateOwner};

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "261471bfc762cb8dd88c93575a8bece68ffa8ca2",
+  "command": [
+    "test",
+    "--doc",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3502-sema-doctest.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T03:42:52.3794756Z",
+  "finishedAt": "2026-10-28T03:43:45.6268095Z"
+}

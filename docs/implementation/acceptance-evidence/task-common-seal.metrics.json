@@ -1,0 +1,26 @@
+[
+  {
+    "path": "crates/arcweft-core/src/plan/body_semantic/task_image.rs",
+    "owner": "arcweft-core",
+    "bytes": 6883,
+    "physicalLoc": 173,
+    "basePhysicalLoc": 177,
+    "growth": -4,
+    "classification": "production",
+    "fanIn": 35,
+    "fanOut": 12,
+    "sha256": "eaa5a5885bce3bf25902e3f92b124be653bad0c1b07d73f2d2a02a713901bad2"
+  },
+  {
+    "path": "crates/arcweft-core/src/plan/body_semantic/task_image/preparation.rs",
+    "owner": "arcweft-core",
+    "bytes": 18030,
+    "physicalLoc": 457,
+    "basePhysicalLoc": 454,
+    "growth": 3,
+    "classification": "production",
+    "fanIn": 35,
+    "fanOut": 12,
+    "sha256": "c7f81e14d477618335ad42326e25aad0370213bce19e6ec9aed5959297342cb0"
+  }
+]

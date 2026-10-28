@@ -1,6 +1,6 @@
 //! One borrowed preparation pass for E0..E14 and its actual F/Q/C children.
-//! Expected codec assertions never enter this pass; public sealing remains
-//! behind the final task/View ownership and codec switch.
+//! Expected codec assertions never enter this pass. Builder and strict Source
+//! decoding share its consuming seal; publication follows all task/View checks.
 
 use super::{
     RuntimeTaskPlan, RuntimeTaskPlanSealError, RuntimeTaskSemanticBinding, UnsealedRuntimePlanImage,
@@ -93,10 +93,12 @@ pub(super) struct CompletedRuntimeTaskPlanSemantics {
 }
 
 impl CompletedRuntimeTaskPlanSemantics {
+    #[cfg(test)]
     pub(super) const fn executable_bytes(&self) -> &[u8; 32] {
         self.executable.as_bytes()
     }
 
+    #[cfg(test)]
     pub(super) fn keys(
         &self,
     ) -> impl ExactSizeIterator<Item = crate::task::TaskPlanSemanticDigest> + '_ {
@@ -262,6 +264,7 @@ impl PreparedRuntimePlanSemantic<'_, '_> {
         })
     }
 
+    #[cfg(test)]
     pub(super) const fn executable_bytes(&self) -> &[u8; 32] {
         self.rows.executable.as_bytes()
     }

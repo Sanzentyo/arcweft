@@ -1,0 +1,387 @@
+[
+  {
+    "requirement": "all fourteen live/inert descriptor families",
+    "matches": [
+      {
+        "binary": "arcweft-core",
+        "test": "task::descriptor::tests::every_request_family_uses_the_same_live_inert_descriptor_and_limits"
+      }
+    ]
+  },
+  {
+    "requirement": "E14/preflight/common F-Q-C/atomic completion",
+    "matches": [
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::builder_seed_checks_original_function_and_control_namespaces"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::builder_task_rows_enter_the_actual_executable_count_before_materialization"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::closed_source_mutation_does_not_poison_an_in_progress_semantic_seal"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::complete_preparation_rejects_a_foreign_task_coordinate_without_issuing_evidence"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::completed_task_source_borrows_canonical_metadata_shared_by_distinct_rows"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::consuming_seal_completes_an_original_function_root_request_without_a_host_projection"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::consuming_seal_keeps_the_original_preparation_meter"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::consuming_seal_moves_original_definitions_into_the_only_completed_table"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::consuming_seal_rejects_wrong_assertions_without_a_published_table"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::core_completion_collects_duplicates_only_after_each_expected_key_check"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::core_completion_matches_one_expected_key_without_hashing_the_assertion"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::core_completion_never_issues_a_view_key_without_its_authority"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::empty_image_completes_all_fifteen_tables_and_the_version_one_envelope"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::every_current_producer_family_has_one_explicit_structured_binding_domain"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::expected_executable_mismatch_keeps_the_original_coordinate_unpublished"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::failed_consuming_finish_closes_source_mutation_without_issuing_a_key"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::failed_final_row_never_publishes_an_earlier_completed_coordinate"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::family_binding_rejection_precedes_missing_producer_resolution_and_poison_is_sticky"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::foreign_source_definition_poison_reaches_every_alias_and_the_original_builder"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::function_root_seed_checks_actual_function_roles_before_projection"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::function_root_seed_projects_q_inside_the_consuming_seal"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::function_root_seed_rejects_an_equal_content_foreign_function"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::line_binding_resolves_the_original_group_instead_of_accepting_a_digest_placeholder"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::original_builder_projects_request_data_without_minting_f_q_or_task_keys"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::original_builder_request_projection_bounds_work_before_source_materialization"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::original_builder_request_projection_rejects_foreign_function_and_coordinate_tokens"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::original_builder_seed_enters_the_same_image_and_consuming_seal"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::public_finish_owns_the_only_completed_table_and_executable_proof"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::reserved_task_definition_cannot_be_dropped_or_published_incomplete"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::saved_key_assertions_resolve_only_through_the_actual_issued_table"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::saved_producer_metadata_is_recovered_only_from_the_original_derivation_input"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::source_construction_capabilities_share_one_registry_and_close_at_finish"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::source_construction_retains_the_existing_thread_transfer_contract"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::source_owned_reservation_requires_an_actual_source_occurrence"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::source_owned_reservation_uses_the_actual_function_and_request"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::source_request_definitions_cannot_supply_roles_absent_from_the_original_endpoint"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::source_request_semantic_types_require_the_original_builder_type_authority"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::task_base_commits_family_class_and_binding_but_excludes_expected_codec_keys"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::task_definition_rejects_foreign_coordinates_and_duplicate_assignment_stickily"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::task_prefix_consumes_the_original_preparation_meter_at_the_exact_work_limit"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::view_authority_rejection_precedes_mismatching_expected_key_and_is_sticky"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::view_completion_checks_current_capability_before_expected_assertions"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::view_completion_rejects_unfinished_requests_and_substituted_issued_keys"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::preparation::tests::view_hash_extension_uses_the_same_exact_work_and_byte_limits"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::tests::common_preflight_children_precede_function_roles_without_hash_work"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::tests::common_preflight_view_count_precedes_known_bytes_and_accepts_exact_empty_bound"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::tests::global_function_roles_precede_request_roles_and_semantic_type_errors"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::tests::task_image_coordinate_count_precedes_expected_key_count"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::tests::task_image_moves_the_actual_inventory_and_keeps_expected_bytes_as_data"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::tests::task_preflight_counts_table_fourteen_before_any_reference_resolution"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::tests::task_request_path_children_reject_before_unknown_type_completion"
+      }
+    ]
+  },
+  {
+    "requirement": "private complete Source codecs and definitions",
+    "matches": [
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::complete_task_source_restores_original_host_request_roles_and_emits_native_completed_keys"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::prepared_task_source_borrows_wire_and_defers_identity_publication"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::prepared_task_source_carries_original_work_through_materialization"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_class_tags_are_the_same_closed_owner_grammar"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_construction::declaration_construction_checks_the_combined_handle_storage_and_original_sticky_bank_before_retention"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_construction::declaration_source_handles_supply_no_local_placement_or_control_completion_proof"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_construction::declaration_source_work_bank_moves_into_the_common_image_without_a_new_allowance"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_construction::source_declarations_enter_the_actual_builder_and_preserve_local_coordinates_and_common_seal"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_construction::source_local_and_control_handles_keep_their_actual_builder_issuer"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_construction::source_nominal_policies_and_control_definitions_reach_the_actual_builder_without_finished_proofs"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_declarations::declaration_element_limit_covers_types_and_controls_together"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_declarations::declaration_frames_cannot_retype_admitted_original_expressions"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_declarations::declaration_frames_rebuild_the_original_executable_local_placement"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_declarations::every_frame_preflights_before_type_admission_or_key_publication"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_declarations::nominal_declarations_share_the_composed_limits_and_original_executable_seal"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_declarations::nominal_source_distinguishes_codec_policy_from_diagnostic_labels_in_original_semantics"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::source_declarations::program_source_owns_local_and_control_definitions_without_an_external_inventory"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::task_source_applies_common_seal_budget_and_shape_caps_before_reconstruction"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::task_source_codec_checks_aggregate_row_storage_before_materialization"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::task_source_codec_recomputes_the_original_key_in_a_fresh_namespace"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::task_source_codec_rejects_noncanonical_frames_before_publication"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::task_source_codec_retains_zero_expected_bytes_without_issuing_a_key"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::task_source_codec_shares_the_exact_work_bank_with_the_common_seal"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::task_source_encoder_has_exact_shared_work_and_reserved_output_bounds"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::task_image::codec::tests::task_source_frame_has_one_canonical_version_one_wire_shape"
+      }
+    ]
+  },
+  {
+    "requirement": "request roles from original function and shared work",
+    "matches": [
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_capture_rows::function_root_request_rejects_an_equal_content_foreign_source_before_role_extraction"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_capture_rows::function_root_request_uses_original_formals_and_captures_and_rechecks_decoded_roles"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_capture_rows::original_builder_root_projection_matches_all_formal_and_capture_transports"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_capture_rows::request_capture_projection_work_does_not_scan_unreferenced_inputs"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_endpoints::original_coordinate_projection_uses_the_same_source_metadata_before_f_completion"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_endpoints::source_projection_rejects_foreign_namespaces_before_work_or_allocation"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_endpoints::source_projection_requires_one_exact_original_endpoint"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_endpoints::thread_and_both_await_many_endpoints_use_their_own_request_definition"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_template_codec::all_host_argument_transports_round_trip_and_reissue_only_the_original_q"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_template_codec::decoded_request_cannot_forge_any_original_argument_or_field_component"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_template_codec::decoded_request_definition_recomputes_q_under_the_actual_f_endpoint"
+      },
+      {
+        "binary": "arcweft-core",
+        "test": "plan::body_semantic::tests::request_template_codec::decoded_request_has_exact_shared_work_and_bytes_without_refreshing_allowance"
+      }
+    ]
+  },
+  {
+    "requirement": "public read-only View capability prefix",
+    "matches": [
+      {
+        "binary": "arcweft-core::task_plan_view_prefix",
+        "test": "upper_authority_has_public_read_only_access_to_the_complete_core_prefix"
+      }
+    ]
+  }
+]

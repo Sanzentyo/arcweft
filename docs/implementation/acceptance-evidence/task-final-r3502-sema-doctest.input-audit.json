@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3502-sema-doctest",
+  "actualExitCode": 0,
+  "scope": [
+    "test",
+    "--doc",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T03:43:46.3598926Z"
+}

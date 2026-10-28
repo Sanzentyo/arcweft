@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "261471bfc762cb8dd88c93575a8bece68ffa8ca2",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-view",
+    "-p",
+    "arcweft-bundle",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3496-program-fanout-awbc-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T03:21:34.4157359Z",
+  "finishedAt": "2026-10-28T03:27:36.6591926Z"
+}
