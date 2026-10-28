@@ -13095,3 +13095,33 @@ R3452の18PASS/4FAIL、診断trace付きR3454の実際の失敗、R3456の19PASS
 全25逆依存・workspace・Native/Web描画parityはこのcutでは未実行。
 Spacingの既存compiler拒否も解消したとは主張しない。Generic Matchその他の受入済み機能は完了を維持する。
 [現世代の入力freeze・実測・所有境界](acceptance-evidence/task-view-body-lowering-stage.json)。
+## View子ブロックの広域検証、引数文法の修復、現状一覧の更新 -- 2026-10-28
+
+公開source 0cebe15a4cf6a09504d7541202a5b5f90e8fad62でR3462全25逆依存を実行。
+5,650実行／5,603PASS／47FAIL／31ignored、1,022.654秒、3,998入力／124EXE、
+source・catalog・終端・EXE差分0。R3425の失敗45識別子すべてを保持し、追加2件を検出した。
+通常Call引数がViewValue文法を継承しRow recordを子ブロックと誤認する退行と、
+未知のconstructor名の意味的拒否を構文回復と見なしていたCLI fixtureである。
+
+Source 202e8cfa58c17693920c4b6a68254011d4bd194cで、Call引数ownerがすべての供給形式に
+Ordinary文法を選び、外側のView文脈へ復帰するよう修復した。固有名の例外は追加しない。
+回復fixtureには実際に閉じ括弧がないpart Callと現行Flow headerを与え、元の
+diagnostic／recovery／export 0件／product拒否の全assertionを維持した。
+初期構文cutで「通常引数は既に隔離した」とした想定を、この実測と修復で訂正する。
+
+R3464は全730 Syntax libraryと関連caseを合わせて754/754PASS（31.386秒、5package／6EXE）。
+既存nested View統合testの4形式、runtime引数・default・alias・codec条件も保持した。
+R3465通常featureのworkspace全target checkはexit0／warning268件。
+R3466全featureのworkspace全target Clippyはexit0／warning8,688件。
+R3467構造gateは97package／3,236file／Rust3,106file／1,761,710LOC、382review trigger、blocking0。
+R3468の5所有者doctestは4PASS／失敗0。いずれも3,998入力の差分0。
+R3462の成功caseはその世代の証拠として保持し、修復後の全25再実行や仮の全件PASSへ合算しない。
+
+公開した202e8cfa58c17693920c4b6a68254011d4bd194cから、先行CLI失敗45件をR3470で限定再実行。
+0PASS／45FAIL、同じ識別子集合、source／catalog／EXE差分0。CLI全691件の再実行とはしない。
+現在一覧の「R3425が最新」「全25とworkspace検証待ち」と重複した子ブロック説明を削除・更新した。
+根拠は上記の新しい実測であり、過去の件数・失敗・SHA・raw結果は変更しない。
+子ブロック修復の受入は独立の境界として記録し、全体ViewやCLIの未達を理由に
+Generic Match、loop、callable-owner認証、nested Character projectionを未完了へ戻さない。
+[広域失敗・修復・gate原本](acceptance-evidence/task-view-body-reverse-acceptance.json)、
+[現在のCLI限定実測](acceptance-evidence/task-cli-failures-after-view-body-arguments.json)。
