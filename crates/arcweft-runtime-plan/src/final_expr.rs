@@ -27,7 +27,8 @@ use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_sema::callable::{CheckedFmtFailurePolicy, FmtParameterId};
 use arcweft_lang_sema::final_analysis::{
-    CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseSite, CheckedSyntheticUseOwner,
+    CheckedFieldReceiver, CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseSite,
+    CheckedSyntheticUseOwner,
 };
 
 use crate::agent::RuntimeAgentIntrinsic;
@@ -3122,35 +3123,84 @@ impl<'hir> FinalExprLowerer<'hir> {
         let target = if let Some(access) = self.semantic_facts.checked_local_place_access(id)
             && access.mode() == CheckedLocalPlaceMode::Inspect
         {
-            let place = access.place();
-            let local = self.local(place.local())?;
-            let place = if place.fields().is_empty() {
-                RuntimeMutablePlaceSeed::Local(local)
-            } else {
-                RuntimeMutablePlaceSeed::Fields {
-                    base: local,
-                    fields: place
-                        .fields()
-                        .iter()
-                        .map(|field| {
-                            field
-                                .runtime_field()
-                                .map(|field| {
-                                    RuntimeRecordFieldSeedId::from_zero_based(field.zero_based())
-                                })
-                                .ok_or_else(|| {
-                                    "field inspection lacks an admitted storage coordinate"
-                                        .to_owned()
-                                })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?
-                        .into_boxed_slice(),
-                }
-            };
-            arcweft_core::plan::RuntimeFieldTargetSeed::Inspect(place)
+            let receiver = self
+                .select(id)
+                .and_then(RuntimeResolvedSelect::receiver)
+                .ok_or_else(|| format!("field inspection {id:?} lacks its checked receiver"))?;
+            self.lower_inspection_receiver(id, receiver, access.place())?
         } else {
             Box::new(self.lower(target_id)?).into()
         };
+        self.lower_field_projection(id, target)
+    }
+
+    /// The local-use event observes one stored prefix. Any remaining checked
+    /// field receivers are evaluated in order; only their selected Copy values
+    /// are materialized. An opaque projection is never a writable stored field.
+    fn lower_inspection_receiver(
+        &self,
+        owner: ExprId,
+        mut receiver: CheckedFieldReceiver,
+        place: &arcweft_lang_sema::final_analysis::CheckedPlace,
+    ) -> Result<arcweft_core::plan::RuntimeFieldTargetSeed, String> {
+        let mut projections = Vec::new();
+        loop {
+            let expression = match receiver {
+                CheckedFieldReceiver::Binding(local)
+                    if RuntimeResolvedPlace::Local(local).matches_checked(place) =>
+                {
+                    break;
+                }
+                CheckedFieldReceiver::Binding(_) => {
+                    return Err(format!(
+                        "field inspection {owner:?} disagrees with its checked receiver place"
+                    ));
+                }
+                CheckedFieldReceiver::Expression(expression) => expression,
+            };
+            let source = match self.value(expression) {
+                Some(RuntimeResolvedValue::Local(local)) => {
+                    Some(RuntimeResolvedPlace::Local(*local))
+                }
+                Some(RuntimeResolvedValue::Place(place)) => Some(place.clone()),
+                _ => None,
+            };
+            if source
+                .as_ref()
+                .is_some_and(|source| source.matches_checked(place))
+            {
+                break;
+            }
+            receiver = self
+                .select(expression)
+                .and_then(RuntimeResolvedSelect::receiver)
+                .ok_or_else(|| {
+                    format!(
+                        "field inspection {owner:?} lacks an admitted receiver at {expression:?}"
+                    )
+                })?;
+            projections.push(expression);
+        }
+        let stored = RuntimeResolvedPlace::try_from_checked(place)
+            .ok_or_else(|| "field inspection lacks an admitted storage coordinate".to_owned())?;
+        let mut target = arcweft_core::plan::RuntimeFieldTargetSeed::Inspect(
+            self.checked_place_seed(owner, &stored, CheckedLocalPlaceMode::Inspect)?,
+        );
+        for expression in projections.into_iter().rev() {
+            let projection = RuntimeExprSeed::new(
+                self.expression_type(expression)?,
+                self.lower_field_projection(expression, target)?,
+            );
+            target = Box::new(projection).into();
+        }
+        Ok(target)
+    }
+
+    fn lower_field_projection(
+        &self,
+        id: ExprId,
+        target: arcweft_core::plan::RuntimeFieldTargetSeed,
+    ) -> Result<RuntimeExprSeedKind, String> {
         match self
             .select(id)
             .ok_or_else(|| format!("checked member fact is missing for expression {id:?}"))?
@@ -3158,15 +3208,15 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedSelect::Method => Err(format!(
                 "bound method at {id:?} cannot execute outside its checked Call"
             )),
-            RuntimeResolvedSelect::AgentField { field } => Ok(RuntimeExprSeedKind::Field {
+            RuntimeResolvedSelect::AgentField { field, .. } => Ok(RuntimeExprSeedKind::Field {
                 target,
                 field: RuntimeFieldProjectionSeed::Agent(*field),
             }),
-            RuntimeResolvedSelect::ProgressField { field } => Ok(RuntimeExprSeedKind::Field {
+            RuntimeResolvedSelect::ProgressField { field, .. } => Ok(RuntimeExprSeedKind::Field {
                 target,
                 field: RuntimeFieldProjectionSeed::Progress(*field),
             }),
-            RuntimeResolvedSelect::Field { owner, field } => Ok(RuntimeExprSeedKind::Field {
+            RuntimeResolvedSelect::Field { owner, field, .. } => Ok(RuntimeExprSeedKind::Field {
                 target,
                 field: RuntimeFieldProjectionSeed::Nominal {
                     owner: *owner,
@@ -3178,6 +3228,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 producer,
                 field,
                 field_type,
+                ..
             } => Ok(RuntimeExprSeedKind::Field {
                 target,
                 field: RuntimeFieldProjectionSeed::OpaqueRecord {

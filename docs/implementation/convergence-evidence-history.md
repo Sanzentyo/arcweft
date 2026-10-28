@@ -13201,3 +13201,16 @@ R3509 workspace全target／全feature checkは終了0・268警告。R3510の同�
 | 今回の変更ownerのgate | **R3500通常feature check／R3501全feature Clippy：終了0、R3502 Core doctest：76／76 PASS** | Coreの全target checkは189警告、Core／View／Bundleの全target Clippyは3,845警告、Core doctestは164警告。locked、各3,998入力差分0。privateな抑制・test用getter・説明だけの変更で、アルゴリズム／public API／codec／依存方向／work・budgetは不変。以前のworkspace・全53逆依存の結果は元入力の証拠として保持し、今回の全workspace／Tier 2実行とは扱わない。[現物metrics・選定根拠](acceptance-evidence/task-common-seal-acceptance.json)。 |
 
 [最終受入・全件原本・比較元](acceptance-evidence/task-view-spacing-acceptance.json)、[実装checkpoint・初回失敗](acceptance-evidence/task-view-spacing-owner-checkpoint.json)、[公開full SHA・tree・blob](acceptance-evidence/task-view-spacing-source-publication.json)。唯一の現状一覧は[current-status.md](current-status.md)。
+
+
+## DialogueViewの同期観測とchecked receiverの修復 — 2026-10-28
+
+確認したmainは 69db789809bf1af1021a2b91ad32997c0aea129b。元のtracked WIP14件・untracked実ファイル6件を保持したdirty checkout。
+
+R3515で表示名と本文を一つのDialogueViewから読むと二つ目がUnavailableになることを再現した。全体goalの未達からの再列挙ではなく、この具体的な新規不具合を修復した。fieldのreceiverをversion 1のsemantic fact／transcriptからRuntimePlanまで保持し、Compiler独自のHIR root探索を削除した。Inspectを同期観測として扱い、pure-program admissionとhandler transitionが共通のwrites判定を使う。opaqueの中間fieldを飛ばすloweringもchecked receiver chainで修復した。
+
+Core R3527は重点4/4 PASS。Compiler View R3535は全72/72 PASS、Sema R3538はlibrary全1,337/1,337 PASS、RuntimePlan R3540はlibrary全131/131 PASS。元入力のMove後拒否、affine型引数・affine実値のCopy拒否、実AWFB往復・純粋関数を通す表示名・本文・action routingのassertionを維持した。R3536構造gateは97package・382review trigger・blocking0。各catalog／終端と3,999入力の差分0。
+
+R3516のOS1455ページング不足、R3520/R3524の3失敗、R3525のテスト型エラー、R3529の中間receiver不一致、R3530のExprId参照型エラー、R3532のhandler誤分類と、その後の修復結果は原本を保持した。以前のSema R3522の1,336件は当時の入力に限り、今回の1,337件へ合算しない。
+
+[owner checkpointと全原本](acceptance-evidence/task-dialogue-projection-owner-checkpoint.json)。このcutは重点ownerの検証を満たす中間公開であり、53package逆依存・workspace check/Clippyの最終受入は続行する。受入済みGeneric Matchや個別View境界を未完了へ戻さない。wait(Duration)のlowering欠落とDuration literalの文脈不足はR3514/R3515の個別再現として残し、CLI全43失敗が解消したとは扱わない。

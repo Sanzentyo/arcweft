@@ -20,6 +20,122 @@ use crate::step::{RuntimeStepInput, RuntimeStepOptions};
 use crate::value::{RuntimeFieldTarget, RuntimeLocalReadMode, RuntimeNominalRecordValue};
 use std::sync::Arc;
 
+fn opaque_inspection_fixture() -> (RuntimePlanBuilder, RuntimeLocalSeedId) {
+    use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId};
+    use crate::value::{RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
+    let opaque = |marker, arguments: Vec<_>, class| {
+        RuntimePlanTypeSeed::new(
+            identity(marker),
+            RuntimePlanTypeProjection::Opaque {
+                producer: RuntimeOpaqueTypeProducerId::try_new(if marker == 8 {
+                    "fixture.inspection.root"
+                } else {
+                    "fixture.inspection.child"
+                })
+                .unwrap(),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: class,
+                persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: arguments.into_boxed_slice(),
+            },
+        )
+    };
+    let mut builder = RuntimePlanBuilder::new();
+    let admitted = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::Need(identity(1))),
+                opaque(3, vec![identity(1)], RuntimeOpaqueValueClass::Plain),
+                opaque(4, vec![identity(2)], RuntimeOpaqueValueClass::Plain),
+                opaque(
+                    5,
+                    vec![],
+                    RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+                ),
+                opaque(8, vec![], RuntimeOpaqueValueClass::Plain),
+            ],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_source("fixture.inspection.root"),
+                identity(8),
+            )],
+        )
+        .unwrap();
+    (builder, admitted.local_ids()[0].clone())
+}
+
+#[test]
+fn opaque_field_inspection_keeps_the_bytecode_copy_argument_contract() {
+    use crate::pattern::RuntimeOpaqueTypeProducerId;
+    let (builder, local) = opaque_inspection_fixture();
+    for (result, copy) in [(3, true), (4, false), (5, false)] {
+        let expression = builder.lower_expression(RuntimeExprSeed::new(
+            identity(result),
+            RuntimeExprSeedKind::Field {
+                target: crate::plan::RuntimeFieldTargetSeed::Inspect(
+                    RuntimeMutablePlaceSeed::Local(local.clone()),
+                ),
+                field: RuntimeFieldProjectionSeed::OpaqueRecord {
+                    owner: identity(8),
+                    producer: RuntimeOpaqueTypeProducerId::try_new("fixture.inspection.root")
+                        .unwrap(),
+                    field: RuntimeRecordFieldSeedId::from_zero_based(0),
+                    field_type: identity(result),
+                },
+            },
+        ));
+        if copy {
+            expression.expect("Plain result with Copy arguments is admitted");
+        } else {
+            assert_eq!(
+                expression,
+                Err(RuntimePlanBuildError::InvalidTypeProjection {
+                    context: "Copy field inspection result",
+                    ty: builder
+                        .resolve_seed_type("result", identity(result))
+                        .unwrap(),
+                })
+            );
+        }
+    }
+}
+
+#[test]
+fn opaque_field_inspection_still_rejects_an_affine_live_payload() {
+    use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId};
+    use crate::value::{RuntimeEvalError, RuntimeOpaqueValue};
+    let owner = |name, marker| {
+        RuntimeOpaqueTypeOwner::exact(
+            RuntimeOpaqueTypeProducerId::try_new(name).unwrap(),
+            identity(marker),
+        )
+    };
+    let root = owner("fixture.inspection.root", 8);
+    let child = owner("fixture.inspection.child", 3);
+    let (_registry, need) = crate::tests::pending_string_need(identity(1));
+    let selected = RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
+        &child,
+        RuntimeValue::NeedHandle(need),
+    ));
+    let value = RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
+        &root,
+        RuntimeValue::Tuple(vec![selected]),
+    ));
+    let field = RuntimeFieldProjection::OpaqueRecord {
+        owner: root,
+        field: RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+    };
+    assert!(!value.ownership().permits_copy());
+    assert_eq!(
+        field.inspect(&value),
+        Err(RuntimeEvalError::AffineFieldCopy)
+    );
+    assert!(
+        !value.ownership().permits_copy(),
+        "the original Need remains owned by its source"
+    );
+}
+
 fn identity(marker: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([marker; 32])
 }

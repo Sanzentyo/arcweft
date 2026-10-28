@@ -96,6 +96,13 @@ String 以外の結果を文字列へ暗黙変換しない。Dialogue の型付�
 projection を保つ。affine な入力・結果は resource owner の接続が必要であり、
 copy として複製しない。
 
+登録済みの Dialogue View projection は、その受理済み field と receiver を同じ
+semantic fact に保持する。表示名・本文などの同期的な観測は入力を移動せず、
+同じ DialogueView から複数の表示や操作を構築できる。receiver の由来は checked
+field graph から取得し、source の綴りや別の HIR 探索で再構築しない。
+この観測は入力全体への Copy 権限を与えず、通常の Move 後の参照は拒否する。
+投影値の保持・capture は元の型と runtime admission の検査を引き続き受ける。
+
 通常の block 内の `let` は派生値であり、retained な `local state` と区別する。
 pattern の実行と型付き出力は Core の checked binding program が所有する。
 View は program identity と canonical output ordinal で local を識別し、parameter の

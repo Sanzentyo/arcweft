@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "run": "task-final-r3539-dialogue-projection-runtime-plan-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-runtime-plan",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T05:54:56.7297784Z"
+}

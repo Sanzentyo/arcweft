@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "executableSha256": "05574f5ddd96f685e2aae10e2a939dbd9cad6dd4bc3f83a231ebfa01e8c9ff73",
+  "variants": [
+    {
+      "name": "plain",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3512-plain.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 58, kind: Expr }) has no admissible final type",
+      "children": null
+    },
+    {
+      "name": "view",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3512-view.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 59, kind: Expr }) has no admissible final type",
+      "children": null
+    },
+    {
+      "name": "styles",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3512-styles.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "semantic value resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 48, kind: Expr })",
+      "children": null
+    },
+    {
+      "name": "ruby",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3512-ruby.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 61, kind: Expr }) has no admissible final type",
+      "children": null
+    },
+    {
+      "name": "no_mark_handler",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3512-no_mark_handler.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "semantic value resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 48, kind: Expr })",
+      "children": null
+    },
+    {
+      "name": "no_thread",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3512-no_thread.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "semantic value resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 48, kind: Expr })",
+      "children": null
+    }
+  ]
+}

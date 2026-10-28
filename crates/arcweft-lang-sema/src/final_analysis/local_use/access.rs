@@ -8,8 +8,19 @@ use crate::final_analysis::CheckedPlace;
 pub enum CheckedLocalPlaceMode {
     Assign,
     Mutate,
-    /// Synchronous field inspection produces a proven Copy value without transferring its owner.
+    /// Synchronous field observation keeps its receiver; the admitted field
+    /// schema owns the projected value and its runtime admission.
     Inspect,
+}
+
+impl CheckedLocalPlaceMode {
+    /// Whether this access changes the selected place rather than observing it.
+    pub const fn writes(self) -> bool {
+        match self {
+            Self::Assign | Self::Mutate => true,
+            Self::Inspect => false,
+        }
+    }
 }
 
 /// Initialization at the write boundary, after the RHS has executed.

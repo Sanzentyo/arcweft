@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "run": "task-final-r3532-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.402s] 3 tests run: 2 passed, 1 failed, 69 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 3,
+  "passed": 2,
+  "failed": 1,
+  "skipped": 69,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflation"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-28T05:48:11.8600487Z"
+}

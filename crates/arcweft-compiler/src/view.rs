@@ -47,8 +47,8 @@ use arcweft_lang_sema::{
     dialogue_view::{DialogueCharacterProjection, DialogueProjectionCoordinate},
     final_analysis::{
         CheckedBindingRole, CheckedExpressionResolution, CheckedFxBindingDecision,
-        CheckedSelectResolution, CheckedValueResolution, CheckedViewCall, CheckedViewFxApplication,
-        CheckedViewFxBinding, CheckedViewValueProgram, FinalSemanticAnalysis,
+        CheckedSelectResolution, CheckedViewCall, CheckedViewFxApplication, CheckedViewFxBinding,
+        CheckedViewValueProgram, FinalSemanticAnalysis,
     },
     registration::RegisteredSemanticWorld,
     types::TypeKind,
@@ -2535,10 +2535,12 @@ impl AuthoredViewBodyLowerer<'_> {
         let transition = handler_value_role == arcweft_view::ViewHandlerTransitionValueRole::Unit
             || input_abi.inputs().iter().any(|input| {
                 input.role() == &arcweft_lang_sema::final_analysis::CheckedExecutionInputRole::Free
-                    && input
-                        .uses()
-                        .iter()
-                        .any(|usage| usage.access().place_access().is_some())
+                    && input.uses().iter().any(|usage| {
+                        usage
+                            .access()
+                            .place_access()
+                            .is_some_and(|access| access.mode().writes())
+                    })
             });
         let source = if transition {
             arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportMutation(
@@ -2815,36 +2817,10 @@ impl AuthoredViewBodyLowerer<'_> {
                 projection,
                 ..
             }) => {
-                let select = self
-                    .module
-                    .resolve_expr(value)
-                    .ok()
-                    .and_then(|expr| match expr.kind() {
-                        arcweft_lang_hir::expr::HirExprKind::Select(select) => Some(select),
-                        _ => None,
-                    })
+                let target = self
+                    .analysis
+                    .local_inspection_root(value)
                     .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
-                let target = match projection {
-                    DialogueProjectionCoordinate::Character(_) => self
-                        .module
-                        .resolve_expr(select.target())
-                        .ok()
-                        .and_then(|expression| match expression.kind() {
-                            arcweft_lang_hir::expr::HirExprKind::Select(character) => {
-                                Some(character.target())
-                            }
-                            _ => None,
-                        }),
-                    _ => Some(select.target()),
-                }
-                .and_then(|target| self.analysis.expression(target))
-                .and_then(|checked| match checked.resolution() {
-                    CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
-                        Some(*local)
-                    }
-                    _ => None,
-                })
-                .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
                 let parameter = self
                     .parameters
                     .get(&target)

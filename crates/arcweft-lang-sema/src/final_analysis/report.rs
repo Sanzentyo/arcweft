@@ -2542,6 +2542,16 @@ impl FinalSemanticAnalysis {
         self.expressions.get(&owner)
     }
 
+    /// Local receiver observed by an admitted, synchronous field projection.
+    /// This follows checked fields, including environment records, without
+    /// granting Copy or a mutable runtime place to the receiver.
+    pub fn local_inspection_root(&self, owner: ExprId) -> Option<LocalId> {
+        self.expression(owner)?.inspection_root(|child| {
+            self.expression(child)
+                .and_then(CheckedExpression::local_place_source)
+        })
+    }
+
     pub fn expression_origin(
         &self,
         owner: ExprId,

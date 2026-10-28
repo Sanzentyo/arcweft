@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "executable": "D:/git/arcweft/target/debug/arcw.exe",
+  "executableSha256": "05574f5ddd96f685e2aae10e2a939dbd9cad6dd4bc3f83a231ebfa01e8c9ff73",
+  "arguments": [
+    "plan",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-contract-r3511.arcw",
+    "--json"
+  ],
+  "exitCode": 1,
+  "sourceSha256": "66201c949c2fd4bda22792f7b918ee538eceb5e987f98fda482807cf1da8fb0c"
+}

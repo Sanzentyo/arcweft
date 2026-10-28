@@ -9,6 +9,49 @@ use crate::types::TypeKind;
 use super::{analyze, character_nominal_fixture, fixture};
 
 #[test]
+fn registered_dialogue_observations_preserve_the_same_input_owner() {
+    use crate::final_analysis::{CheckedExpressionResolution, CheckedSelectResolution};
+    let source = "view Main(dialogue: DialogueView) {\n\
+        Text(dialogue.character.display_name)\n\
+        RichText(dialogue.content)\n\
+        Text(dialogue.character.display_name)\n\
+        RichText(dialogue.content)\n}";
+    let report = analyze(&fixture(source, None)).expect("registered fields observe one View input");
+    let roots = report
+        .expressions()
+        .filter_map(|(owner, fact)| {
+            matches!(
+                fact.resolution(),
+                CheckedExpressionResolution::Select(CheckedSelectResolution::DialogueView { .. })
+            )
+            .then(|| {
+                report
+                    .local_inspection_root(owner)
+                    .expect("checked local receiver")
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(roots.len(), 4);
+    assert!(roots.iter().all(|root| *root == roots[0]));
+}
+
+#[test]
+fn dialogue_observation_does_not_grant_copy_to_a_moved_input() {
+    let source = "view Main(dialogue: DialogueView) {\n\
+        let taken = dialogue\n\
+        Text(dialogue.character.display_name)\n}";
+    assert!(
+        matches!(
+            analyze(&fixture(source, None)),
+            Err(FinalSemanticAnalysisError::LocalUse(
+                CheckedLocalUseError::Unavailable { .. }
+            ))
+        ),
+        "a synchronous observation cannot resurrect its moved receiver"
+    );
+}
+
+#[test]
 fn pending_observers_complete_before_the_enclosing_context_call() {
     use crate::final_analysis::CheckedExpressionResolution;
 

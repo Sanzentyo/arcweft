@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "view_product",
+    "-E",
+    "test(compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflation) | test(handler_capture_abi_uses_canonical_inputs_instead_of_first_use_order) | test(handler_local_captures_use_core_inputs_and_revoke_changed_or_restored_routes)",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3524-program-fanout-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-28T05:25:05.7272805Z",
+  "finishedAt": "2026-10-28T05:25:07.6214277Z"
+}

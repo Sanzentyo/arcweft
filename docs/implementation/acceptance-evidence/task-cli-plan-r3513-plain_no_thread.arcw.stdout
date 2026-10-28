@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "status": "denied",
+  "stage": "type-check",
+  "diagnostics": [
+    {
+      "module": null,
+      "stage": "type-check",
+      "diagnostic": {
+        "severity": "error",
+        "code": "sema.final_analysis",
+        "message": "local LocalId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 5, kind: Local }) is unavailable at Expression(ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 21, kind: Expr }))",
+        "span": null,
+        "labels": [],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    }
+  ]
+}

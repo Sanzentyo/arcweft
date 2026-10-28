@@ -1,0 +1,253 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "workingTree": "dirty; own source paths19 plus original tracked WIP14 and untracked files6",
+  "metrics": [
+    {
+      "path": "crates/arcweft-compiler/src/lower.rs",
+      "owner": "arcweft-compiler",
+      "classification": "production",
+      "bytes": 435102,
+      "physicalLoc": 10233,
+      "basePhysicalLoc": 10205,
+      "growth": 28,
+      "fanIn": 5,
+      "fanOut": 39,
+      "sha256": "06f03bab4a832be4955910381fe67f4895d6aa091250d215fb2d5967a29f6caf"
+    },
+    {
+      "path": "crates/arcweft-compiler/src/view.rs",
+      "owner": "arcweft-compiler",
+      "classification": "production",
+      "bytes": 118787,
+      "physicalLoc": 2951,
+      "basePhysicalLoc": 2975,
+      "growth": -24,
+      "fanIn": 5,
+      "fanOut": 39,
+      "sha256": "8324e13aeae254ea5281bba546a1dc2eec69255bedace5b82ad96ed1c277acf9"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/view_product.rs",
+      "owner": "arcweft-compiler",
+      "classification": "test",
+      "bytes": 238172,
+      "physicalLoc": 6160,
+      "basePhysicalLoc": 6139,
+      "growth": 21,
+      "fanIn": 5,
+      "fanOut": 39,
+      "sha256": "765d1648569058d379f7decbdeb357becef17c613657d51e538abf53877976d6"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "bytes": 260255,
+      "physicalLoc": 6104,
+      "basePhysicalLoc": 6099,
+      "growth": 5,
+      "fanIn": 35,
+      "fanOut": 21,
+      "sha256": "dae16273fd071edd3d7291aae6bc75659a6924c9ed9bfc5acb8b4c45a8ed62f7"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower/field_tests.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "bytes": 38723,
+      "physicalLoc": 1008,
+      "basePhysicalLoc": 892,
+      "growth": 116,
+      "fanIn": 35,
+      "fanOut": 21,
+      "sha256": "3caad5dc2d4b6213d2e87e6e23dfb7bb2a7cdd30d741d73a3d25de515501ae7e"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 243480,
+      "physicalLoc": 5695,
+      "basePhysicalLoc": 5694,
+      "growth": 1,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "eb954e26c098370213799cb4651103dc72d76409c45fe4f2be2b5972f60658a1"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/deterministic_program.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 11813,
+      "physicalLoc": 280,
+      "basePhysicalLoc": 278,
+      "growth": 2,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "78d843d7ab660544084b6db8c858ab0382f5f7b42dbf50717ce5010f9d8f20db"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/execution_inputs.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 43654,
+      "physicalLoc": 990,
+      "basePhysicalLoc": 989,
+      "growth": 1,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "8b881028e896d8230a90707480ac63ab51c9ef65d5bfde8913c326f070e9921d"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 138677,
+      "physicalLoc": 3599,
+      "basePhysicalLoc": 3603,
+      "growth": -4,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "1eed56a49d641bb99aa06f3627dffbb91da84a87bfdfdfe091afb144b36df1e5"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/access.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 4453,
+      "physicalLoc": 146,
+      "basePhysicalLoc": 135,
+      "growth": 11,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "c49ca86fb4be4264850019c89701d50c04fce40c094121e2e0137ec84e5fcec7"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 114515,
+      "physicalLoc": 3414,
+      "basePhysicalLoc": 3411,
+      "growth": 3,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "b6323513d3a9d56ab0e10d895324296ed6f5e56df7ac5a91e9179aff8ced5a61"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 118455,
+      "physicalLoc": 2946,
+      "basePhysicalLoc": 2936,
+      "growth": 10,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "8d1b3b8324eb4ccf25151790611885a256ea94626c3a480f6feef7526d2e5101"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 195253,
+      "physicalLoc": 4777,
+      "basePhysicalLoc": 4769,
+      "growth": 8,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "0fc75de58d513c8f4e871023a0249fd0b9128f0bd8136c7336069b316bf8ccd1"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/execution_inputs.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "test",
+      "bytes": 65127,
+      "physicalLoc": 1826,
+      "basePhysicalLoc": 1782,
+      "growth": 44,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "642eef593ef541ab57935b081690653073988d964e30de89ea62eb9ce4f2be08"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "test",
+      "bytes": 72899,
+      "physicalLoc": 2233,
+      "basePhysicalLoc": 2190,
+      "growth": 43,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "cb4eaf474333fd93ae04e23552e564ab0abed8f7cb6b7a6943fa030b8955bf50"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 142754,
+      "physicalLoc": 3367,
+      "basePhysicalLoc": 3362,
+      "growth": 5,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "7c21bc66facc1238ffbb1ce2deee949b8d0685bea1171921503ae7b40b604d9e"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+      "owner": "arcweft-runtime-plan",
+      "classification": "production",
+      "bytes": 150146,
+      "physicalLoc": 3676,
+      "basePhysicalLoc": 3625,
+      "growth": 51,
+      "fanIn": 10,
+      "fanOut": 15,
+      "sha256": "2ea2bacc3e60bc58a4e528603d388c6d56e2384f8549839401eb219baac18a9a"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "owner": "arcweft-runtime-plan",
+      "classification": "production",
+      "bytes": 596348,
+      "physicalLoc": 15252,
+      "basePhysicalLoc": 15220,
+      "growth": 32,
+      "fanIn": 10,
+      "fanOut": 15,
+      "sha256": "baffaee347c1934be86936465970f23a2711e58bc8c64cbf1b2ab6479ffaff6a"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests.rs",
+      "owner": "arcweft-runtime-plan",
+      "classification": "test",
+      "bytes": 166074,
+      "physicalLoc": 4533,
+      "basePhysicalLoc": 4505,
+      "growth": 28,
+      "fanIn": 10,
+      "fanOut": 15,
+      "sha256": "a5261a266aede39dae69047d79e0fc26b963bf746c88794043d37ab892b0b33b"
+    }
+  ],
+  "ownershipReview": [
+    {
+      "owner": "arcweft-lang-sema::final_analysis",
+      "responsibility": "The checked receiver graph and local-use transaction own synchronous observation, root availability, and pure-program free-input effects. The public local_inspection_root query exposes that existing authority to the Compiler and deletes its independent HIR traversal. writes classifies the closed place access algebra; Inspect remains read-only, Assign/Mutate retain all rejection gates. Receiver identity participates in validation and transcript version1. Existing large files remain cohesive frame/checked-fact owners without another state cluster, I/O, dependency edge, or physical-split-only API."
+    },
+    {
+      "owner": "arcweft-compiler::view",
+      "responsibility": "Consume the checked local receiver query for native View projections. Integration tests follow the View product -> codec -> AWFB -> runtime -> handler admission/revocation owner, adding repeated display/content and normal pure-function projection without relaxing original assertions."
+    },
+    {
+      "owner": "arcweft-core::plan::construction::lower",
+      "responsibility": "Admit Copy field results with the same Plain opaque/type-argument rule as the existing AWBC verifier. Affine classes, affine arguments, function/Need carriers stay rejected. RuntimeFieldProjection inspects live child ownership before cloning. Focused construction and live affine-payload tests follow this admission boundary; no widened mutable-place API, alternate bytecode, codec, or budget."
+    },
+    {
+      "owner": "arcweft-runtime-plan::semantic_facts and final_expr",
+      "responsibility": "RuntimeResolvedSelect retains the Sema-owned receiver for every field family. Validation requires each expression receiver to be its exact child, rejecting cycles and unrelated sources before projection. The lowerer consumes this typed chain from the admitted stored prefix, materializing only selected Copy intermediate results through the unchanged Core/AWBC admission and runtime ownership guard. Opaque fields are not inserted into writable places; physical nominal prefixes preserve their original storage path. No HIR receiver walk, side catalog, graph edge, budget, capture, or wire version is added. The existing large semantic validation and closed expression lowering modules keep their separate admission/projection responsibilities."
+    }
+  ]
+}

@@ -2636,7 +2636,15 @@ fn write_resolution_payload(
                         }
                     }
                 }
-                CheckedSelectResolution::DialogueView { projection, field } => {
+                CheckedSelectResolution::DialogueView {
+                    projection,
+                    field,
+                    receiver,
+                } => {
+                    write_bytes(
+                        hasher,
+                        &coordinates.expression(*receiver)?.canonical_bytes()?,
+                    )?;
                     transcript_update!(hasher, &[projection.semantic_tag()]);
                     write_field_selection(hasher, field)?;
                 }

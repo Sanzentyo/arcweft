@@ -1,0 +1,4 @@
+flow main(delay: Duration) -> Unit {
+wait(delay)
+return ()
+}

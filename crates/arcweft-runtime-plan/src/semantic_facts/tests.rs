@@ -1308,6 +1308,7 @@ fn assignment_fact_fixture(
         RuntimeResolvedSelect::Field {
             owner: identity,
             field: runtime_field,
+            receiver: arcweft_lang_sema::final_analysis::CheckedFieldReceiver::Expression(base),
         },
     );
     let document = Arc::clone(module.provenance().document());
@@ -1512,6 +1513,33 @@ fn local_declarations_use_one_complete_contiguous_canonical_projection() {
         );
         assert_eq!(ty, &unit_type());
         assert_eq!(facts.local_type(owner), Some(&unit_type()));
+    }
+}
+
+#[test]
+fn field_receiver_rejects_self_cycles_and_unrelated_expressions() {
+    use arcweft_lang_sema::final_analysis::CheckedFieldReceiver;
+    for cycle in [true, false] {
+        let (project, mut input, statement, _, fact) =
+            assignment_fact_fixture("field-receiver-identity");
+        input.push_assignment(statement, fact);
+        let (owner, select) = input.selects.first_mut().expect("fixture field");
+        let rejected_owner = *owner;
+        let RuntimeResolvedSelect::Field { receiver, .. } = select else {
+            panic!("fixture has a stored field")
+        };
+        *receiver = CheckedFieldReceiver::Expression(if cycle {
+            rejected_owner
+        } else {
+            boolean_literal(&project)
+        });
+        assert_eq!(
+            runtime_facts(&project, input).expect_err("a receiver must retain its exact source"),
+            RuntimeSemanticFactsError::WrongExpressionFamily {
+                expression: rejected_owner,
+                expected: RuntimeSemanticFactFamily::Select,
+            }
+        );
     }
 }
 

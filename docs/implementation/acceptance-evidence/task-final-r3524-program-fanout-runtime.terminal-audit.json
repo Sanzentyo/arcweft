@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "run": "task-final-r3524-program-fanout-runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.143s] 3 tests run: 0 passed, 3 failed, 69 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 3,
+  "passed": 0,
+  "failed": 3,
+  "skipped": 69,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::view_product",
+      "test": "handler_capture_abi_uses_canonical_inputs_instead_of_first_use_order"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflation"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::view_product",
+      "test": "handler_local_captures_use_core_inputs_and_revoke_changed_or_restored_routes"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-28T05:25:08.7238780Z"
+}

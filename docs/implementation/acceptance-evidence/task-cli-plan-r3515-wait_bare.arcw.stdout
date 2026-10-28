@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "status": "denied",
+  "stage": "readiness",
+  "diagnostics": [
+    {
+      "module": "crate",
+      "stage": "parse",
+      "diagnostic": {
+        "severity": "error",
+        "code": "syntax.statement.missing_wait_open",
+        "message": "wait requires an opening `(`",
+        "span": {
+          "source": {
+            "id": "arcweft-project://task-cli-plan-r3515-wait_bare/task-cli-plan-r3515-wait_bare.arcw",
+            "revision": "8a262e2c7de5e07bbbbde30ac19810db6e0daab14618cb399b0828992e2e840d",
+            "source_len": 43
+          },
+          "start": 27,
+          "end": 27
+        },
+        "labels": [
+          {
+            "style": "primary",
+            "span": {
+              "source": {
+                "id": "arcweft-project://task-cli-plan-r3515-wait_bare/task-cli-plan-r3515-wait_bare.arcw",
+                "revision": "8a262e2c7de5e07bbbbde30ac19810db6e0daab14618cb399b0828992e2e840d",
+                "source_len": 43
+              },
+              "start": 27,
+              "end": 27
+            },
+            "message": null
+          }
+        ],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    },
+    {
+      "module": "crate",
+      "stage": "parse",
+      "diagnostic": {
+        "severity": "error",
+        "code": "syntax.statement.missing_wait_close",
+        "message": "missing closing `)`",
+        "span": {
+          "source": {
+            "id": "arcweft-project://task-cli-plan-r3515-wait_bare/task-cli-plan-r3515-wait_bare.arcw",
+            "revision": "8a262e2c7de5e07bbbbde30ac19810db6e0daab14618cb399b0828992e2e840d",
+            "source_len": 43
+          },
+          "start": 31,
+          "end": 31
+        },
+        "labels": [
+          {
+            "style": "primary",
+            "span": {
+              "source": {
+                "id": "arcweft-project://task-cli-plan-r3515-wait_bare/task-cli-plan-r3515-wait_bare.arcw",
+                "revision": "8a262e2c7de5e07bbbbde30ac19810db6e0daab14618cb399b0828992e2e840d",
+                "source_len": 43
+              },
+              "start": 31,
+              "end": 31
+            },
+            "message": null
+          }
+        ],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    },
+    {
+      "module": null,
+      "stage": "readiness",
+      "diagnostic": {
+        "severity": "error",
+        "code": "hir.project.analysis",
+        "message": "HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+        "span": null,
+        "labels": [],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    }
+  ]
+}

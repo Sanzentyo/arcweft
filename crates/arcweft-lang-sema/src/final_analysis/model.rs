@@ -725,6 +725,7 @@ pub enum CheckedSelectResolution {
     DialogueView {
         projection: crate::dialogue_view::DialogueProjectionCoordinate,
         field: CheckedFieldSelection,
+        receiver: ExprId,
     },
     /// Closed Agent protocol record coordinate selected during type checking.
     AgentField {
@@ -2754,6 +2755,10 @@ impl CheckedExpression {
     /// The selected schema owns whether a builtin field can inspect its receiver.
     pub(crate) fn inspection_receiver(&self) -> Option<CheckedFieldReceiver> {
         match self.resolution() {
+            CheckedExpressionResolution::Select(CheckedSelectResolution::DialogueView {
+                receiver,
+                ..
+            }) => Some(CheckedFieldReceiver::Expression(*receiver)),
             CheckedExpressionResolution::Select(CheckedSelectResolution::AgentField {
                 field,
                 receiver,
@@ -2780,9 +2785,7 @@ impl CheckedExpression {
             CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
                 Some(CheckedFieldReceiver::Binding(*local))
             }
-            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access))
-                if access.selection().runtime_field().is_some() =>
-            {
+            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access)) => {
                 Some(access.receiver())
             }
             _ => None,

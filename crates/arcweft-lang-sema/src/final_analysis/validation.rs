@@ -1320,7 +1320,12 @@ fn validate_expression_resolution(
                 ty,
                 selection.selection(),
             ),
-            CheckedSelectResolution::DialogueView { projection, field } => {
+            CheckedSelectResolution::DialogueView {
+                projection,
+                field,
+                receiver,
+            } => {
+                validate_builtin_field_receiver(modules, expressions, owner, *receiver)?;
                 validate_field_selection(semantic_shapes, modules, expressions, owner, ty, field)?;
                 (match projection {
                     crate::dialogue_view::DialogueProjectionCoordinate::Character(character) => {

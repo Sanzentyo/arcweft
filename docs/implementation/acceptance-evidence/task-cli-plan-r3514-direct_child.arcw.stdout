@@ -1,0 +1,194 @@
+{
+  "lines": [
+    {
+      "child_tasks": 1,
+      "effects": 1,
+      "root": {
+        "kind": "sequence",
+        "children": [
+          {
+            "kind": "start",
+            "children": [
+              {
+                "kind": "child",
+                "children": [],
+                "task": {
+                  "trigger": "immediate",
+                  "join_policy": "Join",
+                  "cancel_policy": "CancelAndJoin",
+                  "scope": {
+                    "node": {
+                      "kind": "action",
+                      "children": [],
+                      "task": null,
+                      "effect": "1 flow ops"
+                    }
+                  }
+                },
+                "effect": null
+              }
+            ],
+            "task": null,
+            "effect": null
+          }
+        ],
+        "task": null,
+        "effect": null
+      },
+      "captures": 0,
+      "nodes": 4,
+      "cancel_rules": 0,
+      "cleanup_actions": 0
+    }
+  ],
+  "dialogue_content_catalog": [
+    {
+      "line": {
+        "path": {
+          "segments": [
+            "flow",
+            "main",
+            "001"
+          ]
+        }
+      },
+      "text_key": "text.flow.main.001",
+      "template": 1,
+      "template_digest": [
+        37,
+        238,
+        34,
+        90,
+        62,
+        160,
+        58,
+        52,
+        107,
+        6,
+        155,
+        177,
+        136,
+        13,
+        148,
+        173,
+        63,
+        81,
+        36,
+        199,
+        55,
+        241,
+        234,
+        143,
+        175,
+        88,
+        250,
+        33,
+        119,
+        242,
+        19,
+        131
+      ],
+      "character": {
+        "target": {
+          "kind": "runtime_character_dialogue",
+          "generation": [
+            19,
+            80,
+            251,
+            86,
+            109,
+            162,
+            114,
+            230,
+            14,
+            190,
+            237,
+            85,
+            249,
+            161,
+            240,
+            40,
+            155,
+            46,
+            166,
+            31,
+            97,
+            127,
+            229,
+            152,
+            3,
+            27,
+            234,
+            1,
+            140,
+            30,
+            208,
+            208
+          ]
+        },
+        "semantic_digest": "457e7d61465daccb97ba8c514abea954ea8f553e43cd415e790de9401e86e991"
+      },
+      "presentation": {
+        "view": "std.view.dialogue",
+        "style": null,
+        "inline_failure": {
+          "kind": "fail_line"
+        }
+      },
+      "presentation_revision": {
+        "manifest_document": {
+          "id": "arcweft-direct-manifest://b747bda4d380e6f66d8ff9419b1b179b8b4162f85cabc810f0d3db1b76b96e79",
+          "revision": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "source_len": 0
+        },
+        "topology_sources": "d19afbeb953cdff2e2b438d519116aaa781f8b39e241af6d2c42345640939bd7",
+        "compiled_sources": "15b0e607c6f38acc997c21ab8e335df563b8857756ed06440577dc9536acde5c",
+        "view_program_id": "view.standard.dialogue.program",
+        "view_program_revision": "598339dc393aec6cc40928df41f814b8238034cded2314028762793c2a16c9ce",
+        "resource_types": "blake3:7e80fca30653fb04009a9af55827979ac58d74aa444820f50fa91dd06a1e117d"
+      },
+      "inline_styles": [],
+      "source": {
+        "id": "source.33c55ca47c0ae8b8d8235e855c0553f7054f0d5766aa5851f1ba5e09268ed86d",
+        "revision": [
+          48,
+          172,
+          135,
+          48,
+          50,
+          85,
+          74,
+          60,
+          23,
+          131,
+          175,
+          134,
+          175,
+          195,
+          213,
+          18,
+          81,
+          60,
+          88,
+          11,
+          78,
+          175,
+          167,
+          18,
+          110,
+          184,
+          167,
+          70,
+          159,
+          57,
+          64,
+          242
+        ],
+        "source_len": 203
+      }
+    }
+  ],
+  "streams": [],
+  "verifier_diagnostics": 0,
+  "verifier_obligations": 0
+}

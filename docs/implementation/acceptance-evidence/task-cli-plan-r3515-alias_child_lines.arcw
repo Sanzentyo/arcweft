@@ -1,0 +1,6 @@
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+let configured = alice()
+configured()[Ready[p]] with { thread motion { log.info("motion") } }
+return ()
+}

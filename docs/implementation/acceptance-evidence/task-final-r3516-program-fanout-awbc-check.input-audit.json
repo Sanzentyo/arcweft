@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "run": "task-final-r3516-program-fanout-awbc-check",
+  "actualExitCode": 101,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "-p",
+    "arcweft-compiler",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(registered_dialogue_observations_preserve_the_same_input_owner) | test(dialogue_observation_does_not_grant_copy_to_a_moved_input) | test(compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflation)",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T05:02:16.2169110Z"
+}

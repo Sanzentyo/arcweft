@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3537-dialogue-projection-sema-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T05:50:29.1845019Z",
+  "finishedAt": "2026-10-28T05:51:53.6119923Z"
+}

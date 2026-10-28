@@ -1685,6 +1685,11 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                     })
                 }
             }
+            RuntimePlanTypeProjection::Opaque {
+                value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+                arguments,
+                ..
+            } => Some(arguments.to_vec()),
             RuntimePlanTypeProjection::BoundType(_)
             | RuntimePlanTypeProjection::AgentValue
             | RuntimePlanTypeProjection::Iterator(_)

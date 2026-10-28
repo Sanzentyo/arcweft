@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "executableSha256": "05574f5ddd96f685e2aae10e2a939dbd9cad6dd4bc3f83a231ebfa01e8c9ff73",
+  "variants": [
+    {
+      "name": "direct",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3514-direct.arcw",
+      "exitCode": 0,
+      "stage": null,
+      "diagnostic": null,
+      "children": 0
+    },
+    {
+      "name": "alias",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3514-alias.arcw",
+      "exitCode": 0,
+      "stage": null,
+      "diagnostic": null,
+      "children": 0
+    },
+    {
+      "name": "direct_child",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3514-direct_child.arcw",
+      "exitCode": 0,
+      "stage": null,
+      "diagnostic": null,
+      "children": 1
+    },
+    {
+      "name": "alias_child",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3514-alias_child.arcw",
+      "exitCode": 1,
+      "stage": "readiness",
+      "diagnostic": "HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+      "children": null
+    },
+    {
+      "name": "direct_wait",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3514-direct_wait.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 21, kind: Expr }) has no admissible final type",
+      "children": null
+    },
+    {
+      "name": "alias_mark",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3514-alias_mark.arcw",
+      "exitCode": 1,
+      "stage": "readiness",
+      "diagnostic": "HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+      "children": null
+    }
+  ]
+}

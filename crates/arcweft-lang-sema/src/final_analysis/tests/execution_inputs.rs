@@ -1164,6 +1164,50 @@ fn extracting_external_assignment_is_rejected_but_the_complete_owned_body_is_adm
 }
 
 #[test]
+fn extracted_registered_field_observation_keeps_a_readonly_external_input() {
+    use crate::final_analysis::{CheckedLocalPlaceMode, CheckedSelectResolution};
+    let world = fixture(
+        "fn root(dialogue: DialogueView) -> String { dialogue.character.display_name }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source,
+            None,
+        )
+        .unwrap();
+    let owner = report
+        .expressions()
+        .find_map(|(owner, fact)| {
+            matches!(
+                fact.resolution(),
+                CheckedExpressionResolution::Select(CheckedSelectResolution::DialogueView { .. })
+            )
+            .then_some(owner)
+        })
+        .unwrap();
+    let program = context
+        .checked_deterministic_program(owner)
+        .expect("a field observation does not mutate its external receiver");
+    let [input] = program.input_abi().inputs() else {
+        panic!("one original input")
+    };
+    assert!(!input.uses().is_empty());
+    assert!(
+        input
+            .uses()
+            .iter()
+            .all(|usage| usage.access().place_access().is_some_and(|access| {
+                access.mode() == CheckedLocalPlaceMode::Inspect && !access.mode().writes()
+            }))
+    );
+}
+
+#[test]
 fn extracted_try_requires_its_carrier_boundary_inside_the_program() {
     use crate::final_analysis::CheckedProgramAdmissionError;
     let world = fixture(

@@ -1,0 +1,6 @@
+pub character alice { display = "Alice" }
+entry cli @entry.main { goto @flow.main }
+flow main() -> Unit effects { log.write } {
+alice()[Ready[p]] with { thread motion { wait(0.1s) } }
+return ()
+}

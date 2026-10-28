@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "run": "task-final-r3517-program-fanout-awbc-check",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(registered_dialogue_observations_preserve_the_same_input_owner) | test(dialogue_observation_does_not_grant_copy_to_a_moved_input)",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T05:06:37.6496112Z"
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-dialogue-projection.structure",
+    "--fail-on-blocking"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3536-dialogue-projection-structure.log",
+  "exitCode": 0,
+  "reportDirectory": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-dialogue-projection.structure",
+  "startedAt": "2026-10-28T05:50:06.7108711Z",
+  "finishedAt": "2026-10-28T05:50:12.3286496Z"
+}

@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "executableSha256": "05574f5ddd96f685e2aae10e2a939dbd9cad6dd4bc3f83a231ebfa01e8c9ff73",
+  "variants": [
+    {
+      "name": "view_two",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3515-view_two.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "local LocalId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 5, kind: Local }) is unavailable at Expression(ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 16, kind: Expr }))",
+      "children": null
+    },
+    {
+      "name": "view_one",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3515-view_one.arcw",
+      "exitCode": 0,
+      "stage": null,
+      "diagnostic": null,
+      "children": null
+    },
+    {
+      "name": "alias_child_lines",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3515-alias_child_lines.arcw",
+      "exitCode": 0,
+      "stage": null,
+      "diagnostic": null,
+      "children": 1
+    },
+    {
+      "name": "wait_parameter",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3515-wait_parameter.arcw",
+      "exitCode": 1,
+      "stage": "runtime-plan-lower",
+      "diagnostic": "final-HIR statement StmtId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 11, kind: Stmt }) family Wait { target: ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 12, kind: Expr }) } has no checked core projection",
+      "children": null
+    },
+    {
+      "name": "wait_bare",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3515-wait_bare.arcw",
+      "exitCode": 1,
+      "stage": "readiness",
+      "diagnostic": [
+        "wait requires an opening `(`",
+        "missing closing `)`",
+        "HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis"
+      ],
+      "children": null
+    }
+  ]
+}

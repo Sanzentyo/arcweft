@@ -1,0 +1,6 @@
+pub character alice { display = "Alice" }
+entry cli @entry.main { goto @flow.main }
+flow main() -> Unit effects { log.write } {
+let configured = alice(); configured()[Ready[mark @.release][p]] with { on mark(@.release) { log.info("release") } }
+return ()
+}

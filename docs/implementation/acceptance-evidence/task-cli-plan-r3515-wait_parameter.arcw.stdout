@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "status": "denied",
+  "stage": "runtime-plan-lower",
+  "diagnostics": [
+    {
+      "module": null,
+      "stage": "runtime-plan-lower",
+      "diagnostic": {
+        "severity": "error",
+        "code": "compiler.runtime_plan_lower",
+        "message": "final-HIR statement StmtId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 11, kind: Stmt }) family Wait { target: ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 12, kind: Expr }) } has no checked core projection",
+        "span": null,
+        "labels": [],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    }
+  ]
+}

@@ -2615,19 +2615,38 @@ pub enum RuntimeResolvedSelect {
     Field {
         owner: RuntimeSemanticTypeId,
         field: RuntimeRecordFieldId,
+        receiver: arcweft_lang_sema::final_analysis::CheckedFieldReceiver,
     },
     OpaqueRecord {
         owner: RuntimeSemanticTypeId,
         producer: RuntimeOpaqueTypeProducerId,
         field: RuntimeRecordFieldId,
         field_type: RuntimeSemanticTypeId,
+        receiver: arcweft_lang_sema::final_analysis::CheckedFieldReceiver,
     },
     AgentField {
         field: RuntimeAgentField,
+        receiver: arcweft_lang_sema::final_analysis::CheckedFieldReceiver,
     },
     ProgressField {
         field: arcweft_core::value::RuntimeProgressField,
+        receiver: arcweft_lang_sema::final_analysis::CheckedFieldReceiver,
     },
+}
+
+impl RuntimeResolvedSelect {
+    /// Exact checked source of the field receiver, independent of writability.
+    pub const fn receiver(
+        &self,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedFieldReceiver> {
+        match self {
+            Self::Method => None,
+            Self::Field { receiver, .. }
+            | Self::OpaqueRecord { receiver, .. }
+            | Self::AgentField { receiver, .. }
+            | Self::ProgressField { receiver, .. } => Some(*receiver),
+        }
+    }
 }
 
 /// One source-ordered case in a complete normalized runtime variant schema.
@@ -8291,7 +8310,7 @@ impl RuntimePlanSemanticFacts {
                 RuntimeSemanticFactFamily::Select,
                 |kind| matches!(kind, HirExprKind::Select(_)),
             )?;
-            validate_select(&modules, select)?;
+            validate_select(&modules, *expression, select)?;
         }
 
         let mut nominal_records = collect_unique(
@@ -11695,9 +11714,22 @@ fn validate_assignment<'types>(
 }
 
 fn validate_select(
-    _modules: &BTreeMap<HirModuleId, &HirModule>,
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
     select: &RuntimeResolvedSelect,
 ) -> Result<(), RuntimeSemanticFactsError> {
+    if let Some(arcweft_lang_sema::final_analysis::CheckedFieldReceiver::Expression(receiver)) =
+        select.receiver()
+    {
+        if !matches!(resolve_expr(modules, owner)?, HirExprKind::Select(select) if select.target() == receiver)
+        {
+            return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+                expression: owner,
+                expected: RuntimeSemanticFactFamily::Select,
+            });
+        }
+        resolve_expr(modules, receiver)?;
+    }
     match select {
         RuntimeResolvedSelect::Method
         | RuntimeResolvedSelect::AgentField { .. }
@@ -13815,7 +13847,7 @@ fn validate_project_function_semantic_catalog(
                 if !matches!(hir, HirExprKind::Select(_)) {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
-                validate_select(modules, select)?;
+                validate_select(modules, owner, select)?;
             }
             RuntimeProjectFunctionExpressionPayload::NominalRecord(record) => {
                 if !matches!(hir, HirExprKind::Record(_) | HirExprKind::RecordLiteral(_)) {

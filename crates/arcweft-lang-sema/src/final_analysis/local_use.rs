@@ -2119,11 +2119,7 @@ impl<'a> LocalUseChecker<'a> {
             .analysis
             .expression(owner)
             .and_then(super::CheckedExpression::inspection_receiver)
-            && let Some(local) = receiver.local_root(|child| {
-                self.analysis
-                    .expression(child)
-                    .and_then(super::CheckedExpression::local_place_source)
-            })
+            && let Some(local) = self.analysis.local_inspection_root(owner)
         {
             let place = match receiver {
                 super::CheckedFieldReceiver::Binding(_) => CheckedPlace::from_local(local),

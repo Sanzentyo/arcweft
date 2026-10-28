@@ -1,0 +1,1056 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "status": "Coherent source checkpoint: Core focused admission/affine guards, complete Sema library, complete Compiler View product integration and complete RuntimePlan library pass. Full 53-package reverse consumers and workspace check/Clippy are pending.",
+  "change": "Preserve exact DialogueView projection receivers and synchronous observation through the single checked graph, pure-program input admission, RuntimePlan field chains and actual bundle/View/action execution.",
+  "reproduced": "R3515 view_two rejects the second read as unavailable. The same source with only content succeeds. This concrete new defect is separate from accepted Generic Match and prior individual retained View boundaries.",
+  "authority": "Sema stores and validates the exact receiver in the field semantic fact and version1 transcript, exposes its checked local root, and classifies Inspect as read-only with writes(). Compiler deletes its independent HIR root reconstruction. RuntimeResolvedSelect retains all checked field-family receivers; validation rejects unrelated/self-cyclic expression receivers. RuntimePlan follows the admitted stored prefix and typed projection chain without adding opaque fields to writable storage.",
+  "ownership": "Ordinary Move remains unavailable afterward; no whole-input Copy is granted. Pure-program export and handler transition decisions use the shared writes() rule. Core construction follows the existing AWBC Plain-opaque/type-argument Copy rule, while affine arguments/classes and live affine payloads remain rejected before cloning. No budget, assertion, work count, capture, timeout, profile, manifest, dependency or version marker is weakened.",
+  "ownerRuns": [
+    {
+      "run": "R3527",
+      "summary": "Summary [   0.067s] 4 tests run: 4 passed, 2065 skipped",
+      "scope": "Core library focused: Plain opaque Copy arguments admitted, Need argument/affine carrier/live affine payload refused, affine nominal owner observation retained. Original inputs; later RuntimePlan/Compiler changes do not change Core sources."
+    },
+    {
+      "run": "R3535",
+      "summary": "Summary [  75.130s] 72 tests run: 72 passed (1 slow), 0 skipped",
+      "scope": "Complete Compiler view_product: actual pure-call nested display projection, repeated display/content and action handler, canonical View codec, AWFB decode, runtime routing and revocation; all existing 72 cases retained."
+    },
+    {
+      "run": "R3538",
+      "summary": "Summary [  22.906s] 1337 tests run: 1337 passed, 0 skipped",
+      "scope": "Complete Sema library, including repeated projection, Move-then-observe rejection and extracted read-only input; no ignored tests."
+    },
+    {
+      "run": "R3540",
+      "summary": "Summary [  40.728s] 131 tests run: 131 passed, 0 skipped",
+      "scope": "Complete RuntimePlan library, including rejection of self-cyclic/unrelated field receivers."
+    }
+  ],
+  "structure": {
+    "run": "R3536",
+    "exitCode": 0,
+    "workspacePackages": 97,
+    "reviewTriggers": 382,
+    "blockingViolations": 0,
+    "sourceInputs": 3999,
+    "sourceDrift": 0,
+    "reports": [
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-projection-structure-dependency_edges.csv",
+        "bytes": 77451,
+        "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+      },
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-projection-structure-file_metrics.csv",
+        "bytes": 327790,
+        "sha256": "16a0bec8a18ecd39c210aaebdca3ac2b7835ff310083f75523ff6862d63dae28"
+      },
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-projection-structure-findings.md",
+        "bytes": 122295,
+        "sha256": "9942e4003b6952a5ef43df8655592c470a9bf399f0cd86d40c95311d329e2542"
+      },
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-projection-structure-package_metrics.csv",
+        "bytes": 6444,
+        "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+      },
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-projection-structure-public_type_duplicates.csv",
+        "bytes": 17121,
+        "sha256": "0d6b85c5a2181c2e1eb11c1706b500a7f088b83726abdd1021b3c98d7b8b5c53"
+      }
+    ],
+    "disposition": "task-dialogue-projection.metrics.json"
+  },
+  "failureHistory": [
+    "R3516 wide catalogue exit101: actual Windows OS1455 paging shortage; source/input drift0. Subsequent builds selected one test binary at a time, without job/profile changes or artifact relocation.",
+    "R3518 focused Sema 2/2 PASS; R3522 complete Sema 1336/1336 PASS on their original earlier source, not relabeled as latest source.",
+    "R3520 View 69/72 PASS,3 FAIL: Inspect was classified as external mutation. R3524 targeted 0/3 PASS: Core construction rejected every opaque result although AWBC already checked Plain arguments.",
+    "R3525 test-only E0308: RuntimeValue::Opaque is unboxed and its Need payload requires RuntimeValue::NeedHandle. Repaired; R3526 catalogue and R3527 all4 focused cases pass.",
+    "R3529 targeted2 PASS/1 FAIL: nested receiver skipped the intermediate opaque field, giving plan type mismatch. R3530 test compilation E0614: generation-local ExprId was dereferenced; repaired before R3531.",
+    "R3532 targeted2 PASS/1 FAIL: Compiler handler transition detection still treated Inspect as a write. The same writes() authority repairs it; R3534 targeted3/3 and R3535 full72/72 pass."
+  ],
+  "diagnosticScope": "R3511-R3515 probe sources/stdout/stderr/receipts retain executable SHA256 and exact source. Typed Duration wait reaches Sema but runtime Wait lowering is absent; Duration literal wait lacks contextual type; style-config fixture failure remains unisolated. Malformed bare-wait and same-line thread recovery are not accepted runtime regressions. These diagnostics do not reopen unrelated accepted features.",
+  "pending": "Complete 53-package reverse-consumer runtime matrix, workspace --all-targets --all-features --locked check and Clippy, final source publication audit and acceptance record. CLI full-run baseline remains R3508 649 PASS/43 FAIL; no new full CLI result is claimed here.",
+  "preservation": "Original tracked WIP14 and untracked actual files6 remain separate. Historical source freezes, terminal audits, failures, exact commands, EXE hashes and raw outputs are retained with their original scope.",
+  "artifacts": [
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-contract-r3511.arcw",
+      "bytes": 647,
+      "sha256": "66201c949c2fd4bda22792f7b918ee538eceb5e987f98fda482807cf1da8fb0c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-contract-r3511.json",
+      "bytes": 505,
+      "sha256": "4db6a416913664ebdccdce58f8809e4ec12c0b988a7dfbb96d9073cf5268d403"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-contract-r3511.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-contract-r3511.stdout",
+      "bytes": 539,
+      "sha256": "48c2b2b6f0e6e7ca5a615ae51ae025b4945ae7677c5c2d843b9fcb37c6a26825"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-contract-r3512.json",
+      "bytes": 2745,
+      "sha256": "c44dc10213f1b6a6c504d725514bb3dfc6ff181210ec28f5e9924a9287f0bf68"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-contract-r3513.json",
+      "bytes": 2136,
+      "sha256": "725b16e11671790e79ed4283ca0da9e395a8fc88d49a6ac4d6ce84cfb44dc85f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-contract-r3514.json",
+      "bytes": 2352,
+      "sha256": "e5356629566c964ee42b5b73f97095720e55c19d34987e7b801f4d66314d7aa0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-contract-r3515.json",
+      "bytes": 2396,
+      "sha256": "8e89001600ef53f6fd3ebd1f856906c991513e3f572526f3e1e04ccd0bd5e2d0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-no_mark_handler.arcw",
+      "bytes": 597,
+      "sha256": "eb1e35c2a9dd97de0783c8f4132afdb8aac6c093f2f26b1f8f92b8c884a63a27"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-no_mark_handler.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-no_mark_handler.arcw.stdout",
+      "bytes": 539,
+      "sha256": "48c2b2b6f0e6e7ca5a615ae51ae025b4945ae7677c5c2d843b9fcb37c6a26825"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-no_thread.arcw",
+      "bytes": 611,
+      "sha256": "0b1fbd29a4db9f9fc7d18978c8cc56e8c78d20ce23ef5a65dc82495b0aa49cd9"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-no_thread.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-no_thread.arcw.stdout",
+      "bytes": 539,
+      "sha256": "48c2b2b6f0e6e7ca5a615ae51ae025b4945ae7677c5c2d843b9fcb37c6a26825"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-plain.arcw",
+      "bytes": 531,
+      "sha256": "c408129ed1d343aebb91856421a58574c0f4f2cb68ef79d578d233931afe18f1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-plain.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-plain.arcw.stdout",
+      "bytes": 540,
+      "sha256": "c5be4aba565439d442555ff8e1abb591f376467882636cccf6f27f1bf4a7edb5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-ruby.arcw",
+      "bytes": 552,
+      "sha256": "2bf261142a0d713d951e2be937c34debb1fc237cf17374620cc7719d079f4c58"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-ruby.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-ruby.arcw.stdout",
+      "bytes": 540,
+      "sha256": "28dba88cd1d72aefc5e789963b21b8b58b4abe4eefd5bf6c300cc3406c29e1b1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-styles.arcw",
+      "bytes": 602,
+      "sha256": "a8420f446d9e23e3fc0c082bd0eb99e7303b7d1de275f8aa5a8c0ddf4ec5ff40"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-styles.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-styles.arcw.stdout",
+      "bytes": 539,
+      "sha256": "48c2b2b6f0e6e7ca5a615ae51ae025b4945ae7677c5c2d843b9fcb37c6a26825"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-view.arcw",
+      "bytes": 556,
+      "sha256": "dd0ff4325f4ace357a484659060488023927f0f00025f78b9c0344dbbba800ce"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-view.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3512-view.arcw.stdout",
+      "bytes": 540,
+      "sha256": "846cf57625131c097e0432f7315351181abef9c6aa9d8baaae0cc5a5082daec3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-explicit_return.arcw",
+      "bytes": 577,
+      "sha256": "8973f23f76d1c99b487be47890f4fcbf3fb39491ade38e3e06154acf65d69aa2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-explicit_return.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-explicit_return.arcw.stdout",
+      "bytes": 540,
+      "sha256": "28dba88cd1d72aefc5e789963b21b8b58b4abe4eefd5bf6c300cc3406c29e1b1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-plain_log_child.arcw",
+      "bytes": 539,
+      "sha256": "87fd79d19e90ded29e0288c567c21d10d5f09fba311ef40849822d4ccd97f816"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-plain_log_child.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-plain_log_child.arcw.stdout",
+      "bytes": 631,
+      "sha256": "3774a86d5ee8f9d31ffea737794fee008d866eba6658822d8b4d5c0b02dc08ee"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-plain_no_mark.arcw",
+      "bytes": 481,
+      "sha256": "42b26a52d3beabe05bf87a7601c5c2fcad2143361be0e7de0a0da128ec3a2d2c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-plain_no_mark.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-plain_no_mark.arcw.stdout",
+      "bytes": 540,
+      "sha256": "c5be4aba565439d442555ff8e1abb591f376467882636cccf6f27f1bf4a7edb5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-plain_no_thread.arcw",
+      "bytes": 495,
+      "sha256": "73a5329896fcf6fa74878dc1043589a58f57075119db9c51ca5a6499171b0c7b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-plain_no_thread.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3513-plain_no_thread.arcw.stdout",
+      "bytes": 631,
+      "sha256": "3774a86d5ee8f9d31ffea737794fee008d866eba6658822d8b4d5c0b02dc08ee"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-alias_child.arcw",
+      "bytes": 234,
+      "sha256": "e30a3e8526fcd88cc0bf45f78c4a81aa3cb24ec1b202826d8a6c769ece8be9ef"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-alias_child.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-alias_child.arcw.stdout",
+      "bytes": 570,
+      "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-alias_mark.arcw",
+      "bytes": 256,
+      "sha256": "c1859cc33ec8f0f2fc12903428bd4b6313497eaa1deb46133fafd0c36e373dc2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-alias_mark.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-alias_mark.arcw.stdout",
+      "bytes": 570,
+      "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-alias.arcw",
+      "bytes": 188,
+      "sha256": "e8c141c89a80478a4dfd9580c4fdf46acd15352c72761a07a9da5852aaae7b7a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-alias.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-alias.arcw.stdout",
+      "bytes": 3556,
+      "sha256": "3af13b73b69b88d557c6b23de2797d61f271fe2ee23c1b0c919d31ef1ce892de"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-direct_child.arcw",
+      "bytes": 203,
+      "sha256": "2b0c701d264bd3149fd373cc2ee59e4bfb656e29976001b11e1db5cdbd5df18f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-direct_child.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-direct_child.arcw.stdout",
+      "bytes": 4138,
+      "sha256": "945c46786b9ced11fbd0411f5c0950e3ca8af5178fdfbe8f0a8396151e8416cc"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-direct_wait.arcw",
+      "bytes": 195,
+      "sha256": "3799d318532bcb076192ed387ab4e86ce98977e96b1c9ba8234d8e346f0cf45f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-direct_wait.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-direct_wait.arcw.stdout",
+      "bytes": 540,
+      "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-direct.arcw",
+      "bytes": 157,
+      "sha256": "d54469e29404b53e3a111a38fe747dab5bd4670c67ea9a03371a496d7d4226d2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-direct.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3514-direct.arcw.stdout",
+      "bytes": 3560,
+      "sha256": "0fe33b82df62fffc60ff7620ada775c64bdab1356f638f610e55f978a1adcb06"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-alias_child_lines.arcw",
+      "bytes": 169,
+      "sha256": "bc3744c0ca3bcb5973320ad909298e2ef0ae878a1691a0c40bd10bc82c545c46"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-alias_child_lines.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-alias_child_lines.arcw.stdout",
+      "bytes": 4148,
+      "sha256": "2618923da44d243de55267fb1113f16ce4eb1190224ac0ceee5b56105721000b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-view_one.arcw",
+      "bytes": 68,
+      "sha256": "feccf7f407198f329c615149fe82c333e9da74c426b15db57fa0c1ddb1b3b4a1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-view_one.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-view_one.arcw.stdout",
+      "bytes": 127,
+      "sha256": "eafbf986c278dcb5f47fa1e87e7a93157fb68d4dae5c98e865bbb44441225880"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-view_two.arcw",
+      "bytes": 107,
+      "sha256": "7f12c1aef6216f8e7f37cd86eda05f23c75293f11ef42f51327d57146ba02f80"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-view_two.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-view_two.arcw.stdout",
+      "bytes": 631,
+      "sha256": "33668631ff6579519dea8cc105c1e960eca6ae5d27727ee2cd5e44815177e5df"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-wait_bare.arcw",
+      "bytes": 43,
+      "sha256": "2fc8c92a57f6893572b8582322cabfec545def0b240c5c98c316e77e75846fbe"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-wait_bare.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-wait_bare.arcw.stdout",
+      "bytes": 2786,
+      "sha256": "a1218a2788b2ae54f5a2c5e92c68087852bf51d61a0ef725d685207ec96618a6"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-wait_parameter.arcw",
+      "bytes": 60,
+      "sha256": "8c60a820770f211caa5e75855f95ad773c6dae2f6e35f1dd13ef195481eeedb0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-wait_parameter.arcw.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-cli-plan-r3515-wait_parameter.arcw.stdout",
+      "bytes": 693,
+      "sha256": "23a0bd7772a75aee9de0ce9cc661598449e97bb42830347fdd27fa010bd9030b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-projection.metrics.json",
+      "bytes": 10103,
+      "sha256": "118bd6a4194fab415a8db9048290af9131c6b3c7ba928134cad894c0dba1545d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-projection.reverse-closure.json",
+      "bytes": 8976,
+      "sha256": "d8add67e875b520fe5528f7c5dbc9e80b090bebbb2aecb34f8a21e7ac516367f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3516-program-fanout-awbc-check.input-audit.json",
+      "bytes": 668,
+      "sha256": "95d9461cc9641b298d095d445edf36dc9a3b86fe5ea37ee0fae5259581781309"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3516-program-fanout-awbc-check.json",
+      "bytes": 800,
+      "sha256": "8d77fcb50a26c537cdbca5ac33e31e1cd4a2f3e2a83792d063340e9c00118161"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3516-program-fanout-awbc-check.log",
+      "bytes": 505988,
+      "sha256": "fbd37df9b1bccc3fd40c17ebfdf94377a3127a0d1563aef2745a1197fe2323d1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3517-program-fanout-awbc-check.input-audit.json",
+      "bytes": 535,
+      "sha256": "be35a84dd12d9e3354cf4ff5ccb338ea49277fc7e90a36e0fdf18d9641f5db3b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3517-program-fanout-awbc-check.json",
+      "bytes": 667,
+      "sha256": "b21d1b4b255365f10b836f7fde6f5c4fa2865a36ab11787b7fc85d8858c63830"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3517-program-fanout-awbc-check.log",
+      "bytes": 337599,
+      "sha256": "ffaf046c70df8008fb7e7973383d6ebe914e0e8ed9fc7bdd0b0189c84b549034"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3518-program-fanout-runtime.binaries-before.json",
+      "bytes": 212,
+      "sha256": "0cdfdb40b5d4468ca14b036e952973d487a0dd16f9dfa20757e71d99a17f0f5f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3518-program-fanout-runtime.json",
+      "bytes": 756,
+      "sha256": "86a35c86b90e9d2f581c0743ad6e289ddc3b6fb9d2dc22ee26fdc868a401f14a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3518-program-fanout-runtime.log",
+      "bytes": 496462,
+      "sha256": "880bcec7e150fd05793504e34ccb2521680dcafa981535bf93cde964f3f2383b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3518-program-fanout-runtime.terminal-audit.json",
+      "bytes": 614,
+      "sha256": "faf4c9f37273097f04d9df26f054bcc5f44d2698131c971dd1bff93f58b09e9d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3519-program-fanout-awbc-check.input-audit.json",
+      "bytes": 402,
+      "sha256": "dc03e50b8c2102ac9b5dcc1e3d4bcbe47c3d0791405c94cdf79af2048f4564cc"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3519-program-fanout-awbc-check.json",
+      "bytes": 534,
+      "sha256": "9936d3485c6c64716637c604dafd6a9dae2af8e1e0d542f7c4462c429b518f52"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3519-program-fanout-awbc-check.log",
+      "bytes": 94862,
+      "sha256": "1be105bb69e3f85f425d80865d220b2b83dd0712e2994d19ab30e0753f31f6d5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3520-program-fanout-runtime.binaries-before.json",
+      "bytes": 220,
+      "sha256": "9a4c537694f9813bb8d44e3b613b2ef9c5daf1442ce13b8c76e4df8eae378f0c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3520-program-fanout-runtime.json",
+      "bytes": 625,
+      "sha256": "6c9d235abb619bb971b149063096e8dd46bc1421e05fb01c89fc15b7f4f45759"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3520-program-fanout-runtime.log",
+      "bytes": 112262,
+      "sha256": "29c40d3e1866e9f79ee7cd6959e2a7d4c1321ef2bbd2a29d954abdb48af5491b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3520-program-fanout-runtime.terminal-audit.json",
+      "bytes": 1186,
+      "sha256": "76794f557138fad15ebabe0b69e5e6da3e5e7b468bc25e1f9e382ea81c81e644"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3521-dialogue-projection-sema-catalog.input-audit.json",
+      "bytes": 388,
+      "sha256": "af3c246896664908946e39738cc7fbd3d6fbe71c3c9da95d535f84125cd94af5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3521-dialogue-projection-sema-catalog.json",
+      "bytes": 520,
+      "sha256": "855df16551e3d35e757ded6feb5aea8241bd556a65d489124e7e2c92f6d41a98"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3521-dialogue-projection-sema-catalog.log",
+      "bytes": 306359,
+      "sha256": "79ed09862734ad3d69df0d5125651029146880fe755d8d2fed8be5345a0f2443"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3522-program-fanout-runtime.binaries-before.json",
+      "bytes": 212,
+      "sha256": "0cdfdb40b5d4468ca14b036e952973d487a0dd16f9dfa20757e71d99a17f0f5f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3522-program-fanout-runtime.json",
+      "bytes": 602,
+      "sha256": "23b9e067298566712b6b3214da419637eac30a74a0740b92ce3f5b2cc55c5883"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3522-program-fanout-runtime.log",
+      "bytes": 496471,
+      "sha256": "af6aabd4d0a0d7ac0ad2d736469613302bcfd7bba833fa94dcd89666b44b8dcf"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3522-program-fanout-runtime.terminal-audit.json",
+      "bytes": 620,
+      "sha256": "036e4d5db873f17926237296be4768b8dd5fe877e576931e16b6e8851fc2d85e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3523-program-fanout-awbc-check.input-audit.json",
+      "bytes": 402,
+      "sha256": "b32acde5e023638b35625fc6e9691de8c62afdfb3547d60465fc742a2b8579b8"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3523-program-fanout-awbc-check.json",
+      "bytes": 534,
+      "sha256": "8cf9544346cb1e6b3fc7cdf37e6d6a0032bb1ab8c6c12412b7319091f3291d71"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3523-program-fanout-awbc-check.log",
+      "bytes": 95192,
+      "sha256": "a22eb06106dc6053a92fbcfb2c6f33d802fe6484b5e4d633e99baea44e734cce"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3524-program-fanout-runtime.binaries-before.json",
+      "bytes": 220,
+      "sha256": "4a8ddeac991513c99c8915da0fc2eec002b093e6c9ff3ecdf9b7baf7088e21db"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3524-program-fanout-runtime.json",
+      "bytes": 891,
+      "sha256": "a1d97fb0a5060594d2795f858368db597cffef14e3accff7b997c16e97a746a1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3524-program-fanout-runtime.log",
+      "bytes": 115510,
+      "sha256": "f42c233854f1f5fdc1f2ab89b7b993b3aac290f5c8a94229859e8a78aa246c5c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3524-program-fanout-runtime.terminal-audit.json",
+      "bytes": 1175,
+      "sha256": "a56aee8a3ba924eddb0e8eed7a059da2efe5d0d3ee3fe2e97232a5bbc1bca4c5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3525-program-fanout-awbc-check.input-audit.json",
+      "bytes": 557,
+      "sha256": "69528e4286dc080342850011dc518df228e7a07b47997d8fcb45bc2ff864fb29"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3525-program-fanout-awbc-check.json",
+      "bytes": 689,
+      "sha256": "51f03b3b16839105ae6a677fe878c6508be31e10e857871d66bb996d01fb6151"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3525-program-fanout-awbc-check.log",
+      "bytes": 13432,
+      "sha256": "019bdf06304fadc967db63282937c787b8ac548aaf31eab9212eabe41347d921"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3526-program-fanout-awbc-check.input-audit.json",
+      "bytes": 555,
+      "sha256": "b41c21a1e1ce2b3c3b2ddf78531f8628f2e68242dd07361d15224f79dc15d126"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3526-program-fanout-awbc-check.json",
+      "bytes": 687,
+      "sha256": "d833514aea853f3736597d250735a0c5d30565b7686481e606482b3d92c0169f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3526-program-fanout-awbc-check.log",
+      "bytes": 434030,
+      "sha256": "45b2238e94cdd8c4553d137a7587ed7cfbd75f3d737ff0372622ed4a69b01a65"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3527-program-fanout-runtime.binaries-before.json",
+      "bytes": 202,
+      "sha256": "ccc5ab86479eee7c0e20363ebac5c606357e247cdda7df8c482a7514e4181042"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3527-program-fanout-runtime.json",
+      "bytes": 776,
+      "sha256": "8591e057ae5845f62e0e2dc62df2039c46f83182a5b0f533c0c169fbf3529a2d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3527-program-fanout-runtime.log",
+      "bytes": 661533,
+      "sha256": "10d4e14f46c2c4c56cd1a6ad664150513d5b1f683fc5286d21d7628fc99c94e3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3527-program-fanout-runtime.terminal-audit.json",
+      "bytes": 614,
+      "sha256": "f6e10239fff62db60e37b40ad778e31011f842933283e5418e8a1b0bfee4e4fc"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3528-program-fanout-awbc-check.input-audit.json",
+      "bytes": 402,
+      "sha256": "bf92aef1ddda4acad26dc4383c9f4ca0f958f2bb8603d12e5c2c5b347bdba09b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3528-program-fanout-awbc-check.json",
+      "bytes": 534,
+      "sha256": "8fa13b0cc4264d45b3a13f444454430a3199d7108bcbf1d6be24eeb7c6ca7776"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3528-program-fanout-awbc-check.log",
+      "bytes": 96435,
+      "sha256": "02ee24952e3e4bef68f26f7dd9bc3d5ff9194f50760970ecbd9d152d8c02489f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3529-program-fanout-runtime.binaries-before.json",
+      "bytes": 220,
+      "sha256": "4a7fc30986d8ba660567aca139f9ad19cef75ae9a34433680980b74f36f7b84d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3529-program-fanout-runtime.json",
+      "bytes": 891,
+      "sha256": "bbb7f4f058aa08095c65bdd9a9f2a5c8866f10f6381782ddef4a6b93aaf51a9b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3529-program-fanout-runtime.log",
+      "bytes": 106960,
+      "sha256": "653fde9d701d588a1b1bd0a2550341ff16678dea13795d3c72af244cca4c6276"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3529-program-fanout-runtime.terminal-audit.json",
+      "bytes": 813,
+      "sha256": "85592b15edf85a1da17d5da66d422e74edf975bcfba0f591ec399be471655104"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3530-program-fanout-awbc-check.input-audit.json",
+      "bytes": 404,
+      "sha256": "383589799b5fbcb6b8b2189b406dcd5ad38ddea13b2d37e0b0261fab4aeceb80"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3530-program-fanout-awbc-check.json",
+      "bytes": 536,
+      "sha256": "ccdfd92361d1a6b48adfaf1de98d601f3915af8ff036568956a1d196e253c979"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3530-program-fanout-awbc-check.log",
+      "bytes": 83573,
+      "sha256": "21ed8f892bc56d54e18ad34781c1d8c08e25a0bde3fa37438e6fe6609108edda"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3531-program-fanout-awbc-check.input-audit.json",
+      "bytes": 402,
+      "sha256": "e5eb02810e7d66b84a5fd5ebb961584ac5d549b1c3fbbebd7368d7ad14cfe9a7"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3531-program-fanout-awbc-check.json",
+      "bytes": 534,
+      "sha256": "0b304fb36ff59829356d08a78d837e549ddeba8183851478d01be8a1cd4952b0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3531-program-fanout-awbc-check.log",
+      "bytes": 94949,
+      "sha256": "3f83c3297ab703a24edb85ff3a50b22b59dcbe9656f01f887ae7827fca55ee7c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3532-program-fanout-runtime.binaries-before.json",
+      "bytes": 220,
+      "sha256": "1268954316c16e75d033bca7d1316795041ba3c8a1ea7268ecd4eab841b09bbf"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3532-program-fanout-runtime.json",
+      "bytes": 891,
+      "sha256": "32edbd4a7dcc87bdc3f0c2105899847dda3929d9205561a6f732018d9c1499d3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3532-program-fanout-runtime.log",
+      "bytes": 104727,
+      "sha256": "c81bfe99584fca520561a5fb3591e0e182fb72bd4bb474ec652daa1f6fc076c1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3532-program-fanout-runtime.terminal-audit.json",
+      "bytes": 813,
+      "sha256": "acb17936bf5658b51b292bf154a9ff5160171aca54c316b403196f7cfa8cccdb"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3533-program-fanout-awbc-check.input-audit.json",
+      "bytes": 402,
+      "sha256": "f5aac5068a9f4acb090d0f79807de16c7d9eeeab4d2367536584dd9d97e71a0a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3533-program-fanout-awbc-check.json",
+      "bytes": 534,
+      "sha256": "d9e28dfb07d894351d716b2edeffdb70c74d93ad42fc5072ed3f4403c027aa19"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3533-program-fanout-awbc-check.log",
+      "bytes": 94862,
+      "sha256": "fe3bf8ffe48e57e2baad4e8ce93aa03cbf3b3674ca88dfb308c1dd869755f1b1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3534-program-fanout-runtime.binaries-before.json",
+      "bytes": 220,
+      "sha256": "bfd2154fda3ff417b20807cf4b7831b6b8da1f4d63c2a845b07d6f1fd50feab3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3534-program-fanout-runtime.json",
+      "bytes": 889,
+      "sha256": "7c448a9d5e300eaba0227bfadbaeac2940b147352d27d049721c755479280b33"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3534-program-fanout-runtime.log",
+      "bytes": 103948,
+      "sha256": "136cd0c3ac9ef8be790c359093f489fcbf35067bc230b3d8dc9a03b24ed5fc51"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3534-program-fanout-runtime.terminal-audit.json",
+      "bytes": 610,
+      "sha256": "1a968425833a59c3ad4326397ee41c784ca8e5887d1a727981e048e546dc692c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3535-program-fanout-runtime.binaries-before.json",
+      "bytes": 220,
+      "sha256": "bfd2154fda3ff417b20807cf4b7831b6b8da1f4d63c2a845b07d6f1fd50feab3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3535-program-fanout-runtime.json",
+      "bytes": 623,
+      "sha256": "d733d7720793cb87b980ee033b8fa6a083e46b222b6a97f34e70d7bc9da6bf1d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3535-program-fanout-runtime.log",
+      "bytes": 103542,
+      "sha256": "b702c62efef079cd227b83bdc2ea0acc5d14f7f6bee8597f087e065c67438743"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3535-program-fanout-runtime.terminal-audit.json",
+      "bytes": 621,
+      "sha256": "b1b8a346feaff6c4cb6b6c93302f7b7aa5e47e1a359d52476d67fab245f45c3d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3536-dialogue-projection-structure.input-audit.json",
+      "bytes": 487,
+      "sha256": "f6b7d9a5011e902e87c6ec489ebfcaadd2926b7ab5fe8ed04b6fb179e54a07cd"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3536-dialogue-projection-structure.json",
+      "bytes": 761,
+      "sha256": "df709b88a180a8cfe66f4b87c12580275dd17d0b8e2002d524fb0e6c0ec67a65"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3536-dialogue-projection-structure.log",
+      "bytes": 65021,
+      "sha256": "b84abb91302d536e1c91e63c6c967d3fbabb6f00d9ec5f6f90d77690608c3503"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3537-dialogue-projection-sema-catalog.input-audit.json",
+      "bytes": 388,
+      "sha256": "48943ce454d7ac3edc52bb7bc6b29455715e68fa7d757b1809ee690af1ac0da6"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3537-dialogue-projection-sema-catalog.json",
+      "bytes": 520,
+      "sha256": "3d19b774a7ae0b8151eca44624f45f3e20c05146a301ea5b5657385bfc5d845b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3537-dialogue-projection-sema-catalog.log",
+      "bytes": 306935,
+      "sha256": "ca4d9b4f11f738a5410fd2ce2dfc422efd2c4223bfaac972ce33303e0a56e9fa"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3538-program-fanout-runtime.binaries-before.json",
+      "bytes": 212,
+      "sha256": "e32a7e70e6a04d7ce37d47d8ae8243f0a2653751261dd692e4f1e76399ebab88"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3538-program-fanout-runtime.json",
+      "bytes": 602,
+      "sha256": "f08a177014e7f518e40963b2e8318db2f10f1675c0f8de763938402ea0d8de1a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3538-program-fanout-runtime.log",
+      "bytes": 496807,
+      "sha256": "bdf00ff3e5a04621b4d74000d93cff67129d3de5453cc0fcf3377d8329180e21"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3538-program-fanout-runtime.terminal-audit.json",
+      "bytes": 620,
+      "sha256": "a921ff62153f800758267782c640bd03e4229d7c7dc9d80f6e8d431bcea6cf18"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3539-dialogue-projection-runtime-plan-catalog.input-audit.json",
+      "bytes": 399,
+      "sha256": "2d7b7b6e01d3b3c55d1a5cbfbf1e85b76826c150d29b14c8c9b0f10b51a385b4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3539-dialogue-projection-runtime-plan-catalog.json",
+      "bytes": 531,
+      "sha256": "a6a1e87570fd467d0e80492768ffb07858dc6748774fa5e5cc8021c455295dc5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3539-dialogue-projection-runtime-plan-catalog.log",
+      "bytes": 105648,
+      "sha256": "e41b09e383938c145890da22d6e97601403d2f3f33a1351678e968f7c593cdbc"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3540-program-fanout-runtime.binaries-before.json",
+      "bytes": 218,
+      "sha256": "9c5d6fa7f225f382e8baffb30bdd0fb8bdb5c2bd529635e05f4964786a1344ec"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3540-program-fanout-runtime.json",
+      "bytes": 605,
+      "sha256": "c96836faea64670690f5f131894a9bd5b3d1c52c771d59139472a44202b8581f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3540-program-fanout-runtime.log",
+      "bytes": 122212,
+      "sha256": "7c3888879a807dac17b44770c3854862045b0365bf658bb7a0363d59e67bda48"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3540-program-fanout-runtime.terminal-audit.json",
+      "bytes": 616,
+      "sha256": "6dfcb83f1fe46d16a7132de153243e33f93bafcc4483af9b61d08b92ce6841bd"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3516.source-freeze.json",
+      "bytes": 782493,
+      "sha256": "81de0752e767042795e2c6642726b52fdceb660c37a383a42303265cd1372764"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3517.inventory.json",
+      "bytes": 352646,
+      "sha256": "ba1adfce56bb57207b051789e12c5765675aa9553fc22d6e9991c8e8193191cb"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3517.source-freeze.json",
+      "bytes": 782493,
+      "sha256": "54b31ce8c1f65e061b575367923d95b781664dd06e24a570d9a62aac913e46f0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3518.source-freeze.json",
+      "bytes": 782493,
+      "sha256": "54b31ce8c1f65e061b575367923d95b781664dd06e24a570d9a62aac913e46f0"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3519.inventory.json",
+      "bytes": 17756,
+      "sha256": "8c25fab30ceb4a0f967986b38a97199aea5e1c3e833d6324fc458ce5308015f3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3519.source-freeze.json",
+      "bytes": 782493,
+      "sha256": "9655eda67c320d3a06b73ba58b035d001a5667fe987423cea44c616883ebe6f4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3520.source-freeze.json",
+      "bytes": 782493,
+      "sha256": "9655eda67c320d3a06b73ba58b035d001a5667fe987423cea44c616883ebe6f4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3521.inventory.json",
+      "bytes": 351309,
+      "sha256": "8e3fe975a052bb4e7ea208fa49ebec9a7a50e7180aee1c5e7ada58c31452863f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3521.source-freeze.json",
+      "bytes": 782493,
+      "sha256": "9655eda67c320d3a06b73ba58b035d001a5667fe987423cea44c616883ebe6f4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3522.source-freeze.json",
+      "bytes": 782493,
+      "sha256": "9655eda67c320d3a06b73ba58b035d001a5667fe987423cea44c616883ebe6f4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3523.inventory.json",
+      "bytes": 17826,
+      "sha256": "1dc9a6ff1a6c8a4aea308dff132409622086c8db66f43320cac7ab4b7ba7897e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3523.source-freeze.json",
+      "bytes": 782720,
+      "sha256": "d520737d309706519d11fd6e63dff221df6201ef0b75d7a338826b59f13f52e9"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3524.source-freeze.json",
+      "bytes": 782720,
+      "sha256": "d520737d309706519d11fd6e63dff221df6201ef0b75d7a338826b59f13f52e9"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3525.source-freeze.json",
+      "bytes": 782850,
+      "sha256": "c563eed066e4b3c4d8a1799203bd5dffb185fd6cbab94db970b28872049234ed"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3526.inventory.json",
+      "bytes": 526293,
+      "sha256": "aaf5508f635c6e996120fbb6b67e4a996af1bdff5b199edad6d468635dbc9b39"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3526.source-freeze.json",
+      "bytes": 782850,
+      "sha256": "731600e944990b73981b9e97efc9e872afb5cfbcd172050732598412c0f64708"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3527.source-freeze.json",
+      "bytes": 782850,
+      "sha256": "731600e944990b73981b9e97efc9e872afb5cfbcd172050732598412c0f64708"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3528.inventory.json",
+      "bytes": 17826,
+      "sha256": "1dc9a6ff1a6c8a4aea308dff132409622086c8db66f43320cac7ab4b7ba7897e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3528.source-freeze.json",
+      "bytes": 782850,
+      "sha256": "c0de3aba1ef2d2d4dd59efe3bfc036d07008a2ba97df7713025906cb8fae409c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3529.source-freeze.json",
+      "bytes": 782850,
+      "sha256": "c0de3aba1ef2d2d4dd59efe3bfc036d07008a2ba97df7713025906cb8fae409c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3530.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "8aa77dec5f53279dd7a283705c7de60ae6a6dea01bdb5accd9dc6d7f39a0ddbc"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3531.inventory.json",
+      "bytes": 17826,
+      "sha256": "1dc9a6ff1a6c8a4aea308dff132409622086c8db66f43320cac7ab4b7ba7897e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3531.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "892ce3c68208951030abd7ad8cf39b243071165c795175d05440b33fa43a6795"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3532.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "892ce3c68208951030abd7ad8cf39b243071165c795175d05440b33fa43a6795"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3533.inventory.json",
+      "bytes": 17826,
+      "sha256": "1dc9a6ff1a6c8a4aea308dff132409622086c8db66f43320cac7ab4b7ba7897e"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3533.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "27a6a9e415e8c636e11fa9b945b4cc97eb728561105f7feafaf4c64bfd5ea332"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3534.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "27a6a9e415e8c636e11fa9b945b4cc97eb728561105f7feafaf4c64bfd5ea332"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3535.inventory.json",
+      "bytes": 17756,
+      "sha256": "8c25fab30ceb4a0f967986b38a97199aea5e1c3e833d6324fc458ce5308015f3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3535.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "27a6a9e415e8c636e11fa9b945b4cc97eb728561105f7feafaf4c64bfd5ea332"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3536.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "27a6a9e415e8c636e11fa9b945b4cc97eb728561105f7feafaf4c64bfd5ea332"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3537.inventory.json",
+      "bytes": 351583,
+      "sha256": "c935eb06451fe192be36ac46786b9419aaa7076d391441a4da5a29c2e5beb97d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3537.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "27a6a9e415e8c636e11fa9b945b4cc97eb728561105f7feafaf4c64bfd5ea332"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3538.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "27a6a9e415e8c636e11fa9b945b4cc97eb728561105f7feafaf4c64bfd5ea332"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3539.inventory.json",
+      "bytes": 33960,
+      "sha256": "b129533c7aa830434ade1a6628aeb055efb4936e72cedb502a313e8ef46698ef"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3539.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "27a6a9e415e8c636e11fa9b945b4cc97eb728561105f7feafaf4c64bfd5ea332"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3540.source-freeze.json",
+      "bytes": 783071,
+      "sha256": "27a6a9e415e8c636e11fa9b945b4cc97eb728561105f7feafaf4c64bfd5ea332"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "base": "69db789809bf1af1021a2b91ad32997c0aea129b",
+  "executableSha256": "05574f5ddd96f685e2aae10e2a939dbd9cad6dd4bc3f83a231ebfa01e8c9ff73",
+  "variants": [
+    {
+      "name": "explicit_return",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3513-explicit_return.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 61, kind: Expr }) has no admissible final type",
+      "children": null
+    },
+    {
+      "name": "plain_no_thread",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3513-plain_no_thread.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "local LocalId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 5, kind: Local }) is unavailable at Expression(ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 21, kind: Expr }))",
+      "children": null
+    },
+    {
+      "name": "plain_no_mark",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3513-plain_no_mark.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 58, kind: Expr }) has no admissible final type",
+      "children": null
+    },
+    {
+      "name": "plain_log_child",
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-cli-plan-r3513-plain_log_child.arcw",
+      "exitCode": 1,
+      "stage": "type-check",
+      "diagnostic": "local LocalId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 5, kind: Local }) is unavailable at Expression(ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 21, kind: Expr }))",
+      "children": null
+    }
+  ]
+}

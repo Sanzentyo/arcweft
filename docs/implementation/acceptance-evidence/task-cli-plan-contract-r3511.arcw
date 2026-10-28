@@ -1,0 +1,16 @@
+pub view PlanDialogue(dialogue: DialogueView) {
+    Panel {
+        Text(dialogue.character.display_name)
+        RichText(dialogue.content)
+    }
+}
+pub style Configured { RichText { color = rgba(64, 65, 66, 255) } }
+pub style Line { RichText { color = rgba(80, 81, 82, 255) } }
+pub character alice { display = "Alice" }
+flow plan() effects { log.write } {
+    let configured = alice(style = @style.Configured, view = @view.PlanDialogue)
+    configured(style = @style.Line)[#color(rgb("#505152"))[#ruby("ま")[待]って。][mark @.release][p]] with {
+        thread motion { wait(0.1s) }
+        on mark(@.release) { log.info("release") }
+    }
+}

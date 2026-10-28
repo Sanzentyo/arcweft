@@ -1,0 +1,175 @@
+{
+  "lines": [
+    {
+      "child_tasks": 0,
+      "effects": 0,
+      "root": {
+        "kind": "sequence",
+        "children": [
+          {
+            "kind": "start",
+            "children": [],
+            "task": null,
+            "effect": null
+          }
+        ],
+        "task": null,
+        "effect": null
+      },
+      "captures": 0,
+      "nodes": 2,
+      "cancel_rules": 0,
+      "cleanup_actions": 0
+    }
+  ],
+  "dialogue_content_catalog": [
+    {
+      "line": {
+        "path": {
+          "segments": [
+            "flow",
+            "main",
+            "001"
+          ]
+        }
+      },
+      "text_key": "text.flow.main.001",
+      "template": 1,
+      "template_digest": [
+        37,
+        238,
+        34,
+        90,
+        62,
+        160,
+        58,
+        52,
+        107,
+        6,
+        155,
+        177,
+        136,
+        13,
+        148,
+        173,
+        63,
+        81,
+        36,
+        199,
+        55,
+        241,
+        234,
+        143,
+        175,
+        88,
+        250,
+        33,
+        119,
+        242,
+        19,
+        131
+      ],
+      "character": {
+        "target": {
+          "kind": "runtime_character_dialogue",
+          "generation": [
+            252,
+            57,
+            199,
+            21,
+            125,
+            96,
+            19,
+            66,
+            69,
+            91,
+            135,
+            40,
+            53,
+            142,
+            201,
+            45,
+            251,
+            90,
+            248,
+            67,
+            213,
+            51,
+            89,
+            206,
+            48,
+            182,
+            77,
+            144,
+            226,
+            6,
+            52,
+            28
+          ]
+        },
+        "semantic_digest": "457e7d61465daccb97ba8c514abea954ea8f553e43cd415e790de9401e86e991"
+      },
+      "presentation": {
+        "view": "std.view.dialogue",
+        "style": null,
+        "inline_failure": {
+          "kind": "fail_line"
+        }
+      },
+      "presentation_revision": {
+        "manifest_document": {
+          "id": "arcweft-direct-manifest://cb78014a72aa0dfbf6b12baed0548f0abb612618a8fbc228ee1106ebe4b2c97a",
+          "revision": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "source_len": 0
+        },
+        "topology_sources": "911e65016d24dd5e4823bb0d15f0f64922fb70c442d358e9918493cc8ed428db",
+        "compiled_sources": "6fe6b25cd34ac2b5a831f0ec689e2a78846015390956704eb6641eb13f96771b",
+        "view_program_id": "view.standard.dialogue.program",
+        "view_program_revision": "598339dc393aec6cc40928df41f814b8238034cded2314028762793c2a16c9ce",
+        "resource_types": "blake3:7e80fca30653fb04009a9af55827979ac58d74aa444820f50fa91dd06a1e117d"
+      },
+      "inline_styles": [],
+      "source": {
+        "id": "source.294980330f9cf26257b4fd05e99af1d22b77e4f5736fed06de6ecc6c56d8c36c",
+        "revision": [
+          229,
+          51,
+          69,
+          155,
+          115,
+          47,
+          18,
+          97,
+          100,
+          221,
+          91,
+          185,
+          187,
+          221,
+          34,
+          0,
+          224,
+          57,
+          30,
+          164,
+          152,
+          171,
+          200,
+          141,
+          188,
+          133,
+          117,
+          24,
+          45,
+          187,
+          244,
+          114
+        ],
+        "source_len": 188
+      }
+    }
+  ],
+  "streams": [],
+  "verifier_diagnostics": 0,
+  "verifier_obligations": 0
+}

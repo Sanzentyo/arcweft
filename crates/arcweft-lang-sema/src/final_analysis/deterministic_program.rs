@@ -159,7 +159,9 @@ impl CheckedClosedExecutionContext<'_> {
                 continue;
             }
             for usage in input.uses() {
-                if let Some(access) = usage.access().place_access() {
+                if let Some(access) = usage.access().place_access()
+                    && access.mode().writes()
+                {
                     if exported_places.contains(&access.place().local_id()) {
                         continue;
                     }

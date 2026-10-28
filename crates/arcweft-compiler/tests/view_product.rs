@@ -149,7 +149,12 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
     let fixture = project_view_fixture_with_entry(
         "entry cli @entry.main { goto @flow.main }\n\
          flow main() -> String { return \"done\" }\n\
-         view Main(dialogue: DialogueView, enabled: bool = true) {\n  Button(enabled = enabled).on_click { dialogue.primary_action }\n}\n",
+         fn mirror(value: String) -> String { value }\n\
+         view Main(dialogue: DialogueView, enabled: bool = true) {\n\
+           Text(dialogue.character.display_name)\n\
+           RichText(dialogue.content)\n\
+           Text(mirror(dialogue.character.display_name))\n\
+           Button(enabled = enabled).on_click { dialogue.primary_action }\n}\n",
         "arcweft-test://compiler-view-on-click",
     );
     let compiled = fixture.compile().expect("typed on_click View product");
@@ -168,6 +173,9 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
         [definition.body.start_instruction as usize..definition.body.end_instruction as usize];
     let handler = match body {
         [
+            ViewProgramInstruction::EmitText { .. },
+            ViewProgramInstruction::EmitText { .. },
+            ViewProgramInstruction::EmitText { .. },
             ViewProgramInstruction::OpenElement { .. },
             ViewProgramInstruction::CloseElement,
             ViewProgramInstruction::BindHandler {
@@ -329,6 +337,19 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
     let [binding] = mount.events.as_slice() else {
         panic!("compiled handler must publish exactly one typed event binding")
     };
+    assert_eq!(mount.text.len(), 3);
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    assert!(matches!(&mount.text[0].value,
+        BundleViewTextValue::CharacterDisplayName { frame }
+            if frame.as_ref() == &display_frame && frame.character.display_name == "Compiler"
+    ));
+    assert!(matches!(&mount.text[1].value,
+        BundleViewTextValue::DisplayFrame { frame, .. }
+            if frame.as_ref() == &display_frame
+    ));
+    assert!(matches!(&mount.text[2].value,
+        BundleViewTextValue::Plain { value } if value == "Compiler"
+    ));
     let invocation = ViewHandlerInvocation::from_input(
         &InputEvent::activate(InputEpoch(1), binding.target().clone()),
         binding.event(),

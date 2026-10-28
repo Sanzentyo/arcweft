@@ -5480,6 +5480,7 @@ fn checked_environment_field_selection(
         super::CheckedSelectResolution::DialogueView {
             projection,
             field: selection,
+            receiver,
         }
     } else {
         super::CheckedSelectResolution::Field(crate::final_analysis::CheckedFieldAccess::new(

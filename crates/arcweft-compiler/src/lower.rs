@@ -1762,9 +1762,14 @@ fn validate_executable_record_projections(
         let CheckedExpressionResolution::Select(select) = expression.resolution() else {
             continue;
         };
-        let selection = match select {
-            CheckedSelectResolution::DialogueView { field, .. } => field,
-            CheckedSelectResolution::Field(field) => field.selection(),
+        let (selection, receiver) = match select {
+            CheckedSelectResolution::DialogueView {
+                field, receiver, ..
+            } => (
+                field,
+                arcweft_lang_sema::final_analysis::CheckedFieldReceiver::Expression(*receiver),
+            ),
+            CheckedSelectResolution::Field(field) => (field.selection(), field.receiver()),
             CheckedSelectResolution::Method(_)
             | CheckedSelectResolution::AgentField { .. }
             | CheckedSelectResolution::ProgressField { .. } => continue,
@@ -1773,7 +1778,7 @@ fn validate_executable_record_projections(
             .project_runtime_field(analysis)
             .map_err(|source| RuntimeSemanticProjectionError::FieldProjection { owner, source })?
             .is_some()
-            || runtime_nominal_environment_select(world, selection).is_some()
+            || runtime_nominal_environment_select(world, selection, receiver).is_some()
             || accepted_runtime_environment_field(world, selection).is_some()
         {
             continue;
@@ -5982,21 +5987,34 @@ fn runtime_select_under(
     analysis: &FinalSemanticAnalysis,
 ) -> Result<Option<RuntimeResolvedSelect>, RuntimeSemanticProjectionError> {
     Ok(Some(match select {
-        CheckedSelectResolution::DialogueView { field, .. } => {
-            runtime_opaque_environment_select(world, field).ok_or(
-                RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
-                    owner: RuntimeRecordExecutableOwner::Expression(owner),
-                    semantic_owner: field.owner_type(),
-                    ordinal: field.declaration_ordinal(),
-                },
-            )?
-        }
+        CheckedSelectResolution::DialogueView {
+            field, receiver, ..
+        } => runtime_opaque_environment_select(
+            world,
+            field,
+            arcweft_lang_sema::final_analysis::CheckedFieldReceiver::Expression(*receiver),
+        )
+        .ok_or(
+            RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
+                owner: RuntimeRecordExecutableOwner::Expression(owner),
+                semantic_owner: field.owner_type(),
+                ordinal: field.declaration_ordinal(),
+            },
+        )?,
         CheckedSelectResolution::Method(_) => RuntimeResolvedSelect::Method,
-        CheckedSelectResolution::AgentField { field, .. } => {
-            RuntimeResolvedSelect::AgentField { field: *field }
+        CheckedSelectResolution::AgentField { field, receiver } => {
+            RuntimeResolvedSelect::AgentField {
+                field: *field,
+                receiver: arcweft_lang_sema::final_analysis::CheckedFieldReceiver::Expression(
+                    *receiver,
+                ),
+            }
         }
-        CheckedSelectResolution::ProgressField { field, .. } => {
+        CheckedSelectResolution::ProgressField { field, receiver } => {
             RuntimeResolvedSelect::ProgressField {
+                receiver: arcweft_lang_sema::final_analysis::CheckedFieldReceiver::Expression(
+                    *receiver,
+                ),
                 field: match field {
                     arcweft_lang_sema::types::ProgressField::Ratio => {
                         arcweft_core::value::RuntimeProgressField::Ratio
@@ -6008,9 +6026,14 @@ fn runtime_select_under(
             }
         }
         CheckedSelectResolution::Field(selection) => {
+            let receiver = selection.receiver();
             let selection = selection.selection();
             if let (Some(owner), Some(field)) = (closed_owner, selection.runtime_field()) {
-                return Ok(Some(RuntimeResolvedSelect::Field { owner, field }));
+                return Ok(Some(RuntimeResolvedSelect::Field {
+                    owner,
+                    field,
+                    receiver,
+                }));
             }
             if let Some(projection) =
                 selection
@@ -6023,10 +6046,11 @@ fn runtime_select_under(
                 RuntimeResolvedSelect::Field {
                     owner: projection.owner().semantic_identity(),
                     field: projection.field().runtime_field(),
+                    receiver,
                 }
             } else {
-                runtime_nominal_environment_select(world, selection)
-                    .or_else(|| runtime_opaque_environment_select(world, selection))
+                runtime_nominal_environment_select(world, selection, receiver)
+                    .or_else(|| runtime_opaque_environment_select(world, selection, receiver))
                     .ok_or(
                         RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
                             owner: RuntimeRecordExecutableOwner::Expression(owner),
@@ -6056,6 +6080,7 @@ fn accepted_runtime_environment_field<'a>(
 fn runtime_nominal_environment_select(
     world: &RegisteredSemanticWorld,
     selection: &arcweft_lang_sema::final_analysis::CheckedFieldSelection,
+    receiver: arcweft_lang_sema::final_analysis::CheckedFieldReceiver,
 ) -> Option<RuntimeResolvedSelect> {
     let record = world
         .environment()
@@ -6081,12 +6106,14 @@ fn runtime_nominal_environment_select(
     Some(RuntimeResolvedSelect::Field {
         owner: RuntimeSemanticTypeId::from_bytes(*semantics.semantic_type().as_bytes()),
         field: RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).ok()?,
+        receiver,
     })
 }
 
 fn runtime_opaque_environment_select(
     world: &RegisteredSemanticWorld,
     selection: &arcweft_lang_sema::final_analysis::CheckedFieldSelection,
+    receiver: arcweft_lang_sema::final_analysis::CheckedFieldReceiver,
 ) -> Option<RuntimeResolvedSelect> {
     let projection = accepted_runtime_environment_field(world, selection)?;
     let ordinal = usize::try_from(projection.field().ordinal()).ok()?;
@@ -6096,6 +6123,7 @@ fn runtime_opaque_environment_select(
         producer: projection.carrier().producer().clone(),
         field,
         field_type: RuntimeSemanticTypeId::from_bytes(*projection.field().type_digest().as_bytes()),
+        receiver,
     })
 }
 

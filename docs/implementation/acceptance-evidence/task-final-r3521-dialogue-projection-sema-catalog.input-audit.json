@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "run": "task-final-r3521-dialogue-projection-sema-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T05:14:15.5903483Z"
+}

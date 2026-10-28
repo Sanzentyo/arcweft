@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "status": "denied",
+  "stage": "type-check",
+  "diagnostics": [
+    {
+      "module": null,
+      "stage": "type-check",
+      "diagnostic": {
+        "severity": "error",
+        "code": "sema.final_analysis",
+        "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 58, kind: Expr }) has no admissible final type",
+        "span": null,
+        "labels": [],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    }
+  ]
+}
