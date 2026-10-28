@@ -13160,3 +13160,17 @@ R3492のCompiler／CLI全target・全feature・locked Clippyは終了0、警告6
 current-status.mdの旧45件現在欄を、訂正理由・対応ID・実行範囲を示して限定実測43件へ差し替えた。qualified variantのplan／codecから後続の実値実行への検証範囲も区別した。Generic Match、loop／HIR frame／Viewなどの受入済み境界を全体goalの未完了だけで戻さない。旧whole-runや中間checkpointを現在説明として重複掲示しない。
 
 原本: [現契約への移行と実行受入](acceptance-evidence/task-dialogue-prefix-acceptance.json)、[source公開](acceptance-evidence/task-dialogue-prefix-source-publication.json)、[現在の43失敗](acceptance-evidence/task-cli-failures-after-dialogue-contract.json)。現状の唯一の一覧は[current-status.md](current-status.md)。
+
+## 共通 TaskPlan seal の現物照合と古い切替前記述の訂正 — 2026-10-28
+
+確認baseは261471bfc762cb8dd88c93575a8bece68ffa8ca2、公開Sourceはac5b5157a8aa5243b7d8f07348470b71eaf6bccb。元tracked WIP 14件・untracked実ファイル6件を保全した同じmainで確認した。共通sealは既に本番builderと厳密なSource decoderの合流点だったため、新しい並行sealを作らず、切替前を示す古い注釈・広すぎるdead-code抑制を削除した。test専用のprivate getter三つはcfg(test)へ限定した。public API・アルゴリズム・codec・製品上限・work／budget／capture条件は変更していない。
+
+R3497はCore／View／Bundle 2,650／2,650 PASS、R3499はCompiler view_product全69／69 PASS（実bindingのMatch Source 13件を含む）。それぞれ3,998入力、catalog／source／終端／実行ファイル差分0。R3500 Core通常feature全target checkは終了0・189警告、R3501 Core／View／Bundle全feature全target Clippyは終了0・3,845警告、R3502 Core全feature doctestは76／76 PASS・164警告。Bundleの実AWFB生成二回の決定性検査もPASSした。全53逆依存・全workspace・Tier 2・Native/Web画像parityの新規runとは扱わない。
+
+14 Host request variantは一つの共通descriptor testの内部14ケースであり、10 Need producer familyやE0..E14 executable分類とは別。共通seal／F/Q/C／expected-key／private Source codec／実View capabilityの確認を、全producer・scheduler・adapterの最終受入へ拡張しない。逆に後者の未確認を理由に、公開済み共通sealやGeneric Match・loop・HIR・Viewの既受入を未実装へ戻さない。
+
+以下は訂正前の一覧行を履歴として保持する。現在の状態ではない。分類と公開sealの実態を一行の「全14の最終受入未確認」にまとめていたため、現在一覧では共通sealと14 Host descriptor／広い統合範囲を分けた。
+
+| Need／TaskPlan の共通 seal・Source admission／scheduler | **codec／資源計測の修復はCore全件・全53逆依存で検証済み。全14の最終受入は未確認** | `TaskHandleType` はNeed／ThreadHandleとpayloadを同時に保持し、実行方式から型を分離する。borrowed preflightも同じtag grammarを使用し、descriptorはcarrierとpolicyを一つの制御byteへ保持する。R3118と統合R3121でCore 2,080／2,080 PASS、前回のcodec 39失敗・nodes 3失敗が全PASS。未知tag拒否も確認し、製品の上限・assertionは維持した。[修復照合](acceptance-evidence/task-handle-codec-core-acceptance.json)。sealed plan／元ProgramのSource lease／expected-key、Program capture role、Host／Webの退役metadata公開の受入履歴を維持する。[以前の必須ケース照合](acceptance-evidence/task-final-r2424-program-state-core-reverse-runtime.acceptance-audit.json)。全producer／builder／decoder／consumerのF/Q/C/E14、private-codec、View capabilityを含む最終受入は未確認。Host requestの14 variantとNeed producerの10 familyは別分類。 |
+
+[実測・分類・変更範囲](acceptance-evidence/task-common-seal-acceptance.json)、[公開full SHA・tree・blob照合](acceptance-evidence/task-common-seal-source-publication.json)。現状の唯一の一覧は[current-status.md](current-status.md)。
