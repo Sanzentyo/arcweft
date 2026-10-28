@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "source": "171e32a8689ff19e5ea49cc0df143810e3eccf70",
+  "originalHeldPatchSha256": "6dd4dd235aedbe9a22634d6faeb23754dba0763abf7fcf15f6c0916f43f2e6ef",
+  "currentHeldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "reason": "Exact original CLI system-info 8-to-32 user patch reconstructed the current working source after this partial publication; all other held inputs are unchanged."
+}

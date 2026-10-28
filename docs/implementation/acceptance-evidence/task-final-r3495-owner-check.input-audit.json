@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "run": "task-final-r3495-owner-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-compiler",
+    "-p",
+    "arcweft-cli",
+    "--all-targets",
+    "--locked"
+  ],
+  "sourceInputs": 3998,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T03:03:58.2315346Z"
+}

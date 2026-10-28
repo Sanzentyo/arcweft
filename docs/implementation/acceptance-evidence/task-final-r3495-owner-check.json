@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "f4bbed3c2660d79f85dba758a7bd577799493e05",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-compiler",
+    "-p",
+    "arcweft-cli",
+    "--all-targets",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3495-owner-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T03:01:49.4202182Z",
+  "finishedAt": "2026-10-28T03:03:57.4658951Z"
+}

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "base": "171e32a8689ff19e5ea49cc0df143810e3eccf70",
+  "history": "docs/implementation/convergence-evidence-history.md",
+  "preservedPrefixBytes": 1498042,
+  "preservedPrefixSha256": "18a69509acdb7a8408e514dd74863a63be290d06d48f0feb0a405a2297830107",
+  "appendedBytes": 5004,
+  "prefixUnchanged": true
+}

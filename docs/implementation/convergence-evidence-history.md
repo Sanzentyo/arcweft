@@ -13140,3 +13140,23 @@ R3486 workspace全feature check、R3487全feature Clippy、R3488通常feature ch
 R3470の限定現在欄と旧View中心の横断欄は、上記の新実測と重複させずcurrent-status.mdの一か所へ差し替えた。過去の失敗・test結果・full SHAは削除せず、この履歴と原本へ保持する。qualified nullary variantの受入はNative／decoded AWBCの値・関数ownerとline-output plan／codecに限り、CLI 2-step完了や全体goalの完了とはしない。Generic Match、受入済みloop／HIR frame／View child bodyの判定を戻す根拠は発生していない。
 
 原本: [最終検証と適用範囲](acceptance-evidence/task-qualified-variant-acceptance.json)、[source公開](acceptance-evidence/task-qualified-variant-source-publication.json)、[現在の全CLI結果](acceptance-evidence/task-cli-failures-after-qualified-variants.json)。現状の唯一の一覧は[current-status.md](current-status.md)。
+
+## 対話CLIの旧期待値訂正と所有子Thread・line out実行 — 2026-10-28
+
+Source 171e32a8689ff19e5ea49cc0df143810e3eccf70（parent f4bbed3c2660d79f85dba758a7bd577799493e05）を公開し、49 path・tree・patch・remote・blobを照合した。変更はCompiler／CLIの2 test consumerだけで、本番Rust、manifest、public API、runtime operationの数え方、元workloadを変更していない。元tracked WIP 14件とuntracked実6件を保持し、CLIの元system-info 8→32 patchが新canonicalから実working blobを再構成することを別indexで再確認した。原WIPの本文は公開へ混ぜず、証明identityを保持した。
+
+訂正理由は採用済み契約と実測である。runtime-step-and-executors.mdのOneOpは1操作上限で内部activation／cleanupも課金し、cli.mdはbounded limit到達を実状態の観測として扱う。async-scheduler.mdはflow_thread.run_child／line_task.run_child Host routeの廃止を明記する。R3489は元2／3-step・1-op入力と、受入を代替しない診断用16-step観測を分離した。元prefixはreveal前で、Nativeは4 step目、AWBCは10 step目にrevealする。子はHost taskを発行せず、実logを一回出し、executor内で回収された。先行R3481の高位dialogueラベル／event 0だけではReadyのpresentation待ちとは判定できず、進行入力の欠如だけをprefix未完了の原因とはしない。
+
+run_json_steps_runtime_planは同じ2-stepを維持し、各操作の課金・正確な状態・早すぎるevent／effect／task／子の不在を検査する。旧run_json_observes_line_child_tasks_through_schedulerのHost proxy完了期待は契約に反するため、同じ3-stepを保持するprefix caseと、別の16-step／max_ops=1で両backendの実子実行・一回のreveal／log・子peak 1→0・Host proxy 0を確認するcaseへ移行した。後者を元3-stepでの子完了とは主張しない。観測logは累積snapshotなので、最終snapshotのmotion 1件と、stepごとのlog effect 1回をそれぞれ検査して二重実行を排除する。
+
+Compilerには元Ready activationへ一回だけ明示進行入力を返し、所有子Threadが一回だけlog／回収され、typed enum line outから実Flow戻り値42まで到達するcaseを追加した。Nativeとcanonical decoded AWBCで同じsourceを実行し、各step最大1操作・先頭3操作の課金・早期revealなし・Host task／call／proxy completion／line command／diagnosticなしを確認した。通常の停止と再開の証拠であり、Native公開save対応を追加したとはしない。
+
+R3490 catalogに続くR3491は全9 dialogue_readinessとCLI 3件の12／12 PASS、2.483秒、750選択外。実行対象2 package、feature統合は先行と同じ16 packageで、3,998入力・102 EXE・catalog／source／終端／EXE差分0。既存のactivation quantum／portable restoreも含む。Cargoの実graphからaffected逆依存10 packageを確認し、manifest／lock入力100件が不変であることを検査した。本番consumerの旧受入を未完了へ戻していない。
+
+R3493/R3494は旧45件からこの2期待値を区別した残り43 IDを限定再実行し、0 PASS／43 FAIL、13.543秒、672選択外。識別子は先行R3483の他43件と一致し、新規ID 0。現CLI catalogは非ignored 692／ignored 23件。先行の全691件646 PASS／45 FAILと今回の限定runを一つの架空の全692件結果へ合算しない。旧失敗・ID・full SHAは原本のまま保持する。
+
+R3492のCompiler／CLI全target・全feature・locked Clippyは終了0、警告6,513件。R3495の同owner通常feature・全target・locked checkも終了0、警告225件。各3,998入力差分0。checkpoint原本はR3495がliveだった構築時点を明記し、確定結果を後続原本へ保持した。変更がtest consumerに限られるため、本番source 218f6270f27d6b663ef6dbc3eaefa5b201469563のR3483／R3485とR3486／R3487／R3488を、その元入力の証拠として再利用した。新workspace／Tier 2／構造scanner／doctestは実行していない。実size・fan-in/outと凝集性判断はowner原本に保持する。
+
+current-status.mdの旧45件現在欄を、訂正理由・対応ID・実行範囲を示して限定実測43件へ差し替えた。qualified variantのplan／codecから後続の実値実行への検証範囲も区別した。Generic Match、loop／HIR frame／Viewなどの受入済み境界を全体goalの未完了だけで戻さない。旧whole-runや中間checkpointを現在説明として重複掲示しない。
+
+原本: [現契約への移行と実行受入](acceptance-evidence/task-dialogue-prefix-acceptance.json)、[source公開](acceptance-evidence/task-dialogue-prefix-source-publication.json)、[現在の43失敗](acceptance-evidence/task-cli-failures-after-dialogue-contract.json)。現状の唯一の一覧は[current-status.md](current-status.md)。
