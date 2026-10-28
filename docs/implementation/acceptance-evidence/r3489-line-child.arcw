@@ -1,0 +1,13 @@
+entry cli @entry.main { goto @flow.main }
+
+pub character alice {
+}
+
+flow main() -> String {
+    alice()[待って。[p]]
+    with:
+        thread motion {
+            log.info("motion")
+        }
+    return "done"
+}

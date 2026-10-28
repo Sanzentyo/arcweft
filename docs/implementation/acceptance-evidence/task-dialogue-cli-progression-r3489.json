@@ -1,0 +1,986 @@
+{
+  "version": 1,
+  "base": "f4bbed3c2660d79f85dba758a7bd577799493e05",
+  "run": "R3489",
+  "executable": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+  "executableSha256": "f4cca3b6dcb14461e28f14245aa5d9ea875ade065901209127c2422504f609e0",
+  "scope": "Exact authored 2/3-step cases plus explicitly diagnostic 16-step observations, always one-op/max_ops=1. Higher diagnostic steps do not satisfy or replace the original acceptance budgets.",
+  "rows": [
+    {
+      "label": "line-out-bytecode-vm-2",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out.arcw",
+      "sourceSha256": "b23597fe3564a7b14b17640bd8ff94539d6e3ecf699dfad9990d4793ddca75c5",
+      "arguments": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out.arcw",
+        "--entry",
+        "entry.run",
+        "--executor",
+        "bytecode-vm",
+        "--mode",
+        "one-op",
+        "--max-ops",
+        "1",
+        "--steps",
+        "2",
+        "--json"
+      ],
+      "diagnosticOnly": false,
+      "exitCode": 0,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out-bytecode-vm-2.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out-bytecode-vm-2.stderr",
+      "finalStatus": "dialogue",
+      "completedTasks": 0,
+      "summary": [
+        {
+          "index": 0,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 1,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "line-out-bytecode-vm-16",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out.arcw",
+      "sourceSha256": "b23597fe3564a7b14b17640bd8ff94539d6e3ecf699dfad9990d4793ddca75c5",
+      "arguments": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out.arcw",
+        "--entry",
+        "entry.run",
+        "--executor",
+        "bytecode-vm",
+        "--mode",
+        "one-op",
+        "--max-ops",
+        "1",
+        "--steps",
+        "16",
+        "--json"
+      ],
+      "diagnosticOnly": true,
+      "exitCode": 0,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out-bytecode-vm-16.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out-bytecode-vm-16.stderr",
+      "finalStatus": "dialogue",
+      "completedTasks": 0,
+      "summary": [
+        {
+          "index": 0,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 1,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 2,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 3,
+          "fiber": "dialogue",
+          "stop": "Output",
+          "ops": 1,
+          "flow": [
+            "dialogue say.flow.run.001"
+          ],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 4,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 5,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 6,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 7,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 8,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 9,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 10,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 11,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 12,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 13,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 14,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 15,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "line-out-awbc-product-2",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out.arcw",
+      "sourceSha256": "b23597fe3564a7b14b17640bd8ff94539d6e3ecf699dfad9990d4793ddca75c5",
+      "arguments": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out.arcw",
+        "--entry",
+        "entry.run",
+        "--executor",
+        "awbc-product",
+        "--mode",
+        "one-op",
+        "--max-ops",
+        "1",
+        "--steps",
+        "2",
+        "--json"
+      ],
+      "diagnosticOnly": false,
+      "exitCode": 0,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out-awbc-product-2.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out-awbc-product-2.stderr",
+      "finalStatus": "running",
+      "completedTasks": 0,
+      "summary": [
+        {
+          "index": 0,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 1,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "line-out-awbc-product-16",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out.arcw",
+      "sourceSha256": "b23597fe3564a7b14b17640bd8ff94539d6e3ecf699dfad9990d4793ddca75c5",
+      "arguments": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out.arcw",
+        "--entry",
+        "entry.run",
+        "--executor",
+        "awbc-product",
+        "--mode",
+        "one-op",
+        "--max-ops",
+        "1",
+        "--steps",
+        "16",
+        "--json"
+      ],
+      "diagnosticOnly": true,
+      "exitCode": 0,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out-awbc-product-16.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-out-awbc-product-16.stderr",
+      "finalStatus": "dialogue",
+      "completedTasks": 0,
+      "summary": [
+        {
+          "index": 0,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 1,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 2,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 3,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 4,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 5,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 6,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 7,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 8,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 9,
+          "fiber": "dialogue",
+          "stop": "Output",
+          "ops": 1,
+          "flow": [
+            "dialogue say.flow.run.001"
+          ],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 10,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 0,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 11,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 0,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 12,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 0,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 13,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 0,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 14,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 0,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 15,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 0,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "line-child-bytecode-vm-3",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child.arcw",
+      "sourceSha256": "fb8bc2c3b340566b85edee23fc8b4999e78837ee97ee27c5d91b01a7a584ce04",
+      "arguments": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child.arcw",
+        "--entry",
+        "entry.main",
+        "--executor",
+        "bytecode-vm",
+        "--mode",
+        "one-op",
+        "--max-ops",
+        "1",
+        "--steps",
+        "3",
+        "--json"
+      ],
+      "diagnosticOnly": false,
+      "exitCode": 0,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child-bytecode-vm-3.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child-bytecode-vm-3.stderr",
+      "finalStatus": "dialogue",
+      "completedTasks": 0,
+      "summary": [
+        {
+          "index": 0,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 1,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 2,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "line-child-bytecode-vm-16",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child.arcw",
+      "sourceSha256": "fb8bc2c3b340566b85edee23fc8b4999e78837ee97ee27c5d91b01a7a584ce04",
+      "arguments": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child.arcw",
+        "--entry",
+        "entry.main",
+        "--executor",
+        "bytecode-vm",
+        "--mode",
+        "one-op",
+        "--max-ops",
+        "1",
+        "--steps",
+        "16",
+        "--json"
+      ],
+      "diagnosticOnly": true,
+      "exitCode": 0,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child-bytecode-vm-16.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child-bytecode-vm-16.stderr",
+      "finalStatus": "dialogue",
+      "completedTasks": 0,
+      "summary": [
+        {
+          "index": 0,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 1,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 2,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 3,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [
+            "dialogue say.flow.main.001"
+          ],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 4,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 5,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 6,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [
+            "log.info"
+          ],
+          "diagnostics": []
+        },
+        {
+          "index": 7,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 8,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 9,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 10,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 11,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 12,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 13,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 14,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 15,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "line-child-awbc-product-3",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child.arcw",
+      "sourceSha256": "fb8bc2c3b340566b85edee23fc8b4999e78837ee97ee27c5d91b01a7a584ce04",
+      "arguments": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child.arcw",
+        "--entry",
+        "entry.main",
+        "--executor",
+        "awbc-product",
+        "--mode",
+        "one-op",
+        "--max-ops",
+        "1",
+        "--steps",
+        "3",
+        "--json"
+      ],
+      "diagnosticOnly": false,
+      "exitCode": 0,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child-awbc-product-3.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child-awbc-product-3.stderr",
+      "finalStatus": "running",
+      "completedTasks": 0,
+      "summary": [
+        {
+          "index": 0,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 1,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 2,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "line-child-awbc-product-16",
+      "source": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child.arcw",
+      "sourceSha256": "fb8bc2c3b340566b85edee23fc8b4999e78837ee97ee27c5d91b01a7a584ce04",
+      "arguments": [
+        "run",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child.arcw",
+        "--entry",
+        "entry.main",
+        "--executor",
+        "awbc-product",
+        "--mode",
+        "one-op",
+        "--max-ops",
+        "1",
+        "--steps",
+        "16",
+        "--json"
+      ],
+      "diagnosticOnly": true,
+      "exitCode": 0,
+      "stdout": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child-awbc-product-16.stdout",
+      "stderr": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\r3489-line-child-awbc-product-16.stderr",
+      "finalStatus": "dialogue",
+      "completedTasks": 0,
+      "summary": [
+        {
+          "index": 0,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 1,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 2,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 3,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 4,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 5,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 6,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 7,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 8,
+          "fiber": "dialogue",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 9,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [
+            "dialogue say.flow.main.001"
+          ],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 10,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 11,
+          "fiber": "running",
+          "stop": "OneOp",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [
+            "log.info"
+          ],
+          "diagnostics": []
+        },
+        {
+          "index": 12,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 1,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 13,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 0,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 14,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 0,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        },
+        {
+          "index": 15,
+          "fiber": "dialogue",
+          "stop": "Blocked",
+          "ops": 0,
+          "flow": [],
+          "tasks": [],
+          "effects": [],
+          "diagnostics": []
+        }
+      ]
+    }
+  ]
+}

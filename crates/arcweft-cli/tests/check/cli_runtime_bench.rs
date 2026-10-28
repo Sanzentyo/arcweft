@@ -841,6 +841,42 @@ fn assert_plan_style_contribution(
     );
 }
 
+fn assert_budgeted_dialogue_prefix(output: &std::process::Output, expected_statuses: &[&str]) {
+    assert!(
+        output.status.success(),
+        "bounded dialogue run succeeds: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("typed runtime report");
+    assert_eq!(report["executor"], "bytecode_vm", "{report}");
+    assert_eq!(report["final_status"], "dialogue", "{report}");
+    let steps = report["steps"].as_array().expect("runtime steps");
+    assert_eq!(steps.len(), expected_statuses.len(), "{report}");
+    for (index, (step, status)) in steps.iter().zip(expected_statuses).enumerate() {
+        assert_eq!(step["index"], index, "{report}");
+        assert_eq!(step["fiber_status"], *status, "{report}");
+        assert_eq!(step["stop_reason"], "OneOp", "{report}");
+        assert_eq!(step["stats"]["executed_ops"], 1, "{report}");
+        assert_eq!(step["stats"]["child_fibers"], 0, "{report}");
+        for field in [
+            "diagnostics",
+            "flow_events",
+            "line_effects",
+            "task_requests",
+        ] {
+            assert_eq!(step[field], serde_json::json!([]), "{field}: {report}");
+        }
+    }
+    assert_eq!(report["native_io"]["completed_tasks"], 0, "{report}");
+    for field in ["submitted", "dispatched", "completed", "in_flight"] {
+        assert_eq!(
+            report["native_io"]["scheduler"][field], 0,
+            "{field}: {report}"
+        );
+    }
+}
+
 #[test]
 fn run_json_steps_runtime_plan() {
     let path = temp_arcw(
@@ -871,19 +907,7 @@ flow run() -> Unit {
         .output()
         .expect("arcw run runs");
 
-    assert!(
-        output.status.success(),
-        "runtime dry-run should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"flow_events\"")
-            && stdout.contains("dialogue")
-            && stdout.contains("done")
-            && stdout.contains("\"executor\": \"bytecode_vm\""),
-        "run JSON should include bytecode executor, step events, and final status: {stdout}"
-    );
+    assert_budgeted_dialogue_prefix(&output, &["running", "dialogue"]);
 }
 
 #[test]
@@ -2279,9 +2303,8 @@ flow main() -> String effects { system.read, log.write } {
     );
 }
 
-#[test]
-fn run_json_observes_line_child_tasks_through_scheduler() {
-    let path = temp_arcw(
+fn line_child_fixture_path() -> PathBuf {
+    temp_arcw(
         "line-child-scheduler",
         r#"
 entry cli @entry.main { goto @flow.main }
@@ -2298,8 +2321,12 @@ flow main() -> String {
     return "done"
 }
 "#,
-    );
+    )
+}
 
+#[test]
+fn run_json_keeps_three_step_line_child_activation_prefix() {
+    let path = line_child_fixture_path();
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
@@ -2310,24 +2337,93 @@ flow main() -> String {
         .arg("3")
         .arg("--json")
         .output()
-        .expect("arcw run observes line child task");
+        .expect("arcw run observes the bounded line prefix");
 
-    assert!(
-        output.status.success(),
-        "line child task run should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("line_task.run_child")
-            && stdout.contains("\"native_io\"")
-            && stdout.contains("\"completed_tasks\": 1")
-            && stdout.contains("\"scheduler\"")
-            && stdout.contains("\"submitted\": 1")
-            && stdout.contains("\"dispatched\": 1")
-            && stdout.contains("\"in_flight\": 0"),
-        "run JSON should observe line child task dispatch and completion: {stdout}"
-    );
+    assert_budgeted_dialogue_prefix(&output, &["running", "dialogue", "dialogue"]);
+}
+
+#[test]
+fn run_json_executes_owned_line_child_without_host_proxy() {
+    let path = line_child_fixture_path();
+    for (executor, report_executor) in [
+        ("bytecode-vm", "bytecode_vm"),
+        ("awbc-product", "awbc_product"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("run")
+            .arg(&path)
+            .args(["--entry", "entry.main", "--executor", executor])
+            .args([
+                "--mode",
+                "one-op",
+                "--max-ops",
+                "1",
+                "--steps",
+                "16",
+                "--json",
+            ])
+            .output()
+            .expect("arcw run executes the original owned line child");
+        assert!(
+            output.status.success(),
+            "{executor}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("typed runtime report");
+        assert_eq!(report["executor"], report_executor, "{report}");
+        assert_eq!(report["final_status"], "dialogue", "{report}");
+        let steps = report["steps"].as_array().expect("runtime steps");
+        assert_eq!(steps.len(), 16, "{report}");
+        for step in steps {
+            assert!(
+                step["stats"]["executed_ops"].as_u64().unwrap() <= 1,
+                "{report}"
+            );
+            assert_eq!(step["diagnostics"], serde_json::json!([]), "{report}");
+            assert_eq!(step["task_requests"], serde_json::json!([]), "{report}");
+        }
+        let revealed = steps
+            .iter()
+            .flat_map(|step| step["flow_events"].as_array().unwrap())
+            .filter(|event| event.as_str().unwrap().starts_with("dialogue "))
+            .count();
+        assert_eq!(revealed, 1, "{report}");
+        let log_effects = steps
+            .iter()
+            .flat_map(|step| step["line_effects"].as_array().unwrap())
+            .filter(|effect| *effect == "log.info")
+            .count();
+        assert_eq!(log_effects, 1, "{report}");
+        assert_eq!(
+            steps
+                .iter()
+                .map(|step| step["stats"]["child_fibers"].as_u64().unwrap())
+                .max(),
+            Some(1),
+            "{report}"
+        );
+        let last = steps.last().unwrap();
+        assert_eq!(last["stats"]["child_fibers"], 0, "{report}");
+        assert_eq!(
+            last["observations"]["logs"],
+            serde_json::json!([{ "level": "info", "message": "motion" }]),
+            "{report}"
+        );
+        for field in [
+            "completed_tasks",
+            "completed_host_calls",
+            "program_task_terminals",
+        ] {
+            assert_eq!(report["native_io"][field], 0, "{field}: {report}");
+        }
+        for field in ["submitted", "dispatched", "completed", "in_flight"] {
+            assert_eq!(
+                report["native_io"]["scheduler"][field], 0,
+                "{field}: {report}"
+            );
+        }
+    }
 }
 
 #[test]

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "base": "f4bbed3c2660d79f85dba758a7bd577799493e05",
+  "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+  "originalWipPatchSha256": "6dd4dd235aedbe9a22634d6faeb23754dba0763abf7fcf15f6c0916f43f2e6ef",
+  "expectedResidualWipPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "originalUserPatchPreserved": true,
+  "heldCanonicalBlobDrift": 0,
+  "expectedHeldBlobs": {
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs": "39e4c8cc33b1cfcfa5c7869b36501fea4518def7",
+    "samples/rich-text-full-grammar.arcw": "63e369ec7b2e2767f1b1eb2553e0a71f0ebcdd89",
+    "samples/agent-script/native-visual-regression.arcw": "68e938de7dad9e13f1ece2316bce9bc4bd1426cb",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs": "d7109fcbd25177b244ff2e626536a2247a6ef158",
+    "samples/agent-script/cli-read-resource-smoke.awfagent": "b151b67feedfe4f42c63949cc334bd62b96693e3",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent": "b64dfa16bbc56601d4c70397a29b9a0832d8aaa0",
+    "crates/arcweft-runtime-host/src/native_task.rs": "b06ac4c9450d7a97aeecce989435b2957ff9dbd1",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent": "313aa453b9abd75d6085296bba07ba86ed718b0d",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs": "400310d15aea6d2a1c022a7342181830d4900057",
+    "samples/rich-text-windows-fonts.arcw": "469421620e54d3e0dec5a6b408523b1f4762aa3e",
+    "samples/agent-script/native-project-graph-relations.arcw": "c9b7335f70859a44a82c42b2fc347ab0443be8ec",
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs": "54a77e26e4e7b66941f5c575c24647d53bf3e688",
+    "samples/image-animation.arcw": "c7f8b6fcf8c4d23b1fc70412dbab1b488a6bd20e",
+    "samples/agent-script/native-choice-dispatch.arcw": "ab0d14a956551c627ee0e585f3ffa5b9965b3c0d"
+  },
+  "stagedCodeBlob": "fdaae9ebc1bd8e8f85743b242918d8d2a59e4cdc",
+  "workingBlob": "400310d15aea6d2a1c022a7342181830d4900057",
+  "codeFile": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-dialogue-prefix.cli-head-after.rs",
+  "oracleIndex": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-dialogue-prefix.oracle-0942d597f19b462897075ac276a2050c.index",
+  "originalUserPatch": "Exact original system-info 8-to-32 user patch applied to the new canonical source in an alternate Git index reconstructs the actual working blob; all other 13 held blobs are unchanged.",
+  "changedFunctions": [
+    "run_json_steps_runtime_plan",
+    "run_json_keeps_three_step_line_child_activation_prefix",
+    "run_json_executes_owned_line_child_without_host_proxy",
+    "assert_budgeted_dialogue_prefix",
+    "line_child_fixture_path"
+  ]
+}

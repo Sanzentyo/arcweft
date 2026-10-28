@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "f4bbed3c2660d79f85dba758a7bd577799493e05",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-compiler",
+    "-p",
+    "arcweft-cli",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3492-owner-clippy.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T02:56:58.2260988Z",
+  "finishedAt": "2026-10-28T02:58:21.4272568Z"
+}

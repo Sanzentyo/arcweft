@@ -6,7 +6,7 @@ use arcweft_core::{
         product_step::{AwbcProductExecutorSaveSnapshot, AwbcProductStepExecutor},
         schema::{AwbcEntryId, AwbcProgram},
     },
-    engine::{DialogueRuntimePhase, Engine, FlowFiberStatus},
+    engine::{DialogueRuntimePhase, Engine, FlowExit, FlowFiberStatus},
     executor::ArcweftRuntimeExecutor,
     plan::{EntryRuntimeId, FlowEvent},
     pure::VmRuntimePureCallBackend,
@@ -524,4 +524,90 @@ fn decoded_awbc_activation_quantum_and_portable_restore_resume_once_at_the_next_
         assert_eq!(actual.stop_reason, RuntimeStepStopReason::BudgetExhausted);
     }
     panic!("restored activation exceeded its deterministic continuation bound");
+}
+
+#[test]
+fn dialogue_line_output_and_owned_child_resume_once_after_budgeted_activation() {
+    const SOURCE: &str = r#"
+enum Outcome { Done }
+pub character alice { display = "Alice" }
+flow main() -> i64 {
+    let outcome = alice()[Ready[p]] with {
+        thread motion { log.info("motion") }
+        out Outcome.Done
+    }
+    return match outcome { .Done => 42i64 }
+}
+entry cli @entry.native_test { goto @flow.main }
+"#;
+    with_both_executors(SOURCE, |backend, step| {
+        let mut next_input = input(0);
+        let mut revealed = Vec::new();
+        let mut messages = Vec::new();
+        let mut advances = 0;
+        let mut observed_child = false;
+        for tick in 0..256 {
+            let result = step(next_input, options(RuntimeStepMode::OneOp, 1));
+            assert!(result.stats.executed_ops <= 1, "{backend}: {result:?}");
+            assert!(
+                result.output.diagnostics.is_empty(),
+                "{backend}: {result:?}"
+            );
+            assert!(
+                result.output.requests.tasks.is_empty(),
+                "{backend}: {result:?}"
+            );
+            assert!(
+                result.output.requests.host_calls.is_empty(),
+                "{backend}: {result:?}"
+            );
+            assert!(
+                result.output.requests.program_task_completions.is_empty(),
+                "{backend}: {result:?}"
+            );
+            assert!(
+                result.output.requests.line_commands.is_empty(),
+                "{backend}: {result:?}"
+            );
+            if tick < 3 {
+                assert_eq!(result.stats.executed_ops, 1, "{backend}: {result:?}");
+                assert!(reveal_owners(&result).is_empty(), "{backend}: {result:?}");
+                assert!(
+                    result.output.effects.line.is_empty(),
+                    "{backend}: {result:?}"
+                );
+            }
+            revealed.extend(reveal_owners(&result));
+            messages.extend(log_messages(&result.output.effects.line));
+            observed_child |= result.stats.child_fibers > 0;
+            next_input = input(tick + 1);
+            if let FlowFiberStatus::Dialogue(status) = &result.fiber_status
+                && status.phase() == DialogueRuntimePhase::Ready
+                && advances == 0
+            {
+                let activation = ready(&result, backend);
+                assert_eq!(revealed, [activation.clone()], "{backend}: {result:?}");
+                next_input.dialogue_advances.push(activation);
+                advances += 1;
+            }
+            if let FlowFiberStatus::Done(exit) = &result.fiber_status {
+                assert_eq!(
+                    exit,
+                    &FlowExit::Return("42".to_owned()),
+                    "{backend}: {result:?}"
+                );
+                assert_eq!(revealed.len(), 1, "{backend}: {result:?}");
+                assert_eq!(advances, 1, "{backend}: {result:?}");
+                assert_eq!(messages, ["motion"], "{backend}: {result:?}");
+                assert!(observed_child, "{backend}: the original child must execute");
+                assert_eq!(result.stats.child_fibers, 0, "{backend}: {result:?}");
+                return;
+            }
+            assert!(
+                !matches!(result.fiber_status, FlowFiberStatus::Failed(_)),
+                "{backend}: {result:?}"
+            );
+        }
+        panic!("{backend}: the owned child and typed line output did not finish");
+    });
 }

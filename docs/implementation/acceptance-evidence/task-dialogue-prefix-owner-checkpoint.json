@@ -1,0 +1,550 @@
+{
+  "version": 1,
+  "base": "f4bbed3c2660d79f85dba758a7bd577799493e05",
+  "status": "Coherent test/consumer migration to the adopted runtime contract; production Rust and runtime work accounting unchanged. The owner default-feature check was live when this checkpoint record was constructed; its final receipt is recorded separately.",
+  "authorities": [
+    {
+      "path": "docs/02-runtime/runtime-step-and-executors.md",
+      "contract": "OneOp executes at most one operation; internally owned activation/cleanup work remains budgeted. Real presentation waits remain waits."
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "contract": "The flow_thread.run_child and line_task.run_child Host routes are absent from adapter manifests, policies and bundle requirements."
+    },
+    {
+      "path": "docs/04-tooling/cli.md",
+      "contract": "Reaching the requested bounded step/operation limit is a successful observation retaining the actual running state; exit 0 is not a completion assertion."
+    },
+    {
+      "path": "docs/01-language/dialogue-calls-scopes-cancellation.md",
+      "contract": "DialogueLine<R> suspends and produces the typed out value after actual dialogue progression."
+    }
+  ],
+  "diagnosis": {
+    "run": "R3489",
+    "scope": "Exact original 2/3-step one-op/max_ops=1 inputs plus explicitly diagnostic 16-step observations. Diagnostic extra steps do not satisfy or replace the original prefix budgets.",
+    "result": "No reveal in the original prefixes. Native reveals at the fourth step; decoded AWBC at the tenth. The actual child emits one log effect and retires internally, without a Host task. Core dialogue phases distinguish Activating from Ready; the high-level dialogue report alone did not prove a presentation wait."
+  },
+  "migrations": [
+    {
+      "oldTest": "run_json_steps_runtime_plan",
+      "oldExpectation": "A done substring within the original 2-step one-op observation",
+      "replacement": "Same 2 steps and unchanged workload/default 1-op budget, with exact index/status/OneOp/1 charged operation, no premature reveal/effect/task/child, and no phantom Host completion assertions."
+    },
+    {
+      "oldTest": "run_json_observes_line_child_tasks_through_scheduler",
+      "oldExpectation": "Removed line_task.run_child route plus 1 Host task submission/dispatch/completion in 3 one-op steps",
+      "replacementTests": [
+        "run_json_keeps_three_step_line_child_activation_prefix",
+        "run_json_executes_owned_line_child_without_host_proxy"
+      ],
+      "replacement": "Keep the original 3-step, one-op source prefix unchanged. A separate 16-step/max_ops=1 Native/Product run asserts one reveal, one log effect, exactly one observed owned child, retirement to zero, one retained motion log and zero Host task/proxy activity. The extra run is not presented as 3-step child completion."
+    }
+  ],
+  "strengthenedExecution": {
+    "test": "dialogue_readiness::dialogue_line_output_and_owned_child_resume_once_after_budgeted_activation",
+    "contract": "Actual canonical decoded AWBC and Native execute the original typed line output with an owned Thread; each step costs at most one operation and each first-three prefix operation is charged. One exact Ready activation receives one explicit advance, one child logs once and retires, and the actual Flow result is 42. Host requests, commands, program proxy completions and diagnostics remain empty. This is ordinary suspension/resume, not a claim of new Native public save support."
+  },
+  "targeted": {
+    "run": "R3491",
+    "summary": "Summary [   2.483s] 12 tests run: 12 passed, 750 skipped",
+    "executed": 12,
+    "passed": 12,
+    "failed": 0,
+    "matchedPackages": 2,
+    "featureContextPackages": 16,
+    "cases": "All 9 Compiler dialogue_readiness cases, including prior budget/quantum/save coverage, and 3 CLI contract cases.",
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "executables": 102,
+    "executableDrift": 0
+  },
+  "remaining": {
+    "run": "R3494",
+    "summary": "Summary [  13.543s] 43 tests run: 0 passed, 43 failed, 672 skipped",
+    "executed": 43,
+    "passed": 0,
+    "failed": 43,
+    "scope": "Exactly the other 43 original R3483 CLI failure IDs. This is not all 692 current nonignored CLI catalog cases.",
+    "sourceInputs": 3998,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "executables": 102,
+    "executableDrift": 0,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_rag_query_indexes_multiple_sources"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_checks_runtime_assert_sections"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_headless_runtime_sections"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_validates_headless_script_benches"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_skips_adapter_only_script_benches"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "plan_json_lists_runtime_task_graph"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "profile_json_runs_native_file_tasks_without_absolute_source"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_semantic_thread_join_conflict"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "run_json_executes_traverse_parallel_file_tasks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "test_json_executes_headless_scenario_expectations"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+      }
+    ]
+  },
+  "gates": {
+    "ownerAllFeatureClippy": {
+      "run": "R3492",
+      "exitCode": 0,
+      "owners": [
+        "arcweft-compiler",
+        "arcweft-cli"
+      ],
+      "allTargets": true,
+      "allFeatures": true,
+      "locked": true,
+      "warnings": 6513,
+      "sourceInputs": 3998,
+      "sourceDrift": 0
+    },
+    "ownerDefaultCheck": "R3495 was live at checkpoint record construction; consult the final acceptance receipt.",
+    "reuse": "Production, manifests, public APIs and dependency edges are unchanged. R3483/R3485 consumer runs and R3486/R3487/R3488 workspace gates remain evidence for their original production inputs; no fresh workspace/Tier2/doctest run is claimed."
+  },
+  "ownership": {
+    "metrics": "task-dialogue-prefix.metrics.json",
+    "graph": "task-dialogue-prefix.reverse-closure.json",
+    "disposition": "The 613-LOC readiness module owns budgeted dialogue execution tests. CLI runtime reporting remains in its existing 9181-LOC integration harness (growth 96); one shared prefix assertion and one shared source fixture replace stale expectations without a parallel runtime authority. This preserves the existing responsibility boundary; no public API widening, state decomposition, dependency edge or I/O owner changed. No new structural scanner pass is needed."
+  },
+  "acceptancePreservation": "Generic Match, accepted loop/HIR/View and qualified variant ownership boundaries are not reopened. The two old CLI failures were obsolete expectations against already adopted contracts, not evidence that those completed production features were unfinished.",
+  "wipProof": "task-dialogue-prefix.cli-preservation-proof.json",
+  "artifacts": [
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-child-awbc-product-16.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-child-awbc-product-16.stdout",
+      "bytes": 30209,
+      "sha256": "530d187247d07161eb651da74cac7aa97efc4666e61ea240d2e59104fbb8700b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-child-awbc-product-3.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-child-awbc-product-3.stdout",
+      "bytes": 8804,
+      "sha256": "3cf8a632444b1efcf067d141d877bc6360700001ab447e0d7ccc19b6fa827b50"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-child-bytecode-vm-16.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-child-bytecode-vm-16.stdout",
+      "bytes": 30693,
+      "sha256": "3521c3b12440b6451955dad814f74cc04a8f7459b536e530fba5f13a054f4fc7"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-child-bytecode-vm-3.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-child-bytecode-vm-3.stdout",
+      "bytes": 8810,
+      "sha256": "2d37fc270dce55412f3c075bf80daa777e764ce8f54634b033e01d0918b3c0b2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-child.arcw",
+      "bytes": 215,
+      "sha256": "fb8bc2c3b340566b85edee23fc8b4999e78837ee97ee27c5d91b01a7a584ce04"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-out-awbc-product-16.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-out-awbc-product-16.stdout",
+      "bytes": 29721,
+      "sha256": "c01ed204672d96970f0fc673d7212bdb2b4e404e3008c2e9b37a455fece0256d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-out-awbc-product-2.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-out-awbc-product-2.stdout",
+      "bytes": 7201,
+      "sha256": "3dec51f615f3ad738e9894ecbe573ceb30619f1d449f525877ef8369f95b8bb1"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-out-bytecode-vm-16.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-out-bytecode-vm-16.stdout",
+      "bytes": 29740,
+      "sha256": "cd20ae99cbf83d9336be3229ad4a7e9ebb9d898f3e52ca5eb49c665721e9e4bb"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-out-bytecode-vm-2.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-out-bytecode-vm-2.stdout",
+      "bytes": 7206,
+      "sha256": "69eed5eef007ed22a890cb8f9f17078e5dd5bc6fdd80d474c4d9e07d419ae655"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\r3489-line-out.arcw",
+      "bytes": 194,
+      "sha256": "b23597fe3564a7b14b17640bd8ff94539d6e3ecf699dfad9990d4793ddca75c5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-cli-progression-r3489.json",
+      "bytes": 26364,
+      "sha256": "28843163a970d2757a317aa616622fb208e4e5ba822ae9ccca0e51119c099b09"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-prefix.cli-preservation-proof.json",
+      "bytes": 2810,
+      "sha256": "82c11f1676f1d8a1c6f80cdbcaecc9e9f86f6ecfe430be25b27b534da36472cb"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-prefix.metrics.json",
+      "bytes": 757,
+      "sha256": "18bfbb4dd467c41d15c8c3fe6f5beaf80e2fcfce50867e9f778b148a35c1e0d3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-dialogue-prefix.reverse-closure.json",
+      "bytes": 5353,
+      "sha256": "29a7f9b0b0ebd9945ef0ea552b07097f68da2048bcd1fa2e280c457bed13bed6"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3490-program-fanout-awbc-check.input-audit.json",
+      "bytes": 1253,
+      "sha256": "9ee85c61459fb159ed1a4e0e5b52b90c3c6c966d36551b2a28bbcdad324d56a3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3490-program-fanout-awbc-check.json",
+      "bytes": 1385,
+      "sha256": "08c65a5c8a46bbb580677e83f982639438fd1cc92bea5fcba7a22e3f75f9615f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3490-program-fanout-awbc-check.log",
+      "bytes": 272046,
+      "sha256": "7a1e81606c986cd9b3b5bb20b7d256f506c35c87d8628bf4a9bb826cb7874fc5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3491-program-fanout-runtime.binaries-before.json",
+      "bytes": 24448,
+      "sha256": "774423c50189ae2ee6c99101a45af842194241b7f982e4b0927fe175e2e77282"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3491-program-fanout-runtime.json",
+      "bytes": 1474,
+      "sha256": "ecd0cec79ff43475c6635f44a94d599ff218223977aaa7db166908f53206c39b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3491-program-fanout-runtime.log",
+      "bytes": 314532,
+      "sha256": "cb36defe6aa321798367040e558fccd9a4b7af967399cc5ba1d24b12ded82984"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3491-program-fanout-runtime.terminal-audit.json",
+      "bytes": 1002,
+      "sha256": "7e5f69651ea45f52106b11290b7dae1c7474e29b6ebeb3a63366f124ae2b4628"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3492-owner-clippy.input-audit.json",
+      "bytes": 354,
+      "sha256": "3c8caad088aaa7abcb5af737c4bb28d2064ed1e31b24c989b2941f2589d88634"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3492-owner-clippy.json",
+      "bytes": 486,
+      "sha256": "6bd0539b79ecc8d82a98623bcfc0383fd2236c1edb4cc40f38fd5a11961b2eac"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3492-owner-clippy.log",
+      "bytes": 5480653,
+      "sha256": "51eca6dc90ea1febd3fb0d94a06497df194267b56c20ab480fbb6c6501c88d4d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3493-program-fanout-awbc-check.input-audit.json",
+      "bytes": 4556,
+      "sha256": "6b432bed51966be38a5464b17f8b418e2d0b354a26568508f32dce888a3e232b"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3493-program-fanout-awbc-check.json",
+      "bytes": 4688,
+      "sha256": "612d62e15516ffe342cb74eeb7079926cd8a56387d8c5ea1b324f543c6e30700"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3493-program-fanout-awbc-check.log",
+      "bytes": 263402,
+      "sha256": "77e4b1e5006c816ada569521317fd787966be8d8f91692f5809a56f05ccb75b6"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3494-program-fanout-runtime.binaries-before.json",
+      "bytes": 24448,
+      "sha256": "774423c50189ae2ee6c99101a45af842194241b7f982e4b0927fe175e2e77282"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3494-program-fanout-runtime.json",
+      "bytes": 4779,
+      "sha256": "88dac8c80c46de0404c1c4e14d4827b89d76aad1bad724282c2936b8b7f904a4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3494-program-fanout-runtime.log",
+      "bytes": 3413479,
+      "sha256": "c140a9ed36d49cf0bf9b36e64ea486b5451b2af6dcbc69d4bb11be24d963002f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3494-program-fanout-runtime.terminal-audit.json",
+      "bytes": 8342,
+      "sha256": "5715c98a7c289b08eb86621bfa3578698a638a23c65ada5d8f4ac30d107822c4"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3490.inventory.json",
+      "bytes": 184023,
+      "sha256": "4cf163e3d5ff4ae297947beb94de517839666e92b3efc0f2a54a99d6b26163d5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3490.source-freeze.json",
+      "bytes": 782062,
+      "sha256": "307a7ecad90555eba37a66374ad23362344df05dc8dbc74814ac2e54ff48d400"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3491.source-freeze.json",
+      "bytes": 782061,
+      "sha256": "418cd97874559ed8245e3677dfdddbd28ebf1572f005e3ee454093d0b389c4f2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3492.source-freeze.json",
+      "bytes": 782061,
+      "sha256": "418cd97874559ed8245e3677dfdddbd28ebf1572f005e3ee454093d0b389c4f2"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3493.inventory.json",
+      "bytes": 172119,
+      "sha256": "1f886b06878ebd3f36c9ddb30eb869a90ed056d11e7c5b22715e15bd249998e5"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3493.source-freeze.json",
+      "bytes": 781953,
+      "sha256": "c8cc7164c5770bbbb84a4949eceed23827c72ff291bf6668ce14c1617180be23"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3494.source-freeze.json",
+      "bytes": 781953,
+      "sha256": "c8cc7164c5770bbbb84a4949eceed23827c72ff291bf6668ce14c1617180be23"
+    }
+  ]
+}

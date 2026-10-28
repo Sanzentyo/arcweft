@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "base": "f4bbed3c2660d79f85dba758a7bd577799493e05",
+  "owners": [
+    "arcweft-compiler",
+    "arcweft-cli"
+  ],
+  "closure": [
+    {
+      "name": "arcweft-agent-mcp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+    },
+    {
+      "name": "arcweft-agent-mcp-client",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+    },
+    {
+      "name": "arcweft-agent-repl",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+    },
+    {
+      "name": "arcweft-cli",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+    },
+    {
+      "name": "arcweft-compiler",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+    },
+    {
+      "name": "arcweft-lsp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+    },
+    {
+      "name": "arcweft-player-native",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+    },
+    {
+      "name": "arcweft-player-web",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+    },
+    {
+      "name": "arcweft-runtime-host",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+    },
+    {
+      "name": "arcweft-verify-lsp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+    }
+  ],
+  "featureContext": [
+    {
+      "name": "arcweft-agent-mcp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-agent-mcp\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-agent-mcp-client",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-agent-mcp-client\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-agent-repl",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-agent-repl\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-agent-runner",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-agent-runner\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-cli",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-compiler",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-compiler\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-lsp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-lsp\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-player-native",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-player-native\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-player-scene",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-player-scene\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-player-web",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-player-web\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-runtime-driver",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-driver\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-runtime-host",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-host\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-runtime-plan",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-runtime-plan\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-test",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-test\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-tooling",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-tooling\\Cargo.toml"
+    },
+    {
+      "name": "arcweft-verify-lsp",
+      "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0",
+      "manifest_path": "D:\\git\\arcweft\\crates\\arcweft-verify-lsp\\Cargo.toml"
+    }
+  ],
+  "metadata": "task-view-body.metadata.json",
+  "metadataSha256": "0824c7d11c38224fc7762d755c8d43a48cca52c6de32098574f78c4371711d56",
+  "reusedMetadata": true,
+  "verifiedManifestAndLockInputs": 100,
+  "graphDrift": 0,
+  "reason": "Test-only changes do not alter downstream production semantics. Select all readiness owner tests plus the three CLI contract cases; retain the prior full 16-package feature activation to avoid feature-unification assumptions. R3483/R3485 production-consumer evidence is reused with its original source."
+}

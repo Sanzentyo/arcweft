@@ -1,0 +1,26 @@
+[
+  {
+    "path": "crates/arcweft-compiler/tests/evaluated_effects/dialogue_readiness.rs",
+    "owner": "arcweft-compiler",
+    "bytes": 24092,
+    "physicalLoc": 613,
+    "basePhysicalLoc": 527,
+    "growth": 86,
+    "classification": "integration-test",
+    "fanIn": 5,
+    "fanOut": 34,
+    "sha256": "95999cc0f7d3a32c7317304eadacfc81c4b610c391828b25e885e70e94f24397"
+  },
+  {
+    "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "owner": "arcweft-cli",
+    "bytes": 313278,
+    "physicalLoc": 9181,
+    "basePhysicalLoc": 9085,
+    "growth": 96,
+    "classification": "integration-test",
+    "fanIn": 0,
+    "fanOut": 55,
+    "sha256": "0d8b27b685312cab28535d54162812f5ba696e620ea7017addfba78d79ed87c5"
+  }
+]
