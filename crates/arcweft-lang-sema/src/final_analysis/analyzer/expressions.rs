@@ -4469,12 +4469,18 @@ impl Analyzer<'_, '_, '_> {
                         | arcweft_view::ViewElementArgumentRole::Y
                         | arcweft_view::ViewElementArgumentRole::Width
                         | arcweft_view::ViewElementArgumentRole::Height
+                        | arcweft_view::ViewElementArgumentRole::Spacing
                 )
             }) {
+                let scalar_kind = if role == Some(arcweft_view::ViewElementArgumentRole::Spacing) {
+                    crate::checked_text_proxy::CheckedCompileTimeScalarKind::Int
+                } else {
+                    crate::checked_text_proxy::CheckedCompileTimeScalarKind::Length
+                };
                 self.materialize_compile_time_scalar_fact(
                     module,
                     argument.value(),
-                    &crate::checked_text_proxy::CheckedCompileTimeScalarKind::Length,
+                    &scalar_kind,
                     expected
                         .clone()
                         .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?,

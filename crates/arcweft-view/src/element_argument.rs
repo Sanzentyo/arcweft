@@ -1,6 +1,9 @@
 //! Semantic grammar of builtin element arguments.
 
-use crate::ViewElementKind;
+use crate::{
+    ViewElementKind,
+    style::{ViewPhysicalFlow, ViewPropertyKind},
+};
 
 /// One declaration-independent role in a builtin element's input schema.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -59,8 +62,29 @@ impl ViewElementArgumentRole {
             Self::Label | Self::Enabled => {
                 element.is_action_control() || element.text_input_kind().is_some()
             }
-            Self::Spacing => element.is_layout_container(),
+            Self::Spacing => self.style_property(element).is_some(),
             Self::X | Self::Y | Self::Width | Self::Height => true,
+        }
+    }
+
+    /// Canonical physical Style property for an admitted geometry argument.
+    /// Spacing belongs to the element's physical flow, never an inherited box axis.
+    pub const fn style_property(self, element: ViewElementKind) -> Option<ViewPropertyKind> {
+        match self {
+            Self::X => Some(ViewPropertyKind::Left),
+            Self::Y => Some(ViewPropertyKind::Top),
+            Self::Width => Some(ViewPropertyKind::Width),
+            Self::Height => Some(ViewPropertyKind::Height),
+            Self::Spacing => match element.default_physical_flow() {
+                Some(ViewPhysicalFlow::Row | ViewPhysicalFlow::RowReverse) => {
+                    Some(ViewPropertyKind::ColumnGap)
+                }
+                Some(ViewPhysicalFlow::Column | ViewPhysicalFlow::ColumnReverse) => {
+                    Some(ViewPropertyKind::RowGap)
+                }
+                Some(ViewPhysicalFlow::Overlay) | None => None,
+            },
+            Self::Label | Self::Enabled => None,
         }
     }
 }

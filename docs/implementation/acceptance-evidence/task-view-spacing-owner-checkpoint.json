@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "base": "d3035b074f7bb7e2fdd41c52006ab9a9431fd295",
+  "status": "Coherent implementation checkpoint: focused spacing acceptance and structural gate pass. Complete 41-package reverse-consumer catalogue is linking; its runtime, workspace gates and final acceptance remain in progress.",
+  "change": "Connect the already typed integer-pixel Row/Column spacing role through the shared compile-time scalar fact transaction to the existing canonical inline Style gap and physical geometry owners.",
+  "ownership": "ViewElementArgumentRole owns physical property selection and element admission. Row selects ColumnGap, Column selects RowGap. Sema materializes an i32/Int scalar in the original transaction. Compiler performs checked nonnegative pixel-to-thousandths conversion and emits the sole Style declaration with the exact source range. No alternate layout, source reconstruction, scalar interpreter, wire schema or version is added.",
+  "contract": "spacing is a compile-time i32 integer-pixel scalar for Row/Column. Zero is valid; negative/overflow, runtime values, incompatible types, duplicates, overlay containers and leaves reject. The current geometric scalar profile is explicit in docs/03-presentation/view-reactive.md.",
+  "focused": {
+    "run": "R3505",
+    "summary": "Summary [   0.396s] 3 tests run: 3 passed, 69 skipped",
+    "executed": 3,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 69,
+    "sourceInputs": 3999,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "executables": 1,
+    "executableDrift": 0,
+    "cases": "Canonical Style codec, exact source provenance, physical Row/Column gaps, zero/one/two child geometry, cache, largest representable integer pixel value, negative/overflow, all element roles and typed scalar admission."
+  },
+  "initialFailure": "R3503 was a test-only E0308 compile failure: expected physical geometry sizes require u32, while the scalar uses i32. Exact checked conversions repaired the two expected-size expressions. R3504 catalogue and R3505 runtime pass; the original receipt/log/input freeze remain history.",
+  "structure": {
+    "run": "R3507",
+    "exitCode": 0,
+    "workspacePackages": 97,
+    "reviewTriggers": 382,
+    "blockingViolations": 0,
+    "sourceInputs": 3999,
+    "sourceDrift": 0,
+    "reports": [
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-view-spacing-structure-dependency_edges.csv",
+        "bytes": 77451,
+        "sha256": "258db26b310eca08b26437e68d5e90cf3d2eb85b75eeb37af5587ce18da7946f"
+      },
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-view-spacing-structure-file_metrics.csv",
+        "bytes": 327788,
+        "sha256": "b6b419746b399e502f521525e9ea0522c8103602f5b03de11a11058493b3149a"
+      },
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-view-spacing-structure-findings.md",
+        "bytes": 122295,
+        "sha256": "911f73d5a1895d9a8fed820f3e7c2b805bdfd7727e5be7153a02aad308620f3e"
+      },
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-view-spacing-structure-package_metrics.csv",
+        "bytes": 6444,
+        "sha256": "048f6d11a5dd2b40308777f6fda14ddd358ddd535726e3d81f6eab76e6bcab82"
+      },
+      {
+        "path": "docs\\implementation\\acceptance-evidence\\task-view-spacing-structure-public_type_duplicates.csv",
+        "bytes": 17121,
+        "sha256": "6f44fc0106f882d66930286ac870e7d9bdaa229210262e13c91db6c28e2fed3b"
+      }
+    ],
+    "disposition": "task-view-spacing.metrics.json"
+  },
+  "pending": "R3506 complete 41-package catalogue, subsequent complete nextest reverse consumers, workspace all-target/all-feature check and Clippy, and final published acceptance. Do not treat this intermediate checkpoint as a green workspace claim.",
+  "preservation": "The existing Generic Match/loop/HIR/View acceptances are not reopened. Original tracked WIP14 and untracked files6 remain separate; no runtime work, operation count, budget, capture or assertion condition is lowered.",
+  "artifacts": [
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3503-program-fanout-awbc-check.input-audit.json",
+      "bytes": 404,
+      "sha256": "842346f3eec6d9fcab88e20656305687e4ed12baefeeef0b4e886386bdeddd3f"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3503-program-fanout-awbc-check.json",
+      "bytes": 536,
+      "sha256": "657615fc02f1a474e3fd598b3afa78c2cc54b8be8c3ffeef00a7ace3e8375613"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3503-program-fanout-awbc-check.log",
+      "bytes": 86880,
+      "sha256": "af77e42f08c397e83dc2513b31dc60e7533cd5aa91353912e8db8760aab8ce46"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3504-program-fanout-awbc-check.input-audit.json",
+      "bytes": 402,
+      "sha256": "e8459230db5cb66006c9f482bc1a8cb3a380422f52c502244400c7c254ea4f98"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3504-program-fanout-awbc-check.json",
+      "bytes": 534,
+      "sha256": "3251c2f8b084be4d483c762a072bc05a0246bb3f1dce355df2aae18e91a8a273"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3504-program-fanout-awbc-check.log",
+      "bytes": 94862,
+      "sha256": "97722d9fffa0e274c663c2fc05cac0f4265c0e3e9953fa47ce4b0cb11d605e38"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3505-program-fanout-runtime.binaries-before.json",
+      "bytes": 220,
+      "sha256": "2b9d4645c4157e26aa1f251884697fed25562442ca0e0ccfd0e14fd4d0197057"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3505-program-fanout-runtime.json",
+      "bytes": 658,
+      "sha256": "359a21cfc24bcf0497a9e6025e6bbdc23f03232700c29231a45ede151154d51c"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3505-program-fanout-runtime.log",
+      "bytes": 103948,
+      "sha256": "550d71b1d3882c0e073a2f289056acdd53f296c895994fc54a56555572e148e9"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3505-program-fanout-runtime.terminal-audit.json",
+      "bytes": 610,
+      "sha256": "07d223c479ee1363ef0b50552d5b8e487667ed8558104a440defe69bf4c6f263"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3507-view-spacing-structure.input-audit.json",
+      "bytes": 473,
+      "sha256": "44e29b472d8a00ea0c248558dae87d82912cddd8d9a9fb4a6cf7e48892052491"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3507-view-spacing-structure.json",
+      "bytes": 740,
+      "sha256": "af0bb2387cc91e7cc3b0677e0ff10217011eec1a7c5d6a8bacfde8e0e8a5037d"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-final-r3507-view-spacing-structure.log",
+      "bytes": 65014,
+      "sha256": "72f7c2b5dc2ac4b6790dabcd70061401fdeb4a266135e8c0f5288465afc744bb"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3503.source-freeze.json",
+      "bytes": 782116,
+      "sha256": "87f1c42c8475bf48cca6088f81f52ebce024654893f8a8aed7380a6642bfcf02"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3504.inventory.json",
+      "bytes": 17826,
+      "sha256": "62ea13d63ae090e8efe7892c434762f27c5f596d8a680f6219f1917e2470e0e3"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-program-fanout-runtime-r3504.source-freeze.json",
+      "bytes": 782116,
+      "sha256": "558a39fe9e3f51c1d3b715eee417f40efe0c9dd79582d14b455a0daa7651f35a"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-view-spacing.metrics.json",
+      "bytes": 2751,
+      "sha256": "db5721e7993f5b28c6703d9eaf6451228d97afd622e3ece0eec6d69f7dafcb02"
+    },
+    {
+      "path": "docs\\implementation\\acceptance-evidence\\task-view-spacing.reverse-closure.json",
+      "bytes": 6967,
+      "sha256": "78e4bbce18eeef64ebf5b10d57073f848c27679bc22383cd6cd3d0a1cce3f90e"
+    }
+  ]
+}

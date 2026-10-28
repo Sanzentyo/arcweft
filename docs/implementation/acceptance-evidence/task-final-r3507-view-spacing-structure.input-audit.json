@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3507-view-spacing-structure",
+  "actualExitCode": 0,
+  "scope": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--write",
+    "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-view-spacing.structure",
+    "--fail-on-blocking"
+  ],
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T03:59:37.9209494Z"
+}

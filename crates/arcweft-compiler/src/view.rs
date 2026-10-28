@@ -1910,11 +1910,11 @@ impl AuthoredViewBodyLowerer<'_> {
                 arcweft_view::ViewElementArgumentRole::Label
                     | arcweft_view::ViewElementArgumentRole::Enabled
             ) && !element.is_action_control()
-                || argument.role() == arcweft_view::ViewElementArgumentRole::Spacing
+                || !argument.role().accepts_element(element)
         }) {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
-        let styles = self.lower_element_style(arguments)?;
+        let styles = self.lower_element_style(element, arguments)?;
         let ordinal = self.element_ordinal;
         self.element_ordinal = self
             .element_ordinal
@@ -2143,6 +2143,7 @@ impl AuthoredViewBodyLowerer<'_> {
 
     fn lower_element_style(
         &mut self,
+        element: arcweft_view::ViewElementKind,
         arguments: &[arcweft_lang_sema::final_analysis::CheckedViewElementArgument],
     ) -> Result<Vec<arcweft_view::style::ViewStyleApplicationTarget>, ViewProjectLowerError> {
         use arcweft_lang_sema::{
@@ -2159,14 +2160,16 @@ impl AuthoredViewBodyLowerer<'_> {
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
         let mut declarations = Vec::new();
         for argument in arguments {
-            let property = match argument.role() {
-                ViewElementArgumentRole::X => ViewPropertyKind::Left,
-                ViewElementArgumentRole::Y => ViewPropertyKind::Top,
-                ViewElementArgumentRole::Width => ViewPropertyKind::Width,
-                ViewElementArgumentRole::Height => ViewPropertyKind::Height,
-                ViewElementArgumentRole::Label | ViewElementArgumentRole::Enabled => continue,
-                ViewElementArgumentRole::Spacing => return Err(invalid()),
-            };
+            if matches!(
+                argument.role(),
+                ViewElementArgumentRole::Label | ViewElementArgumentRole::Enabled
+            ) {
+                continue;
+            }
+            let property = argument
+                .role()
+                .style_property(element)
+                .ok_or_else(invalid)?;
             let checked = self
                 .analysis
                 .expression(argument.value())
@@ -2175,12 +2178,23 @@ impl AuthoredViewBodyLowerer<'_> {
             else {
                 return Err(invalid());
             };
-            let CheckedCompileTimeScalar::Length(length) = scalar.value() else {
-                return Err(invalid());
+            let milli = match (argument.role(), scalar.value()) {
+                (ViewElementArgumentRole::Spacing, CheckedCompileTimeScalar::Int(value)) => {
+                    i32::try_from(*value)
+                        .ok()
+                        .and_then(|value| value.checked_mul(1_000))
+                        .filter(|value| *value >= 0)
+                        .ok_or_else(invalid)?
+                }
+                (
+                    ViewElementArgumentRole::X
+                    | ViewElementArgumentRole::Y
+                    | ViewElementArgumentRole::Width
+                    | ViewElementArgumentRole::Height,
+                    CheckedCompileTimeScalar::Length(length),
+                ) if length.unit == LengthUnit::Px => length.milli,
+                _ => return Err(invalid()),
             };
-            if length.unit != LengthUnit::Px {
-                return Err(invalid());
-            }
             let lookup = self
                 .module
                 .source_site(
@@ -2230,7 +2244,7 @@ impl AuthoredViewBodyLowerer<'_> {
             declarations.push(ViewStyleDeclaration::new(
                 property,
                 ViewSpecifiedValue::Length {
-                    value: ViewLengthMilli::new(length.milli),
+                    value: ViewLengthMilli::new(milli),
                 },
                 ViewStyleAssignOp::Replace,
                 source_id,

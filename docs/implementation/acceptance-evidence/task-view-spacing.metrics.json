@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "base": "d3035b074f7bb7e2fdd41c52006ab9a9431fd295",
+  "metrics": [
+    {
+      "path": "crates/arcweft-view/src/element_argument.rs",
+      "owner": "arcweft-view",
+      "classification": "production",
+      "bytes": 2984,
+      "physicalLoc": 90,
+      "basePhysicalLoc": 66,
+      "growth": 24,
+      "fanIn": 19,
+      "fanOut": 10,
+      "sha256": "50f12ccc48826b63ee3c5f8c556d2ad5e3ae5f94bd5a089198080a4b8e7b8f37"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+      "owner": "arcweft-lang-sema",
+      "classification": "production",
+      "bytes": 243458,
+      "physicalLoc": 5694,
+      "basePhysicalLoc": 5688,
+      "growth": 6,
+      "fanIn": 12,
+      "fanOut": 18,
+      "sha256": "a489e054283267de82411b94528a9cd4e5019bd6de4509f0a586311f88491ccd"
+    },
+    {
+      "path": "crates/arcweft-compiler/src/view.rs",
+      "owner": "arcweft-compiler",
+      "classification": "production",
+      "bytes": 119985,
+      "physicalLoc": 2975,
+      "basePhysicalLoc": 2961,
+      "growth": 14,
+      "fanIn": 5,
+      "fanOut": 39,
+      "sha256": "d5344825bcf0d873599673431d5630a33bb85e070b38d697d575a5331ad933eb"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/view_product.rs",
+      "owner": "arcweft-compiler",
+      "classification": "test",
+      "bytes": 237209,
+      "physicalLoc": 6139,
+      "basePhysicalLoc": 6136,
+      "growth": 3,
+      "fanIn": 5,
+      "fanOut": 39,
+      "sha256": "cf00e53eb2c3cb50f89c671e7be90659addb7976aae89abf6c75007a963db6b5"
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/view_product/spacing.rs",
+      "owner": "arcweft-compiler",
+      "classification": "test",
+      "bytes": 8146,
+      "physicalLoc": 210,
+      "basePhysicalLoc": 0,
+      "growth": 210,
+      "fanIn": 5,
+      "fanOut": 39,
+      "sha256": "0eaf213d558559f62b18edec5c85ad2b206171376d9a3c3fbb814b33430166b5"
+    }
+  ],
+  "disposition": "ViewElementArgumentRole owns the one closed role-to-physical-property rule, shared by admission and compiler lowering. The existing Sema expression owner keeps scalar reduction in its original fact transaction; the existing Compiler View lowerer projects those accepted facts into the sole Style patch. No state cluster, dependency edge, schema or I/O owner is introduced. Large pre-existing analyzer/compiler/integration modules retain their recorded cohesive ownership; the new spacing acceptance cases are a dedicated child test module. The added public role method expresses a legitimate domain rule rather than widening APIs for a physical split. Run the canonical structural scanner for this public admission boundary."
+}

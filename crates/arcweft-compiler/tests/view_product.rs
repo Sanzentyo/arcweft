@@ -5,6 +5,9 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 #[path = "view_product/match_source.rs"]
 mod match_source;
 
+#[path = "view_product/spacing.rs"]
+mod spacing;
+
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary,
     resource_codec::{

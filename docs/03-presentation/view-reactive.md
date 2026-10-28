@@ -185,6 +185,13 @@ profile は px の固定小数点 thousandths を使い、pt／em は換算規�
 既存の Style/layout 規則に従う。これらの入力は新しい runtime scalar interpreter
 や別の bounds table を作らず、既存の cascade、geometry、paint、hit-test 境界を使う。
 
+`Row`／`Column` の `spacing` は compile-time scalar の i32 整数pxを受け取る。
+Row は物理 ColumnGap、Column は物理 RowGap の inline Style declarationへ投影する。
+writing modeによる軸の入れ替えは行わず、間隔は隣接する子の間だけに加える。
+0は受理し、負値とthousandthsへのchecked変換がoverflowする値は拒否する。
+overlay containerとleaf、runtime値、型不一致、重複した指定も拒否する。
+寸法引数と同じchecked scalar・source range・Style codec・cascade・geometryを使う。
+
 Style の型 selector は、同じ `ViewStyleTargetKind` の registry から source、codec、
 property applicability、runtime matching へ渡す。container／control は既存の
 `ViewElementKind` を保持し、`Text`、`RichText`、`Image`、`View`、

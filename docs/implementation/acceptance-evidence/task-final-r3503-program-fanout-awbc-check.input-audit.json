@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "run": "task-final-r3503-program-fanout-awbc-check",
+  "actualExitCode": 101,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "view_product",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 3999,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T03:56:40.2728894Z"
+}

@@ -1,0 +1,17 @@
+{
+  "base": "d3035b074f7bb7e2fdd41c52006ab9a9431fd295",
+  "changed": [
+    "docs/03-presentation/view-reactive.md"
+  ],
+  "checkedDocuments": 129,
+  "relativeLinks": 632,
+  "brokenLinks": [],
+  "unclosedFences": [],
+  "statusCommitIds": 39,
+  "unretainedIds": [],
+  "evidenceChanges": [],
+  "heldFiles": 20,
+  "heldDrift": 0,
+  "partialCliOriginalWipProof": true,
+  "rustCargoRun": false
+}
