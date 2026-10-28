@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run": "task-final-r3614-wait-core-doctest",
+  "actualExitCode": 0,
+  "scope": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked"
+  ],
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-28T23:51:19.6324418Z"
+}

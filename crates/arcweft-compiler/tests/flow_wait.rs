@@ -532,7 +532,14 @@ fn standalone_awbc_cancellation_retires_wait_without_executing_the_tail() {
             &mut host,
         )
         .unwrap();
-        assert!(matches!(result.exit, VmExit::Running));
+        match result.exit {
+            VmExit::Running => {}
+            VmExit::Suspended(notice) => assert_eq!(
+                notice.kind,
+                arcweft_core::awbc::fiber::FiberSuspensionKind::DurationWait
+            ),
+            exit => panic!("unexpected pre-cancellation exit: {exit:?}"),
+        }
     }
     assert!(matches!(
         fiber

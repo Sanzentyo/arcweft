@@ -653,7 +653,7 @@ fn step_with_host_context_optional(
                     return Ok(VmStepOutput {
                         executed,
                         observations,
-                        exit: VmExit::Running,
+                        exit: terminal_exit(fiber),
                     });
                 }
             }

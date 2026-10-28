@@ -1,0 +1,103 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::awbc_region_baseline_executes_through_compact_vm",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::awbc_region_lowering_accepts_basic_verified_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::awbc_region_lowering_accepts_project_call_as_internal_terminator",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::awbc_region_lowering_rejects_host_boundary_without_opt_in",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::awbc_region_project_call_uses_the_exact_program_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::cache_key_digest_is_deterministic_and_backend_sensitive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::compiled_continue_uses_dispatcher_budget_accounting",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::compiled_fallback_must_not_consume_instruction_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::compiled_fallback_restores_the_entry_checkpoint",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::compiled_forged_instruction_suspension_restores_the_complete_entry_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::compiled_nested_return_restores_caller_and_writes_destination",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::compiled_region_rejects_a_cancelled_entry_without_reclassifying_it",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::compiled_wait_uses_the_original_instruction_then_resumes_after_elapsed_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-codegen",
+      "binary": "arcweft-runtime-codegen",
+      "test": "tests::runtime_codegen_policy_labels_are_stable_for_repl_tiering_status",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

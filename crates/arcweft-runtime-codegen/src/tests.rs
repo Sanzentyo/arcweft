@@ -41,6 +41,7 @@ enum RegionBehavior {
     Continue,
     ReturnString,
     Fallback { consumed: u64 },
+    ForgedDurationWait,
 }
 
 struct TestRegion {
@@ -55,6 +56,32 @@ impl CompiledRegion for TestRegion {
 
     fn step(&self, input: CompiledRegionInput<'_>) -> CompiledRegionResult {
         match self.behavior {
+            RegionBehavior::ForgedDurationWait => {
+                use arcweft_core::awbc::fiber::{
+                    FiberResumeTarget, FiberSuspension, FiberSuspensionReason,
+                };
+                let mut next = input.fiber.cursor;
+                next.instruction_offset += 1;
+                input.fiber.line_cursor = 99;
+                input
+                    .fiber
+                    .suspend(FiberSuspension {
+                        resume: FiberResumeTarget::Exact(next),
+                        reason: FiberSuspensionReason::DurationWait(
+                            arcweft_core::time::LogicalWait::start(
+                                arcweft_core::time::LogicalDuration::from_nanos(5),
+                            )
+                            .unwrap(),
+                        ),
+                    })
+                    .unwrap();
+                CompiledRegionResult {
+                    consumed: 1,
+                    exit: CompiledStepExit::Suspended(
+                        input.fiber.suspension.as_ref().unwrap().notice(),
+                    ),
+                }
+            }
             RegionBehavior::Continue => {
                 input.fiber.line_cursor = 42;
                 // Generated code cannot account budget itself; the dispatcher
@@ -360,6 +387,107 @@ fn compiled_fallback_restores_the_entry_checkpoint() {
     assert_eq!(fiber.line_cursor, 0);
     assert_eq!(fiber.cursor.block, AwbcBlockId(0));
     assert_eq!(fiber.budget.remaining, 10);
+}
+
+#[test]
+fn compiled_forged_instruction_suspension_restores_the_complete_entry_state() {
+    let program = admit(program());
+    let region = TestRegion {
+        metadata: metadata(&program),
+        behavior: RegionBehavior::ForgedDurationWait,
+    };
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).unwrap();
+    let before =
+        fiber
+            .checkpoint(&mut program.retained_value_admission(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ))
+            .unwrap();
+    let result = execute_compiled_region(
+        &region,
+        identity(),
+        &program,
+        &RuntimeFormatContext::default(),
+        &mut fiber,
+        10,
+    );
+    assert!(matches!(result, Err(CompiledApplyError::Fiber(_))));
+    let after =
+        fiber
+            .checkpoint(&mut program.retained_value_admission(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ))
+            .unwrap();
+    assert_eq!(before, after);
+    assert_eq!(fiber.budget.remaining, 10);
+    assert_eq!(fiber.line_cursor, 0);
+}
+
+#[test]
+fn compiled_wait_uses_the_original_instruction_then_resumes_after_elapsed_time() {
+    use arcweft_core::awbc::{
+        fiber::{FiberStatus, FiberSuspensionReason},
+        vm::{self, VmExit, VmStepOptions},
+    };
+    use arcweft_core::time::LogicalDuration;
+    let mut input = program();
+    input.constants.push(AwbcConstant::DurationNanos(5));
+    input.effect_plans.push(AwbcEffectPlan {
+        signature: AwbcSignatureId(0),
+        capability: None,
+        payload: AwbcEffectPayload::Wait(AwbcWaitDuration::Constant(AwbcConstantId(0))),
+        resources: Vec::new(),
+    });
+    input.instructions.push(AwbcInstruction::EmitEffect {
+        effect: AwbcEffectPlanId(0),
+        args: Vec::new(),
+    });
+    input.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    let program = admit(input);
+    let report = lower_awbc_regions(
+        &program,
+        &AwbcRegionLowerOptions {
+            generation: ProgramGenerationId(1),
+            program_digest: PROGRAM_DIGEST,
+            allow_host_boundaries: true,
+            ..Default::default()
+        },
+    );
+    assert!(report.rejected.is_empty());
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).unwrap();
+    let transition = execute_compiled_region(
+        report.regions[0].as_ref(),
+        identity(),
+        &program,
+        &RuntimeFormatContext::default(),
+        &mut fiber,
+        10,
+    )
+    .unwrap();
+    assert_eq!(transition, CompiledTransition::Suspended);
+    assert_eq!(fiber.status, FiberStatus::Suspended);
+    assert_eq!(fiber.budget.remaining, 9);
+    assert_eq!(fiber.cursor.instruction_offset, 0);
+    assert!(
+        matches!(fiber.suspension.as_ref().map(|s| &s.reason), Some(FiberSuspensionReason::DurationWait(wait)) if wait.remaining().as_nanos() == 5)
+    );
+    fiber
+        .advance_duration_wait(&program, LogicalDuration::from_nanos(4))
+        .unwrap();
+    assert_eq!(fiber.status, FiberStatus::Suspended);
+    fiber
+        .advance_duration_wait(&program, LogicalDuration::from_nanos(1))
+        .unwrap();
+    assert_eq!(fiber.cursor.instruction_offset, 1);
+    let result = vm::step_with_host(
+        &program,
+        &mut fiber,
+        VmStepOptions::default(),
+        &mut vm::RejectingVmHost,
+    )
+    .unwrap();
+    assert!(matches!(result.exit, VmExit::Returned(None)));
+    assert!(result.observations.is_empty());
 }
 
 #[test]

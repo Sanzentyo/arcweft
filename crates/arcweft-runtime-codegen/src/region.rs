@@ -229,7 +229,13 @@ pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
             available,
         });
     }
-    apply_exit(program, fiber, result.exit)
+    match apply_exit(program, fiber, result.exit) {
+        Ok(transition) => Ok(transition),
+        Err(error) => {
+            fiber.restore(checkpoint, program)?;
+            Err(error)
+        }
+    }
 }
 
 fn validate_metadata(
@@ -308,11 +314,10 @@ fn apply_exit(
             if fiber.status != FiberStatus::Suspended || suspension.notice() != notice {
                 return Err(CompiledApplyError::InvalidSafePoint);
             }
-            let expected = suspension_kind(&suspension.reason);
-            let resume = suspension
-                .declared_resume()
-                .ok_or(CompiledApplyError::InvalidSafePoint)?;
-            validate_resume(program, fiber, resume, expected)?;
+            // Core owns both declared terminator suspensions and exact
+            // instruction suspensions. Admit their original sites and payloads
+            // through that same grammar instead of inventing a safe-point kind.
+            fiber.validate_for_program(program)?;
             Ok(CompiledTransition::Suspended)
         }
         CompiledStepExit::Returned(value) => {
@@ -430,17 +435,4 @@ fn validate_fallback_point(
         }
     }
     Ok(())
-}
-
-const fn suspension_kind(reason: &FiberSuspensionReason) -> AwbcSafePointKind {
-    match reason {
-        FiberSuspensionReason::Dialogue { .. } => AwbcSafePointKind::Dialogue,
-        FiberSuspensionReason::Choice { .. } => AwbcSafePointKind::Choice,
-        FiberSuspensionReason::Await { .. } => AwbcSafePointKind::Await,
-        FiberSuspensionReason::AwaitMany(_) | FiberSuspensionReason::ProgramFanout(_) => {
-            AwbcSafePointKind::AwaitMany
-        }
-        FiberSuspensionReason::HostCall { .. } => AwbcSafePointKind::HostCall,
-        FiberSuspensionReason::BudgetYield => AwbcSafePointKind::BudgetYield,
-    }
 }

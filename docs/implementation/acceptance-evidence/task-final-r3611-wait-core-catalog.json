@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "e6d24eeb893e7e56b383024f462c29c35ac24100",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--lib",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3611-wait-core-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T23:37:39.1317801Z",
+  "finishedAt": "2026-10-28T23:38:43.0881216Z"
+}

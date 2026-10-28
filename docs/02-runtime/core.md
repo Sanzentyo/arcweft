@@ -302,6 +302,12 @@ the ordinary fiber, and compatible program replacement preserves the remaining
 time while validating that its source instruction is still Wait. Dialogue
 activation uses its own existing fiber and transactional time ingress.
 
+The VM returns its suspended notice when the Wait instruction yields. Compiled
+regions authenticate their suspension with the same Core fiber admission,
+including exact instruction resumes, instead of a second safe-point-kind table.
+An invalid compiled exit restores the entry checkpoint and its budget before
+returning the error.
+
 `yield` is not a line effect. It lowers only through Stream generation plans;
 a dialogue line plan must use `out` for line-scope values.
 

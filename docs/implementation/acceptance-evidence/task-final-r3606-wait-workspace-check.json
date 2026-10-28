@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "e6d24eeb893e7e56b383024f462c29c35ac24100",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3606-wait-workspace-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T23:25:39.5102855Z",
+  "finishedAt": "2026-10-28T23:30:35.8856714Z",
+  "freeBefore": 461347192832,
+  "freeAfter": 458293301248
+}

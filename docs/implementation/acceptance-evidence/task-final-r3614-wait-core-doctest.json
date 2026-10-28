@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "e6d24eeb893e7e56b383024f462c29c35ac24100",
+  "command": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3614-wait-core-doctest.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-28T23:49:01.0378663Z",
+  "finishedAt": "2026-10-28T23:51:18.8700646Z"
+}

@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "base": "e6d24eeb893e7e56b383024f462c29c35ac24100",
+  "date": "2026-10-29",
+  "status": "Historical gate sequence; superseded by task-wait-tier2-owner-checkpoint.json for the repaired input",
+  "core": {
+    "version": 1,
+    "base": "e6d24eeb893e7e56b383024f462c29c35ac24100",
+    "run": "task-final-r3602-program-fanout-runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  45.791s] 2075 tests run: 2075 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2075,
+    "passed": 2075,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4003,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-28T23:09:27.3224599Z"
+  },
+  "sourceCheckpoint": "task-wait-awbc-owner-checkpoint.json",
+  "sourcePublication": "task-wait-awbc-source-publication.json",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3601-wait-core-catalog.input-audit.json",
+      "bytes": 368,
+      "sha256": "5462d5e674c23ef549a882f62c8ab5405a54395ad39528175f64c00f732b5539"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3601-wait-core-catalog.json",
+      "bytes": 500,
+      "sha256": "f3611379ad00eda7ff909fab429341dbcf171dbc3cce00469514737e335c29e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3601-wait-core-catalog.log",
+      "bytes": 387579,
+      "sha256": "4f7be955b737f675365adf32414269e84637bfbab5220a6186a923a8ba4feadb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3602-program-fanout-runtime.binaries-before.json",
+      "bytes": 202,
+      "sha256": "e72c02f3a4a06045cd60f6fbd6a5c598eddbb6722b55520f6cf154c86f970da7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3602-program-fanout-runtime.json",
+      "bytes": 597,
+      "sha256": "9962094733ed15914f13f307fce2b9a2e0aebc7ba04377dd390571fa9d06aace"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3602-program-fanout-runtime.log",
+      "bytes": 663426,
+      "sha256": "c8646d7e7e0d5b79f9eab9d2600ad7c943e8ea53dafaf9cf5ab6f3056b1ce676"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3602-program-fanout-runtime.terminal-audit.json",
+      "bytes": 620,
+      "sha256": "cf8f5e6f0c2439b51df20bd93c9c57b95f1e76e35d1a4aa4d214100a41de59a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3601.inventory.json",
+      "bytes": 525761,
+      "sha256": "c9732904ad535f53a9cfcd683d158af267aeeeea7cfdaa1ac6b173be2fce3d1a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3601.source-freeze.json",
+      "bytes": 782524,
+      "sha256": "058257bb70bfb4b79947d01346a0bbebe409e616742709dde1422b5b915aa816"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3602.source-freeze.json",
+      "bytes": 782524,
+      "sha256": "058257bb70bfb4b79947d01346a0bbebe409e616742709dde1422b5b915aa816"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3603-wait-workspace-check.input-audit.json",
+      "bytes": 316,
+      "sha256": "4f92f46dcc31a871a40cdf19251e0d1cac89c4d7d82a68f320cef9ca3364cddf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3603-wait-workspace-check.json",
+      "bytes": 448,
+      "sha256": "012a66dd0fcf5bcfc73be3d9fa39ae465c37c6f7c692bdada534819bb76f72be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3603-wait-workspace-check.log",
+      "bytes": 104741,
+      "sha256": "e1db2dd6d5f68799ccc3f02d72a8d3a3f5d55970c050aadee8735833a76e656b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3603.source-freeze.json",
+      "bytes": 782524,
+      "sha256": "058257bb70bfb4b79947d01346a0bbebe409e616742709dde1422b5b915aa816"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3606-wait-workspace-check.input-audit.json",
+      "bytes": 314,
+      "sha256": "15bedbc1456952165695fb6561e7dcc77797340736adc5d9c9da58ce913ed83d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3606-wait-workspace-check.json",
+      "bytes": 507,
+      "sha256": "7adfda7519eebaa7a81a0d4b3f304eed88215f4acd7cd50c9979bb4ac1b264cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3606-wait-workspace-check.log",
+      "bytes": 108951,
+      "sha256": "98358bfc20945b7160d37db9e215a288f4b33a2522c0efe72b77ab8c639c1eff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3606.source-freeze.json",
+      "bytes": 782732,
+      "sha256": "d36f9400d70cc0abf1e19e239b7f23b66ddaee0d8add73b2b53bbcdb093a57b3"
+    }
+  ],
+  "workspaceCheckAttempt": {
+    "run": "task-final-r3603-wait-workspace-check",
+    "exitCode": 101,
+    "sourceInputs": 4003,
+    "sourceDrift": 0,
+    "cause": "runtime-codegen region suspension_kind omitted the new DurationWait. Repair uses Core suspension admission, immediate canonical VM Suspended exit and transactional invalid-exit rollback; current rerun R3606."
+  },
+  "currentWorkspaceCheck": {
+    "run": "task-final-r3606-wait-workspace-check",
+    "exitCode": 0,
+    "packages": 97,
+    "sourceInputs": 4003,
+    "sourceDrift": 0,
+    "scope": "All targets/all features/locked; includes uncommitted four-path Tier2 repair"
+  },
+  "supersededReason": "Pending Core/check/Clippy/doctest entries are complete at R3612/R3606/R3613/R3614. R3602 covers the earlier published input and R3603 remains failed history. Item-by-item current status is maintained only in current-status.md."
+}
