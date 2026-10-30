@@ -95,7 +95,7 @@ show(@character.alice, .worried, at = (0.35, 0.92), scale = 1.05, z = 10)
 hide(@character.alice, fade = 180ms)
 ```
 
-`show(...)` returns a `StageHandle<CharacterSurface>`. The visible stage object
+`show(...)` returns a `Handle<CharacterSurface>`. The visible stage object
 and the handle have the same scope lifetime by default. When the handle is
 dropped at scope exit, the runtime clears the registered slot unless the handle
 was detached or moved to a longer scope.
@@ -119,13 +119,16 @@ Multiple instances of a character require explicit slots:
 let alice_main = show(@character.alice, .smile, slot = @slot.character.alice.main)
 let alice_mirror = show(@character.alice, .worried, slot = @slot.character.alice.mirror)
 
-let current_main = show.ref(@character.alice, slot = @slot.character.alice.main)
+let main_slot = ref.show(@character.alice, slot = @slot.character.alice.main)
 let removed_main = hide(@character.alice, slot = @slot.character.alice.main)
 ```
 
-`show.ref(...)` only reads the slot. It does not create or retain a stage
-object. `hide(...)` is the clear operation paired with `show(...)`; it returns
-the removed handle/value when the slot was occupied.
+`ref.show(...)` returns a `SlotRef<CharacterSurface>` without creating a stage
+object or changing slot ownership. `hide(...)` is the clear operation paired
+with `show(...)`; it returns `Option<CharacterSurface>` containing the removed
+surface when the slot was occupied. This surface is distinct from the
+scope-owned `Handle<CharacterSurface>` returned by staging. An older handle
+cannot clear a replacement occupant.
 
 ## Face and pose change
 

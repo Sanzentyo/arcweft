@@ -1,0 +1,19 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-verify-z3",
+      "binary": "arcweft-verify-z3",
+      "test": "tests::outcome_parser_is_owned_by_smt_outcome",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-z3",
+      "binary": "arcweft-verify-z3",
+      "test": "tests::parses_boolean_and_integer_model_values",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

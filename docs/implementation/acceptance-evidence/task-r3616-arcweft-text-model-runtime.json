@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-text-model",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-r3616-arcweft-text-model-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-29T02:28:45.4389027Z",
+  "finishedAt": "2026-10-29T02:28:48.0770875Z"
+}

@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "sourceFreeze": "task-program-fanout-runtime-r3616",
+  "graph": "task-wait-runtime.reverse-closure.json",
+  "startedAt": "2026-10-30T23:36:02.1970397Z",
+  "status": "terminal",
+  "currentPackage": null,
+  "stage": null,
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "catalog": "task-r3617-arcweft-compiler-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "task-r3617-arcweft-compiler-runtime",
+      "actualExitCode": 0,
+      "executed": 661,
+      "passed": 661,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4003,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 26,
+      "binaryDrift": 0,
+      "failureSet": []
+    }
+  ],
+  "finishedAt": "2026-10-30T23:39:59.0446147Z"
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-r3616-arcweft-lang-syntax-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-syntax",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-29T01:24:16.4017251Z"
+}

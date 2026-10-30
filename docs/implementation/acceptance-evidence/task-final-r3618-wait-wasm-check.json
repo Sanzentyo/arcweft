@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-player-web",
+    "--target",
+    "wasm32-unknown-unknown",
+    "--locked"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-final-r3618-wait-wasm-check.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-30T23:40:25.7811947Z",
+  "finishedAt": "2026-10-30T23:42:08.7229934Z",
+  "freeBefore": 247413596160,
+  "freeAfter": 245882744832
+}

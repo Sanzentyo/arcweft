@@ -617,15 +617,20 @@ scope opening_view {
 // room and alice_on_stage leave scope here; their registered values are cleared.
 ```
 
-Every presentation value is registered in a typed target/slot pair. A slot is a
-static-option-like cell: setting it replaces and returns the previous value if
-one existed, reading it does not change it, and clearing it returns the current
-value if present.
+Background and character staging use typed target/slot pairs. `bg(...)` returns
+`Handle<BackgroundSurface>` and `show(...)` returns `Handle<CharacterSurface>`.
+Staging replaces that slot's occupant and returns the new scope-owned handle.
+A handle for a previous occupant cannot clear its replacement.
+
+`ref.bg(...)` and `ref.show(...)` return typed `SlotRef<T>` addresses without
+changing slot ownership. `clear.bg(...)` and `hide(...)` return the removed
+surface as `Option<T>`; the removed surface and its scope-owned handle are
+distinct values.
 
 ```arcw
-let previous_bg = bg(@asset:.bg.room, target = @target.scene, slot = @slot.background.main)
-let current_bg = bg.ref(target = @target.scene, slot = @slot.background.main)
-let cleared_bg = bg.clear(target = @target.scene, slot = @slot.background.main)
+let room = bg(@asset:.bg.room, target = @target.scene, slot = @slot.background.main)
+let background_slot = ref.bg(target = @target.scene, slot = @slot.background.main)
+let removed_background = clear.bg(target = @target.scene, slot = @slot.background.main)
 ```
 
 Defaults:

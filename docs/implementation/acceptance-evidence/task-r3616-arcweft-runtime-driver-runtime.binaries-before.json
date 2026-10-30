@@ -1,0 +1,22 @@
+[
+  {
+    "binary": "arcweft-runtime-driver",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_driver-4f63582b4ad449fe.exe",
+    "sha256": "230ce9208b65018cabd8211219906e25d9d5fe69c9f43b19da203ca44dd3b4d9"
+  },
+  {
+    "binary": "arcweft-runtime-driver::awbc_product_session",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_session-7547fe6a7dce8a0e.exe",
+    "sha256": "da0683d1d9398fec7d3b5c1af343af7f5cfebdce0d01ffd1f9d1f4a3992c2375"
+  },
+  {
+    "binary": "arcweft-runtime-driver::dialogue_view_store",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_view_store-5f8442d6ec852773.exe",
+    "sha256": "da45b338faf79a22382e0ee80c6ba0a4e6f2c0709be1260c0d629e65d239d638"
+  },
+  {
+    "binary": "arcweft-runtime-driver::view_runtime",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_runtime-0e049c444c1293f9.exe",
+    "sha256": "4598bafa5d05411eb4f5207e95ba586c3a275dc0590d1fcc807872a19f3c48cc"
+  }
+]

@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "arcweft-project",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_project-5d608f7a4ca1f26f.exe",
+    "sha256": "e8a7f28c4072a51d6dfc890b15c21a8abf67689d6381cc32108f39089605b28b"
+  },
+  {
+    "binary": "arcweft-project::bytecode_link_producer_inventory",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\bytecode_link_producer_inventory-a6cbbe0f4c2e3ba6.exe",
+    "sha256": "b1bbcdaabd60821f77220e8b784c44d777fc5e304f6b54f71c12a31d099dcecb"
+  }
+]

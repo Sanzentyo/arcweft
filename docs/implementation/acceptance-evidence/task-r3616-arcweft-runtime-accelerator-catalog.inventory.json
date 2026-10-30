@@ -1,0 +1,824 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "inference::tests::accelerated_session_reuses_prepared_wgpu_matmul_bias_add_buffers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "inference::tests::adapter_runs_conv2d_relu_and_max_pool",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "inference::tests::builder_rejects_bad_bias_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "inference::tests::forward_graph_runs_dense_relu_softmax_argmax",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "inference::tests::session_accepts_borrowed_inputs_without_consuming_tensors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "inference::tests::session_does_not_fuse_when_matmul_output_is_observable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "inference::tests::session_fuses_private_matmul_bias_add_at_adapter_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "inference::tests::toy_mnist_cnn_can_classify_a_single_image",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "inference::tests::toy_mnist_mlp_can_classify_a_single_image",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::auto_4x4_matmul_records_glam_policy_reason",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::auto_elementwise_records_scalar_cpu_policy_reason",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::auto_f64_math_stays_on_cpu_even_when_wgpu_threshold_matches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::auto_large_elementwise_records_wgpu_threshold_policy_reason",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::auto_large_f64_matmul_prefers_ndarray_cpu_backend",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::auto_large_matmul_records_wgpu_threshold_policy_reason",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::auto_small_general_matmul_prefers_scalar_cpu_backend",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::auto_tensor_elementwise_records_ndarray_cpu_policy_reason",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::browser_webgpu_auto_policy_falls_back_on_storage_limits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::browser_webgpu_auto_policy_keeps_elementwise_cpu_by_default",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::browser_webgpu_auto_policy_selects_matmul_modes_by_work_size",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::browser_webgpu_policy_constructors_make_explicit_selection_visible",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::explicit_glam_f64_tensor_add_records_scalar_fallback_without_widening",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::explicit_wgpu_f64_math_reports_portability_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::f64_tensor_add_keeps_shape_and_backend_stats_without_widening",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::matmul_bias_add_fuses_scalar_work_and_records_backend_stats",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::matmul_bias_add_uses_fused_wgpu_one_shot_kernel_when_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::one_shot_wgpu_readback_reuses_staging_buffer_when_adapter_is_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_matrix_add_can_write_into_reused_output_buffer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_matrix_add_capacity_reuses_buffers_for_smaller_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_matrix_add_submit_only_defers_readback_when_adapter_is_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_matrix_matmul_bias_add_capacity_reuses_buffers_for_smaller_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_matrix_matmul_bias_add_reuses_gpu_buffers_when_adapter_is_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_matrix_matmul_bias_add_submit_only_defers_readback_when_adapter_is_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_matrix_matmul_capacity_reuses_buffers_for_smaller_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_matrix_matmul_reuses_gpu_buffers_when_adapter_is_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_matrix_matmul_submit_only_defers_readback_when_adapter_is_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_tensor_add_capacity_reuses_buffers_for_smaller_lengths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_tensor_add_reuses_gpu_buffers_when_adapter_is_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::prepared_tensor_add_submit_only_defers_readback_when_adapter_is_available",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::scalar_ndarray_and_glam_f64_matmul_match_without_widening",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::scalar_ndarray_and_glam_matmul_match",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "math::tests::tensor_add_keeps_shape_and_backend_stats",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::aot_accelerates_exact_width_scalar_calls_without_i64_widening",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::aot_batch_matches_scalar_results_and_records_parallel_stats",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::aot_scalar_preserves_i32_and_f32_without_vm_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::aot_source_function_cache_refuses_foreign_plan_leases_with_colliding_site_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::aot_worker_pool_is_created_only_for_parallel_batches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_accelerator_promotes_large_flat_batches_to_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_accelerator_uses_aot_for_cold_scalar_calls_without_value_vec_allocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_promotes_hot_scalar_exact_int_calls_to_native_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_promotes_hot_scalar_float_calls_to_native_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_promotes_large_f32_flat_batch_to_native_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_promotes_large_f64_flat_batch_to_native_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_promotes_large_i32_flat_batch_to_native_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_promotes_large_u32_flat_batch_to_native_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_promotes_small_integer_flat_batches_to_native_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_promotes_target_size_integer_flat_batches_to_native_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_promotes_wide_integer_flat_batches_to_native_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::auto_source_function_promotion_refuses_foreign_leases_and_promotes_the_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::awbc_accelerator_retains_the_actual_executable_without_native_cache_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::checked_native_unsigned_sum_keeps_wide_refusal_and_wrapping_fold_parity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::exact_integer_native_faults_keep_the_owned_error_channel_and_target_width",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::executable_source_function_accelerates_scalar_batch_and_fusion_with_complete_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::executable_source_function_auto_promotion_keeps_the_exact_plan_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::executable_source_function_foreign_capabilities_decline_without_bypassing_vm_continuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::explicit_jit_uses_native_f32_for_slice_and_flat_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::explicit_jit_uses_native_f64_for_slice_and_flat_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::explicit_jit_uses_native_i16_for_slice_and_flat_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::explicit_jit_uses_native_i32_for_slice_and_flat_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::explicit_jit_uses_native_u32_for_slice_and_flat_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::explicit_jit_uses_native_u64_for_slice_and_flat_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::external_context::installed_external_context_keeps_the_original_program_and_borrowed_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::external_data_tests::data_avro_envelope_round_trips_with_the_selected_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::external_data_tests::data_calls_reject_unbound_context_and_wrong_format_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::external_data_tests::data_codec_applies_source_transparent_policy_to_enum_tuple_one_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::external_data_tests::data_codec_errors_are_returned_as_the_selected_data_error_variant",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::external_data_tests::data_codec_keeps_option_tuple_map_kind_and_entry_order_distinct",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::external_data_tests::data_encode_and_typed_decode_use_the_selected_graph_and_data_format_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::external_data_tests::data_shape_uses_the_selected_program_type_row",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::external_inference_call_sequence_uses_adapter_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::f64_math_intrinsic_uses_width_preserving_adapter_backend",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::generic_exact_int_scalar_call_recognizes_width_specific_jit_entry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::inference_dispatch_requires_the_exact_registered_provider_export_and_overload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::jit_batch_matches_scalar_results_without_value_vec_allocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::jit_flat_batch_sum_avoids_output_copy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::math_intrinsic_uses_adapter_math_accelerator",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::ordinary_function_repeated_and_flat_sums_match_wrapping_core_reduction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::repeated_batch::empty_repeated_batch_does_no_work_or_promotion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::repeated_batch::repeated_batch_executes_each_row_and_borrows_one_complete_row",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::repeated_batch::repeated_batch_fault_counts_only_the_attempted_row",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::repeated_batch::repeated_batch_foreign_plan_uses_its_original_body_on_vm",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::repeated_batch::repeated_batch_header_checks_unused_formals_and_output_abi",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::repeated_batch::repeated_batch_with_no_inputs_still_executes_every_row",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_auto_wgpu_matmul_reuses_capacity_cache_for_smaller_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_auto_wgpu_matmul_uses_prepared_cache_when_threshold_selects_gpu",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_auto_wgpu_matrix_add_reuses_capacity_cache_for_smaller_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_auto_wgpu_matrix_add_uses_prepared_cache_when_threshold_selects_gpu",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_auto_wgpu_tensor_add_reuses_capacity_cache_for_smaller_len",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_auto_wgpu_tensor_add_uses_prepared_cache_when_threshold_selects_gpu",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_external_infer_matmul_bias_add_reuses_prepared_wgpu_buffers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_wgpu_math_cache_reuses_prepared_matmul_buffers_across_counter_reset",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_wgpu_math_cache_reuses_prepared_tensor_add_buffers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_wgpu_math_cache_updates_prepared_matmul_inputs_for_same_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_wgpu_math_cache_updates_prepared_matrix_add_inputs_for_same_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::runtime_wgpu_math_cache_updates_prepared_tensor_add_inputs_for_same_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::signed_division::signed_i128_division_sum_refusal_keeps_the_exact_value_and_no_retry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::signed_division::signed_i128_fault_is_terminal_with_wrapping_and_full_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::signed_division::signed_i16_fault_is_terminal_with_wrapping_and_full_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::signed_division::signed_i32_fault_is_terminal_with_wrapping_and_full_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::signed_division::signed_i64_fault_is_terminal_with_wrapping_and_full_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::signed_division::signed_i8_fault_is_terminal_with_wrapping_and_full_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::signed_division::signed_isize_fault_is_terminal_with_wrapping_and_full_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::u32_division_fault_is_terminal_and_matches_aot_vm_with_wrapped_denominator",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::u64_division_fault_is_terminal_and_matches_aot_vm_with_wrapped_denominator",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::value_fallback_reuses_vm_scratch_without_value_vec_allocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::vm_batch_uses_i64_args_without_value_vec_allocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-accelerator",
+      "binary": "arcweft-runtime-accelerator",
+      "test": "tests::wide_scalar::executable_wide_integer_calls_keep_native_scalar_execution_after_auto_promotion",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

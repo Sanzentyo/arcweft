@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-character-view",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-r3616-arcweft-character-view-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-29T00:36:38.0091150Z",
+  "finishedAt": "2026-10-29T00:36:40.5630190Z"
+}

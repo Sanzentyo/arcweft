@@ -1,0 +1,54 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-adapter-desktop",
+      "binary": "arcweft-adapter-desktop",
+      "test": "codec::tests::desktop_decoder_has_no_json_request_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-desktop",
+      "binary": "arcweft-adapter-desktop",
+      "test": "codec::tests::typed_owned_cursor_icon_rejects_string_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-desktop",
+      "binary": "arcweft-adapter-desktop",
+      "test": "codec::tests::typed_owned_window_mode_decodes_from_variant_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-desktop",
+      "binary": "arcweft-adapter-desktop",
+      "test": "manifest::tests::logical_manifests_have_unique_ids_and_host_call_owners",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-desktop",
+      "binary": "arcweft-adapter-desktop",
+      "test": "manifest::tests::owned_window_manifest_exports_typed_source_functions_and_host_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-desktop",
+      "binary": "arcweft-adapter-desktop",
+      "test": "manifest::tests::standard_profile_excludes_non_user_selected_and_global_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-adapter-desktop",
+      "binary": "arcweft-adapter-desktop::native_integration",
+      "test": "native_desktop_capabilities_complete_through_host_registry",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "run": "task-r3616-arcweft-player-web-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.718s] 36 tests run: 36 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 36,
+  "passed": 36,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-29T01:53:26.2119679Z"
+}

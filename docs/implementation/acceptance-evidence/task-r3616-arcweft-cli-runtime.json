@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-cli",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-r3616-arcweft-cli-runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-29T00:46:50.2022161Z",
+  "finishedAt": "2026-10-29T00:58:19.4926634Z"
+}

@@ -1,0 +1,5157 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "assertion::tests::assertion_modes_own_runtime_and_fact_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "ast::module_path::tests::rejects_paths_that_escape_the_crate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "ast::module_path::tests::resolves_crate_self_and_super_paths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "ast::symbol_path::tests::accepts_external_segments_and_records_exact_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "ast::symbol_path::tests::enforces_implicit_root_without_restricting_later_segments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "ast::symbol_path::tests::project_paths_convert_to_module_qualified_or_external_root_symbols",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "ast::symbol_path::tests::project_symbol_path_rejects_empty_and_invalid_implicit_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "ast::symbol_path::tests::project_symbol_segment_accepts_external_hyphen_without_becoming_a_module_segment",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "ast::symbol_path::tests::project_symbol_segment_rejects_empty_control_and_separators",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::access::tests::private_family_aliases_remain_nameable_for_atomic_consumer_migration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::action::tests::action_attachment_owns_prefix_header_and_ordered_typed_signature",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::action::tests::action_attachment_retains_missing_invalid_and_forbidden_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::activity::tests::activity_attachment_exposes_missing_invalid_duplicate_and_order_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::activity::tests::activity_attachment_keeps_header_and_trailing_recovery_in_source_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::activity::tests::activity_attachment_owns_closed_policies_ports_and_contract_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::assert_prove_uses_existing_assertion_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::empty_block_has_distinct_braces_and_omitted_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::expression_body_and_one_expression_block_are_observably_distinct",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::malformed_trust_metadata_is_explicit_recovery_not_verified",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::missing_proof_block_close_does_not_absorb_the_following_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::one_expression_block_retains_authored_tail_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::ordinary_function_attachment_marks_invalid_rest_structure_as_owner_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::ordinary_function_attachment_owns_curried_parameters_contracts_and_block_only_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::ordinary_function_attachment_owns_the_dedicated_content_parameter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::ordinary_function_attachment_owns_trailing_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::ordinary_function_attachment_preserves_fixed_default_and_rest_groups",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::ordinary_function_attachment_retains_a_missing_default_as_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::ordinary_function_attachment_retains_missing_group_type_and_body_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::predicate_and_proof_receiver_shapes_attach_as_typed_parameter_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::predicate_block_exact_shapes_and_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::predicate_proof_headers_bind_exact_children_and_malformed_recovery_roles",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::proof_attachment_owns_final_trust_and_consumes_the_generic_attribute",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::proof_attachment_owns_return_contracts_and_proof_statement_families",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::proof_attachment_uses_fallback_anchors_when_all_contracts_are_recovered",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::proof_attachment_uses_parameter_end_for_the_implicit_unit_return",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::proof_block_exact_shapes_and_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::callable::tests::proof_call_statement_uses_existing_call_expression",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::choice::tests::long_else_if_chain_attaches_as_flat_source_ordered_branches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::choice::tests::multiline_record_heads_keep_the_final_brace_as_the_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::choice::tests::postfix_record_heads_are_not_reclassified_as_choice_bodies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::choice::tests::terminal_else_stops_before_duplicate_else_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::declaration::tests::attached_character_semantics_bind_canonical_header_and_display_member",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::declaration::tests::attached_character_semantics_distinguish_header_recovery_without_text_reparse",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::declaration::tests::attached_character_semantics_preserve_recovered_member_ordinals_and_body_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::declaration::tests::attached_family_relative_wrong_family_keeps_authored_family_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::dialogue_plan::tests::braced_init_is_one_typed_scoped_item_with_ordered_statements",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::dialogue_plan::tests::colon_init_is_one_typed_scoped_item_and_does_not_consume_plan_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::dialogue_plan::tests::init_and_direct_line_plan_conditions_own_typed_flow_branch_bodies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::dialogue_plan::tests::init_colon_form_in_indented_plan_keeps_the_following_item_outside_init",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::dialogue_plan::tests::init_out_followed_by_a_statement_remains_typed_for_semantic_rejection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::dialogue_plan::tests::init_without_a_body_has_a_bounded_recovery_span",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::dialogue_plan::tests::inline_with_colon_missing_indent_keeps_recovery_and_following_binding",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::entry::tests::delimited_entry_id_remains_a_recognized_noncanonical_entry_header",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::entry::tests::entry_attachment_preserves_typed_header_and_complete_member_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::entry::tests::entry_attachment_propagates_callable_path_trailing_recovery_to_the_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::entry::tests::entry_attachment_propagates_recovered_goto_id_to_the_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::entry::tests::entry_attachment_retains_current_grammar_recovery_without_text_reinterpretation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::ambiguous_postfix_candidates_expose_borrowed_revision_bound_graphs_only",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_array_repeat_keeps_fixed_value_and_length_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_associated_call_recovery_requires_an_authored_separator",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_associated_calls_retain_the_parser_owned_type_receiver_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_call_type_applications_retain_ordered_type_children_and_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_composite_slots_preserve_authored_and_missing_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_e14_through_e17_keep_exact_semantic_children_and_recovery_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_e19_range_keeps_fixed_optional_endpoint_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_e20_e21_records_keep_path_fields_and_explicit_value_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_e22_binary_keeps_operator_and_fixed_operand_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_e35_error_retains_only_an_authored_recovery_prefix",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_hash_content_application_owns_head_and_body_without_postfix_child",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_known_leaf_recovery_remains_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_leaf_matrix_exposes_typed_semantics_components_and_path_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_numeric_sequence_owns_idless_elements_suffix_and_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::attached_select_owns_target_and_exact_missing_member_insertion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::bare_direct_angle_path_is_not_reclassified_as_a_call_type_application",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_associated_call_exposes_direct_typed_receiver_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_assertion_condition_limit_is_inclusive_and_charged_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_assertion_view_retains_mode_delimiters_and_conditions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_assignment_views_keep_both_typed_operands_and_missing_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_closure_pattern_trailing_input_preserves_exact_ownership",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_closure_view_preserves_parameter_pattern_type_and_body_relations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_dot_nominal_receiver_keeps_its_callee_owned_type_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_if_and_match_views_preserve_nested_statement_owners",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_if_let_view_distinguishes_missing_then_from_authored_else",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_keyword_statement_views_keep_missing_and_punctuation_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_keyword_statement_views_preserve_exact_family_relations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_match_view_keeps_arm_wrappers_as_scope_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_recovery_preserves_original_diagnostics_and_required_composition",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_required_operand_views_keep_ordinary_wait_as_a_call_expression",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_statement_recovery_views_keep_the_recognized_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_statement_relations_do_not_flatten_nested_blocks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_unsafe_view_keeps_id_reason_safety_doc_and_missing_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::candidate_value_blocks_preserve_statement_order_and_tail_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::candidate_control::recovery_composition_is_independent_of_grouping_and_required_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_callback_call_retains_one_central_closure_argument",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_closure_retains_parameter_type_and_body_identities",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_computation_blocks_retain_the_selected_kind_and_block_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_if_distinguishes_missing_required_slots_from_omission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_if_let_distinguishes_each_missing_slot_from_omitted_else",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_if_let_retains_pattern_and_fixed_semantic_child_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_if_retains_authored_else_if_as_one_semantic_child",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_if_retains_required_children_and_omitted_else_insertion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_if_stops_condition_before_else_and_rejects_forged_omission_site",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_implicit_callback_body_uses_the_central_block_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::control::attached_scope_omission_is_a_block_and_invalid_present_name_stays_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::expression_paths_require_qualified_syntax_for_explicit_module_roots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::grouped_composite_slots_keep_outer_source_and_inner_expression_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::match_expression::attached_match_preserves_missing_body_guard_arrow_value_and_close",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::match_expression::attached_match_retains_ordered_arm_owners_and_exact_parts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::snapshot_rejects_invalid_component_and_unit_child_invariants",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::expression::tests::transparent_groups_forward_final_navigation_roles_only_to_semantic_expressions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::extern_capability::tests::capability_attachment_marks_invalid_rest_structure_as_owner_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::extern_capability::tests::capability_attachment_preserves_interleaved_members_groups_defaults_and_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::extern_capability::tests::capability_attachment_retains_missing_name_body_and_member_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::extern_capability::tests::capability_attachment_retains_unclosed_effects_and_outer_body_independently",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::family::tests::concrete_family_predicates_accept_only_explicit_identity_kinds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::body_indented_with_is_recovery_and_never_becomes_the_choice_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::braced_choice_if_keeps_next_line_else_as_one_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_if_else_if_chain_is_one_flat_typed_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_lifecycle_mark_trigger_owns_typed_selector",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_lifecycle_plan_is_one_typed_source_ordered_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_lifecycle_plan_recovery_stays_inside_typed_plan_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_lifecycle_plan_same_line_uses_the_same_owner_in_thread",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_plan_action_suffix_is_typed_recovery_after_a_present_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_plan_required_body_suffix_preserves_typed_head_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_plan_trailing_tokens_are_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_recovery_keeps_missing_body_unknown_item_and_compact_slots_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_required_body_suffix_preserves_record_and_block_expression_heads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::choice_statement_owns_closed_candidate_option_and_action_families",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::comment_only_indented_choice_recovers_without_consuming_the_dedent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::compact_choice_arm_accepts_the_shared_raw_string_literal_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::crlf_thread_choice_uses_the_same_indented_source_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::dedicated_thread_flow_statement_recovery_remains_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::dedicated_thread_flow_statements_expose_typed_values_and_nested_bodies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::dense_same_line_indented_choice_items_share_one_monotonic_indent_scan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::direct_and_let_choice_share_one_choice_expression_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::empty_nested_option_reports_suite_recovery_without_losing_its_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_attachment_aggregates_shared_signature_and_statement_only_body_owners",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_attachment_exposes_the_second_group_only_as_typed_signature_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_attachment_keeps_rejected_defaults_out_of_the_callable_default_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_attachment_owns_the_four_identity_states_without_source_reconstruction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_attachment_retains_empty_markers_and_wrong_family_poison_as_typed_states",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_contract_attachment_distinguishes_empty_braced_and_missing_unbraced_lists",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_contract_attachment_preserves_heterogeneous_order_modes_and_keyword_sites",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_contract_attachment_retains_unclosed_list_without_losing_following_clause",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_expression_statement_owns_its_semicolon_outside_the_call",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_missing_required_body_retains_the_typed_insertion_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_parameter_retains_the_parser_owned_missing_colon_insertion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::flow_statement_only_body_projects_all_sixteen_families_in_source_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::indented_choice_body_and_plan_stop_before_the_next_flow_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::indented_choice_for_and_both_option_forms_share_the_typed_suite_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::indented_choice_if_keeps_owner_aligned_else_as_one_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::indented_choice_semicolons_progress_without_creating_extra_suite_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::intermediate_option_indent_is_a_recovered_field_not_a_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::leading_block_comment_uses_the_first_content_column_for_item_indent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::line_plan_at_indentation_is_the_same_callback_expression_as_braces_and_let",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::misindented_with_after_a_missing_body_is_not_attached_as_the_choice_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::missing_choice_body_and_present_plan_share_one_choice_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::missing_compact_action_stops_before_comment_and_valid_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::missing_option_field_value_stops_before_comment_and_valid_field",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::missing_plan_body_stops_before_comment_and_outer_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::multiline_choice_item_accepts_a_same_line_semicolon_sibling_at_owner_indent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::next_line_bare_with_is_a_typed_missing_choice_plan_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::nonempty_option_does_not_consume_dedented_comment_or_outer_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::on_statement_attachment_owns_typed_trigger_and_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::on_statement_block_forms_preserve_ordered_handler_statements",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::same_line_braced_choice_can_open_an_indented_plan_at_choice_indent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::select_binding_name_retains_missing_and_invalid_authored_owners",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::select_branch_recovery_retains_unknown_head_and_missing_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::select_statement_preserves_unary_and_typed_branch_forms",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::thread_expression_uses_the_same_sixteen_family_statement_only_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::typed_candidate_pattern_colons_are_not_misclassified_as_suite_bodies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::flow::tests::unclosed_choice_plan_action_retains_a_present_body_with_missing_close",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::item::tests::typed_item_inventory_covers_every_item_kind_exactly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::layer::tests::family_relative_reference_keeps_typed_root_for_semantic_resolution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::layer::tests::layer_attachment_covers_every_authored_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::layer::tests::layer_attachment_covers_every_closed_policy_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::layer::tests::layer_attachment_owns_closed_kind_members_references_and_expressions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::layer::tests::layer_attachment_retains_typed_recovery_without_source_rediscovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::layer::tests::recovered_authored_expression_marks_the_layer_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::metric::tests::metric_attachment_owns_closed_kind_type_and_source_ordered_schema",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::metric::tests::metric_attachment_retains_missing_kind_type_body_and_member_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::metric::tests::metric_attachment_retains_unknown_duplicate_order_and_value_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::node::tests::every_identity_bearing_kind_has_one_exact_marker_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::node::tests::fragment_root_markers_accept_only_their_typed_node_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::resource::tests::resource_attachment_owns_prefix_identity_type_and_ordered_initializers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::resource::tests::resource_attachment_retains_relative_id_non_nominal_type_and_field_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::source_file::tests::explicit_root_only_paths_keep_one_owner_and_parent_normalizes_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::source_file::tests::missing_module_path_keeps_one_path_identity_and_typed_missing_name",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::source_file::tests::paths_preserve_parser_selected_roots_and_idless_segments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::source_file::tests::source_file_roles_separate_headers_from_ordinary_items_in_authored_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::source_file::tests::use_paths_attach_external_project_segments_without_source_reparse",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::source_file::tests::use_projection_owns_glob_group_alias_and_recovery_without_range_pairing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::source_file::tests::visibility_group_member_kind_and_missing_close_are_direct_typed_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::statement::tests::dialogue_line_plan_cancel_attaches_indented_thread_body_and_recovers_missing_suite",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::statement::tests::dialogue_line_plan_cancel_attaches_typed_trigger_and_thread_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::statement::tests::inline_colon_dialogue_keeps_same_indent_line_plan_after_content",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::statement::tests::keyword_statement_views_keep_required_slots_and_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::statement::tests::keyword_statement_views_preserve_exact_labels_operands_and_arrow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::statement::tests::line_plan_defer_attaches_outcome_body_and_authored_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::statement::tests::line_plan_defer_rejects_unknown_outcomes_and_missing_indented_bodies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::style::tests::aliases_and_environment_list_errors_remain_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::style::tests::attaches_minimal_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::style::tests::canonical_style_attachment_owns_ids_selectors_properties_and_environment_matrix",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::style::tests::missing_style_body_and_selector_are_owned_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::style::tests::recovery_rows_attach_independently",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::style::tests::style_id_forms_and_recovered_id_shapes_remain_parser_owned",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::style::tests::style_token_ids_are_bound_from_the_attached_typed_name",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::test_bench::tests::test_and_bench_attachment_preserves_typed_id_kind_and_statement_roles",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::test_bench::tests::test_and_bench_attachment_retains_missing_and_unclosed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::attached_error_pattern_owns_the_thirteenth_semantic_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::attached_type_projection_covers_final_families_components_and_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::attached_type_projection_rejects_stale_and_foreign_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::attached_typed_binding_exposes_its_exact_type_child",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::exact_roles_index_nearest_identity_parent_without_structural_wrappers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::let_initializer_distinguishes_authored_missing_and_absent_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::missing_and_wrong_kind_paths_fail_without_range_or_text_lookup",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::missing_if_let_equals_retains_a_typed_missing_scrutinee",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::nested_pattern_and_type_accessors_keep_exact_child_roles",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::ordinary_call_accessors_keep_named_and_positional_argument_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::proof_block_accessors_preserve_statement_pattern_type_and_tail_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::repeated_exact_roles_remain_ordered_without_claiming_unique_child_access",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::retained_declaration_header_owns_prefixes_name_and_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::statement_if_let_and_unsafe_audit_anchor_remain_typed_and_snapshot_bound",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::statement_match_body_owns_flattened_typed_arms_and_exact_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::structurally_equal_foreign_rowan_root_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::typed_and_rowan_handles_round_trip_without_range_search",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::typed_handle_cannot_cross_an_immutable_snapshot_lineage",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::typed_tree_navigates_declaration_prefixes_parameters_and_expression_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::unsafe_audit_body_recovery_never_fabricates_an_authored_anchor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::tests::unsafe_audit_head_recovery_distinguishes_omission_from_missing_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::thread_statement::tests::for_body_retains_ordinary_statement_block_for_function_context",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::thread_statement::tests::for_key_is_a_typed_optional_expression_without_consuming_the_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::thread_statement::tests::for_source_accepts_transparent_group_delimiters_without_a_second_expression_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::thread_statement::tests::labelled_loop_expression_retains_name_span_and_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::thread_statement::tests::loop_family_unclosed_bodies_share_the_typed_missing_close_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::thread_statement::tests::loop_while_while_let_and_for_own_typed_heads_and_thread_flow_bodies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::thread_statement::tests::malformed_loop_family_heads_keep_typed_slots_and_exact_missing_bodies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::thread_statement::tests::thread_expression_reuses_the_same_loop_family_owners",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::trait_impl::tests::every_receiver_form_has_a_pattern_and_never_a_fabricated_type",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::trait_impl::tests::missing_impl_target_and_invalid_members_remain_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::trait_impl::tests::trait_and_impl_attachments_preserve_distinct_members_and_method_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::view::tests::header_and_trailing_recoveries_keep_distinct_source_owned_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::view::tests::keyword_and_destructuring_parameters_poison_view_without_losing_typed_patterns",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::view::tests::malformed_part_modifier_is_typed_recovery_and_not_a_clean_local_name",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::view::tests::missing_view_signature_and_body_remain_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::view::tests::view_attachment_reuses_callable_parameters_and_owns_exports_and_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::view::tests::view_binding_entries_keep_storage_and_source_order_without_reclassifying_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::view::tests::view_fragment_owns_part_modifier_roles_without_detached_view_reparse",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "attachment::view::tests::view_fragment_preserves_value_export_value_interleaving_and_global_export_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "expressions::projection_tests::candidate_graph_rejects_every_keyword_projection_family_substitution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::activity_nested_rows_share_the_declaration_member_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::activity_recovery_members_accept_exact_limit_and_reject_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::diagnostic_budget_accepts_exact_limit_and_rejects_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::diagnostic_budget_uses_the_publication_identity_without_message_text",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::expression_record_fields_do_not_charge_declaration_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::extern_capability_nested_items_share_the_declaration_member_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::final_stats_freeze_the_existing_transaction_accounting",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::flow_fixed_parameters_accept_exact_limit_and_reject_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::grouped_use_member_budget_accepts_exact_limit_and_rejects_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::grouped_use_member_budget_fails_closed_without_a_use_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::identity_node_budget_accepts_exact_limit_and_rejects_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::layer_recovery_members_charge_both_member_budgets_and_reject_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::nominal_record_member_budget_accepts_exact_limit_and_rejects_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::prefix_depth_budget_accepts_exact_limit_and_rejects_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::rejected_flow_parameter_group_does_not_charge_fixed_parameters",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::resource_fields_accept_exact_declaration_member_limit_and_reject_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::top_level_item_budget_accepts_exact_limit_and_rejects_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::budget::tests::trait_and_impl_inline_items_share_the_declaration_member_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::build::tests::assertion_events_require_one_projection_on_the_exact_statement_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::build::tests::diagnostic_validation_rejects_an_invalid_related_range",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::build::tests::event_validation_rejects_gaps_unbalanced_nodes_and_token_kind_misuse",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::build::tests::expression_leaf_events_require_one_kind_consistent_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::build::tests::lossless_build_retains_utf8_trivia_and_identity_paths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::build::tests::missing_token_alone_marks_the_complete_transaction_as_recovered",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::build::tests::missing_tokens_and_diagnostics_consume_no_source_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::build::tests::source_free_build_retains_the_exact_validated_event_transaction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::build::tests::transparent_expression_group_marker_rejects_every_other_node_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::contract_projection::tests::projection_keeps_no_effect_keywords_distinct_from_modes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::event::candidate_recovery_tests::retained_candidate_diagnostics_share_the_exact_document_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::event::candidate_recovery_tests::retained_candidate_recovery_validates_primary_related_edit_and_missing_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::event::tests::fragment_event_rebase_rejects_coordinate_overflow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::event::tests::fragment_events_rebase_every_source_coordinate_exactly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::kinds::tests::complete_kind_inventory_aligns_identity_and_typed_attachment",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::kinds::tests::final_kind_inventory_owns_identity_classification",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::kinds::tests::typed_attachment_tags_cover_semantic_families_only",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::projection_tests::every_keyword_statement_requires_its_exact_projection_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::projection_tests::keyword_statement_projection_rebase_preserves_typed_label_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "grammar::roles::tests::role_classes_discard_only_sibling_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::bound::tests::diagnostic_dedup_uses_structured_identity_and_preserves_first_event_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::assertion_condition_limit_accepts_exactly_64_and_rolls_back_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::assertion_projection_rebinds_mode_on_same_lineage_and_retains_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::contract_clause_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::diagnostic_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::expression_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::fatal_attachment_failure_is_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::fatal_event_validation_failure_is_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::generic_parameter_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::identity_bearing_node_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::pattern_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::predicate_parameter_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::proof_parameter_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::statement_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::type_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::atomicity::where_predicate_limit_is_inclusive_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_absolute_and_family_entity_patterns_project_final_id_components",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_candidate_fragment_rebases_nested_recovery_types_and_patterns",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_expression_fragment_owns_one_fresh_lineage_and_exact_source_span",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_leaf_fragment_rebases_semantic_components_into_the_target_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_numeric_literal_patterns_project_prefix_body_suffix_and_unit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_pattern_paths_separate_module_roots_from_semantic_segments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_pattern_projection_covers_all_twelve_authored_families",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_pattern_projection_keeps_parser_owned_semantic_families_and_components",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_raw_content_fragment_rebases_its_opaque_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_relative_entity_patterns_project_parents_suffixes_and_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::attached_text_and_boolean_literal_patterns_project_only_authored_parts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::changed_grammar_node_gets_fresh_id_while_unchanged_siblings_survive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::choice::flat_choice_if_chain_survives_initial_parse_and_reparse_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::copied_subtree_preserves_one_original_and_allocates_fresh_copy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::cross_parent_move_allocates_fresh_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::current_returns_only_the_registered_lineage_snapshot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::diagnostic_limit_is_inclusive_and_one_over_rolls_back",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::every_final_fragment_family_attaches_its_typed_root_at_the_exact_span",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::exact_snapshot_operation_rejects_wrong_snapshot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::extern_capability_member_limit_accepts_exactly_1024_and_rolls_back_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::flow_heterogeneous_contract_limit_accepts_exact_and_rejects_one_over_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::foreign_lineage_in_same_database_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::fragment_attachment_failure_consumes_no_lineage_or_node_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::generic_error_nodes_are_distinct_and_deterministic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::grouped_expression_fragment_selects_inner_identity_and_retains_outer_span",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::grouped_use_member_limit_accepts_exactly_1024_and_rolls_back_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::incomplete_invalid_mismatched_and_foreign_fragments_commit_no_lineage",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::independent_databases_cannot_resolve_equal_raw_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::invalid_edit_order_overlap_and_foreign_provenance_leave_lineage_unchanged",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::lossless_root_round_trips_every_utf8_byte",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::missing_child_identity_is_role_and_anchor_specific",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::ordinary_expression_nesting_does_not_consume_prefix_depth",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::parsed_expression_lookup_is_exact_and_rejects_stale_or_foreign_ownership",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::parsed_source_public_lease_owns_one_typed_source_file_and_all_lowering_families",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::prefix_await_heads_consume_one_prefix_level_per_head",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::prefix_depth_limit_is_fatal_and_rolls_back_the_transaction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::prefix_depth_tracks_active_ancestors_through_parentheses",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::private_bound_diagnostic_spans_share_the_exact_committed_source_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::private_bound_product_retains_the_attached_snapshot_and_grammar_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::private_bound_reparse_replaces_diagnostics_without_mutating_the_old_snapshot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::recovered_equivalent_node_survives_trivia_change",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::reparsing_a_snapshot_from_another_database_is_rejected_without_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::reparsing_a_stale_snapshot_is_rejected_without_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::rich_text_attachment_failure_rolls_back_lineage_and_node_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::same_line_descendants_receive_distinct_syntax_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::same_parent_unique_reorder_preserves_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::source_generation_exhaustion_rolls_back_the_transaction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::stale_generation_current_resolution_is_typed_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::syntax_identity_exhaustion_is_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::syntax_no_op_returns_exact_arc_and_consumes_nothing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::trait_member_limit_accepts_exactly_1024_and_rolls_back_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::trivia_only_reparse_preserves_predicate_proof_descendant_ids_and_updates_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::try_await_emits_nested_typed_prefix_nodes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::typed_to_rowan_and_rowan_to_typed_round_trip",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::database::tests::wrong_typed_kind_returns_kind_mismatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::limits::tests::syntax_hard_limits_match_the_language_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "incremental::shape::tests::missing_expected_inventory_is_path_exact_and_preserves_event_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::allow_attribute_suppresses_flow_module_mismatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::bare_entity_decl_name_is_canonical_not_redundant",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::compact_declaration_spelling_does_not_emit_explicit_id_hint",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::deep_dot_run_lint_carries_explicit_super_suggestion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::explicit_character_id_derives_binding_for_identity_lint",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::explicit_decl_id_has_stable_hint_code",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::explicit_id_lint_carries_machine_applicable_suggestion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::explicit_style_ids_prefer_compact_authoring_form",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::explicit_super_relative_id_is_not_reclassified_as_a_dot_run",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::generated_marker_surfaces_generated_decl_form",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::generated_marker_surfaces_generated_id_only_form",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::inner_allow_attribute_suppresses_source_wide_id_lints",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::inner_attribute_handles_reject_foreign_and_stale_database_use",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::inner_attribute_projection_is_typed_source_bound_and_recovers_without_a_reader",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::inner_generated_marker_applies_to_proof_decl_forms",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::inner_generated_marker_does_not_suppress_decl_mismatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::lint_code_inventory_is_complete_unique_and_stable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::lints_decl_binding_mismatch_as_identity_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::lints_redundant_flow_and_proof_decl_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::lints_redundant_proof_decl_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::lints_relative_entity_decl_identity_without_source_rescanning",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::misplaced_inner_attribute_does_not_apply_to_source_lints",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "lint::tests::proof_identity_style_lints_respect_allow_and_generated_attributes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "name::call_argument::tests::canonical_paths_keep_segment_identity_and_lexical_names_remain_distinct",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "name::call_argument::tests::missing_and_malformed_paths_do_not_publish_a_partial_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::action_grammar_tests::action_defaults_return_types_and_bodies_are_rejected_without_raw_reparse",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::action_grammar_tests::action_missing_group_and_non_binding_parameter_remain_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::action_grammar_tests::action_nonempty_invalid_type_keeps_the_authored_parameter_close",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::action_grammar_tests::action_parameters_own_authored_and_missing_punctuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::action_grammar_tests::action_trailing_syntax_uses_the_shared_declaration_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::action_grammar_tests::canonical_action_owns_a_typed_bodyless_channel_signature",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::action_grammar_tests::zero_parameter_action_is_a_clean_unit_payload_channel",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::activity_grammar_tests::activity_contract_limit_is_shared_across_requires_and_ensures",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::activity_grammar_tests::activity_contract_recovery_does_not_create_a_clause_ordinal_gap",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::activity_grammar_tests::activity_declaration_member_limit_counts_recovery_entries_transactionally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::activity_grammar_tests::activity_port_limit_is_shared_across_input_and_output_sections",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::activity_grammar_tests::activity_rejects_an_unexpected_header_and_preserves_the_next_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::activity_grammar_tests::activity_section_port_and_contract_recovery_remains_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::activity_grammar_tests::canonical_activity_owns_abstract_ports_policies_and_contracts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::activity_grammar_tests::minimal_activity_body_is_typed_and_uses_semantic_defaults_by_omission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::character_grammar_tests::canonical_character_owns_typed_header_body_and_expression",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::character_grammar_tests::character_identity_errors_are_typed_and_do_not_consume_the_next_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::character_grammar_tests::character_member_failures_keep_typed_members_and_related_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::character_grammar_tests::empty_character_body_is_typed_and_clean",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::character_grammar_tests::removed_character_header_components_use_ordinary_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::character_grammar_tests::unclosed_character_body_stops_before_the_following_view",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::cursor::tests::discarded_candidate_events_and_diagnostics_stay_unpublished",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::cursor::tests::discarded_candidate_work_still_reaches_the_global_expression_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::cursor::tests::retained_candidate_normalizes_to_one_tokenless_semantic_graph",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::cursor::tests::selected_candidate_commits_precharged_events_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::bare_dialogue_plans_classify_only_the_dialogue_head",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::bracket_dialogue_followed_by_bare_scope_has_two_flow_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::bracket_dialogue_with_indented_plan_keeps_its_head_distinct_from_with_colon",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::dialogue_inline_spaces_after_atoms_keep_exact_text_spans_and_lossless_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::dialogue_margin_only_body_stays_missing_and_raw_whitespace_stays_opaque",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::dialogue_physical_newlines_own_indentation_and_original_line_ending_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::explicit_attached_bodies_admit_numerals_and_ascii_punctuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::explicit_line_plan_missing_body_keeps_typed_recovery_and_following_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::explicit_line_plan_owns_an_otherwise_ambiguous_bracket_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::explicit_with_braces_remains_a_dialogue_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::for_over_bracket_expression_keeps_its_braced_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::inline_space_preservation_keeps_atom_boundary_comments_as_lossless_trivia",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::inline_timed_cue_empty_body_and_malformed_tail_recover_before_the_next_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::inline_timed_cue_uses_the_indented_callback_graph_and_keeps_its_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::nested_content_apostrophes_preserve_typed_bodies_and_lossless_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::non_raw_content_calls_still_parse_nested_dialogue_content",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::ordinary_dialogue_forms_keep_typed_body_applications",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::point_actions_keep_one_typed_call_payload_and_timed_cue_duration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::raw_call_body_is_opaque_in_the_syntax_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::raw_call_spacing_keeps_the_typed_body_opaque",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::dialogue_expression_tests::tests::retained_ruby_is_a_typed_dialogue_node_surface",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::document::tests::block_comments_split_newlines_without_losing_comment_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::document::tests::numeric_ranges_raw_strings_and_character_escapes_keep_exact_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::document::tests::one_pass_lexer_classifies_current_token_families_losslessly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::document::tests::shadow_root_keeps_non_declarations_as_generic_errors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::document::tests::terminal_entity_reference_colon_remains_a_suite_token",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::document::tests::unterminated_non_dialogue_string_retains_typed_literal_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::entry_grammar_tests::agent_entry_emits_controller_path_losslessly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::entry_grammar_tests::entry_head_diagnostics_own_exact_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::entry_grammar_tests::entry_options_use_shared_expression_grammar",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::entry_grammar_tests::invalid_entry_member_is_ordinary_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::entry_grammar_tests::malformed_entry_body_recovers_before_following_proof",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::entry_grammar_tests::malformed_role_and_route_keep_later_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::entry_grammar_tests::missing_entry_body_does_not_consume_following_proof",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::entry_grammar_tests::server_routes_emit_method_path_target_and_bindings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::entry_grammar_tests::stateful_entry_emits_typed_roles_and_goto_losslessly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::associated_call_projection_uses_the_same_attached_type_transaction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::associated_call_recovery_starts_only_after_an_authored_separator",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::binary_e22_projection_uses_the_closed_operator_vocabulary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::choice_keyword_select_requires_choice_grammar_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::content_interpolation_cannot_form_an_index_without_an_expression_target",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::e35_generic_error_projects_only_the_unclassified_recovery_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::empty_call_after_rejected_statement_owner_does_not_fabricate_a_callee_range",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::known_leaf_recovery_keeps_its_typed_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::leading_turbofish_does_not_fabricate_a_missing_callee_call",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::leaf_expression_matrix_projects_e01_through_e07_on_exact_start_events",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::named_argument_paths_keep_canonical_segments_and_exact_lossless_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::numeric_select_member_keeps_the_inner_missing_select_before_generic_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::parenthesized_call_projection_retains_argument_forms_and_termination",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::postfix_bracket_candidates_classify_without_source_name_heuristics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::pratt_e14_through_e17_projections_retain_slots_forms_and_components",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::pratt_start_insertion_preserves_each_child_leaf_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::prefix_e23_e24_e26_projections_retain_semantics_components_and_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::qualified_value_path_call_is_not_reclassified_as_an_associated_type_call",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::question_marker_is_not_reclassified_as_try",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::range_e19_projection_preserves_optional_endpoints_and_inclusive_marker",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::record_field_value_may_start_on_a_more_indented_line",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::records_e20_e21_project_authored_fields_and_exact_source_parts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::expression::tests::select_projection_keeps_missing_member_without_postfix_try",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::candidate_tails_stay_inside_retained_type_and_function_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::capability_function_receiver_shape_requires_a_typed_pattern_annotation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::capability_functions_admit_the_dedicated_content_parameter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::capability_types_functions_effects_and_curried_parameters_are_typed_and_lossless",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::deleted_candidate_shapes_are_one_generic_error_member_each",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::documented_visible_members_interleave_and_keep_trailing_effect_commas",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::duplicate_contradictory_and_prefixed_candidates_remain_ordinary_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::effect_braces_do_not_steal_grouped_expression_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::empty_capability_is_lossless_and_has_no_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::invalid_members_and_unbraced_effects_recover_before_later_functions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::missing_capability_name_and_body_have_zero_width_owned_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::unclosed_capability_body_synchronizes_before_the_following_proof",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::extern_capability_grammar_tests::unclosed_effects_recover_before_the_next_member_without_stealing_the_outer_close",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::callable_attached_content_parameter_has_a_closed_typed_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::function_empty_parameter_group_budget_is_inclusive_and_transactional",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::function_header_without_parameters_gets_typed_missing_group_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::function_parameter_budget_is_inclusive_across_all_curried_groups",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::invalid_rest_shapes_remain_lossless_typed_parameter_trees",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::missing_function_body_does_not_consume_the_following_proof",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::missing_function_close_synchronizes_before_the_following_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::ordinary_function_owns_curried_signature_contracts_and_block_descendants",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::ordinary_function_parameters_retain_typed_fixed_default_and_rest_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::ordinary_functions_retain_typed_extension_receiver_markers_losslessly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::removed_function_role_spellings_do_not_form_function_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::top_level_function_receiver_shape_requires_a_typed_pattern_annotation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::function_grammar_tests::trailing_function_syntax_is_one_typed_recovery_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::item_tests::every_current_top_level_declaration_family_has_one_lossless_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::item_tests::outer_attribute_delimiter_and_missing_value_recovery_remain_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::item_tests::outer_attributes_own_dotted_paths_and_shared_ordinary_arguments_without_call_callees",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::item_tests::removed_attribute_shapes_are_one_generic_recovery_without_expression_owners",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::item_tests::removed_top_level_shapes_are_ordinary_error_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::layer_grammar_tests::canonical_layer_owns_kind_singletons_policies_and_references",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::layer_grammar_tests::engine_root_and_unknown_layer_members_are_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::layer_grammar_tests::layer_header_and_duplicate_member_errors_keep_typed_nodes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::layer_grammar_tests::layer_reference_families_and_closed_policies_are_checked_in_the_typed_tree",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::layer_grammar_tests::unknown_layer_members_share_the_exact_layer_limit_and_rollback_cleanly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::lexer::tests::closed_string_keeps_square_close_inside_one_token",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::lexer::tests::delimited_entity_reference_is_one_exact_token",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::lexer::tests::entity_reference_suffix_stops_before_an_ordinary_spread_operator",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::lexer::tests::lifetime_tokens_retain_valid_and_recoverable_names_as_one_token",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::lexer::tests::ordinary_postfix_question_remains_separate_from_a_value_token",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::lexer::tests::registered_units_starting_with_e_are_distinct_from_exponents",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::lexer::tests::unclosed_delimited_entity_reference_stops_at_its_first_recovery_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::lexer::tests::unclosed_string_exposes_unescaped_square_close_for_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::lexer::tests::unclosed_string_keeps_escaped_square_close_inside_token",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::metric_grammar_tests::canonical_metric_rows_own_kind_type_members_labels_and_buckets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::metric_grammar_tests::duplicate_unit_retains_both_typed_members_and_related_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::metric_grammar_tests::metric_declaration_member_limit_counts_recovery_entries_transactionally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::metric_grammar_tests::metric_kind_role_is_closed_for_known_values_and_recovery_for_other_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::metric_grammar_tests::metric_labels_also_consume_the_shared_declaration_member_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::metric_grammar_tests::metric_member_recovery_is_typed_and_preserves_following_siblings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::metric_grammar_tests::metric_missing_kind_type_and_body_have_zero_width_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::module_use_grammar_tests::grouped_use_member_limit_is_inclusive_and_one_over_is_fatal",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::module_use_grammar_tests::missing_alias_name_is_typed_without_losing_the_import",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::module_use_grammar_tests::missing_group_close_synchronizes_before_the_following_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::module_use_grammar_tests::missing_module_path_does_not_consume_the_following_use",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::module_use_grammar_tests::module_and_use_families_emit_paths_groups_names_aliases_and_globs_losslessly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::module_use_grammar_tests::parent_root_normalizes_once_and_explicit_root_only_paths_recover_in_place",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::module_use_grammar_tests::source_header_phase_recovers_duplicate_and_late_headers_as_ordinary_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::module_use_grammar_tests::use_path_token_cursor_retains_external_project_segments_and_exact_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::module_use_grammar_tests::visibility_projection_is_typed_and_invalid_scopes_use_ordinary_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::bare_variant_grammar_projects_one_generic_expected_type_head",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::bindings_reject_trailing_tokens_without_fabricating_a_local",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::contextual_choice_keyword_is_an_ordinary_binding_pattern",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::decimal_markers_keep_unknown_suffixes_as_decimal_poison",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::incomplete_decimal_components_do_not_roll_back_to_integer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::malformed_literals_remain_literal_family_poison",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::missing_variant_name_owns_a_zero_width_required_component",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::missing_variant_payload_close_is_a_required_parser_owned_insertion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::mutable_typed_binding_recovery_and_or_mutability_remain_exact",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::nested_pattern_trailing_input_keeps_its_own_source_component",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::numeric_digit_accounting_excludes_prefix_separators_suffix_and_unit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::or_patterns_reuse_first_alternative_binding_ordinals_and_poison_mismatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::pattern_trailing_input_retains_recovery_for_every_completed_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::project_paths_retain_external_capable_segments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::radix_prefix_remains_integer_authority_for_conflicting_suffixes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::sequence_rest_preserves_absent_unbound_binding_and_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::trailing_or_retains_a_missing_alternative_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::typed_binding_preserves_mutability_and_exact_keyword_name_type_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::unknown_integer_suffix_is_invalid_integer_content_without_unit_admission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::pattern::tests::valid_literals_retain_the_same_typed_family_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::assertion_conditions_are_independent_typed_expressions_with_an_inclusive_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::bracket_families_and_call_argument_shapes_are_independently_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::canonical_multiline_contract_header_and_block_form_one_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::closures_own_typed_parameters_return_types_bodies_and_grouping",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::comparison_operator_does_not_hide_if_expression_branches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::control_expressions_emit_typed_conditions_patterns_branches_and_arms",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::control_statements_and_thread_expression_own_typed_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::documentation_and_outer_attributes_attach_to_the_following_proof",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::entity_style_proof_name_recovers_as_a_proof_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::explicit_proof_identity_is_retained_before_the_local_name",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::expression_events_preserve_precedence_arguments_and_bracket_select_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::generic_header_angle_nesting_controls_logical_line_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::generic_where_and_contract_limits_are_per_declaration_and_inclusive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::let_statement_variants_share_pattern_and_initializer_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::malformed_header_recovery_keeps_following_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::malformed_removed_form_does_not_hide_following_current_declarations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::malformed_statement_and_tail_are_poisoned_but_queryable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::malformed_statement_is_typed_without_consuming_following_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::malformed_thread_wait_recovers_inside_its_body_before_the_next_function",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::missing_block_close_preserves_the_following_declarations_prefixes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::missing_block_close_uses_zero_width_delimiter_node",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::missing_body_does_not_consume_following_clean_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::missing_contract_expression_has_the_shared_canonical_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::missing_parameter_close_synchronizes_before_the_following_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::mixed_integer_suffixes_retain_typed_numeric_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::nested_type_and_pattern_families_have_independent_events",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::on_mark_statement_uses_the_typed_mark_trigger_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::predicate_and_proof_blocks_reject_non_contract_statement_families",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::predicate_and_proof_parameter_limits_are_inclusive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::predicate_authored_return_is_retained_as_current_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::predicate_proof_complete_header_grammar_matrix",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::prefix_try_uses_the_ordinary_expression_grammar_and_missing_operand_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::proof_block_separates_statements_tail_braces_and_omitted_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::receiver_shaped_predicate_and_proof_parameters_retain_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::record_and_named_block_families_share_typed_fields_and_blocks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::removed_forms_use_ordinary_current_grammar_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::required_operand_statements_retain_exact_missing_slots_and_wait_punctuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::requires_must_precede_ensures",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::shared_statement_families_keep_typed_identity_and_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::statement_shaped_braces_remain_a_block_expression",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::thread_wait_owns_its_flow_grammar_inside_an_ordinary_function",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::trusted_proof_attribute_accepts_exactly_one_decoded_reason",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::trusted_proof_attribute_emits_only_the_eight_owned_diagnostic_codes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::words_before_contract_values_use_ordinary_expression_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::predicate_proof_tests::zero_parameter_closure_is_not_a_binary_or_expression",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::recovery::tests::generic_error_preserves_structured_payload_and_shared_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::recovery::tests::parse_error_kind_inventory_is_complete_unique_and_stable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::resource_grammar_tests::comparison_and_missing_initializer_keep_exact_sibling_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::resource_grammar_tests::generic_head_is_structural_but_non_path_heads_are_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::resource_grammar_tests::malformed_field_does_not_hide_later_fields_or_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::resource_grammar_tests::malformed_resource_headers_have_owned_recovery_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::resource_grammar_tests::removed_entity_scaffold_and_old_family_heads_do_not_create_resources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::resource_grammar_tests::typed_resource_header_body_and_nested_values_are_lossless",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::activity_port_budget_accepts_256_and_rejects_257_transactionally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::canonical_mixed_document_dispatches_all_seven_retained_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::comment_rich_mixed_document_remains_byte_exact",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::declaration_member_budget_accepts_1024_and_rejects_1025_transactionally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::fixed_parameter_budget_accepts_256_and_rejects_257_transactionally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::layer_member_budget_accepts_64_and_rejects_65_transactionally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::metric_bucket_budget_accepts_1024_and_rejects_1025_transactionally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::metric_label_budget_accepts_64_and_rejects_65_transactionally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::removed_top_level_families_and_statements_use_ordinary_error_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::top_level_retained_namespace_calls_are_error_items_not_declarations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_grammar_tests::view_export_budget_accepts_256_and_rejects_257_transactionally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_header_tests::blank_logical_line_detaches_documentation_from_a_retained_header",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_header_tests::every_retained_family_normalizes_relative_id_and_preserves_a_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_header_tests::every_retained_family_reports_exact_keyword_name_and_preserves_a_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_header_tests::every_retained_family_reports_exact_wrong_family_id_and_preserves_a_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_header_tests::every_retained_family_reports_zero_width_missing_name_without_stealing_a_sibling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_header_tests::retained_headers_are_lossless_for_lf_crlf_and_unicode_identifiers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::retained_header_tests::retained_headers_keep_docs_attributes_visibility_ids_names_and_aliases_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::closed_flow_groups_do_not_treat_nested_arrows_or_default_blocks_as_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::closed_multiline_flow_contract_list_needs_no_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::contract_list_recovery_waits_for_nested_multiline_delimiters",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::curried_flow_group_is_recovery_and_does_not_hide_the_following_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::debug_assertion_mode_keeps_its_exact_name_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::every_flow_contract_list_family_uses_the_same_unclosed_list_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::flow_contract_interleaving",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::flow_contract_modes_are_closed_tokens_not_name_references",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::flow_fixed_parameter_limit_is_inclusive_transactional_and_ignores_rejected_groups",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::flow_header_and_body_share_typed_declaration_descendants",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::flow_identity_forms_distinguish_authored_and_implicit_names",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::flow_parameter_default_is_typed_recovery_and_preserves_the_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::flow_receiver_shape_requires_a_typed_pattern_annotation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::labelled_loop_prefix_preserves_trivia_lifetime_paths_and_missing_body_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::loop_family_missing_bodies_retain_typed_heads_and_zero_width_body_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::loop_family_unclosed_body_uses_current_grammar_close_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::missing_flow_contract_list_does_not_consume_the_flow_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::missing_flow_identity_and_body_recover_before_the_following_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::missing_no_effect_operand_preserves_both_keywords_and_the_flow_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::on_handler_blocks_preserve_statement_bodies_and_recovery_sites",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::unclosed_flow_contract_list_stops_before_the_flow_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::unclosed_flow_contract_list_stops_before_the_next_clause_and_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::shadow_flow_tests::unclosed_second_flow_parameter_group_stops_before_contract_and_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::signal_grammar_tests::canonical_signal_rows_own_closed_typed_observable_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::signal_grammar_tests::flow_body_signal_statement_never_enters_declaration_grammar",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::signal_grammar_tests::signal_defers_observable_shape_validation_but_rejects_source_policy_tails",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::signal_grammar_tests::signal_missing_colon_and_type_are_zero_width_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::signal_grammar_tests::signal_statement_and_postfix_expression_heads_use_structured_lookahead",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::style_grammar_tests::malformed_style_member_recovers_before_later_member_and_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::style_grammar_tests::missing_style_close_preserves_the_following_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::style_grammar_tests::mixed_style_members_share_one_aggregate_declaration_member_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::style_grammar_tests::style_environment_nesting_accepts_exact_limit_and_rejects_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::style_grammar_tests::style_members_share_the_declaration_member_limit_exactly",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::style_grammar_tests::style_shadow_grammar_is_lossless_and_owns_typed_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::test_bench_grammar_tests::bench_assert_sections_retain_expectation_calls_as_named_plan_blocks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::test_bench_grammar_tests::missing_plan_header_parts_and_bodies_recover_before_following_proofs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::test_bench_grammar_tests::test_and_bench_plans_are_structured_and_lossless",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::test_bench_grammar_tests::unclosed_plan_body_synchronizes_before_the_next_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::test_bench_grammar_tests::unexpected_plan_header_tokens_are_recovered_without_hiding_the_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::trait_impl_grammar_tests::associated_type_and_method_tails_are_typed_recovery_nodes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::trait_impl_grammar_tests::invalid_member_recovers_at_the_next_member_line",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::trait_impl_grammar_tests::member_prefixes_and_semicolon_separators_keep_distinct_typed_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::trait_impl_grammar_tests::missing_impl_associated_target_is_typed_without_losing_the_next_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::trait_impl_grammar_tests::trait_and_impl_callable_members_admit_the_dedicated_content_parameter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::trait_impl_grammar_tests::trait_and_impl_members_keep_associated_types_curried_functions_and_bounds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::trait_impl_grammar_tests::trait_receivers_use_binding_patterns_without_inventing_parameter_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::trait_impl_grammar_tests::unclosed_impl_synchronizes_before_the_following_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::type_declaration_grammar_tests::enum_variant_payloads_preserve_unit_tuple_and_ordered_record_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::type_declaration_grammar_tests::malformed_enum_record_fields_recover_within_the_variant_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::type_declaration_grammar_tests::malformed_fields_and_missing_alias_target_recover_before_following_items",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::type_declaration_grammar_tests::missing_enum_payload_and_body_closes_do_not_consume_the_next_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::type_declaration_grammar_tests::missing_enum_record_close_recovers_before_the_following_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::type_declaration_grammar_tests::nominal_declarations_attach_their_exact_bodies_and_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::type_declaration_grammar_tests::nominal_member_names_accept_keyword_spellings_in_their_unambiguous_namespace",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::type_declaration_grammar_tests::nominal_type_families_emit_typed_fields_payloads_targets_and_constraints",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::type_declaration_grammar_tests::nominal_where_predicates_attach_missing_bounds_as_typed_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::unbound_fragment::tests::every_family_uses_one_exact_entrypoint",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::unbound_fragment::tests::expression_retains_exact_text_and_shared_grammar_completion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::unbound_fragment::tests::limit_failure_is_invalid_without_fabricating_an_attachable_tree",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::unbound_fragment::tests::statement_completion_comes_from_typed_grammar_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::unbound_fragment::tests::statement_exposes_its_primary_typed_kind_without_source_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::canonical_view_owns_fixed_signature_exports_fragment_and_typed_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::keyword_parameter_is_not_admitted_as_a_view_binding",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::malformed_export_retains_typed_export_recovery_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::misplaced_export_is_typed_and_following_sibling_is_preserved",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::rest_parameter_is_retained_as_typed_invalid_parameter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::unclosed_nested_view_value_stops_before_the_next_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::unknown_view_line_uses_typed_expression_recovery",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_call_arguments_keep_nominal_records_in_the_ordinary_expression_grammar",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_child_bodies_are_immediate_regions_and_handlers_remain_closures",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_child_bodies_preserve_the_control_regions_that_own_them",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_defaults_are_typed_but_destructuring_and_header_extensions_are_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_header_and_trailing_recovery_roles_are_distinct",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "parser::view_grammar_tests::view_missing_parameters_and_where_clause_recover_without_losing_the_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "reference::tests::borrow_kind_exposes_owned_mutability_behavior",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "reference::tests::reference_nodes_retain_typed_children_and_exact_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::dialogue_action::scanner_tests::scanner_classifies_missing_named_value_as_invalid_without_losing_parts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::dialogue_action::scanner_tests::scanner_retains_decoded_value_and_exact_authored_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::dialogue_action::scanner_tests::scanner_retains_named_parts_when_key_or_value_is_invalid",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::dialogue_surface::tests::content_boundaries_distinguish_text_expression_and_point_head_quotes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::dialogue_surface::tests::content_boundary_scan_is_iterative_for_deep_hash_bodies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::dialogue_surface::tests::hash_interpolation_lifetime_does_not_hide_its_close",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::dialogue_surface::tests::raw_is_retained_only_as_the_canonical_hash_call_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::dialogue_surface::tests::scans_retained_surfaces_and_canonical_content_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::dialogue_surface::tests::spaced_raw_and_non_raw_heads_have_distinct_typed_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "text::tests::quoted_closing_brackets_do_not_end_dialogue_bracket_heads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::multiline_and_utf8_paths_are_byte_exact",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::nested_reference_slice_generic_tuple_maps_every_structural_node",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::qualified_constructor_records_exact_terminal_segment",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::qualified_turbofish_and_nested_generic_lexemes_are_exact",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::repeated_function_type_nodes_keep_distinct_exact_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::source_map_constructor_rejects_heads_and_children_outside_their_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::source_map_constructor_rejects_missing_extra_and_duplicate_paths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::trait_arguments_and_associated_values_keep_independent_paths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::type_ref_exact_generic_argument_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::type_ref_exact_type_node_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::type_ref_one_over_generic_argument_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::type_ref_one_over_type_node_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::type_source_map_maps_nodes_and_lexemes_together",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::source::tests::type_source_map_rejects_missing_duplicate_and_out_of_order_lexemes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::empty_generic_argument_list_is_a_typed_failure_instead_of_a_parser_panic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::function_components_follow_the_exact_return_boundary_through_grouping",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::invalid_region_order_and_missing_referent_are_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::named_reference_region_retains_exact_token",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::nested_reference_ranges_use_original_type_offsets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::nominal_path_exposes_structural_heads_without_display_reconstruction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::reference_forms_preserve_kind_region_and_operator_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::reference_prefix_binds_tighter_than_type_choice",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::references_inside_composite_types_keep_parent_offsets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax",
+      "test": "types::token::grammar::tests::trivia_does_not_change_reference_mutability",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax::public_api",
+      "test": "removed_public_api_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax::public_parser_authority",
+      "test": "every_public_fragment_family_attaches_without_reparse",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax::public_parser_authority",
+      "test": "fragment_attachment_rejects_incomplete_and_mismatched_products_structurally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-lang-syntax",
+      "binary": "arcweft-lang-syntax::public_parser_authority",
+      "test": "whole_source_publication_retains_one_exact_document_and_snapshot",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

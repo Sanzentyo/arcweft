@@ -1,0 +1,19 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-character-view",
+      "binary": "arcweft-character-view",
+      "test": "tests::builds_retained_image_stack_from_render_spec",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-character-view",
+      "binary": "arcweft-character-view",
+      "test": "tests::strict_mode_rejects_unimplemented_blend_behavior",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

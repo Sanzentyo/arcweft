@@ -1,0 +1,27 @@
+[
+  {
+    "binary": "arcweft-resource-model",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_resource_model-a75c70f8882fbd28.exe",
+    "sha256": "311794cdffeeab422911fe19e11a32ecb181afe8c3617808b5eab210ec41fa3d"
+  },
+  {
+    "binary": "arcweft-resource-model::identity_contract",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\identity_contract-e968940ab4da4541.exe",
+    "sha256": "7f0b2c3a6b05c5c046617388e86493c48bf13ab64b2e23391c5d69b5b6c18314"
+  },
+  {
+    "binary": "arcweft-resource-model::registry_contract",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\registry_contract-e270a79290c650b6.exe",
+    "sha256": "fd2b123a85b46d1d0a8af7ca3ff5003a2d811120fd667bf493225f6512750811"
+  },
+  {
+    "binary": "arcweft-resource-model::retained_identity_contract",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\retained_identity_contract-0f8086163cb071b8.exe",
+    "sha256": "0c0d9a52ed4e3a62c5902c87a7a590dc7d9d896174808c482e6319e9c4681a91"
+  },
+  {
+    "binary": "arcweft-resource-model::value_contract",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\value_contract-d9578fce4d390a15.exe",
+    "sha256": "5fda252f605020d43762865508317bc030a5111ed370d463554b8447dfdb32e3"
+  }
+]

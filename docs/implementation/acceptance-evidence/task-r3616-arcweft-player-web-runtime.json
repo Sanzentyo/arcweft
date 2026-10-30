@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-player-web",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-r3616-arcweft-player-web-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-29T01:53:21.2670098Z",
+  "finishedAt": "2026-10-29T01:53:25.0541861Z"
+}

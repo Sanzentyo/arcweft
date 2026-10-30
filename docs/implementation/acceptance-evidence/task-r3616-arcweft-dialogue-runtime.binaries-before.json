@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "arcweft-dialogue",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_dialogue-79b29044ff53fd30.exe",
+    "sha256": "f28ab0febc4376a3bc6ebe76762876d0d863be1afc62499e96c73f2d9efd15e2"
+  },
+  {
+    "binary": "arcweft-dialogue::rich_text_schema",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\rich_text_schema-fadd469186a50845.exe",
+    "sha256": "e42ef8510f7be08e5e2cf40678ab4647289584a45b48681853bbf3a8d95227b3"
+  }
+]

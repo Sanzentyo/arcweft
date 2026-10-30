@@ -1,0 +1,488 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_dialogue::runtime_type::tests::branch_join_widens_only_distinct_character_identities",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_dialogue::runtime_type::tests::exact_and_any_acceptance_preserves_nominal_precision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_dialogue::runtime_type::tests::exact_and_any_owners_use_one_canonical_producer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_dialogue::schema::policies::tests::policy_graph_retains_all_owner_domains_and_structural_payload_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_dialogue::schema::role_payload::tests::rich_text_borrowed_codec_rejects_domain_invalid_inert_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_dialogue::schema::role_payload::tests::rich_text_configuration_preserves_ruby_typography_properties",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_dialogue::schema::role_payload::tests::rich_text_configuration_rejects_content_reading_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_dialogue::schema::role_payload::tests::rich_text_decoder_uses_catalog_coordinates_and_rejects_tampering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_dialogue::schema::role_payload::tests::sparse_schema_has_a_complete_option_graph_and_typed_empty_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_presentation::tests::exact_target_binds_catalog_semantics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "character_presentation::tests::runtime_target_retains_the_generation_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "inline_failure::tests::failure_selection_is_closed_and_resolves_at_display_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "inline_failure::tests::runtime_policy_decoder_accepts_only_exact_closed_policy_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "inline_failure::tests::tagged_unit_variants_reject_unknown_fields_at_every_level",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "presentation_profile::tests::engine_default_has_one_typed_view_and_no_base_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "presentation_revision::tests::revision_wire_rejects_missing_unknown_and_noncanonical_facts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "presentation_revision::tests::revision_wire_round_trip_preserves_all_six_typed_facts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "presentation_revision::tests::stamp_retains_all_six_typed_admission_facts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::character_ownership_and_patch_clear_are_immutable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::custom_field_catalog_digest_is_order_invariant_and_commits_descriptor_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::custom_field_catalog_rejects_duplicate_ids_and_limit_overruns",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::dialogue_ids_enforce_their_field_table_byte_limits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::dialogue_locale_is_a_domain_newtype_over_locale_tag",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::failed_patch_leaves_base_and_successful_candidate_unchanged",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generation::declaration_rejects_a_caller_supplied_default_digest_that_does_not_match",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generation::declaration_rejects_noncanonical_dialogue_and_look_type_identities",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generation::generation_codec_uses_program_bound_nominal_defaults_and_fallback_styles",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generation::generation_declaration_codec_rejects_input_over_the_byte_limit_before_parsing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generation::generation_declaration_codec_rejects_tampered_digest_and_noncanonical_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generation::generation_declaration_codec_round_trips_canonical_version_one_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generation::generation_declaration_digest_is_ordered_and_source_owned",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generation::generation_type_reference_mapping_preserves_identity_and_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generation::presentation_fingerprints_follow_accepted_resources_not_profile_selection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::generic_typed_values_use_runtime_depth_64_not_structured_depth_8",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::hooks_enforce_exact_256_kib_aggregate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::inline_failure_policies_are_strict_manifest_values_at_the_dialogue_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::production_limits_have_the_exact_typed_contract_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::role_deserialization_revalidates_structured_limits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::role_encoded_sizes_accept_exact_limits_and_reject_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::binding::retained_producers_select_the_exact_native_or_awbc_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::binding::runtime_binding_accepts_empty_logical_membership_and_rejects_missing_declared_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::binding::runtime_binding_admits_both_program_kinds_and_retains_the_generation_and_exact_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::binding::runtime_binding_checks_the_bound_payloads_complete_private_graph",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::binding::runtime_binding_preflights_unused_roots_and_rejects_a_foreign_dialogue_type_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::binding::runtime_binding_rechecks_actual_view_and_style_resource_fingerprints",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::binding::runtime_binding_requires_exact_visual_presence_and_manifest_fingerprints",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::custom_entries_use_active_types_and_require_canonical_id_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::generation_producer_constructs_and_reconfigures_absent_visual_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::generation_recomputes_default_digest_from_effective_config",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::generation_requires_every_logical_character_member_to_be_declared",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::native_and_awbc_round_trip_the_tuple_and_every_policy_case",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::rejects_outer_owner_removed_carrier_and_tuple_arity_before_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::rejects_stale_contracts_and_tampered_policy_headers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::role_payload_admission_rejects_nested_nominal_type_and_header_mismatches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::runtime_external_call_backend_delegates_to_the_accepted_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::schema_preflights_unused_role_payloads_and_custom_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::source_patch_rows_reject_values_outside_the_exact_voice_and_character_look_cases",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::source_type_inventory_requires_exact_voice_rows_and_present_character_look_coverage",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::source_voice_and_look_values_are_joined_through_exact_program_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::structured_role_patches_preserve_opaque_ownership_and_normalize_the_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::runtime_schema::unbound_optional_roles_reject_set_and_profile_style_clear_is_no_overrides",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::structured_clear_rejects_non_option_some_leaf_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::structured_paths_and_values_enforce_depth_8_and_total_leaves_256",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue",
+      "test": "tests::character_dialogue::typed_values_normalize_nested_negative_zero_and_preserve_record_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue::rich_text_schema",
+      "test": "dialogue_control_inventory_round_trips",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue::rich_text_schema",
+      "test": "dialogue_control_schemas_preserve_exact_limits_and_outputs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue::rich_text_schema",
+      "test": "dialogue_host_inventory_owns_only_current_names",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-dialogue",
+      "binary": "arcweft-dialogue::rich_text_schema",
+      "test": "dialogue_host_schemas_retain_cross_field_inputs_without_guessing_them",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

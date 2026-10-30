@@ -1,0 +1,77 @@
+[
+  {
+    "binary": "arcweft-render-wgpu",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_render_wgpu-3a81c7530a75b936.exe",
+    "sha256": "132bbb2938c07cec59c342c0f5802a3a49953cfde376239d546a4656e0de1cd6"
+  },
+  {
+    "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry_runtime_control_styles-e4eba56a80094729.exe",
+    "sha256": "8e67c01a8c40b83b604d0ee8b8462a63f9114edf281aeb8f28333fa7b6328f9e"
+  },
+  {
+    "binary": "arcweft-render-wgpu::geometry",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\geometry-59ffddde1a39864b.exe",
+    "sha256": "7e40fedda9635c85e7cb4e781865983afe5a2f8246b5a862dbc6dde353223934"
+  },
+  {
+    "binary": "arcweft-render-wgpu::prepared_text",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\prepared_text-5be9a5cecbfb6a96.exe",
+    "sha256": "cd685bf6487154995b69d303efb9caf11616cd68f510440d8c3ff6b50127bec1"
+  },
+  {
+    "binary": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_backdrop_gpu_smoke-a173701a8af6e771.exe",
+    "sha256": "ad2810c2d7c1b3ada9ec22aad18d39a6bb9248c0ab550e4582b8ef73bba76e66"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_blend_hsl_modes",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_blend_hsl_modes-c0eb077c66710199.exe",
+    "sha256": "62ccccdfe68e95af7cf285a21378ab9bccdaa486f4bf0a05f982c2fe1d92dd6e"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_box_shadow_exact_png_golden",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_exact_png_golden-1ab763409c7b900b.exe",
+    "sha256": "f98c8e609f6d075e949769560aa255eb15b1a642bcfaed82ea51c1000a19fc87"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_box_shadow_gpu_smoke",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_gpu_smoke-27cf9d903049249e.exe",
+    "sha256": "e75e77d1206f7da247c75873c98a06a2f429da2417c9f071ad8f10c94abef8c1"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_box_shadow_plan",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_box_shadow_plan-cca6cdbc40b8a3af.exe",
+    "sha256": "a24b6be231107485a097e2126a3f6358000f3522e3a8aaeb8931afd981a3ffac"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_clip_mask_render_closure",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_clip_mask_render_closure-614f8d5e0e916e2e.exe",
+    "sha256": "d65dca25b09ffa9c19a87123bf89d86a5605648446bbcd45cb2d57a1b55cf87f"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke_seq06_13c",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke_seq06_13c-f69b382ae22df235.exe",
+    "sha256": "e4a5c0b91f652022a9eafc30373652b65668ce7f8392e4a5b7f974a0f8a38ed8"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke_timestamps",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke_timestamps-70670054078f7f7f.exe",
+    "sha256": "915754e008b878de6b1089570f63d7d9addcb258f0d389693057dd588e8ece5c"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_gpu_smoke-68921ea9e6a5135b.exe",
+    "sha256": "67850faed70a6271b049b632110d2ae82c027ccf481835b06c717ab2999ad78e"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_compositor_plan",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_compositor_plan-bda80b362340acf9.exe",
+    "sha256": "d31c398c0d7f8ac8a6805f13ba431db6e29ed705d7daa2b51de086545effc198"
+  },
+  {
+    "binary": "arcweft-render-wgpu::view_scene_player_path",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_scene_player_path-cc2f5a8792b37928.exe",
+    "sha256": "565c36b6ce81134acc867af1f15ac1f8ef0ebd3f0087828710a0e3dd14c928b8"
+  }
+]

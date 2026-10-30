@@ -1,0 +1,47 @@
+[
+  {
+    "binary": "arcweft-agent-repl::api_compile",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-358151f99fb245b0.exe",
+    "sha256": "c57fd33c71e42b9462a40485cc982c21ec902f34064f103a3a2eb9eae24670ed"
+  },
+  {
+    "binary": "arcweft-agent-repl",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_repl-96fceabd695c62af.exe",
+    "sha256": "eb8b0e16dbd8272d3b9143142d01f6cbea91460c84b6b4575091068e4ad4f2dd"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_cell",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_cell-881bafe633838dfb.exe",
+    "sha256": "1522706249a08cb277bd977a94560beb7215d392667b4ccea7a6cc38bb15e6a0"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_command",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_command-5b17d3118fdf0972.exe",
+    "sha256": "4a075adc9e4c7f5bb9825c7fd3f39b254211ef432ad55fab955a855e1ded0151"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_task_adapter",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_task_adapter-87911c8646c4ea54.exe",
+    "sha256": "d497215e3d1f98e01e4c321a1ce4f69ad64fd1e802ed8b51b909c7dddbae1aaf"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_tiering",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_tiering-402e43c2881845a9.exe",
+    "sha256": "9d4b215e318d2f9bf01af4aa977f131b6ae0c73350725f61e1c67c48c9c52def"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_trace",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_trace-e6ad21fd323ecfdd.exe",
+    "sha256": "4841045b09380ead43ce94e9c6fc1cabbe971c81ffc575b1310b0b16bbc2f3a0"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_transaction",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_transaction-f6b7328c7cd27e0d.exe",
+    "sha256": "d3b54342320642a5f12fe35b39386d958b152fe416266432f3214bb9b057a4a1"
+  },
+  {
+    "binary": "arcweft-agent-repl::runtime_assertion_diagnostic",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_diagnostic-ff134eeaafdf443d.exe",
+    "sha256": "f5a9938ea3afd980de47556f6cd782471b54d964518aa6ab93065dc8ce8be35f"
+  }
+]

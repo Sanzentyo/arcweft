@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-r3616-arcweft-player-text-input-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-player-text-input",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-29T01:46:36.4995076Z"
+}

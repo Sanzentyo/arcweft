@@ -1,0 +1,299 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "artifact::tests::artifact_key_is_stable_for_sorted_features_and_dependencies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "artifact::tests::body_digests_affect_body_dependent_queries_only",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "artifact::tests::query_owns_its_expected_artifact_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "artifact::tests::runtime_plan_artifact_key_copies_the_canonical_generic_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "artifact::tests::runtime_plan_artifact_key_rejects_other_artifact_families",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "content::tests::binary_resource_retains_exact_bytes_and_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "content::tests::topology_revision_changes_for_binary_semantic_and_absence_inputs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "content::tests::topology_revision_is_insertion_order_independent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "content::tests::topology_revision_rejects_duplicate_canonical_keys",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "fingerprint::tests::named_digests_are_canonicalized_by_name",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "fingerprint::tests::project_fingerprint_sorts_target_features",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "fingerprint::tests::source_revision_converts_without_rehashing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "graph::tests::dependency_order_places_body_dependencies_first",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "graph::tests::duplicate_imports_are_deduplicated_by_target",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "graph::tests::groups_body_cycles_into_one_compile_unit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "graph::tests::ordinary_cycles_merge_body_compile_units",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "graph::tests::segment_type_stays_constructible_for_graph_clients",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "incremental::tests::build_snapshot_appends_query_evidence_deterministically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "incremental::tests::build_snapshot_orders_entries_modules_and_queries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "incremental::tests::build_snapshot_reports_module_and_query_invalidations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "incremental::tests::cache_record_status_reports_hits_and_rebuild_reasons",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "incremental::tests::compile_demand_join_is_monotone",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "incremental::tests::query_kind_owns_namespace_artifact_and_dependency_scope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "layout::tests::canonical_layout_uses_assets_and_content",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "layout::tests::disjoint_custom_layout_is_accepted",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "layout::tests::portable_segment_overlap_is_rejected_case_insensitively",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "layout::tests::textual_prefix_without_a_segment_boundary_does_not_overlap",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "persistent_object::codec::tests::link_plan_payload_digest_is_stable_for_canonical_unit_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "persistent_object::codec::tests::persistent_object_bytes_are_deterministic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "persistent_object::codec::tests::persistent_object_rejects_malformed_diagnostic_summary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "persistent_object::codec::tests::persistent_object_rejects_malformed_interface_summary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "persistent_object::codec::tests::persistent_object_rejects_malformed_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "persistent_object::codec::tests::persistent_object_rejects_schema_and_compiler_identity_mismatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "persistent_object::codec::tests::persistent_object_round_trips_parse_interface_and_hir_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "sources::tests::authored_source_paths_are_identical_after_project_relocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "sources::tests::authored_source_paths_are_portable_and_preserve_diagnostic_documents",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "sources::tests::authored_source_paths_reject_foreign_parent_empty_and_unknown_coordinates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "sources::tests::authored_source_paths_reject_non_utf8_components_without_lossy_conversion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "sources::tests::content_revision_does_not_duplicate_document_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project",
+      "test": "sources::tests::project_source_revision_is_the_document_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project::bytecode_link_producer_inventory",
+      "test": "producer_family_wire_names_are_stable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project",
+      "binary": "arcweft-project::bytecode_link_producer_inventory",
+      "test": "producer_inventory_contains_every_required_seq04_8_3_family",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

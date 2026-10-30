@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-r3616-arcweft-runtime-codegen-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-runtime-codegen",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-29T02:06:25.8509557Z"
+}

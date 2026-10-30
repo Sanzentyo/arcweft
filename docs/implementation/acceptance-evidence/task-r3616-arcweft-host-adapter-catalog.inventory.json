@@ -1,0 +1,75 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::custom_host_call_args_decode_variant_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::custom_host_call_args_preserve_positional_and_named_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::dense_host_contract_types_use_the_core_checked_identity_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::policy_is_manifest_derived",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::policy_reports_all_missing_runtime_implementations_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::primitive_host_results_share_the_checked_runtime_type_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::registered_host_call_contract_uses_digest_mode_and_result_semantic_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::registry_dispatches_by_manifest_host_call",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::registry_rejects_duplicate_host_call_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-host-adapter",
+      "binary": "arcweft-host-adapter",
+      "test": "tests::registry_rejects_nested_need_in_manifest_host_call_result",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

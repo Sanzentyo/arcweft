@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "run": "task-r3616-arcweft-runtime-host-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   8.680s] 72 tests run: 72 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 72,
+  "passed": 72,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-29T02:15:12.5157128Z"
+}

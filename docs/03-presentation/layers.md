@@ -227,8 +227,8 @@ scene {
 }
 ```
 
-Presentation calls that register visible values also choose a target/slot. The
-default target is `@target.scene`; `bg(...)` writes
+Background and character staging choose a target/slot. The default target is
+`@target.scene`; `bg(...)` writes
 `@slot.background.default`, and `show(@character.alice, ...)` writes
 `@slot.character.alice.default`. If a scene needs parallel backgrounds,
 reflections, split-screen layers, or multiple copies of a character, the slot
@@ -242,14 +242,18 @@ let alice = show(@character.alice, .normal, target = @target.scene, slot = @slot
 let alice_shadow = show(@character.alice, .shadow, target = @target.scene, slot = @slot.character.alice.shadow)
 ```
 
-Slots are typed option-like cells. Setting a slot returns the previous value if
-one was present; `bg.ref(...)` / `show.ref(...)` read a slot without changing
-ownership; `bg.clear(...)` / `hide(...)` clear the slot and return the removed
-value if present.
+Slots are typed option-like cells. `bg(...)` and `show(...)` replace their
+occupant and return `Handle<BackgroundSurface>` and `Handle<CharacterSurface>`,
+respectively. An older handle cannot clear a replacement occupant.
+`ref.bg(...)` / `ref.show(...)` return typed `SlotRef<T>` addresses without
+changing ownership; `clear.bg(...)` / `hide(...)` remove the occupant and return
+`Option<BackgroundSurface>` / `Option<CharacterSurface>`.
 
-The core handle and slot model lives in the Sans I/O `arcweft-presentation`
-crate. Render adapters consume the resulting state but do not own the data
-format. The syntax/typecheck layer validates that background calls use
+Sans-I/O Core owns runtime token issuance, scope custody, and release. The
+shared resource kinds and host-neutral image values belong to
+`arcweft-interaction-model::presentation`; `arcweft-presentation` owns retained
+render-layer state. Render adapters consume that state without issuing runtime
+resource leases. The syntax/typecheck layer validates that background calls use
 `@slot.background.*`, character calls use `@slot.character.*`, and targets use
 `@target.*`.
 

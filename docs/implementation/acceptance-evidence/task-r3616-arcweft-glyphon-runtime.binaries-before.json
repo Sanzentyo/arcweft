@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "arcweft-glyphon",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_glyphon-ba3bd4e9ac670b5b.exe",
+    "sha256": "344301f0558e60b24aaa64b49abec82ffa74e32fb9f690e8d8088b4faa9ebf43"
+  },
+  {
+    "binary": "arcweft-glyphon::shared_text_layout",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\shared_text_layout-40a22be7605db0d2.exe",
+    "sha256": "a7df44d569a1166aef32c6419b66455a004cb18e3d07bfefec6efca8c3ff8387"
+  }
+]

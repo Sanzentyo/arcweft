@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-dialogue",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-r3616-arcweft-dialogue-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-29T01:04:09.0067048Z",
+  "finishedAt": "2026-10-29T01:04:26.7279303Z"
+}

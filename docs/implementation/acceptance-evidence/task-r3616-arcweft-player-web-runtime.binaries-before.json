@@ -1,0 +1,32 @@
+[
+  {
+    "binary": "arcweft-player-web",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_web-5a8843e59ed28e04.exe",
+    "sha256": "97aa80db03cbf6820858168818e07ade39edb8e85a5ffdf2ad57cea2f781116f"
+  },
+  {
+    "binary": "arcweft-player-web::input",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\input-c557b52c3246df8d.exe",
+    "sha256": "91593b8d47d599e39dbbba9e77746ee367d398f9061bac07fb962641a918fc0e"
+  },
+  {
+    "binary": "arcweft-player-web::interaction_visual_state",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\interaction_visual_state-43212172f1e0b1e5.exe",
+    "sha256": "beb666a4cd3f9ef1c8b42464a7bc95c0763b9fcbf3171ff58c0e3d05eec72134"
+  },
+  {
+    "binary": "arcweft-player-web::parity",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\parity-479819789dd7ca50.exe",
+    "sha256": "a337549741d0b7c17c0ccfab86f208c7a746e0f8629f305e1cd041c23d0061c7"
+  },
+  {
+    "binary": "arcweft-player-web::report",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\report-dd69b32e83d7e814.exe",
+    "sha256": "9479f0999b78fc988836dde81c8316db409ed0868d55b577dccd23a3c53a0d9e"
+  },
+  {
+    "binary": "arcweft-player-web::web_text_input_glue",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\web_text_input_glue-a58af4e7eb1a8639.exe",
+    "sha256": "81e04d866a5d829f2d8618f4a79470bb65188a23a017013fc1faeb89c62d245d"
+  }
+]

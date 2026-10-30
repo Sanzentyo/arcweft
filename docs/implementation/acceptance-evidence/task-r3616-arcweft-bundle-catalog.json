@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-bundle",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-r3616-arcweft-bundle-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-29T00:20:37.0560985Z",
+  "finishedAt": "2026-10-29T00:26:00.3150340Z"
+}

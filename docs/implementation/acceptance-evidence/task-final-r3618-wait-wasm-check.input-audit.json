@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "task-final-r3618-wait-wasm-check",
+  "actualExitCode": 0,
+  "scope": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-player-web",
+    "--target",
+    "wasm32-unknown-unknown",
+    "--locked"
+  ],
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-30T23:42:09.3430417Z"
+}

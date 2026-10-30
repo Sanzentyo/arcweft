@@ -65,7 +65,7 @@ debug surface.
 
 Background state is addressed by a typed target/slot pair. The defaults are
 `@target.scene` and `@slot.background.default`; a later valid write replaces
-only the same pair, while other pairs coexist. `bg.clear(...)` clears exactly
+only the same pair, while other pairs coexist. `clear.bg(...)` clears exactly
 the selected pair. A malformed replacement or clear rejects the presentation
 update atomically, leaving its previously committed state intact. The shared
 target/slot ownership rules are described in [Presentation Layers](layers.md).

@@ -1,0 +1,22 @@
+[
+  {
+    "binary": "arcweft-project-loader",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_project_loader-68f290f6a4f9a757.exe",
+    "sha256": "ef7bb73c01778869f80d5a17c0c5cb1f1aa2e75fe7eec421e3c99dbfdf67e565"
+  },
+  {
+    "binary": "arcweft-project-loader::dependency_direction",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-99d464c3564e38fa.exe",
+    "sha256": "39b92f56b2b1662beba5a4e4e4b77589b33ca3a8886004f1bc0be4a4bedabc2c"
+  },
+  {
+    "binary": "arcweft-project-loader::public_api",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-61d3b0c2001f3d06.exe",
+    "sha256": "88ef4e02337cfafd766e2040a396161c9e06d71f788f7488a2797667a406a05d"
+  },
+  {
+    "binary": "arcweft-project-loader::release_trust_e2e",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\release_trust_e2e-1cdc087f14f5f642.exe",
+    "sha256": "c6e2f3102c7b08101eaea774b31447cf67991f0c31c46ac50610479cc4a2d5e6"
+  }
+]

@@ -1,0 +1,27 @@
+[
+  {
+    "binary": "arcweft-runtime-host",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_host-807ad275a74081ad.exe",
+    "sha256": "f199b767b2ff632ea47ba3636f00abf86c8c64e841abc2cf214736b97306ade4"
+  },
+  {
+    "binary": "arcweft-runtime-host::awbc_product_runner",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_runner-661163b4cc1b7808.exe",
+    "sha256": "92b348e1dc7f3da2dae23fdd5a760073bcfafb7f3a907b0cad983ab191e0c32b"
+  },
+  {
+    "binary": "arcweft-runtime-host::bundle_runner",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\bundle_runner-bb57029082f5d388.exe",
+    "sha256": "3200c03fd8eb6fe2a60a2489c5f83b7a7a4a0183af9639facd57c2b117d72c8c"
+  },
+  {
+    "binary": "arcweft-runtime-host::dependency_direction",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-3b57e62cc4203387.exe",
+    "sha256": "c8a063d21bf8e8f8734235fd813619680278581106f690f65541e24b44e4544f"
+  },
+  {
+    "binary": "arcweft-runtime-host::view_interaction_dispatch",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_interaction_dispatch-ebc6a88307bd9dde.exe",
+    "sha256": "fde99adb4ac109fd4db85ad8301f789ec5e4708e556d7d50a88358a107a5b10e"
+  }
+]

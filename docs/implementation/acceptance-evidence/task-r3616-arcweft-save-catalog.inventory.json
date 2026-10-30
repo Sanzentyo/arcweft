@@ -1,0 +1,250 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::codec_tests::generic_codec_header_is_admitted_before_the_codec_is_called",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::codec_tests::generic_codec_output_obeys_payload_and_complete_envelope_limits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::tests::a_swallowed_write_failure_cannot_publish_a_partial_envelope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::tests::header_limits_refuse_before_entering_the_typed_serializer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::tests::output_growth_and_failure_preserve_the_same_bank",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::tests::payload_output_limit_stops_serialization_before_the_remaining_members",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::tests::raw_output_keeps_its_explicit_checksum_for_defensive_decoder_tests",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::tests::serializer_failures_preserve_their_encoding_error_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::tests::typed_and_raw_output_keep_the_exact_version_one_transcript_at_the_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "encoding::tests::unrepresentable_known_payload_length_is_rejected_without_allocating_it",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::strict_typed_json_save_disables_the_trailing_data_escape_hatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::strict_typed_json_save_rejects_duplicate_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::strict_typed_json_save_rejects_trailing_payload_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::strict_typed_json_save_rejects_unknown_nested_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::strict_typed_json_save_rejects_unknown_top_level_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::typed_json_payload_borrows_the_original_envelope_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::typed_json_save_rejects_future_schema_version",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::typed_json_save_rejects_non_json_codec",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::typed_json_save_rejects_predecessor_schema_version",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::typed_json_save_rejects_schema_identity_mismatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::typed_json_save_rejects_trailing_envelope_data",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save",
+      "test": "typed_json_tests::typed_json_save_round_trips_strict_envelope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::public_api",
+      "test": "permissive_typed_json_decoder_is_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::runtime_assertion_identity",
+      "test": "save_round_trip_retains_the_real_core_runtime_assertion_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "migration_limits::codec_results_are_admitted_before_migration_and_shape_conversion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "migration_limits::migration_results_are_admitted_before_conversion_or_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_decode_rejects_schema_identity_and_future_versions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_decode_requires_matching_migration_for_old_versions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_decode_runs_multi_step_migration_chain",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_envelope_checks_lengths_before_copying_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_envelope_rejects_trailing_data_by_default",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::strict_decode",
+      "test": "save_migration_chain_rejects_schema_mismatches_and_duplicate_steps",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::typed_json_preflight",
+      "test": "complete_json_resource_limits_reject_before_any_typed_construction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::typed_json_preflight",
+      "test": "strict_json_rejects_nested_escaped_duplicate_map_keys",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-save",
+      "binary": "arcweft-save::typed_json_preflight",
+      "test": "typed_preflight_preserves_wide_numbers_and_runtime_float_bits",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

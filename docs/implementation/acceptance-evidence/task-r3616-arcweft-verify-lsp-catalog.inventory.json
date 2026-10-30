@@ -1,0 +1,103 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::converts_report_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::diagnoses_missing_adapter_manifest_requirements",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::diagnoses_missing_runtime_host_call_implementation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::exposes_adapter_manifest_completions_and_hover",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::exposes_complex_rust_adapter_type_shapes_from_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::exposes_runtime_host_completions_and_hover",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::exposes_rust_adapter_completion_and_hover",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::profile_context_builder_accepts_runtime_host_capabilities",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::profile_context_can_extend_runner_with_implemented_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::profile_context_wires_adapter_manifest_and_runtime_host_helpers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::profile_manifest_conformance_uses_runtime_host_report",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::verifier_empty_insertion_action_becomes_workspace_edit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::verifier_host_action_becomes_command_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "binary": "arcweft-verify-lsp",
+      "test": "tests::verifier_source_edit_action_becomes_workspace_edit",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

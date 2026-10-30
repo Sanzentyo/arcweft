@@ -1,0 +1,27 @@
+[
+  {
+    "binary": "arcweft-tooling",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_tooling-7b65ac460c1d2dfc.exe",
+    "sha256": "967910db2058163f578979e538e4aae746d782bbab0c4a00189f38b35c5f9077"
+  },
+  {
+    "binary": "arcweft-tooling::capability_policy",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\capability_policy-c70f1e718b75c323.exe",
+    "sha256": "a646f7961309bb2eb9cc9d6b452fa101a1c72ef9656d2c660ee428190de408f3"
+  },
+  {
+    "binary": "arcweft-tooling::public_api",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-7fbc431c84aca1e1.exe",
+    "sha256": "77dc84aba3128c067caa1082940aa817b31dc4ffd283203b61afb2adafc5c1af"
+  },
+  {
+    "binary": "arcweft-tooling::runtime_assertion_diagnostic",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_diagnostic-6bc350b309784c0b.exe",
+    "sha256": "a435ec96812a3ddca5ec81d2dad920d15ccbc662df8926947e8269d657d3cf80"
+  },
+  {
+    "binary": "arcweft-tooling::view_export_part",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_export_part-dc7f1a546f7532f7.exe",
+    "sha256": "d037077233094d3169ad7a317ec4f4129e52c265a204cf682df04ca5f1c4b238"
+  }
+]

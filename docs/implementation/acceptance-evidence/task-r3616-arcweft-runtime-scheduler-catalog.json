@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-runtime-scheduler",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-r3616-arcweft-runtime-scheduler-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-29T02:17:49.4707161Z",
+  "finishedAt": "2026-10-29T02:17:56.0190208Z"
+}

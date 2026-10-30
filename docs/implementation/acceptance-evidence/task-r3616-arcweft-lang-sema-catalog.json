@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\task-r3616-arcweft-lang-sema-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-29T01:18:52.2903069Z",
+  "finishedAt": "2026-10-29T01:20:29.7546823Z"
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "binary": "arcweft-lang-hir",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_hir-96780cec4a084439.exe",
+    "sha256": "0d37a05b839e19613ee336e087bcd0e00662677d2c7031ed918d740508254d81"
+  },
+  {
+    "binary": "arcweft-lang-hir::final_hir_public_api",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\final_hir_public_api-ff84f858d88232d6.exe",
+    "sha256": "974df30842169fdf7656c90714aa18b10484cb06106c0bd877cec0b13b9cb213"
+  },
+  {
+    "binary": "arcweft-lang-hir::project_symbols",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\project_symbols-7f87d55ce66e4229.exe",
+    "sha256": "c058586db03f57ff818a29cd5a4124787526ffa26f2b81d939fece65f6b00de9"
+  },
+  {
+    "binary": "arcweft-lang-hir::public_api",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-97757c7e41360f3a.exe",
+    "sha256": "a34e21c26b30cb2fb2b7c9a7929cc921b80cbadf60aad24908a0ec98ce0212f2"
+  }
+]

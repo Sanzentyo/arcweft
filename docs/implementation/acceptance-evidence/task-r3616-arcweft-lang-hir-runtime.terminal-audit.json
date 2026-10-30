@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "run": "task-r3616-arcweft-lang-hir-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 289.641s] 963 tests run: 963 passed (3 slow), 8 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 963,
+  "passed": 963,
+  "failed": 0,
+  "skipped": 8,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4003,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-29T01:16:54.0657762Z"
+}
