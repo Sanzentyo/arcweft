@@ -17,6 +17,7 @@ pub enum PresentationCallableId {
     RefShow,
     ClearBackground,
     Hide,
+    Mount,
 }
 
 /// Ownership of the value returned by one executable presentation call.
@@ -34,7 +35,7 @@ impl PresentationCallableId {
         use PresentationCallableResult::{Handle, Removed, SlotRef};
         use PresentationResourceKind as Resource;
         match self {
-            Self::View => Handle(Resource::View),
+            Self::View | Self::Mount => Handle(Resource::View),
             Self::Menu => Handle(Resource::Menu),
             Self::Overlay => Handle(Resource::Overlay),
             Self::Background => Handle(Resource::Background),
@@ -47,7 +48,7 @@ impl PresentationCallableId {
             Self::Hide => Removed(Resource::Character),
         }
     }
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::View,
         Self::Menu,
         Self::Overlay,
@@ -59,6 +60,7 @@ impl PresentationCallableId {
         Self::RefShow,
         Self::ClearBackground,
         Self::Hide,
+        Self::Mount,
     ];
 
     pub fn resolve_surface_name(name: &str) -> Option<Self> {
@@ -80,12 +82,17 @@ impl PresentationCallableId {
             Self::RefShow => "ref.show",
             Self::ClearBackground => "clear.bg",
             Self::Hide => "hide",
+            Self::Mount => "mount",
         }
     }
 
     pub fn argument_role(self, name: &str) -> Option<PresentationArgumentRole> {
         match self {
             Self::View | Self::Menu | Self::Overlay => view_argument(name),
+            Self::Mount => match view_argument(name)? {
+                PresentationArgumentRole::View => Some(PresentationArgumentRole::ViewValue),
+                argument => Some(argument),
+            },
             Self::Background => background_argument(name),
             Self::Image => image_argument(name),
             Self::PlayerViewport => viewport_argument(name),
@@ -108,6 +115,7 @@ impl PresentationCallableId {
             Self::RefShow => 8,
             Self::ClearBackground => 9,
             Self::Hide => 10,
+            Self::Mount => 11,
         }
     }
 }

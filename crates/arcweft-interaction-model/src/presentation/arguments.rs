@@ -58,6 +58,7 @@ pub enum PresentationArgumentRole {
     Look,
     Source,
     Character,
+    ViewValue,
 }
 
 impl PresentationArgumentRole {
@@ -114,6 +115,7 @@ impl PresentationArgumentRole {
             Self::Look => 48,
             Self::Source => 49,
             Self::Character => 50,
+            Self::ViewValue => 51,
         }
     }
 }

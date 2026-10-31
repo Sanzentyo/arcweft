@@ -51,6 +51,7 @@ impl PresentationArgumentValuePolicy {
 
         match role {
             PresentationArgumentRole::View => Exact(TypeKind::entity_ref(EntityKind::View)),
+            PresentationArgumentRole::ViewValue => Exact(TypeKind::ViewValue),
             PresentationArgumentRole::Asset => Exact(TypeKind::entity_ref(EntityKind::Asset)),
             PresentationArgumentRole::Character => {
                 Exact(TypeKind::entity_ref(EntityKind::Character))

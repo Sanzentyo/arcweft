@@ -1861,7 +1861,8 @@ pub(in crate::callable) fn presentation_schema(
     let (parameters, policy) = match id {
         PresentationCallableId::View
         | PresentationCallableId::Menu
-        | PresentationCallableId::Overlay => (view_parameters(id), open_named_supply()),
+        | PresentationCallableId::Overlay
+        | PresentationCallableId::Mount => (view_parameters(id), open_named_supply()),
         PresentationCallableId::Background => (
             vec![
                 required_positional(0, "asset", TypeKind::entity_ref(EntityKind::Asset))
@@ -2438,19 +2439,7 @@ mod tests {
 
     #[test]
     fn presentation_schemas_retain_typed_argument_roles_for_every_callable() {
-        for id in [
-            PresentationCallableId::View,
-            PresentationCallableId::Menu,
-            PresentationCallableId::Overlay,
-            PresentationCallableId::Background,
-            PresentationCallableId::Image,
-            PresentationCallableId::PlayerViewport,
-            PresentationCallableId::Show,
-            PresentationCallableId::RefBackground,
-            PresentationCallableId::RefShow,
-            PresentationCallableId::ClearBackground,
-            PresentationCallableId::Hide,
-        ] {
+        for id in PresentationCallableId::ALL {
             let schema = presentation_schema(id, None, None).expect("presentation schema");
             for parameter in schema.groups()[0].parameters() {
                 assert!(
