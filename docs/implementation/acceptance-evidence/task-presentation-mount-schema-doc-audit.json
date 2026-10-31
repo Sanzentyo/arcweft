@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-01",
+  "base": "c16e081596dc7a33721cfd1c6cebad1c4fb9b3a6",
+  "changed": [
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "checkedDocuments": 129,
+  "relativeLinks": 645,
+  "brokenLinks": [],
+  "unclosedFences": [],
+  "statusCommitIds": 48,
+  "unretainedIds": [],
+  "historicalRawChanges": [],
+  "historicalPrefixPreserved": true,
+  "heldFiles": 20,
+  "heldDrift": 0,
+  "partialCliOriginalWipProof": true,
+  "rustCargoRun": false
+}

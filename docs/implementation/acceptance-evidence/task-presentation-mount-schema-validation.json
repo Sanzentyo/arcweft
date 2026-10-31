@@ -1,0 +1,350 @@
+{
+  "version": 1,
+  "date": "2026-11-01",
+  "publication": {
+    "version": 1,
+    "commit": "c16e081596dc7a33721cfd1c6cebad1c4fb9b3a6",
+    "parent": "8145274aa98ea3f2b2e54f4dbcea56a0496cbca4",
+    "tree": "225f98f80992f3dd012a16f6a852cf2a9dd0b253",
+    "remote": "c16e081596dc7a33721cfd1c6cebad1c4fb9b3a6",
+    "paths": [
+      {
+        "path": "crates/arcweft-interaction-model/src/presentation/arguments.rs",
+        "blob": "b7af5761c49642d8461c73a428b9db3db751c7fe"
+      },
+      {
+        "path": "crates/arcweft-interaction-model/src/presentation/callables.rs",
+        "blob": "0264c10724cba007e5db881213113f5d063469ad"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/callable/presentation.rs",
+        "blob": "2f1108f7b129b68d2927c468fc820cff7345b5dd"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+        "blob": "5a9f3f38b93be43ef767c0940ccf0c5bc71e30d6"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/tests/presentation.rs",
+        "blob": "1750eb3884e706ea19fdb28b43146dbb606a6cf8"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "73072c7cb0109b2bae1e1c2b0df5b8dcae3cf7ce5d6b66845f1f33eb0ba6a4dc",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T22:01:55.4470129Z"
+  },
+  "workingTree": "main; original tracked WIP14 and untracked files6 retained",
+  "scope": "Shared mount identity and semantic ViewValue binding only. Source execution ABI is not accepted.",
+  "schema": {
+    "callables": 12,
+    "handleMethods": 6,
+    "argumentRoles": 52
+  },
+  "owner": {
+    "version": 1,
+    "base": "8145274aa98ea3f2b2e54f4dbcea56a0496cbca4",
+    "run": "presentation-mount-schema-owner-20261101.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [ 137.801s] 1394 tests run: 1394 passed (1 slow), 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 1394,
+    "passed": 1394,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4036,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T21:59:36.7413555Z"
+  },
+  "clippy": {
+    "version": 1,
+    "base": "8145274aa98ea3f2b2e54f4dbcea56a0496cbca4",
+    "command": [
+      "clippy",
+      "-p",
+      "arcweft-interaction-model",
+      "-p",
+      "arcweft-lang-sema",
+      "--all-targets",
+      "--all-features",
+      "--locked"
+    ],
+    "exitCode": 0,
+    "sourceInputs": 4036,
+    "sourceDrift": 0,
+    "startedAt": "2026-10-31T21:59:50.2970371Z",
+    "finishedAt": "2026-10-31T22:01:33.9525691Z"
+  },
+  "fmt": {
+    "version": 1,
+    "paths": [
+      "crates/arcweft-interaction-model/src/presentation/arguments.rs",
+      "crates/arcweft-interaction-model/src/presentation/callables.rs",
+      "crates/arcweft-lang-sema/src/callable/presentation.rs",
+      "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+      "crates/arcweft-lang-sema/src/final_analysis/tests/presentation.rs"
+    ],
+    "exitCode": 0,
+    "sourceDrift": 0
+  },
+  "initialAttempts": [
+    {
+      "stem": "presentation-mount-schema-focus1-20261101",
+      "passed": 4,
+      "failed": 1
+    },
+    {
+      "stem": "presentation-mount-schema-focus2-20261101",
+      "passed": 0,
+      "failed": 1
+    }
+  ],
+  "correction": "Initial positive fixtures omitted the function result annotation, requiring Unit rather than Handle<View>. NoViableSignature was correct. Explicit Handle<View> results made the direct and aliased construction cases pass. These failures do not establish a production nested-binding defect.",
+  "correctedFocus": {
+    "stem": "presentation-mount-schema-focus3-20261101",
+    "passed": 5,
+    "failed": 0,
+    "excluded": 1345
+  },
+  "notRun": [
+    "Fresh complete reverse-dependency nextest matrix",
+    "Fresh workspace check/Clippy",
+    "mount runtime, save/restore and display parity"
+  ],
+  "priorEvidence": "task-presentation-shared-identities-validation.json remains evidence for c4365e40c7e1b6050b4ba3162b367c954b7f07ff; its results are not relabeled as a mount rerun.",
+  "raw": {
+    "path": "task-presentation-mount-schema-validation-raw.zip",
+    "sha256": "54c652c6833556d063c2df6b04aa55e4d971abc90c195bc359de4368f40b25e9",
+    "entries": [
+      {
+        "name": "checkpoint-presentation-mount-schema.reviewed.patch",
+        "bytes": 9838,
+        "sha256": "73072c7cb0109b2bae1e1c2b0df5b8dcae3cf7ce5d6b66845f1f33eb0ba6a4dc"
+      },
+      {
+        "name": "checkpoint-presentation-mount-schema.verified.json",
+        "bytes": 1309,
+        "sha256": "e71255046bc012cb18f94d63c89c5df12180df4e389db907b3131218df8b19a1"
+      },
+      {
+        "name": "presentation-mount-schema-focus1-20261101.binaries-before.json",
+        "bytes": 212,
+        "sha256": "21528b12449c807ba94522b21204738adcfabab362cf5b38dd3d077063331130"
+      },
+      {
+        "name": "presentation-mount-schema-focus1-20261101.catalog.inventory.json",
+        "bytes": 356412,
+        "sha256": "dfcc85564c1d9ae6c81dca78aa7819cf5a1cb86a3b67727d3b12c8b577269808"
+      },
+      {
+        "name": "presentation-mount-schema-focus1-20261101.catalog.json",
+        "bytes": 734,
+        "sha256": "e8979a1e3dff7bddc400090abb62b1509fa535b5467bb238d48978a36344caa4"
+      },
+      {
+        "name": "presentation-mount-schema-focus1-20261101.catalog.log",
+        "bytes": 342157,
+        "sha256": "eafba98315b1de092016bd0b47d120fae9f7d27f5ff95eace8121436284d9a75"
+      },
+      {
+        "name": "presentation-mount-schema-focus1-20261101.runtime.json",
+        "bytes": 828,
+        "sha256": "df8b0164791b48dce3bb568c51f44c7aed956fa0395e507b1441b360d221f808"
+      },
+      {
+        "name": "presentation-mount-schema-focus1-20261101.runtime.log",
+        "bytes": 503610,
+        "sha256": "f8f4734894fdc6c06672e3ed4f84058c3801fe0a82f1cd47549a31f21c041eda"
+      },
+      {
+        "name": "presentation-mount-schema-focus1-20261101.runtime.terminal-audit.json",
+        "bytes": 836,
+        "sha256": "e0d897f2429af6218a405e04b9bd901df87d79d61c4c4c31cda2a324ee7b0b2a"
+      },
+      {
+        "name": "presentation-mount-schema-focus1-20261101.source-freeze.json",
+        "bytes": 789012,
+        "sha256": "7ae43c3cc922e87774e558ff53110a9297757ed06270da4eb80f45dedb4b62f6"
+      },
+      {
+        "name": "presentation-mount-schema-focus2-20261101.binaries-before.json",
+        "bytes": 212,
+        "sha256": "44f052b4f676988372e99cf0d820fc5443b197a65e29a5ce1a6749d994864daf"
+      },
+      {
+        "name": "presentation-mount-schema-focus2-20261101.catalog.inventory.json",
+        "bytes": 356416,
+        "sha256": "12aff7cbe25326ef85ce49cd66223c1645c54c5e4c5342d18e4ea751994fd6e3"
+      },
+      {
+        "name": "presentation-mount-schema-focus2-20261101.catalog.json",
+        "bytes": 686,
+        "sha256": "6644a62467f8417e50e8689e8fad50278b43ddd7b11cfde9e6b1b095de88dd14"
+      },
+      {
+        "name": "presentation-mount-schema-focus2-20261101.catalog.log",
+        "bytes": 341912,
+        "sha256": "53dfe946872e1aef638049ba308247781458b5554a99c472d3457ae633503c4b"
+      },
+      {
+        "name": "presentation-mount-schema-focus2-20261101.runtime.json",
+        "bytes": 780,
+        "sha256": "1cc377ba9750f3926b4ba5d5e40820160201419d258aaffd5773d54d9ff0ad7c"
+      },
+      {
+        "name": "presentation-mount-schema-focus2-20261101.runtime.log",
+        "bytes": 504091,
+        "sha256": "46463e6f457853de2da819f2274a7d0fc57c56a74471a4436db16e026bedfe6f"
+      },
+      {
+        "name": "presentation-mount-schema-focus2-20261101.runtime.terminal-audit.json",
+        "bytes": 835,
+        "sha256": "db0debae16f4fd3efd16b0f10c6580e955b9855816f6ed6f43a6307f8934166f"
+      },
+      {
+        "name": "presentation-mount-schema-focus2-20261101.source-freeze.json",
+        "bytes": 789012,
+        "sha256": "f2b890fea1dac24f08f24bb2039931356f91784964c81c871875502c0a67b252"
+      },
+      {
+        "name": "presentation-mount-schema-focus3-20261101.binaries-before.json",
+        "bytes": 212,
+        "sha256": "0a20be44f06a93fe504e904df46b368602357e6068cdf28d654d63da770bf7e3"
+      },
+      {
+        "name": "presentation-mount-schema-focus3-20261101.catalog.inventory.json",
+        "bytes": 356412,
+        "sha256": "dfcc85564c1d9ae6c81dca78aa7819cf5a1cb86a3b67727d3b12c8b577269808"
+      },
+      {
+        "name": "presentation-mount-schema-focus3-20261101.catalog.json",
+        "bytes": 734,
+        "sha256": "4ec414697ab9114c8eed86a06404aa296266769b8e2f825ae43c8558fcad699d"
+      },
+      {
+        "name": "presentation-mount-schema-focus3-20261101.catalog.log",
+        "bytes": 341661,
+        "sha256": "88abcaf5fc1df6903c0370534408f63f82eca55b9331e990b95de9d59b8b5fb4"
+      },
+      {
+        "name": "presentation-mount-schema-focus3-20261101.runtime.json",
+        "bytes": 826,
+        "sha256": "734a2a491cfb6eb7bd05d8e64845c235461cd8dc046db0c638f4436c3c1a751b"
+      },
+      {
+        "name": "presentation-mount-schema-focus3-20261101.runtime.log",
+        "bytes": 502786,
+        "sha256": "88a1bb97aa4fd484dd25ff7a49ec0c760d42ba62224ac74fb3532437aed8cc46"
+      },
+      {
+        "name": "presentation-mount-schema-focus3-20261101.runtime.terminal-audit.json",
+        "bytes": 624,
+        "sha256": "5801d4f1611163b94703a432fd4fd53a129f03d52d8ef7431e4fa95401b034ae"
+      },
+      {
+        "name": "presentation-mount-schema-focus3-20261101.source-freeze.json",
+        "bytes": 789012,
+        "sha256": "b3c6cad4079140cd69937c272f98270a1d7ea5de190620eb39592b3cca1d1cb0"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.binaries-before.json",
+        "bytes": 1703,
+        "sha256": "86dc89907d5e81e35a9846d30addabfe868c333d5515c798e919d001f83285ff"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.catalog.inventory.json",
+        "bytes": 365892,
+        "sha256": "78342fb2a69761db2963cb2280d9e1e0715b09e9e1f6ec69783f7ed460b4a946"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.catalog.json",
+        "bytes": 589,
+        "sha256": "a9719ba3126de68f13801076b3812a66cce16bf28e0c2577d3eee93717f07a21"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.catalog.log",
+        "bytes": 325856,
+        "sha256": "d81c59117755be2c62d50b1eb753fcf532c46b703e883c2adeeb4e3cec350d60"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.clippy.json",
+        "bytes": 418,
+        "sha256": "50f34e588b29e28b82848551ee41f728174d5b997d09ef044d46981ed97cbec1"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.clippy.log",
+        "bytes": 5690997,
+        "sha256": "a2a2b9aa934be7e15edaca9422c528f5463e7453cccd8746af344cb33c005e7c"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.fmt.json",
+        "bytes": 423,
+        "sha256": "00bbf6a10b9d9c4035d85a7af586229ff76a27b5229e7c347f3045cc04951482"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.fmt.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.runtime.json",
+        "bytes": 681,
+        "sha256": "100c630ccb7aa7772b827125d5df60be5e47a27e49a6e2e322eb773bbffd91c5"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.runtime.log",
+        "bytes": 521115,
+        "sha256": "1de2f2c61469b54ffb9447e583220e74e9d07c7fd3b6ce7f5a327f57e7dc2c0c"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.runtime.terminal-audit.json",
+        "bytes": 638,
+        "sha256": "c214c54a466c9bba9a5345d9db2ae04a7446a771ad1677c2f6307b300da21aca"
+      },
+      {
+        "name": "presentation-mount-schema-owner-20261101.source-freeze.json",
+        "bytes": 789012,
+        "sha256": "2ad0d794401c8cf712bd15c5e8160198b1e4599631ef6fa4f20117a44717db53"
+      },
+      {
+        "name": "run-presentation-mount-schema-owner-quality.ps1",
+        "bytes": 1989,
+        "sha256": "d6d561e958ae8b42393f68fb466bfeb95bef1b7c95f445dd2b7c28b8d1e8db35"
+      },
+      {
+        "name": "initial-source/crates__arcweft-interaction-model__src__presentation__arguments.rs",
+        "bytes": 3044,
+        "sha256": "68d2174f331a2e1033d83a805ae6ae53a974c0dc2e68627297c8de6281df3dbd"
+      },
+      {
+        "name": "initial-source/crates__arcweft-interaction-model__src__presentation__callables.rs",
+        "bytes": 9808,
+        "sha256": "322daf41974122c310e00a516d1317aa67f654b7902a057fae353956d984915e"
+      },
+      {
+        "name": "initial-source/crates__arcweft-lang-sema__src__callable__presentation.rs",
+        "bytes": 5974,
+        "sha256": "c1eeb4dbe24155e1e8d75f3eba5bbe6093dbee77470ffad1041e3264d9fadf5e"
+      },
+      {
+        "name": "initial-source/crates__arcweft-lang-sema__src__callable__schema__families.rs",
+        "bytes": 118474,
+        "sha256": "551f7f1282dbc3a641150e5073929c0dd8b41473b1b34c9a652ec5acc4d8e7d3"
+      },
+      {
+        "name": "initial-source/crates__arcweft-lang-sema__src__final_analysis__tests__presentation.rs",
+        "bytes": 5460,
+        "sha256": "d9782545856b2423223de782b5947259e2213225fb7edea0131436d6bab72ad2"
+      }
+    ]
+  }
+}
