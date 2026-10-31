@@ -13401,3 +13401,9 @@ Source 1bf138d190c826841935b38bf01c3048fb43c3cb、parent 41db45e42c00ca348532961
 最終Sema owner3は1,370／1,370 PASS・除外0・終了0。型の深さexact／one-over、累積node上限、失敗後の独立再検査を追加した。最終compiler caseは同じNode<bool> captureの読取りを1回から2回へ強め、Nativeの元programで構築した再帰値のsnapshotをcanonical decoded AWBCへ復元し、両backendで同じTuple([Unit])を得た。1 PASS・42選択外・終了0。旧fixtureと同じbytesとはしない。両最終runの4,007入力・binary・catalog集合差分0。workspace all-target/all-feature check／Clippy、Sema default check、doctest 2／2、明示11 Rust pathのfmtは終了0。構造監査は97 package・3,245 files・review trigger 382・blocking 0で、警告なしとはしない。
 
 Supersedes: 現状一覧の「Sema ownerのみ検証済み」を、元定義によるCopy／Moveと実View captureの公開済み結果へ更新した。先行成功はその元入力の結果として保持し、利用側失敗は具体的に別記した。全体goalやこの1失敗を根拠にGeneric Match・C1–C5を未完了へ戻していない。6 pathを通常main pushし、remote・全blob・保持WIP hashの一致を確認した。推移的逆依存22 packageはこのSourceで検証開始し、Sema ownerを再利用して残21 packageだけを実行する。実captureのpure-program結果からactive taskの各step save／rollback、型だけの関数値certificate、Native/Web画像やCLI全体の受入を推定しない。
+
+## Rust ADT Sourceでの全CLI終端 — 2026-10-31
+
+Source 1bf138d190c826841935b38bf01c3048fb43c3cbと保持WIPの4,007入力で、package単独all-feature／locked／native nextestは692件中649 PASS／43 FAIL・23 ignored・実終了100。元Source c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030の全CLI失敗IDと新規0・解消0で完全一致した。catalog／source／binary／終端case集合の差分0。全21 consumerの残りは実行中であり、CLI終端と混同しない。[全CLI原本・失敗比較・範囲](acceptance-evidence/task-nominal-c6-cli-acceptance.json)。
+
+Supersedes: 現状一覧のCLI行を今回のSourceと確定原本へ更新した。以前の692件の結果は元Sourceの履歴として保持し、今回の43 FAILも成功扱いにしない。Generic Match・構造的nominalの既存受入・実View capture等の個別成功を、全体goalやCLI統合の未完了を理由に戻していない。

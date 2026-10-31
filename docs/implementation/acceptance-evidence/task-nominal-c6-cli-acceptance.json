@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "sourceCommit": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "recordedAt": "2026-10-31T05:46:40.2891739Z",
+  "scope": "Complete package-local all-feature CLI native nextest execution; transitive consumer matrix still running",
+  "executed": 692,
+  "passed": 649,
+  "failed": 43,
+  "ignored": 23,
+  "actualNextestExitCode": 100,
+  "newFailureIds": [],
+  "resolvedBaselineFailureIds": [],
+  "comparisonBaseline": "task-presentation-awbc-scopes-reverse-acceptance.json",
+  "comparisonBaselineSource": "c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030",
+  "sourceInputs": 4007,
+  "sourceDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "acceptance": "CLI integration remains incomplete. None of the 43 failures is relabeled as a pass or used to reopen Generic Match or another accepted feature.",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-catalog.input-audit.json",
+      "bytes": 357,
+      "sha256": "d4279107adf88a4b6b6c27e121db64c849ad726fc1ddbe57878b9c185f52f878"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-catalog.inventory.json",
+      "bytes": 171469,
+      "sha256": "d91f9743cc38ac0862b3a11d097245578a56035ad0efa8260b7ee23013cd0b5d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-catalog.json",
+      "bytes": 489,
+      "sha256": "dca47d83ecb0c31052e2f44c02cbbd9e287dc0795dd3a82e7e622db08c8aa842"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-catalog.log",
+      "bytes": 215302,
+      "sha256": "1be2cfa78eb88e4cc47ae70cbd0e8247dffca31869e5b15cce348d8e6a1b2d1f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-failure-comparison.json",
+      "bytes": 559,
+      "sha256": "e283cd34d77066ae5336782d3136cd7493e0d2b3784396252f8d25661d74897f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-runtime.binaries-before.json",
+      "bytes": 3078,
+      "sha256": "e12685d8182f2115c66f489c96945e8f05916a2cd762bf714adc1f5fc9df1f31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-runtime.json",
+      "bytes": 583,
+      "sha256": "c9389f2826dd3c4e9ed01b574060442517b60a290d9a5bbd163959774c8f102f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-runtime.log",
+      "bytes": 3406986,
+      "sha256": "b3a803cab5c3fc937a319fc1dd6c651a6dc6a016cf690a970175cefb9f637666"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-runtime.terminal-audit.json",
+      "bytes": 7944,
+      "sha256": "331f145d4fa5470d812ccebfcc4507b622f4c6cd8499f1d4649a3f8d86c8946e"
+    }
+  ]
+}
