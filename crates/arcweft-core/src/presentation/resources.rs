@@ -204,7 +204,39 @@ pub(crate) struct PresentationScopeTarget<'scope> {
     anchor: PresentationScopeAnchor,
 }
 
+/// Borrowed grant at its actual storage anchor; it cannot issue a live grant.
+pub(crate) struct PresentationScopeRef<'scope> {
+    binding: Option<&'scope RuntimePresentationScopeBinding>,
+    anchor: PresentationScopeAnchor,
+}
+
+impl<'scope> PresentationScopeRef<'scope> {
+    pub(crate) fn awbc(
+        binding: Option<&'scope RuntimePresentationScopeBinding>,
+        frame: crate::runtime_id::RuntimeFrameInstanceId,
+        scope: Option<crate::awbc::schema::AwbcScopeId>,
+    ) -> Self {
+        Self {
+            binding,
+            anchor: PresentationScopeAnchor::Awbc { frame, scope },
+        }
+    }
+}
+
+/// One real execution's scope in a possibly multi-fiber retirement contour.
+pub(crate) struct PresentationScopeExit<S> {
+    pub(crate) execution: ExecutionInstanceId,
+    pub(crate) fiber: RuntimePersistentFiberId,
+    pub(crate) scope: S,
+}
+
 impl<'scope> PresentationScopeTarget<'scope> {
+    pub(crate) fn as_ref(&self) -> PresentationScopeRef<'_> {
+        PresentationScopeRef {
+            binding: self.binding(),
+            anchor: self.anchor,
+        }
+    }
     pub(crate) const fn native(
         binding: &'scope mut Option<RuntimePresentationScopeBinding>,
     ) -> Self {
@@ -530,7 +562,7 @@ impl<V> PresentationLedger<V> {
         fiber: RuntimePersistentFiberId,
         mut target: PresentationScopeTarget<'_>,
     ) -> Result<Vec<PresentationRetirement<V>>, RuntimePresentationError> {
-        self.validate_bound_scope(program, execution, fiber, &target)?;
+        self.validate_bound_scope(program, execution, fiber, target.as_ref())?;
         let Some(binding) = target.binding() else {
             return Ok(Vec::new());
         };
@@ -547,10 +579,10 @@ impl<V> PresentationLedger<V> {
         program: &RuntimeProgramOwner,
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
-        target: &PresentationScopeTarget<'_>,
+        target: PresentationScopeRef<'_>,
     ) -> Result<(), RuntimePresentationError> {
         self.validate_program(program)?;
-        let Some(binding) = target.binding() else {
+        let Some(binding) = target.binding else {
             return Ok(());
         };
         if !binding.program.same_program(program)

@@ -819,6 +819,27 @@ impl super::AwbcProductStepExecutor {
         for child in &batch.child_fibers {
             child.fiber.validate_cleanup_inputs(&self.program)?;
         }
+        let order = cancellations
+            .iter()
+            .enumerate()
+            .map(|(index, cancel)| (cancel.instance, index))
+            .collect::<BTreeMap<_, _>>();
+        let mut cancelled = self
+            .child_fibers
+            .iter()
+            .filter(|child| {
+                executor_actions.get(&child.fiber.instance)
+                    == Some(&ProductExistingChildAction::CancelAndJoin)
+            })
+            .chain(batch.child_fibers.iter().filter(|child| {
+                batch_actions.get(&child.fiber.instance)
+                    == Some(&ProductExistingChildAction::CancelAndJoin)
+            }))
+            .map(|child| &child.fiber)
+            .collect::<Vec<_>>();
+        cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
+        self.program
+            .preflight_fiber_cancellations(self.presentation.as_ref(), cancelled)?;
         Ok(PreparedLineTaskCommands {
             line_task,
             scheduled,
@@ -836,6 +857,33 @@ impl super::AwbcProductStepExecutor {
         batch: &mut super::ProductLineTaskExecutionBatch,
         mut prepared: PreparedLineTaskCommands,
     ) {
+        // The same real contour is checked again under exclusive borrows, before
+        // a command is recorded, a child is removed, or any grant is cleared.
+        let order = prepared
+            .cancellations
+            .iter()
+            .enumerate()
+            .map(|(index, cancel)| (cancel.instance, index))
+            .collect::<BTreeMap<_, _>>();
+        let mut cancelled = self
+            .child_fibers
+            .iter_mut()
+            .filter(|child| {
+                prepared.executor_actions.get(&child.fiber.instance)
+                    == Some(&ProductExistingChildAction::CancelAndJoin)
+            })
+            .chain(batch.child_fibers.iter_mut().filter(|child| {
+                prepared.batch_actions.get(&child.fiber.instance)
+                    == Some(&ProductExistingChildAction::CancelAndJoin)
+            }))
+            .map(|child| &mut child.fiber)
+            .collect::<Vec<_>>();
+        // Stable ordering also preserves the later commit queue's order for
+        // actions already staged before this command sequence.
+        cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
+        self.program
+            .retire_cancelled_fiber_scopes(&mut self.presentation, cancelled)
+            .expect("final command preflight retains the complete cancellation contour");
         batch.line_task_activations.clear();
         transaction
             .line_mut()
@@ -873,7 +921,8 @@ impl super::AwbcProductStepExecutor {
                     .admit_scheduled_child_bindings_prepared(proof, bindings);
             }
             batch.observations.extend(
-                crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
+                self.program
+                    .cancel_fiber(&mut child.fiber, &mut self.presentation)
                     .expect("prepared line cancellation retains its admitted cleanup inventory")
                     .observations,
             );
@@ -1042,7 +1091,8 @@ impl super::AwbcProductStepExecutor {
                         .remove(index)
                         .expect("preflighted child action retains its exact instance");
                     batch.observations.extend(
-                        crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
+                        self.program
+                            .cancel_fiber(&mut child.fiber, &mut self.presentation)
                             .expect(
                                 "prepared line cancellation retains its admitted cleanup inventory",
                             )

@@ -5,6 +5,311 @@ use crate::presentation::resources::{
 use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToken};
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
+mod cancellation {
+    use super::*;
+    use crate::awbc::schema::*;
+    use crate::line_task::{
+        LineTaskActivation, LineTaskCommand, LineTaskLiveState, LineTaskWorkTag,
+    };
+    use crate::presentation::RuntimePresentationError;
+    use crate::runtime_id::DialogueActivationId;
+    use crate::step::RuntimeStepOutput;
+    use std::collections::BTreeSet;
+
+    fn fixture(
+        queued: bool,
+    ) -> (
+        AwbcProductStepExecutor,
+        DialogueActivationId,
+        Vec<LineTaskWorkTag>,
+        Vec<RuntimePresentationHandleToken>,
+    ) {
+        let mut program = mark_selector_program(
+            arcweft_interaction_model::input::InputActionId::new("presentation.cancel").unwrap(),
+        );
+        program.runtime_types.push(AwbcRuntimeType::new(
+            crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
+            AwbcRuntimeTypeShape::Bool,
+        ));
+        program.line_task_nodes = vec![
+            AwbcLineTaskNode::Parallel {
+                policy: AwbcParallelPolicy::JoinAll,
+                children: vec![AwbcLineTaskNodeId(1), AwbcLineTaskNodeId(3)],
+            },
+            AwbcLineTaskNode::Child {
+                trigger: AwbcLineTaskTrigger::Immediate,
+                join: AwbcChildJoinPolicy::Join,
+                cancel: AwbcChildCancelPolicy::CancelAndJoin,
+                scope: AwbcLineTaskNodeId(2),
+            },
+            AwbcLineTaskNode::Action(AwbcFunctionId(2)),
+            AwbcLineTaskNode::Child {
+                trigger: AwbcLineTaskTrigger::Immediate,
+                join: AwbcChildJoinPolicy::Join,
+                cancel: AwbcChildCancelPolicy::CancelAndJoin,
+                scope: AwbcLineTaskNodeId(4),
+            },
+            AwbcLineTaskNode::Action(AwbcFunctionId(2)),
+        ];
+        program.line_task_groups[0].nodes = AwbcTableRange::new(0, 5);
+        let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
+        let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
+        let view = executor.line_task_view(AwbcContentUnitId(0)).unwrap();
+        let mut live = LineTaskLiveState::new(&view, activation);
+        let run = crate::line_task::progress_live_line_task_group(
+            &view,
+            Default::default(),
+            crate::line_task::LineTaskReadyEvents::new(&BTreeSet::new()),
+            &mut live,
+        )
+        .unwrap();
+        assert_eq!(run.commands.len(), 2);
+        executor
+            .dialogues
+            .begin(ActiveDialogue {
+                activation,
+                content: AwbcContentUnitId(0),
+                target: fixture_dialogue_target(),
+                target_type: AwbcTypeId(2),
+                line: crate::plan::RuntimeLineId::from_runtime_line_value(
+                    "line.presentation.cancel",
+                )
+                .unwrap(),
+                captures: Box::new([]),
+                task_inputs: Box::new([]),
+                values: Box::new([]),
+                effect_callbacks: BTreeMap::new(),
+                voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
+                result: AwbcDialogueResultTarget {
+                    ty: AwbcTypeId(1),
+                    pattern: AwbcPatternId(0),
+                    destination: AwbcRegisterId(0),
+                },
+                phase: ProductDialoguePhase::Reducing { line_task: live },
+                elapsed_nanos: 0,
+                pending_content_events: vec![],
+                pending_advance: false,
+                pending_line_outcomes: vec![],
+                pending_activation_host_call: None,
+            })
+            .unwrap();
+        let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+        transaction
+            .line_mut()
+            .commit_result(AwbcTypeId(1), RuntimeValue::String("base-result".into()))
+            .unwrap();
+        commit_test_dialogue_transaction(&mut executor, transaction);
+        let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+        let mut banks = PresentationBanks::new(
+            owner.clone(),
+            executor.artifact_fingerprint,
+            PresentationLedgerLimits {
+                handles: 3,
+                scopes: 8,
+            },
+        );
+        let body = |value| PresentationBody {
+            expected: crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
+            binding: None,
+            value: RuntimePayload(RuntimeValue::Bool(value)),
+        };
+        let site = || PresentationRegistrationSite::Independent(PresentationResourceKind::Image);
+        if queued {
+            let ledger = banks.ledger_mut(RuntimePresentationBankId::Root).unwrap();
+            let scope = executor
+                .fiber
+                .bind_presentation_scope(&owner, ledger)
+                .unwrap();
+            for value in [false, true] {
+                ledger.register(&owner, scope, site(), body(value)).unwrap();
+            }
+            executor
+                .fiber
+                .retire_presentation_scope(&owner, &mut banks)
+                .unwrap();
+        }
+        let ledger = banks.ledger_mut(RuntimePresentationBankId::Root).unwrap();
+        let root = executor
+            .fiber
+            .bind_presentation_scope(&owner, ledger)
+            .unwrap();
+        ledger.register(&owner, root, site(), body(true)).unwrap();
+        let mut tags = Vec::new();
+        let mut tokens = Vec::new();
+        for command in run.commands {
+            let LineTaskCommand::Run { tag, policy } = command else {
+                unreachable!()
+            };
+            let mut fiber =
+                create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(2));
+            let ledger = banks
+                .ledger_mut(RuntimePresentationBankId::Dialogue { activation })
+                .unwrap();
+            let scope = fiber.bind_presentation_scope(&owner, ledger).unwrap();
+            tokens.push(
+                ledger
+                    .register(&owner, scope, site(), body(false))
+                    .unwrap()
+                    .0,
+            );
+            tags.push(tag.clone());
+            executor.child_fibers.push_back(ProductChildFiber {
+                owner: ProductChildFiberOwner::LineTask {
+                    content: AwbcContentUnitId(0),
+                    tag,
+                    policy,
+                    phase: ProductLineTaskFiberPhase::Active,
+                },
+                fiber,
+                runtime_generation: executor.runtime_generation,
+                pending_host_call: None,
+            });
+        }
+        executor.presentation = Some(banks);
+        executor.snapshot().unwrap();
+        (executor, activation, tags, tokens)
+    }
+
+    fn commands(tags: &[LineTaskWorkTag]) -> LineTaskActivation {
+        LineTaskActivation {
+            commands: tags
+                .iter()
+                .cloned()
+                .map(|tag| LineTaskCommand::Cancel { tag })
+                .collect(),
+            scheduled_completions: Vec::new(),
+        }
+    }
+
+    fn cancel(
+        executor: &mut AwbcProductStepExecutor,
+        activation: DialogueActivationId,
+        tags: &[LineTaskWorkTag],
+    ) {
+        let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+        let mut batch = executor
+            .prepare_line_task_commands(&mut transaction, commands(tags))
+            .unwrap();
+        let prepared = executor
+            .preflight_line_task_commands(&mut transaction, &batch)
+            .unwrap();
+        let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
+        executor.realize_line_task_commands(&mut transaction, &mut batch, prepared);
+        executor.dialogues.commit_prepared(transaction, proof);
+        let mut output = RuntimeStepOutput::default();
+        executor.commit_line_task_commands(batch, &mut output);
+        assert!(output.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn line_cancellation_retires_all_actual_child_scopes_before_removal_and_public_save_roundtrips()
+    {
+        let (mut executor, activation, mut tags, mut tokens) = fixture(false);
+        tags.reverse();
+        tokens.reverse();
+        cancel(&mut executor, activation, &tags);
+        assert!(executor.child_fibers.is_empty());
+        assert!(
+            executor
+                .fiber
+                .active_frame()
+                .unwrap()
+                .presentation_scope_binding()
+                .is_some()
+        );
+        let retired = executor.presentation.as_ref().unwrap().retirements();
+        assert_eq!(
+            retired
+                .iter()
+                .map(|entry| entry.token.clone())
+                .collect::<Vec<_>>(),
+            tokens
+        );
+        let after = executor.snapshot().unwrap();
+        let save = AwbcProductExecutorSaveSnapshot::from_live(&after, &executor.program).unwrap();
+        let wire = serde_json::to_vec(&save).unwrap();
+        executor = executor
+            .restore_inert_snapshot_owned(serde_json::from_slice(&wire).unwrap())
+            .unwrap();
+        assert_eq!(executor.snapshot().unwrap(), after);
+    }
+
+    #[test]
+    fn later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move() {
+        let (mut executor, activation, tags, _) = fixture(false);
+        let before = executor.snapshot().unwrap();
+        executor.child_fibers[1].fiber.presentation_bank = RuntimePresentationBankId::Root;
+        let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+        let error = executor
+            .prepare_line_task_commands(&mut transaction, commands(&tags))
+            .err()
+            .unwrap();
+        assert!(
+            matches!(
+                error,
+                ProductStepError::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
+                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(
+                        RuntimePresentationError::Owner
+                    )
+                ))
+            ),
+            "{error:?}"
+        );
+        executor.dialogues.restore_transaction(transaction).unwrap();
+        executor.child_fibers[1].fiber.presentation_bank =
+            RuntimePresentationBankId::Dialogue { activation };
+        assert_eq!(executor.snapshot().unwrap(), before);
+        cancel(&mut executor, activation, &tags);
+        assert!(executor.child_fibers.is_empty());
+    }
+
+    #[test]
+    fn combined_child_retirement_capacity_rejects_without_partial_cancel_and_retry_preserves_order()
+    {
+        let (mut executor, activation, tags, tokens) = fixture(true);
+        let before = executor.snapshot().unwrap();
+        let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+        let error = executor
+            .prepare_line_task_commands(&mut transaction, commands(&tags))
+            .err()
+            .unwrap();
+        assert!(
+            matches!(
+                error,
+                ProductStepError::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
+                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(
+                        RuntimePresentationError::RetirementCapacity
+                    )
+                ))
+            ),
+            "{error:?}"
+        );
+        executor.dialogues.restore_transaction(transaction).unwrap();
+        assert_eq!(executor.snapshot().unwrap(), before);
+        assert_eq!(executor.child_fibers.len(), 2);
+        executor
+            .presentation
+            .as_mut()
+            .unwrap()
+            .retirements_mut()
+            .clear();
+        cancel(&mut executor, activation, &tags);
+        assert!(executor.child_fibers.is_empty());
+        assert_eq!(
+            executor
+                .presentation
+                .as_ref()
+                .unwrap()
+                .retirements()
+                .iter()
+                .map(|entry| entry.token.clone())
+                .collect::<Vec<_>>(),
+            tokens
+        );
+        executor.snapshot().unwrap();
+    }
+}
+
 #[test]
 fn vm_terminal_return_preserves_the_affine_result_until_scope_custody_is_available() {
     use crate::program_invocation::RuntimeProgramInput;

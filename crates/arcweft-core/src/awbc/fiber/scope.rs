@@ -7,6 +7,9 @@ use super::{
     FiberDeferredRelease, FiberStateError, FiberTrap, RuntimeProgramOwner,
 };
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
+use crate::presentation::resources::{
+    PresentationScopeExit, PresentationScopeRef, PresentationScopeTarget,
+};
 use crate::program_types::RuntimeProgramValueType;
 use crate::runtime_id::{RuntimeDeferRegistrationId, RuntimeDeferSiteId};
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimeValue, RuntimeValueView};
@@ -81,6 +84,75 @@ impl super::FiberFrame {
 }
 
 impl super::FiberState {
+    pub(crate) fn presentation_unwind_scopes(
+        &self,
+    ) -> Result<
+        Vec<PresentationScopeExit<PresentationScopeRef<'_>>>,
+        crate::presentation::RuntimePresentationError,
+    > {
+        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
+        let fiber =
+            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
+        let mut targets = Vec::new();
+        for frame in self.frames.iter().rev() {
+            for (scope, binding) in frame
+                .scopes
+                .iter()
+                .rev()
+                .map(|scope| (Some(scope.id), scope.presentation_scope.as_ref()))
+                .chain(std::iter::once((
+                    None,
+                    frame.root_presentation_scope.as_ref(),
+                )))
+            {
+                if let Some(binding) = binding {
+                    if binding.bank() != self.presentation_bank {
+                        return Err(crate::presentation::RuntimePresentationError::Owner);
+                    }
+                    targets.push(PresentationScopeExit {
+                        execution,
+                        fiber,
+                        scope: PresentationScopeRef::awbc(Some(binding), frame.instance, scope),
+                    });
+                }
+            }
+        }
+        Ok(targets)
+    }
+
+    pub(crate) fn presentation_unwind_scopes_mut(
+        &mut self,
+    ) -> Result<
+        Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+        crate::presentation::RuntimePresentationError,
+    > {
+        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
+        let fiber =
+            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
+        let mut targets = Vec::new();
+        for frame in self.frames.iter_mut().rev() {
+            for (scope, binding) in frame
+                .scopes
+                .iter_mut()
+                .rev()
+                .map(|scope| (Some(scope.id), &mut scope.presentation_scope))
+                .chain(std::iter::once((None, &mut frame.root_presentation_scope)))
+            {
+                if let Some(grant) = binding.as_ref() {
+                    if grant.bank() != self.presentation_bank {
+                        return Err(crate::presentation::RuntimePresentationError::Owner);
+                    }
+                    targets.push(PresentationScopeExit {
+                        execution,
+                        fiber,
+                        scope: PresentationScopeTarget::awbc(binding, frame.instance, scope),
+                    });
+                }
+            }
+        }
+        Ok(targets)
+    }
+
     /// Moves the current real scope's bodies into its execution owner's queue.
     /// A VM may borrow the owner, but cannot create a replacement ledger.
     pub(crate) fn retire_presentation_scope<V>(

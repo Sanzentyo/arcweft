@@ -5,8 +5,83 @@ use super::snapshot::{
     AwbcProductExecutorSnapshot, AwbcProductLineTaskWorkInstanceSnapshot,
 };
 use super::*;
-use crate::presentation::resources::{PresentationExecutionAdmission, PresentationExecutionRole};
+use crate::presentation::resources::{
+    PresentationBanks, PresentationBody, PresentationExecutionAdmission, PresentationExecutionRole,
+};
 use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+
+impl AwbcProductProgram {
+    pub(super) fn preflight_fiber_cancellations<'fiber>(
+        &self,
+        presentation: Option<&PresentationBanks<PresentationBody<RuntimePayload>>>,
+        fibers: impl IntoIterator<Item = &'fiber FiberState>,
+    ) -> Result<(), crate::awbc::fiber::FiberStateError> {
+        let mut targets = Vec::new();
+        for fiber in fibers {
+            if matches!(fiber.status, FiberStatus::Running | FiberStatus::Suspended) {
+                fiber.validate_cleanup_inputs(self)?;
+                targets.extend(fiber.presentation_unwind_scopes().map_err(|error| {
+                    crate::awbc::fiber::FiberStateError::Snapshot(error.into())
+                })?);
+            }
+        }
+        let Some(banks) = presentation else {
+            return if targets.is_empty() {
+                Ok(())
+            } else {
+                Err(crate::awbc::fiber::FiberStateError::Snapshot(
+                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
+                ))
+            };
+        };
+        banks
+            .preflight_scope_contour(
+                &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                targets,
+            )
+            .map_err(|error| crate::awbc::fiber::FiberStateError::Snapshot(error.into()))
+    }
+
+    pub(super) fn retire_cancelled_fiber_scopes<'fiber>(
+        &self,
+        presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
+        fibers: impl IntoIterator<Item = &'fiber mut FiberState>,
+    ) -> Result<(), crate::awbc::fiber::FiberStateError> {
+        let mut targets = Vec::new();
+        for fiber in fibers {
+            if matches!(fiber.status, FiberStatus::Running | FiberStatus::Suspended) {
+                fiber.validate_cleanup_inputs(self)?;
+                targets.extend(fiber.presentation_unwind_scopes_mut().map_err(|error| {
+                    crate::awbc::fiber::FiberStateError::Snapshot(error.into())
+                })?);
+            }
+        }
+        let Some(banks) = presentation else {
+            return if targets.is_empty() {
+                Ok(())
+            } else {
+                Err(crate::awbc::fiber::FiberStateError::Snapshot(
+                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
+                ))
+            };
+        };
+        banks
+            .retire_scope_contour(
+                &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                targets,
+            )
+            .map_err(|error| crate::awbc::fiber::FiberStateError::Snapshot(error.into()))
+    }
+
+    pub(super) fn cancel_fiber(
+        &self,
+        fiber: &mut FiberState,
+        presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
+    ) -> Result<crate::awbc::vm::VmStepOutput, crate::awbc::vm::VmError> {
+        self.retire_cancelled_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
+        crate::awbc::vm::cancel_fiber(self, fiber)
+    }
+}
 
 impl ProductChildFiberOwner {
     fn presentation_role(&self) -> PresentationExecutionRole {

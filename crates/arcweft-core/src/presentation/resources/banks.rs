@@ -114,6 +114,24 @@ impl<V> PresentationBanks<V> {
         fiber: RuntimePersistentFiberId,
         targets: Vec<PresentationScopeTarget<'_>>,
     ) -> Result<(), RuntimePresentationError> {
+        self.retire_scope_contour(
+            program,
+            targets
+                .into_iter()
+                .map(|scope| PresentationScopeExit {
+                    execution,
+                    fiber,
+                    scope,
+                })
+                .collect(),
+        )
+    }
+
+    pub(crate) fn preflight_scope_contour<'scope>(
+        &self,
+        program: &RuntimeProgramOwner,
+        targets: impl IntoIterator<Item = PresentationScopeExit<PresentationScopeRef<'scope>>>,
+    ) -> Result<(), RuntimePresentationError> {
         let root = self
             .ledgers
             .get(&RuntimePresentationBankId::Root)
@@ -121,15 +139,15 @@ impl<V> PresentationBanks<V> {
         root.validate_program(program)?;
         let mut count = self.retirements.len();
         let mut seen = std::collections::BTreeSet::new();
-        for target in &targets {
-            let Some(binding) = target.binding() else {
+        for target in targets {
+            let Some(binding) = target.scope.binding else {
                 continue;
             };
             let ledger = self
                 .ledgers
                 .get(&binding.owner.bank)
                 .ok_or(RuntimePresentationError::Owner)?;
-            ledger.validate_bound_scope(program, execution, fiber, target)?;
+            ledger.validate_bound_scope(program, target.execution, target.fiber, target.scope)?;
             if ledger.limits != root.limits || !seen.insert(binding.owner) {
                 return Err(RuntimePresentationError::InvalidState);
             }
@@ -140,15 +158,31 @@ impl<V> PresentationBanks<V> {
                 return Err(RuntimePresentationError::RetirementCapacity);
             }
         }
+        Ok(())
+    }
+
+    pub(crate) fn retire_scope_contour(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        targets: Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+    ) -> Result<(), RuntimePresentationError> {
+        self.preflight_scope_contour(
+            program,
+            targets.iter().map(|target| PresentationScopeExit {
+                execution: target.execution,
+                fiber: target.fiber,
+                scope: target.scope.as_ref(),
+            }),
+        )?;
         for target in targets {
-            let Some(binding) = target.binding() else {
+            let Some(binding) = target.scope.binding() else {
                 continue;
             };
             self.retirements.extend(
                 self.ledgers
                     .get_mut(&binding.owner.bank)
                     .expect("every issuing ledger was preflighted")
-                    .exit_bound_scope(program, execution, fiber, target)
+                    .exit_bound_scope(program, target.execution, target.fiber, target.scope)
                     .expect("exclusive contour and ledger borrows retain the preflight"),
             );
         }
