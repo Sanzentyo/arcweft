@@ -329,10 +329,9 @@ impl AwbcProductStepExecutor {
             }
         }
         if matches!(&state, AwaitNeedPublicationKind::Cancelled)
-            && let Err(error) = self.program.preflight_fiber_cancellations(
-                self.presentation.as_ref(),
-                std::iter::once(&self.fiber),
-            )
+            && let Err(error) = self
+                .program
+                .preflight_fiber_unwinds(self.presentation.as_ref(), std::iter::once(&self.fiber))
         {
             self.record_error(error.into(), output);
             return false;
@@ -936,10 +935,9 @@ impl AwbcProductStepExecutor {
         if self
             .next_await_many_task_event(&in_flight_tasks)
             .is_some_and(|(_, event)| matches!(&event.kind, TaskEventKind::Cancelled))
-            && let Err(error) = self.program.preflight_fiber_cancellations(
-                self.presentation.as_ref(),
-                std::iter::once(&self.fiber),
-            )
+            && let Err(error) = self
+                .program
+                .preflight_fiber_unwinds(self.presentation.as_ref(), std::iter::once(&self.fiber))
         {
             if let Some(suspension) = self.fiber.suspension.as_mut() {
                 suspension.reason = FiberSuspensionReason::AwaitMany(state);
@@ -1850,7 +1848,7 @@ impl AwbcProductStepExecutor {
         if matches!(&state, AwaitNeedPublicationKind::Cancelled)
             && let Err(error) = self
                 .program
-                .preflight_fiber_cancellations(self.presentation.as_ref(), std::iter::once(&*fiber))
+                .preflight_fiber_unwinds(self.presentation.as_ref(), std::iter::once(&*fiber))
         {
             self.record_error(error.into(), output);
             return false;
@@ -2250,7 +2248,7 @@ impl AwbcProductStepExecutor {
             .is_some_and(|(_, event)| matches!(&event.kind, TaskEventKind::Cancelled))
             && let Err(error) = self
                 .program
-                .preflight_fiber_cancellations(self.presentation.as_ref(), std::iter::once(&*fiber))
+                .preflight_fiber_unwinds(self.presentation.as_ref(), std::iter::once(&*fiber))
         {
             if let Some(suspension) = fiber.suspension.as_mut() {
                 suspension.reason = FiberSuspensionReason::AwaitMany(state);

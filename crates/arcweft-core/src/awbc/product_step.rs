@@ -308,6 +308,22 @@ impl From<crate::presentation::RuntimeCommandQueueError> for ProductStepError {
 }
 
 impl ProductStepError {
+    /// A refused custody transition must retain its continuation for retry.
+    fn is_presentation_refusal(&self) -> bool {
+        matches!(
+            self,
+            Self::Vm(crate::awbc::vm::VmError::Fiber(
+                crate::awbc::fiber::FiberStateError::Snapshot(
+                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(_)
+                )
+            )) | Self::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
+                crate::value::AwbcRuntimeValueSnapshotError::Presentation(_)
+            )) | Self::CheckpointValue(crate::value::AwbcRuntimeValueSnapshotError::Presentation(
+                _
+            ))
+        )
+    }
+
     const fn category(&self) -> RuntimeDiagnosticCategory {
         match self {
             Self::Input(_) => RuntimeDiagnosticCategory::Input,
@@ -2903,14 +2919,7 @@ impl AwbcProductStepExecutor {
             checkpoint.restore(&mut self.fiber, &mut self.presentation, &self.program)
         {
             self.fail_with_error(ProductStepError::Fiber(restore_error), output);
-        } else if matches!(
-            &error,
-            ProductStepError::Vm(crate::awbc::vm::VmError::Fiber(
-                crate::awbc::fiber::FiberStateError::Snapshot(
-                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(_)
-                )
-            ))
-        ) {
+        } else if error.is_presentation_refusal() {
             // Custody refusal leaves the original continuation retryable. A
             // second terminal transition would repeat the refused unwind.
             self.record_error(error, output);
@@ -3315,6 +3324,20 @@ impl AwbcProductStepExecutor {
         let mut vm_output = match vm_result {
             Ok(vm_output) => vm_output,
             Err(error) => {
+                let error = ProductStepError::Vm(error);
+                if error.is_presentation_refusal() {
+                    if self.rollback_selected_child_step(
+                        child,
+                        checkpoint,
+                        pending_host_call_before,
+                        resume_journal,
+                        need_states,
+                        output,
+                    ) {
+                        self.record_error(error, output);
+                    }
+                    return false;
+                }
                 let message = error.to_string();
                 match &owner {
                     ProductChildFiberOwner::LineTask { tag, .. } => {
@@ -4729,6 +4752,14 @@ impl AwbcProductStepExecutor {
                 pure_backend,
             ) {
                 Ok(progress) => progress,
+                Err(error) if error.is_presentation_refusal() => {
+                    if let Err(restore_error) = self.dialogues.restore_transaction(transaction) {
+                        self.fail_with_error(restore_error.into(), output);
+                    } else {
+                        self.record_error(error, output);
+                    }
+                    return false.into();
+                }
                 Err(error) => {
                     return self
                         .begin_product_dialogue_failure(transaction, error, output)

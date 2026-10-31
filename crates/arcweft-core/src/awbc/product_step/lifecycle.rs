@@ -144,18 +144,21 @@ impl AwbcProductStepExecutor {
         ) {
             return;
         }
-        if let Err(error) = self.fiber.validate_cleanup_inputs(&self.program) {
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Internal,
-                error.to_string(),
-            ));
-            self.record_trap(&trap, output);
-            self.fiber.mark_trapped(trap);
+        if let Err(error) = self
+            .program
+            .preflight_fiber_unwinds(self.presentation.as_ref(), std::iter::once(&self.fiber))
+        {
+            self.record_error(error.into(), output);
             return;
         }
         if !self.release_installed_await_many_for_trap(output) {
             return;
         }
+        // Reconciliation changes the dialogue registry, not these admitted
+        // grants or the bank queue. No fallible work remains before retirement.
+        self.program
+            .retire_fiber_scopes(&mut self.presentation, std::iter::once(&mut self.fiber))
+            .expect("exclusive fiber and banks retain the unwind preflight");
         for cleanup in self
             .fiber
             .take_unwind_cleanups(&self.program)

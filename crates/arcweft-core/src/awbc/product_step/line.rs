@@ -839,7 +839,7 @@ impl super::AwbcProductStepExecutor {
             .collect::<Vec<_>>();
         cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
         self.program
-            .preflight_fiber_cancellations(self.presentation.as_ref(), cancelled)?;
+            .preflight_fiber_unwinds(self.presentation.as_ref(), cancelled)?;
         Ok(PreparedLineTaskCommands {
             line_task,
             scheduled,
@@ -882,7 +882,7 @@ impl super::AwbcProductStepExecutor {
         // actions already staged before this command sequence.
         cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
         self.program
-            .retire_cancelled_fiber_scopes(&mut self.presentation, cancelled)
+            .retire_fiber_scopes(&mut self.presentation, cancelled)
             .expect("final command preflight retains the complete cancellation contour");
         batch.line_task_activations.clear();
         transaction
@@ -1306,7 +1306,7 @@ impl super::AwbcProductStepExecutor {
                             &self.program,
                         )
                         .expect("accepted activation checkpoint restores in its original program");
-                    return Err(ProductStepError::Internal(error.to_string()));
+                    return Err(ProductStepError::Vm(error));
                 }
             };
 

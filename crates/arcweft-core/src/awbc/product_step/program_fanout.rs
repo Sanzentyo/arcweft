@@ -273,7 +273,7 @@ impl AwbcProductStepExecutor {
                 );
             }
             if cancelling {
-                self.program.preflight_fiber_cancellations(
+                self.program.preflight_fiber_unwinds(
                     self.presentation.as_ref(),
                     std::iter::once(&child.fiber),
                 )?;

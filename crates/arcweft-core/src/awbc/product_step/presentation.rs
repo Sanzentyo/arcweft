@@ -11,7 +11,7 @@ use crate::presentation::resources::{
 use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
 
 impl AwbcProductProgram {
-    pub(super) fn preflight_fiber_cancellations<'fiber>(
+    pub(super) fn preflight_fiber_unwinds<'fiber>(
         &self,
         presentation: Option<&PresentationBanks<PresentationBody<RuntimePayload>>>,
         fibers: impl IntoIterator<Item = &'fiber FiberState>,
@@ -42,7 +42,7 @@ impl AwbcProductProgram {
             .map_err(|error| crate::awbc::fiber::FiberStateError::Snapshot(error.into()))
     }
 
-    pub(super) fn retire_cancelled_fiber_scopes<'fiber>(
+    pub(super) fn retire_fiber_scopes<'fiber>(
         &self,
         presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
         fibers: impl IntoIterator<Item = &'fiber mut FiberState>,
@@ -78,7 +78,7 @@ impl AwbcProductProgram {
         fiber: &mut FiberState,
         presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
     ) -> Result<crate::awbc::vm::VmStepOutput, crate::awbc::vm::VmError> {
-        self.retire_cancelled_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
+        self.retire_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
         crate::awbc::vm::cancel_fiber(self, fiber)
     }
 }

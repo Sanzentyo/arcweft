@@ -52,7 +52,7 @@ fn advance(executor: &mut AwbcProductStepExecutor) {
     );
 }
 
-fn nested_fixture(queued: bool) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
+pub(super) fn nested_program() -> AwbcProgram {
     let mut program = trap_program(AwbcTrapCode::ExplicitPanic, "nested presentation trap");
     program.runtime_types.push(AwbcRuntimeType::new(
         crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
@@ -105,6 +105,13 @@ fn nested_fixture(queued: bool) -> (AwbcProductStepExecutor, Vec<RuntimePresenta
         frame_layout: AwbcFrameLayoutId(0),
         kind: AwbcSafePointKind::CallableBoundary,
     });
+    program
+}
+
+pub(super) fn nested_fixture(
+    queued: bool,
+) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
+    let program = nested_program();
     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
     let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
     executor.presentation = Some(PresentationBanks::new(
