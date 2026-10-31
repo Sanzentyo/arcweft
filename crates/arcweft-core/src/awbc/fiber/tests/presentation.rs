@@ -465,6 +465,10 @@ fn inert_presentation_bank_roundtrips_before_restoring_its_original_scope() {
     let decoded = state.retain_program(
         fixture.owner.clone(),
         crate::runtime_id::RuntimePresentationBankId::Root,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
     );
     assert_eq!(decoded.inert_state(), inert.inert_state());
 
@@ -598,6 +602,10 @@ fn inert_presentation_slot_admission_uses_the_original_address_and_sticky_bank()
         .retain_program(
             fixture.owner.clone(),
             crate::runtime_id::RuntimePresentationBankId::Root,
+            PresentationLedgerLimits {
+                handles: 4,
+                scopes: 4,
+            },
         );
     let mut admission = RuntimeRetainedValueAdmission::for_program(
         fixture.owner.clone(),

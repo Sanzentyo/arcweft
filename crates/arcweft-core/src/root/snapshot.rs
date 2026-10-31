@@ -190,13 +190,14 @@ impl RootStateSaveSnapshotV1 {
     pub(crate) fn into_runtime_image(
         self,
         active: &crate::entry::ActiveEntrySnapshotV1,
-        owner: &crate::task::RuntimeProgramOwner,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<super::RootRuntimeRollbackImage, RootStateSaveSnapshotError> {
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
-        self.admit_retained(active, &mut admission)?;
+        self.admit_retained(active, admission)?;
+        let owner = admission
+            .program_owner()
+            .ok_or(RootRuntimeError::SnapshotRoleMismatch(
+                "original program owner",
+            ))?;
         let roles = Self::selected_roles(active, owner)?.clone();
         Ok(super::RootRuntime {
             active: super::ActiveRootState {

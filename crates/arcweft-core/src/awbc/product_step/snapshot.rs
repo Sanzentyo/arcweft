@@ -371,6 +371,11 @@ impl ProductChildFiberOwner {
 /// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwbcProductExecutorSnapshot {
+    pub(super) presentation: Option<
+        crate::presentation::resources::PresentationBanks<
+            crate::presentation::resources::PresentationBody<AwbcRuntimeValueSnapshot>,
+        >,
+    >,
     pub root: Option<crate::root::RootRuntimeRollbackImage>,
     pub runtime_generation: crate::task::GenerationId,
     pub fiber: AwbcFiberStateSnapshot,
@@ -409,6 +414,7 @@ pub struct AwbcProductExecutorSnapshot {
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProductExecutorSaveSnapshot {
+    presentation: Option<crate::presentation::resources::PresentationBanksSaveSnapshot>,
     pub root: Option<crate::root::RootStateSaveSnapshotV1>,
     pub runtime_generation: crate::task::GenerationId,
     pub fiber: AwbcFiberStateSnapshot,
@@ -1746,6 +1752,9 @@ impl AwbcProductExecutorSnapshot {
         if let Some(owner) = &self.root {
             owner.visit_stored_value_roots(&mut root)?;
         }
+        if let Some(banks) = &self.presentation {
+            banks.visit_value_roots(&mut root)?;
+        }
         self.fiber.visit_saved_value_roots(&mut root)?;
         for child in &self.child_fibers {
             child.fiber.visit_saved_value_roots(&mut root)?;
@@ -1792,6 +1801,14 @@ impl AwbcProductExecutorSnapshot {
                 message: error.to_string(),
             })?;
         let snapshot = self;
+        if let Some(banks) = &snapshot.presentation {
+            let artifact = AwbcProductStepExecutor::artifact_fingerprint(program)?;
+            banks
+                .admit_retained(owner, artifact, admission)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?;
+        }
         admission
             .validate_metadata(&(
                 (
@@ -2575,6 +2592,11 @@ impl AwbcProductExecutorSnapshot {
                     .to_owned(),
             });
         }
+        admission.finish_presentation_custody().map_err(|error| {
+            AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            }
+        })?;
         Ok(())
     }
 
@@ -2834,6 +2856,9 @@ impl AwbcProductExecutorSaveSnapshot {
         if let Some(value) = self.root.as_ref().and_then(|root| root.phase.state_value()) {
             visit(value)?;
         }
+        if let Some(banks) = &self.presentation {
+            banks.visit_value_roots(visit)?;
+        }
         self.fiber.visit_saved_value_roots(&mut *visit)?;
         for child in &self.child_fibers {
             child.fiber.visit_saved_value_roots(&mut *visit)?;
@@ -2909,6 +2934,10 @@ impl AwbcProductExecutorSaveSnapshot {
         let dialogues = snapshot.dialogues.clone();
         Ok(Self {
             root,
+            presentation: snapshot
+                .presentation
+                .as_ref()
+                .map(|banks| banks.inert_state_admitted()),
             runtime_generation: snapshot.runtime_generation,
             fiber: snapshot.fiber.clone(),
             child_fibers: snapshot
@@ -2967,6 +2996,24 @@ impl AwbcProductExecutorSaveSnapshot {
         program: &super::AwbcProductProgram,
     ) -> Result<AwbcProductExecutorSnapshot, AwbcProductStepBuildError> {
         let owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
+        let presentation = self.presentation.map(|banks| {
+            banks.retain_program(
+                &owner,
+                crate::presentation::resources::PresentationLedgerLimits::for_schema(
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+        });
+        let mut admission =
+            program.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        if let Some(banks) = &presentation {
+            let artifact = AwbcProductStepExecutor::artifact_fingerprint(program)?;
+            banks
+                .admit_retained(&owner, artifact, &mut admission)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?;
+        }
         let root = self
             .root
             .map(|root| {
@@ -2977,15 +3024,12 @@ impl AwbcProductExecutorSaveSnapshot {
                     .map_err(|error| AwbcProductStepBuildError::RootSnapshot {
                         message: error.to_string(),
                     })?;
-                root.into_runtime_image(&active, &owner).map_err(|error| {
-                    AwbcProductStepBuildError::RootSnapshot {
+                root.into_runtime_image(&active, &mut admission)
+                    .map_err(|error| AwbcProductStepBuildError::RootSnapshot {
                         message: error.to_string(),
-                    }
-                })
+                    })
             })
             .transpose()?;
-        let mut admission =
-            program.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
         admission
             .validate_metadata_collection(self.queued_task_events.len())
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
@@ -3023,6 +3067,7 @@ impl AwbcProductExecutorSaveSnapshot {
         let queued_task_events = self.queued_task_events;
         Ok(AwbcProductExecutorSnapshot {
             root,
+            presentation,
             runtime_generation: self.runtime_generation,
             fiber: self.fiber,
             child_fibers: self
@@ -3446,6 +3491,9 @@ impl AwbcProductStepExecutor {
         &self,
         mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
     ) -> Result<(), E> {
+        if let Some(banks) = &self.presentation {
+            banks.visit_value_roots(&mut |payload| visitor(payload.value()))?;
+        }
         self.fiber.visit_runtime_values(&mut visitor)?;
         for child in &self.child_fibers {
             child.fiber.visit_runtime_values(&mut visitor)?;
@@ -3585,6 +3633,13 @@ impl AwbcProductStepExecutor {
         let mut admission = self
             .program
             .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        if let Some(banks) = &self.presentation {
+            banks
+                .admit_retained(&owner, self.artifact_fingerprint, &mut admission)
+                .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+                    message: error.to_string(),
+                })?;
+        }
         if let Some(root) = &self.root {
             root.admit_retained(&mut admission).map_err(|error| {
                 AwbcProductSaveError::InvalidSnapshot {
@@ -3601,6 +3656,11 @@ impl AwbcProductStepExecutor {
             .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
                 message: error.to_string(),
             })?;
+        admission.finish_presentation_custody().map_err(|error| {
+            AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            }
+        })?;
         let root = self
             .root
             .as_ref()
@@ -3641,6 +3701,14 @@ impl AwbcProductStepExecutor {
             })?;
         Ok(AwbcProductExecutorSnapshot {
             root,
+            presentation: self
+                .presentation
+                .as_ref()
+                .map(|banks| banks.snapshot_admitted())
+                .transpose()
+                .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+                    message: error.to_string(),
+                })?,
             runtime_generation: self.runtime_generation,
             fiber,
             child_fibers,
@@ -3790,6 +3858,13 @@ impl AwbcProductStepExecutor {
             })?;
         let mut executor =
             Self::for_fiber(program, fiber, fingerprint, snapshot.runtime_generation);
+        executor.presentation = snapshot
+            .presentation
+            .map(|banks| banks.into_admitted_live(materialization))
+            .transpose()
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         executor.format_context = format_context;
         executor.child_fibers = snapshot
             .child_fibers

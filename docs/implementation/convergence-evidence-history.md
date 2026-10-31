@@ -13437,3 +13437,15 @@ Source 091ffdad88bf290912982bb8c484bf0efe700514、資料公開1447b8d2e969028e12
 Supersedes: 現状一覧の「全53逆依存を検証中」を「実装再開のため明示的に中断・最終Sourceで全closure検証が必要」へ訂正する。owner2144 PASS・quality成功・過去の全53結果は元入力の履歴として保持し、今回の全53成功やSource ABI完了とはしない。中間commitの正常動作確認を必須としないユーザー指示に沿い、次の同一Core cohortを実装してから必要な横断検証をまとめる。既存受入のGeneric Match等を未完了へ戻す変更ではない。
 
 資料監査1回目は、既公開owner-validation recordの進行状態を上書きしようとした変更をhistoricalRawChangesとして拒否した。公開blobの原bytesへ戻し、進行状態の訂正は新しい中断記録だけに置いた。ownerの元結果は変更していない。失敗監査原本も保持する。
+
+## AWBC ProductのPresentation保存grammarと共有Root admission — 2026-10-31
+
+確認base 11efc2f8d7534640aee7e902f1e5cc207d789805、保持WIP 14 tracked／6 untrackedを維持した実装checkpoint。PresentationBanksは同じgeneric owning grammarのledger storageを切り替え、live／in-memory rollbackのprogram保持ledgerと、program leaseを持たないinert wire stateを扱う。並行したwire modelを追加していない。bank mapを順序付きrowで保存し、重複bankは二つ目のbodyを読む前に拒否する。資源上限はledgerの信頼済みcontextへ移し、version 1 wireの自己申告limitsを削除した。旧limits fieldを読む互換pathは持たない。
+
+AWBC Productが集合bankを所有し、snapshot／公開save／restoreでbody・回収待ちbody・scope headerを一緒に扱う。全bank headerのcustodyを先に登録し、Root／fiber／task／dialogueの保持値を同じadmissionで検査してから閉じる。Rootのinert image変換も、その同じadmissionを受け取る。materializationは元programとSourceを含む完全なrestore contextを維持し、live／inertの両visitorがbank bodyと回収待ちbodyを含む。
+
+追加4件は、実Product公開saveの往復、bank欠落時の失敗と元owner保持、回収待ちbody／不正なbody型、重複bankの早期拒否とwire policy注入拒否を検査した。初回catalogはtest closureの引数型不一致2件で終了101・runtime未実行だった。型注釈を修正したowner2は4／4 PASS・2144選択外。Root共有admission追加後のowner3は2148／2148 PASS・0 skipped・終了0、4012入力／binary／catalog差分0。Core all-target/all-feature Clippy、default all-target check、doctest 78／78、明示13 Rust pathのfmt、構造gateも終了0。
+
+所有境界: resourcesはbank／lease／retirementとそのcodec、Productは全実行ownerを含む保存／復元、Rootは元entry role／state契約を所有する。新しい銀行・保存モデルやI/O ownerをProduct大規模moduleへ複製していない。既存の大きなsnapshot moduleは完全なProduct imageの入出力という責務を維持し、row codecとPresentation専用testは各owner配下へ分けた。Cargo edgeやunsafeを追加していない。
+
+Supersedes: 個別bank状態codecを、Productの集合保存grammarへ接続した実装記録。これを動的なRoot／Dialogue bank選択、全実行checkpoint／VM cleanup、Sourceの11 callable・mount(ViewValue)・6 method、driver、置換・画像parityの受入としない。今回の実save fixtureはRoot bankの実scopeとtyped Bool bodyであり、SourceからViewValueを構築・mountした結果ではない。Source command ABIは引き続き未接続で、全逆依存は後続の同一Core cohortをまとめた入力で実施する。Generic Match等の受入済み境界は保持する。

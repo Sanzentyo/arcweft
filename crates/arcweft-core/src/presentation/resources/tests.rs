@@ -577,7 +577,7 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
 fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
     let program = new_program();
     let mut ledger = new_ledger::<i32>(program.clone(), 2);
-    ledger.state.limits.scopes = 1;
+    ledger.limits.scopes = 1;
     let fiber = RuntimePersistentFiberId::from_allocated(3);
     let mut env = crate::value::RuntimeEnv::default();
     let owner = ledger

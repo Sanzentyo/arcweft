@@ -20,6 +20,7 @@ use std::num::NonZeroU64;
 mod banks;
 mod storage;
 pub(crate) use banks::PresentationBanks;
+pub(crate) use banks::PresentationBanksSaveSnapshot;
 pub(crate) use storage::{PresentationAdmission, PresentationBody};
 
 /// Dynamic owner, never a scope name or a reusable static instruction coordinate.
@@ -305,7 +306,8 @@ struct PresentationLease<V> {
     body: Option<V>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct PresentationRetirement<V> {
     pub token: RuntimePresentationHandleToken,
     pub body: V,
@@ -317,11 +319,19 @@ impl<V> PresentationRetirement<V> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct PresentationLedgerLimits {
     pub handles: usize,
     pub scopes: usize,
+}
+
+impl PresentationLedgerLimits {
+    pub(crate) fn for_schema(limits: crate::entry::RuntimeSchemaLimits) -> Self {
+        Self {
+            handles: limits.max_sequence_items as usize,
+            scopes: limits.max_sequence_items as usize,
+        }
+    }
 }
 
 /// Live resources have no Clone or wire reader. Rollback must admit the owning
@@ -330,6 +340,8 @@ pub(crate) struct PresentationLedgerLimits {
 pub(crate) struct PresentationLedger<V> {
     program: RuntimeProgramOwner,
     bank: RuntimePresentationBankId,
+    /// Trusted execution policy; decoded state cannot choose its own limits.
+    limits: PresentationLedgerLimits,
     state: PresentationLedgerState<V>,
 }
 
@@ -353,9 +365,20 @@ pub(crate) struct PresentationLedgerState<V> {
             PresentationScopeAnchor,
         ),
     >,
-    limits: PresentationLedgerLimits,
     #[serde(deserialize_with = "storage::deserialize_unique_map")]
     leases: BTreeMap<NonZeroU64, PresentationLease<V>>,
+}
+
+impl<V> AsRef<PresentationLedgerState<V>> for PresentationLedger<V> {
+    fn as_ref(&self) -> &PresentationLedgerState<V> {
+        &self.state
+    }
+}
+
+impl<V> AsRef<PresentationLedgerState<V>> for PresentationLedgerState<V> {
+    fn as_ref(&self) -> &PresentationLedgerState<V> {
+        self
+    }
 }
 
 /// A rejected registration returns the untouched owned body to its caller.
@@ -388,7 +411,7 @@ impl<V> PresentationLedger<V> {
         program: &RuntimeProgramOwner,
     ) -> Result<(), RuntimePresentationError> {
         self.validate_program(program)?;
-        if self.state.leases.len() >= self.state.limits.handles {
+        if self.state.leases.len() >= self.limits.handles {
             return Err(RuntimePresentationError::Capacity);
         }
         let mut next = self.state.next;
@@ -416,12 +439,12 @@ impl<V> PresentationLedger<V> {
         Self {
             program,
             bank,
+            limits,
             state: PresentationLedgerState {
                 artifact,
                 next: RuntimeIdCursor::initial(),
                 next_scope: RuntimeIdCursor::initial(),
                 scopes: BTreeMap::new(),
-                limits,
                 leases: BTreeMap::new(),
             },
         }
@@ -448,7 +471,7 @@ impl<V> PresentationLedger<V> {
             self.validate_scope(binding.owner)?;
             return Ok(binding.owner);
         }
-        if self.state.scopes.len() >= self.state.limits.scopes {
+        if self.state.scopes.len() >= self.limits.scopes {
             return Err(RuntimePresentationError::ScopeCapacity);
         }
         let mut next = self.state.next_scope;
@@ -566,7 +589,7 @@ impl<V> PresentationLedger<V> {
         let prepared = (|| {
             self.validate_program(program)?;
             self.validate_scope(owner)?;
-            if self.state.leases.len() >= self.state.limits.handles {
+            if self.state.leases.len() >= self.limits.handles {
                 return Err(RuntimePresentationError::Capacity);
             }
             let mut next = self.state.next;

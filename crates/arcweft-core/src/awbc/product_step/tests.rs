@@ -83,6 +83,7 @@ fn commit_test_dialogue_transaction(
 
 #[path = "tests/context.rs"]
 mod context;
+mod presentation;
 
 fn completed_handle_program() -> (
     AwbcProductStepExecutor,

@@ -226,8 +226,8 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
             if !self.program.same_program(owner)
                 || !self.bank.matches_artifact(artifact)
                 || self.state.artifact != artifact
-                || self.state.leases.len() > self.state.limits.handles
-                || self.state.scopes.len() > self.state.limits.scopes
+                || self.state.leases.len() > self.limits.handles
+                || self.state.scopes.len() > self.limits.scopes
             {
                 return Err(invalid());
             }
@@ -235,8 +235,8 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
                 self.state.artifact,
                 self.state.next,
                 self.state.next_scope,
-                self.state.limits.handles,
-                self.state.limits.scopes,
+                self.limits.handles,
+                self.limits.scopes,
             ))?;
             admission.validate_metadata_collection(self.state.scopes.len())?;
             let issued_scope = self.state.next_scope.last_issued();
@@ -349,6 +349,7 @@ impl Clone for PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
         Self {
             program: self.program.clone(),
             bank: self.bank,
+            limits: self.limits,
             state: self.state.clone(),
         }
     }
@@ -384,12 +385,12 @@ impl PresentationLedger<PresentationBody<RuntimePayload>> {
         Ok(PresentationLedger {
             program: self.program.clone(),
             bank: self.bank,
+            limits: self.limits,
             state: PresentationLedgerState {
                 artifact: self.state.artifact,
                 next: self.state.next,
                 next_scope: self.state.next_scope,
                 scopes: self.state.scopes.clone(),
-                limits: self.state.limits,
                 leases,
             },
         })
@@ -435,19 +436,18 @@ impl PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
         Ok(PresentationLedger {
             program: self.program,
             bank: self.bank,
+            limits: self.limits,
             state: PresentationLedgerState {
                 artifact: self.state.artifact,
                 next: self.state.next,
                 next_scope: self.state.next_scope,
                 scopes: self.state.scopes,
-                limits: self.state.limits,
                 leases,
             },
         })
     }
 }
 
-#[cfg(test)]
 impl PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>> {
     /// Retains the caller's selected lease with inert storage. Complete Product
     /// admission must still verify every header before any live materialization.
@@ -455,10 +455,12 @@ impl PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>> {
         self,
         program: RuntimeProgramOwner,
         bank: RuntimePresentationBankId,
+        limits: PresentationLedgerLimits,
     ) -> PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
         PresentationLedger {
             program,
             bank,
+            limits,
             state: self,
         }
     }

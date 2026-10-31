@@ -1560,6 +1560,11 @@ pub struct AwbcProductStepExecutor {
         crate::task::RuntimeNeedPublicationCursor,
     >,
     need_producers: NeedProducerRegistry,
+    presentation: Option<
+        crate::presentation::resources::PresentationBanks<
+            crate::presentation::resources::PresentationBody<RuntimePayload>,
+        >,
+    >,
     remaining_new_task_requests: usize,
     queued_task_events: VecDeque<TaskEvent>,
     emitted_content: BTreeSet<AwbcContentUnitId>,
@@ -2231,6 +2236,7 @@ impl AwbcProductStepExecutor {
             task_publications: BTreeMap::new(),
             need_publications: BTreeMap::new(),
             need_producers: NeedProducerRegistry::default(),
+            presentation: None,
             remaining_new_task_requests: usize::MAX,
             queued_task_events: VecDeque::new(),
             emitted_content: BTreeSet::new(),

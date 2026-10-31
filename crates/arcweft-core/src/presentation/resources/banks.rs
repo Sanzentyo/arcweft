@@ -8,11 +8,26 @@ use crate::value::{
 
 /// Bank cursors survive empty scopes and dialogue completion. Recreating a bank
 /// would let an old token alias a newly issued resource with the same cursor.
-#[derive(Debug, PartialEq)]
-pub(crate) struct PresentationBanks<V> {
-    ledgers: BTreeMap<RuntimePresentationBankId, PresentationLedger<V>>,
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "L: Serialize, V: Serialize",
+        deserialize = "L: Deserialize<'de>, V: Deserialize<'de>"
+    )
+)]
+pub(crate) struct PresentationBanks<V, L = PresentationLedger<V>> {
+    #[serde(with = "bank_rows")]
+    ledgers: BTreeMap<RuntimePresentationBankId, L>,
     pub(super) retirements: Vec<PresentationRetirement<V>>,
 }
+
+/// The same owning grammar with inert ledger storage and no program or policy
+/// authority. Only this storage specialization has a wire reader.
+pub(crate) type PresentationBanksSaveSnapshot = PresentationBanks<
+    PresentationBody<AwbcRuntimeValueSnapshot>,
+    PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>>,
+>;
 
 impl<V> PresentationBanks<V> {
     pub(crate) fn new(
@@ -41,12 +56,12 @@ impl<V> PresentationBanks<V> {
         if !bank.matches_artifact(root.state.artifact) {
             return Err(RuntimePresentationError::Program);
         }
-        if !self.ledgers.contains_key(&bank) && self.ledgers.len() >= root.state.limits.scopes {
+        if !self.ledgers.contains_key(&bank) && self.ledgers.len() >= root.limits.scopes {
             return Err(RuntimePresentationError::ScopeCapacity);
         }
         let program = root.program.clone();
         let artifact = root.state.artifact;
-        let limits = root.state.limits;
+        let limits = root.limits;
         Ok(self
             .ledgers
             .entry(bank)
@@ -67,7 +82,7 @@ impl<V> PresentationBanks<V> {
             .values()
             .map(|ledger| ledger.state.leases.len())
             .try_fold(0usize, usize::checked_add)
-            .is_none_or(|count| count >= root.state.limits.handles)
+            .is_none_or(|count| count >= root.limits.handles)
         {
             return Err(RuntimePresentationError::Capacity);
         }
@@ -93,7 +108,7 @@ impl<V> PresentationBanks<V> {
             .retirements
             .len()
             .checked_add(count)
-            .is_none_or(|count| count > ledger.state.limits.handles)
+            .is_none_or(|count| count > ledger.limits.handles)
         {
             return Err(RuntimePresentationError::RetirementCapacity);
         }
@@ -128,20 +143,20 @@ impl<V: RuntimeStoredValue> PresentationBanks<PresentationBody<V>> {
                 .get(&RuntimePresentationBankId::Root)
                 .ok_or(RuntimePresentationError::InvalidState)?;
             admission.validate_metadata_collection(self.ledgers.len())?;
-            if self.ledgers.len() > root.state.limits.scopes {
+            if self.ledgers.len() > root.limits.scopes {
                 return Err(RuntimePresentationError::InvalidState.into());
             }
             let mut proof: Option<PresentationAdmission> = None;
             let mut handles = 0usize;
             for (bank, ledger) in &self.ledgers {
                 admission.validate_metadata(bank)?;
-                if *bank != ledger.bank || ledger.state.limits != root.state.limits {
+                if *bank != ledger.bank || ledger.limits != root.limits {
                     return Err(RuntimePresentationError::InvalidState.into());
                 }
                 handles = handles
                     .checked_add(ledger.state.leases.len())
                     .ok_or(RuntimePresentationError::Capacity)?;
-                if handles > root.state.limits.handles {
+                if handles > root.limits.handles {
                     return Err(RuntimePresentationError::Capacity.into());
                 }
                 let next = ledger.admit_ownership(program, artifact, admission)?;
@@ -152,7 +167,7 @@ impl<V: RuntimeStoredValue> PresentationBanks<PresentationBody<V>> {
                 }
             }
             admission.validate_metadata_collection(self.retirements.len())?;
-            if self.retirements.len() > root.state.limits.handles {
+            if self.retirements.len() > root.limits.handles {
                 return Err(RuntimePresentationError::RetirementCapacity.into());
             }
             let mut retired_ids = std::collections::BTreeSet::new();
@@ -183,12 +198,36 @@ impl<V: RuntimeStoredValue> PresentationBanks<PresentationBody<V>> {
     }
 }
 
-impl Clone for PresentationBanks<PresentationBody<AwbcRuntimeValueSnapshot>> {
+impl<L: Clone> Clone for PresentationBanks<PresentationBody<AwbcRuntimeValueSnapshot>, L> {
     fn clone(&self) -> Self {
         Self {
             ledgers: self.ledgers.clone(),
             retirements: self.retirements.clone(),
         }
+    }
+}
+
+impl<V, L: AsRef<PresentationLedgerState<PresentationBody<V>>>>
+    PresentationBanks<PresentationBody<V>, L>
+{
+    pub(crate) fn visit_value_roots<E>(
+        &self,
+        visit: &mut impl FnMut(&V) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for ledger in self.ledgers.values() {
+            for body in ledger
+                .as_ref()
+                .leases
+                .values()
+                .filter_map(|lease| lease.body.as_ref())
+            {
+                visit(&body.value)?;
+            }
+        }
+        for retired in &self.retirements {
+            visit(&retired.body.value)?;
+        }
+        Ok(())
     }
 }
 
@@ -224,6 +263,17 @@ impl PresentationBanks<PresentationBody<RuntimePayload>> {
 }
 
 impl PresentationBanks<PresentationBody<AwbcRuntimeValueSnapshot>> {
+    pub(crate) fn inert_state_admitted(&self) -> PresentationBanksSaveSnapshot {
+        PresentationBanks {
+            ledgers: self
+                .ledgers
+                .iter()
+                .map(|(bank, ledger)| (*bank, ledger.state.clone()))
+                .collect(),
+            retirements: self.retirements.clone(),
+        }
+    }
+
     pub(crate) fn into_admitted_live<'a>(
         self,
         context: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
@@ -249,6 +299,27 @@ impl PresentationBanks<PresentationBody<AwbcRuntimeValueSnapshot>> {
         })
     }
 }
+
+impl PresentationBanksSaveSnapshot {
+    /// Attaches the selected original lease to inert storage only. Product must
+    /// still admit the whole owning contour before constructing any live value.
+    pub(crate) fn retain_program(
+        self,
+        program: &RuntimeProgramOwner,
+        limits: PresentationLedgerLimits,
+    ) -> PresentationBanks<PresentationBody<AwbcRuntimeValueSnapshot>> {
+        PresentationBanks {
+            ledgers: self
+                .ledgers
+                .into_iter()
+                .map(|(bank, state)| (bank, state.retain_program(program.clone(), bank, limits)))
+                .collect(),
+            retirements: self.retirements,
+        }
+    }
+}
+
+mod bank_rows;
 
 #[cfg(test)]
 mod tests;

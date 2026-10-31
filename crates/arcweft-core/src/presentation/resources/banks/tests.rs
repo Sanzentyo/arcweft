@@ -277,3 +277,90 @@ fn capacity_is_shared_across_banks_and_foreign_bank_does_not_allocate() {
     );
     assert_eq!(banks.ledgers.len(), 2);
 }
+
+#[test]
+fn inert_bank_rows_reject_duplicates_before_the_second_body_and_cannot_supply_policy() {
+    let (program, artifact, expected, _) = fixture();
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let mut env = RuntimeEnv::default();
+    let scope = bind(
+        &mut banks,
+        RuntimePresentationBankId::Root,
+        &program,
+        &mut env,
+    );
+    banks
+        .ledger_mut(RuntimePresentationBankId::Root)
+        .unwrap()
+        .register(&program, scope, site(), body(expected, true))
+        .unwrap();
+    let mut admission = RuntimeRetainedValueAdmission::for_program(
+        program.clone(),
+        RuntimeSchemaLimits::engine_default(),
+    );
+    banks
+        .admit_retained(&program, artifact, &mut admission)
+        .unwrap();
+    env.admit_retained(&mut admission).unwrap();
+    admission.finish_presentation_custody().unwrap();
+    let image = banks.snapshot_admitted().unwrap();
+    let wire = image.inert_state_admitted();
+    let value = serde_json::to_value(&wire).unwrap();
+    assert!(value.get("program").is_none());
+    assert!(value["ledgers"][0][1].get("limits").is_none());
+    let decoded: PresentationBanksSaveSnapshot = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(decoded, wire);
+    let mut duplicate = value.clone();
+    let bank = duplicate["ledgers"][0][0].clone();
+    duplicate["ledgers"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!([bank, {"unread_invalid_body": true}]));
+    let error = serde_json::from_value::<PresentationBanksSaveSnapshot>(duplicate).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("duplicate presentation bank identity"),
+        "{error}"
+    );
+    let mut forged_policy = value;
+    forged_policy["ledgers"][0][1]["limits"] =
+        serde_json::json!({"handles": u64::MAX, "scopes": u64::MAX});
+    assert!(
+        serde_json::from_value::<PresentationBanksSaveSnapshot>(forged_policy)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field")
+    );
+    let restored = decoded.retain_program(
+        &program,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let mut admission = RuntimeRetainedValueAdmission::for_program(
+        program.clone(),
+        RuntimeSchemaLimits::engine_default(),
+    );
+    restored
+        .admit_retained(&program, artifact, &mut admission)
+        .unwrap();
+    env.admit_retained(&mut admission).unwrap();
+    admission.finish_presentation_custody().unwrap();
+    let mut visited = Vec::new();
+    restored
+        .visit_value_roots(&mut |value| {
+            visited.push(value.clone());
+            Ok::<_, ()>(())
+        })
+        .unwrap();
+    assert_eq!(visited.len(), 1);
+}

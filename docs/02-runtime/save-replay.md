@@ -279,9 +279,11 @@ function binding・候補body・Handle custodyがすべて成立してからscop
 失敗時は候補bodyを呼出側へ返し、既存のbody・slot・発行cursorを変更しない。
 inert tokenのcodec読取りは、このledgerへの取付けやlive Handleの発行権限にはならない。
 
-Presentation ledger の live と inert は同じ所有state grammarを使い、state codec は
-program leaseを含めない。bodyのreader／writerはinert storageだけに限定する。
-scope／leaseの重複IDは二つ目のbodyを読む前に拒否する。slot addressはbodyがない
+Presentation ledger とbank集合のlive／inertは同じ所有grammarを使い、state codec は
+program leaseと信頼済みの資源上限を含めない。復元する実行contextの上限を適用し、
+wireから上限を指定させない。bodyのreader／writerはinert storageだけに限定する。
+bank identityのmapは順序付きrowで保存する。bank／scope／leaseの重複IDは二つ目の
+bodyを読む前に拒否する。slot addressはbodyがない
 leaseでも同じ構築条件とmetadata allowanceで検査し、headerの失敗は同じbankに保持する。
 bodyのlive materializationへは、選択済みprogramとadmit済みSourceを含む元のrestore
 contextをそのまま渡し、別programのleaseを拒否する。

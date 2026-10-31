@@ -75,10 +75,7 @@ impl Engine {
                 PresentationBanks::new(
                     owner.clone(),
                     artifact,
-                    PresentationLedgerLimits {
-                        handles: limits.max_sequence_items as usize,
-                        scopes: limits.max_sequence_items as usize,
-                    },
+                    PresentationLedgerLimits::for_schema(limits),
                 )
             });
             banks.preflight_register(&owner)?;
