@@ -1,0 +1,164 @@
+[
+  {
+    "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+    "owner": "arcweft-core",
+    "classification": "test",
+    "bytes": 25137,
+    "physicalLOC": 695,
+    "basePhysicalLOC": 688,
+    "sha256": "dbad74106968b341fe592446de09414553a6db39794ced4d4e5e588bfeec994b"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 240915,
+    "physicalLOC": 5977,
+    "basePhysicalLOC": 5976,
+    "sha256": "0c2a39d138445533638ab0d60e6b4bffc1966a6bc7ae8cfad2212db7b3dc381a"
+  },
+  {
+    "path": "crates/arcweft-core/src/engine.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 236009,
+    "physicalLOC": 5847,
+    "basePhysicalLOC": 5858,
+    "sha256": "3999b71e83bfb5ca57fd8e120c584e8bc6e2885b15b39f354de9c191a738d2c2"
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 84876,
+    "physicalLOC": 2225,
+    "basePhysicalLOC": 2208,
+    "sha256": "ecbcfeb3a0eb035779e7bed32bb1a9c958c118cadd14905eea33ba365da66465"
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+    "owner": "arcweft-core",
+    "classification": "test",
+    "bytes": 13459,
+    "physicalLOC": 393,
+    "basePhysicalLOC": 354,
+    "sha256": "946ed54ca2140f7b7c28a91a3f05163458340b74141388a51b5efa9a070012a0"
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+    "owner": "arcweft-core",
+    "classification": "test",
+    "bytes": 11263,
+    "physicalLOC": 312,
+    "basePhysicalLOC": 290,
+    "sha256": "f7b0e9c1f48a1500032eeb0741bd39aef66d8205c040bdd04874201d843ccf1d"
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/presentation.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 6076,
+    "physicalLOC": 157,
+    "basePhysicalLOC": 192,
+    "sha256": "c09f270316c3852d9ade47540bbf437d7c1ad3942d57b5f2f9182548b6625250"
+  },
+  {
+    "path": "crates/arcweft-core/src/engine/rollback.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 47979,
+    "physicalLOC": 1186,
+    "basePhysicalLOC": 1175,
+    "sha256": "a9d81708cc8f2a478e3decc8ed47b8562a070b9b0b688f5e5ac650db2e7e9a08"
+  },
+  {
+    "path": "crates/arcweft-core/src/presentation/resources.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 24224,
+    "physicalLOC": 710,
+    "basePhysicalLOC": 692,
+    "sha256": "06f1880cc418372d9fcf664694c4306cb8a361f006a13284b73d28032836d221"
+  },
+  {
+    "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 9542,
+    "physicalLOC": 254,
+    "basePhysicalLOC": 0,
+    "sha256": "506b1a47183b1a80a1710996a19aed0684a951633e24018d2d80f007aa44b5f9"
+  },
+  {
+    "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+    "owner": "arcweft-core",
+    "classification": "test",
+    "bytes": 9010,
+    "physicalLOC": 279,
+    "basePhysicalLOC": 0,
+    "sha256": "9c5003a152fc9c95459617c0e75e55dd8a57a1b0b4fe3a2e23b720e5d82b90f9"
+  },
+  {
+    "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 16807,
+    "physicalLOC": 465,
+    "basePhysicalLOC": 417,
+    "sha256": "ca5c79e1b7757199cddce602c8c1183cf8a1984f4068ffa48dec05b2006687ac"
+  },
+  {
+    "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+    "owner": "arcweft-core",
+    "classification": "test",
+    "bytes": 20278,
+    "physicalLOC": 666,
+    "basePhysicalLOC": 588,
+    "sha256": "bc79ca10457cb6083feb19dd3cc8c67a0996b3de7399e2c4bc681b5f6a7131ae"
+  },
+  {
+    "path": "crates/arcweft-core/src/runtime_id.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 49082,
+    "physicalLOC": 1538,
+    "basePhysicalLOC": 1536,
+    "sha256": "6a22ec002f4120e776ee15729dcb7c613e5044920bdaf86e649b90b0dfadf357"
+  },
+  {
+    "path": "crates/arcweft-core/src/runtime_id/presentation_bank.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 4459,
+    "physicalLOC": 105,
+    "basePhysicalLOC": 0,
+    "sha256": "c4bc1416e3ead83ecfd904d357477fbf20311ebaae43f431304578144283d3fe"
+  },
+  {
+    "path": "crates/arcweft-core/src/runtime_id/presentation_handle.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 12017,
+    "physicalLOC": 316,
+    "basePhysicalLOC": 231,
+    "sha256": "65ffcbcdf8990fa99f956bcad05a3dbf3d7db7af2dfc3dad59a6d364fe358e41"
+  },
+  {
+    "path": "crates/arcweft-core/src/task.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 73801,
+    "physicalLOC": 2229,
+    "basePhysicalLOC": 2228,
+    "sha256": "803612e5c2b1300e994fd8e2b65ed8ddba118c195fb546bcb85d1527e68843bb"
+  },
+  {
+    "path": "crates/arcweft-core/src/value/ownership.rs",
+    "owner": "arcweft-core",
+    "classification": "production with embedded tests where present",
+    "bytes": 25342,
+    "physicalLOC": 667,
+    "basePhysicalLOC": 666,
+    "sha256": "e77235903e527c365a8ee57a12659d0bc25a7868ca712c6b7dee9188662aac42"
+  }
+]

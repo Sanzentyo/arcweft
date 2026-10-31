@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "091ffdad88bf290912982bb8c484bf0efe700514",
+  "command": [
+    "tree",
+    "--workspace",
+    "--all-features",
+    "--target",
+    "all",
+    "--invert",
+    "arcweft-core",
+    "--locked"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-31T07:24:18.5898285Z",
+  "finishedAt": "2026-10-31T07:24:20.7182543Z"
+}

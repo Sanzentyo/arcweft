@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "paths": [
+    "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+    "crates/arcweft-core/src/awbc/product_step.rs",
+    "crates/arcweft-core/src/engine.rs",
+    "crates/arcweft-core/src/engine/dialogue/store.rs",
+    "crates/arcweft-core/src/engine/presentation_tests.rs",
+    "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+    "crates/arcweft-core/src/engine/presentation.rs",
+    "crates/arcweft-core/src/engine/rollback.rs",
+    "crates/arcweft-core/src/presentation/resources.rs",
+    "crates/arcweft-core/src/presentation/resources/banks.rs",
+    "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+    "crates/arcweft-core/src/presentation/resources/storage.rs",
+    "crates/arcweft-core/src/presentation/resources/tests.rs",
+    "crates/arcweft-core/src/runtime_id.rs",
+    "crates/arcweft-core/src/runtime_id/presentation_bank.rs",
+    "crates/arcweft-core/src/runtime_id/presentation_handle.rs",
+    "crates/arcweft-core/src/task.rs",
+    "crates/arcweft-core/src/value/ownership.rs"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4010,
+  "sourceDrift": 0
+}

@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "base": "accabf6eae17d83559bcc0872ce90537be004890",
+  "tree": "33711a0362821264983d9cbc6f5718923cf4a342",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "blob": "df42bc0605085d5b14b9116e33307fcc2e30dfa0"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "blob": "c27c9a368274676cdd1598f5df202dad3bfe15e7"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "blob": "66e69502c21428cb293e476c81f62b1a1c3175b7"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+      "blob": "107d87d83d7e51e33a1563cc1cb02a2f12e0bc2c"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation.rs",
+      "blob": "0f656d11a17d7e8db3395e1c73ed8e133ff4b370"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+      "blob": "c2830c4873e9f88c1cd8537e35e41de91f20023b"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+      "blob": "62abace0d66fd597a179ac85a4ae465e2b01ef59"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/rollback.rs",
+      "blob": "0c9de21e2a2c48c1e94ba65f84f719c893bdebeb"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "d4d55b86f78f82b340a460afc23f5ed7d3d6e0c7"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+      "blob": "2a227ebd1d722488d731c150e00436e2dd3d148a"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "blob": "7f7e5353a21a549a9fd5c36d9e385e60fc15c8d4"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+      "blob": "1c63ef2ff428be1863d8e71ddbb646fd826e7914"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "blob": "aa06f78d14cc182c13ddcb30db38dbaaa8104d4a"
+    },
+    {
+      "path": "crates/arcweft-core/src/runtime_id.rs",
+      "blob": "eb80ec520b7f2a38a158c14cb955a19944bc0a81"
+    },
+    {
+      "path": "crates/arcweft-core/src/runtime_id/presentation_bank.rs",
+      "blob": "4d0e435ffdde220423f6b2440d72902fbae0c67d"
+    },
+    {
+      "path": "crates/arcweft-core/src/runtime_id/presentation_handle.rs",
+      "blob": "223be14d817af8286382c13d2ac214d1afbba680"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "blob": "eec3fe77ae98da54c8c802e90345d2be9e12b1db"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/ownership.rs",
+      "blob": "bcb0aa4b1327c9de4063fc30ad51bf7c4972b53e"
+    },
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "blob": "f5fd0d14bfe6e3a07d9e57302286f3bb30f43b5a"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "blob": "561b0ec31e82e6b6dbc3ea799b932b030a44ab61"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "131a2d597e7bd54ed3b34da46105ecb8941724cb"
+    }
+  ],
+  "other": [],
+  "held": [
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+    "crates/arcweft-runtime-host/src/native_task.rs",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+    "samples/agent-script/native-choice-dispatch.arcw",
+    "samples/agent-script/native-project-graph-relations.arcw",
+    "samples/agent-script/native-visual-regression.arcw",
+    "samples/image-animation.arcw",
+    "samples/rich-text-full-grammar.arcw",
+    "samples/rich-text-windows-fonts.arcw"
+  ],
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "patchSha256": "46b07db7e33ee3b2340bbfc93388e13ba3ac6ce6f4a31020afb47600de3f3f71",
+  "preparedAt": "2026-10-31T07:19:50.6711265Z"
+}

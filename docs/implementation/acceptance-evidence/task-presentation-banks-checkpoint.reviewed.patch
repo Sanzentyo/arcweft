@@ -1,0 +1,1939 @@
+diff --git a/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs b/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs
+index 1431680f636f3a39cd2ffd53a8b83c02091ebf4f..df42bc0605085d5b14b9116e33307fcc2e30dfa0 100644
+--- a/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs
+@@ -79,6 +79,7 @@ impl Fixture {
+         let ledger = PresentationLedger::new(
+             owner.clone(),
+             artifact,
++            crate::runtime_id::RuntimePresentationBankId::Root,
+             PresentationLedgerLimits {
+                 handles: limit,
+                 scopes: limit,
+@@ -461,7 +462,10 @@ fn inert_presentation_bank_roundtrips_before_restoring_its_original_scope() {
+     let bytes = serde_json::to_vec(inert.inert_state()).unwrap();
+     let state: PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>> =
+         serde_json::from_slice(&bytes).unwrap();
+-    let decoded = state.retain_program(fixture.owner.clone());
++    let decoded = state.retain_program(
++        fixture.owner.clone(),
++        crate::runtime_id::RuntimePresentationBankId::Root,
++    );
+     assert_eq!(decoded.inert_state(), inert.inert_state());
+ 
+     let mut admission = RuntimeRetainedValueAdmission::for_program(
+@@ -591,7 +595,10 @@ fn inert_presentation_slot_admission_uses_the_original_address_and_sticky_bank()
+     row["site"]["Slot"]["target"] = serde_json::json!("asset.invalid");
+     let decoded = serde_json::from_value::<InertBank>(value)
+         .unwrap()
+-        .retain_program(fixture.owner.clone());
++        .retain_program(
++            fixture.owner.clone(),
++            crate::runtime_id::RuntimePresentationBankId::Root,
++        );
+     let mut admission = RuntimeRetainedValueAdmission::for_program(
+         fixture.owner.clone(),
+         crate::entry::RuntimeSchemaLimits::engine_default(),
+diff --git a/crates/arcweft-core/src/awbc/product_step.rs b/crates/arcweft-core/src/awbc/product_step.rs
+index 380a55fd85c920f6447b40a228c7a7a019af2133..c27c9a368274676cdd1598f5df202dad3bfe15e7 100644
+--- a/crates/arcweft-core/src/awbc/product_step.rs
++++ b/crates/arcweft-core/src/awbc/product_step.rs
+@@ -2180,6 +2180,7 @@ impl AwbcProductStepExecutor {
+         let mut facade_fiber = FlowFiber {
+             frame: crate::engine::NativeFlowExecutionFrame {
+                 program: crate::task::RuntimeProgramOwner::Awbc(program.program_arc()),
++                presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
+                 line_cursor: 0,
+                 pending_ops: VecDeque::new(),
+                 control_stack: Vec::new(),
+diff --git a/crates/arcweft-core/src/engine.rs b/crates/arcweft-core/src/engine.rs
+index 522df8120e3906ce95d72a106b1e22abb99cad6f..66e69502c21428cb293e476c81f62b1a1c3175b7 100644
+--- a/crates/arcweft-core/src/engine.rs
++++ b/crates/arcweft-core/src/engine.rs
+@@ -124,12 +124,7 @@ pub struct Engine<
+     generation: GenerationId,
+     need_producers: N,
+     presentation: Option<
+-        crate::presentation::resources::PresentationLedger<
+-            crate::presentation::resources::PresentationBody<P>,
+-        >,
+-    >,
+-    presentation_retirements: Vec<
+-        crate::presentation::resources::PresentationRetirement<
++        crate::presentation::resources::PresentationBanks<
+             crate::presentation::resources::PresentationBody<P>,
+         >,
+     >,
+@@ -184,7 +179,6 @@ impl Clone for NativeEngineRollbackImage {
+             generation: self.generation,
+             need_producers: self.need_producers.clone(),
+             presentation: self.presentation.clone(),
+-            presentation_retirements: self.presentation_retirements.clone(),
+             task_request_quota_remaining: self.task_request_quota_remaining,
+             scalar_step_charge: self.scalar_step_charge,
+             need_publications: self.need_publications.clone(),
+@@ -349,6 +343,8 @@ pub struct NativeFlowExecutionFrame<
+ > {
+     /// Immutable code and type authority retained by this execution frame.
+     pub(crate) program: crate::task::RuntimeProgramOwner,
++    /// The activation owns presentation even while borrowing its parent fiber.
++    pub(crate) presentation_bank: crate::runtime_id::RuntimePresentationBankId,
+     pub line_cursor: usize,
+     pub(crate) pending_ops: VecDeque<O>,
+     pub(crate) control_stack: Vec<C>,
+@@ -393,6 +389,7 @@ impl Clone for NativeFlowExecutionFrameRollbackImage {
+     fn clone(&self) -> Self {
+         Self {
+             program: self.program.clone(),
++            presentation_bank: self.presentation_bank,
+             line_cursor: self.line_cursor,
+             pending_ops: self.pending_ops.clone(),
+             control_stack: self.control_stack.clone(),
+@@ -549,6 +546,7 @@ impl NativeFlowExecutionFrame {
+         self.ensure_program_owner(owner)?;
+         Ok(NativeFlowExecutionFrameRollbackImage {
+             program: self.program.clone(),
++            presentation_bank: self.presentation_bank,
+             line_cursor: self.line_cursor,
+             pending_ops: self
+                 .pending_ops
+@@ -624,6 +622,7 @@ impl NativeFlowExecutionFrame {
+         image.ensure_program_owner(owner)?;
+         Ok(Self {
+             program: image.program,
++            presentation_bank: image.presentation_bank,
+             line_cursor: image.line_cursor,
+             pending_ops: image
+                 .pending_ops
+@@ -1975,6 +1974,7 @@ impl NativeFlowExecutionFrame {
+     fn new(program: crate::task::RuntimeProgramOwner) -> Self {
+         Self {
+             program,
++            presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
+             line_cursor: 0,
+             pending_ops: VecDeque::new(),
+             control_stack: Vec::new(),
+@@ -2043,17 +2043,6 @@ impl Engine {
+                 .map(|ledger| ledger.snapshot_admitted())
+                 .transpose()
+                 .map_err(|error| error.to_string())?,
+-            presentation_retirements: self
+-                .presentation_retirements
+-                .iter()
+-                .map(|retired| {
+-                    Ok(crate::presentation::resources::PresentationRetirement {
+-                        token: retired.token.clone(),
+-                        body: retired.body.snapshot_admitted(&owner)?,
+-                    })
+-                })
+-                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()
+-                .map_err(|error| error.to_string())?,
+             task_request_quota_remaining: self.task_request_quota_remaining,
+             scalar_step_charge: self.scalar_step_charge,
+             need_publications: self
+@@ -2128,17 +2117,6 @@ impl Engine {
+                 .map(|ledger| ledger.into_admitted_live(owner))
+                 .transpose()
+                 .map_err(|error| error.to_string())?,
+-            presentation_retirements: image
+-                .presentation_retirements
+-                .into_iter()
+-                .map(|retired| {
+-                    Ok(crate::presentation::resources::PresentationRetirement {
+-                        token: retired.token,
+-                        body: retired.body.into_admitted_live(owner)?,
+-                    })
+-                })
+-                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()
+-                .map_err(|error| error.to_string())?,
+             task_request_quota_remaining: image.task_request_quota_remaining,
+             scalar_step_charge: image.scalar_step_charge,
+             need_publications: image
+@@ -2284,7 +2262,6 @@ impl Engine {
+             generation,
+             need_producers: NeedProducerRegistry::default(),
+             presentation: None,
+-            presentation_retirements: Vec::new(),
+             task_request_quota_remaining: usize::MAX,
+             scalar_step_charge: None,
+             need_publications: BTreeMap::new(),
+@@ -2295,6 +2272,7 @@ impl Engine {
+             fiber: FlowFiber {
+                 frame: crate::engine::NativeFlowExecutionFrame {
+                     program: crate::task::RuntimeProgramOwner::Plan(plan),
++                    presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
+                     line_cursor: 0,
+                     pending_ops: VecDeque::new(),
+                     control_stack: Vec::new(),
+@@ -3378,6 +3356,7 @@ impl Engine {
+             FlowFiber {
+                 frame: crate::engine::NativeFlowExecutionFrame {
+                     program: self.fiber.frame.program.clone(),
++                    presentation_bank: self.fiber.frame.presentation_bank,
+                     line_cursor: 0,
+                     pending_ops,
+                     control_stack: Vec::new(),
+@@ -3543,6 +3522,9 @@ impl Engine {
+         FlowFiber {
+             frame: crate::engine::NativeFlowExecutionFrame {
+                 program: self.fiber.frame.program.clone(),
++                presentation_bank: crate::runtime_id::RuntimePresentationBankId::Dialogue {
++                    activation: *prepared.key.dialogue(),
++                },
+                 line_cursor: 0,
+                 pending_ops: prepared.pending_ops,
+                 control_stack: Vec::new(),
+@@ -3861,6 +3843,10 @@ impl Engine {
+                     batch.child_fibers.push_back(FlowFiber {
+                         frame: crate::engine::NativeFlowExecutionFrame {
+                             program: self.fiber.frame.program.clone(),
++                            presentation_bank:
++                                crate::runtime_id::RuntimePresentationBankId::Dialogue {
++                                    activation: activation_id,
++                                },
+                             line_cursor: 0,
+                             pending_ops,
+                             control_stack: Vec::new(),
+@@ -4091,6 +4077,9 @@ impl Engine {
+         let child = FlowFiber {
+             frame: crate::engine::NativeFlowExecutionFrame {
+                 program: self.fiber.frame.program.clone(),
++                presentation_bank: crate::runtime_id::RuntimePresentationBankId::Dialogue {
++                    activation: *activation,
++                },
+                 line_cursor: 0,
+                 pending_ops: prepared.pending_ops,
+                 control_stack: Vec::new(),
+diff --git a/crates/arcweft-core/src/engine/dialogue/store.rs b/crates/arcweft-core/src/engine/dialogue/store.rs
+index e18a9c2d0348bdc2577172c840c387a16a6bb661..107d87d83d7e51e33a1563cc1cb02a2f12e0bc2c 100644
+--- a/crates/arcweft-core/src/engine/dialogue/store.rs
++++ b/crates/arcweft-core/src/engine/dialogue/store.rs
+@@ -280,6 +280,18 @@ impl DialogueActivationStoreRollbackImage {
+     ) -> Result<(), String> {
+         self.registry
+             .try_visit_active(|activation, active, _| {
++                if active.frame.execution.presentation_bank
++                    != (crate::runtime_id::RuntimePresentationBankId::Dialogue {
++                        activation: *activation,
++                    })
++                {
++                    return Err(
++                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
++                            message: "dialogue presentation bank differs from its activation"
++                                .into(),
++                        },
++                    );
++                }
+                 active.frame.validate_parent(activation, next_fiber_id)
+             })
+             .map_err(|error| error.to_string())
+@@ -712,6 +724,18 @@ impl DialogueActivationStore {
+     ) -> Result<(), String> {
+         self.registry
+             .try_visit_active(|activation, active, _| {
++                if active.frame.execution.presentation_bank
++                    != (crate::runtime_id::RuntimePresentationBankId::Dialogue {
++                        activation: *activation,
++                    })
++                {
++                    return Err(
++                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
++                            message: "dialogue presentation bank differs from its activation"
++                                .into(),
++                        },
++                    );
++                }
+                 active.frame.validate_parent(activation, next_fiber_id)
+             })
+             .map_err(|error| error.to_string())
+@@ -1071,8 +1095,10 @@ impl DialogueActivationStore {
+     pub(crate) fn begin(
+         &mut self,
+         activation: DialogueActivationId,
+-        frame: DialogueActivationFrame,
++        mut frame: DialogueActivationFrame,
+     ) -> Result<(), LineRuntimeError> {
++        frame.execution.presentation_bank =
++            crate::runtime_id::RuntimePresentationBankId::Dialogue { activation };
+         self.registry.begin(
+             activation,
+             EngineDialogueActivationFrame {
+@@ -1470,16 +1496,7 @@ mod tests {
+             let mut frame = frame(test_program(), DialogueRuntimePhase::Ready);
+             frame.parent = super::super::super::FlowFiberId::from_executor_ordinal(parent);
+             let mut store = DialogueActivationStore::default();
+-            store
+-                .registry
+-                .begin(
+-                    activation(1),
+-                    EngineDialogueActivationFrame {
+-                        frame,
+-                        inbox: DialogueStepInbox::default(),
+-                    },
+-                )
+-                .unwrap();
++            store.begin(activation(1), frame).unwrap();
+             store
+         };
+         let original = store(0);
+diff --git a/crates/arcweft-core/src/engine/presentation.rs b/crates/arcweft-core/src/engine/presentation.rs
+index a4cb93d2f44df7ad358287ce51f595a77d9a2878..0f656d11a17d7e8db3395e1c73ed8e133ff4b370 100644
+--- a/crates/arcweft-core/src/engine/presentation.rs
++++ b/crates/arcweft-core/src/engine/presentation.rs
+@@ -3,7 +3,7 @@
+ use super::*;
+ use crate::presentation::RuntimePresentationError;
+ use crate::presentation::resources::{
+-    PresentationBody, PresentationLedger, PresentationLedgerLimits, PresentationRegistrationSite,
++    PresentationBanks, PresentationBody, PresentationLedgerLimits, PresentationRegistrationSite,
+ };
+ use crate::value::RuntimeStoredValue;
+ 
+@@ -13,43 +13,12 @@ impl<N, P: RuntimeStoredValue, R, F, D> Engine<N, P, R, F, D> {
+         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
+-        let mut proof = if let Some(ledger) = &self.presentation {
++        if let Some(banks) = &self.presentation {
+             let artifact = self
+                 .plan
+                 .artifact()
+                 .ok_or(RuntimePresentationError::MissingArtifact)?;
+-            Some(ledger.admit_ownership(&owner, artifact, admission)?)
+-        } else {
+-            None
+-        };
+-        admission.validate_metadata_collection(self.presentation_retirements.len())?;
+-        let mut retired_ids = BTreeSet::new();
+-        for retired in &self.presentation_retirements {
+-            admission.validate_metadata(&retired.token)?;
+-            let ledger = self
+-                .presentation
+-                .as_ref()
+-                .ok_or(RuntimePresentationError::InvalidState)?;
+-            ledger.validate_retirement(&retired.token)?;
+-            if !retired_ids.insert(retired.token.issuance()) {
+-                return Err(RuntimePresentationError::InvalidState.into());
+-            }
+-            if Some(*retired.token.artifact()) != self.plan.artifact() {
+-                return Err(RuntimePresentationError::InvalidState.into());
+-            }
+-            proof
+-                .as_mut()
+-                .ok_or(RuntimePresentationError::InvalidState)?
+-                .include_retirement(&retired.token);
+-        }
+-        if let Some(proof) = proof {
+-            admission.bind_presentation_custody(proof)?;
+-        }
+-        if let Some(ledger) = &self.presentation {
+-            ledger.admit_bodies(admission)?;
+-        }
+-        for retired in &self.presentation_retirements {
+-            retired.body.admit_retained(admission)?;
++            banks.admit_retained(&owner, artifact, admission)?;
+         }
+         Ok(())
+     }
+@@ -102,8 +71,8 @@ impl Engine {
+                 binding.map(Arc::as_ref),
+             )?;
+             admission.finish_presentation_custody()?;
+-            let ledger = self.presentation.get_or_insert_with(|| {
+-                PresentationLedger::new(
++            let banks = self.presentation.get_or_insert_with(|| {
++                PresentationBanks::new(
+                     owner.clone(),
+                     artifact,
+                     PresentationLedgerLimits {
+@@ -112,6 +81,8 @@ impl Engine {
+                     },
+                 )
+             });
++            banks.preflight_register(&owner)?;
++            let ledger = banks.ledger_mut(self.fiber.frame.presentation_bank)?;
+             ledger.preflight_register(&owner)?;
+             Ok::<_, crate::value::AwbcRuntimeValueSnapshotError>(
+                 self.fiber.bind_presentation_scope(ledger)?,
+@@ -129,7 +100,9 @@ impl Engine {
+         let ledger = self
+             .presentation
+             .as_mut()
+-            .expect("prepared original resource owner");
++            .expect("prepared original resource owner")
++            .ledger_mut(self.fiber.frame.presentation_bank)
++            .expect("prepared original bank");
+         let (token, previous) = ledger
+             .register(
+                 &owner,
+@@ -160,24 +133,16 @@ impl Engine {
+ 
+     pub(super) fn retire_current_presentation_scope(&mut self) -> Result<(), RuntimeEvalError> {
+         if self.fiber.frame.env.presentation_scope_binding().is_some() {
+-            let ledger = self
++            let banks = self
+                 .presentation
+                 .as_mut()
+                 .ok_or(RuntimePresentationError::Owner)?;
+-            let maximum =
+-                crate::entry::RuntimeSchemaLimits::engine_default().max_sequence_items as usize;
+-            let count =
+-                ledger.bound_scope_body_count(self.fiber.frame.env.presentation_scope_binding());
+-            if self
+-                .presentation_retirements
+-                .len()
+-                .checked_add(count)
+-                .is_none_or(|count| count > maximum)
+-            {
+-                return Err(RuntimePresentationError::RetirementCapacity.into());
+-            }
+-            let retired = self.fiber.release_presentation_scope(ledger)?;
+-            self.presentation_retirements.extend(retired);
++            banks.retire_bound_scope(
++                &self.fiber.frame.program,
++                self.fiber.execution,
++                self.fiber.persistent_id,
++                self.fiber.frame.env.presentation_scope_target()?,
++            )?;
+         }
+         Ok(())
+     }
+diff --git a/crates/arcweft-core/src/engine/presentation_tests.rs b/crates/arcweft-core/src/engine/presentation_tests.rs
+index 05a645781b62bf2f879881547490d958e24a56bd..c2830c4873e9f88c1cd8537e35e41de91f20023b 100644
+--- a/crates/arcweft-core/src/engine/presentation_tests.rs
++++ b/crates/arcweft-core/src/engine/presentation_tests.rs
+@@ -20,6 +20,7 @@ fn ledger<V>(engine: &Engine) -> PresentationLedger<V> {
+     PresentationLedger::new(
+         engine.fiber.frame.program.clone(),
+         crate::effect::RuntimeArtifactFingerprint::try_from_bytes([11; 32]).unwrap(),
++        crate::runtime_id::RuntimePresentationBankId::Root,
+         PresentationLedgerLimits {
+             handles: 8,
+             scopes: 8,
+@@ -226,16 +227,28 @@ fn engine_owned_presentation_survives_rollback_and_ordinary_scope_exit() {
+             .presentation_scope_binding()
+             .is_none()
+     );
+-    assert_eq!(restored.presentation_retirements.len(), 1);
+-    assert_eq!(restored.presentation_retirements[0].token, token);
+     assert_eq!(
+-        restored.presentation_retirements[0].body.value.value(),
++        restored.presentation.as_ref().unwrap().retirements().len(),
++        1
++    );
++    assert_eq!(
++        restored.presentation.as_ref().unwrap().retirements()[0].token,
++        token
++    );
++    assert_eq!(
++        restored.presentation.as_ref().unwrap().retirements()[0]
++            .body
++            .value
++            .value(),
+         &RuntimeValue::Bool(true)
+     );
+     let retired_image = restored.inert_rollback_image().unwrap();
+     let retired = Engine::from_rollback_image(retired_image.clone(), &owner).unwrap();
+     assert_eq!(retired.inert_rollback_image().unwrap(), retired_image);
+-    assert_eq!(retired.presentation_retirements.len(), 1);
++    assert_eq!(
++        retired.presentation.as_ref().unwrap().retirements().len(),
++        1
++    );
+     restored.push_scope_frame(crate::scope::RuntimeScopeIdentity::Anonymous);
+     let (next, _) = restored
+         .register_presentation_body(view_site(), ty, RuntimePayload(RuntimeValue::Bool(false)))
+@@ -247,7 +260,10 @@ fn engine_owned_presentation_survives_rollback_and_ordinary_scope_exit() {
+             &mut crate::pure::VmRuntimePureCallBackend::default(),
+         )
+         .unwrap();
+-    assert_eq!(restored.presentation_retirements.len(), 2);
++    assert_eq!(
++        restored.presentation.as_ref().unwrap().retirements().len(),
++        2
++    );
+ }
+ 
+ #[test]
+@@ -297,6 +313,19 @@ fn rollback_rejects_missing_ledger_duplicate_retirement_and_foreign_program() {
+         .unwrap();
+     let owner = engine.fiber.frame.program.clone();
+     let image = engine.inert_rollback_image().unwrap();
++    let mut wrong_bank = image.clone();
++    wrong_bank.fiber.frame.presentation_bank =
++        crate::runtime_id::RuntimePresentationBankId::Dialogue {
++            activation: crate::runtime_id::DialogueActivationId::new(
++                engine.plan.artifact().unwrap(),
++                engine.fiber.persistent_id,
++                crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
++                    std::num::NonZeroU32::MIN,
++                ),
++                0,
++            ),
++        };
++    assert!(Engine::from_rollback_image(wrong_bank, &owner).is_err());
+     let mut missing = image.clone();
+     missing.presentation = None;
+     assert!(Engine::from_rollback_image(missing, &owner).is_err());
+@@ -316,9 +345,13 @@ fn rollback_rejects_missing_ledger_duplicate_retirement_and_foreign_program() {
+         .unwrap();
+     let valid = engine.inert_rollback_image().unwrap();
+     let mut duplicate = valid.clone();
++    let retired = duplicate.presentation.as_ref().unwrap().retirements()[0].clone();
+     duplicate
+-        .presentation_retirements
+-        .push(duplicate.presentation_retirements[0].clone());
++        .presentation
++        .as_mut()
++        .unwrap()
++        .retirements_mut()
++        .push(retired);
+     assert!(Engine::from_rollback_image(duplicate, &owner).is_err());
+     assert_eq!(engine.inert_rollback_image().unwrap(), valid);
+ }
+@@ -346,9 +379,15 @@ fn native_completion_and_child_close_retire_nested_presentation_scopes_in_order(
+             FlowFiberStatus::Done(_)
+         ));
+         assert!(engine.fiber.frame.control_stack.is_empty());
+-        assert_eq!(engine.presentation_retirements.len(), 2);
+-        assert_eq!(engine.presentation_retirements[0].token, inner);
+-        assert_eq!(engine.presentation_retirements[1].token, outer);
++        assert_eq!(engine.presentation.as_ref().unwrap().retirements().len(), 2);
++        assert_eq!(
++            engine.presentation.as_ref().unwrap().retirements()[0].token,
++            inner
++        );
++        assert_eq!(
++            engine.presentation.as_ref().unwrap().retirements()[1].token,
++            outer
++        );
+         assert!(engine.inert_rollback_image().is_ok());
+     }
+ }
+diff --git a/crates/arcweft-core/src/engine/presentation_tests/custody.rs b/crates/arcweft-core/src/engine/presentation_tests/custody.rs
+index 2cbd21e3ed3459a3be1ed7aa6a49b9b155623f41..62abace0d66fd597a179ac85a4ae465e2b01ef59 100644
+--- a/crates/arcweft-core/src/engine/presentation_tests/custody.rs
++++ b/crates/arcweft-core/src/engine/presentation_tests/custody.rs
+@@ -144,9 +144,12 @@ fn native_presentation_handle_custody_roundtrips_the_actual_frame_and_rejects_du
+             .try_wrap(token.encode_payload())
+             .unwrap(),
+     ]);
+-    duplicate.presentation_retirements[0].body.expected = fixture.tuple_type;
+-    duplicate.presentation_retirements[0].body.value =
+-        crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(&value).unwrap();
++    duplicate.presentation.as_mut().unwrap().retirements_mut()[0]
++        .body
++        .expected = fixture.tuple_type;
++    duplicate.presentation.as_mut().unwrap().retirements_mut()[0]
++        .body
++        .value = crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(&value).unwrap();
+     let error = Engine::from_rollback_image(duplicate, &owner).unwrap_err();
+     assert!(error.contains("invalid retained custody"), "{error}");
+     assert!(error.contains("duplicate: true"), "{error}");
+@@ -167,13 +170,23 @@ fn native_presentation_handle_requires_the_issuing_ledger_and_current_lease() {
+     let bound = fixture
+         .engine
+         .fiber
+-        .bind_presentation_scope(fixture.engine.presentation.as_mut().unwrap())
++        .bind_presentation_scope(
++            fixture
++                .engine
++                .presentation
++                .as_mut()
++                .unwrap()
++                .ledger_mut(crate::runtime_id::RuntimePresentationBankId::Root)
++                .unwrap(),
++        )
+         .unwrap();
+     fixture
+         .engine
+         .presentation
+         .as_mut()
+         .unwrap()
++        .ledger_mut(crate::runtime_id::RuntimePresentationBankId::Root)
++        .unwrap()
+         .release(&owner, &token, Some(bound))
+         .unwrap();
+     let error = fixture.engine.inert_rollback_image().unwrap_err();
+@@ -250,9 +263,18 @@ fn native_presentation_registration_moves_handle_captures_and_retires_the_owned_
+         &mut RuntimeStepOutput::default(),
+         &mut crate::pure::VmRuntimePureCallBackend::default(),
+     );
+-    assert_eq!(restored.presentation_retirements.len(), 2);
+-    assert_eq!(restored.presentation_retirements[0].token, captured);
+-    assert_eq!(restored.presentation_retirements[1].token, outer);
++    assert_eq!(
++        restored.presentation.as_ref().unwrap().retirements().len(),
++        2
++    );
++    assert_eq!(
++        restored.presentation.as_ref().unwrap().retirements()[0].token,
++        captured
++    );
++    assert_eq!(
++        restored.presentation.as_ref().unwrap().retirements()[1].token,
++        outer
++    );
+     let retired_image = restored.inert_rollback_image().unwrap();
+     assert_eq!(
+         Engine::from_rollback_image(retired_image.clone(), &owner)
+diff --git a/crates/arcweft-core/src/engine/rollback.rs b/crates/arcweft-core/src/engine/rollback.rs
+index 088c6f3810806d4e5b092bed6f02ecd06341551e..0c9de21e2a2c48c1e94ba65f84f719c893bdebeb 100644
+--- a/crates/arcweft-core/src/engine/rollback.rs
++++ b/crates/arcweft-core/src/engine/rollback.rs
+@@ -420,7 +420,18 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
+             admission.retain_failure(error.clone());
+             return Err(error);
+         }
+-        admission.validate_metadata(&self.line_cursor)?;
++        admission.validate_metadata(&(self.line_cursor, self.presentation_bank))?;
++        if self
++            .env
++            .presentation_scope_bindings()
++            .any(|binding| binding.bank() != self.presentation_bank)
++        {
++            let error = crate::value::AwbcRuntimeValueSnapshotError::from(
++                crate::presentation::RuntimePresentationError::Owner,
++            );
++            admission.retain_failure(error.clone());
++            return Err(error);
++        }
+         admission.validate_metadata_collection(self.root_cleanups.len())?;
+         for cleanup in &self.root_cleanups {
+             admission.validate_metadata_string(&cleanup.key)?;
+diff --git a/crates/arcweft-core/src/presentation/resources.rs b/crates/arcweft-core/src/presentation/resources.rs
+index d363e90f6c2e10865ef4180d05e266ee0c4f23ef..d4d55b86f78f82b340a460afc23f5ed7d3d6e0c7 100644
+--- a/crates/arcweft-core/src/presentation/resources.rs
++++ b/crates/arcweft-core/src/presentation/resources.rs
+@@ -8,7 +8,8 @@ use super::RuntimePresentationError;
+ use crate::effect::RuntimeArtifactFingerprint;
+ use crate::runtime_id::{
+     ExecutionInstanceId, RuntimeIdCursor, RuntimeIdExhausted, RuntimeIdNamespace,
+-    RuntimePersistentFiberId, RuntimePresentationHandleToken, RuntimeScopeInstanceId,
++    RuntimePersistentFiberId, RuntimePresentationBankId, RuntimePresentationHandleToken,
++    RuntimeScopeInstanceId,
+ };
+ use crate::task::RuntimeProgramOwner;
+ use arcweft_id::PublicId;
+@@ -16,13 +17,16 @@ use arcweft_interaction_model::presentation::PresentationResourceKind;
+ use serde::{Deserialize, Serialize};
+ use std::collections::BTreeMap;
+ use std::num::NonZeroU64;
++mod banks;
+ mod storage;
++pub(crate) use banks::PresentationBanks;
+ pub(crate) use storage::{PresentationAdmission, PresentationBody};
+ 
+ /// Dynamic owner, never a scope name or a reusable static instruction coordinate.
+-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
++#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub(crate) struct PresentationScopeOwner {
++    bank: RuntimePresentationBankId,
+     execution: ExecutionInstanceId,
+     fiber: RuntimePersistentFiberId,
+     scope: RuntimeScopeInstanceId,
+@@ -107,6 +111,10 @@ pub struct RuntimePresentationScopeSnapshot {
+ }
+ 
+ impl RuntimePresentationScopeBinding {
++    pub(crate) const fn bank(&self) -> RuntimePresentationBankId {
++        self.owner.bank
++    }
++
+     pub(crate) fn snapshot_admitted(
+         &self,
+         program: &RuntimeProgramOwner,
+@@ -321,6 +329,7 @@ pub(crate) struct PresentationLedgerLimits {
+ #[derive(Debug, PartialEq)]
+ pub(crate) struct PresentationLedger<V> {
+     program: RuntimeProgramOwner,
++    bank: RuntimePresentationBankId,
+     state: PresentationLedgerState<V>,
+ }
+ 
+@@ -362,6 +371,7 @@ impl<V> PresentationLedger<V> {
+         token: &RuntimePresentationHandleToken,
+     ) -> Result<(), RuntimePresentationError> {
+         if token.artifact() != &self.state.artifact
++            || token.bank() != self.bank
+             || self.state.leases.contains_key(&token.issuance())
+             || self
+                 .state
+@@ -400,10 +410,12 @@ impl<V> PresentationLedger<V> {
+     pub(crate) fn new(
+         program: RuntimeProgramOwner,
+         artifact: RuntimeArtifactFingerprint,
++        bank: RuntimePresentationBankId,
+         limits: PresentationLedgerLimits,
+     ) -> Self {
+         Self {
+             program,
++            bank,
+             state: PresentationLedgerState {
+                 artifact,
+                 next: RuntimeIdCursor::initial(),
+@@ -444,6 +456,7 @@ impl<V> PresentationLedger<V> {
+             next.take_next(RuntimeIdNamespace::ScopeInstance)?,
+         );
+         let owner = PresentationScopeOwner {
++            bank: self.bank,
+             execution,
+             fiber,
+             scope,
+@@ -464,11 +477,12 @@ impl<V> PresentationLedger<V> {
+         &self,
+         owner: PresentationScopeOwner,
+     ) -> Result<(), RuntimePresentationError> {
+-        if self
+-            .state
+-            .scopes
+-            .get(&owner.scope)
+-            .is_none_or(|record| record.0 != owner.execution || record.1 != owner.fiber)
++        if owner.bank != self.bank
++            || self
++                .state
++                .scopes
++                .get(&owner.scope)
++                .is_none_or(|record| record.0 != owner.execution || record.1 != owner.fiber)
+         {
+             return Err(RuntimePresentationError::Owner);
+         }
+@@ -506,6 +520,9 @@ impl<V> PresentationLedger<V> {
+         if !self.program.same_program(program) {
+             return Err(RuntimePresentationError::Program);
+         }
++        if !self.bank.matches_artifact(self.state.artifact) {
++            return Err(RuntimePresentationError::Execution);
++        }
+         Ok(())
+     }
+ 
+@@ -516,7 +533,7 @@ impl<V> PresentationLedger<V> {
+         owner: Option<PresentationScopeOwner>,
+     ) -> Result<NonZeroU64, RuntimePresentationError> {
+         self.validate_program(program)?;
+-        if token.artifact() != &self.state.artifact {
++        if token.artifact() != &self.state.artifact || token.bank() != self.bank {
+             return Err(RuntimePresentationError::Execution);
+         }
+         let Some(lease) = self.state.leases.get(&token.issuance()) else {
+@@ -570,6 +587,7 @@ impl<V> PresentationLedger<V> {
+             owner.execution,
+             owner.fiber,
+             issuance,
++            self.bank,
+         );
+         self.state.leases.insert(
+             issuance,
+diff --git a/crates/arcweft-core/src/presentation/resources/banks.rs b/crates/arcweft-core/src/presentation/resources/banks.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..2a227ebd1d722488d731c150e00436e2dd3d148a
+--- /dev/null
++++ b/crates/arcweft-core/src/presentation/resources/banks.rs
+@@ -0,0 +1,254 @@
++//! One custody owner for all execution banks and their pending retirements.
++
++use super::*;
++use crate::value::{
++    AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimePayload,
++    RuntimeRetainedValueAdmission, RuntimeStoredValue,
++};
++
++/// Bank cursors survive empty scopes and dialogue completion. Recreating a bank
++/// would let an old token alias a newly issued resource with the same cursor.
++#[derive(Debug, PartialEq)]
++pub(crate) struct PresentationBanks<V> {
++    ledgers: BTreeMap<RuntimePresentationBankId, PresentationLedger<V>>,
++    pub(super) retirements: Vec<PresentationRetirement<V>>,
++}
++
++impl<V> PresentationBanks<V> {
++    pub(crate) fn new(
++        program: RuntimeProgramOwner,
++        artifact: RuntimeArtifactFingerprint,
++        limits: PresentationLedgerLimits,
++    ) -> Self {
++        Self {
++            ledgers: std::iter::once((
++                RuntimePresentationBankId::Root,
++                PresentationLedger::new(program, artifact, RuntimePresentationBankId::Root, limits),
++            ))
++            .collect(),
++            retirements: Vec::new(),
++        }
++    }
++
++    pub(crate) fn ledger_mut(
++        &mut self,
++        bank: RuntimePresentationBankId,
++    ) -> Result<&mut PresentationLedger<V>, RuntimePresentationError> {
++        let root = self
++            .ledgers
++            .get(&RuntimePresentationBankId::Root)
++            .ok_or(RuntimePresentationError::InvalidState)?;
++        if !bank.matches_artifact(root.state.artifact) {
++            return Err(RuntimePresentationError::Program);
++        }
++        if !self.ledgers.contains_key(&bank) && self.ledgers.len() >= root.state.limits.scopes {
++            return Err(RuntimePresentationError::ScopeCapacity);
++        }
++        let program = root.program.clone();
++        let artifact = root.state.artifact;
++        let limits = root.state.limits;
++        Ok(self
++            .ledgers
++            .entry(bank)
++            .or_insert_with(|| PresentationLedger::new(program, artifact, bank, limits)))
++    }
++
++    pub(crate) fn preflight_register(
++        &self,
++        program: &RuntimeProgramOwner,
++    ) -> Result<(), RuntimePresentationError> {
++        let root = self
++            .ledgers
++            .get(&RuntimePresentationBankId::Root)
++            .ok_or(RuntimePresentationError::InvalidState)?;
++        root.validate_program(program)?;
++        if self
++            .ledgers
++            .values()
++            .map(|ledger| ledger.state.leases.len())
++            .try_fold(0usize, usize::checked_add)
++            .is_none_or(|count| count >= root.state.limits.handles)
++        {
++            return Err(RuntimePresentationError::Capacity);
++        }
++        Ok(())
++    }
++
++    pub(crate) fn retire_bound_scope(
++        &mut self,
++        program: &RuntimeProgramOwner,
++        execution: ExecutionInstanceId,
++        fiber: RuntimePersistentFiberId,
++        target: PresentationScopeTarget<'_>,
++    ) -> Result<(), RuntimePresentationError> {
++        let Some(binding) = target.binding() else {
++            return Ok(());
++        };
++        let ledger = self
++            .ledgers
++            .get_mut(&binding.owner.bank)
++            .ok_or(RuntimePresentationError::Owner)?;
++        let count = ledger.bound_scope_body_count(Some(binding));
++        if self
++            .retirements
++            .len()
++            .checked_add(count)
++            .is_none_or(|count| count > ledger.state.limits.handles)
++        {
++            return Err(RuntimePresentationError::RetirementCapacity);
++        }
++        self.retirements
++            .extend(ledger.exit_bound_scope(program, execution, fiber, target)?);
++        Ok(())
++    }
++
++    #[cfg(test)]
++    pub(crate) fn retirements(&self) -> &[PresentationRetirement<V>] {
++        &self.retirements
++    }
++
++    #[cfg(test)]
++    pub(crate) fn retirements_mut(&mut self) -> &mut Vec<PresentationRetirement<V>> {
++        &mut self.retirements
++    }
++}
++
++impl<V: RuntimeStoredValue> PresentationBanks<PresentationBody<V>> {
++    /// All headers across all banks precede every retained body, under the same
++    /// original-program allowance. Equal local cursors never share custody.
++    pub(crate) fn admit_retained(
++        &self,
++        program: &RuntimeProgramOwner,
++        artifact: RuntimeArtifactFingerprint,
++        admission: &mut RuntimeRetainedValueAdmission,
++    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
++        let result = (|| {
++            let root = self
++                .ledgers
++                .get(&RuntimePresentationBankId::Root)
++                .ok_or(RuntimePresentationError::InvalidState)?;
++            admission.validate_metadata_collection(self.ledgers.len())?;
++            if self.ledgers.len() > root.state.limits.scopes {
++                return Err(RuntimePresentationError::InvalidState.into());
++            }
++            let mut proof: Option<PresentationAdmission> = None;
++            let mut handles = 0usize;
++            for (bank, ledger) in &self.ledgers {
++                admission.validate_metadata(bank)?;
++                if *bank != ledger.bank || ledger.state.limits != root.state.limits {
++                    return Err(RuntimePresentationError::InvalidState.into());
++                }
++                handles = handles
++                    .checked_add(ledger.state.leases.len())
++                    .ok_or(RuntimePresentationError::Capacity)?;
++                if handles > root.state.limits.handles {
++                    return Err(RuntimePresentationError::Capacity.into());
++                }
++                let next = ledger.admit_ownership(program, artifact, admission)?;
++                if let Some(proof) = &mut proof {
++                    proof.merge(next)?;
++                } else {
++                    proof = Some(next);
++                }
++            }
++            admission.validate_metadata_collection(self.retirements.len())?;
++            if self.retirements.len() > root.state.limits.handles {
++                return Err(RuntimePresentationError::RetirementCapacity.into());
++            }
++            let mut retired_ids = std::collections::BTreeSet::new();
++            let mut proof = proof.ok_or(RuntimePresentationError::InvalidState)?;
++            for retired in &self.retirements {
++                admission.validate_metadata(&retired.token)?;
++                self.ledgers
++                    .get(&retired.token.bank())
++                    .ok_or(RuntimePresentationError::InvalidState)?
++                    .validate_retirement(&retired.token)?;
++                if !retired_ids.insert(retired.token.clone()) {
++                    return Err(RuntimePresentationError::InvalidState.into());
++                }
++                proof.include_retirement(&retired.token);
++            }
++            admission.bind_presentation_custody(proof)?;
++            for ledger in self.ledgers.values() {
++                ledger.admit_bodies(admission)?;
++            }
++            for retired in &self.retirements {
++                retired.body.admit_retained(admission)?;
++            }
++            Ok(())
++        })();
++        result.inspect_err(|error: &AwbcRuntimeValueSnapshotError| {
++            admission.retain_failure(error.clone())
++        })
++    }
++}
++
++impl Clone for PresentationBanks<PresentationBody<AwbcRuntimeValueSnapshot>> {
++    fn clone(&self) -> Self {
++        Self {
++            ledgers: self.ledgers.clone(),
++            retirements: self.retirements.clone(),
++        }
++    }
++}
++
++impl PresentationBanks<PresentationBody<RuntimePayload>> {
++    pub(crate) fn snapshot_admitted(
++        &self,
++    ) -> Result<
++        PresentationBanks<PresentationBody<AwbcRuntimeValueSnapshot>>,
++        AwbcRuntimeValueSnapshotError,
++    > {
++        let root = self
++            .ledgers
++            .get(&RuntimePresentationBankId::Root)
++            .ok_or(RuntimePresentationError::InvalidState)?;
++        Ok(PresentationBanks {
++            ledgers: self
++                .ledgers
++                .iter()
++                .map(|(bank, ledger)| Ok((*bank, ledger.snapshot_admitted()?)))
++                .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
++            retirements: self
++                .retirements
++                .iter()
++                .map(|retired| {
++                    Ok(PresentationRetirement {
++                        token: retired.token.clone(),
++                        body: retired.body.snapshot_admitted(&root.program)?,
++                    })
++                })
++                .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
++        })
++    }
++}
++
++impl PresentationBanks<PresentationBody<AwbcRuntimeValueSnapshot>> {
++    pub(crate) fn into_admitted_live<'a>(
++        self,
++        context: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
++    ) -> Result<PresentationBanks<PresentationBody<RuntimePayload>>, AwbcRuntimeValueSnapshotError>
++    {
++        let context = context.into();
++        Ok(PresentationBanks {
++            ledgers: self
++                .ledgers
++                .into_iter()
++                .map(|(bank, ledger)| Ok((bank, ledger.into_admitted_live(context)?)))
++                .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
++            retirements: self
++                .retirements
++                .into_iter()
++                .map(|retired| {
++                    Ok(PresentationRetirement {
++                        token: retired.token,
++                        body: retired.body.into_admitted_live(context)?,
++                    })
++                })
++                .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
++        })
++    }
++}
++
++#[cfg(test)]
++mod tests;
+diff --git a/crates/arcweft-core/src/presentation/resources/banks/tests.rs b/crates/arcweft-core/src/presentation/resources/banks/tests.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..7f7e5353a21a549a9fd5c36d9e385e60fc15c8d4
+--- /dev/null
++++ b/crates/arcweft-core/src/presentation/resources/banks/tests.rs
+@@ -0,0 +1,279 @@
++use super::*;
++use crate::entry::RuntimeSchemaLimits;
++use crate::pattern::RuntimeSemanticTypeId;
++use crate::runtime_id::{DialogueActivationId, RuntimeDialogueContentPlanId};
++use crate::value::{RuntimeEnv, RuntimeValue};
++use std::num::NonZeroU32;
++use std::sync::Arc;
++
++fn fixture() -> (
++    RuntimeProgramOwner,
++    RuntimeArtifactFingerprint,
++    RuntimeSemanticTypeId,
++    RuntimePresentationBankId,
++) {
++    let expected = RuntimeSemanticTypeId::from_bytes([0x71; 32]);
++    let mut builder = crate::plan::RuntimePlanBuilder::new();
++    builder
++        .admit_type_batch(
++            [crate::plan::RuntimePlanTypeSeed::new(
++                expected,
++                crate::plan::RuntimePlanTypeProjection::Bool,
++            )],
++            std::iter::empty::<crate::plan::RuntimeLocalDeclarationSeed>(),
++        )
++        .unwrap();
++    let mut plan = builder.finish().unwrap();
++    let artifact = RuntimeArtifactFingerprint::try_from_bytes([0x72; 32]).unwrap();
++    plan.bind_artifact(artifact).unwrap();
++    let bank = RuntimePresentationBankId::Dialogue {
++        activation: DialogueActivationId::new(
++            artifact,
++            RuntimePersistentFiberId::from_allocated(1),
++            RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
++            0,
++        ),
++    };
++    (
++        RuntimeProgramOwner::Plan(Arc::new(plan)),
++        artifact,
++        expected,
++        bank,
++    )
++}
++
++fn execution() -> ExecutionInstanceId {
++    ExecutionInstanceId::from_allocated(NonZeroU64::MIN)
++}
++fn fiber() -> RuntimePersistentFiberId {
++    RuntimePersistentFiberId::from_allocated(1)
++}
++fn body(expected: RuntimeSemanticTypeId, value: bool) -> PresentationBody<RuntimePayload> {
++    PresentationBody {
++        expected,
++        binding: None,
++        value: RuntimePayload(RuntimeValue::Bool(value)),
++    }
++}
++fn site() -> PresentationRegistrationSite {
++    PresentationRegistrationSite::Slot(
++        PresentationSlotAddress::try_new(
++            PublicId::try_new("target.bank").unwrap(),
++            PublicId::try_new("slot.bank").unwrap(),
++            PresentationResourceKind::Background,
++        )
++        .unwrap(),
++    )
++}
++fn bind<V>(
++    banks: &mut PresentationBanks<V>,
++    bank: RuntimePresentationBankId,
++    program: &RuntimeProgramOwner,
++    env: &mut RuntimeEnv,
++) -> PresentationScopeOwner {
++    banks
++        .ledger_mut(bank)
++        .unwrap()
++        .bind_scope(
++            program,
++            execution(),
++            fiber(),
++            env.presentation_scope_target().unwrap(),
++        )
++        .unwrap()
++}
++
++#[test]
++fn bank_headers_merge_before_bodies_and_same_fiber_grants_round_trip_without_collision() {
++    let (program, artifact, expected, dialogue) = fixture();
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 4,
++            scopes: 4,
++        },
++    );
++    let mut root_env = RuntimeEnv::default();
++    let mut dialogue_env = RuntimeEnv::default();
++    let root_scope = bind(
++        &mut banks,
++        RuntimePresentationBankId::Root,
++        &program,
++        &mut root_env,
++    );
++    let dialogue_scope = bind(&mut banks, dialogue, &program, &mut dialogue_env);
++    assert_eq!(root_scope.scope, dialogue_scope.scope);
++    let (root_token, _) = banks
++        .ledger_mut(RuntimePresentationBankId::Root)
++        .unwrap()
++        .register(&program, root_scope, site(), body(expected, true))
++        .unwrap();
++    let (dialogue_token, replaced) = banks
++        .ledger_mut(dialogue)
++        .unwrap()
++        .register(&program, dialogue_scope, site(), body(expected, false))
++        .unwrap();
++    assert!(replaced.is_none());
++    assert_eq!(root_token.issuance(), dialogue_token.issuance());
++    assert_ne!(root_token, dialogue_token);
++    let mut admission = RuntimeRetainedValueAdmission::for_program(
++        program.clone(),
++        RuntimeSchemaLimits::engine_default(),
++    );
++    banks
++        .admit_retained(&program, artifact, &mut admission)
++        .unwrap();
++    root_env.admit_retained(&mut admission).unwrap();
++    dialogue_env.admit_retained(&mut admission).unwrap();
++    admission.finish_presentation_custody().unwrap();
++    let image = banks.snapshot_admitted().unwrap();
++    let mut restored = image.clone().into_admitted_live(&program).unwrap();
++    assert_eq!(restored.snapshot_admitted().unwrap(), image);
++    restored
++        .retire_bound_scope(
++            &program,
++            execution(),
++            fiber(),
++            root_env.presentation_scope_target().unwrap(),
++        )
++        .unwrap();
++    assert!(
++        restored.ledgers[&dialogue].state.leases[&dialogue_token.issuance()]
++            .body
++            .is_some()
++    );
++    restored
++        .retire_bound_scope(
++            &program,
++            execution(),
++            fiber(),
++            dialogue_env.presentation_scope_target().unwrap(),
++        )
++        .unwrap();
++    assert_eq!(restored.retirements.len(), 2);
++    assert_eq!(restored.retirements[0].token, root_token);
++    assert_eq!(restored.retirements[1].token, dialogue_token);
++    let mut admission = RuntimeRetainedValueAdmission::for_program(
++        program.clone(),
++        RuntimeSchemaLimits::engine_default(),
++    );
++    restored
++        .admit_retained(&program, artifact, &mut admission)
++        .unwrap();
++    admission.finish_presentation_custody().unwrap();
++    let next_scope = bind(&mut restored, dialogue, &program, &mut dialogue_env);
++    let (next_token, _) = restored
++        .ledger_mut(dialogue)
++        .unwrap()
++        .register(&program, next_scope, site(), body(expected, true))
++        .unwrap();
++    assert!(next_token.issuance() > dialogue_token.issuance());
++    assert!(next_scope.scope > dialogue_scope.scope);
++}
++
++#[test]
++fn malformed_later_bank_header_rejects_before_earlier_bank_body_and_failure_sticks() {
++    let (program, artifact, expected, dialogue) = fixture();
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 4,
++            scopes: 4,
++        },
++    );
++    let mut env = RuntimeEnv::default();
++    let scope = bind(
++        &mut banks,
++        RuntimePresentationBankId::Root,
++        &program,
++        &mut env,
++    );
++    let (token, _) = banks
++        .ledger_mut(RuntimePresentationBankId::Root)
++        .unwrap()
++        .register(
++            &program,
++            scope,
++            site(),
++            PresentationBody {
++                expected,
++                binding: None,
++                value: RuntimePayload(RuntimeValue::Unit),
++            },
++        )
++        .unwrap();
++    banks.ledger_mut(dialogue).unwrap().state.artifact =
++        RuntimeArtifactFingerprint::try_from_bytes([0x73; 32]).unwrap();
++    let mut admission = RuntimeRetainedValueAdmission::for_program(
++        program.clone(),
++        RuntimeSchemaLimits::engine_default(),
++    );
++    let error = banks
++        .admit_retained(&program, artifact, &mut admission)
++        .unwrap_err();
++    assert_eq!(error, RuntimePresentationError::InvalidState.into());
++    assert_eq!(admission.finish_presentation_custody().unwrap_err(), error);
++    assert_eq!(
++        banks.ledgers[&RuntimePresentationBankId::Root].state.leases[&token.issuance()]
++            .body
++            .as_ref()
++            .unwrap()
++            .value
++            .value(),
++        &RuntimeValue::Unit
++    );
++}
++
++#[test]
++fn capacity_is_shared_across_banks_and_foreign_bank_does_not_allocate() {
++    let (program, artifact, expected, dialogue) = fixture();
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 2,
++            scopes: 2,
++        },
++    );
++    let mut root = RuntimeEnv::default();
++    let mut other = RuntimeEnv::default();
++    let first = bind(
++        &mut banks,
++        RuntimePresentationBankId::Root,
++        &program,
++        &mut root,
++    );
++    banks
++        .ledger_mut(RuntimePresentationBankId::Root)
++        .unwrap()
++        .register(&program, first, site(), body(expected, true))
++        .unwrap();
++    let second = bind(&mut banks, dialogue, &program, &mut other);
++    banks
++        .ledger_mut(dialogue)
++        .unwrap()
++        .register(&program, second, site(), body(expected, false))
++        .unwrap();
++    assert_eq!(
++        banks.preflight_register(&program),
++        Err(RuntimePresentationError::Capacity)
++    );
++    let RuntimePresentationBankId::Dialogue { activation } = dialogue else {
++        unreachable!()
++    };
++    let foreign = RuntimePresentationBankId::Dialogue {
++        activation: DialogueActivationId::new(
++            RuntimeArtifactFingerprint::try_from_bytes([0x74; 32]).unwrap(),
++            activation.owner_fiber(),
++            activation.content(),
++            activation.occurrence(),
++        ),
++    };
++    assert_eq!(
++        banks.ledger_mut(foreign).unwrap_err(),
++        RuntimePresentationError::Program
++    );
++    assert_eq!(banks.ledgers.len(), 2);
++}
+diff --git a/crates/arcweft-core/src/presentation/resources/storage.rs b/crates/arcweft-core/src/presentation/resources/storage.rs
+index 5352fb0f3595352f90215188cf48e3a7b11ab543..1c63ef2ff428be1863d8e71ddbb646fd826e7914 100644
+--- a/crates/arcweft-core/src/presentation/resources/storage.rs
++++ b/crates/arcweft-core/src/presentation/resources/storage.rs
+@@ -129,21 +129,36 @@ impl Clone for PresentationRetirement<PresentationBody<AwbcRuntimeValueSnapshot>
+ /// its occurrence here; the contour cannot issue grants or live handles.
+ pub(crate) struct PresentationAdmission {
+     program: RuntimeProgramOwner,
+-    scopes: BTreeMap<
+-        RuntimeScopeInstanceId,
+-        (
+-            ExecutionInstanceId,
+-            RuntimePersistentFiberId,
+-            PresentationScopeAnchor,
+-        ),
+-    >,
+-    unseen: std::collections::BTreeSet<RuntimeScopeInstanceId>,
++    banks: std::collections::BTreeSet<RuntimePresentationBankId>,
++    scopes: BTreeMap<PresentationScopeOwner, PresentationScopeAnchor>,
++    unseen: std::collections::BTreeSet<PresentationScopeOwner>,
+     handles: std::collections::BTreeSet<RuntimePresentationHandleToken>,
+     seen_handles: std::collections::BTreeSet<RuntimePresentationHandleToken>,
+     detached: std::collections::BTreeSet<RuntimePresentationHandleToken>,
+ }
+ 
+ impl PresentationAdmission {
++    /// Joins disjoint bank headers before observing any value. The original
++    /// program and the same admission allowance still own the whole contour.
++    pub(crate) fn merge(&mut self, other: Self) -> Result<(), RuntimePresentationError> {
++        if !self.program.same_program(&other.program)
++            || !self.seen_handles.is_empty()
++            || !other.seen_handles.is_empty()
++            || self.unseen.len() != self.scopes.len()
++            || other.unseen.len() != other.scopes.len()
++            || !self.banks.is_disjoint(&other.banks)
++            || !self.handles.is_disjoint(&other.handles)
++        {
++            return Err(RuntimePresentationError::InvalidState);
++        }
++        self.banks.extend(other.banks);
++        self.scopes.extend(other.scopes);
++        self.unseen.extend(other.unseen);
++        self.handles.extend(other.handles);
++        self.detached.extend(other.detached);
++        Ok(())
++    }
++
+     pub(crate) fn admit_handle(
+         &mut self,
+         token: &RuntimePresentationHandleToken,
+@@ -189,8 +204,8 @@ impl PresentationAdmission {
+         anchor: PresentationScopeAnchor,
+     ) -> bool {
+         self.program.same_program(program)
+-            && self.scopes.get(&owner.scope) == Some(&(owner.execution, owner.fiber, anchor))
+-            && self.unseen.remove(&owner.scope)
++            && self.scopes.get(&owner) == Some(&anchor)
++            && self.unseen.remove(&owner)
+     }
+ 
+     pub(crate) fn complete(&self) -> bool {
+@@ -209,6 +224,7 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
+             let invalid =
+                 || AwbcRuntimeValueSnapshotError::from(RuntimePresentationError::InvalidState);
+             if !self.program.same_program(owner)
++                || !self.bank.matches_artifact(artifact)
+                 || self.state.artifact != artifact
+                 || self.state.leases.len() > self.state.limits.handles
+                 || self.state.scopes.len() > self.state.limits.scopes
+@@ -242,6 +258,7 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
+                     admission.validate_metadata(&(owner.execution, owner.fiber, owner.scope))?;
+                 }
+                 if lease.token.issuance() != *issuance
++                    || lease.token.bank() != self.bank
+                     || lease.token.artifact() != &self.state.artifact
+                     || self
+                         .state
+@@ -265,8 +282,34 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
+             }
+             Ok(PresentationAdmission {
+                 program: self.program.clone(),
+-                unseen: self.state.scopes.keys().copied().collect(),
+-                scopes: self.state.scopes.clone(),
++                banks: std::iter::once(self.bank).collect(),
++                unseen: self
++                    .state
++                    .scopes
++                    .iter()
++                    .map(|(scope, (execution, fiber, _))| PresentationScopeOwner {
++                        bank: self.bank,
++                        execution: *execution,
++                        fiber: *fiber,
++                        scope: *scope,
++                    })
++                    .collect(),
++                scopes: self
++                    .state
++                    .scopes
++                    .iter()
++                    .map(|(scope, (execution, fiber, anchor))| {
++                        (
++                            PresentationScopeOwner {
++                                bank: self.bank,
++                                execution: *execution,
++                                fiber: *fiber,
++                                scope: *scope,
++                            },
++                            *anchor,
++                        )
++                    })
++                    .collect(),
+                 handles: self
+                     .state
+                     .leases
+@@ -305,6 +348,7 @@ impl Clone for PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
+     fn clone(&self) -> Self {
+         Self {
+             program: self.program.clone(),
++            bank: self.bank,
+             state: self.state.clone(),
+         }
+     }
+@@ -339,6 +383,7 @@ impl PresentationLedger<PresentationBody<RuntimePayload>> {
+             .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?;
+         Ok(PresentationLedger {
+             program: self.program.clone(),
++            bank: self.bank,
+             state: PresentationLedgerState {
+                 artifact: self.state.artifact,
+                 next: self.state.next,
+@@ -389,6 +434,7 @@ impl PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
+             .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?;
+         Ok(PresentationLedger {
+             program: self.program,
++            bank: self.bank,
+             state: PresentationLedgerState {
+                 artifact: self.state.artifact,
+                 next: self.state.next,
+@@ -408,9 +454,11 @@ impl PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>> {
+     pub(crate) fn retain_program(
+         self,
+         program: RuntimeProgramOwner,
++        bank: RuntimePresentationBankId,
+     ) -> PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
+         PresentationLedger {
+             program,
++            bank,
+             state: self,
+         }
+     }
+diff --git a/crates/arcweft-core/src/presentation/resources/tests.rs b/crates/arcweft-core/src/presentation/resources/tests.rs
+index 0f7b33ab539977f5e384e4638543679448ccf523..aa06f78d14cc182c13ddcb30db38dbaaa8104d4a 100644
+--- a/crates/arcweft-core/src/presentation/resources/tests.rs
++++ b/crates/arcweft-core/src/presentation/resources/tests.rs
+@@ -19,6 +19,7 @@ fn bodies<V>(retired: Vec<PresentationRetirement<V>>) -> Vec<V> {
+ 
+ fn scope(fiber: u64, scope: u64) -> PresentationScopeOwner {
+     PresentationScopeOwner {
++        bank: RuntimePresentationBankId::Root,
+         execution: execution(),
+         fiber: RuntimePersistentFiberId::from_allocated(fiber),
+         scope: RuntimeScopeInstanceId::from_allocated(NonZeroU64::new(scope).unwrap()),
+@@ -55,6 +56,7 @@ fn new_ledger<V>(program: RuntimeProgramOwner, capacity: usize) -> PresentationL
+     PresentationLedger::new(
+         program,
+         RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap(),
++        crate::runtime_id::RuntimePresentationBankId::Root,
+         PresentationLedgerLimits {
+             handles: capacity,
+             scopes: capacity,
+@@ -62,6 +64,80 @@ fn new_ledger<V>(program: RuntimeProgramOwner, capacity: usize) -> PresentationL
+     )
+ }
+ 
++#[test]
++fn separate_banks_with_equal_local_cursors_cannot_release_each_others_lease() {
++    use crate::runtime_id::{DialogueActivationId, RuntimeDialogueContentPlanId};
++    use std::num::NonZeroU32;
++    let program = new_program();
++    let artifact = RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap();
++    let dialogue_bank = RuntimePresentationBankId::Dialogue {
++        activation: DialogueActivationId::new(
++            artifact,
++            RuntimePersistentFiberId::from_allocated(0),
++            RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
++            0,
++        ),
++    };
++    let mut root = new_ledger(program.clone(), 4);
++    let mut dialogue = PresentationLedger::new(
++        program.clone(),
++        artifact,
++        dialogue_bank,
++        PresentationLedgerLimits {
++            handles: 4,
++            scopes: 4,
++        },
++    );
++    let root_scope = new_scope(&mut root, &program, 0);
++    let dialogue_scope = new_scope(&mut dialogue, &program, 0);
++    let root_handle = root
++        .register(
++            &program,
++            root_scope,
++            PresentationRegistrationSite::Slot(address("shared")),
++            10,
++        )
++        .unwrap()
++        .0;
++    let dialogue_handle = dialogue
++        .register(
++            &program,
++            dialogue_scope,
++            PresentationRegistrationSite::Slot(address("shared")),
++            20,
++        )
++        .unwrap()
++        .0;
++    assert_eq!(root_handle.execution(), dialogue_handle.execution());
++    assert_eq!(root_handle.fiber(), dialogue_handle.fiber());
++    assert_eq!(root_handle.issuance(), dialogue_handle.issuance());
++    assert_ne!(root_handle, dialogue_handle);
++    assert_eq!(
++        dialogue.release(&program, &root_handle, Some(dialogue_scope)),
++        Err(RuntimePresentationError::Execution)
++    );
++    assert_eq!(
++        root.release(&program, &dialogue_handle, Some(root_scope)),
++        Err(RuntimePresentationError::Execution)
++    );
++    assert_eq!(
++        dialogue.release(&program, &dialogue_handle, Some(root_scope)),
++        Err(RuntimePresentationError::Owner)
++    );
++    assert_eq!(root.clear(&program, &address("shared")).unwrap(), Some(10));
++    assert_eq!(
++        dialogue
++            .release(&program, &dialogue_handle, Some(dialogue_scope))
++            .unwrap(),
++        Some(20)
++    );
++    assert_eq!(
++        root.release(&program, &root_handle, Some(root_scope))
++            .unwrap(),
++        None
++    );
++}
++
+ #[test]
+ fn replacement_and_clear_move_non_clone_bodies_without_old_handle_clearing_new_slot() {
+     #[derive(Debug, PartialEq)]
+@@ -133,6 +209,7 @@ fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
+         token.execution(),
+         token.fiber(),
+         token.issuance(),
++        token.bank(),
+     );
+     let checks = [
+         (
+@@ -169,6 +246,7 @@ fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
+         ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap()),
+         decoded.fiber(),
+         decoded.issuance(),
++        decoded.bank(),
+     );
+     assert_eq!(
+         ledger.release(&program, &foreign_execution, Some(owner)),
+diff --git a/crates/arcweft-core/src/runtime_id.rs b/crates/arcweft-core/src/runtime_id.rs
+index bcf98600e1ca1abae755e917fe28515c020ce2d0..eb80ec520b7f2a38a158c14cb955a19944bc0a81 100644
+--- a/crates/arcweft-core/src/runtime_id.rs
++++ b/crates/arcweft-core/src/runtime_id.rs
+@@ -14,7 +14,9 @@ use thiserror::Error;
+ 
+ #[allow(dead_code, reason = "the canonical snapshot consumer lands in G1.2-D")]
+ pub(crate) mod binary;
++mod presentation_bank;
+ mod presentation_handle;
++pub use presentation_bank::{RuntimePresentationBankId, RuntimePresentationBankIdDecodeError};
+ pub use presentation_handle::{
+     RuntimePresentationHandleToken, RuntimePresentationHandleTokenDecodeError,
+ };
+@@ -304,7 +306,7 @@ impl fmt::Display for RuntimeLineHandleSiteId {
+ }
+ 
+ /// Stable identity of one concrete activation of a dialogue content plan.
+-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
++#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+ pub struct DialogueActivationId {
+     artifact: crate::effect::RuntimeArtifactFingerprint,
+     owner_fiber: RuntimePersistentFiberId,
+diff --git a/crates/arcweft-core/src/runtime_id/presentation_bank.rs b/crates/arcweft-core/src/runtime_id/presentation_bank.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d0e435ffdde220423f6b2440d72902fbae0c67d
+--- /dev/null
++++ b/crates/arcweft-core/src/runtime_id/presentation_bank.rs
+@@ -0,0 +1,105 @@
++//! Inert namespace identity of one Root or dialogue-owned presentation bank.
++
++use super::{DialogueActivationId, RuntimeDialogueContentPlanId, RuntimePersistentFiberId};
++use crate::effect::RuntimeArtifactFingerprint;
++use crate::value::{RuntimeScalarView, RuntimeUInt, RuntimeValue, RuntimeValueView};
++use serde::{Deserialize, Serialize};
++use std::num::NonZeroU32;
++
++/// Bank selection is part of resource identity, rather than a host-side lookup
++/// inferred from the currently displayed line. Decoding grants no custody.
++#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
++#[serde(tag = "kind", deny_unknown_fields, rename_all = "snake_case")]
++pub enum RuntimePresentationBankId {
++    Root,
++    Dialogue { activation: DialogueActivationId },
++}
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
++pub enum RuntimePresentationBankIdDecodeError {
++    #[error("presentation bank identity has an invalid closed shape")]
++    Shape,
++    #[error("presentation bank identity has an invalid artifact fingerprint")]
++    Artifact,
++    #[error("presentation bank content identity must be nonzero")]
++    Content,
++}
++
++impl RuntimePresentationBankId {
++    pub(crate) fn matches_artifact(self, artifact: RuntimeArtifactFingerprint) -> bool {
++        match self {
++            Self::Root => true,
++            Self::Dialogue { activation } => activation.artifact() == artifact,
++        }
++    }
++
++    pub(crate) fn encode_payload(self) -> RuntimeValue {
++        match self {
++            Self::Root => RuntimeValue::Tuple(vec![RuntimeValue::UInt(RuntimeUInt::U8(0))]),
++            Self::Dialogue { activation } => RuntimeValue::Tuple(vec![
++                RuntimeValue::UInt(RuntimeUInt::U8(1)),
++                RuntimeValue::Seq(crate::value::RuntimeSeq::dense_bytes(
++                    activation.artifact().as_bytes().to_vec(),
++                )),
++                RuntimeValue::u64(activation.owner_fiber().get()),
++                RuntimeValue::u32(activation.content().get().get()),
++                RuntimeValue::u64(activation.occurrence()),
++            ]),
++        }
++    }
++
++    pub(crate) fn try_decode_view(
++        value: RuntimeValueView<'_>,
++    ) -> Result<Self, RuntimePresentationBankIdDecodeError> {
++        use RuntimePresentationBankIdDecodeError as Error;
++        let RuntimeValueView::Tuple(fields) = value else {
++            return Err(Error::Shape);
++        };
++        match (fields.len(), fields.get(0)) {
++            (1, Some(RuntimeValueView::Scalar(RuntimeScalarView::UInt(RuntimeUInt::U8(0))))) => {
++                Ok(Self::Root)
++            }
++            (5, Some(RuntimeValueView::Scalar(RuntimeScalarView::UInt(RuntimeUInt::U8(1))))) => {
++                let Some(RuntimeValueView::Sequence(artifact)) = fields.get(1) else {
++                    return Err(Error::Shape);
++                };
++                let bytes = artifact
++                    .byte_storage()
++                    .and_then(|bytes| bytes.try_into().ok())
++                    .ok_or(Error::Artifact)?;
++                let artifact = RuntimeArtifactFingerprint::try_from_bytes(bytes)
++                    .map_err(|_| Error::Artifact)?;
++                let Some(RuntimeValueView::Scalar(RuntimeScalarView::UInt(RuntimeUInt::U64(
++                    fiber,
++                )))) = fields.get(2)
++                else {
++                    return Err(Error::Shape);
++                };
++                let Some(RuntimeValueView::Scalar(RuntimeScalarView::UInt(RuntimeUInt::U32(
++                    content,
++                )))) = fields.get(3)
++                else {
++                    return Err(Error::Shape);
++                };
++                let content = NonZeroU32::new(content)
++                    .map(RuntimeDialogueContentPlanId::from_accepted_ordinal)
++                    .ok_or(Error::Content)?;
++                let Some(RuntimeValueView::Scalar(RuntimeScalarView::UInt(RuntimeUInt::U64(
++                    occurrence,
++                )))) = fields.get(4)
++                else {
++                    return Err(Error::Shape);
++                };
++                Ok(Self::Dialogue {
++                    activation: DialogueActivationId::new(
++                        artifact,
++                        RuntimePersistentFiberId::from_allocated(fiber),
++                        content,
++                        occurrence,
++                    ),
++                })
++            }
++            _ => Err(Error::Shape),
++        }
++    }
++}
+diff --git a/crates/arcweft-core/src/runtime_id/presentation_handle.rs b/crates/arcweft-core/src/runtime_id/presentation_handle.rs
+index 327136046f36c1a77ddb1f1a54d315db45172242..223be14d817af8286382c13d2ac214d1afbba680 100644
+--- a/crates/arcweft-core/src/runtime_id/presentation_handle.rs
++++ b/crates/arcweft-core/src/runtime_id/presentation_handle.rs
+@@ -1,6 +1,6 @@
+ //! Exact execution identity for a general presentation resource lease.
+ 
+-use super::{ExecutionInstanceId, RuntimePersistentFiberId};
++use super::{ExecutionInstanceId, RuntimePersistentFiberId, RuntimePresentationBankId};
+ use crate::effect::RuntimeArtifactFingerprint;
+ use crate::value::{RuntimeScalarView, RuntimeUInt, RuntimeValue, RuntimeValueView};
+ use arcweft_interaction_model::presentation::PresentationResourceKind;
+@@ -17,12 +17,15 @@ pub struct RuntimePresentationHandleToken {
+     execution: ExecutionInstanceId,
+     fiber: RuntimePersistentFiberId,
+     issuance: NonZeroU64,
++    bank: RuntimePresentationBankId,
+ }
+ 
+ #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+ pub enum RuntimePresentationHandleTokenDecodeError {
+-    #[error("presentation handle token must contain its five canonical fields")]
++    #[error("presentation handle token must contain its six canonical fields")]
+     Shape,
++    #[error(transparent)]
++    Bank(#[from] super::RuntimePresentationBankIdDecodeError),
+     #[error("presentation handle token contains an unknown resource kind")]
+     Resource,
+     #[error("presentation handle token contains an invalid artifact fingerprint")]
+@@ -40,6 +43,7 @@ impl RuntimePresentationHandleToken {
+         execution: ExecutionInstanceId,
+         fiber: RuntimePersistentFiberId,
+         issuance: NonZeroU64,
++        bank: RuntimePresentationBankId,
+     ) -> Self {
+         Self {
+             artifact,
+@@ -47,6 +51,7 @@ impl RuntimePresentationHandleToken {
+             execution,
+             fiber,
+             issuance,
++            bank,
+         }
+     }
+ 
+@@ -67,6 +72,10 @@ impl RuntimePresentationHandleToken {
+         self.issuance
+     }
+ 
++    pub const fn bank(&self) -> RuntimePresentationBankId {
++        self.bank
++    }
++
+     /// The canonical value envelope is independent of Native/AWBC storage.
+     pub fn encode_payload(&self) -> RuntimeValue {
+         RuntimeValue::Tuple(vec![
+@@ -77,6 +86,7 @@ impl RuntimePresentationHandleToken {
+             RuntimeValue::u64(self.execution.get().get()),
+             RuntimeValue::u64(self.fiber.get()),
+             RuntimeValue::u64(self.issuance.get()),
++            self.bank.encode_payload(),
+         ])
+     }
+ 
+@@ -94,7 +104,7 @@ impl RuntimePresentationHandleToken {
+         let RuntimeValueView::Tuple(fields) = value else {
+             return Err(Error::Shape);
+         };
+-        if fields.len() != 5 {
++        if fields.len() != 6 {
+             return Err(Error::Shape);
+         }
+         let Some(RuntimeValueView::Sequence(artifact)) = fields.get(0) else {
+@@ -124,8 +134,12 @@ impl RuntimePresentationHandleToken {
+             .ok_or(Error::Execution)?;
+         let fiber = RuntimePersistentFiberId::from_allocated(scalar(3)?);
+         let issuance = NonZeroU64::new(scalar(4)?).ok_or(Error::Issuance)?;
++        let bank = RuntimePresentationBankId::try_decode_view(fields.get(5).ok_or(Error::Shape)?)?;
++        if !bank.matches_artifact(artifact) {
++            return Err(Error::Artifact);
++        }
+         Ok(Self::from_issued(
+-            artifact, resource, execution, fiber, issuance,
++            artifact, resource, execution, fiber, issuance, bank,
+         ))
+     }
+ }
+@@ -141,6 +155,7 @@ mod tests {
+             ExecutionInstanceId::from_allocated(NonZeroU64::new(3).unwrap()),
+             RuntimePersistentFiberId::from_allocated(0),
+             NonZeroU64::new(1).unwrap(),
++            RuntimePresentationBankId::Root,
+         )
+     }
+ 
+@@ -167,6 +182,7 @@ mod tests {
+                 token.execution(),
+                 token.fiber(),
+                 token.issuance(),
++                token.bank(),
+             );
+             assert_eq!(
+                 RuntimePresentationHandleToken::try_decode_payload(&selected.encode_payload())
+@@ -183,6 +199,7 @@ mod tests {
+                 ExecutionInstanceId::from_allocated(NonZeroU64::new(4).unwrap()),
+                 token.fiber(),
+                 token.issuance(),
++                token.bank(),
+             )
+         );
+     }
+@@ -228,4 +245,72 @@ mod tests {
+             .insert("dialogue".into(), serde_json::json!(1));
+         assert!(serde_json::from_value::<RuntimePresentationHandleToken>(encoded).is_err());
+     }
++
++    #[test]
++    fn presentation_bank_is_part_of_exact_token_identity_and_closed_payload() {
++        use super::super::{DialogueActivationId, RuntimeDialogueContentPlanId};
++        use std::num::NonZeroU32;
++        let root = token();
++        let bank = RuntimePresentationBankId::Dialogue {
++            activation: DialogueActivationId::new(
++                *root.artifact(),
++                RuntimePersistentFiberId::from_allocated(11),
++                RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::new(3).unwrap()),
++                4,
++            ),
++        };
++        let dialogue = RuntimePresentationHandleToken::from_issued(
++            *root.artifact(),
++            root.resource(),
++            root.execution(),
++            root.fiber(),
++            root.issuance(),
++            bank,
++        );
++        assert_ne!(root, dialogue, "bank identity cannot alias a Root lease");
++        assert_eq!(
++            RuntimePresentationHandleToken::try_decode_payload(&dialogue.encode_payload()).unwrap(),
++            dialogue
++        );
++        assert_eq!(
++            serde_json::from_slice::<RuntimePresentationHandleToken>(
++                &serde_json::to_vec(&dialogue).unwrap()
++            )
++            .unwrap(),
++            dialogue
++        );
++        let RuntimeValue::Tuple(mut envelope) = dialogue.encode_payload() else {
++            unreachable!()
++        };
++        let RuntimeValue::Tuple(fields) = &mut envelope[5] else {
++            unreachable!()
++        };
++        fields[3] = RuntimeValue::u32(0);
++        assert_eq!(
++            RuntimePresentationHandleToken::try_decode_payload(&RuntimeValue::Tuple(envelope)),
++            Err(RuntimePresentationHandleTokenDecodeError::Bank(
++                super::super::RuntimePresentationBankIdDecodeError::Content
++            ))
++        );
++        let RuntimeValue::Tuple(mut envelope) = dialogue.encode_payload() else {
++            unreachable!()
++        };
++        let RuntimeValue::Tuple(fields) = &mut envelope[5] else {
++            unreachable!()
++        };
++        fields[1] = RuntimeValue::Seq(crate::value::RuntimeSeq::dense_bytes(vec![8; 32]));
++        assert_eq!(
++            RuntimePresentationHandleToken::try_decode_payload(&RuntimeValue::Tuple(envelope)),
++            Err(RuntimePresentationHandleTokenDecodeError::Artifact)
++        );
++        let RuntimeValue::Tuple(mut envelope) = root.encode_payload() else {
++            unreachable!()
++        };
++        envelope.pop();
++        assert_eq!(
++            RuntimePresentationHandleToken::try_decode_payload(&RuntimeValue::Tuple(envelope)),
++            Err(RuntimePresentationHandleTokenDecodeError::Shape),
++            "the replaced five-field reader is not retained"
++        );
++    }
+ }
+diff --git a/crates/arcweft-core/src/task.rs b/crates/arcweft-core/src/task.rs
+index 3b97f7490048a1582bc51dbbbf21b1f12724097c..eec3fe77ae98da54c8c802e90345d2be9e12b1db 100644
+--- a/crates/arcweft-core/src/task.rs
++++ b/crates/arcweft-core/src/task.rs
+@@ -1768,6 +1768,7 @@ mod host_ready_ownership_tests {
+                 ExecutionInstanceId::from_allocated(NonZeroU64::new(3).unwrap()),
+                 RuntimePersistentFiberId::from_allocated(0),
+                 NonZeroU64::new(1).unwrap(),
++                crate::runtime_id::RuntimePresentationBankId::Root,
+             );
+             let owner = RuntimeOpaqueTypeOwner::exact_with(
+                 RuntimeOpaqueTypeProducerId::try_new("test.presentation.host-ready").unwrap(),
+diff --git a/crates/arcweft-core/src/value/ownership.rs b/crates/arcweft-core/src/value/ownership.rs
+index 28f7398c07a1abf943e572cc9ea45f7c4bbe4d6b..bcb0aa4b1327c9de4063fc30ad51bf7c4972b53e 100644
+--- a/crates/arcweft-core/src/value/ownership.rs
++++ b/crates/arcweft-core/src/value/ownership.rs
+@@ -409,6 +409,7 @@ mod presentation_custody_tests {
+                 ExecutionInstanceId::from_allocated(NonZeroU64::new(7).unwrap()),
+                 RuntimePersistentFiberId::from_allocated(4),
+                 NonZeroU64::new(9).unwrap(),
++                crate::runtime_id::RuntimePresentationBankId::Root,
+             );
+             let owner = RuntimeOpaqueTypeOwner::exact_with(
+                 RuntimeOpaqueTypeProducerId::try_new("test.presentation.custody").unwrap(),
+diff --git a/docs/02-runtime/save-replay.md b/docs/02-runtime/save-replay.md
+index 2c12c3e0ea1bc66ab1b16664532e1843fca56eee..f5fd0d14bfe6e3a07d9e57302286f3bb30f43b5a 100644
+--- a/docs/02-runtime/save-replay.md
++++ b/docs/02-runtime/save-replay.md
+@@ -265,6 +265,15 @@ tokenは元のleaseまたは回収待ちの所有headerに完全一致し、同
+ scopeからdetachしたleaseは、保持値のグラフに一意なHandleを必要とする。
+ contourと既に観測したHandleはbankの一時停止・再開で移動し、再発行しない。
+ 
++Presentation の資源bankは `Root` または完全な `DialogueActivationId` で識別する。
++bank identityはtokenと動的scope ownerに含まれ、同じprogram・fiber・局所発行番号でも
++異なるbankのlease／slotを操作できない。tokenのversion 1 payloadはartifact・resource・
++execution・fiber・issuance・bank identityの厳密な6項目であり、bankを
++省略したpayloadは受理しない。Dialogueが親fiberを借りる間も、実行frameがactivationの
++bankを保持する。全bankのheaderを検査して一つのcustody contourへ統合した後にbodyを
++読む。bankと回収待ちbodyは同じ所有者のrollbackへ含め、空になったbankの発行cursorを
++再初期化しない。
++
+ Presentation bodyへの所有権移動も既存のlive保持状態と同じbankで検査し、元の型・
+ function binding・候補body・Handle custodyがすべて成立してからscope束縛と発行へ進む。
+ 失敗時は候補bodyを呼出側へ返し、既存のbody・slot・発行cursorを変更しない。
+diff --git a/docs/03-presentation/layers.md b/docs/03-presentation/layers.md
+index aefc451352ca5b834752ac2dba3a0f9356973fa6..561b0ec31e82e6b6dbc3ea799b932b030a44ab61 100644
+--- a/docs/03-presentation/layers.md
++++ b/docs/03-presentation/layers.md
+@@ -257,6 +257,13 @@ resource leases. The syntax/typecheck layer validates that background calls use
+ `@slot.background.*`, character calls use `@slot.character.*`, and targets use
+ `@target.*`.
+ 
++Root and each dialogue activation have independent presentation banks. A bank
++identity is part of both the resource token and its dynamic scope grant; matching
++local issuance numbers or slot addresses do not cross that boundary. Execution
++frames retain the selected bank while a dialogue borrows its parent fiber.
++The Core custody owner retains all banks and pending resource retirements, and
++keeps empty-bank cursors so stale tokens cannot become current again.
++
+ ## HTML / Servo / DOM layer
+ 
+ HTML/CSS View は Game Native View とは別の `HtmlView` layer として扱う。
+diff --git a/docs/implementation/convergence-evidence-history.md b/docs/implementation/convergence-evidence-history.md
+index a28a78ee5ba665487e6a967a217132286de6ccea..131a2d597e7bd54ed3b34da46105ecb8941724cb 100644
+--- a/docs/implementation/convergence-evidence-history.md
++++ b/docs/implementation/convergence-evidence-history.md
+@@ -13415,3 +13415,13 @@ Source 1bf138d190c826841935b38bf01c3048fb43c3cb、元Sema owner3の1,370 PASSを
+ Supersedes: 現状一覧のRust ADT「逆依存を検証中」を全22終端へ更新し、CLI行の最新原本を今回のSourceに置き換えた。先行Rust ADT retention／Copy／実View captureの受入と、Generic Match・C1–C5の受入は維持する。過去のconsumer red、Sema owner1の1 FAIL、初回red 1 FAIL、元Sourceの全CLI 43 FAILは履歴として変更しない。型だけの関数値証明、active taskの各step save／rollback、Native/Web画像parityを、このdata captureケースとconsumer終端から受入済みに拡張しない。
+ 
+ 公開・確認履歴の保持: retention ownerの検証記録41db45e42c00ca3485329610e80f4a85f3e93013、Copy／実captureの検証記録5f06de3881856f6b36fd5c593ce403c2e9d1d0fc、CLI全件記録c2d57f0c9a103cb4b141633b647489fe77bd3691を通常pushし、各remote・blob照合は差分0だった。現状一覧の確認mainをc2d57f0c9a103cb4b141633b647489fe77bd3691へ更新する際、資料監査1回目が旧確認点5f06de3881856f6b36fd5c593ce403c2e9d1d0fcの履歴欠落を検出したため、この補記で過去の確認SHAとして保持する。元の検証結果・raw bytes・履歴prefixは変更しない。
++
++## Presentation bank identityとNative集合owner — 2026-10-31
++
++確認base accabf6eae17d83559bcc0872ce90537be004890、mainの保持WIP 14 tracked／6 untrackedを維持した実装checkpoint。Root／完全なDialogueActivationIdをtokenとscope ownerへ含め、局所scope／lease cursorが一致しても別bankの資源を操作できない形へ変更した。version 1のtokenは厳密な6項目で、旧5項目readerは保持しない。DialogueActivationIdのCopyは不変なidentity fieldだけの複写であり、live値・scope grant・leaseを複製しない。
++
++PresentationBanksがbankごとのledgerと回収待ちbodyを一緒に所有する。Native Engineに別置きされていたretirement vectorを削除し、全bank headerを同じ元programのadmissionへ統合してからbodyを検査する。容量はbank間で共有し、空bankもcursorを保持する。Native frameのbankは子へ継承し、DialogueStoreのactivation入口・line child・effect callbackでは完全なactivationから選択する。実行frameのgrantとbankの不一致、rollback imageのactivation bank不一致を拒否する。Engineはframe／schedulerの所有、bank集合は資源／回収／custodyの所有を分担し、I/Oと新しいcrate edgeを導入していない。既存の大きなEngine／Product moduleへ並行した資源モデルを追加せず、集合ownerとその挙動testをresources配下へ分離した。
++
++先行bank identity入力はCore 2141／2141 PASS。集合owner初回は2144件中2140 PASS／4 FAILだった。追加fixtureのtarget ID接頭辞を修正し、既存のparent検査fixtureをregistry直書きからDialogueStore.beginへ移行した。assertionは維持した。最終owner3は2144／2144 PASS・0 skipped・終了0、4010入力／binary／catalog差分0。等しいfiber／局所cursor、別bank同一slotの独立、後続header失敗が先行body検査より先に保持されること、全bank容量、cursor再利用拒否と集合rollbackを確認した。workspace check／Clippy・default check・doctest・構造監査・全逆依存の最終結果はこのcheckpointのowner結果へ合算しない。
++
++Supersedes: これはPresentationの単一Root namespaceをbank identity付き集合へ置き換えた実装記録であり、既存のtoken／Native custody／Image owner／AWBC scope／個別bank状態codecの受入を取り消す記録ではない。Generic Matchも受入・公開済みを維持する。Sourceの11 callable・mount(ViewValue)・6 method、AWBC Productの集合bank所有・公開saveとVM cleanup、Dialogue transactionを含む実行時の完全な保持contourはこのowner testから完了と推定しない。全体の現状判定はcurrent-status.mdだけを参照する。
+\ No newline at end of file

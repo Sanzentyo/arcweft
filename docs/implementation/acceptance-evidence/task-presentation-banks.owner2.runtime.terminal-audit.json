@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "base": "accabf6eae17d83559bcc0872ce90537be004890",
+  "run": "presentation-banks.owner2.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  75.249s] 2144 tests run: 2140 passed, 4 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2144,
+  "passed": 2140,
+  "failed": 4,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4010,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "engine::dialogue::store::tests::dialogue_parent_must_match_the_activations_issuing_fiber"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "presentation::resources::banks::tests::bank_headers_merge_before_bodies_and_same_fiber_grants_round_trip_without_collision"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "presentation::resources::banks::tests::capacity_is_shared_across_banks_and_foreign_bank_does_not_allocate"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "presentation::resources::banks::tests::malformed_later_bank_header_rejects_before_earlier_bank_body_and_failure_sticks"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T07:16:13.3313051Z"
+}

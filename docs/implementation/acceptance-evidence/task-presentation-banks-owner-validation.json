@@ -1,0 +1,785 @@
+{
+  "version": 1,
+  "scope": "Presentation bank identity, aggregate Native owner and retained custody substrate",
+  "sourcePublication": {
+    "version": 1,
+    "commit": "091ffdad88bf290912982bb8c484bf0efe700514",
+    "parent": "accabf6eae17d83559bcc0872ce90537be004890",
+    "tree": "33711a0362821264983d9cbc6f5718923cf4a342",
+    "remote": "091ffdad88bf290912982bb8c484bf0efe700514",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "blob": "df42bc0605085d5b14b9116e33307fcc2e30dfa0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "c27c9a368274676cdd1598f5df202dad3bfe15e7"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine.rs",
+        "blob": "66e69502c21428cb293e476c81f62b1a1c3175b7"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+        "blob": "107d87d83d7e51e33a1563cc1cb02a2f12e0bc2c"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation.rs",
+        "blob": "0f656d11a17d7e8db3395e1c73ed8e133ff4b370"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+        "blob": "c2830c4873e9f88c1cd8537e35e41de91f20023b"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+        "blob": "62abace0d66fd597a179ac85a4ae465e2b01ef59"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/rollback.rs",
+        "blob": "0c9de21e2a2c48c1e94ba65f84f719c893bdebeb"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources.rs",
+        "blob": "d4d55b86f78f82b340a460afc23f5ed7d3d6e0c7"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "blob": "2a227ebd1d722488d731c150e00436e2dd3d148a"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+        "blob": "7f7e5353a21a549a9fd5c36d9e385e60fc15c8d4"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+        "blob": "1c63ef2ff428be1863d8e71ddbb646fd826e7914"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+        "blob": "aa06f78d14cc182c13ddcb30db38dbaaa8104d4a"
+      },
+      {
+        "path": "crates/arcweft-core/src/runtime_id.rs",
+        "blob": "eb80ec520b7f2a38a158c14cb955a19944bc0a81"
+      },
+      {
+        "path": "crates/arcweft-core/src/runtime_id/presentation_bank.rs",
+        "blob": "4d0e435ffdde220423f6b2440d72902fbae0c67d"
+      },
+      {
+        "path": "crates/arcweft-core/src/runtime_id/presentation_handle.rs",
+        "blob": "223be14d817af8286382c13d2ac214d1afbba680"
+      },
+      {
+        "path": "crates/arcweft-core/src/task.rs",
+        "blob": "eec3fe77ae98da54c8c802e90345d2be9e12b1db"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/ownership.rs",
+        "blob": "bcb0aa4b1327c9de4063fc30ad51bf7c4972b53e"
+      },
+      {
+        "path": "docs/02-runtime/save-replay.md",
+        "blob": "f5fd0d14bfe6e3a07d9e57302286f3bb30f43b5a"
+      },
+      {
+        "path": "docs/03-presentation/layers.md",
+        "blob": "561b0ec31e82e6b6dbc3ea799b932b030a44ab61"
+      },
+      {
+        "path": "docs/implementation/convergence-evidence-history.md",
+        "blob": "131a2d597e7bd54ed3b34da46105ecb8941724cb"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "46b07db7e33ee3b2340bbfc93388e13ba3ac6ce6f4a31020afb47600de3f3f71",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T07:20:08.2988217Z"
+  },
+  "ownerAcceptance": "owner-verified; full reverse consumer matrix running",
+  "owner": {
+    "final": "task-presentation-banks.owner3.runtime.terminal-audit.json",
+    "executed": 2144,
+    "passed": 2144,
+    "failed": 0,
+    "skipped": 0,
+    "sourceInputs": 4010,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "binaryDrift": 0,
+    "intermediate": [
+      {
+        "attempt": "bank-domain.owner1",
+        "passed": 2141,
+        "failed": 0,
+        "inputs": 4008
+      },
+      {
+        "attempt": "banks.owner2",
+        "passed": 2140,
+        "failed": 4,
+        "inputs": 4010,
+        "cause": "three added fixtures lacked target. prefix; one parent fixture bypassed DialogueActivationStore.begin",
+        "repair": "correct typed fixture address and use the actual activation entrance; retain parent assertions"
+      }
+    ]
+  },
+  "quality": [
+    {
+      "record": "task-presentation-banks.workspace-check.json",
+      "result": {
+        "version": 1,
+        "base": "accabf6eae17d83559bcc0872ce90537be004890",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4010,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T07:18:54.6229852Z",
+        "finishedAt": "2026-10-31T07:21:02.2551146Z"
+      }
+    },
+    {
+      "record": "task-presentation-banks.workspace-clippy.json",
+      "result": {
+        "version": 1,
+        "base": "accabf6eae17d83559bcc0872ce90537be004890",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4010,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T07:21:02.7096419Z",
+        "finishedAt": "2026-10-31T07:22:58.5224103Z"
+      }
+    },
+    {
+      "record": "task-presentation-banks.core-default-check.json",
+      "result": {
+        "version": 1,
+        "base": "accabf6eae17d83559bcc0872ce90537be004890",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4010,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T07:22:58.9404814Z",
+        "finishedAt": "2026-10-31T07:23:13.4311233Z"
+      }
+    },
+    {
+      "record": "task-presentation-banks.core-doctest.json",
+      "result": {
+        "version": 1,
+        "base": "accabf6eae17d83559bcc0872ce90537be004890",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4010,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T07:23:13.8448201Z",
+        "finishedAt": "2026-10-31T07:23:22.6858696Z"
+      }
+    },
+    {
+      "record": "task-presentation-banks.structure.json",
+      "result": {
+        "version": 1,
+        "base": "accabf6eae17d83559bcc0872ce90537be004890",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-banks.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4010,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T07:23:23.0906854Z",
+        "finishedAt": "2026-10-31T07:23:28.0820368Z"
+      }
+    },
+    {
+      "record": "task-presentation-banks.fmt.json",
+      "result": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/engine.rs",
+          "crates/arcweft-core/src/engine/dialogue/store.rs",
+          "crates/arcweft-core/src/engine/presentation_tests.rs",
+          "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+          "crates/arcweft-core/src/engine/presentation.rs",
+          "crates/arcweft-core/src/engine/rollback.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/storage.rs",
+          "crates/arcweft-core/src/presentation/resources/tests.rs",
+          "crates/arcweft-core/src/runtime_id.rs",
+          "crates/arcweft-core/src/runtime_id/presentation_bank.rs",
+          "crates/arcweft-core/src/runtime_id/presentation_handle.rs",
+          "crates/arcweft-core/src/task.rs",
+          "crates/arcweft-core/src/value/ownership.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4010,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "doctests": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0
+  },
+  "structure": {
+    "packages": 97,
+    "files": 3248,
+    "rustFiles": 3118,
+    "physicalLOC": 1775131.0,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "core": {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    "touched": [
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "owner": "arcweft-core",
+        "bytes": "25137",
+        "physical_lines": "695",
+        "code_lines": "666",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "owner": "arcweft-core",
+        "bytes": "240915",
+        "physical_lines": "5977",
+        "code_lines": "5693",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+        "owner": "arcweft-core",
+        "bytes": "84876",
+        "physical_lines": "2225",
+        "code_lines": "2091",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "808"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation.rs",
+        "owner": "arcweft-core",
+        "bytes": "6076",
+        "physical_lines": "157",
+        "code_lines": "148",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+        "owner": "arcweft-core",
+        "bytes": "11263",
+        "physical_lines": "312",
+        "code_lines": "303",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+        "owner": "arcweft-core",
+        "bytes": "13459",
+        "physical_lines": "393",
+        "code_lines": "380",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/rollback.rs",
+        "owner": "arcweft-core",
+        "bytes": "47979",
+        "physical_lines": "1186",
+        "code_lines": "1143",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine.rs",
+        "owner": "arcweft-core",
+        "bytes": "236009",
+        "physical_lines": "5847",
+        "code_lines": "5485",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "886"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+        "owner": "arcweft-core",
+        "bytes": "9010",
+        "physical_lines": "279",
+        "code_lines": "274",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "owner": "arcweft-core",
+        "bytes": "9542",
+        "physical_lines": "254",
+        "code_lines": "236",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+        "owner": "arcweft-core",
+        "bytes": "16807",
+        "physical_lines": "465",
+        "code_lines": "428",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+        "owner": "arcweft-core",
+        "bytes": "20278",
+        "physical_lines": "666",
+        "code_lines": "647",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources.rs",
+        "owner": "arcweft-core",
+        "bytes": "24224",
+        "physical_lines": "710",
+        "code_lines": "623",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/runtime_id/presentation_bank.rs",
+        "owner": "arcweft-core",
+        "bytes": "4459",
+        "physical_lines": "105",
+        "code_lines": "96",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/runtime_id/presentation_handle.rs",
+        "owner": "arcweft-core",
+        "bytes": "12017",
+        "physical_lines": "316",
+        "code_lines": "296",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "170"
+      },
+      {
+        "path": "crates/arcweft-core/src/runtime_id.rs",
+        "owner": "arcweft-core",
+        "bytes": "49082",
+        "physical_lines": "1538",
+        "code_lines": "1282",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "144"
+      },
+      {
+        "path": "crates/arcweft-core/src/task.rs",
+        "owner": "arcweft-core",
+        "bytes": "73801",
+        "physical_lines": "2229",
+        "code_lines": "1954",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "155"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/ownership.rs",
+        "owner": "arcweft-core",
+        "bytes": "25342",
+        "physical_lines": "667",
+        "code_lines": "589",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "279"
+      }
+    ]
+  },
+  "ownershipReview": [
+    "PresentationBanks owns all bank ledgers and pending retirements; per-bank original ledger is the only slot/lease/cursor authority. Engine separate retirement owner removed.",
+    "Native frame selects Root/inherited bank; DialogueActivationStore entrance and line/callback children select exact activation identity, independently of borrowed fiber.",
+    "Engine and DialogueStore retain scheduler/frame/activation responsibility. Existing large owner cohesion remains applicable; task.rs fixture migration and Product facade field initialization add no independent state cluster.",
+    "No new Cargo edge, I/O, unsafe or Arcweft contract version. Immutable DialogueActivationId is Copy; live values and grant/ledger owners remain non-Clone."
+  ],
+  "reverse": {
+    "source": "091ffdad88bf290912982bb8c484bf0efe700514",
+    "selectedPackages": 53,
+    "reusedOwner": 1,
+    "remainingConsumers": 52,
+    "status": "running",
+    "graph": "task-presentation-banks.reverse-closure.json",
+    "manifestFiles": 100,
+    "manifestDrift": 0,
+    "resolvedPackages": 845,
+    "workspaceMembers": 97,
+    "actualSourceEpoch": "presentation-banks.reverse",
+    "completedConsumerCounts": null
+  },
+  "preservedAccepted": [
+    "Generic Match accepted and published",
+    "prior token/Native custody/cleanup/private rollback",
+    "Image value owner",
+    "AWBC physical scope grant substrate and per-bank inert state codec"
+  ],
+  "notEstablished": [
+    "AWBC Product aggregate bank ownership, active grants in public save/rollback and VM cleanup",
+    "complete retained contour while Dialogue transaction borrows the parent frame",
+    "11 Source callables, mount(ViewValue), 6 Handle methods, instruction/lowering/driver",
+    "full consumer terminal result or final native/web image parity"
+  ],
+  "evidence": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.check1.json",
+      "sha256": "d0f26d443205c4de88d021ec29bca0043d2b94320e4eeee8930dfdc101ce94a6",
+      "bytes": 367
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.check1.log",
+      "sha256": "aab0139c3b3cec9610ee80b142febb95032837e5e1f01675c012e46e737a6b9b",
+      "bytes": 82504
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.check1.source-freeze.json",
+      "sha256": "27690d622e97c0378e47bfd7b43cd55fa8861c8480ba30c57ef7a118627ab131",
+      "bytes": 783237
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.owner1.binaries-before.json",
+      "sha256": "b4347b08389817d2255e87df16dc83dd6710560d3cba318fbd1d417acec77aa9",
+      "bytes": 3108
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.owner1.catalog.inventory.json",
+      "sha256": "3707b7b096b9d394cb830fabf8b75273a4598a5ae89277dc19d40ad2a85f7861",
+      "bytes": 541503
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.owner1.catalog.json",
+      "sha256": "0a5653272e090ea70b3daf307a719ba062d547bc895807a1e74b695eb60b0ee0",
+      "bytes": 484
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.owner1.catalog.log",
+      "sha256": "b91110327d3f600ee825427010331e70ac2492a9710ba6b03d74af33081333be",
+      "bytes": 453612
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.owner1.runtime.json",
+      "sha256": "cca6339c0e3e0ee48fdde913a1a503015b86d034a14b17def89e42e881ecec01",
+      "bytes": 576
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.owner1.runtime.log",
+      "sha256": "9d715fd670f18899c93e874e01315519ca67bed9d966b302f61c7ed778859f69",
+      "bytes": 733144
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.owner1.runtime.terminal-audit.json",
+      "sha256": "cacded3abdcfce5118b045125f90b4fbd5deb6241950c6357c63eeaea7a4778e",
+      "bytes": 620
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-bank-domain.owner1.source-freeze.json",
+      "sha256": "36fcb5c43307f780046c58e7dfa93af1ee5c1952cc1f3eb08c2bce683f09be8e",
+      "bytes": 783258
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner2.binaries-before.json",
+      "sha256": "3a290e855e4c7c84600fda81e8932b36a895d0d508b98df40ed8d87b4b74b7f3",
+      "bytes": 3108
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner2.catalog.inventory.json",
+      "sha256": "8145b4bbeaa521600c2152f640dbb919f6a8ead844265c42978d5e081caa81df",
+      "bytes": 542307
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner2.catalog.json",
+      "sha256": "af3652b8eddc67c45cbf74f2d0438cd2411250ae292880fa03a13cfd70416bb6",
+      "bytes": 478
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner2.catalog.log",
+      "sha256": "c361f4dbe4fc7d9861b72ce4ac4ad43dee4c41ccb7ec28f22ce4b38892ed5680",
+      "bytes": 454821
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner2.runtime.json",
+      "sha256": "0556e631ac96cf4404a44a156cc2195c7ae17b486286f617850b586a2ebd8be5",
+      "bytes": 572
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner2.runtime.log",
+      "sha256": "bb58ed507bb33b4da18eb668296d532edd51b02c88f784a0f3b3f580d59de2cb",
+      "bytes": 738182
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner2.runtime.terminal-audit.json",
+      "sha256": "4b7e4966c04958f29fae83bf35e26db0fde70684431a359ff45ae79ff86da513",
+      "bytes": 1427
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner2.source-freeze.json",
+      "sha256": "c5d5f6451d4fb98a54c64edfad7cddb3d0d6d7cfbe6551f12f2585c562ad8c93",
+      "bytes": 783654
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner3.binaries-before.json",
+      "sha256": "b1cbce1ef51646fb3d69a8efecdafda077aaf394843bf8329b6f7b50dbdfdd0b",
+      "bytes": 3108
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner3.catalog.inventory.json",
+      "sha256": "8145b4bbeaa521600c2152f640dbb919f6a8ead844265c42978d5e081caa81df",
+      "bytes": 542307
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner3.catalog.json",
+      "sha256": "34ff1a0d87f1b0c22af398d32af6c6c32e3179df64b2fba8c08411b45597f29c",
+      "bytes": 478
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner3.catalog.log",
+      "sha256": "8811dfe9ec9e2aaa511775d9b3f7979f6e038beede8e0ca5c061429c85660823",
+      "bytes": 454821
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner3.runtime.json",
+      "sha256": "7a8ae814b6013190a64a069eb94cc03b434349926183496c3821923a248cc82d",
+      "bytes": 570
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner3.runtime.log",
+      "sha256": "14a870a5fab120c5e05dcc936c01de020273a0fcd0824e687015bc601c733bdc",
+      "bytes": 734797
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner3.runtime.terminal-audit.json",
+      "sha256": "4e818c9b7d40439b8b04a200f42b2b5d1e067e9882c454281be422401ca467a8",
+      "bytes": 614
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner3.source-freeze.json",
+      "sha256": "272dc7c245cf70eebb5ba15d7d5ae44445d20c15bee207787ee406930941e101",
+      "bytes": 783654
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-checkpoint.prepare.log",
+      "sha256": "85d3989606e24816cbd7527758a86990ba09a9bbc543d3ff1270c23215101177",
+      "bytes": 1719
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-checkpoint.prepared.json",
+      "sha256": "ebdafcfce94c3966b48a3b494ceff1bf2f7dc081f35a9009c3617dc2347a06da",
+      "bytes": 4169
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-checkpoint.publish.log",
+      "sha256": "9c175274ad968a8afcfa26591a41081ce3c33ec20210de6a9a8b64000286162d",
+      "bytes": 881
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-checkpoint.reviewed.patch",
+      "sha256": "46b07db7e33ee3b2340bbfc93388e13ba3ac6ce6f4a31020afb47600de3f3f71",
+      "bytes": 86379
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-checkpoint.verified.json",
+      "sha256": "c05d003525cc4427a078380a79fa40fca4de3b699599c2e5e82148144b444e63",
+      "bytes": 3474
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.core-default-check.json",
+      "sha256": "13599e3ab1e42ee327ec1dff6d8f585e69fa3c0f43d5adfc96b18f0153f32ac2",
+      "bytes": 344
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.core-default-check.log",
+      "sha256": "e731c5a249be7979906704c68391ac7056eb96f6ea5e87c277fea7fb7da355f4",
+      "bytes": 83155
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.core-doctest.json",
+      "sha256": "d233818242b1d03112114d2d1dae1a480c7b2cf40c4d7eda459897d872be0b53",
+      "bytes": 358
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.core-doctest.log",
+      "sha256": "c25d466ae2003222d4f9e1bcc468ee7c508d9c90cd1ac6aceca7ef8ca0a4170b",
+      "bytes": 82305
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.fmt.json",
+      "sha256": "dddf01b62efb7a661f238e63796e3a0cb08bd202766ddd318ef5397fb758d8ed",
+      "bytes": 1147
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.owner-metrics.json",
+      "sha256": "083c4595efff2fdfa0197ab7c1d69f35bed9b4cf1502421198f544d20c24813e",
+      "bytes": 5837
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-closure.json",
+      "sha256": "cd2775ea9bebc95c78203a19bd846f964a4768603a5ac6fa61a122ad9f8f007a",
+      "bytes": 19490
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-tree.json",
+      "sha256": "8afa9b471701be389b993146525fd515649cd0e2cf4b92a5f65b83fa0ba0dae7",
+      "bytes": 353
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-tree.log",
+      "sha256": "d810d66e7799da56a011828d687a5139078376f373b861502c6e8eebca1539fd",
+      "bytes": 25750
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse.source-freeze.json",
+      "sha256": "67cd9840a324beb7c9566e8b758bcd5577ec7214aadb7208e438380081acdd09",
+      "bytes": 783923
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.structure.json",
+      "sha256": "be34fcffa5b25b085c5af18a4d9708d030d8db9bef81ad25680b9701bd2ef904",
+      "bytes": 513
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.structure.log",
+      "sha256": "8f2f9ef321a52fb50d3433a0a6eb3e7c0f077f80c78b189c6b013660b315ea74",
+      "bytes": 65022
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.workspace-check.json",
+      "sha256": "f80229f71f6e3264710aae72f2418c9e5b93f1cb3de1dd809466c1c79d3e284b",
+      "bytes": 355
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.workspace-check.log",
+      "sha256": "1e13f8c394ee8b17d2913f42a065c7c14ab46e24c477765f9ecb5920f88d5579",
+      "bytes": 111324
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.workspace-clippy.json",
+      "sha256": "03fc101d342a6fe6c2a2382f5fd6bfd5334c8af60365f5cb91e9eea856d20bd7",
+      "bytes": 356
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.workspace-clippy.log",
+      "sha256": "e6ad0a5cc2cf3d6d51db0ec058ba6afb2878f6232a0c26dee41af78d23527249",
+      "bytes": 8399386
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.structure-dependency_edges.csv",
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4",
+      "bytes": 77544
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.structure-file_metrics.csv",
+      "sha256": "ad9cb3d2508dea546271bded2a4826424f8e6c8d4965a71acf1593c777dc4909",
+      "bytes": 328931
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.structure-findings.md",
+      "sha256": "7c7b0b11fdd89595d9d11aa9767bb6678bc146eadab3b3be7701d6245c3da81d",
+      "bytes": 122295
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.structure-package_metrics.csv",
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2",
+      "bytes": 6444
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.structure-public_type_duplicates.csv",
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac",
+      "bytes": 17238
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.docs-audit.log",
+      "sha256": "769f18ddf157464f52feceefa5f47185923ba27b92489a48d1603a7101d79268",
+      "bytes": 442
+    }
+  ],
+  "recordedAt": "2026-10-31T07:25:32.8331577Z",
+  "documentationAudit": {
+    "record": "task-presentation-banks.docs-audit.log",
+    "documents": 129,
+    "links": 650,
+    "brokenLinks": 0,
+    "unretainedCommitIds": 0,
+    "historicalRawChanges": 0,
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0
+  }
+}

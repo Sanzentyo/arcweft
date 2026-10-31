@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "accabf6eae17d83559bcc0872ce90537be004890",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-bank-domain.owner1.runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T06:58:08.6766769Z",
+  "finishedAt": "2026-10-31T06:59:25.9262049Z"
+}

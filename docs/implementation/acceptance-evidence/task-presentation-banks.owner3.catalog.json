@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "accabf6eae17d83559bcc0872ce90537be004890",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-banks.owner3.catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T07:16:36.6450627Z",
+  "finishedAt": "2026-10-31T07:17:17.6588351Z"
+}

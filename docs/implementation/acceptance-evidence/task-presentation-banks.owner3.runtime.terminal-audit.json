@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "accabf6eae17d83559bcc0872ce90537be004890",
+  "run": "presentation-banks.owner3.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  71.135s] 2144 tests run: 2144 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2144,
+  "passed": 2144,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4010,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T07:18:31.9733910Z"
+}

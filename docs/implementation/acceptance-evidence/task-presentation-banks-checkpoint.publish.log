@@ -1,0 +1,10 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 091ffdad8] Own presentation banks and retirement custody under exact bank identities
+ 21 files changed, 1087 insertions(+), 139 deletions(-)
+ create mode 100644 crates/arcweft-core/src/presentation/resources/banks.rs
+ create mode 100644 crates/arcweft-core/src/presentation/resources/banks/tests.rs
+ create mode 100644 crates/arcweft-core/src/runtime_id/presentation_bank.rs
+To https://github.com/Sanzentyo/arcweft.git
+   accabf6ea..091ffdad8  HEAD -> main
+{"commit":"091ffdad88bf290912982bb8c484bf0efe700514","parent":"accabf6eae17d83559bcc0872ce90537be004890","tree":"33711a0362821264983d9cbc6f5718923cf4a342","paths":21,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"46b07db7e33ee3b2340bbfc93388e13ba3ac6ce6f4a31020afb47600de3f3f71","indexEmpty":true}
