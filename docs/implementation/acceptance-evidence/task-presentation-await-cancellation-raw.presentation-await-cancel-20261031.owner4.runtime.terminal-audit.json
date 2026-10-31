@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "68e150db5ae521d7bf316f60c88e9b87d982f0bb",
+  "run": "presentation-await-cancel-20261031.owner4.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  81.483s] 2179 tests run: 2179 passed (1 slow), 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2179,
+  "passed": 2179,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4021,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T11:48:41.8387296Z"
+}

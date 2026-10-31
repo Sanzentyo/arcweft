@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "commit": "5f861e4d3088c3b2563cec927885ac489b37a123",
+  "parent": "68e150db5ae521d7bf316f60c88e9b87d982f0bb",
+  "tree": "30980dd371682e03891d05f4c2569332de9971f3",
+  "remote": "5f861e4d3088c3b2563cec927885ac489b37a123",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+      "blob": "af04305f1d8d83890da97a4610a9ff525c27f2c9"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "blob": "57a558b5a3c573203e26307320ea57828cb7bf63"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "e82c74f223c5a2bb99c4e4592933b7819e7f4611"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+      "blob": "e967e454fea85dca78dd78f14ee3adf310a5e69f"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-cancellation.awbc",
+      "blob": "a00ecdfb3df92e0634808b0208c0de5c79cd6123"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc",
+      "blob": "96521395ca793eebbabe994e295e023ef52e9143"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "913c8f4a097698eb6cfbeea02d37c159694eea4b85b9cf7810d981cdb0963cf4",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T11:46:34.5612445Z"
+}

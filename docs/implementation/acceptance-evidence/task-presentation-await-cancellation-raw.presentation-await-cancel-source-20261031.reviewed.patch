@@ -1,0 +1,1082 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step/program_fanout.rs b/crates/arcweft-core/src/awbc/product_step/program_fanout.rs
+index 5c5728a86b1f51300df1f67e2c3f64b91edc1315..af04305f1d8d83890da97a4610a9ff525c27f2c9 100644
+--- a/crates/arcweft-core/src/awbc/product_step/program_fanout.rs
++++ b/crates/arcweft-core/src/awbc/product_step/program_fanout.rs
+@@ -249,6 +249,36 @@ impl AwbcProductStepExecutor {
+                 "Program Fanout requires its accepted Program launch".into(),
+             ));
+         }
++        // Inspect the complete installed launch inventory before extracting the
++        // controller state or transferring an earlier Ready value.
++        if let Some(FiberSuspensionReason::ProgramFanout(state)) = child
++            .fiber
++            .suspension
++            .as_ref()
++            .map(|suspension| &suspension.reason)
++        {
++            let mut cancelling = false;
++            for flight in &state.in_flight {
++                let launch = self
++                    .need_producers
++                    .launch_for_handle(&flight.handle)
++                    .ok_or_else(|| {
++                        ProductStepError::Input(
++                            "Program Fanout worker lost its accepted launch".into(),
++                        )
++                    })?;
++                cancelling |= matches!(
++                    launch.state(),
++                    crate::task::RuntimeNeedProducerState::Cancelled
++                );
++            }
++            if cancelling {
++                self.program.preflight_fiber_cancellations(
++                    self.presentation.as_ref(),
++                    std::iter::once(&child.fiber),
++                )?;
++            }
++        }
+         let Some(suspension) = child.fiber.suspension.as_mut() else {
+             return Ok(false);
+         };
+@@ -320,8 +350,9 @@ impl AwbcProductStepExecutor {
+         if cancelled {
+             // Restore the original suspension owner before admitting unwind.
+             // Its ordinary Program retirement joins already attached workers.
+-            let cancellation = crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
+-                .map_err(|error| ProductStepError::Internal(error.to_string()))?;
++            let cancellation = self
++                .program
++                .cancel_fiber(&mut child.fiber, &mut self.presentation)?;
+             journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
+             journal.record_deferred_observations(cancellation.observations);
+             return Ok(true);
+diff --git a/crates/arcweft-core/src/awbc/product_step/suspension.rs b/crates/arcweft-core/src/awbc/product_step/suspension.rs
+index d8484060e756008c3edfb45f0e473b14d33ea9be..57a558b5a3c573203e26307320ea57828cb7bf63 100644
+--- a/crates/arcweft-core/src/awbc/product_step/suspension.rs
++++ b/crates/arcweft-core/src/awbc/product_step/suspension.rs
+@@ -9,7 +9,6 @@ use super::{
+     VmObservation, content_request, resolved_runtime_need_state, runtime_value_label,
+     stream_id_for,
+ };
+-use crate::awbc::vm::cancel_fiber;
+ use crate::stream::StreamEventKind;
+ use crate::task::{NamedHostArg, NeedProducerRuntimeArgument};
+ use crate::value::runtime_value_into_sequence_values;
+@@ -329,6 +328,15 @@ impl AwbcProductStepExecutor {
+                 }
+             }
+         }
++        if matches!(&state, AwaitNeedPublicationKind::Cancelled)
++            && let Err(error) = self.program.preflight_fiber_cancellations(
++                self.presentation.as_ref(),
++                std::iter::once(&self.fiber),
++            )
++        {
++            self.record_error(error.into(), output);
++            return false;
++        }
+         self.need_publications.insert(publication_key, cursor);
+         match state {
+             AwaitNeedPublicationKind::InfrastructureFailure(failure) => {
+@@ -408,7 +416,10 @@ impl AwbcProductStepExecutor {
+                 true
+             }
+             AwaitNeedPublicationKind::Cancelled => {
+-                match cancel_fiber(&self.program, &mut self.fiber) {
++                match self
++                    .program
++                    .cancel_fiber(&mut self.fiber, &mut self.presentation)
++                {
+                     Ok(cancellation) => {
+                         self.consume_observations(cancellation.observations, output);
+                     }
+@@ -922,6 +933,20 @@ impl AwbcProductStepExecutor {
+             .iter()
+             .map(|in_flight| in_flight.handle.correlation().task_id)
+             .collect::<std::collections::BTreeSet<_>>();
++        if self
++            .next_await_many_task_event(&in_flight_tasks)
++            .is_some_and(|(_, event)| matches!(&event.kind, TaskEventKind::Cancelled))
++            && let Err(error) = self.program.preflight_fiber_cancellations(
++                self.presentation.as_ref(),
++                std::iter::once(&self.fiber),
++            )
++        {
++            if let Some(suspension) = self.fiber.suspension.as_mut() {
++                suspension.reason = FiberSuspensionReason::AwaitMany(state);
++            }
++            self.record_error(error.into(), output);
++            return false;
++        }
+         let events = self.take_await_many_task_events(&in_flight_tasks);
+         let mut progressed = false;
+         let mut accepted_ready = false;
+@@ -1007,13 +1032,6 @@ impl AwbcProductStepExecutor {
+                     return true;
+                 }
+                 TaskEventKind::Cancelled => {
+-                    if let Err(error) = self.fiber.validate_cleanup_inputs(&self.program) {
+-                        if let Some(suspension) = self.fiber.suspension.as_mut() {
+-                            suspension.reason = FiberSuspensionReason::AwaitMany(state);
+-                        }
+-                        self.record_error(error.into(), output);
+-                        return false;
+-                    }
+                     if !self.discard_extracted_await_many(
+                         state,
+                         &before_handles,
+@@ -1022,7 +1040,10 @@ impl AwbcProductStepExecutor {
+                     ) {
+                         return false;
+                     }
+-                    match cancel_fiber(&self.program, &mut self.fiber) {
++                    match self
++                        .program
++                        .cancel_fiber(&mut self.fiber, &mut self.presentation)
++                    {
+                         Ok(cancellation) => {
+                             self.consume_observations(cancellation.observations, output);
+                         }
+@@ -1826,6 +1847,14 @@ impl AwbcProductStepExecutor {
+                 }
+             }
+         }
++        if matches!(&state, AwaitNeedPublicationKind::Cancelled)
++            && let Err(error) = self
++                .program
++                .preflight_fiber_cancellations(self.presentation.as_ref(), std::iter::once(&*fiber))
++        {
++            self.record_error(error.into(), output);
++            return false;
++        }
+         self.need_publications.insert(publication_key, cursor);
+         match state {
+             AwaitNeedPublicationKind::InfrastructureFailure(failure) => {
+@@ -1985,7 +2014,7 @@ impl AwbcProductStepExecutor {
+                 true
+             }
+             AwaitNeedPublicationKind::Cancelled => {
+-                match cancel_fiber(&self.program, fiber) {
++                match self.program.cancel_fiber(fiber, &mut self.presentation) {
+                     Ok(cancellation) => {
+                         journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
+                         journal.record_deferred_observations(cancellation.observations);
+@@ -2216,6 +2245,19 @@ impl AwbcProductStepExecutor {
+             .iter()
+             .map(|in_flight| in_flight.handle.correlation().task_id)
+             .collect::<std::collections::BTreeSet<_>>();
++        if self
++            .next_await_many_task_event(&in_flight_tasks)
++            .is_some_and(|(_, event)| matches!(&event.kind, TaskEventKind::Cancelled))
++            && let Err(error) = self
++                .program
++                .preflight_fiber_cancellations(self.presentation.as_ref(), std::iter::once(&*fiber))
++        {
++            if let Some(suspension) = fiber.suspension.as_mut() {
++                suspension.reason = FiberSuspensionReason::AwaitMany(state);
++            }
++            self.record_error(error.into(), output);
++            return false;
++        }
+         let events = self.take_await_many_task_events_for_deferred(&in_flight_tasks, journal);
+         let mut progressed = false;
+         for event_index in events {
+@@ -2299,7 +2341,7 @@ impl AwbcProductStepExecutor {
+                     return true;
+                 }
+                 TaskEventKind::Cancelled => {
+-                    match cancel_fiber(&self.program, fiber) {
++                    match self.program.cancel_fiber(fiber, &mut self.presentation) {
+                         Ok(cancellation) => {
+                             journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
+                             journal.record_deferred_observations(cancellation.observations);
+@@ -2449,23 +2491,25 @@ impl AwbcProductStepExecutor {
+         progressed || output.requests.tasks.len() > request_count
+     }
+ 
++    fn next_await_many_task_event(
++        &self,
++        in_flight_tasks: &std::collections::BTreeSet<TaskId>,
++    ) -> Option<(usize, &TaskEvent)> {
++        self.queued_task_events
++            .iter()
++            .enumerate()
++            .find(|(_, event)| in_flight_tasks.contains(&event.correlation.task_id))
++    }
++
+     fn take_await_many_task_events(
+         &mut self,
+         in_flight_tasks: &std::collections::BTreeSet<TaskId>,
+     ) -> Vec<TaskEvent> {
+-        let mut events = Vec::new();
+-        let mut index = 0;
+-        while index < self.queued_task_events.len() {
+-            if in_flight_tasks.contains(&self.queued_task_events[index].correlation.task_id) {
+-                if let Some(event) = self.queued_task_events.remove(index) {
+-                    events.push(event);
+-                }
+-                break;
+-            } else {
+-                index += 1;
+-            }
+-        }
+-        events
++        self.next_await_many_task_event(in_flight_tasks)
++            .map(|(index, _)| index)
++            .and_then(|index| self.queued_task_events.remove(index))
++            .into_iter()
++            .collect()
+     }
+ 
+     fn take_await_many_task_events_for_deferred(
+@@ -2474,30 +2518,27 @@ impl AwbcProductStepExecutor {
+         journal: &mut super::DeferredChildResumeJournal,
+     ) -> std::ops::Range<usize> {
+         let start = journal.consumed_task_events.len();
+-        let mut index = 0;
+-        while index < self.queued_task_events.len() {
+-            if in_flight_tasks.contains(&self.queued_task_events[index].correlation.task_id) {
+-                let event = self
+-                    .queued_task_events
+-                    .remove(index)
+-                    .expect("checked queued task event remains present");
+-                let mut original_index = index;
+-                let mut prior_positions = journal
+-                    .consumed_task_events
+-                    .iter()
+-                    .map(|entry| entry.queue_index)
+-                    .collect::<Vec<_>>();
+-                prior_positions.sort_unstable();
+-                for position in prior_positions {
+-                    if position <= original_index {
+-                        original_index += 1;
+-                    }
++        if let Some(index) = self
++            .next_await_many_task_event(in_flight_tasks)
++            .map(|(index, _)| index)
++        {
++            let event = self
++                .queued_task_events
++                .remove(index)
++                .expect("checked queued task event remains present");
++            let mut original_index = index;
++            let mut prior_positions = journal
++                .consumed_task_events
++                .iter()
++                .map(|entry| entry.queue_index)
++                .collect::<Vec<_>>();
++            prior_positions.sort_unstable();
++            for position in prior_positions {
++                if position <= original_index {
++                    original_index += 1;
+                 }
+-                journal.record_consumed_task_event(original_index, event);
+-                break;
+-            } else {
+-                index += 1;
+             }
++            journal.record_consumed_task_event(original_index, event);
+         }
+         start..journal.consumed_task_events.len()
+     }
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index 5c935d64f6716b92e41f7ed70833b4b049598141..e82c74f223c5a2bb99c4e4592933b7819e7f4611 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -5,6 +5,8 @@ use crate::presentation::resources::{
+ use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToken};
+ use arcweft_interaction_model::presentation::PresentationResourceKind;
+ 
++mod cancellation_resume;
++
+ mod cancellation {
+     use super::*;
+     use crate::awbc::schema::*;
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..e967e454fea85dca78dd78f14ee3adf310a5e69f
+--- /dev/null
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs
+@@ -0,0 +1,683 @@
++use super::super::*;
++use crate::awbc::fiber::FiberSuspensionReason;
++use crate::awbc::product_step::DeferredChildResumeJournal;
++use crate::presentation::resources::{
++    PresentationBanks, PresentationBody, PresentationLedgerLimits, PresentationRegistrationSite,
++};
++use crate::runtime_id::RuntimePresentationHandleToken;
++use crate::step::RuntimeStepOutput;
++use arcweft_interaction_model::presentation::PresentationResourceKind;
++
++fn install_resource(
++    executor: &mut AwbcProductStepExecutor,
++    child: Option<usize>,
++    blocked: bool,
++) -> RuntimePresentationHandleToken {
++    let expected = executor
++        .program
++        .runtime_types
++        .iter()
++        .find(|ty| matches!(ty.shape(), AwbcRuntimeTypeShape::String))
++        .unwrap()
++        .semantic_identity();
++    install_resource_values(
++        executor,
++        child,
++        blocked,
++        expected,
++        RuntimeValue::String("current".into()),
++        RuntimeValue::String("prior".into()),
++    )
++}
++
++fn install_resource_values(
++    executor: &mut AwbcProductStepExecutor,
++    child: Option<usize>,
++    blocked: bool,
++    expected: RuntimeSemanticTypeId,
++    current: RuntimeValue,
++    prior: RuntimeValue,
++) -> RuntimePresentationHandleToken {
++    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
++    let mut banks = PresentationBanks::new(
++        owner.clone(),
++        executor.artifact_fingerprint,
++        if blocked {
++            PresentationLedgerLimits {
++                handles: 1,
++                scopes: 8,
++            }
++        } else {
++            PresentationLedgerLimits::for_schema(crate::entry::RuntimeSchemaLimits::engine_default())
++        },
++    );
++    let fiber = child.map_or(&mut executor.fiber, |index| {
++        &mut executor.child_fibers[index].fiber
++    });
++    let site = || PresentationRegistrationSite::Independent(PresentationResourceKind::Image);
++    let body = |value| PresentationBody {
++        expected,
++        binding: None,
++        value: RuntimePayload(value),
++    };
++    if blocked {
++        let ledger = banks.ledger_mut(fiber.presentation_bank()).unwrap();
++        let scope = fiber.bind_presentation_scope(&owner, ledger).unwrap();
++        ledger.register(&owner, scope, site(), body(prior)).unwrap();
++        fiber.retire_presentation_scope(&owner, &mut banks).unwrap();
++    }
++    let ledger = banks.ledger_mut(fiber.presentation_bank()).unwrap();
++    let scope = fiber.bind_presentation_scope(&owner, ledger).unwrap();
++    let token = ledger
++        .register(&owner, scope, site(), body(current))
++        .unwrap()
++        .0;
++    executor.presentation = Some(banks);
++    executor.snapshot().unwrap();
++    token
++}
++
++fn assert_retired(executor: &AwbcProductStepExecutor, token: &RuntimePresentationHandleToken) {
++    let retired = executor.presentation.as_ref().unwrap().retirements();
++    assert_eq!(retired.len(), 1);
++    assert_eq!(&retired[0].token, token);
++    assert_eq!(
++        retired[0].body.value.0,
++        RuntimeValue::String("current".into())
++    );
++}
++
++fn roundtrip(executor: AwbcProductStepExecutor) -> AwbcProductStepExecutor {
++    let before = executor.snapshot().unwrap();
++    let saved = AwbcProductExecutorSaveSnapshot::from_live(&before, &executor.program).unwrap();
++    let wire = serde_json::to_vec(&saved).unwrap();
++    let executor = executor
++        .restore_inert_snapshot_owned(serde_json::from_slice(&wire).unwrap())
++        .unwrap();
++    assert_eq!(executor.snapshot().unwrap(), before);
++    executor
++}
++
++fn need_fixture(
++    blocked: bool,
++) -> (
++    AwbcProductStepExecutor,
++    RuntimeStepInput,
++    RuntimePresentationHandleToken,
++) {
++    let (mut executor, input) =
++        typed_direct_need_executor_and_input(vec![runtime_need_state(0, Need::Cancelled)]);
++    let token = install_resource(&mut executor, None, blocked);
++    let output = executor.step(Default::default(), RuntimeStepOptions::default());
++    assert!(
++        output.output.diagnostics.is_empty(),
++        "{:?}",
++        output.output.diagnostics
++    );
++    assert!(matches!(
++        executor
++            .fiber
++            .suspension
++            .as_ref()
++            .map(|suspension| &suspension.reason),
++        Some(FiberSuspensionReason::Await {
++            target: crate::awbc::fiber::FiberAwaitTarget::Need { .. },
++            ..
++        })
++    ));
++    (executor, input, token)
++}
++
++fn resume_need(
++    executor: &mut AwbcProductStepExecutor,
++    input: &mut RuntimeStepInput,
++    output: &mut RuntimeStepOutput,
++) -> bool {
++    let correlation = input.need_states[0].correlation;
++    executor.resume_need(
++        &correlation,
++        AwbcTypeId(2),
++        Some(AwbcPatternId(0)),
++        None,
++        AwbcResumePointId(0),
++        &mut input.need_states,
++        output,
++    )
++}
++
++#[test]
++fn need_cancellation_retires_the_actual_scope_and_roundtrips_the_public_owner() {
++    let (mut executor, mut input, token) = need_fixture(false);
++    assert!(resume_need(
++        &mut executor,
++        &mut input,
++        &mut RuntimeStepOutput::default()
++    ));
++    assert_eq!(executor.fiber.status, FiberStatus::Cancelled);
++    assert_eq!(executor.need_publications.len(), 1);
++    assert_retired(&executor, &token);
++    roundtrip(executor);
++}
++
++#[test]
++fn need_cancellation_capacity_refusal_preserves_the_publication_and_complete_snapshot_until_retry()
++{
++    let (mut executor, mut input, token) = need_fixture(true);
++    let before = executor.snapshot().unwrap();
++    let mut output = RuntimeStepOutput::default();
++    assert!(!resume_need(&mut executor, &mut input, &mut output));
++    assert_eq!(output.diagnostics.len(), 1);
++    assert_eq!(executor.snapshot().unwrap(), before);
++    assert!(executor.need_publications.is_empty());
++    executor
++        .presentation
++        .as_mut()
++        .unwrap()
++        .retirements_mut()
++        .clear();
++    let mut output = RuntimeStepOutput::default();
++    assert!(resume_need(&mut executor, &mut input, &mut output));
++    assert!(output.diagnostics.is_empty());
++    assert_eq!(executor.fiber.status, FiberStatus::Cancelled);
++    assert_eq!(executor.need_publications.len(), 1);
++    assert_retired(&executor, &token);
++    executor.snapshot().unwrap();
++}
++
++fn awaiting_many(threaded: bool) -> AwbcProductStepExecutor {
++    let program = await_many_product_program_with_thread(
++        if threaded {
++            AwaitManyFixtureOutput::Result
++        } else {
++            AwaitManyFixtureOutput::Sequence
++        },
++        threaded,
++    );
++    let mut executor = if threaded {
++        AwbcProductStepExecutor::for_function_invocation_with_generation(
++            program,
++            AwbcEntryId(0),
++            AwbcFunctionId(3),
++            [RuntimeFlowParameterBinding {
++                parameter: crate::entry::FlowParameterCoordinate::from_position(0),
++                value: await_many_items(),
++            }],
++            64,
++            GenerationId::new(7),
++        )
++        .unwrap()
++    } else {
++        await_many_executor(&program, await_many_items(), GenerationId::new(7))
++    };
++    for _ in 0..64 {
++        let result = executor.step(Default::default(), direct_need_step_options());
++        assert!(
++            result.output.diagnostics.is_empty(),
++            "{:?}",
++            result.output.diagnostics
++        );
++        let fiber = if threaded {
++            executor.child_fibers.front().map(|child| &child.fiber)
++        } else {
++            Some(&executor.fiber)
++        };
++        if fiber.is_some_and(|fiber| {
++            matches!(fiber.suspension.as_ref().map(|suspension| &suspension.reason),
++            Some(FiberSuspensionReason::AwaitMany(state)) if !state.in_flight.is_empty())
++        }) {
++            return executor;
++        }
++    }
++    panic!("genuine Source-backed AwaitMany did not suspend");
++}
++
++fn queue_cancellation(executor: &mut AwbcProductStepExecutor, child: bool) {
++    let fiber = if child {
++        &executor.child_fibers[0].fiber
++    } else {
++        &executor.fiber
++    };
++    let Some(FiberSuspensionReason::AwaitMany(state)) = fiber
++        .suspension
++        .as_ref()
++        .map(|suspension| &suspension.reason)
++    else {
++        unreachable!()
++    };
++    let correlation = state.in_flight[0].handle.correlation();
++    let mut output = RuntimeStepOutput::default();
++    executor.latch_task_events(
++        vec![producer_task_event(
++            correlation.generation,
++            correlation,
++            0,
++            TaskEventKind::Cancelled,
++        )],
++        &mut output,
++    );
++    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
++    assert_eq!(executor.queued_task_events.len(), 1);
++}
++
++fn resume_many(
++    executor: &mut AwbcProductStepExecutor,
++    child: bool,
++    output: &mut RuntimeStepOutput,
++) -> bool {
++    let mut backend = crate::pure::VmRuntimePureCallBackend::default();
++    if child {
++        let mut journal = DeferredChildResumeJournal::capture(executor);
++        let mut child = executor.child_fibers.pop_front().unwrap();
++        let mut staged = RuntimeStepOutput::default();
++        let result = executor
++            .resume_deferred_child_suspension(
++                &mut child,
++                &mut Vec::new(),
++                &mut Vec::new(),
++                &mut staged,
++                &mut journal,
++                &mut backend,
++            )
++            .unwrap();
++        if !result {
++            assert!(journal.consumed_task_events.is_empty());
++        }
++        executor.child_fibers.push_front(child);
++        journal.commit(executor, staged, output);
++        result
++    } else {
++        let before = crate::awbc::product_step::line::product_fiber_handle_owners(
++            executor.facade_fiber.execution,
++            &executor.fiber,
++        )
++        .unwrap();
++        let suspension = executor.fiber.suspension.as_mut().unwrap();
++        let resume = suspension.declared_resume().unwrap();
++        let FiberSuspensionReason::AwaitMany(state) =
++            std::mem::replace(&mut suspension.reason, FiberSuspensionReason::BudgetYield)
++        else {
++            unreachable!()
++        };
++        executor.resume_await_many(state, resume, before, output, &mut backend)
++    }
++}
++
++#[test]
++fn main_await_many_cancellation_keeps_the_queued_event_and_extracted_state_on_capacity_refusal() {
++    for blocked in [false, true] {
++        let mut executor = awaiting_many(false);
++        let token = install_resource(&mut executor, None, blocked);
++        queue_cancellation(&mut executor, false);
++        if blocked {
++            let before = executor.snapshot().unwrap();
++            let mut output = RuntimeStepOutput::default();
++            assert!(!resume_many(&mut executor, false, &mut output));
++            assert_eq!(output.diagnostics.len(), 1);
++            assert_eq!(executor.snapshot().unwrap(), before);
++            assert_eq!(executor.queued_task_events.len(), 1);
++            executor
++                .presentation
++                .as_mut()
++                .unwrap()
++                .retirements_mut()
++                .clear();
++        }
++        let mut output = RuntimeStepOutput::default();
++        assert!(resume_many(&mut executor, false, &mut output));
++        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
++        assert_eq!(executor.fiber.status, FiberStatus::Cancelled);
++        assert!(executor.queued_task_events.is_empty());
++        assert_retired(&executor, &token);
++        executor.snapshot().unwrap();
++        if !blocked {
++            roundtrip(executor);
++        }
++    }
++}
++
++#[test]
++fn genuine_program_child_await_many_cancellation_preserves_event_journal_and_bank_until_admitted() {
++    for blocked in [false, true] {
++        let mut executor = awaiting_many(true);
++        assert!(matches!(
++            executor.child_fibers[0].owner,
++            ProductChildFiberOwner::Program { .. }
++        ));
++        let token = install_resource(&mut executor, Some(0), blocked);
++        queue_cancellation(&mut executor, true);
++        if blocked {
++            let before = executor.snapshot().unwrap();
++            let mut output = RuntimeStepOutput::default();
++            assert!(!resume_many(&mut executor, true, &mut output));
++            assert_eq!(output.diagnostics.len(), 1);
++            assert_eq!(executor.snapshot().unwrap(), before);
++            assert_eq!(executor.queued_task_events.len(), 1);
++            executor
++                .presentation
++                .as_mut()
++                .unwrap()
++                .retirements_mut()
++                .clear();
++        }
++        let mut output = RuntimeStepOutput::default();
++        assert!(resume_many(&mut executor, true, &mut output));
++        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
++        assert_eq!(
++            executor.child_fibers[0].fiber.status,
++            FiberStatus::Cancelled
++        );
++        assert!(executor.queued_task_events.is_empty());
++        assert_retired(&executor, &token);
++        executor.snapshot().unwrap();
++        if !blocked {
++            roundtrip(executor);
++        }
++    }
++}
++
++fn fanout_fixture(
++    nested: bool,
++) -> (
++    AwbcProductStepExecutor,
++    crate::runtime_id::RuntimeFiberInstanceId,
++    [crate::task::TaskCorrelation; 2],
++) {
++    let bytes: &[u8] = if nested {
++        include_bytes!("fanout-need-cancellation.awbc")
++    } else {
++        include_bytes!("fanout-cancellation.awbc")
++    };
++    let program = AwbcProgram::decode_canonical(bytes, Default::default()).unwrap();
++    program
++        .verify(Default::default(), Default::default())
++        .unwrap();
++    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
++    for _ in 0..128 {
++        let output = executor.step(Default::default(), RuntimeStepOptions::default());
++        assert!(
++            output.output.diagnostics.is_empty(),
++            "{:?}",
++            output.output.diagnostics
++        );
++        assert!(
++            output.output.requests.tasks.is_empty(),
++            "LocalOnly Source never requires Host execution"
++        );
++        if let Some((controller, flights)) = executor.child_fibers.iter().find_map(|child| {
++            let FiberSuspensionReason::ProgramFanout(state) =
++                &child.fiber.suspension.as_ref()?.reason
++            else {
++                return None;
++            };
++            (state.in_flight.len() == 2).then(|| {
++                (
++                    child.fiber.instance,
++                    [
++                        state.in_flight[0].handle.correlation(),
++                        state.in_flight[1].handle.correlation(),
++                    ],
++                )
++            })
++        }) {
++            return (executor, controller, flights);
++        }
++    }
++    panic!("genuine decoded Source did not start both Fanout workers");
++}
++
++fn worker_index(
++    executor: &AwbcProductStepExecutor,
++    correlation: crate::task::TaskCorrelation,
++) -> usize {
++    executor.child_fibers.iter().position(|child| matches!(&child.owner,
++        ProductChildFiberOwner::Program { launch, .. } if launch.handle().correlation == correlation)).unwrap()
++}
++
++fn step_child_at(executor: &mut AwbcProductStepExecutor, index: usize) {
++    let child = executor.child_fibers.remove(index).unwrap();
++    executor.child_fibers.push_front(child);
++    let mut output = RuntimeStepOutput::default();
++    assert!(executor.step_next_child(
++        &mut output,
++        &mut crate::pure::VmRuntimePureCallBackend::default(),
++        &mut RuntimeStepInput::default(),
++        &mut Vec::new()
++    ));
++    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
++}
++
++fn cancel_worker(
++    executor: &mut AwbcProductStepExecutor,
++    correlation: crate::task::TaskCorrelation,
++) {
++    let index = worker_index(executor, correlation);
++    let output = executor
++        .program
++        .cancel_fiber(
++            &mut executor.child_fibers[index].fiber,
++            &mut executor.presentation,
++        )
++        .unwrap();
++    assert!(output.observations.is_empty());
++    step_child_at(executor, index);
++    assert!(matches!(
++        executor
++            .need_producers
++            .launch_for_correlation(&correlation)
++            .unwrap()
++            .state(),
++        crate::task::RuntimeNeedProducerState::Cancelled
++    ));
++}
++
++fn install_bool_resource(
++    executor: &mut AwbcProductStepExecutor,
++    index: usize,
++    blocked: bool,
++) -> RuntimePresentationHandleToken {
++    let expected = executor
++        .program
++        .runtime_types
++        .iter()
++        .find(|ty| matches!(ty.shape(), AwbcRuntimeTypeShape::Bool))
++        .unwrap()
++        .semantic_identity();
++    install_resource_values(
++        executor,
++        Some(index),
++        blocked,
++        expected,
++        RuntimeValue::Bool(true),
++        RuntimeValue::Bool(false),
++    )
++}
++
++fn assert_bool_retired(executor: &AwbcProductStepExecutor, token: &RuntimePresentationHandleToken) {
++    let retired = executor.presentation.as_ref().unwrap().retirements();
++    assert_eq!(retired.len(), 1);
++    assert_eq!(&retired[0].token, token);
++    assert_eq!(retired[0].body.value.0, RuntimeValue::Bool(true));
++}
++
++#[test]
++fn fanout_cancellation_preflights_the_installed_owner_before_an_earlier_ready_value_moves() {
++    for blocked in [false, true] {
++        let (mut executor, controller, flights) = fanout_fixture(false);
++        for _ in 0..64 {
++            if matches!(
++                executor
++                    .need_producers
++                    .launch_for_correlation(&flights[0])
++                    .unwrap()
++                    .state(),
++                crate::task::RuntimeNeedProducerState::Ready(_)
++            ) {
++                break;
++            }
++            let index = worker_index(&executor, flights[0]);
++            step_child_at(&mut executor, index);
++        }
++        assert!(matches!(
++            executor
++                .need_producers
++                .launch_for_correlation(&flights[0])
++                .unwrap()
++                .state(),
++            crate::task::RuntimeNeedProducerState::Ready(_)
++        ));
++        cancel_worker(&mut executor, flights[1]);
++        let index = executor
++            .child_fibers
++            .iter()
++            .position(|child| child.fiber.instance == controller)
++            .unwrap();
++        let token = install_bool_resource(&mut executor, index, blocked);
++        let before = executor.snapshot().unwrap();
++        let mut child = executor.child_fibers.remove(index).unwrap();
++        let resume = child
++            .fiber
++            .suspension
++            .as_ref()
++            .unwrap()
++            .declared_resume()
++            .unwrap();
++        let mut journal = DeferredChildResumeJournal::capture(&executor);
++        let mut output = RuntimeStepOutput::default();
++        if blocked {
++            let error = executor
++                .resume_program_fanout_for_child(&mut child, resume, &mut output, &mut journal)
++                .unwrap_err();
++            assert!(matches!(
++                error,
++                ProductStepError::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
++                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(
++                        crate::presentation::RuntimePresentationError::RetirementCapacity
++                    )
++                ))
++            ));
++            assert!(!journal.owner_value_transferred);
++            assert!(matches!(
++                executor
++                    .need_producers
++                    .launch_for_correlation(&flights[0])
++                    .unwrap()
++                    .state(),
++                crate::task::RuntimeNeedProducerState::Ready(_)
++            ));
++            executor.child_fibers.insert(index, child);
++            assert_eq!(executor.snapshot().unwrap(), before);
++            executor
++                .presentation
++                .as_mut()
++                .unwrap()
++                .retirements_mut()
++                .clear();
++            child = executor.child_fibers.remove(index).unwrap();
++        }
++        assert!(
++            executor
++                .resume_program_fanout_for_child(&mut child, resume, &mut output, &mut journal)
++                .unwrap()
++        );
++        assert_eq!(child.fiber.status, FiberStatus::Cancelled);
++        assert!(journal.owner_value_transferred);
++        assert!(matches!(
++            executor
++                .need_producers
++                .launch_for_correlation(&flights[0])
++                .unwrap()
++                .state(),
++            crate::task::RuntimeNeedProducerState::ReadyTransferred
++        ));
++        executor.child_fibers.insert(index, child);
++        journal.commit(&mut executor, output, &mut RuntimeStepOutput::default());
++        assert_bool_retired(&executor, &token);
++        executor.snapshot().unwrap();
++        if !blocked {
++            roundtrip(executor);
++        }
++    }
++}
++
++#[test]
++fn genuine_nested_program_need_cancellation_preserves_its_publication_until_scope_retirement_is_admitted()
++ {
++    for blocked in [false, true] {
++        let (mut executor, _, flights) = fanout_fixture(true);
++        let mut awaited = None;
++        for _ in 0..64 {
++            let index = worker_index(&executor, flights[0]);
++            if let Some(FiberSuspensionReason::Await {
++                target: crate::awbc::fiber::FiberAwaitTarget::Need { need, .. },
++                ..
++            }) = executor.child_fibers[index]
++                .fiber
++                .suspension
++                .as_ref()
++                .map(|suspension| &suspension.reason)
++            {
++                awaited = Some(need.correlation());
++                break;
++            }
++            step_child_at(&mut executor, index);
++        }
++        cancel_worker(
++            &mut executor,
++            awaited.expect("real Source worker awaits its actual nested Program"),
++        );
++        let index = worker_index(&executor, flights[0]);
++        let token = install_bool_resource(&mut executor, index, blocked);
++        let before = executor.snapshot().unwrap();
++        let mut journal = DeferredChildResumeJournal::capture(&executor);
++        let mut child = executor.child_fibers.remove(index).unwrap();
++        let mut output = RuntimeStepOutput::default();
++        let mut backend = crate::pure::VmRuntimePureCallBackend::default();
++        if blocked {
++            assert!(
++                !executor
++                    .resume_deferred_child_suspension(
++                        &mut child,
++                        &mut Vec::new(),
++                        &mut Vec::new(),
++                        &mut output,
++                        &mut journal,
++                        &mut backend
++                    )
++                    .unwrap()
++            );
++            assert_eq!(output.diagnostics.len(), 1);
++            assert!(!journal.owner_value_transferred);
++            executor.child_fibers.insert(index, child);
++            assert_eq!(executor.snapshot().unwrap(), before);
++            executor
++                .presentation
++                .as_mut()
++                .unwrap()
++                .retirements_mut()
++                .clear();
++            child = executor.child_fibers.remove(index).unwrap();
++            output = RuntimeStepOutput::default();
++        }
++        assert!(
++            executor
++                .resume_deferred_child_suspension(
++                    &mut child,
++                    &mut Vec::new(),
++                    &mut Vec::new(),
++                    &mut output,
++                    &mut journal,
++                    &mut backend
++                )
++                .unwrap()
++        );
++        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
++        assert_eq!(child.fiber.status, FiberStatus::Cancelled);
++        executor.child_fibers.insert(index, child);
++        journal.commit(&mut executor, output, &mut RuntimeStepOutput::default());
++        assert_bool_retired(&executor, &token);
++        executor.snapshot().unwrap();
++        if !blocked {
++            roundtrip(executor);
++        }
++    }
++}
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-cancellation.awbc b/crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-cancellation.awbc
+new file mode 100644
+index 0000000000000000000000000000000000000000..a00ecdfb3df92e0634808b0208c0de5c79cd6123
+GIT binary patch
+literal 5330
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc b/crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc
+new file mode 100644
+index 0000000000000000000000000000000000000000..96521395ca793eebbabe994e295e023ef52e9143
+GIT binary patch
+literal 6262
+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
+CG`c7N
+
+literal 0
+HcmV?d00001
+

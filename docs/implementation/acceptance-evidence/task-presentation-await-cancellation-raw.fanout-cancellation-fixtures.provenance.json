@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "sourceRestored": true,
+  "originalSourceSha256": "4c871df09228ef25019b39ee473513a04a6219397a22b7171aff054ff6aaed92",
+  "source": "crates/arcweft-runtime-plan/src/awbc_lower/tests/program_fanout.rs",
+  "fixtures": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-cancellation.awbc",
+      "bytes": 5330,
+      "sha256": "7f42604e30c09a15e5752f75933e481af56dee7927a4dbea0c8b8dd6c664dd2a"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc",
+      "bytes": 6262,
+      "sha256": "2ea2b86f3e18b365d9be3c132c3784abd4162fc9a5f6c2c46d4e3a4fbe25450d"
+    }
+  ],
+  "at": "2026-10-31T11:41:24.2981024Z"
+}

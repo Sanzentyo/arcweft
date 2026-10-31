@@ -1,0 +1,6 @@
+crates/arcweft-core/src/awbc/product_step/suspension.rs
+crates/arcweft-core/src/awbc/product_step/program_fanout.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-cancellation.awbc
+crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc

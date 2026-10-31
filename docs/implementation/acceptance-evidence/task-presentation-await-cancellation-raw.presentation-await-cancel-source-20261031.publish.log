@@ -1,0 +1,10 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 5f861e4d3] feat(core): preflight Need and Fanout resource cancellation before publication transfer
+ 6 files changed, 806 insertions(+), 49 deletions(-)
+ create mode 100644 crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs
+ create mode 100644 crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-cancellation.awbc
+ create mode 100644 crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc
+To https://github.com/Sanzentyo/arcweft.git
+   68e150db5..5f861e4d3  HEAD -> main
+{"commit":"5f861e4d3088c3b2563cec927885ac489b37a123","parent":"68e150db5ae521d7bf316f60c88e9b87d982f0bb","tree":"30980dd371682e03891d05f4c2569332de9971f3","paths":6,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"913c8f4a097698eb6cfbeea02d37c159694eea4b85b9cf7810d981cdb0963cf4","indexEmpty":true}

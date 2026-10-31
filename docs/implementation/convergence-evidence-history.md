@@ -13557,3 +13557,19 @@ owner6は2173／2173 PASS・除外0。次に、同じ本物の発行済み子2�
 最終owner7と同じ4018入力でCore全target／全feature Clippy・default全target check・doctest78／78・明示31 Rust pathのfmt・構造gateが各終了0。source／binary／catalog差分0。最終構造は97 package・3256 files・3126 Rust files・1770990 physical Rust LOC、review trigger382・blocking0。owner6に対する先行qualityの1770982 LOCとその全結果は別入力の履歴として保持し、最終runへ件数を合算しない。warning・初期失敗・型付き拒否・full SHA・原本bytesは[各入力の全検証と公開照合](acceptance-evidence/task-presentation-line-cancellation-owner-validation.json)へ保持する。typed Bool bodyのfixtureをSource ViewValue／mountやdriverの受入へ拡張しない。
 
 Supersedes: 取消全体を未接続とした先行の現状記述は、今回のprepared line-task CancelAndJoinを除いて、Await／Need・Program Fanout由来の取消へ範囲を絞る。frame return／select／goto／trapの回収・escaping handle所有権移動、Native実借用parentのadmission、Source11 callable・mount・6 method・driver、active-bank置換・画像parity、最終逆依存／target matrixは別の未達条件として残す。既受入の全Product checkpoint・保存／custody基盤・lexical exit・Generic Matchは未完了へ戻さない。現状一覧は一か所とし、公開済み検証記録と履歴prefixは書き換えない。
+
+## Need／AwaitMany／Program Fanout取消の元bank接続 — 2026-10-31
+
+Source 5f861e4d3088c3b2563cec927885ac489b37a123、parent 68e150db5ae521d7bf316f60c88e9b87d982f0bb、tree 30980dd371682e03891d05f4c2569332de9971f3、6 path、patch SHA256 913c8f4a097698eb6cfbeea02d37c159694eea4b85b9cf7810d981cdb0963cf4を通常pushし、remote／全blob差分0、index empty、元14 tracked／6 untracked WIP保持を確認した。実装・対象6 testと2 canonical fixtureを先に公開し、以下はその最終入力の終端結果である。
+
+main／実子の単独Needは、実scopeと元programの回収preflight後にNeed publication cursorを受理する。main／実子AwaitManyは、検査と消費で同じ最初の対象event選択を使い、拒否時は抽出したstateを元suspensionへ戻してeventをqueueへ残す。Program Fanoutは全in-flight launchをinstalled stateから借用して取消を検査し、回収不可なら先行Readyを取らずに返す。成功時は従来の処理順を維持して、同じadmitted programとbank ownerから実fiberを取消へ遷移させる。Fanout取消のVM errorをInternal文字列へ戻していた変換も削除した。
+
+新testのprivate field参照と存在しないAwaitNeed variantは初期終了101で修復した。続く限定4件は3 PASS／1 FAILで、実threaded AwaitMany fixtureが要求するResult契約へ揃え、元のassertionを緩和していない。Fanout用fixture生成の初回は既存flow executableの重複登録で1 FAIL、修復後のplain生成は1 PASS。nested生成の存在しないproducer family名は終了101で、実際のStructuredTaskPlan familyへ揃えた後は1 PASS。各生成runの他132件は選択外であり、Core runへ加算しない。一時的なlowerer test変更は、Git基点と同じ元bytes／SHA256へ復元した。Cargoの生成物を移動・コピーせず、現在のlowererから新しいcanonical test dataを直接生成し、verify・encode/decode一致・ABI 1を確認した。
+
+plain fixtureは5330 bytes・SHA256 7f42604e30c09a15e5752f75933e481af56dee7927a4dbea0c8b8dd6c664dd2a、nested fixtureは6262 bytes・SHA256 2ea2b86f3e18b365d9be3c132c3784abd4162fc9a5f6c2c46d4e3a4fbe25450d。実workerを実行して一方のReadyを発行し、他方の実fiber取消と通常のProgram retirementからCancelledを発行する。controllerやreceipt・結果・scopeを偽造して代用しない。nested fixtureは実子が別の本物のProgram Needをawaitする状態を作る。
+
+対象6件は6 PASS／2120選択外。単独Need、main／実子AwaitMany、実子NeedとFanoutで、default policyの公開save／restore完全一致と、handles=1／scopes=8の容量拒否・完全snapshot保持・同じ上限／入力での再試行を確認した。Fanoutの拒否前後は先行ReadyがReadyのままでjournalのowner transferもない。許可後は元のReady転送と実scope bodyの一回の回収が成立する。String／Boolのbodyは資源custodyのfixtureであり、Source ViewValueやmount／driverの受入へ広げない。
+
+最終Core ownerは2179／2179 PASS・0 skipped・終了0。追加testと2 fixtureを含む4021入力／binary／catalog差分0。同じ入力のCore全target／全feature Clippy・default全target check・doctest78／78・明示32 Rust pathのfmt・構造gateは各終了0。構造は97 package・3257 files・3127 Rust files・1771747 physical Rust LOC、review trigger382・blocking0。warning・初期失敗・fixture生成元・full SHA・原本bytesは[検証・生成・公開照合](acceptance-evidence/task-presentation-await-cancellation-owner-validation.json)に保持する。限定run・生成run・先行2173件の受入を最終2179件へ合算せず、workspace／全逆依存の最終受入とも同一視しない。
+
+Supersedes: 現状一覧の「Await／Need・Program Fanout由来の取消が未接続」は、この5経路の実装と実行結果を根拠に削除する。frame return／select／goto／trapの回収・escaping handle所有権移動、Native実借用parentのadmission、Source11 callable・mount・6 method・driver、active-bank置換・画像parity、最終逆依存／target matrixは別の未達条件である。全Product checkpoint・保存／custody基盤・lexical exit・line-task取消・Generic Matchの既受入を戻さず、現状一覧は一か所を維持する。公開済み履歴prefixと検証原本は書き換えない。

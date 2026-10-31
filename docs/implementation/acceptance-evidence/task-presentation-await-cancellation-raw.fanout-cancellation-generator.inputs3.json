@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "source": "crates/arcweft-runtime-plan/src/awbc_lower/tests/program_fanout.rs",
+  "originalSha256": "4c871df09228ef25019b39ee473513a04a6219397a22b7171aff054ff6aaed92",
+  "temporarySha256": "05f84b73ad0d0df73e34008e51165e2fdd27ef848e470fa79e4062ca64690b35",
+  "originalBytes": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/fanout-cancellation-generator.original-source.rs",
+  "fixture": "crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc",
+  "command": "cargo nextest run -p arcweft-runtime-plan --all-features --locked --lib -E test(generate_presentation_nested_need_fixture) --no-tests fail --no-fail-fast --status-level all --final-status-level all"
+}

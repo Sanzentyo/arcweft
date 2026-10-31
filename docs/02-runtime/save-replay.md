@@ -310,6 +310,14 @@ line-task の `CancelAndJoin` は、command batch の準備で全対象子の実
 既存 action は、その commit queue の順序を保つ。body は元の bank 集合に残り、回収待ちの
 保持値と token を公開 save／restore へ含める。
 
+単独 Need と AwaitMany の取消は、元の program と実 fiber の scope contour を検査してから、
+Need publication cursor の更新や対象 task event の queue からの取り出しへ進む。検査に
+失敗した場合は、抽出中の AwaitMany state を同じ suspension へ戻し、publication と event を
+次の試行へ保持する。準備する event と消費する event は同じ選択規則を使う。
+Program Fanout は全 in-flight launch を保持中の state から借用して取消を検査し、後続の
+取消を回収できない場合に、先行する Ready 値を転送しない。検査後は元の処理順を保ち、
+scope の body を同じ bank 集合へ回収してから fiber を取消へ遷移させる。
+
 AWBC fiberのversion 1保存grammarは実行bankを必須fieldとして持つ。Root入口はRoot、
 Dialogue入口・line・callbackは完全なactivationのbankを選び、Program子fiberと継続は
 生成元のbankを継承する。Productのmetadata admissionは、Root・子fiber・Dialogue内の

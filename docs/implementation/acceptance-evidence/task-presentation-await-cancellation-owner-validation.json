@@ -1,0 +1,661 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T11:51:06.4433186Z",
+  "inspectedMain": "5f861e4d3088c3b2563cec927885ac489b37a123",
+  "scope": "Presentation resource retirement in main/deferred Need, main/deferred AwaitMany and genuine Program Fanout cancellation, before publication cursor updates, event consumption or earlier Ready transfer.",
+  "sourcePublication": {
+    "version": 1,
+    "commit": "5f861e4d3088c3b2563cec927885ac489b37a123",
+    "parent": "68e150db5ae521d7bf316f60c88e9b87d982f0bb",
+    "tree": "30980dd371682e03891d05f4c2569332de9971f3",
+    "remote": "5f861e4d3088c3b2563cec927885ac489b37a123",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+        "blob": "af04305f1d8d83890da97a4610a9ff525c27f2c9"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "blob": "57a558b5a3c573203e26307320ea57828cb7bf63"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "blob": "e82c74f223c5a2bb99c4e4592933b7819e7f4611"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+        "blob": "e967e454fea85dca78dd78f14ee3adf310a5e69f"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-cancellation.awbc",
+        "blob": "a00ecdfb3df92e0634808b0208c0de5c79cd6123"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc",
+        "blob": "96521395ca793eebbabe994e295e023ef52e9143"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "913c8f4a097698eb6cfbeea02d37c159694eea4b85b9cf7810d981cdb0963cf4",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T11:46:34.5612445Z"
+  },
+  "workingTree": {
+    "heldTracked": 14,
+    "heldUntracked": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "coreDirty": false
+  },
+  "owner": {
+    "version": 1,
+    "base": "68e150db5ae521d7bf316f60c88e9b87d982f0bb",
+    "run": "presentation-await-cancel-20261031.owner4.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  81.483s] 2179 tests run: 2179 passed (1 slow), 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2179,
+    "passed": 2179,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4021,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T11:48:41.8387296Z"
+  },
+  "ownerBinaryDrift": 0,
+  "ownerQualitySourceDrift": 0,
+  "quality": [
+    {
+      "kind": "clippy",
+      "receipt": {
+        "version": 1,
+        "base": "5f861e4d3088c3b2563cec927885ac489b37a123",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4021,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:49:58.4027137Z",
+        "finishedAt": "2026-10-31T11:50:21.8466621Z"
+      }
+    },
+    {
+      "kind": "default-check",
+      "receipt": {
+        "version": 1,
+        "base": "5f861e4d3088c3b2563cec927885ac489b37a123",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4021,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:50:22.3158597Z",
+        "finishedAt": "2026-10-31T11:50:39.3148503Z"
+      }
+    },
+    {
+      "kind": "doctest",
+      "receipt": {
+        "version": 1,
+        "base": "5f861e4d3088c3b2563cec927885ac489b37a123",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4021,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:50:39.7660251Z",
+        "finishedAt": "2026-10-31T11:50:49.1733808Z"
+      }
+    },
+    {
+      "kind": "structure",
+      "receipt": {
+        "version": 1,
+        "base": "5f861e4d3088c3b2563cec927885ac489b37a123",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T114955972.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4021,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:50:49.6434982Z",
+        "finishedAt": "2026-10-31T11:50:53.5878918Z"
+      }
+    },
+    {
+      "kind": "fmt",
+      "receipt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/program.rs",
+          "crates/arcweft-core/src/awbc/product_step/root.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/engine.rs",
+          "crates/arcweft-core/src/line_task.rs",
+          "crates/arcweft-core/src/line_task/activation.rs",
+          "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "crates/arcweft-core/src/line_task/handle.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4021,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "doctest": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0
+  },
+  "structure": {
+    "packages": 97,
+    "files": 3257,
+    "rustFiles": 3127,
+    "rustPhysicalLoc": 1771747,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "disposition": "The admitted program and existing bank aggregate own cancellation. The executor owns the single queued-event selection rule, shared by preflight and consumption. No wire grammar, fake scope, duplicate runtime owner, or upward Core dependency was added. Canonical fixture data is generated through the existing lowerer, not copied from Cargo build caches."
+  },
+  "accepted": [
+    "Main and actual child Need cancellation preflight original scope grants and aggregate retirement capacity before accepting the Need publication cursor. Refusal retains the complete snapshot and permits the same publication to retry.",
+    "Main and actual Program-child AwaitMany use the same event selection rule for admission and removal. Refusal reinstalls the extracted state, retains the queued event and leaves the deferred journal without consumed events.",
+    "Program Fanout inspects the complete installed launch inventory before extracting controller state. With an actual earlier Ready worker and later Cancelled worker, capacity refusal preserves the Ready payload and complete snapshot without a journal owner transfer.",
+    "After capacity is available under the unchanged handles=1/scopes=8 policy, cancellation retires the actual current body/token once, accepts the same publication/event and transitions the actual fiber to Cancelled.",
+    "All five paths execute genuine suspensions. Fanout and nested Program Need use current lowerer-generated canonical AWBC, actual worker execution and actual Program retirement; no fabricated controller, receipt, Ready payload or scope grant substitutes for those owners.",
+    "Successful default-policy scenarios round-trip the complete public save snapshot. Scalar String/Bool resource bodies demonstrate custody, not Source ViewValue construction or driver ABI."
+  ],
+  "fixtures": {
+    "version": 1,
+    "sourceRestored": true,
+    "originalSourceSha256": "4c871df09228ef25019b39ee473513a04a6219397a22b7171aff054ff6aaed92",
+    "source": "crates/arcweft-runtime-plan/src/awbc_lower/tests/program_fanout.rs",
+    "fixtures": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-cancellation.awbc",
+        "bytes": 5330,
+        "sha256": "7f42604e30c09a15e5752f75933e481af56dee7927a4dbea0c8b8dd6c664dd2a"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc",
+        "bytes": 6262,
+        "sha256": "2ea2b86f3e18b365d9be3c132c3784abd4162fc9a5f6c2c46d4e3a4fbe25450d"
+      }
+    ],
+    "at": "2026-10-31T11:41:24.2981024Z"
+  },
+  "attempts": [
+    {
+      "attempt": "focus1",
+      "exitCode": 101,
+      "reason": "New test used private runtime-type fields and a nonexistent AwaitNeed variant; changed to public accessors and the actual Await/Need grammar."
+    },
+    {
+      "attempt": "focus2",
+      "exitCode": 100,
+      "passed": 3,
+      "failed": 1,
+      "excluded": 2120,
+      "reason": "Existing genuine threaded AwaitMany fixture requires Result output; use that existing contract without relaxing its assertion."
+    },
+    {
+      "attempt": "generator1",
+      "exitCode": 100,
+      "passed": 0,
+      "failed": 1,
+      "excluded": 132,
+      "reason": "Fixture already registered its flow executable. Removed only the duplicate temporary registration."
+    },
+    {
+      "attempt": "generator2",
+      "exitCode": 0,
+      "passed": 1,
+      "failed": 0,
+      "excluded": 132,
+      "reason": "Generated plain Fanout canonical AWBC, verified decode equality and ABI 1."
+    },
+    {
+      "attempt": "generator3",
+      "exitCode": 101,
+      "reason": "Temporary nested fixture named nonexistent producer family Program; use actual StructuredTaskPlan family."
+    },
+    {
+      "attempt": "generator4",
+      "exitCode": 0,
+      "passed": 1,
+      "failed": 0,
+      "excluded": 132,
+      "reason": "Generated genuine nested Program Need fixture; verified canonical decode equality and ABI 1, then restored lowerer test source bytes."
+    },
+    {
+      "attempt": "focus3",
+      "exitCode": 0,
+      "passed": 6,
+      "failed": 0,
+      "excluded": 2120
+    },
+    {
+      "attempt": "owner4",
+      "exitCode": 0,
+      "passed": 2179,
+      "failed": 0,
+      "excluded": 0,
+      "sourceInputs": 4021,
+      "sourceDrift": 0
+    }
+  ],
+  "warnings": "Compiler and Clippy warnings are retained in raw logs. Successful exit is not a zero-warning claim.",
+  "priorAcceptance": [
+    "task-presentation-line-cancellation-owner-validation.json",
+    "task-presentation-lexical-vm-owner-validation.json",
+    "task-product-execution-checkpoint-owner-validation.json"
+  ],
+  "remaining": [
+    "Frame return/select/goto/trap resource retirement and escaping-handle ownership transfer",
+    "Native retained contour including the actual borrowed parent",
+    "Source ViewValue construction and eleven callables/mount/six methods/lowering/driver",
+    "Active-bank replacement and Native/Web image parity",
+    "Final reverse-dependency, feature/target and workspace acceptance matrix"
+  ],
+  "acceptedFeaturesRetained": "Generic Match, complete Product checkpoints, lexical exits and prepared line-task cancellation remain accepted. This cut does not reopen them because the whole goal is unfinished.",
+  "artifacts": [
+    {
+      "path": "task-presentation-await-cancellation-raw.run-product-execution-quality.ps1",
+      "source": "run-product-execution-quality.ps1",
+      "bytes": 3062,
+      "sha256": "d1ca633b5d3bf8ecd4ba2fdeeafd1cfbfd689376fa4aa6aa1918834f2a0b05ca"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.run-presentation-await-cancel-20261031.owner4.ps1",
+      "source": "run-presentation-await-cancel-20261031.owner4.ps1",
+      "bytes": 5503,
+      "sha256": "6c7d2721c9e49869469457114a988abf05bbd1b31c193e8394592bf0bb1f68f8"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-fixtures.provenance.json",
+      "source": "fanout-cancellation-fixtures.provenance.json",
+      "bytes": 745,
+      "sha256": "f86ed7329b689039e32b2c20e8f5c5cf9c8b05ecf8c0cdd1f1481be7baa0056d"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator2.source.rs",
+      "source": "fanout-cancellation-generator2.source.rs",
+      "bytes": 25769,
+      "sha256": "1d07e865152a41a8311c317efe0c9508ae56de858490823adc25eb4cd17eec20"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator4.source.rs",
+      "source": "fanout-cancellation-generator4.source.rs",
+      "bytes": 27273,
+      "sha256": "59b1d1c88e7248a6bc1234cf5c9865330f383c0a011cfacd61d30ded87bd4499"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-source-20261031.owned.txt",
+      "source": "presentation-await-cancel-source-20261031.owned.txt",
+      "bytes": 447,
+      "sha256": "122a0ec7703b12b03eab409b87e1d5c33a1ce6df5cb9e249472ac8f29f55e97d"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-source-20261031.prepared.json",
+      "source": "presentation-await-cancel-source-20261031.prepared.json",
+      "bytes": 2233,
+      "sha256": "323300c38cc41f05b15aa8631d40a4575a22b93655b47899194207cc102b6c8f"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-source-20261031.verified.json",
+      "source": "presentation-await-cancel-source-20261031.verified.json",
+      "bytes": 1538,
+      "sha256": "adf2868e9d448741f47d30cd0721e3bdab150b3aa5192cd08f53bb45c015875a"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-source-20261031.reviewed.patch",
+      "source": "presentation-await-cancel-source-20261031.reviewed.patch",
+      "bytes": 44431,
+      "sha256": "913c8f4a097698eb6cfbeea02d37c159694eea4b85b9cf7810d981cdb0963cf4"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-source-20261031.publish.log",
+      "source": "presentation-await-cancel-source-20261031.publish.log",
+      "bytes": 978,
+      "sha256": "7e676e178c0dadf6a23b6d6dde9e36c14865263306aa96abc7089732a92e71f5"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.focus1.json",
+      "source": "presentation-await-cancel-20261031.focus1.json",
+      "bytes": 265,
+      "sha256": "61b978d8f6fbf84e68f9f69fa0139e24f015bee18dd772ad00b63c51dfed244d"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.focus1.log",
+      "source": "presentation-await-cancel-20261031.focus1.log",
+      "bytes": 12254,
+      "sha256": "fbe9cce4930cccdc1e53b977f8486367e08a9061d6c71faa88270783e87989c5"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.focus2.json",
+      "source": "presentation-await-cancel-20261031.focus2.json",
+      "bytes": 265,
+      "sha256": "9fb51f78741cc12b425e753bb0dd0279974d944dd934dcc5bd56591416bdfe29"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.focus2.log",
+      "source": "presentation-await-cancel-20261031.focus2.log",
+      "bytes": 681643,
+      "sha256": "e808bdddd62340f4d39f2474f81af81e04d4a6f2c77a9b2fd40212e7e0205a43"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.focus3.json",
+      "source": "presentation-await-cancel-20261031.focus3.json",
+      "bytes": 263,
+      "sha256": "5be07b6b191246897a45d74beaa2589f82ea92a7aa468a6684c19f0e9c77b849"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.focus3.log",
+      "source": "presentation-await-cancel-20261031.focus3.log",
+      "bytes": 681763,
+      "sha256": "50118355481bb20bd2d04df88242b9c28bd42c212a5db1f8b45ae89ea147527d"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator.log",
+      "source": "fanout-cancellation-generator.log",
+      "bytes": 126467,
+      "sha256": "44fd54e15fcd8fa10ab18c2916a08a8604b0bf1d6e848eef2e5153ddcc52a184"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator.result.json",
+      "source": "fanout-cancellation-generator.result.json",
+      "bytes": 66,
+      "sha256": "65a516d78e6b91eb60f553a5f013b2997db9c275b1d92f08906797fad3a78199"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator.inputs.json",
+      "source": "fanout-cancellation-generator.inputs.json",
+      "bytes": 757,
+      "sha256": "e3e99945f298252db53615b639831df37d53a54d63f239716be802e27a7403e8"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator2.log",
+      "source": "fanout-cancellation-generator2.log",
+      "bytes": 125165,
+      "sha256": "4670800ac0f252d078a85bc68b274f9b12ef21f85270c93a3f6ad65ac119b3f0"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator2.result.json",
+      "source": "fanout-cancellation-generator2.result.json",
+      "bytes": 64,
+      "sha256": "ff717db17d473cd3aa16fc941cbd0bf79ad799a5ae2d6804680abfe31e74c3af"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator.inputs2.json",
+      "source": "fanout-cancellation-generator.inputs2.json",
+      "bytes": 757,
+      "sha256": "73b24bdd86fc69040e724ed84eef544bb84c1c121ca2b73550bb5c510f3b77cd"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator3.log",
+      "source": "fanout-cancellation-generator3.log",
+      "bytes": 85891,
+      "sha256": "86f33eb1e86cce550b5c3725f5125cd77a2806b86eceaa66e41264f7b96a4ae4"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator3.result.json",
+      "source": "fanout-cancellation-generator3.result.json",
+      "bytes": 66,
+      "sha256": "a20a0588b38be523a4cc47c2f872784f65f30d866a6af5aaf8ab97117cff9e9c"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator.inputs3.json",
+      "source": "fanout-cancellation-generator.inputs3.json",
+      "bytes": 754,
+      "sha256": "9d5ef0ff85f40209daf28839b20feafba52e1ff4a229f6547fb9f13f3dafc339"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator4.log",
+      "source": "fanout-cancellation-generator4.log",
+      "bytes": 125150,
+      "sha256": "5c2ce7b70eac57ca6d163ccf81c41181fcbc31c69983e3ad64736e4077f4ab01"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator4.result.json",
+      "source": "fanout-cancellation-generator4.result.json",
+      "bytes": 64,
+      "sha256": "8f28085646be2f7044db235344645a10d93c7a5b93d5c84853919bbcb0e0b251"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.fanout-cancellation-generator.inputs4.json",
+      "source": "fanout-cancellation-generator.inputs4.json",
+      "bytes": 754,
+      "sha256": "544b3e1342ca2199485ee3170b6323f565bdef1372b1d809d045c13049dc94c7"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.owner4.source-freeze.json",
+      "source": "presentation-await-cancel-20261031.owner4.source-freeze.json",
+      "bytes": 785937,
+      "sha256": "8ba33b250588a5ea787f8474056336cd1d2943edf59608a6057dc3844ba90999"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.owner4.binaries-before.json",
+      "source": "presentation-await-cancel-20261031.owner4.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "1542a7b403f7532cb4515c90d5b1fa79dbd73d53c02f59e2c1613af7d27eea15"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.owner4.catalog.inventory.json",
+      "source": "presentation-await-cancel-20261031.owner4.catalog.inventory.json",
+      "bytes": 551946,
+      "sha256": "470b674ffbc4abbc4fcbe4127b9192f262011638f5dfa232a8fe189d9e2b3069"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.owner4.catalog.json",
+      "source": "presentation-await-cancel-20261031.owner4.catalog.json",
+      "bytes": 494,
+      "sha256": "5366e2099605d85f35d298110d923240200e7f3c3fc14b9e2c6115b9b160e511"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.owner4.catalog.log",
+      "source": "presentation-await-cancel-20261031.owner4.catalog.log",
+      "bytes": 460925,
+      "sha256": "b312902fd3d661b083646b77f8ca2ece0f658b962c702f416757721d05dea7d9"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.owner4.runtime.json",
+      "source": "presentation-await-cancel-20261031.owner4.runtime.json",
+      "bytes": 586,
+      "sha256": "5cff6593bfe16b240408f03e96f4b45a531b81a2d759321620c2ffdee0111292"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.owner4.runtime.log",
+      "source": "presentation-await-cancel-20261031.owner4.runtime.log",
+      "bytes": 746488,
+      "sha256": "ecf5d32e0a7febe6d800490d4e6875a3626a45a3e4f32de16cbd933639c688e1"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.presentation-await-cancel-20261031.owner4.runtime.terminal-audit.json",
+      "source": "presentation-await-cancel-20261031.owner4.runtime.terminal-audit.json",
+      "bytes": 639,
+      "sha256": "cea8636a7a4500dc19c8aa17d452d23544c6b7fcb6ab28faf5a025541a8eb046"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.source-freeze.json",
+      "source": "product-execution-quality-20261031T114955972.source-freeze.json",
+      "bytes": 785981,
+      "sha256": "0f9f069e8701f62e8655a342f2be9f862175b1ebd6db7ffc19c7623d69f6bdee"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.clippy.json",
+      "source": "product-execution-quality-20261031T114955972.clippy.json",
+      "bytes": 368,
+      "sha256": "be2cac0b4ca9befc8dfd0f7b21254fcb244fcdb27ab54d07ef4abe2d0dac8615"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.clippy.log",
+      "source": "product-execution-quality-20261031T114955972.clippy.log",
+      "bytes": 4458735,
+      "sha256": "d5151248f78645b8ba94c0c2ba351bf1e826559bef873211aacdc3fe6b668696"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.default-check.json",
+      "source": "product-execution-quality-20261031T114955972.default-check.json",
+      "bytes": 344,
+      "sha256": "5d1d18c79f9d7c2a08e96bda66a38e7d6b43651c03976328d8ea0bb183c94dfb"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.default-check.log",
+      "source": "product-execution-quality-20261031T114955972.default-check.log",
+      "bytes": 82490,
+      "sha256": "4b4813170883126c308e8c062140f575fb341c23d65158718a7ae2cff95ed860"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.doctest.json",
+      "source": "product-execution-quality-20261031T114955972.doctest.json",
+      "bytes": 358,
+      "sha256": "61a65babc13f1242b71807711dde20913bbe64ced033d27e6cf8ebfde1a6fa25"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.doctest.log",
+      "source": "product-execution-quality-20261031T114955972.doctest.log",
+      "bytes": 81640,
+      "sha256": "5a73b3084a22b4659fb5787928904c300bbc37a0b0aaa176c835835df3e51f02"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.structure.json",
+      "source": "product-execution-quality-20261031T114955972.structure.json",
+      "bytes": 539,
+      "sha256": "2dceea5e9db300d4b3fd0f3844e7824bf94e1984f457f72123b022c403e06a14"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.structure.log",
+      "source": "product-execution-quality-20261031T114955972.structure.log",
+      "bytes": 65048,
+      "sha256": "59dce82ea355be161962c35986a74b0beaa5545e398e6b88937f5b802a2ebd98"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.fmt.json",
+      "source": "product-execution-quality-20261031T114955972.fmt.json",
+      "bytes": 2082,
+      "sha256": "626ad9ccbe4ca49907f94ad13d5240ec60d65e4055471a7fb9a42ac942b0a181"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.fmt.log",
+      "source": "product-execution-quality-20261031T114955972.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.structure-report.dependency_edges.csv",
+      "source": "product-execution-quality-20261031T114955972.structure-report/dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.structure-report.file_metrics.csv",
+      "source": "product-execution-quality-20261031T114955972.structure-report/file_metrics.csv",
+      "bytes": 329878,
+      "sha256": "9c72f14a7d44ef86146cd4b1e7712a0cd766af855f1ae9eb1a7377e12e29ec53"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.structure-report.findings.md",
+      "source": "product-execution-quality-20261031T114955972.structure-report/findings.md",
+      "bytes": 122295,
+      "sha256": "ccf4e26c45a9d72c57518ea666d4217cc1c62e10d73e486d34dc107954d79c10"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.structure-report.package_metrics.csv",
+      "source": "product-execution-quality-20261031T114955972.structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.product-execution-quality-20261031T114955972.structure-report.public_type_duplicates.csv",
+      "source": "product-execution-quality-20261031T114955972.structure-report/public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    },
+    {
+      "path": "task-presentation-await-cancellation-raw.documentation-audit.json",
+      "source": "arcweft-docs-reconcile-20261027/task-wait-reverse-doc-audit.json",
+      "bytes": 574,
+      "sha256": "6db3d994eaf36c4594dd85014f4646f4ea61be7b46ba95dc06596dd40b3aca90"
+    }
+  ],
+  "artifactCount": 53,
+  "artifactBytes": 10536068.0,
+  "rawByteDrift": 0,
+  "documentationAudit": {
+    "date": "2026-10-31",
+    "base": "5f861e4d3088c3b2563cec927885ac489b37a123",
+    "changed": [
+      "docs/02-runtime/save-replay.md",
+      "docs/implementation/convergence-evidence-history.md",
+      "docs/implementation/current-status.md"
+    ],
+    "checkedDocuments": 129,
+    "relativeLinks": 647,
+    "brokenLinks": [],
+    "unclosedFences": [],
+    "statusCommitIds": 48,
+    "unretainedIds": [],
+    "historicalRawChanges": [],
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0,
+    "partialCliOriginalWipProof": true,
+    "rustCargoRun": false
+  }
+}

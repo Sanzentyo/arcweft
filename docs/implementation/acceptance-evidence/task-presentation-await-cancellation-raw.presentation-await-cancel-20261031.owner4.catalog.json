@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "68e150db5ae521d7bf316f60c88e9b87d982f0bb",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-await-cancel-20261031.owner4.catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T11:46:16.0905722Z",
+  "finishedAt": "2026-10-31T11:47:16.9200806Z"
+}
