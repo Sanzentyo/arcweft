@@ -641,9 +641,12 @@ fn program_handle_private_fiber_checkpoint_restores_its_original_source() {
         AwbcFiberRoot::Task(AwbcTaskPlanId(0)),
         vec![capture],
         inputs,
-        crate::runtime_id::RuntimeFiberInstanceId::from_allocated(std::num::NonZeroU64::MIN),
-        0,
-        64,
+        crate::awbc::fiber::FiberCreationContext::new(
+            crate::runtime_id::RuntimeFiberInstanceId::from_allocated(std::num::NonZeroU64::MIN),
+            0,
+            64,
+            crate::runtime_id::RuntimePresentationBankId::Root,
+        ),
     );
     fiber
         .active_frame_mut()

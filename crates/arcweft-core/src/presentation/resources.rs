@@ -18,9 +18,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 mod banks;
+mod execution;
 mod storage;
 pub(crate) use banks::PresentationBanks;
 pub(crate) use banks::PresentationBanksSaveSnapshot;
+pub(crate) use execution::{PresentationExecutionAdmission, PresentationExecutionRole};
 pub(crate) use storage::{PresentationAdmission, PresentationBody};
 
 /// Dynamic owner, never a scope name or a reusable static instruction coordinate.
@@ -50,6 +52,7 @@ pub(crate) trait PresentationScopeStorage {
     fn admit_awbc_scope(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        bank: RuntimePresentationBankId,
         fiber: crate::runtime_id::RuntimeFiberInstanceId,
         frame: crate::runtime_id::RuntimeFrameInstanceId,
         scope: Option<crate::awbc::schema::AwbcScopeId>,
@@ -68,11 +71,13 @@ impl PresentationScopeOwner {
     fn validate_awbc_anchor(
         self,
         anchor: PresentationScopeAnchor,
+        bank: RuntimePresentationBankId,
         fiber: crate::runtime_id::RuntimeFiberInstanceId,
         frame: crate::runtime_id::RuntimeFrameInstanceId,
         scope: Option<crate::awbc::schema::AwbcScopeId>,
     ) -> Result<(), RuntimePresentationError> {
-        if self.execution.get() != fiber.get()
+        if self.bank != bank
+            || self.execution.get() != fiber.get()
             || self.fiber.get() != fiber.get().get()
             || anchor != (PresentationScopeAnchor::Awbc { frame, scope })
         {
@@ -165,12 +170,13 @@ impl PresentationScopeStorage for RuntimePresentationScopeBinding {
     fn admit_awbc_scope(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        bank: RuntimePresentationBankId,
         fiber: crate::runtime_id::RuntimeFiberInstanceId,
         frame: crate::runtime_id::RuntimeFrameInstanceId,
         scope: Option<crate::awbc::schema::AwbcScopeId>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         self.owner
-            .validate_awbc_anchor(self.anchor, fiber, frame, scope)?;
+            .validate_awbc_anchor(self.anchor, bank, fiber, frame, scope)?;
         self.admit_retained(admission)
     }
 }
@@ -179,12 +185,13 @@ impl PresentationScopeStorage for RuntimePresentationScopeSnapshot {
     fn admit_awbc_scope(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        bank: RuntimePresentationBankId,
         fiber: crate::runtime_id::RuntimeFiberInstanceId,
         frame: crate::runtime_id::RuntimeFrameInstanceId,
         scope: Option<crate::awbc::schema::AwbcScopeId>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         self.owner
-            .validate_awbc_anchor(self.anchor, fiber, frame, scope)?;
+            .validate_awbc_anchor(self.anchor, bank, fiber, frame, scope)?;
         self.admit_retained(admission)
     }
 }
@@ -389,6 +396,10 @@ pub(crate) struct PresentationRegisterError<V, E = RuntimePresentationError> {
 }
 
 impl<V> PresentationLedger<V> {
+    pub(crate) const fn bank(&self) -> RuntimePresentationBankId {
+        self.bank
+    }
+
     pub(crate) fn validate_retirement(
         &self,
         token: &RuntimePresentationHandleToken,

@@ -123,22 +123,24 @@ fn validate_product_dialogue_phase<V, O, E, F, L, P, H, R>(
     })
 }
 
-fn activation_fiber_in_phase<V, O, E, F, L, P, H>(
-    frame: &super::AwbcProductActiveDialogue<V, O, E, super::AwbcProductDialoguePhase<F, L, P>, H>,
-) -> Option<&F> {
-    match &frame.phase {
-        super::AwbcProductDialoguePhase::Activating { fiber, .. }
-        | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
-            state: super::AwbcProductDialogueClosingState::Activation { fiber, .. },
-            ..
-        }) => Some(fiber),
-        super::AwbcProductDialoguePhase::Reducing { .. }
-        | super::AwbcProductDialoguePhase::Publishing { .. }
-        | super::AwbcProductDialoguePhase::Transitioning
-        | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
-            state: super::AwbcProductDialogueClosingState::LineTask { .. },
-            ..
-        }) => None,
+impl<V, O, E, F, L, P, H>
+    super::AwbcProductActiveDialogue<V, O, E, super::AwbcProductDialoguePhase<F, L, P>, H>
+{
+    pub(super) fn activation_fiber(&self) -> Option<&F> {
+        match &self.phase {
+            super::AwbcProductDialoguePhase::Activating { fiber, .. }
+            | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+                state: super::AwbcProductDialogueClosingState::Activation { fiber, .. },
+                ..
+            }) => Some(fiber),
+            super::AwbcProductDialoguePhase::Reducing { .. }
+            | super::AwbcProductDialoguePhase::Publishing { .. }
+            | super::AwbcProductDialoguePhase::Transitioning
+            | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+                state: super::AwbcProductDialogueClosingState::LineTask { .. },
+                ..
+            }) => None,
+        }
     }
 }
 
@@ -874,7 +876,7 @@ impl<V, O, E, N, B, R, G, L, P, H>
             .line_task_group
             .and_then(|id| program.line_task_groups.get(id.index()))
             .ok_or_else(|| invalid("active dialogue snapshot content has no line-task group"))?;
-        if activation_fiber_in_phase(self).is_some_and(|fiber| {
+        if self.activation_fiber().is_some_and(|fiber| {
             fiber.root != crate::awbc::fiber::AwbcFiberRoot::Function(group.activation)
         }) {
             return Err(invalid(
@@ -1801,13 +1803,11 @@ impl AwbcProductExecutorSnapshot {
                 message: error.to_string(),
             })?;
         let snapshot = self;
-        if let Some(banks) = &snapshot.presentation {
-            let artifact = AwbcProductStepExecutor::artifact_fingerprint(program)?;
-            banks
-                .admit_retained(owner, artifact, admission)
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?;
+        if snapshot.fiber.presentation_bank() != crate::runtime_id::RuntimePresentationBankId::Root
+        {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "Product main fiber must retain the Root presentation bank".into(),
+            });
         }
         admission
             .validate_metadata(&(
@@ -1825,7 +1825,6 @@ impl AwbcProductExecutorSnapshot {
                     &self.stream_sequences,
                     self.next_generation,
                     self.next_fiber_instance,
-                    &self.dialogue_occurrences,
                     self.next_host_call_sequence,
                     self.next_audio_sequence,
                 ),
@@ -1834,11 +1833,15 @@ impl AwbcProductExecutorSnapshot {
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
-        admission
-            .validate_metadata_collection(snapshot.child_fibers.len())
-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                message: error.to_string(),
-            })?;
+        self.admit_presentation_execution(admission)?;
+        if let Some(banks) = &snapshot.presentation {
+            let artifact = AwbcProductStepExecutor::artifact_fingerprint(program)?;
+            banks
+                .admit_retained(owner, artifact, admission)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?;
+        }
         snapshot
             .fiber
             .root
@@ -1875,21 +1878,6 @@ impl AwbcProductExecutorSnapshot {
             return Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message: "Product main fiber does not own the initial fiber identity".to_owned(),
             });
-        }
-        let mut fiber_instances = BTreeSet::new();
-        for fiber in std::iter::once(&snapshot.fiber)
-            .chain(snapshot.child_fibers.iter().map(|child| &child.fiber))
-        {
-            if snapshot
-                .next_fiber_instance
-                .last_issued()
-                .is_none_or(|last| fiber.instance.get() > last)
-                || !fiber_instances.insert(fiber.instance)
-            {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "Product fiber instance is duplicated or was not allocated".to_owned(),
-                });
-            }
         }
         let has_invalid_await_many_identity = |fiber: &AwbcFiberStateSnapshot| {
             fiber.suspension.as_ref().is_some_and(|suspension| {
@@ -2176,10 +2164,12 @@ impl AwbcProductExecutorSnapshot {
                     });
                 }
             }
-            let activation_host_suspension = activation_fiber_in_phase(active)
+            let activation_host_suspension = active
+                .activation_fiber()
                 .and_then(|fiber| fiber.suspension.as_ref())
                 .filter(|_| {
-                    activation_fiber_in_phase(active)
+                    active
+                        .activation_fiber()
                         .is_some_and(|fiber| fiber.status == FiberStatus::Suspended)
                 });
             match (
@@ -2372,7 +2362,7 @@ impl AwbcProductExecutorSnapshot {
                     });
                 }
             }
-            let activation_fiber = activation_fiber_in_phase(active);
+            let activation_fiber = active.activation_fiber();
             let mut actual_scoped_inflight = None;
             for child in &snapshot.child_fibers {
                 let AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {
@@ -3605,6 +3595,11 @@ impl AwbcProductStepExecutor {
         Ok((need_producers, queued_task_events))
     }
     pub fn snapshot(&self) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
+        if self.fiber.presentation_bank() != crate::runtime_id::RuntimePresentationBankId::Root {
+            return Err(AwbcProductSaveError::InvalidSnapshot {
+                message: "Product main fiber must retain the Root presentation bank".into(),
+            });
+        }
         self.fiber
             .root
             .admit_executor_roots(
@@ -3633,6 +3628,10 @@ impl AwbcProductStepExecutor {
         let mut admission = self
             .program
             .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        self.admit_presentation_execution(&mut admission)
+            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            })?;
         if let Some(banks) = &self.presentation {
             banks
                 .admit_retained(&owner, self.artifact_fingerprint, &mut admission)
@@ -3813,18 +3812,9 @@ impl AwbcProductStepExecutor {
                 message: format!("invalid Need producer registry snapshot: {error}"),
             })?;
         let need_producers = registry;
-        let fibers = std::iter::once(snapshot.fiber.instance)
-            .chain(
-                snapshot
-                    .child_fibers
-                    .iter()
-                    .map(|child| child.fiber.instance),
-            )
-            .collect::<BTreeSet<_>>();
         let mut launches = BTreeSet::new();
         for child in &snapshot.child_fibers {
-            let AwbcProductChildFiberOwnerSnapshot::Program { handle, parent } = &child.owner
-            else {
+            let AwbcProductChildFiberOwnerSnapshot::Program { handle, .. } = &child.owner else {
                 if matches!(child.fiber.root, crate::awbc::fiber::AwbcFiberRoot::Task(_)) {
                     return Err(AwbcProductStepBuildError::RestoreSnapshot {
                         message: "task root lacks its accepted Program owner".into(),
@@ -3840,11 +3830,7 @@ impl AwbcProductStepExecutor {
                     && body.source.bytes() == launch.source().task_plan().key().as_bytes()
                     && child.runtime_generation == handle.correlation.generation
             });
-            if !matched
-                || !fibers.contains(parent)
-                || parent.get() >= child.fiber.instance.get()
-                || !launches.insert(handle.correlation)
-            {
+            if !matched || !launches.insert(handle.correlation) {
                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
                     message: "Program child origin, parent or launch is invalid".into(),
                 });
@@ -4213,6 +4199,7 @@ mod tests {
             },
             state: AwbcProductDialogueClosingStateSaveSnapshot::Activation {
                 fiber: AwbcFiberStateSnapshot {
+                    presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
                     instance: RuntimeFiberInstanceId::from_allocated(NonZeroU64::MIN),
                     next_frame_instance: RuntimeIdCursor::initial(),
                     generation: 1,

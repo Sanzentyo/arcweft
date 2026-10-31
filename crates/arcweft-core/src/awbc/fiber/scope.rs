@@ -21,14 +21,22 @@ impl<V, O, N, B, R, G: crate::presentation::resources::PresentationScopeStorage>
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> AwbcSaveResult<()> {
         let result = (|| {
+            admission.validate_metadata(&self.presentation_bank)?;
             for frame in &self.frames {
                 if let Some(binding) = &frame.root_presentation_scope {
-                    binding.admit_awbc_scope(admission, self.instance, frame.instance, None)?;
+                    binding.admit_awbc_scope(
+                        admission,
+                        self.presentation_bank,
+                        self.instance,
+                        frame.instance,
+                        None,
+                    )?;
                 }
                 for scope in &frame.scopes {
                     if let Some(binding) = &scope.presentation_scope {
                         binding.admit_awbc_scope(
                             admission,
+                            self.presentation_bank,
                             self.instance,
                             frame.instance,
                             Some(scope.id),
@@ -84,6 +92,9 @@ impl super::FiberState {
         if !matches!(program, RuntimeProgramOwner::Awbc(_)) {
             return Err(crate::presentation::RuntimePresentationError::Program);
         }
+        if ledger.bank() != self.presentation_bank {
+            return Err(crate::presentation::RuntimePresentationError::Owner);
+        }
         let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
         let fiber =
             crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
@@ -103,6 +114,9 @@ impl super::FiberState {
     > {
         if !matches!(program, RuntimeProgramOwner::Awbc(_)) {
             return Err(crate::presentation::RuntimePresentationError::Program);
+        }
+        if ledger.bank() != self.presentation_bank {
+            return Err(crate::presentation::RuntimePresentationError::Owner);
         }
         let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
         let fiber =

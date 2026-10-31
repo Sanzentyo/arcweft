@@ -157,9 +157,12 @@ impl AwbcProductStepExecutor {
         let child = binding.prepare_owned_program_task_fiber(
             &admitted,
             *worker,
-            instance,
-            self.next_generation,
-            parent.budget.quantum,
+            crate::awbc::fiber::FiberCreationContext::new(
+                instance,
+                self.next_generation,
+                parent.budget.quantum.max(1),
+                parent.presentation_bank(),
+            ),
         )?;
         let last = index as usize + 1 == state.items.len();
         let mut copies = Vec::with_capacity(inputs.len());

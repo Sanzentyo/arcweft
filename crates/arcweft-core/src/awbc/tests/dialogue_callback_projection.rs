@@ -152,8 +152,17 @@ fn dialogue_callback_projects_retained_parameter_into_body_argument_and_executes
     let instance = crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
         std::num::NonZeroU64::new(1).unwrap(),
     );
-    let mut fiber =
-        FiberState::for_callable_callback_prepared(&program, callback, prepared, instance, 1, 1);
+    let mut fiber = FiberState::for_callable_callback_prepared(
+        &program,
+        callback,
+        prepared,
+        crate::awbc::fiber::FiberCreationContext::new(
+            instance,
+            1,
+            1,
+            crate::runtime_id::RuntimePresentationBankId::Root,
+        ),
+    );
     assert_eq!(
         fiber.frames[0].registers[0].as_ref(),
         Some(&RuntimeValue::Bool(true))

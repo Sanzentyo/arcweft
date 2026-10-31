@@ -4369,6 +4369,8 @@ pub enum LineRuntimeError {
     UnboundArtifact,
     #[error("dialogue occurrence identity overflowed")]
     DialogueOccurrenceOverflow,
+    #[error("dialogue occurrence namespace capacity exceeded")]
+    DialogueNamespaceCapacity,
     #[error("dialogue content has no result-producing line task group")]
     MissingTaskGroup,
     #[error("dialogue content references a missing line task group")]

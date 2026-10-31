@@ -152,9 +152,12 @@ impl AwbcProductStepExecutor {
             AwbcFiberRoot::Program(id),
             into_values(inputs, result),
             layout,
-            self.fiber.instance,
-            self.runtime_generation.get(),
-            self.fiber.budget.quantum,
+            crate::awbc::fiber::FiberCreationContext::new(
+                self.fiber.instance,
+                self.runtime_generation.get(),
+                self.fiber.budget.quantum,
+                self.fiber.presentation_bank(),
+            ),
         );
         self.facade_fiber.frame.status = crate::engine::FlowFiberStatus::Running;
         self.fiber.frames[0].instance = frame_instance;
@@ -324,9 +327,12 @@ impl AwbcProductStepExecutor {
             AwbcFiberRoot::Program(id),
             inputs.into_owned(),
             prepared,
-            executor.fiber.instance,
-            generation.get(),
-            budget_quantum.max(1),
+            crate::awbc::fiber::FiberCreationContext::new(
+                executor.fiber.instance,
+                generation.get(),
+                budget_quantum.max(1),
+                executor.fiber.presentation_bank(),
+            ),
         );
         Ok(executor)
     }

@@ -2208,6 +2208,12 @@ impl Engine {
             .artifact()
             .ok_or(crate::line_task::LineRuntimeError::UnboundArtifact)?;
         let key = (self.fiber.persistent_id, content);
+        if !self.dialogue_occurrences.contains_key(&key)
+            && self.dialogue_occurrences.len()
+                >= crate::entry::RuntimeSchemaLimits::engine_default().max_sequence_items as usize
+        {
+            return Err(crate::line_task::LineRuntimeError::DialogueNamespaceCapacity);
+        }
         let occurrence = self.dialogue_occurrences.get(&key).copied().unwrap_or(0);
         let next = occurrence
             .checked_add(1)

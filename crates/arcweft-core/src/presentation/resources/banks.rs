@@ -30,6 +30,9 @@ pub(crate) type PresentationBanksSaveSnapshot = PresentationBanks<
 >;
 
 impl<V> PresentationBanks<V> {
+    pub(crate) fn bank_ids(&self) -> impl Iterator<Item = RuntimePresentationBankId> + '_ {
+        self.ledgers.keys().copied()
+    }
     pub(crate) fn new(
         program: RuntimeProgramOwner,
         artifact: RuntimeArtifactFingerprint,

@@ -15,6 +15,52 @@ struct Fixture {
     ledger: PresentationLedger<PresentationBody<RuntimePayload>>,
 }
 
+#[test]
+fn foreign_bank_binding_and_release_leave_scope_values_and_issuance_unchanged() {
+    let mut fixture = Fixture::new(4);
+    let token = fixture.register(true);
+    let before = fixture.image();
+    let bank = crate::runtime_id::RuntimePresentationBankId::Dialogue {
+        activation: crate::runtime_id::DialogueActivationId::new(
+            fixture.artifact,
+            crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
+            crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+                std::num::NonZeroU32::MIN,
+            ),
+            0,
+        ),
+    };
+    let mut foreign = PresentationLedger::<PresentationBody<RuntimePayload>>::new(
+        fixture.owner.clone(),
+        fixture.artifact,
+        bank,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let foreign_before = foreign.snapshot_admitted().unwrap();
+    assert_eq!(
+        fixture
+            .fiber
+            .bind_presentation_scope(&fixture.owner, &mut foreign),
+        Err(RuntimePresentationError::Owner)
+    );
+    assert!(matches!(
+        fixture
+            .fiber
+            .release_presentation_scope(&fixture.owner, &mut foreign),
+        Err(RuntimePresentationError::Owner)
+    ));
+    assert_eq!(foreign.snapshot_admitted().unwrap(), foreign_before);
+    assert_eq!(fixture.image(), before);
+    assert_eq!(fixture.retire(), [RuntimeValue::Bool(true)]);
+    assert_eq!(
+        fixture.ledger.release(&fixture.owner, &token, None),
+        Err(RuntimePresentationError::UnknownHandle)
+    );
+}
+
 impl Fixture {
     fn new(limit: usize) -> Self {
         let mut program = zero_parameter_entry_program();
@@ -408,6 +454,7 @@ fn live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries() {
         if inert {
             snapshot.admit_awbc_scope(
                 &mut admission,
+                fixture.fiber.presentation_bank(),
                 fixture.fiber.instance,
                 frame.instance,
                 None,
@@ -415,6 +462,7 @@ fn live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries() {
         } else {
             binding.admit_awbc_scope(
                 &mut admission,
+                fixture.fiber.presentation_bank(),
                 fixture.fiber.instance,
                 frame.instance,
                 None,

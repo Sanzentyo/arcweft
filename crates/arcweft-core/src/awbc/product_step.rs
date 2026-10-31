@@ -13,6 +13,7 @@ mod execution;
 mod lifecycle;
 mod line;
 mod mapping;
+mod presentation;
 pub mod program;
 mod program_fanout;
 mod program_task;
@@ -583,6 +584,14 @@ impl AwbcProductStepExecutor {
         let content = Self::runtime_dialogue_content_id(content)?;
         let owner = self.facade_fiber.persistent_id;
         let key = (owner, content);
+        if !self.dialogue_occurrences.contains_key(&key)
+            && self.dialogue_occurrences.len()
+                >= crate::entry::RuntimeSchemaLimits::engine_default().max_sequence_items as usize
+        {
+            return Err(ProductStepError::Line(
+                crate::line_task::LineRuntimeError::DialogueNamespaceCapacity,
+            ));
+        }
         let occurrence = self.dialogue_occurrences.get(&key).copied().unwrap_or(0);
         let next = occurrence
             .checked_add(1)
@@ -1963,6 +1972,7 @@ impl AwbcProductStepExecutor {
                 });
             }
             FiberState {
+                presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
                 instance: crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
                     std::num::NonZeroU64::MIN,
                 ),
@@ -2277,6 +2287,7 @@ impl AwbcProductStepExecutor {
 
     fn prepare_dialogue_effect_callback(
         &self,
+        activation: crate::runtime_id::DialogueActivationId,
         callback: RuntimeCallableValue,
         prepared: crate::awbc::fiber::PreparedCallableCallbackActivation,
         instance: crate::runtime_id::RuntimeFiberInstanceId,
@@ -2285,9 +2296,12 @@ impl AwbcProductStepExecutor {
             &self.program,
             callback,
             prepared,
-            instance,
-            self.runtime_generation.get(),
-            self.fiber.budget.quantum.max(1),
+            crate::awbc::fiber::FiberCreationContext::new(
+                instance,
+                self.runtime_generation.get(),
+                self.fiber.budget.quantum.max(1),
+                crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
+            ),
         );
         ProductChildFiber {
             owner: ProductChildFiberOwner::Independent,
@@ -2342,7 +2356,8 @@ impl AwbcProductStepExecutor {
                 .effect_callbacks
                 .remove(&site)
                 .expect("callback was preflighted in the owning dialogue frame");
-            let child = self.prepare_dialogue_effect_callback(callback, proof, instance);
+            let child =
+                self.prepare_dialogue_effect_callback(activation, callback, proof, instance);
             batch.child_fibers.push_back(child);
         }
         batch.next_fiber_instance = next_fiber_instance;
@@ -4578,13 +4593,16 @@ impl AwbcProductStepExecutor {
                 return;
             }
         };
-        let mut activation_fiber = match FiberState::for_function_with_instance(
+        let mut activation_fiber = match FiberState::for_function_in_context(
             &self.program,
             crate::awbc::fiber::AwbcFiberRoot::Function(group.activation),
             group.activation,
-            activation_fiber_instance,
-            self.next_generation,
-            self.fiber.budget.quantum.max(1),
+            crate::awbc::fiber::FiberCreationContext::new(
+                activation_fiber_instance,
+                self.next_generation,
+                self.fiber.budget.quantum.max(1),
+                crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
+            ),
         ) {
             Ok(fiber) => fiber,
             Err(error) => {

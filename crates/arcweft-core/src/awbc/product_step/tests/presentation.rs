@@ -112,3 +112,58 @@ fn product_save_visitors_include_retirements_and_body_headers_reject_wrong_types
         .unwrap();
     assert_eq!(bool_roots, 1);
 }
+
+#[test]
+fn public_restore_rejects_forged_bank_and_namespace_frontiers_atomically() {
+    let (mut executor, _) = fixture();
+    let before = executor.snapshot().unwrap();
+    let save = AwbcProductExecutorSaveSnapshot::from_live(&before, &executor.program).unwrap();
+    let original = serde_json::to_value(save).unwrap();
+    let activation = crate::runtime_id::DialogueActivationId::new(
+        executor.artifact_fingerprint,
+        crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
+        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+            std::num::NonZeroU32::MIN,
+        ),
+        0,
+    );
+    let row = serde_json::json!({"owner": activation.owner_fiber(), "content": activation.content(), "next": 1});
+    for mutation in 0..5 {
+        let mut wire = original.clone();
+        match mutation {
+            0 => {
+                wire["dialogue_occurrences"] = serde_json::json!([row]);
+                wire["fiber"]["presentation_bank"] =
+                    serde_json::to_value(RuntimePresentationBankId::Dialogue { activation })
+                        .unwrap();
+            }
+            1 => wire["dialogue_occurrences"] = serde_json::json!([row, row]),
+            2 => {
+                wire["dialogue_occurrences"] = serde_json::json!([row]);
+                wire["dialogue_occurrences"][0]["next"] = 0.into();
+            }
+            3 => {
+                wire["dialogue_occurrences"] = serde_json::json!([row]);
+                wire["dialogue_occurrences"][0]["owner"] = serde_json::to_value(
+                    crate::runtime_id::RuntimePersistentFiberId::from_allocated(2),
+                )
+                .unwrap();
+            }
+            4 => {
+                wire["fiber"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("presentation_bank");
+            }
+            _ => unreachable!(),
+        }
+        let save = match serde_json::from_value(wire) {
+            Ok(save) => save,
+            Err(_) if mutation == 4 => continue,
+            Err(error) => panic!("mutation {mutation} must reach retained admission: {error}"),
+        };
+        let (retained, _) = executor.restore_inert_snapshot_owned(save).unwrap_err();
+        executor = retained;
+        assert_eq!(executor.snapshot().unwrap(), before, "mutation {mutation}");
+    }
+}

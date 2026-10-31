@@ -8095,13 +8095,16 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
             .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
             .unwrap(),
     );
-    let fiber = FiberState::for_function_with_instance(
+    let fiber = FiberState::for_function_in_context(
         &executor.program,
         crate::awbc::fiber::AwbcFiberRoot::Function(tail),
         tail,
-        instance,
-        executor.next_generation,
-        executor.fiber.budget.quantum,
+        crate::awbc::fiber::FiberCreationContext::new(
+            instance,
+            executor.next_generation,
+            executor.fiber.budget.quantum,
+            executor.fiber.presentation_bank(),
+        ),
     )
     .unwrap();
     executor.next_generation += 1;

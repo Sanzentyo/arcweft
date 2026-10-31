@@ -905,9 +905,14 @@ impl super::AwbcProductStepExecutor {
                 crate::awbc::fiber::AwbcFiberRoot::Function(run.spawn.inputs.function()),
                 args,
                 run.spawn.inputs,
-                run.spawn.fiber_instance,
-                run.spawn.child_generation,
-                self.fiber.budget.quantum.max(1),
+                crate::awbc::fiber::FiberCreationContext::new(
+                    run.spawn.fiber_instance,
+                    run.spawn.child_generation,
+                    self.fiber.budget.quantum.max(1),
+                    crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                        activation: transaction.frame().activation,
+                    },
+                ),
             );
             batch.child_fibers.push_back(super::ProductChildFiber {
                 owner: run.owner,
@@ -1007,6 +1012,7 @@ impl super::AwbcProductStepExecutor {
                 let content = transaction.frame().content;
                 batch.spawn_prepared(
                     self,
+                    crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
                     super::ProductChildFiberOwner::Deferred {
                         content,
                         activation,
@@ -2649,6 +2655,9 @@ impl super::AwbcProductStepExecutor {
                 let content = content.expect("Run content was preflighted above");
                 batch.spawn_prepared(
                     self,
+                    crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                        activation: *activation,
+                    },
                     super::ProductChildFiberOwner::ScopedDeferred {
                         content,
                         activation: activation.clone(),
@@ -3497,6 +3506,7 @@ impl super::ProductLineTaskExecutionBatch {
     fn spawn_prepared(
         &mut self,
         executor: &super::AwbcProductStepExecutor,
+        bank: crate::runtime_id::RuntimePresentationBankId,
         owner: super::ProductChildFiberOwner,
         args: Vec<RuntimeValue>,
         prepared: PreparedLineChildSpawn,
@@ -3506,9 +3516,12 @@ impl super::ProductLineTaskExecutionBatch {
             crate::awbc::fiber::AwbcFiberRoot::Function(prepared.inputs.function()),
             args,
             prepared.inputs,
-            prepared.fiber_instance,
-            prepared.child_generation,
-            executor.fiber.budget.quantum.max(1),
+            crate::awbc::fiber::FiberCreationContext::new(
+                prepared.fiber_instance,
+                prepared.child_generation,
+                executor.fiber.budget.quantum.max(1),
+                bank,
+            ),
         );
         self.next_generation = prepared.next_generation;
         self.next_fiber_instance = prepared.next_fiber_instance;

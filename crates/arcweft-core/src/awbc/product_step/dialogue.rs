@@ -26,6 +26,18 @@ pub(super) type ProductDialogueTransaction =
     RuntimeDialogueActivationTransaction<ActiveDialogue, AwbcTypeId>;
 
 impl ProductDialogueStore {
+    /// Borrows the actual retained activation frames, including metadata-only
+    /// topology checks before an enclosing owner copies any frame values.
+    pub(super) fn try_visit_active<'a, E>(
+        &'a self,
+        mut visit: impl FnMut(&'a DialogueActivationId, &'a ActiveDialogue) -> Result<(), E>,
+    ) -> Result<(), E>
+    where
+        E: From<crate::line_task::RuntimeDialogueRegistrySnapshotError>,
+    {
+        self.registry
+            .try_visit_active(|activation, frame, _| visit(activation, frame))
+    }
     pub(super) fn into_published(
         self,
     ) -> Result<crate::line_task::RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {

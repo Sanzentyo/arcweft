@@ -327,6 +327,7 @@ pub struct FiberState<
     G = crate::presentation::RuntimePresentationScopeBinding,
 > {
     pub instance: RuntimeFiberInstanceId,
+    pub(in crate::awbc) presentation_bank: crate::runtime_id::RuntimePresentationBankId,
     pub next_frame_instance: RuntimeIdCursor,
     /// Next per-fiber AwaitMany occurrence ordinal, persisted across safe points.
     pub generation: u64,
@@ -343,6 +344,39 @@ pub struct FiberState<
     pub streams: Vec<FiberStreamState<V>>,
 }
 
+impl<V, O, N, B, R, G> FiberState<V, O, N, B, R, G> {
+    /// The execution bank is independent of both the dynamic fiber number and
+    /// a callable's declaration. Nested calls keep this reached context.
+    pub const fn presentation_bank(&self) -> crate::runtime_id::RuntimePresentationBankId {
+        self.presentation_bank
+    }
+}
+
+/// Complete execution coordinates chosen by the actual spawning owner before
+/// a prepared input packet constructs its frame. This contains no grant.
+pub(crate) struct FiberCreationContext {
+    instance: RuntimeFiberInstanceId,
+    generation: u64,
+    budget_quantum: u64,
+    presentation_bank: crate::runtime_id::RuntimePresentationBankId,
+}
+
+impl FiberCreationContext {
+    pub(crate) const fn new(
+        instance: RuntimeFiberInstanceId,
+        generation: u64,
+        budget_quantum: u64,
+        presentation_bank: crate::runtime_id::RuntimePresentationBankId,
+    ) -> Self {
+        Self {
+            instance,
+            generation,
+            budget_quantum,
+            presentation_bank,
+        }
+    }
+}
+
 impl<
     V: InertRuntimeValueStorage + Clone,
     O: InertRuntimeValueStorage + Clone,
@@ -356,6 +390,7 @@ impl<
         Self {
             instance: self.instance,
             next_frame_instance: self.next_frame_instance,
+            presentation_bank: self.presentation_bank,
             generation: self.generation,
             root: self.root,
             cursor: self.cursor,
@@ -414,19 +449,10 @@ impl PreparedFunctionInputBinding {
         self,
         program: &AwbcProgram,
         root: AwbcFiberRoot,
-        instance: RuntimeFiberInstanceId,
-        generation: u64,
-        budget_quantum: u64,
+        creation: FiberCreationContext,
     ) -> (FiberState, Box<[AwbcRegisterId]>) {
-        let mut fiber = FiberState::allocate_function_frame(
-            program,
-            root,
-            self.function,
-            instance,
-            generation,
-            budget_quantum,
-        )
-        .expect("prepared function input binding validated the AWBC frame");
+        let mut fiber = FiberState::allocate_function_frame(program, root, self.function, creation)
+            .expect("prepared function input binding validated the AWBC frame");
         fiber.frames[0].type_instantiation = self.type_instantiation.map(std::sync::Arc::new);
         (fiber, self.parameter_registers)
     }
@@ -1203,6 +1229,7 @@ impl AwbcFiberStateSnapshot {
         Ok(Self {
             instance: state.instance,
             next_frame_instance: state.next_frame_instance,
+            presentation_bank: state.presentation_bank,
             generation: state.generation,
             root: state.root,
             cursor: state.cursor,
@@ -1286,6 +1313,7 @@ impl AwbcFiberStateSnapshot {
         Ok(FiberState {
             instance: self.instance,
             next_frame_instance: self.next_frame_instance,
+            presentation_bank: self.presentation_bank,
             generation: self.generation,
             root: self.root,
             cursor: self.cursor,
@@ -2163,13 +2191,16 @@ impl FiberState {
             AwbcEntryTarget::Function { function, .. } => *function,
             AwbcEntryTarget::Routes(_) => return Err(FiberStateError::RouteSelectionRequired),
         };
-        Self::for_function_with_instance(
+        Self::for_function_in_context(
             program,
             AwbcFiberRoot::Entry(entry),
             function,
-            instance,
-            generation,
-            budget_quantum,
+            FiberCreationContext::new(
+                instance,
+                generation,
+                budget_quantum,
+                crate::runtime_id::RuntimePresentationBankId::Root,
+            ),
         )
     }
 
@@ -2213,35 +2244,29 @@ impl FiberState {
         generation: u64,
         budget_quantum: u64,
     ) -> Result<Self, FiberStateError> {
-        Self::for_function_with_instance(
+        Self::for_function_in_context(
             program,
             root,
             function,
-            RuntimeFiberInstanceId::from_allocated(std::num::NonZeroU64::MIN),
-            generation,
-            budget_quantum,
+            FiberCreationContext::new(
+                RuntimeFiberInstanceId::from_allocated(std::num::NonZeroU64::MIN),
+                generation,
+                budget_quantum,
+                crate::runtime_id::RuntimePresentationBankId::Root,
+            ),
         )
     }
 
-    pub(crate) fn for_function_with_instance(
+    pub(crate) fn for_function_in_context(
         program: &AwbcProgram,
         root: AwbcFiberRoot,
         function: AwbcFunctionId,
-        instance: RuntimeFiberInstanceId,
-        generation: u64,
-        budget_quantum: u64,
+        creation: FiberCreationContext,
     ) -> Result<Self, FiberStateError> {
         if matches!(root, AwbcFiberRoot::Task(_)) {
             return Err(FiberStateError::InvalidFrame);
         }
-        let mut fiber = Self::allocate_function_frame(
-            program,
-            root,
-            function,
-            instance,
-            generation,
-            budget_quantum,
-        )?;
+        let mut fiber = Self::allocate_function_frame(program, root, function, creation)?;
         let signature = program
             .functions
             .get(function.index())
@@ -2259,10 +2284,14 @@ impl FiberState {
         program: &AwbcProgram,
         root: AwbcFiberRoot,
         function: AwbcFunctionId,
-        instance: RuntimeFiberInstanceId,
-        generation: u64,
-        budget_quantum: u64,
+        creation: FiberCreationContext,
     ) -> Result<Self, FiberStateError> {
+        let FiberCreationContext {
+            instance,
+            generation,
+            budget_quantum,
+            presentation_bank,
+        } = creation;
         if root == AwbcFiberRoot::Empty
             || root
                 .validate_root_frame(program, Some(function))?
@@ -2282,6 +2311,7 @@ impl FiberState {
         Ok(Self {
             instance,
             next_frame_instance,
+            presentation_bank,
             generation,
             root,
             cursor: FiberCursor {
@@ -2322,13 +2352,10 @@ impl FiberState {
         root: AwbcFiberRoot,
         args: Vec<RuntimeValue>,
         prepared: PreparedFunctionInputBinding,
-        instance: RuntimeFiberInstanceId,
-        generation: u64,
-        budget_quantum: u64,
+        creation: FiberCreationContext,
     ) -> Self {
         debug_assert_eq!(prepared.parameter_registers.len(), args.len());
-        let (mut fiber, parameters) =
-            prepared.allocate_fiber(program, root, instance, generation, budget_quantum);
+        let (mut fiber, parameters) = prepared.allocate_fiber(program, root, creation);
         let registers = &mut fiber.frames[0].registers;
         for (register, value) in parameters.into_iter().zip(args) {
             registers[register.index()] = value.into();
@@ -2344,9 +2371,7 @@ impl FiberState {
         program: &AwbcProgram,
         callable: RuntimeCallableValue,
         prepared: PreparedCallableCallbackActivation,
-        instance: RuntimeFiberInstanceId,
-        generation: u64,
-        budget_quantum: u64,
+        creation: FiberCreationContext,
     ) -> Self {
         let PreparedCallableCallbackActivation {
             function,
@@ -2373,9 +2398,7 @@ impl FiberState {
             AwbcFiberRoot::Function(function),
             values,
             input_layout,
-            instance,
-            generation,
-            budget_quantum,
+            creation,
         )
     }
 

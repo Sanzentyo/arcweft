@@ -178,9 +178,12 @@ impl AwbcProductStepExecutor {
             origin,
             args,
             prepared,
-            instance,
-            self.runtime_generation.get(),
-            self.fiber.budget.quantum.max(1),
+            crate::awbc::fiber::FiberCreationContext::new(
+                instance,
+                self.runtime_generation.get(),
+                self.fiber.budget.quantum.max(1),
+                crate::runtime_id::RuntimePresentationBankId::Root,
+            ),
         );
         self.next_fiber_instance = next_instance;
         self.child_fibers.push_front(super::ProductChildFiber {

@@ -29,9 +29,7 @@ impl PreparedFunctionInputBinding {
         self,
         program: &AwbcProgram,
         task: crate::awbc::schema::AwbcTaskPlanId,
-        instance: RuntimeFiberInstanceId,
-        generation: u64,
-        quantum: u64,
+        creation: FiberCreationContext,
     ) -> Result<PreparedOwnedProgramTaskFiber, FiberStateError> {
         let Some(crate::awbc::schema::AwbcTaskPlanExecution::Program(body)) = program
             .task_plans
@@ -43,13 +41,7 @@ impl PreparedFunctionInputBinding {
         if self.function != body.kernel {
             return Err(FiberStateError::InvalidFrame);
         }
-        let (fiber, parameters) = self.allocate_fiber(
-            program,
-            AwbcFiberRoot::Task(task),
-            instance,
-            generation,
-            quantum.max(1),
-        );
+        let (fiber, parameters) = self.allocate_fiber(program, AwbcFiberRoot::Task(task), creation);
         Ok(PreparedOwnedProgramTaskFiber { fiber, parameters })
     }
 }
@@ -132,9 +124,12 @@ impl FiberState {
         let (mut child, parameters) = inputs.allocate_fiber(
             program,
             AwbcFiberRoot::Task(task),
-            instance,
-            generation,
-            self.budget.quantum.max(1),
+            FiberCreationContext::new(
+                instance,
+                generation,
+                self.budget.quantum.max(1),
+                self.presentation_bank,
+            ),
         );
         let mut moves = Vec::with_capacity(moved.len());
         for ((source, mode), destination) in captures.iter().zip(modes).zip(parameters) {
