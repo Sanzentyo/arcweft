@@ -1,5 +1,6 @@
-use arcweft_bundle::{ArcweftBundle, BundleCodecError, BundleImageFormat, BundleImageObject};
+use arcweft_bundle::{ArcweftBundle, BundleCodecError, BundleImageFormat};
 use arcweft_image::{DecodedImage, ImageDecodeOptions, ImageError, ImageFormat};
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_layout::{
     LayoutRect, LayoutSize, ScalePolicy,
     stage_placement::{ResolvedStagePlacement, StagePlacement, StagePlacementContext, StageRect},
@@ -68,7 +69,7 @@ impl BundleImageCatalog {
 
     pub fn render_images(
         &self,
-        objects: &[BundleImageObject],
+        objects: &[PresentationImage],
         elapsed_millis: u64,
         viewport: RenderViewport,
     ) -> Result<Vec<RenderImage>, BundleImageCatalogError> {
@@ -80,7 +81,7 @@ impl BundleImageCatalog {
 
     fn render_image(
         &self,
-        object: &BundleImageObject,
+        object: &PresentationImage,
         elapsed_millis: u64,
         viewport: RenderViewport,
     ) -> Result<RenderImage, BundleImageCatalogError> {
@@ -121,7 +122,7 @@ impl BundleImageCatalog {
 }
 
 fn render_placement(
-    object: &BundleImageObject,
+    object: &PresentationImage,
     viewport: RenderViewport,
 ) -> Result<ResolvedStagePlacement, BundleImageCatalogError> {
     let placement = object.placement.unwrap_or_else(|| {

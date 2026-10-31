@@ -12,8 +12,9 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
   は同じ型を使い、driver 経由の identity 定義や公開 alias を持たない。View・asset・
   image・target・layer の public ID と、実行時 occurrence の identity を区別する。
 - `arcweft-core` は runtime/data core に限定し、dialogue / presentation / syntax / verifier / CLI / LSP / wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
-- `arcweft-interaction-model::presentation` は image の fit、検証済み alignment、
+- `arcweft-interaction-model::presentation` は image の登録データ、fit、検証済み alignment、
   playback、fixed-point transformと `PresentationResourceKind` の共有domainを所有する。
+  登録データは `arcweft-layout` の Sans I/O placement 値を直接保持する。
   resource familyはSemaの型constructorとdriverの保持recordが直接共有する。
   Core の実行契約と
   bundle、presentation、retained View、renderer は同じ値型を使い、各層での

@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 arcweft-id.workspace = true
+arcweft-layout.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 

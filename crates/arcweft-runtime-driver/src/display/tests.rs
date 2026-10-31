@@ -135,7 +135,8 @@ fn canonical_default_background_uses_stage_geometry_and_typed_options() {
     assert_eq!(background.layer.as_deref(), Some("layer.background"));
     assert_eq!(
         background.bounds,
-        BundleImageObjectBounds::from_px(0, 0, 1280, 720)
+        PresentationImageBounds::try_from_px(0, 0, 1280, 720)
+            .expect("fixed image bounds fit milli-unit storage")
     );
     assert_eq!(
         background.placement,
@@ -1076,15 +1077,16 @@ fn inline_image_runtime_call() -> RuntimeCall {
     }
 }
 
-fn presentation_image_object(id: &str) -> BundleImageObject {
-    BundleImageObject {
+fn presentation_image_object(id: &str) -> PresentationImage {
+    PresentationImage {
         id: id.to_owned(),
         asset: "asset.glass_bg".to_owned(),
         target: Some("target.glass_bg".to_owned()),
         layer: Some("layer.background".to_owned()),
         view: None,
         containing_scroll_region: None,
-        bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
+        bounds: PresentationImageBounds::try_from_px(0, 0, 1280, 720)
+            .expect("fixed image bounds fit milli-unit storage"),
         placement: None,
         fit: ImageObjectFit::Cover,
         alignment: ImageObjectAlignment::default(),
@@ -1099,7 +1101,7 @@ fn presentation_image_object(id: &str) -> BundleImageObject {
     }
 }
 
-fn image_runtime_resources(image: &BundleImageObject) -> BundlePresentationResources<'_> {
+fn image_runtime_resources(image: &PresentationImage) -> BundlePresentationResources<'_> {
     BundlePresentationResources {
         image_objects: std::slice::from_ref(image),
         text_inputs: &[],

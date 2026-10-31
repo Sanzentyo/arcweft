@@ -7,8 +7,9 @@
 
 use crate::container::{BundleDigest, BundleSectionKind};
 use crate::patch::PatchCompatibility;
-use crate::{ArcweftBundle, BundleImageAsset, BundleImageObject, BundleVirtualFile};
+use crate::{ArcweftBundle, BundleImageAsset, BundleVirtualFile};
 use arcweft_audio_core::graph::AudioGraph;
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_text_model::DialogueContentCatalog;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -53,7 +54,7 @@ pub struct AssetCatalogSection {
 /// Optional display catalog section for image objects.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DisplayCatalogSection {
-    pub image_objects: Vec<BundleImageObject>,
+    pub image_objects: Vec<PresentationImage>,
 }
 
 /// Optional audio graph section.

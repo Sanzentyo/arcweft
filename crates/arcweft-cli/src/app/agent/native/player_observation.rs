@@ -36,11 +36,13 @@ use arcweft_agent_protocol::{
     view::{AgentObservedScrollRegion, AgentObservedVirtualList, AgentViewTree},
 };
 use arcweft_bundle::BundleVirtualFileSpace;
-use arcweft_bundle::{BundleImageObject, BundleImageObjectParam, BundleImageObjectProxy};
 use arcweft_core::plan::EntryRuntimeId;
 use arcweft_core::task::TaskEvent;
 use arcweft_core::{effect::RuntimeAssertionFailure, engine::FlowFiberStatus};
 use arcweft_interaction_model::presentation::ImageObjectFit;
+use arcweft_interaction_model::presentation::{
+    PresentationImage, PresentationImageParam, PresentationImageProxy,
+};
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest, PlayerPreparedFrame,
@@ -934,7 +936,7 @@ fn player_observed_image_object(
     step: usize,
     viewport: &AgentViewport,
     image: &RenderImage,
-    source: Option<&BundleImageObject>,
+    source: Option<&PresentationImage>,
     visual_time_millis: u64,
 ) -> Option<AgentObservedObject> {
     if !source.is_none_or(|source| source.visible) {
@@ -1021,7 +1023,7 @@ fn player_observed_image_object(
 }
 
 fn bundle_image_params(
-    params: &BTreeMap<String, BundleImageObjectParam>,
+    params: &BTreeMap<String, PresentationImageParam>,
 ) -> BTreeMap<String, AgentImageObjectParam> {
     params
         .iter()
@@ -1029,24 +1031,24 @@ fn bundle_image_params(
         .collect()
 }
 
-fn bundle_image_param(value: &BundleImageObjectParam) -> AgentImageObjectParam {
+fn bundle_image_param(value: &PresentationImageParam) -> AgentImageObjectParam {
     match value {
-        BundleImageObjectParam::Bool { value } => AgentImageObjectParam::Bool { value: *value },
-        BundleImageObjectParam::Integer { value } => {
+        PresentationImageParam::Bool { value } => AgentImageObjectParam::Bool { value: *value },
+        PresentationImageParam::Integer { value } => {
             AgentImageObjectParam::Integer { value: *value }
         }
-        BundleImageObjectParam::Milli { value } => AgentImageObjectParam::Milli { value: *value },
-        BundleImageObjectParam::Text { value } => AgentImageObjectParam::Text {
+        PresentationImageParam::Milli { value } => AgentImageObjectParam::Milli { value: *value },
+        PresentationImageParam::Text { value } => AgentImageObjectParam::Text {
             value: value.clone(),
         },
-        BundleImageObjectParam::Id { value } => AgentImageObjectParam::Id {
+        PresentationImageParam::Id { value } => AgentImageObjectParam::Id {
             value: value.clone(),
         },
     }
 }
 
 fn bundle_image_proxies(
-    proxies: &[BundleImageObjectProxy],
+    proxies: &[PresentationImageProxy],
 ) -> Vec<AgentPresentationObjectProxyRef> {
     proxies
         .iter()
@@ -1069,17 +1071,17 @@ fn bundle_image_proxies(
         .collect()
 }
 
-fn bundle_image_proxy_param(value: &BundleImageObjectParam) -> RichTextParam {
+fn bundle_image_proxy_param(value: &PresentationImageParam) -> RichTextParam {
     match value {
-        BundleImageObjectParam::Bool { value } => RichTextParam::Bool { value: *value },
-        BundleImageObjectParam::Integer { value } => RichTextParam::Int { value: *value },
-        BundleImageObjectParam::Milli { value } => RichTextParam::Milli {
+        PresentationImageParam::Bool { value } => RichTextParam::Bool { value: *value },
+        PresentationImageParam::Integer { value } => RichTextParam::Int { value: *value },
+        PresentationImageParam::Milli { value } => RichTextParam::Milli {
             value: Milli(*value),
         },
-        BundleImageObjectParam::Text { value } => RichTextParam::Text {
+        PresentationImageParam::Text { value } => RichTextParam::Text {
             value: value.clone(),
         },
-        BundleImageObjectParam::Id { value } => RichTextParam::Selector {
+        PresentationImageParam::Id { value } => RichTextParam::Selector {
             value: value.clone(),
         },
     }

@@ -41,10 +41,7 @@ use arcweft_core::pattern::RuntimeSemanticTypeId;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
 use arcweft_dialogue::CharacterDialogueGenerationDeclaration;
-use arcweft_interaction_model::presentation::{
-    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
-};
-use arcweft_layout::stage_placement::StagePlacement;
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_manifest_model::ProjectLocaleSpec;
 use arcweft_resource_manifest::PublishedResourceTypeManifestSetV1;
 use arcweft_source::SourceDocumentId;
@@ -101,7 +98,7 @@ pub struct ArcweftBundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<AudioGraph>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub image_objects: Vec<BundleImageObject>,
+    pub image_objects: Vec<PresentationImage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view_program: Option<ViewProgramResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -214,76 +211,6 @@ pub struct BundleImageAsset {
     pub animation: BundleImageAnimation,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dimensions: Option<BundleImageDimensions>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct BundleImageObject {
-    pub id: String,
-    pub asset: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layer: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub view: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub containing_scroll_region: Option<String>,
-    pub bounds: BundleImageObjectBounds,
-    /// Authored placement contract. When absent, `bounds` is explicit absolute
-    /// placement for image object data that has no responsive stage placement.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub placement: Option<StagePlacement>,
-    pub fit: ImageObjectFit,
-    pub alignment: ImageObjectAlignment,
-    pub playback: ImageObjectPlayback,
-    pub transform: ImageObjectTransform,
-    #[serde(default)]
-    pub depth_milli: i32,
-    #[serde(default = "default_opacity_milli")]
-    pub opacity_milli: u16,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub actions: Vec<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub params: BTreeMap<String, BundleImageObjectParam>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub proxies: Vec<BundleImageObjectProxy>,
-    #[serde(default = "default_true")]
-    pub visible: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum BundleImageObjectParam {
-    Bool { value: bool },
-    Integer { value: i64 },
-    Milli { value: i32 },
-    Text { value: String },
-    Id { value: String },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct BundleImageObjectProxy {
-    pub id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub type_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub role: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layer: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub depth_milli: Option<i32>,
-    #[serde(default)]
-    pub hit_test: bool,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub params: BTreeMap<String, BundleImageObjectParam>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct BundleImageObjectBounds {
-    pub x_milli: i32,
-    pub y_milli: i32,
-    pub width_milli: u32,
-    pub height_milli: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -808,7 +735,7 @@ impl ArcweftBundle {
     #[must_use]
     pub fn with_image_objects(
         mut self,
-        objects: impl IntoIterator<Item = BundleImageObject>,
+        objects: impl IntoIterator<Item = PresentationImage>,
     ) -> Self {
         self.image_objects.extend(objects);
         self.image_objects
@@ -1225,7 +1152,7 @@ impl ArcweftBundle {
         self.image_assets.iter().find(|asset| asset.id == id)
     }
 
-    pub fn image_object(&self, id: &str) -> Option<&BundleImageObject> {
+    pub fn image_object(&self, id: &str) -> Option<&PresentationImage> {
         self.image_objects.iter().find(|object| object.id == id)
     }
 
@@ -1605,25 +1532,6 @@ impl BundleImageDimensions {
     }
 }
 
-impl BundleImageObjectBounds {
-    pub const fn from_px(x: i32, y: i32, width: u32, height: u32) -> Self {
-        Self {
-            x_milli: x.saturating_mul(1_000),
-            y_milli: y.saturating_mul(1_000),
-            width_milli: width.saturating_mul(1_000),
-            height_milli: height.saturating_mul(1_000),
-        }
-    }
-}
-
-const fn default_opacity_milli() -> u16 {
-    1_000
-}
-
-const fn default_true() -> bool {
-    true
-}
-
 impl BundleVirtualFileSpace {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -1702,6 +1610,10 @@ mod tests {
     use arcweft_id::LocaleTag;
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
+    };
+    use arcweft_interaction_model::presentation::{
+        ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
+        PresentationImageBounds, PresentationImageParam, PresentationImageProxy,
     };
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use arcweft_text_model::DialogueContentFragmentTemplate;
@@ -2061,14 +1973,15 @@ mod tests {
 
     #[test]
     fn bundle_image_objects_round_trip_as_typed_metadata() {
-        let expected = BundleImageObject {
+        let expected = PresentationImage {
             id: "image.hero.logo".to_owned(),
             asset: "asset.view.logo".to_owned(),
             target: Some("target.hero.logo".to_owned()),
             layer: Some("layer.foreground".to_owned()),
             view: None,
             containing_scroll_region: None,
-            bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
+            bounds: PresentationImageBounds::try_from_px(10, 20, 320, 180)
+                .expect("fixed image bounds fit milli-unit storage"),
             placement: None,
             fit: ImageObjectFit::Cover,
             alignment: ImageObjectAlignment::try_new(250, 750).expect("valid fixture alignment"),
@@ -2086,12 +1999,12 @@ mod tests {
             actions: vec!["action.inspect.logo".to_owned()],
             params: [(
                 "param.role".to_owned(),
-                BundleImageObjectParam::Text {
+                PresentationImageParam::Text {
                     value: "hero".to_owned(),
                 },
             )]
             .into(),
-            proxies: vec![BundleImageObjectProxy {
+            proxies: vec![PresentationImageProxy {
                 id: "proxy.logo.hotspot".to_owned(),
                 type_name: Some("LogoHotspot".to_owned()),
                 role: Some("inspect".to_owned()),
@@ -2100,7 +2013,7 @@ mod tests {
                 hit_test: true,
                 params: [(
                     "channel".to_owned(),
-                    BundleImageObjectParam::Text {
+                    PresentationImageParam::Text {
                         value: "preview".to_owned(),
                     },
                 )]

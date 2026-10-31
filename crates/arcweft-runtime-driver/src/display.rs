@@ -17,7 +17,6 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
-use arcweft_bundle::{BundleImageObject, BundleImageObjectBounds};
 use arcweft_character::presentation_name::{
     AcceptedCharacterPresentationCatalog, CharacterNameResolutionLocales,
 };
@@ -39,6 +38,7 @@ use arcweft_id::{DeclarationIdentityFamily, LocaleTag};
 use arcweft_interaction_model::presentation::{
     ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
 };
+use arcweft_interaction_model::presentation::{PresentationImage, PresentationImageBounds};
 use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StageAnchor, StagePlacement, StageRect, StageSize};
 use arcweft_manifest_model::ProjectLocaleSpec;
@@ -353,7 +353,7 @@ pub struct BundlePresentationSnapshot<F = arcweft_text_model::LineDisplayFrame> 
     pub revision: u64,
     pub dialogue: DialoguePresentationStore<F>,
     pub choices: Vec<BundleChoice>,
-    pub images: Vec<BundleImageObject>,
+    pub images: Vec<PresentationImage>,
     #[serde(default, skip_serializing_if = "is_default")]
     pub presentation_handle_epoch: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -458,7 +458,7 @@ impl<F> BundlePresentationSnapshot<F> {
 /// Runtime resources that affect portable presentation state.
 #[derive(Clone, Copy)]
 pub(crate) struct BundlePresentationResources<'a> {
-    pub(crate) image_objects: &'a [BundleImageObject],
+    pub(crate) image_objects: &'a [PresentationImage],
     pub(crate) text_inputs: &'a [ViewRuntimeTextControl],
     pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
     pub(crate) scroll_regions: &'a [ViewRuntimeScrollRegion],
@@ -841,8 +841,8 @@ fn choices_from_status(status: &FlowFiberStatus) -> Vec<BundleChoice> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum PresentationImageEffect {
     Object(String),
-    InlineObject(Box<BundleImageObject>),
-    Background(Box<BundleImageObject>),
+    InlineObject(Box<PresentationImage>),
+    Background(Box<PresentationImage>),
     ClearBackground(String),
 }
 
@@ -897,10 +897,10 @@ fn image_effect_from_call(
 }
 
 fn images_from_effects(
-    previous: &[BundleImageObject],
+    previous: &[PresentationImage],
     effects: &[LineEffectRequest],
-    image_objects: &[BundleImageObject],
-) -> Result<Vec<BundleImageObject>, BundlePresentationUpdateError> {
+    image_objects: &[PresentationImage],
+) -> Result<Vec<PresentationImage>, BundlePresentationUpdateError> {
     let mut active = previous.to_vec();
     for effect in effects {
         let LineEffectRequest::Call(call) = effect else {
@@ -937,7 +937,7 @@ fn images_from_effects(
     Ok(active)
 }
 
-fn upsert_image_object(active: &mut Vec<BundleImageObject>, object: BundleImageObject) {
+fn upsert_image_object(active: &mut Vec<PresentationImage>, object: PresentationImage) {
     if let Some(existing) = active.iter_mut().find(|existing| existing.id == object.id) {
         *existing = object;
     } else {
@@ -973,7 +973,7 @@ fn public_id_arg(arg: &str) -> Option<String> {
 
 fn inline_image_object(
     call: &RuntimeCall,
-) -> Result<BundleImageObject, BundlePresentationUpdateError> {
+) -> Result<PresentationImage, BundlePresentationUpdateError> {
     let asset = named_arg(&call.args, "asset")
         .and_then(public_id_arg)
         .filter(|id| id.starts_with("asset."))
@@ -997,7 +997,7 @@ fn inline_image_object(
                 "an `image.*` public ID",
             )
         })?;
-    let bounds = BundleImageObjectBounds {
+    let bounds = PresentationImageBounds {
         x_milli: required_image_coordinate(call, "x")?,
         y_milli: required_image_coordinate(call, "y")?,
         width_milli: required_image_extent(call, "width")?,
@@ -1009,7 +1009,7 @@ fn inline_image_object(
         bounds.width_milli,
         bounds.height_milli,
     ));
-    Ok(BundleImageObject {
+    Ok(PresentationImage {
         id,
         asset,
         target: optional_image_public_id(call, "target", "target.")?,
@@ -1120,7 +1120,7 @@ fn optional_image_argument<T: Copy>(
 
 fn background_image_object(
     call: &RuntimeCall,
-) -> Result<BundleImageObject, BundlePresentationUpdateError> {
+) -> Result<PresentationImage, BundlePresentationUpdateError> {
     let asset_arg = call
         .args
         .first()
@@ -1141,8 +1141,9 @@ fn background_image_object(
     let address = background_slot_address(call, "bg")?;
     let id = address.image_id().as_str().to_owned();
     let target = address.target().id().as_str().to_owned();
-    let bounds = BundleImageObjectBounds::from_px(0, 0, 1280, 720);
-    Ok(BundleImageObject {
+    let bounds = PresentationImageBounds::try_from_px(0, 0, 1280, 720)
+        .expect("fixed image bounds fit milli-unit storage");
+    Ok(PresentationImage {
         id,
         asset,
         target: Some(target),

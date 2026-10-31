@@ -801,8 +801,8 @@ mod tests {
     use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{
         BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
-        BundleImageObject, BundleImageObjectBounds, BundleManifest, BundleRuntimeSummary,
-        BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
+        BundleManifest, BundleRuntimeSummary, BundleVirtualFile, BundleVirtualFileRef,
+        BundleVirtualFileSpace,
     };
     use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
     use arcweft_core::plan::{
@@ -813,6 +813,7 @@ mod tests {
     use arcweft_interaction_model::presentation::{
         ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
     };
+    use arcweft_interaction_model::presentation::{PresentationImage, PresentationImageBounds};
     use arcweft_render_wgpu::geometry::RenderViewport;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -1234,15 +1235,15 @@ mod tests {
         SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
-    fn fixture_image_object() -> BundleImageObject {
-        BundleImageObject {
+    fn fixture_image_object() -> PresentationImage {
+        PresentationImage {
             id: "sprite.object".to_owned(),
             asset: "sprite".to_owned(),
             target: None,
             layer: None,
             view: None,
             containing_scroll_region: None,
-            bounds: BundleImageObjectBounds {
+            bounds: PresentationImageBounds {
                 x_milli: 0,
                 y_milli: 0,
                 width_milli: 1000,

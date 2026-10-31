@@ -4,6 +4,13 @@
 //! Defaults are authoring conveniences; deserialization requires the encoded
 //! fields and never substitutes a default for an invalid value.
 
+mod image;
+
+pub use image::{
+    PresentationImage, PresentationImageBounds, PresentationImageBoundsComponent,
+    PresentationImageBoundsError, PresentationImageParam, PresentationImageProxy,
+};
+
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 

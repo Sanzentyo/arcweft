@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "base": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "tree": "22b91c9d7f32345f61d0d43fa5dd2a98ff60cd9b",
+  "indexedPaths": 448,
+  "indexedByteDrift": 0,
+  "indexedArtifacts": 440,
+  "artifactSha256Drift": 0,
+  "historicalRawModifications": 0,
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "at": "2026-10-30T23:50:20.1670547Z"
+}

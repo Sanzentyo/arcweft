@@ -353,7 +353,7 @@ fn content_root(bundle: &ArcweftBundle) -> Result<BundleDigest, GenerationBuildE
         virtual_files: Vec<&'a BundleVirtualFile>,
         image_assets: Vec<&'a arcweft_bundle::BundleImageAsset>,
         audio: serde_json::Value,
-        image_objects: Vec<&'a arcweft_bundle::BundleImageObject>,
+        image_objects: Vec<&'a arcweft_interaction_model::presentation::PresentationImage>,
     }
 
     let mut virtual_files = bundle.virtual_files.iter().collect::<Vec<_>>();

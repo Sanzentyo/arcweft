@@ -1,10 +1,10 @@
-use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -471,9 +471,9 @@ fn unknown_handle(id: &PresentationHandleId) -> PresentationHandleDiagnostic {
 }
 
 pub(crate) fn apply_presentation_image_handles(
-    active: &mut Vec<BundleImageObject>,
+    active: &mut Vec<PresentationImage>,
     handles: &[PresentationHandleRecord],
-    image_objects: &[BundleImageObject],
+    image_objects: &[PresentationImage],
 ) {
     for handle in handles
         .iter()
@@ -701,7 +701,7 @@ fn hidden_matching_handle<'a>(
     hidden
 }
 
-fn upsert_image_object(active: &mut Vec<BundleImageObject>, object: BundleImageObject) {
+fn upsert_image_object(active: &mut Vec<PresentationImage>, object: PresentationImage) {
     if let Some(existing) = active.iter_mut().find(|existing| existing.id == object.id) {
         *existing = object;
     } else {

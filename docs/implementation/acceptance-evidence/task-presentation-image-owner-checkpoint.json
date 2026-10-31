@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "date": "2026-10-31",
+  "base": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "scope": "Shared inert image registration model; Presentation Source/command ABI remains unconnected",
+  "ownedSource": [
+    "crates/arcweft-bundle/tests/product_catalog_resource_codecs.rs",
+    "crates/arcweft-bundle/src/lib.rs",
+    "crates/arcweft-bundle/src/resource_codec/product_catalog.rs",
+    "crates/arcweft-cli/src/app/agent/native/player_observation/tests.rs",
+    "crates/arcweft-cli/src/app/agent/native/player_observation.rs",
+    "crates/arcweft-player-scene/src/images.rs",
+    "crates/arcweft-compiler/src/view.rs",
+    "crates/arcweft-player-scene/src/frame/view_style/consumer.rs",
+    "crates/arcweft-player-scene/src/frame/view_geometry/intrinsic.rs",
+    "crates/arcweft-player-native/tests/support/windowed_live_patch_fixtures.rs",
+    "crates/arcweft-player-native/src/windowed_runtime.rs",
+    "crates/arcweft-runtime-driver/src/display.rs",
+    "crates/arcweft-runtime-driver/src/display/tests.rs",
+    "crates/arcweft-runtime-driver/src/swap.rs",
+    "crates/arcweft-runtime-driver/src/view_projection.rs",
+    "crates/arcweft-runtime-driver/src/session.rs",
+    "crates/arcweft-runtime-driver/src/session/construction.rs",
+    "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+    "Cargo.lock",
+    "crates/arcweft-interaction-model/Cargo.toml",
+    "crates/arcweft-interaction-model/src/presentation.rs",
+    "crates/arcweft-interaction-model/src/presentation/image.rs"
+  ],
+  "wireContract": "Existing field/variant layout and version 1 retained; no obsolete type alias or dual reader",
+  "numericContract": "Exact pixel-to-milli conversion; signed coordinates and zero extents preserved; each overflow returns its component",
+  "check": {
+    "command": [
+      "cargo",
+      "check",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked"
+    ],
+    "exitCode": 0,
+    "log": "task-presentation-image-owner.workspace-check.log"
+  },
+  "clippy": "running at source checkpoint",
+  "runtimeTests": "not yet run at source checkpoint",
+  "reversePackages": 62,
+  "sourceFreeze": "task-presentation-image-owner.source-freeze.json",
+  "remaining": "Typed Source operations, AWBC ledger, independent Dialogue bank and driver command connection",
+  "originalWip": "Original tracked 14 and untracked 6 preserved"
+}

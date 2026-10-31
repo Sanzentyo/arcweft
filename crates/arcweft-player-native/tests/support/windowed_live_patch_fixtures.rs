@@ -3,8 +3,8 @@ use arcweft_bundle::patch::{BundlePatchArtifact, PatchCompatibility, encode_patc
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
-    BundleImageObject, BundleImageObjectBounds, BundleManifest, BundleRuntimeSummary,
-    BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
+    BundleManifest, BundleRuntimeSummary, BundleVirtualFile, BundleVirtualFileRef,
+    BundleVirtualFileSpace,
 };
 use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
 use arcweft_core::pattern::RuntimeSemanticTypeId;
@@ -26,6 +26,7 @@ use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, TextKey};
 use arcweft_interaction_model::presentation::{
     ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
 };
+use arcweft_interaction_model::presentation::{PresentationImage, PresentationImageBounds};
 use arcweft_player_native::windowed_patch::{
     FrameBoundary, PatchEventSource, RestartReason, WindowedPatchEvent, WindowedPatchReport,
 };
@@ -1645,15 +1646,15 @@ fn cli_main_entry() -> arcweft_core::plan::RuntimeEntrySpec {
     }
 }
 
-fn fixture_image_object() -> BundleImageObject {
-    BundleImageObject {
+fn fixture_image_object() -> PresentationImage {
+    PresentationImage {
         id: "sprite.object".to_owned(),
         asset: "sprite".to_owned(),
         target: None,
         layer: None,
         view: None,
         containing_scroll_region: None,
-        bounds: BundleImageObjectBounds {
+        bounds: PresentationImageBounds {
             x_milli: 0,
             y_milli: 0,
             width_milli: 1000,

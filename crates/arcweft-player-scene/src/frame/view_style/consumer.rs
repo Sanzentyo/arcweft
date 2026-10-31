@@ -3,11 +3,11 @@
 use super::super::PlayerFrameError;
 use super::super::ViewCommittedGeometryFrame;
 use super::{NodeBinding, ResolvedViewStyleFrame, StyleTargetKind};
-use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeNodeStyle, ViewRuntimeScrollRegion,
     ViewRuntimeStyleProjectionError, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewMountOutput, BundleViewStyleNode, BundleViewStyleNodeKind,
@@ -22,7 +22,7 @@ pub(in crate::frame) struct StyledViewResources {
     pub(in crate::frame) action_buttons: Vec<ViewRuntimeActionButton>,
     pub(in crate::frame) scroll_regions: Vec<ViewRuntimeScrollRegion>,
     pub(in crate::frame) surfaces: Vec<ViewRuntimeSurface>,
-    pub(in crate::frame) images: Vec<BundleImageObject>,
+    pub(in crate::frame) images: Vec<PresentationImage>,
     pub(in crate::frame) geometry: Arc<ViewCommittedGeometryFrame>,
 }
 
@@ -376,7 +376,7 @@ const fn image_visual_property(property: ViewPropertyKind) -> bool {
     matches!(property, ViewPropertyKind::Opacity)
 }
 
-fn apply_image_visual(image: &mut BundleImageObject, style: &ViewRuntimeNodeStyle) {
+fn apply_image_visual(image: &mut PresentationImage, style: &ViewRuntimeNodeStyle) {
     if let Some(depth) = style.visual().depth_milli {
         image.depth_milli = depth;
     }

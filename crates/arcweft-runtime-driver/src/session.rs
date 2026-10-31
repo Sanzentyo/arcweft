@@ -46,7 +46,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
     ViewRuntimeTextControl, ViewRuntimeTextSelection,
 };
-use arcweft_bundle::{ArcweftBundle, BundleImageObject, BundleKind};
+use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_character::presentation_name::AcceptedCharacterPresentationCatalog;
 use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
@@ -79,6 +79,7 @@ use arcweft_interaction_model::input::{
     InputActionId, InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
 use arcweft_interaction_model::payload::InteractionPayload;
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_manifest_model::ProjectLocaleSpec;
 use arcweft_presentation::appearance::{
     PresentationEnvironment, PresentationEnvironmentField, PresentationEnvironmentOverrides,
@@ -284,7 +285,7 @@ pub struct BundleSession {
     character_presentation: Option<AcceptedCharacterPresentationCatalog>,
     project_locale: ProjectLocaleSpec,
     active_locale: LocaleTag,
-    image_objects: Vec<BundleImageObject>,
+    image_objects: Vec<PresentationImage>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,

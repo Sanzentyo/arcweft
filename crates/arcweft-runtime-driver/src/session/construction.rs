@@ -3,19 +3,20 @@
 use super::{
     AcceptedCharacterPresentationCatalog, Arc, ArcweftBundle, ArcweftRuntimeExecutor, AwbcEntryId,
     AwbcProductStepBuildError, AwbcProgram, BTreeMap, BundleEntryStart, BundleEntryStartError,
-    BundleImageObject, BundleKind, BundlePresentationSnapshot, BundleSession,
-    BundleSessionArtifactIdentity, BundleSessionError, BundleSessionOptions, BundleView,
-    BundleViewRuntime, BundleViewRuntimeError, DialogueContentCatalog, EntryRuntimeId,
-    FxDefinitions, GenerationBuildError, GenerationId, GenerationRuntimeImage,
-    GenerationRuntimeTable, PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget,
-    RootCommandHostCallCatalog, RuntimeTaskRegistry, SessionEnvironmentState, SwapSession,
-    SystemPaletteSet, ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
+    BundleKind, BundlePresentationSnapshot, BundleSession, BundleSessionArtifactIdentity,
+    BundleSessionError, BundleSessionOptions, BundleView, BundleViewRuntime,
+    BundleViewRuntimeError, DialogueContentCatalog, EntryRuntimeId, FxDefinitions,
+    GenerationBuildError, GenerationId, GenerationRuntimeImage, GenerationRuntimeTable,
+    PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget, RootCommandHostCallCatalog,
+    RuntimeTaskRegistry, SessionEnvironmentState, SwapSession, SystemPaletteSet,
+    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
     ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
     ViewRuntimeTextControl, ViewVirtualizationRuntime,
 };
 use arcweft_core::awbc::product_step::AwbcProductProgram;
 use arcweft_core::value::RuntimeFormatContext;
 use arcweft_id::LocaleTag;
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_manifest_model::ProjectLocaleSpec;
 
 #[derive(Debug)]
@@ -30,7 +31,7 @@ pub(super) struct SessionRuntime {
     pub(super) character_presentation: Option<AcceptedCharacterPresentationCatalog>,
     pub(super) project_locale: ProjectLocaleSpec,
     pub(super) active_locale: LocaleTag,
-    pub(super) image_objects: Vec<BundleImageObject>,
+    pub(super) image_objects: Vec<PresentationImage>,
     pub(super) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(super) action_buttons: Vec<ViewRuntimeActionButton>,
     pub(super) scroll_regions: Vec<ViewRuntimeScrollRegion>,
@@ -50,7 +51,7 @@ struct SessionRuntimeResources {
     character_presentation: Option<AcceptedCharacterPresentationCatalog>,
     project_locale: ProjectLocaleSpec,
     active_locale: LocaleTag,
-    image_objects: Vec<BundleImageObject>,
+    image_objects: Vec<PresentationImage>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,

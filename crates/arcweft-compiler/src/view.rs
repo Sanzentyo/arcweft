@@ -7,7 +7,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_bundle::{
-    BundleImageObject,
     resource_codec::{
         SourceMapBuildError, SourceMapDocumentInput, SourceMapSection, ValidatedViewProduct,
         ViewDefinitionResource, ViewInputResource, ViewInstructionSpan, ViewParameterResource,
@@ -24,6 +23,7 @@ use arcweft_bundle::{
     standard_view,
 };
 use arcweft_id::DeclarationIdentityFamily;
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_lang_hir::{
     expr::HirCallArgument,
     identity::{CaptureId, ExprId, ItemId, LocalId},
@@ -88,7 +88,7 @@ pub struct CompiledViewProduct {
     product: Arc<ValidatedViewProduct>,
     text: Option<ViewTextResource>,
     input: Option<ViewInputResource>,
-    image_objects: Vec<BundleImageObject>,
+    image_objects: Vec<PresentationImage>,
     view_sources: BTreeMap<ViewId, SourceSpan>,
     style_sources: BTreeMap<ViewStyleSheetId, SourceSpan>,
     authored_sources: SourceSetRevision,
@@ -318,7 +318,7 @@ impl CompiledViewProduct {
         self.input.as_ref()
     }
 
-    pub fn image_objects(&self) -> &[BundleImageObject] {
+    pub fn image_objects(&self) -> &[PresentationImage] {
         &self.image_objects
     }
 

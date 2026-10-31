@@ -1,7 +1,6 @@
 //! Projects mount-scoped executable View output into existing scene resources.
 
 use crate::view_runtime::{BundleViewFrame, BundleViewMountOutput, BundleViewStyleNodeKind};
-use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::view::{
     ViewActionPayloadResource, ViewFocusInitialPolicy, ViewFocusTargetResolution,
     ViewRuntimeActionButtonAction,
@@ -10,12 +9,13 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_view::{EventKind, ViewId, ViewMountId};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ProjectedViewResources {
-    pub(crate) images: Vec<BundleImageObject>,
+    pub(crate) images: Vec<PresentationImage>,
     pub(crate) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(crate) action_buttons: Vec<ViewRuntimeActionButton>,
     pub(crate) scroll_regions: Vec<ViewRuntimeScrollRegion>,
@@ -26,9 +26,9 @@ pub(crate) struct ProjectedViewResources {
 
 pub(crate) struct ViewProjectionInput<'a> {
     pub(crate) executable_definitions: &'a BTreeSet<ViewId>,
-    pub(crate) current_images: &'a [BundleImageObject],
+    pub(crate) current_images: &'a [PresentationImage],
     pub(crate) current_text_inputs: &'a [ViewRuntimeTextControl],
-    pub(crate) images: &'a [BundleImageObject],
+    pub(crate) images: &'a [PresentationImage],
     pub(crate) text_inputs: &'a [ViewRuntimeTextControl],
     pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
     pub(crate) scroll_regions: &'a [ViewRuntimeScrollRegion],
@@ -374,7 +374,7 @@ macro_rules! impl_view_owned {
 }
 
 impl_view_owned!(
-    BundleImageObject,
+    PresentationImage,
     ViewRuntimeTextControl,
     ViewRuntimeActionButton,
     ViewRuntimeScrollRegion,

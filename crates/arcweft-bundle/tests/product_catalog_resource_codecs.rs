@@ -10,8 +10,8 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
-    BundleImageObject, BundleImageObjectBounds, BundleManifest, BundleRuntimeSummary,
-    BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
+    BundleManifest, BundleRuntimeSummary, BundleVirtualFile, BundleVirtualFileRef,
+    BundleVirtualFileSpace,
 };
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
@@ -26,6 +26,7 @@ use arcweft_interaction_model::audio::{AudioBusId, AudioLoopMode, AudioResourceI
 use arcweft_interaction_model::presentation::{
     ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
 };
+use arcweft_interaction_model::presentation::{PresentationImage, PresentationImageBounds};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::DialogueContentCatalog;
 
@@ -346,7 +347,7 @@ fn image_object_decode_requires_explicit_image_values_and_validates_alignment() 
         let mut missing = encoded.clone();
         missing.as_object_mut().unwrap().remove(field);
         assert!(
-            serde_json::from_value::<BundleImageObject>(missing).is_err(),
+            serde_json::from_value::<PresentationImage>(missing).is_err(),
             "missing {field} must not select an authoring default"
         );
     }
@@ -358,22 +359,23 @@ fn image_object_decode_requires_explicit_image_values_and_validates_alignment() 
     ] {
         let mut malformed = encoded.clone();
         malformed["alignment"] = alignment;
-        assert!(serde_json::from_value::<BundleImageObject>(malformed).is_err());
+        assert!(serde_json::from_value::<PresentationImage>(malformed).is_err());
     }
-    let decoded = serde_json::from_value::<BundleImageObject>(encoded.clone()).unwrap();
+    let decoded = serde_json::from_value::<PresentationImage>(encoded.clone()).unwrap();
     assert_eq!(decoded, fixture_image_object());
     assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
 }
 
-fn fixture_image_object() -> BundleImageObject {
-    BundleImageObject {
+fn fixture_image_object() -> PresentationImage {
+    PresentationImage {
         id: "image.hero.logo".to_owned(),
         asset: "asset.view.logo".to_owned(),
         target: Some("target.hero.logo".to_owned()),
         layer: Some("layer.foreground".to_owned()),
         view: None,
         containing_scroll_region: None,
-        bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
+        bounds: PresentationImageBounds::try_from_px(10, 20, 320, 180)
+            .expect("fixed image bounds fit milli-unit storage"),
         placement: None,
         fit: ImageObjectFit::Cover,
         alignment: ImageObjectAlignment::try_new(250, 750).expect("valid fixture alignment"),

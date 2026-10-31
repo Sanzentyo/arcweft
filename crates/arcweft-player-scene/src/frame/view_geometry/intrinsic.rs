@@ -1,10 +1,10 @@
 //! Typed intrinsic-product adapters.
 
-use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeGeometryOwner, ViewRuntimeScrollRegion, ViewRuntimeSurface,
     ViewRuntimeTextControl,
 };
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_runtime_driver::view_runtime::BundleViewTextOutput;
 use arcweft_view::geometry::{
     ViewAvailableGeometrySize, ViewGeometrySize, ViewIntrinsicMeasure, ViewIntrinsicMeasureRevision,
@@ -20,7 +20,7 @@ pub(crate) enum ViewIntrinsicProductRef<'a> {
     ScrollRegion(&'a ViewRuntimeScrollRegion),
     Surface(&'a ViewRuntimeSurface),
     TextOutput(&'a BundleViewTextOutput),
-    Image(&'a BundleImageObject),
+    Image(&'a PresentationImage),
 }
 
 impl ViewIntrinsicProductRef<'_> {

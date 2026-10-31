@@ -1,0 +1,1807 @@
+{
+  "version": 1,
+  "commit": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "parent": "cf43d3a591ed53aa18e34ee39a2423537609a593",
+  "tree": "22b91c9d7f32345f61d0d43fa5dd2a98ff60cd9b",
+  "remote": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "paths": [
+    {
+      "path": "docs/01-language/scenario-surface-syntax.md",
+      "blob": "21fd31593019af3a0b1f53d45c7b9150384b1b1f"
+    },
+    {
+      "path": "docs/03-presentation/character-stage.md",
+      "blob": "482c351bdc52ec2225c5d1853d2fd007ed0dfaa1"
+    },
+    {
+      "path": "docs/03-presentation/image-presentation-objects.md",
+      "blob": "31144aeb3033ca88c8814b5b6acb66e0b4409822"
+    },
+    {
+      "path": "docs/03-presentation/layers.md",
+      "blob": "aefc451352ca5b834752ac2dba3a0f9356973fa6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3618-wait-wasm-check.input-audit.json",
+      "blob": "47e6a98222f756a4a5d1afec7fa9b656fdb9a90b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3618-wait-wasm-check.json",
+      "blob": "f8df4e0bc364615188f85c57f9735cf96a4813ff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-final-r3618-wait-wasm-check.log",
+      "blob": "463f6664ec41f5c6f6dcab20d7baea204b27040d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3616.source-freeze.json",
+      "blob": "a127118ff19c26b7eaf6c7122cda960cdeb1a5c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-program-fanout-runtime-r3618.source-freeze.json",
+      "blob": "ae5092ee4e01930ba22c910d6888b7477d1874ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-desktop-catalog.input-audit.json",
+      "blob": "83063a56adec46b6014de6a93b9c873dfda8367b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-desktop-catalog.inventory.json",
+      "blob": "5c238691a77e113d18e2ead19b9e029db45e08d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-desktop-catalog.json",
+      "blob": "6b4c9bf78582dfb96dabb930cae3bb9312477691"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-desktop-catalog.log",
+      "blob": "39ab50d11221847528ed6866c940082016ef923e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-desktop-runtime.binaries-before.json",
+      "blob": "88e24acb54cdd4ed22055c1fb1d16fa6fd36cc23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-desktop-runtime.json",
+      "blob": "5f03afbf70f3eef0a98aaa96c2f8e914691e24fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-desktop-runtime.log",
+      "blob": "8a9127ef431d92ddb4ebca47b20d42c53ca77d50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-desktop-runtime.terminal-audit.json",
+      "blob": "3de5bc045062690d13c7f59451a575596c77f641"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-sema-catalog.input-audit.json",
+      "blob": "32cefb60a0b590f2c18ce488effd219ca6b1d629"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-sema-catalog.inventory.json",
+      "blob": "a89baf9bbfa90239baff62331d80d1282f3cd66b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-sema-catalog.json",
+      "blob": "22bad41f617909f6c905b39673a424c58c1cb662"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-sema-catalog.log",
+      "blob": "2b7d1782687eb32cd0d60c97499fc25c797d60bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-sema-runtime.binaries-before.json",
+      "blob": "4d178fbc12f7699533d020abb6b1bf57f455de0c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-sema-runtime.json",
+      "blob": "23ccfdb357a856c9819116313870dbf86b2216d4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-sema-runtime.log",
+      "blob": "56de54c97ff6f2cbc451d99b3502e128020bfe1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-adapter-sema-runtime.terminal-audit.json",
+      "blob": "f2d4e6af57d23e9783405c17f0435dce1220b379"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-catalog.input-audit.json",
+      "blob": "1a5dc2ff68a7fb96566342c3d88494d1f492d91a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-catalog.inventory.json",
+      "blob": "c01f34a7cf23b8205a83c5eae1e61d012aca7d4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-catalog.json",
+      "blob": "729b84568aebdce13b4fdadd216c46712ec40feb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-catalog.log",
+      "blob": "c74a3f87b763603f02c5c07514df1969d3cd5dec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-client-catalog.input-audit.json",
+      "blob": "d0aa02266f0dbd0194af23a4709a0f6329bc0b1b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-client-catalog.inventory.json",
+      "blob": "51a82e92524d482deb28c438674df92605f1a889"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-client-catalog.json",
+      "blob": "f8b5a7cfd7b4c113ac7e510aacc48029e453a0d8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-client-catalog.log",
+      "blob": "19c08ff7802e4bb8dcaafccc08cd8a32513be0f3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-client-runtime.binaries-before.json",
+      "blob": "c43158cff588c3d3cd5cece64f46a02315e401d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-client-runtime.json",
+      "blob": "3db5abdea92a7aa31a3e965dd3e123e4db5a4783"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-client-runtime.log",
+      "blob": "3c50cec0b62795f3229163e84bb6cc12c8b8bc1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-client-runtime.terminal-audit.json",
+      "blob": "55a7400639cf7298470b3c1af183e0fe21f05f3d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-runtime.binaries-before.json",
+      "blob": "86726a041fc5e89da0defcb25b9544a993607f0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-runtime.json",
+      "blob": "4482cb7b62f9f7d7f3bd5746bb323a026cbfae35"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-runtime.log",
+      "blob": "2fb63a061a8f747a3c77efbbd3802391d7986826"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-mcp-runtime.terminal-audit.json",
+      "blob": "9413d405d4703b30e4c7137fe2ab4bb9f2034917"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-policy-catalog.input-audit.json",
+      "blob": "615af9132a7f7df0ea30118425cc7ddf930c079b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-policy-catalog.inventory.json",
+      "blob": "fe57729c30ffd345df8db7942409d69de4bea116"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-policy-catalog.json",
+      "blob": "78b715803342b8f220fa98b3d777040f988fecf5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-policy-catalog.log",
+      "blob": "6efc914bca528763937fcbf1b85f55dbdae56da5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-policy-runtime.binaries-before.json",
+      "blob": "37446b5dc28114728b6f128c02951bb291e512d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-policy-runtime.json",
+      "blob": "b7ebf2a74ed88715a03ab7d74d513eec7ba374ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-policy-runtime.log",
+      "blob": "a02791bc7349d8fef4c68d0355af48f3ef13ba6c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-policy-runtime.terminal-audit.json",
+      "blob": "761d961f3cfdc930690d55f4e3d99e3c22e9e111"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-protocol-catalog.input-audit.json",
+      "blob": "898a801737f9bf6598b2869d99f4bf6ba4fdfbc5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-protocol-catalog.inventory.json",
+      "blob": "daa1ca418200384b2443aae658ec81c707377f4c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-protocol-catalog.json",
+      "blob": "e4c23b04d0e833d73c9dfedb791342eca110fff2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-protocol-catalog.log",
+      "blob": "e5245a2c1af6c9e54b9b0eb16b8530cbc67f71d1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-protocol-runtime.binaries-before.json",
+      "blob": "82c1a6a320a9de743c2dd86334a95c4553b7017c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-protocol-runtime.json",
+      "blob": "76f4d745f2f596fd64065c4c9897bd21cb4f2abd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-protocol-runtime.log",
+      "blob": "fe73de4a868cdc67a85a1fbc9552892e9c15b7d5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-protocol-runtime.terminal-audit.json",
+      "blob": "7ba01c9ab6539d02fd1dbb1d8de0ef19cd144826"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-repl-catalog.input-audit.json",
+      "blob": "68034cd3b52aa74e0c214bc50caf1a905cd4e04f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-repl-catalog.inventory.json",
+      "blob": "e668354dc4f937f484d91d468a5e4c6fc072f696"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-repl-catalog.json",
+      "blob": "2149e53bfee15af5d2d81b0ae5dca5810804b090"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-repl-catalog.log",
+      "blob": "641d043d0789dcf5039ca6e44a11b6a6832138ae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-repl-runtime.binaries-before.json",
+      "blob": "58b78b9822d4217e60a340ac416858bacee22769"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-repl-runtime.json",
+      "blob": "aeaa6f0550d27f99b3ed4cf609a843e13d60975f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-repl-runtime.log",
+      "blob": "14bc8c384e21a735f3af0ab7776f0a53d714a535"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-repl-runtime.terminal-audit.json",
+      "blob": "8ef56bb83dc220f5b6f74d2ac0e176db9b99c658"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-runner-catalog.input-audit.json",
+      "blob": "9310c07d23e90a072e711f82e048add13d630eff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-runner-catalog.inventory.json",
+      "blob": "cff03dceeb5d498b70502659d27dcbe0d2e9be89"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-runner-catalog.json",
+      "blob": "8d27e4c6f63f226803bf22d765cac8d37fb600cd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-runner-catalog.log",
+      "blob": "ead88a9997638b7679031a5a51c14fb78bc0ef37"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-runner-runtime.binaries-before.json",
+      "blob": "181818e4d82f7aaaa5e6c676825296fce8036734"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-runner-runtime.json",
+      "blob": "08f31df39fb1e02c3bfaba78eacfd30f4b99cd44"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-runner-runtime.log",
+      "blob": "e7174f11e2f5e95a11f22d1e35a055020a02e049"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-agent-runner-runtime.terminal-audit.json",
+      "blob": "3036263f29eff3cb3e8a09252c4e642285f4dbda"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-browser-bench-catalog.input-audit.json",
+      "blob": "2a53d7fb51c2fda610bf06d152b412607c10427e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-browser-bench-catalog.inventory.json",
+      "blob": "3462ddbf80b36261e9b274c5433c3fbfd74f7124"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-browser-bench-catalog.json",
+      "blob": "645a4b31a7f6a69d69e6d4987dc3ba446a5a19b7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-browser-bench-catalog.log",
+      "blob": "74531aad481f0836d4542f2852e5f31469954c90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-browser-bench-runtime.binaries-before.json",
+      "blob": "953ae03d557e50aee99c4bbfefe7ca429617f970"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-browser-bench-runtime.json",
+      "blob": "aa38b8272bc5f1538b614aa88a0cca857ee23356"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-browser-bench-runtime.log",
+      "blob": "eeced2266bb137412e632ae5436735f3ee349e25"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-browser-bench-runtime.terminal-audit.json",
+      "blob": "db46516dc5d9e7e2c024fb664440140e60b7041a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-assets-catalog.input-audit.json",
+      "blob": "0c4ab94b68a972743ee596ac316b650e08af18a5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-assets-catalog.inventory.json",
+      "blob": "6c422a1a700b68b239c3072beb7e7486a054ad4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-assets-catalog.json",
+      "blob": "629869afb12e1cb50cc4b6e3f842a8d384fc75d8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-assets-catalog.log",
+      "blob": "7c287e02657180a0f70044221b5604c165a9f26b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-catalog.input-audit.json",
+      "blob": "20cc787e3d81b9690533a08ffe2ba8a8ecb671e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-catalog.inventory.json",
+      "blob": "cc940845b87f43cddce45229cd19cd0393c7e718"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-catalog.json",
+      "blob": "15ab7d35d7a02af346eb6230ee0fbafb73e6b6a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-catalog.log",
+      "blob": "78c13806a219ca2e47fa13fe5c148d8dbaff6f9f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-runtime.binaries-before.json",
+      "blob": "8a45bcb0a492736d74fd0ade6b5882e8d033c1f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-runtime.json",
+      "blob": "dc4a626bcd23d84a1b369981f1ce9d71a8aeea67"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-runtime.log",
+      "blob": "b65257b6e3a3486be08be596e5807c52e665a379"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-bundle-runtime.terminal-audit.json",
+      "blob": "fcabae78d4ccacd86518229e04d7fe5dd4b93dea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-catalog.input-audit.json",
+      "blob": "8cd103ce7218e06c0fe99d6eb6fda740ab3e7202"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-catalog.inventory.json",
+      "blob": "6c422a1a700b68b239c3072beb7e7486a054ad4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-catalog.json",
+      "blob": "6a958249274e19e37131a4cc6ff38a3c286e4a8c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-catalog.log",
+      "blob": "fb2abd977545def82f5f755d7b2edee6aaddbf2f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-character-view-catalog.input-audit.json",
+      "blob": "4494c8eaa046b3e33d6abedd381f2eeb18233efc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-character-view-catalog.inventory.json",
+      "blob": "3c018cfb1e4362caa9cc1c204a5c5b22205bec17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-character-view-catalog.json",
+      "blob": "a1eb7ec3cd5c17eb62a649773411ecc6383a4dbc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-character-view-catalog.log",
+      "blob": "b56690b41cc27cc50ff8ae46bdd373e12ad879d6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-character-view-runtime.binaries-before.json",
+      "blob": "f702837740e435c71bcb33088ca5bf7c1943d822"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-character-view-runtime.json",
+      "blob": "2a0d25db116c083a8bbf30126e858a03539a9fa8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-character-view-runtime.log",
+      "blob": "ba839bbe59768fbcc431e42e16c8d30329788690"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-character-view-runtime.terminal-audit.json",
+      "blob": "be83d372bd5c566d89082cea398afdc175a7ff40"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-cli-catalog.input-audit.json",
+      "blob": "8974a07d6cdb2b42c1bec31d7231341d842688f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-cli-catalog.inventory.json",
+      "blob": "a6fc6fb4c3adb2dd9ef128c3c62ea3f709e0faf0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-cli-catalog.json",
+      "blob": "2a46b764861dac0a5435507aec0306f18b5bfb65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-cli-catalog.log",
+      "blob": "475fbe7d58c39babc5f5d00b923d0e8aa70b3c39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-cli-runtime.binaries-before.json",
+      "blob": "d018787deba97765a00b71ce2aace1c09dc40c4b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-cli-runtime.json",
+      "blob": "2e4c328399a105bbb68d086dd17fc514721d0432"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-cli-runtime.log",
+      "blob": "9a76647a236eda6a83877877b5c6352bbbe0c10f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-cli-runtime.terminal-audit.json",
+      "blob": "b598f642c4437fe3af05dcb288c617fedacd41e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-compiler-catalog.input-audit.json",
+      "blob": "2a5578b3f0af1d55c85b7503d88a689172468d31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-compiler-catalog.json",
+      "blob": "f214f45504dbb5bf9230d1e7c3ddc8a449ad5c39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-compiler-catalog.log",
+      "blob": "2e44cf893d34203969bec02812be2e6bcd9d62c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-core-catalog.input-audit.json",
+      "blob": "894ec6f1b26f7b229e4740803f5906f53e86d77a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-core-catalog.inventory.json",
+      "blob": "8a1b2791010f3fc3da4e90f88a67c5b78a883f47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-core-catalog.json",
+      "blob": "d11acd82493ab140930f24c2eed2398824f08d7b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-core-catalog.log",
+      "blob": "f6a0187b8fe25fb470bebcb973667315f9600f70"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-core-runtime.binaries-before.json",
+      "blob": "0a106a9e15a6f92d0bbcc20764e756336b42c3c7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-core-runtime.json",
+      "blob": "ab4456397ff6db143e4f8f4ac7ce1dbe2c2ea2bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-core-runtime.log",
+      "blob": "218536e3192e250ad3d3fdf60f1d30a6a8ccadf6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-core-runtime.terminal-audit.json",
+      "blob": "44c7d63cd60e2e9165df3648ab89dbf9bfa6d3b3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-model-catalog.input-audit.json",
+      "blob": "ea8a1e7f667f148d849e8db5ea8b5c21508fffdf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-model-catalog.inventory.json",
+      "blob": "5ca2df52133b01dc2b234bf8bb2999dfc405aaa3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-model-catalog.json",
+      "blob": "fd24850eacdc82ca8fde42c3ec3cef37e23c3e0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-model-catalog.log",
+      "blob": "01917ba17fcba17e4016f758335617dddd5b09e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-model-runtime.binaries-before.json",
+      "blob": "13171dc34fff9c2acb16ccf35247fa77839fe952"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-model-runtime.json",
+      "blob": "82c6d917a3c58ecde80d88bacfb8f82f709f4cde"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-model-runtime.log",
+      "blob": "db5403017bf66ff522675579c35d1e5faa5d99fb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-model-runtime.terminal-audit.json",
+      "blob": "f5b703074ff4db3d806386633a905de01600f169"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-sqlite-catalog.input-audit.json",
+      "blob": "278671d90a0170657708874a067e61ca3c11630c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-sqlite-catalog.inventory.json",
+      "blob": "5605ae00059255fb4ce140135717ad97c154bc44"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-sqlite-catalog.json",
+      "blob": "d9a20705df7a01c2b1a348ec90f0aafba9a118e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-sqlite-catalog.log",
+      "blob": "533c6143c6f556e383ca100fe87e11a749dbca27"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-sqlite-runtime.binaries-before.json",
+      "blob": "47c593bb9a72ce4f3e712602302dfb53f7a36257"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-sqlite-runtime.json",
+      "blob": "033f4448c32f3c2b2ee8558b6843248618a17276"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-sqlite-runtime.log",
+      "blob": "0660019b1900707b85cb91dba0e0eb0f9329822e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-debug-sqlite-runtime.terminal-audit.json",
+      "blob": "7a12ce32e1af9359f4a195be027b2d4d74a5459a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-dialogue-catalog.input-audit.json",
+      "blob": "175acbf718f22d339840f78d8c1206f87553b1f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-dialogue-catalog.inventory.json",
+      "blob": "2c3774d3f342f6447480d06d09a8fa77d395b646"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-dialogue-catalog.json",
+      "blob": "b2af3b2e43ba4e49d7e06bfca4f72a747ca59b1d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-dialogue-catalog.log",
+      "blob": "28ebd889c20fd81dbcacac02185112df033ae7c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-dialogue-runtime.binaries-before.json",
+      "blob": "eebeede67a6a392d6653c7a55da70b620c060fd5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-dialogue-runtime.json",
+      "blob": "4df6f22df11056303b3cec8cd61f9f1e0e85075d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-dialogue-runtime.log",
+      "blob": "1b578b3758172fd96d7eb0bfb56b01598d793c3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-dialogue-runtime.terminal-audit.json",
+      "blob": "872831b209ae9f71122b9745d2f00e8407a50e41"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-glyphon-catalog.input-audit.json",
+      "blob": "85175c55593b5e834390d6d585b9aa8e158dbcfd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-glyphon-catalog.inventory.json",
+      "blob": "5165bfda048a3cfd9df85d93e3767ba7f8c99a93"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-glyphon-catalog.json",
+      "blob": "abeaea17f2ad97c9a67746d3814a5a799ee3ae46"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-glyphon-catalog.log",
+      "blob": "7f9a4a9f83247dec079ee4c918157e9f4eda8e92"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-glyphon-runtime.binaries-before.json",
+      "blob": "5cfb1fcad00ef5b2f13d2d9ca890cf4a0e69733e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-glyphon-runtime.json",
+      "blob": "9d4cb6099e2237c5334192a902a187931b89a7a9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-glyphon-runtime.log",
+      "blob": "6fd7b19922b968aaed7af253ea6eca9a753e4bf9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-glyphon-runtime.terminal-audit.json",
+      "blob": "63959c028c16b342b16fb661d49263471f1d7bee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-host-adapter-catalog.input-audit.json",
+      "blob": "5a20d5c10de7a4f749aab81c29494c64ae59e5c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-host-adapter-catalog.inventory.json",
+      "blob": "1b78ad5851c5e0ccc727cfda7595bead47ab9320"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-host-adapter-catalog.json",
+      "blob": "a113ea32f69d89a485859dbac97032896946c773"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-host-adapter-catalog.log",
+      "blob": "72ef339c137fc72d65d5c56159351cceb59048df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-host-adapter-runtime.binaries-before.json",
+      "blob": "e87b3b917770428cdeaf75aa3543c72ded837919"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-host-adapter-runtime.json",
+      "blob": "b0615a9d75bacb14063aed988df93a19d9d1530a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-host-adapter-runtime.log",
+      "blob": "cdc47152e932f162c5bb866f367e7638d605544e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-host-adapter-runtime.terminal-audit.json",
+      "blob": "527c0fe125e4f435e8e4e8b3b039e2be478dfd08"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-hir-catalog.input-audit.json",
+      "blob": "cc4ec127aff732df3c53e3806b2a7fb66c7db870"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-hir-catalog.inventory.json",
+      "blob": "43b7c48e00fb7905cadf73bade4b5ce5a6eaa4ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-hir-catalog.json",
+      "blob": "76ffe5f6eb6309abcb572ed63326ae660d455787"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-hir-catalog.log",
+      "blob": "16f0b217befdf80a27d14d4ccd74cda875f5896a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-hir-runtime.binaries-before.json",
+      "blob": "e76577e1e2942079b9c3cffafc654174f9b42348"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-hir-runtime.json",
+      "blob": "8eed1b42822ae2f0486305cd70d599092b138e3f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-hir-runtime.log",
+      "blob": "20e16a68c2e6af011c488065b76ad74bac69010b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-hir-runtime.terminal-audit.json",
+      "blob": "c55e45271d06fa3386145b0f57c8e2b0300990c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-jit-cranelift-catalog.input-audit.json",
+      "blob": "3c875c3d6504235a30d78d5fc6e22c018415d6af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-jit-cranelift-catalog.inventory.json",
+      "blob": "f71f2ab077558f629ff1de1c21d2a602eae318f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-jit-cranelift-catalog.json",
+      "blob": "d12b40cf9b8f925cd4bc815831d27114463da04a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-jit-cranelift-catalog.log",
+      "blob": "b50dec34b10044071cc18c1d47630908fb2008ba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-jit-cranelift-runtime.binaries-before.json",
+      "blob": "b45910ddca69815b0f9e6121c251da728efe205e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-jit-cranelift-runtime.json",
+      "blob": "57ff1180d6ef7ba4cd4f6c289cb784c71bfc01de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-jit-cranelift-runtime.log",
+      "blob": "4feebf347fc01742487510c8ba20b4617fae49dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-jit-cranelift-runtime.terminal-audit.json",
+      "blob": "0a60fbaf5128080274f0fc2b0ac1fb2851ea4721"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-sema-catalog.input-audit.json",
+      "blob": "239011ae981219bffc181c8e742c4385cf6df176"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-sema-catalog.inventory.json",
+      "blob": "0beabff4db8e5942451c706864a3b62e96d8e613"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-sema-catalog.json",
+      "blob": "218651d0ea9b688ae3b6c32b1506773e39130ff1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-sema-catalog.log",
+      "blob": "f4b837730eb2c9be2b5aa85fbe88d348dc734841"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-sema-runtime.binaries-before.json",
+      "blob": "4db28b3998cddfd8de285b3e7be478c1b0a99d0f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-sema-runtime.json",
+      "blob": "b0a0dc208a6cbab01eb5bda0d55099fa22565422"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-sema-runtime.log",
+      "blob": "9ed26f1dfcdcbb880a9f3737e63294cbf925d336"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-sema-runtime.terminal-audit.json",
+      "blob": "7c3310b1d3574099cf70cecccbdfb1c4151933e2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-syntax-catalog.input-audit.json",
+      "blob": "0353a6ed6c38af1e0723260ce225a4934977c964"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-syntax-catalog.inventory.json",
+      "blob": "5f92972f1d11b37d678be09c3b33a625689b186e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-syntax-catalog.json",
+      "blob": "1055589a1ee8327798d03565847dc5a37af29fe8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-syntax-catalog.log",
+      "blob": "e07a37d8db272d7a16be8f13282ecfefae9fa570"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-syntax-runtime.binaries-before.json",
+      "blob": "3e095a6bbcfbb67473a124d68dbc7bd8d97d01be"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-syntax-runtime.json",
+      "blob": "6461b11920f6734c495ecb099a7c667e23f29459"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-syntax-runtime.log",
+      "blob": "659b5e7c6cab42af562b7e9f551e399517b9cd66"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lang-syntax-runtime.terminal-audit.json",
+      "blob": "72286a116c3955f1ccefef4d0b70ec7f9f495962"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-launch-catalog.input-audit.json",
+      "blob": "dc6eddb0e370923ceadfb5171fe7307a7d4909d0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-launch-catalog.inventory.json",
+      "blob": "667d67da4d93c7d09dafefd63fc19691b94c528f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-launch-catalog.json",
+      "blob": "133973b75ae68d4b5973a7bf353d128676fd6b58"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-launch-catalog.log",
+      "blob": "cb0188390a07cbdac12b7b5e6d4aebff62f50b02"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-launch-runtime.binaries-before.json",
+      "blob": "0a2e86fdbce32b868ea91235fdf4ce1ee265b28e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-launch-runtime.json",
+      "blob": "117db5dc7a26a75070354f065ff87a387eeade2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-launch-runtime.log",
+      "blob": "82dccd416dcfbafa3cec8cb78925d43ac861aa95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-launch-runtime.terminal-audit.json",
+      "blob": "d116a32a69623b98d75616bf108edfe738e7978a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lsp-catalog.input-audit.json",
+      "blob": "ba33ce26c6230b1be005bcf778c7b89e229bc80b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lsp-catalog.inventory.json",
+      "blob": "96a433c22abbe7fdcbee965e383d1b0cad9bd8c1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lsp-catalog.json",
+      "blob": "506d649f1a7f32698d722b42612d4461b953011a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lsp-catalog.log",
+      "blob": "0fa1db40eabe53bd4937081ccdce1d8ba0e42571"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lsp-runtime.binaries-before.json",
+      "blob": "2d7b340bbb0f6e729205fdc66a2262ad3e94f3f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lsp-runtime.json",
+      "blob": "a4c178a38a83487df2ea2ba96da3a25ed8776cec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lsp-runtime.log",
+      "blob": "00db3fa9b71acd8f8acf271505ea4cbb25fafb6c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-lsp-runtime.terminal-audit.json",
+      "blob": "0cb3fa1798fd26513920ee3bcfd71cb930820602"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-native-catalog.input-audit.json",
+      "blob": "0652825fae9f801dc45b2700cb959a61046ad2e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-native-catalog.inventory.json",
+      "blob": "dd1e7f2ee35a98b9f8b6e03f8a46e61ad53eb6c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-native-catalog.json",
+      "blob": "1eb7059e69dc26d18125f834780df9ba6ca1d9a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-native-catalog.log",
+      "blob": "1b6272d6e14379ba18920d3bdf25a69d4806971e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-native-runtime.binaries-before.json",
+      "blob": "78f113635c0f06c7afacde1385d8f39cf6dd7a08"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-native-runtime.json",
+      "blob": "aa7085bac36f622c8fb18c8f6c915f1ce0496f3f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-native-runtime.log",
+      "blob": "68b506be0a3d80c952a8f78e6c47084589fd4a44"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-native-runtime.terminal-audit.json",
+      "blob": "de199f860955b1aa6e931914f1b7db9dc004454f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-scene-catalog.input-audit.json",
+      "blob": "e2f52b08a18e4bcca0c3c61f46eb16bc2aefad05"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-scene-catalog.inventory.json",
+      "blob": "7cc4fd888f859d8e0791739180a797f86e091fba"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-scene-catalog.json",
+      "blob": "67a73d88b9734689e58ef38fca9d805714ecd314"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-scene-catalog.log",
+      "blob": "7084706d7b14826ce47b8088b170c93c2f5311c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-scene-runtime.binaries-before.json",
+      "blob": "56ea34f912857027edd27226ab5df606ad545876"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-scene-runtime.json",
+      "blob": "6cec8f02c101d9ad08c2a40cddc1d7458ab20a1c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-scene-runtime.log",
+      "blob": "b3d8138c2c7d7a16af561bd3cd3f50cc4b1d099c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-scene-runtime.terminal-audit.json",
+      "blob": "dd00621694696749cd7c25d4ad89bfd5583cc9e6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-text-input-catalog.input-audit.json",
+      "blob": "96b05a766dd8506e6f58562379bf2d1bf92f431a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-text-input-catalog.inventory.json",
+      "blob": "47aee23bf771c8c584fe61e56bfeda8f57c60180"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-text-input-catalog.json",
+      "blob": "660a0e4eefecb59943b60f6ef6caa6a3295bc13b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-text-input-catalog.log",
+      "blob": "913234401ca842cadb439d3406af25339d783cf9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-text-input-runtime.binaries-before.json",
+      "blob": "53cd41022b4b24682ae64bebb0776f2a779b21c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-text-input-runtime.json",
+      "blob": "d7049dbbf16bda0105fe385ce651a83455623530"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-text-input-runtime.log",
+      "blob": "d9db8a5e545df93a6f74fb255fc99c00a80cf9af"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-text-input-runtime.terminal-audit.json",
+      "blob": "0c89ae9d275d5c2c5d76abd54481dc4adfb3248b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-web-catalog.input-audit.json",
+      "blob": "753040f3bb127275735b319abb72c819f5b1b450"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-web-catalog.inventory.json",
+      "blob": "e20e1ccdba92f37057d0a4dad242f99f626b8b31"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-web-catalog.json",
+      "blob": "62d8603c4efbb03e35c1d7e8d85ca85926c53d1b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-web-catalog.log",
+      "blob": "c8a2ab75055880f5a539ddf1f8acacf01c2ef066"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-web-runtime.binaries-before.json",
+      "blob": "6e718d175e2f75e25d6873662a6c79fd892d77fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-web-runtime.json",
+      "blob": "7046a553bd2bb29f6924207d4f89616adaa5bf56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-web-runtime.log",
+      "blob": "1685feb343eadcc5cffa473a713d023b4e882142"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-player-web-runtime.terminal-audit.json",
+      "blob": "322ca8f63acb5a51599c867929d733ca2bbe092f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-catalog.input-audit.json",
+      "blob": "343679f2d7043b16e7195e9ee4cdc6324f9fb14e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-catalog.inventory.json",
+      "blob": "b20fff35ab448d4fa445b66fd16bb178de46c870"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-catalog.json",
+      "blob": "eebd202aabe9496ba312cd5b2464ea4bdad8bd1e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-catalog.log",
+      "blob": "3d7cba525c4bd8220ea4771036dd8a2d07f71dc2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-loader-catalog.input-audit.json",
+      "blob": "605b9a246d4967cb5de11ca2027baf9113c4fa73"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-loader-catalog.inventory.json",
+      "blob": "2e120652af70dc916a0964e8311d1593d450796f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-loader-catalog.json",
+      "blob": "c8c12dba344c17aaf98f2406eb3410fddd5d4a78"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-loader-catalog.log",
+      "blob": "a10ac59694c82190964aab33f3a824c38fc35280"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-loader-runtime.binaries-before.json",
+      "blob": "b7236a3447f8a028fdcd1f355c73c99b6ea97ce8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-loader-runtime.json",
+      "blob": "a2f30408167675b62a6a88b64affe40c9d11f5d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-loader-runtime.log",
+      "blob": "0601e1545d9205506d852eac62bc6bf4fac70cf7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-loader-runtime.terminal-audit.json",
+      "blob": "1c7ae870a4a0da35fb8a2bb02b4786e269c04b53"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-runtime.binaries-before.json",
+      "blob": "82063a612d4cf80eeab09528b25d958a34b80acf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-runtime.json",
+      "blob": "97adada44dae5c81b669175dfe16e1a1cfef12ac"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-runtime.log",
+      "blob": "4c5a164e75abcec4a8cbc59ee0bd73587fdb693b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-project-runtime.terminal-audit.json",
+      "blob": "5d3d0cea19b743a8dd64d959db1497e776144a5b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-rag-catalog.input-audit.json",
+      "blob": "7c7706c334882257c3ebf362092c283a237a0a6f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-rag-catalog.inventory.json",
+      "blob": "06bdea6d966d6e5410f09894f6f23ef00f0cd8a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-rag-catalog.json",
+      "blob": "616254e1a233f5e47a44babe8e3ec0403f37cff5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-rag-catalog.log",
+      "blob": "9db769f22c11a848e7c1115b73520d09590a8b81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-rag-runtime.binaries-before.json",
+      "blob": "ab2b1ed5936b90b9a153d0760c2fcdae845eb59c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-rag-runtime.json",
+      "blob": "dfa9811a8a4d85c1cfd5941e4792a2d400f0c094"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-rag-runtime.log",
+      "blob": "f28f4bf82f101426a621a140ef7bd2276982e1aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-rag-runtime.terminal-audit.json",
+      "blob": "cfc7439fd508de5d42365961b491c4a1c37b2a47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-text-catalog.input-audit.json",
+      "blob": "69f49c6ae5bff3e90f3e96b7829f811c8d9be1e4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-text-catalog.inventory.json",
+      "blob": "a17a251f3d479f14d633e4c7b1fd22a60964d32f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-text-catalog.json",
+      "blob": "8fc4e4f9d5cc98123a7f0c9786e20af580a4be39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-text-catalog.log",
+      "blob": "a1066ffcd35174eb8b6ad93d233190d396d830dd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-text-runtime.binaries-before.json",
+      "blob": "6e2b1aa47a1123eb1c9c067ef015a6669056165d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-text-runtime.json",
+      "blob": "cada4396c11b608346c2766aff9fbc7010aaf5f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-text-runtime.log",
+      "blob": "d742c0fa0d71e0f65b9a0fc0f4c04d9f0f0e1532"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-text-runtime.terminal-audit.json",
+      "blob": "860ad16518801f5a9823cf3d949696d538f78f00"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-web-catalog.input-audit.json",
+      "blob": "ea4901ba3358d06ee0b07efcba66938568e56d60"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-web-catalog.inventory.json",
+      "blob": "6c422a1a700b68b239c3072beb7e7486a054ad4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-web-catalog.json",
+      "blob": "a436c784f42d8133bb28f871ab68ac2f36afc97e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-web-catalog.log",
+      "blob": "0e02f76d103d1f8fd071f176187572179fedc55a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-wgpu-catalog.input-audit.json",
+      "blob": "98f8c6403849827c5f9a1a7fcf626021fedce3f1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-wgpu-catalog.inventory.json",
+      "blob": "c7793d93f2040a4e27666f20082edb79c41b073e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-wgpu-catalog.json",
+      "blob": "73d9b57879ef0cc72fd53f6f400f5b74813d156f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-wgpu-catalog.log",
+      "blob": "891bdd0e2ad897571382d00a4550cf3a6b5acd2f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-wgpu-runtime.binaries-before.json",
+      "blob": "345211ae2ccdd6dcd6284d6cc7a06a49a91ec36d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-wgpu-runtime.json",
+      "blob": "9bdb806922b1ffc41b145f8f31ef959bb23b853d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-wgpu-runtime.log",
+      "blob": "81d95fa80c50bf58f5f3e1965a60ca74ec81f9ec"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-render-wgpu-runtime.terminal-audit.json",
+      "blob": "5cb3ce82ab07785967be12684fbe19e33095e408"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-manifest-catalog.input-audit.json",
+      "blob": "3086f752367e7d2e5c078f2a60d5f05aab9537f6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-manifest-catalog.inventory.json",
+      "blob": "1e917230e302b9a578f41ebe7d04daaa6ede4df9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-manifest-catalog.json",
+      "blob": "e7ef210db61e122fe36177b461c0aa9e92e910de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-manifest-catalog.log",
+      "blob": "7592740c73c2ec32159b60eff76717f0a04a1246"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-manifest-runtime.binaries-before.json",
+      "blob": "157d9eea3c81ae8fe063de12dceeb3b3a6878527"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-manifest-runtime.json",
+      "blob": "aa959a38c2f9276e8c8a30f0d5d7f43c801ec4b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-manifest-runtime.log",
+      "blob": "43b3829101d3ac1c30a65ff2c25c4282ca6a1046"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-manifest-runtime.terminal-audit.json",
+      "blob": "3eae26991ab57cb63937652a3c8727a30d3de9eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-model-catalog.input-audit.json",
+      "blob": "f924e1055f7e0197e8060d5859a3208d69d8484f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-model-catalog.inventory.json",
+      "blob": "f147cd0640b1b268db288a1e8d071074f2eb4f06"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-model-catalog.json",
+      "blob": "341e764d00353d223f3919caacb16fff4c30d0a8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-model-catalog.log",
+      "blob": "827e8dc45cd2d119dcf82af3474e5492d728a503"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-model-runtime.binaries-before.json",
+      "blob": "b04a2266eef0b30b4a98899904d51e2b7143787b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-model-runtime.json",
+      "blob": "89bce9754baf4526ebc2dfea52cb00709a20c853"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-model-runtime.log",
+      "blob": "e01fb220e98bd710c3b9542a2e8dec7ba4a69f5f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-resource-model-runtime.terminal-audit.json",
+      "blob": "2956691fd74a04fbb10dfd380af9576462e365b1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-accelerator-catalog.input-audit.json",
+      "blob": "30ab2c9290e7c8c6d3c19fa931d38ca00e0545c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-accelerator-catalog.inventory.json",
+      "blob": "5bcd43121c970dda490cdae60be43538517d32f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-accelerator-catalog.json",
+      "blob": "c99dfb71d94431bf3411423fcbca9ed7881434fc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-accelerator-catalog.log",
+      "blob": "c03db4056e45d8f424097461ca9b1dabbf1bf6cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-accelerator-runtime.binaries-before.json",
+      "blob": "df9b6477975ee1e1941016ef92207473444c1b9c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-accelerator-runtime.json",
+      "blob": "3bc8e7db5c6778db4ada7e265950f2f9cd2c60e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-accelerator-runtime.log",
+      "blob": "66103f9b23194f16d48f19cfccff198fd6034fb8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-accelerator-runtime.terminal-audit.json",
+      "blob": "ea005ebb725e9b9d09c28091d9aceb4aaf3ce6c2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-codegen-catalog.input-audit.json",
+      "blob": "984e0dcdf02780b84dea2d33731247e9cfc976c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-codegen-catalog.inventory.json",
+      "blob": "ba949b0a1dd4d1fd95bad97b3afa53eb5f21011c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-codegen-catalog.json",
+      "blob": "1eda4c435a4714c56ab8f02262938998b3cb1614"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-codegen-catalog.log",
+      "blob": "30696a86a1355fdef60a0da897359c4d292bbc3b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-codegen-runtime.binaries-before.json",
+      "blob": "2102ffe5bee44edc4d67772a2023efd3fcabc7de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-codegen-runtime.json",
+      "blob": "684a0970ebd1775860cbb7becf4d16587afead1d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-codegen-runtime.log",
+      "blob": "eb282449309b12254bce162403adbbfce6c68559"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-codegen-runtime.terminal-audit.json",
+      "blob": "61f37d64eb9b7f37b212cb706097fd4a64f32a68"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-driver-catalog.input-audit.json",
+      "blob": "0c970423a6531e7fb674f9bc1c89d8957945533d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-driver-catalog.inventory.json",
+      "blob": "799694083d2b34c5f48441ca07d90e2829bbbfed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-driver-catalog.json",
+      "blob": "4d76b9a5c9eea91e5b214e50c1f7ddcfa08d71ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-driver-catalog.log",
+      "blob": "400faf9765f096aed3c87ec06e36757308cb0e84"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-driver-runtime.binaries-before.json",
+      "blob": "229c5eebe357012f678578faf03cc06ce1ddec05"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-driver-runtime.json",
+      "blob": "2af250db89493da616923516dadd306966dc95b9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-driver-runtime.log",
+      "blob": "bf2139d93f8ff906f8efa0fb8a1a41c08197569e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-driver-runtime.terminal-audit.json",
+      "blob": "191eba13fd954551526085687b7d2a6acfde8256"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-host-catalog.input-audit.json",
+      "blob": "b1e0a735e0c8dfb85c1d8d99b0b05ee87d5d733a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-host-catalog.inventory.json",
+      "blob": "d158a0a0a11071a1237870032239cdce42da142e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-host-catalog.json",
+      "blob": "221364ccf5039a3fccedc95f1cb7f9272fee5824"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-host-catalog.log",
+      "blob": "7d24eabb659d66ba3bac0e496ce2673997fa7395"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-host-runtime.binaries-before.json",
+      "blob": "5e3f3a45426e98a624e285b09e0ec84fcdd10fd5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-host-runtime.json",
+      "blob": "dc4c0eb8ce61f80aad6c1987b503365b084e9f08"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-host-runtime.log",
+      "blob": "1e380cc89a4db0e139aa8e711376a725aa8f3e32"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-host-runtime.terminal-audit.json",
+      "blob": "1871fe397527b06eba39dbdc0494ee13d258ec21"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-plan-catalog.input-audit.json",
+      "blob": "4ae06e62d7863f1d4f8e6c357dfb71af1cbb9adc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-plan-catalog.inventory.json",
+      "blob": "9e628058e57f25722744063fa694aa86f4cd3780"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-plan-catalog.json",
+      "blob": "a5dbb9b56be66dfa0e923c7c9b570d1f6f2a77d2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-plan-catalog.log",
+      "blob": "a52094390f8446ac43e0c9d3e42084ec7553f48c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-plan-runtime.binaries-before.json",
+      "blob": "b9f3ae759d46d23299815e4ee161938db092d38c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-plan-runtime.json",
+      "blob": "9441d501a130690f2f2ffa8f687c548e0a806add"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-plan-runtime.log",
+      "blob": "c81b538bbc37cc06e63010a0c637236e03ce3892"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-plan-runtime.terminal-audit.json",
+      "blob": "afb019d0a879ca996bbe420d95ba0217a1cd43d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-scheduler-catalog.input-audit.json",
+      "blob": "12df461658ef5adec7f1aa3515c14d979e424df2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-scheduler-catalog.inventory.json",
+      "blob": "f5de6688e906e24de7c1af20078f6604a79722b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-scheduler-catalog.json",
+      "blob": "f3b7f9c1ced4507289828645f1847b53ca9dad39"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-scheduler-catalog.log",
+      "blob": "cbe11962dad6fbcb9187193524c751c46e818d23"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-scheduler-runtime.binaries-before.json",
+      "blob": "1a5ae470c7c93887f05dc45380b63bb0202437d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-scheduler-runtime.json",
+      "blob": "e23346a62f8ee83a047bf00a403e333d65f48844"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-scheduler-runtime.log",
+      "blob": "73474f5cd73c4ace9c3aa04ce999b0130145d1f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-runtime-scheduler-runtime.terminal-audit.json",
+      "blob": "4b7bf0d283aa059c26d85e5d947efb3f8ff93f36"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-save-catalog.input-audit.json",
+      "blob": "1c6e3724f6b0c4c75609c50e4c68abc55401b682"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-save-catalog.inventory.json",
+      "blob": "ddaeb99c5af99cf32a4d0652889f9585a9cdf289"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-save-catalog.json",
+      "blob": "2393ae1c0c0b2d83c4e78ff04bdaf86494d5e575"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-save-catalog.log",
+      "blob": "f65b398c3e51a2c8f8b5dd66f0d71a29a7ed823b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-save-runtime.binaries-before.json",
+      "blob": "1d481f74bf70553b4f33f1ef15c10a058e651bbb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-save-runtime.json",
+      "blob": "9b273140f59723c6f5aae6613a32dc01babffcb8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-save-runtime.log",
+      "blob": "c9fc199159495c7f6c51aad77119b59fb3c984c6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-save-runtime.terminal-audit.json",
+      "blob": "8f72bb631907e86db02aff8dc443900c7faf1579"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-test-catalog.input-audit.json",
+      "blob": "f0a73b1fa6b535e2fcc83ef122084bd0f6e8c0b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-test-catalog.inventory.json",
+      "blob": "b9d1b57736349b830bb19979ba223b9b5d0b7b4e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-test-catalog.json",
+      "blob": "0e395da2e2caf6148ce989aa9edbe67b787260eb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-test-catalog.log",
+      "blob": "f066844f08f8bfeaa1bd6702594661ab43dbfd1a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-test-runtime.binaries-before.json",
+      "blob": "17cb24c0fb17baa75ba93ea2c5b74b43e632cdae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-test-runtime.json",
+      "blob": "4ade8e2ea4c4fbb66d244ab5ee53669d6b403385"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-test-runtime.log",
+      "blob": "8f2ad81fd6ff010afc2b0f1b44e939c37b2a9f6d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-test-runtime.terminal-audit.json",
+      "blob": "1ee3dc80319c0133fe8bcb83a0b9dd94b4cbf07a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-layout-catalog.input-audit.json",
+      "blob": "49ffba2bf382ab8e9f86463dd88341c5b27ef603"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-layout-catalog.inventory.json",
+      "blob": "530c1368e78e747302367bb0fa9f3629b2dbaa47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-layout-catalog.json",
+      "blob": "729011d0afa33945b50b20844235d63168095970"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-layout-catalog.log",
+      "blob": "0ae59d119c2bdb59d7b27a990bbb7778c68cb487"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-layout-runtime.binaries-before.json",
+      "blob": "3aed8abb10efebacc71114c8df3b51df741383da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-layout-runtime.json",
+      "blob": "82964da6c79ee78c338f2e0d8c9d9d923defc52b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-layout-runtime.log",
+      "blob": "a09a7dfe15c59230123ea1e16da562fb10903469"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-layout-runtime.terminal-audit.json",
+      "blob": "677aac54eaf16795599703b7ee9bd9e1a994d1c5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-model-catalog.input-audit.json",
+      "blob": "87e3c462a2f1c7399a31c0719ac6d4515a2867c9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-model-catalog.inventory.json",
+      "blob": "9c8c28a30e970bb3f374d6203ae5d325122b48ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-model-catalog.json",
+      "blob": "038eb880b19c4eb74396c3bb8c1d79d449f54bf0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-model-catalog.log",
+      "blob": "e296c607ef8a9c1b689e51dae09601badcb60e68"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-model-runtime.binaries-before.json",
+      "blob": "317579b9baa5a1bfb2b10f9921944127253bedb8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-model-runtime.json",
+      "blob": "a8399493948b7e8a0c8a192fdc571992402db42c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-model-runtime.log",
+      "blob": "478bc41f3a9dfbf83f97a79b52fe71e3716f8595"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-text-model-runtime.terminal-audit.json",
+      "blob": "3d7652e9d322960fdb4556879c80af3d42460219"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-tooling-catalog.input-audit.json",
+      "blob": "9dfe6bcf1b3050097fa8f63d37ba337683d7cb06"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-tooling-catalog.inventory.json",
+      "blob": "73886312afd3d899296e39ad10ffb758f28270e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-tooling-catalog.json",
+      "blob": "0398d5ac71765e19baa82a57156531914c097a05"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-tooling-catalog.log",
+      "blob": "7894f132715995c8f932a6f2baa40b88de184c25"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-tooling-runtime.binaries-before.json",
+      "blob": "512b50066a022ea7160d8092600961efa19daa3d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-tooling-runtime.json",
+      "blob": "af150f6132f3ef9ff7e780743d3cde44743fe413"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-tooling-runtime.log",
+      "blob": "02f00c78c9bf0b8367e6a6b4995b1982a9538f9e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-tooling-runtime.terminal-audit.json",
+      "blob": "9b4ef18228e57b81d80aa46b5e818dfe471cd471"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-catalog.input-audit.json",
+      "blob": "f571f7c2f3a10a79ccecebce114759baded27f93"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-catalog.inventory.json",
+      "blob": "48cfb53d9522ee07f498723290a96c5dd3979b6f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-catalog.json",
+      "blob": "a259c659fd170150615e94d8a4a226a0d79b2b65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-catalog.log",
+      "blob": "1142413bf4bb641d84c8cfcb4780e27276f9ab58"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-lsp-catalog.input-audit.json",
+      "blob": "882061dd2b32621deb30e60d030d47835eaeff3e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-lsp-catalog.inventory.json",
+      "blob": "f92d6b7fdfbd977298bd332f75deab6367f2669c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-lsp-catalog.json",
+      "blob": "47a52410807d29ada5926ab1c157f6964cf92fae"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-lsp-catalog.log",
+      "blob": "45fe2a8a6ce74d4d7a384cea70e2766ae92613da"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-lsp-runtime.binaries-before.json",
+      "blob": "e3f5dac7fb1e8987af1bc10780eaf63e1694d619"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-lsp-runtime.json",
+      "blob": "cbaedbe58ee29d5be62521bd5780148c6ce38380"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-lsp-runtime.log",
+      "blob": "3a5abada0bd6c35504ac5c2786a256dfa292f9aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-lsp-runtime.terminal-audit.json",
+      "blob": "5a532263aae7e459f328e17416b24141313e46e8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-oxiz-catalog.input-audit.json",
+      "blob": "3fd6734a9e37c7a233684d0cca3e9c1af90aa75c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-oxiz-catalog.inventory.json",
+      "blob": "c8c69a45e9ddeccc6e8399bcf01d978ffd2d3ee1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-oxiz-catalog.json",
+      "blob": "ed3dd9d76dfbbf4006a17f5e810f36641764abbb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-oxiz-catalog.log",
+      "blob": "cda94ab3250d5e6a4bcda1d0f523f6ce8e52f729"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-oxiz-runtime.binaries-before.json",
+      "blob": "f0a6e9ac4d8ef54ddeaee8ceda5dcede1757def9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-oxiz-runtime.json",
+      "blob": "0fe0f9047bd564bde2a107882f6d0affb57cd0ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-oxiz-runtime.log",
+      "blob": "d0c8074f91cf464fbe8a4787d9d779d523d04890"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-oxiz-runtime.terminal-audit.json",
+      "blob": "8203cbec5cbf3f25ed3dc7757515695e2a73b3bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-runtime.binaries-before.json",
+      "blob": "2a849c25bf28414f22dd0c7bc884048d08de9fa1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-runtime.json",
+      "blob": "cff95b7baef0fe2873049457d03a039d6bcfb903"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-runtime.log",
+      "blob": "ced1a55fa5bd4b0f61ee57178a72d7a266c9c90e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-runtime.terminal-audit.json",
+      "blob": "054a38ab2b0bc6a2feae5296f4d66fdb14a2199a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-z3-catalog.input-audit.json",
+      "blob": "ef6bcd06178a63711637b80bbe0f2e510c969759"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-z3-catalog.inventory.json",
+      "blob": "548258abe28f4599beee64e0a8fcc3e7099a2c52"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-z3-catalog.json",
+      "blob": "3b691892866bbaaa95d37b6dd98991f731474d04"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-z3-catalog.log",
+      "blob": "8e8c3630c6f3e4f327c3e92fa01063ca037f9254"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-z3-runtime.binaries-before.json",
+      "blob": "bb3a30b83e3656e3a08640e3f8daf607d4e34456"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-z3-runtime.json",
+      "blob": "ef9d46d6910bb9e303d869b64bdeee4c3b45fd85"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-z3-runtime.log",
+      "blob": "333e6eac933c438bd3e7996f9a6a396a458baca1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-verify-z3-runtime.terminal-audit.json",
+      "blob": "8d2fe794ed67cf89e7954e93b295185e45f27a69"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-view-catalog.input-audit.json",
+      "blob": "e34fd5ece3fa37636dfb4fd453015ffca9bea994"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-view-catalog.inventory.json",
+      "blob": "699ba076a2b79eb454fef93b6b17c146c94bd59b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-view-catalog.json",
+      "blob": "4e04d7f4fe01507fc5c97cb61ef379ca0b7af3fd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-view-catalog.log",
+      "blob": "b7229e91b4f813c0ca8dbd37a96b9634060d987e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-view-runtime.binaries-before.json",
+      "blob": "bc1eb5659911d02f4f12f6ca8816a004dbc5b058"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-view-runtime.json",
+      "blob": "7987f90c0b1dc8541282eb6c5a068f5e3e3f4d34"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-view-runtime.log",
+      "blob": "84f3fcf72e669d16e747ae0f13b1b76a1309fd50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-arcweft-view-runtime.terminal-audit.json",
+      "blob": "a82d150749c18615b1ac7a740337d2595942e40a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-reverse-matrix.driver.log",
+      "blob": "eefc4301c2294a563c107eda8ccbf5cec58e5e75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3616-reverse-matrix.json",
+      "blob": "eefc4301c2294a563c107eda8ccbf5cec58e5e75"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-arcweft-compiler-catalog.input-audit.json",
+      "blob": "e33140a9427d457f20ffe8c8e2fe2c13d822a535"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-arcweft-compiler-catalog.inventory.json",
+      "blob": "6100922c8c03fcfd08ae31784ca229ee29da287a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-arcweft-compiler-catalog.json",
+      "blob": "826b64b8eba2017b50e1f6043ff18fae84a34758"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-arcweft-compiler-catalog.log",
+      "blob": "ad7764a05df1fa0e9c255d694e8b6a1eb43bd521"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-arcweft-compiler-runtime.binaries-before.json",
+      "blob": "cd4233c086e97e6fa2bbb86da8fe484b485bd39f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-arcweft-compiler-runtime.json",
+      "blob": "ff92faaab877a310b5eec63fea7ca69496c14c0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-arcweft-compiler-runtime.log",
+      "blob": "10ed2bd589967c4ad54ac66da3925e3059893dc0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-arcweft-compiler-runtime.terminal-audit.json",
+      "blob": "c4f7f9781d62f96a3a6a1d00d002045b9ec281de"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-reverse-matrix.driver.log",
+      "blob": "a118bc3d91fc5da0f74cca4f43f88aae259e4c56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-r3617-reverse-matrix.json",
+      "blob": "a118bc3d91fc5da0f74cca4f43f88aae259e4c56"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-reverse-runtime-acceptance.json",
+      "blob": "17e1c7f465de40b846028254213515bbf5eac1d8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-tier2-source-publication.json",
+      "blob": "f9ee62862f42ab75c3be1b4340bb984bdd116a42"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "15ab40194eb661ff75bb68393b8a0565875a599d"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "c976b7a48fb8140a2dd857719ae61fffe196a888"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "cafdc8502eb5d887aeb198190a11b6f77d8280144fbfa2d8018f2c4a7230c489",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-30T23:52:05.0804762Z"
+}

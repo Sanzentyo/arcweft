@@ -1,6 +1,5 @@
 use super::*;
 use arcweft_agent_protocol::action::{AgentActionDispatch, AgentActionKind};
-use arcweft_bundle::BundleImageObjectBounds;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
     ViewInputPurpose, ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
@@ -12,6 +11,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
 };
 use arcweft_id::PublicId;
+use arcweft_interaction_model::presentation::PresentationImageBounds;
 use arcweft_interaction_model::presentation::{
     ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
 };
@@ -425,15 +425,16 @@ fn render_image(id: &str) -> RenderImage {
     }
 }
 
-fn bundle_image_object(id: &str, visible: bool) -> BundleImageObject {
-    BundleImageObject {
+fn bundle_image_object(id: &str, visible: bool) -> PresentationImage {
+    PresentationImage {
         id: id.to_owned(),
         asset: "asset.glass_bg".to_owned(),
         target: Some("target.glass_bg".to_owned()),
         layer: Some("layer.background".to_owned()),
         view: None,
         containing_scroll_region: None,
-        bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
+        bounds: PresentationImageBounds::try_from_px(0, 0, 1280, 720)
+            .expect("fixed image bounds fit milli-unit storage"),
         placement: None,
         fit: ImageObjectFit::Cover,
         alignment: ImageObjectAlignment::default(),
