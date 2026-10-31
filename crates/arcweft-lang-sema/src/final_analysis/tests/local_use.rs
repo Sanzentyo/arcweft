@@ -138,8 +138,10 @@ fn thread_producers_retain_the_exact_checked_body_and_execution_mode() {
 
 #[test]
 fn thread_publication_rejects_structural_and_foreign_body_semantics() {
-    use crate::final_analysis::{
-        CheckedExpression, CheckedExpressionResolution, FinalSemanticAnalysis,
+    use crate::final_analysis::CheckedExpressionResolution;
+    use crate::final_analysis::analyzer::{
+        FinalAuthorityMutationForTest, ThreadExpressionMutationForTest,
+        analyze_final_project_with_authority_mutation_for_test,
     };
 
     let world = fixture(
@@ -153,49 +155,28 @@ fn thread_publication_rejects_structural_and_foreign_body_semantics() {
         .filter(|(_, fact)| matches!(fact.resolution(), CheckedExpressionResolution::Thread(_)))
         .collect::<Vec<_>>();
     assert_eq!(threads.len(), 2);
-    let (owner, original) = threads[0];
+    let owner = threads[0].0;
     let cancellation = std::sync::atomic::AtomicBool::new(false);
-    let rebuild = |input| {
-        FinalSemanticAnalysis::try_new_with_control_and_type_resolutions(
+    let publish = |mutation| {
+        analyze_final_project_with_authority_mutation_for_test(
             world.project.analysis_view().unwrap(),
             &world.symbols,
-            std::sync::Arc::clone(accepted.hir_topology()),
-            accepted.checked_callables().clone(),
-            input,
-            accepted
-                .type_resolutions()
-                .map(|(owner, report)| (owner, report.clone()))
-                .collect(),
+            crate::final_analysis::FinalSemanticCatalogs::production(&world.registered),
             crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
+            FinalAuthorityMutationForTest::ThreadExpression { owner, mutation },
         )
+        .map_err(crate::final_analysis::FinalSemanticProjectError::into_semantic_fixture_error)
     };
-    rebuild(super::input_from_report(&accepted))
-        .expect("complete Thread publication preserves accepted type-resolution evidence");
-    for (ty, resolution) in [
-        (
-            original.value_type().unwrap().clone(),
-            CheckedExpressionResolution::Structural,
-        ),
-        (
-            original.value_type().unwrap().clone(),
-            threads[1].1.resolution().clone(),
-        ),
-        (TypeKind::Unit, original.resolution().clone()),
+    publish(ThreadExpressionMutationForTest::Preserve)
+        .expect("complete Thread publication preserves its production authority");
+    for mutation in [
+        ThreadExpressionMutationForTest::Structural,
+        ThreadExpressionMutationForTest::ForeignBody {
+            owner: threads[1].0,
+        },
+        ThreadExpressionMutationForTest::UnitResult,
     ] {
-        let mut input = super::input_from_report(&accepted);
-        let (_, fact) = input
-            .expressions
-            .iter_mut()
-            .find(|(candidate, _)| *candidate == owner)
-            .unwrap();
-        *fact = CheckedExpression::value(
-            ty,
-            original.type_selection().unwrap(),
-            original.effects().clone(),
-            resolution,
-        )
-        .into();
-        let error = rebuild(input)
+        let error = publish(mutation)
             .expect_err("a Thread requires its own checked body, mode and result type");
         assert_eq!(error, FinalSemanticAnalysisError::WrongPayloadFamily);
     }

@@ -253,6 +253,10 @@ pub(super) fn analyze_final_project_with_statement_mutation_for_test(
 
 #[cfg(test)]
 pub(super) enum FinalAuthorityMutationForTest {
+    ThreadExpression {
+        owner: ExprId,
+        mutation: ThreadExpressionMutationForTest,
+    },
     EventDigest {
         statement: StmtId,
         replacement: crate::types::SemanticTypeDigest,
@@ -264,6 +268,14 @@ pub(super) enum FinalAuthorityMutationForTest {
         declaration: arcweft_lang_hir::symbol::CallableDeclarationKey,
         replacement: CheckedCallableId,
     },
+}
+
+#[cfg(test)]
+pub(super) enum ThreadExpressionMutationForTest {
+    Preserve,
+    Structural,
+    ForeignBody { owner: ExprId },
+    UnitResult,
 }
 
 #[cfg(test)]
@@ -320,6 +332,14 @@ struct FunctionSiteContext {
 }
 
 trait FinalAnalysisMutation {
+    #[cfg(test)]
+    fn apply_publication_input(
+        &mut self,
+        _input: &mut FinalSemanticAnalysisInput,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        Ok(())
+    }
+
     fn apply_prepared_input(
         &mut self,
         input: &mut FinalSemanticAnalysisInput,
@@ -400,6 +420,56 @@ impl FinalAnalysisMutation for ExactPreparedStatementMutation {
 
 #[cfg(test)]
 impl FinalAnalysisMutation for FinalAuthorityMutationForTest {
+    fn apply_publication_input(
+        &mut self,
+        input: &mut FinalSemanticAnalysisInput,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let Self::ThreadExpression { owner, mutation } = self else {
+            return Ok(());
+        };
+        let original = input
+            .expressions
+            .iter()
+            .find(|(candidate, _)| candidate == owner)
+            .and_then(|(_, fact)| fact.complete())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let mut ty = original
+            .value_type()
+            .cloned()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let resolution = match mutation {
+            ThreadExpressionMutationForTest::Preserve => return Ok(()),
+            ThreadExpressionMutationForTest::Structural => CheckedExpressionResolution::Structural,
+            ThreadExpressionMutationForTest::ForeignBody { owner } => input
+                .expressions
+                .iter()
+                .find(|(candidate, _)| candidate == owner)
+                .and_then(|(_, fact)| fact.complete())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
+                .resolution()
+                .clone(),
+            ThreadExpressionMutationForTest::UnitResult => {
+                ty = TypeKind::Unit;
+                original.resolution().clone()
+            }
+        };
+        let replacement = CheckedExpression::value(
+            ty,
+            original
+                .type_selection()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+            original.effects().clone(),
+            resolution,
+        );
+        let (_, fact) = input
+            .expressions
+            .iter_mut()
+            .find(|(candidate, _)| candidate == owner)
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        *fact = replacement.into();
+        Ok(())
+    }
+
     fn apply_prepared_input(
         &mut self,
         input: &mut FinalSemanticAnalysisInput,
@@ -415,7 +485,9 @@ impl FinalAnalysisMutation for FinalAuthorityMutationForTest {
                     family: SemanticFactFamily::Statement,
                 })?
                 .replace_event_digest_for_test(*statement, *replacement),
-            Self::MissingCheckedCallable { .. } | Self::SubstituteCheckedCallable { .. } => Ok(()),
+            Self::ThreadExpression { .. }
+            | Self::MissingCheckedCallable { .. }
+            | Self::SubstituteCheckedCallable { .. } => Ok(()),
         }
     }
 
@@ -424,7 +496,7 @@ impl FinalAnalysisMutation for FinalAuthorityMutationForTest {
         checked_callables: &mut Arc<crate::callable::CheckedCallableCatalog>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         match self {
-            Self::EventDigest { .. } => Ok(()),
+            Self::ThreadExpression { .. } | Self::EventDigest { .. } => Ok(()),
             Self::MissingCheckedCallable { declaration } => Arc::get_mut(checked_callables)
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
                 .remove_project_candidate_for_test(declaration)
@@ -869,6 +941,8 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         self.control.check()?;
         let semantic_shapes =
             super::AcceptedSemanticShapeCatalog::build(self.catalogs.world.environment())?;
+        #[cfg(test)]
+        mutation.apply_publication_input(&mut input)?;
         mutation.apply_checked_callables(&mut checked_callables)?;
         let report = FinalSemanticAnalysis::try_new_with_control_and_type_resolutions_and_catalog(
             self.executable,
